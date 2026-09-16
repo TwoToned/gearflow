@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // #1221 follow-up (parent #1221, closes Phase 5's "Equipment write-side
-// gap" — FEATUREDOCS/76) — proves `useLineItemWrites`'s `add`/`addCustom`/
+// gap" — FEATUREDOCS/78) — proves `useLineItemWrites`'s `add`/`addCustom`/
 // `addKit` thread their new optional `versionId` straight through to the
 // underlying `api.lineItemWrites.*` mutation args, unchanged, and that
 // omitting it (the pre-#1221 call shape) sends `undefined` — the server

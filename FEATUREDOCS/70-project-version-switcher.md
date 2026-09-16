@@ -51,7 +51,7 @@ existing quote-derived lock until that phase lands.
 > actions and drift-indicator import (their mutations were already throwing
 > stubs since #1229 Phase 3); Send/Accept/Decline/Recall/View/Rename/Delete-
 > recalled are unchanged and this doc's description of them still holds. See
-> FEATUREDOCS/76's Phase 5 section for the full picture, including the
+> FEATUREDOCS/78's Phase 5 section for the full picture, including the
 > documented gap (new equipment/group/category/service inserts on a non-live
 > version still land on the live one).
 

@@ -5,7 +5,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
-import { requireCanUnlockPricing } from "./lib/projectLocks";
+import { requireCanUnlockPricing, pricingLockRaiseFields } from "./lib/projectLocks";
 import { assertUnlockPricingAllowed } from "./lib/agentArgs";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -14,7 +14,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * versioning v2", parent #1221) — the entire lock-tier system (unlock
  * sessions, per-edit justification, HARD_LOCKED) collapses to these. See
  * `convex/lib/projectLocks.ts` for the guard every money-write mutation calls,
- * and FEATUREDOCS/76's Phase 4 section for the full model.
+ * and FEATUREDOCS/78's Phase 4 section for the full model.
  *
  * `lockPricingNative` is `danger: "low"` (re-locking never destroys anything —
  * it only starts rejecting future money writes). `unlockPricingNative` is
@@ -56,13 +56,7 @@ export const lockPricingNative = mutation({
     const project = await requireProjectInOrg(ctx, id, orgId);
     if (project.pricingLocked === true) return { id, pricingLocked: true };
 
-    await ctx.db.patch(project._id, {
-      pricingLocked: true,
-      pricingLockedAt: now,
-      pricingLockedById: actor.userId,
-      pricingLockedByName: actor.userName,
-      updatedAt: now,
-    });
+    await ctx.db.patch(project._id, { ...pricingLockRaiseFields(actor, now), updatedAt: now });
 
     await writeActivityLog(ctx, {
       id: auditId,

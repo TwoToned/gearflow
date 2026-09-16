@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// #1221 follow-up (parent #1221, FEATUREDOCS/76) — UnifiedAddDialog's
+// #1221 follow-up (parent #1221, FEATUREDOCS/78) — UnifiedAddDialog's
 // segmented kind switcher is the ONE place that gates "Sale" while viewing
 // a non-live version (own-stock/kit/custom-item are fully enabled now that
 // their underlying CREATE mutations support a target versionId — see

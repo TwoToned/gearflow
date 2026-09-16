@@ -87,6 +87,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
+import { PaymentProgressStrip } from "@/components/projects/payment-progress-strip";
 import { useCanDo } from "@/lib/use-permissions";
 import { formatCurrency } from "@/lib/formatters";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
@@ -128,6 +129,7 @@ const allStatuses = [
   "ENQUIRY",
   "QUOTING",
   "QUOTED",
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",
@@ -174,6 +176,11 @@ export default function ProjectDetailPage({
   // (Radix `TabsContent` unmounts inactive panels), resetting its own
   // one-shot ref guard while the URL param is still there, popping the
   // dialog open again on every return visit for the rest of the session.
+  // #1236 — frozen at mount, same pattern `project-quote-rail.tsx` uses: this
+  // only drives the DERIVED `effectiveQuoteStatus` read inside
+  // `PaymentProgressStrip` below, so it doesn't need to tick — a stale-by-a-
+  // few-minutes EXPIRED read on this one page is not worth a re-render timer.
+  const [lockNow] = useState(() => Date.now());
   const [autoOpenAddModelId] = useState(() => searchParams.get("modelId") ?? undefined);
   useEffect(() => {
     if (!autoOpenAddModelId) return;
@@ -549,6 +556,19 @@ export default function ProjectDetailPage({
                   label: projectStatusLabels[s] || formatLabel(s),
                 }))}
                 onStatusChange={(s) => confirmGate.requestStatusChange(s)}
+              />
+            )}
+
+            {/* #1236 — the money phase's derived sub-steps, directly under the
+                node they belong to. Renders only at AWAITING_PAYMENT; see
+                FEATUREDOCS/77 for why these are three derived facts rather than
+                three statuses. */}
+            {!project.isTemplate && (
+              <PaymentProgressStrip
+                projectId={id}
+                orgId={orgId}
+                status={project.status}
+                now={lockNow}
               />
             )}
           </div>

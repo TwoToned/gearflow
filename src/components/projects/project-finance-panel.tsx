@@ -40,7 +40,7 @@ interface ProjectFinancePanelProps {
  * above the tabs on `/projects/[id]`, `FinanceTabSlot`), which is what makes
  * this safe to call unconditionally. The Overview tab's `QuoteCard`/
  * `QuoteManagerDialog` deliberately do NOT — Overview stays live-only
- * (FEATUREDOCS/76), so they never pass this prop and keep exactly their
+ * (FEATUREDOCS/78), so they never pass this prop and keep exactly their
  * pre-follow-up behaviour.
  */
 export function ProjectFinancePanel({ projectId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total }: ProjectFinancePanelProps) {

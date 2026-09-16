@@ -596,7 +596,7 @@ export const createCategoryAndPlaceGroup = mutation({
     // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the
     // version the new category lands on, defaulting to live when absent.
     // NOTE: no UI currently threads this (the Move-to-new-category dialogs
-    // weren't wired to a viewed version in this pass — see FEATUREDOCS/76);
+    // weren't wired to a viewed version in this pass — see FEATUREDOCS/78);
     // added for API completeness/future wiring, additive-only. Whatever it
     // resolves to MUST match the moved group's own version (checked below) —
     // a group can't be relocated into a category living in a different

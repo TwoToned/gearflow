@@ -13,7 +13,7 @@ import { api } from "../../convex/_generated/api";
  * `setLabelNative`/`deleteNative`. Replaces the throwing stubs this file
  * used to hold (`saveVersion`/`promoteRevision`, over the OLDER quote-
  * revision model) now that the header pill + Versions panel are rebuilt on
- * the new verbs directly — see FEATUREDOCS/76's Phase 3 "UI callers left
+ * the new verbs directly — see FEATUREDOCS/78's Phase 3 "UI callers left
  * intentionally broken" note for why those stubs existed.
  *
  * `makeLive` is called directly via `useMutation` here, the same way

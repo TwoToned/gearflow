@@ -36,7 +36,11 @@ export const COUNTER_FIELDS = [
 ] as const;
 export type CounterField = (typeof COUNTER_FIELDS)[number];
 
-const ACTIVE_PROJECT_STATUSES = new Set(["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]);
+// #1236 — AWAITING_PAYMENT counts as active: the job is agreed and its gear is
+// held (HARD_PROJECT_STATUSES). No backfill is needed because no row has ever
+// sat at this status — every project reaching it does so through a patch that
+// bumps these counters with both the old and new status.
+const ACTIVE_PROJECT_STATUSES = new Set(["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]);
 const PENDING_OFFER_STATUSES = new Set(["OFFERED", "PENDING"]);
 
 export interface CounterValues {

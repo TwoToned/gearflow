@@ -108,35 +108,78 @@ pnpm exec prisma generate
 
 After this, `pnpm dev`, `pnpm test`, and `pnpm build` will all work.
 
-### Convex Dev in Worktrees
+### Convex in Worktrees & agent sessions
 
 **Always use `pnpm exec convex` — never `npx convex`**, which runs a global CLI
 copy that can't resolve `convex/server` from local `node_modules`, causing an
 esbuild failure. `pnpm exec convex` uses the locally installed version.
 
-**When Claude Code edits `convex/*.ts` files**, push the changes immediately after:
+**Default: do NOT push. Editing `convex/*.ts` needs no deployment.** The test
+suite runs Convex functions in-memory (`convex-test`, 164 files) and
+`convex/_generated/` is committed, so lint, typecheck, `pnpm build` and
+`pnpm test` all pass with no Convex credentials at all — which is exactly what
+`ci.yml` does (`NEXT_PUBLIC_CONVEX_URL: https://dummy-e2e.convex.cloud`).
+Verify a Convex change with `pnpm test`, not by pushing it somewhere.
+
+`pnpm build` is the one that's picky, and about Postgres rather than Convex:
+page-data collection reaches the database, so a `DATABASE_URL` pointing at a
+remote it can't reach fails the build with a bare `Failed to collect page data
+for /_not-found` that names Prisma but not the cause. A dummy
+(`postgresql://dummy:dummy@localhost:5432/dummy`, what `ci.yml` uses) builds
+clean; a live remote URL from a sandbox often doesn't.
+
+This matters most when several agent sessions / worktrees run at once: a push is
+shared mutable state. `convex dev --once` targets the **shared dev deployment**
+that the PR previews run against, so two branches pushing divergent schemas
+race, last write wins, and one session's half-finished schema breaks the
+previews and every other session. Never wire a Convex push into an automatic
+post-edit step.
+
+**Adding a new `convex/*.ts` module** is the one case that touches `_generated/`,
+and `convex codegen` refuses to run without a configured deployment
+(`✖ No CONVEX_DEPLOYMENT set`). Hand-edit `convex/_generated/api.d.ts` instead —
+a new module is exactly two mechanical lines (`import type * as x from "../x.js";`
+and `x: typeof x;` in the `fullApi` map). Editing functions *inside* an existing
+module changes nothing generated.
+
+**When you genuinely need a live backend** (running the app, clicking through a
+flow), take your own preview deployment — never the shared dev one:
+
 ```bash
-pnpm exec convex dev --once
+pnpm exec convex deploy --preview-name "$(git rev-parse --abbrev-ref HEAD)"
 ```
-This is a one-shot push to the shared dev deployment — no watcher, no URL rewriting.
-Run it automatically after any Convex function change. `CONVEX_DEPLOY_KEY` must be
-in `.env`.
 
-**When a human dev wants a live watcher**, use a named preview deployment to avoid
-conflicting with other worktrees or the shared dev deployment:
+Branch names are unique per worktree, so each session gets its own isolated
+deployment; re-running reuses it rather than recreating it. To build against it
+in one shot:
 
 ```bash
-# Start Convex watcher for this branch (creates/reuses a preview deployment)
-pnpm exec convex dev --preview-run $(git rev-parse --abbrev-ref HEAD)
+pnpm exec convex deploy --preview-name "$(git rev-parse --abbrev-ref HEAD)" \
+  --cmd-url-env-var-name NEXT_PUBLIC_CONVEX_URL --cmd 'pnpm build'
 ```
 
-This writes the preview deployment URL to `.env.local` as `NEXT_PUBLIC_CONVEX_URL`,
-which the dev server picks up automatically. Run it in a separate terminal alongside
-`pnpm dev`. The preview deployment name must not contain `/` — for worktree branches
-like `feature/my-thing`, the branch name works fine as-is (Convex URL-encodes it).
+`CONVEX_DEPLOY_KEY` must be a **preview** deploy key (Convex dashboard → Project
+Settings → Deploy keys → Preview). By Convex's key scoping, a preview key reaches
+only preview deployments, never prod or the shared dev one — that scoping, not
+anyone's discipline, is what makes it safe for unattended sessions to share one
+credential. Never hand a session a prod key, and never run a bare
+`pnpm exec convex deploy` (no `--preview-name`): with a prod key in the
+environment that deploys to production. Do **not** set
+`CONVEX_DEPLOYMENT`: it pins every session to a single deployment and re-creates
+the collision a preview key exists to prevent.
 
-`CONVEX_DEPLOY_KEY` must be set in `.env` or `.env.local` pointing to your Convex
-Cloud project deploy key.
+Three things that are easy to get wrong:
+- `convex dev` has **no** preview flags. `--preview-run` is a *seed function
+  name* on `convex deploy`, not a deployment name; the name flags are
+  `--preview-name` / `--preview-create`.
+- Preview deployments do **not** inherit the prod or dev deployment's environment
+  variables; they get the project-level defaults. `CONVEX_AUTH_ISSUER` /
+  `CONVEX_AUTH_JWKS_URL` are set as project defaults (verified 2026-09-16: a
+  fresh preview came up carrying both), which is what keeps auth alive on a
+  preview — `convex/auth.config.ts` reads them at push time. Clear those defaults
+  and every new preview is born with auth dead.
+- Previews auto-delete 5 days after creation (14 on paid plans) and count toward
+  the team's deployment limit — relevant if you keep many worktrees alive.
 
 ### DB Setup (first time)
 ```bash
@@ -462,6 +505,73 @@ on one document — which is also why `buildFinanceLines` needs no counterpart
 (the group still bills as one line). Kit parents are excluded, and expand
 (warehouse) mode ignores the flag entirely — packers need the full list.
 
+### Project status advances itself — add a TRIGGER, never a second patch site
+`convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
+effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item
+packed → `PREPPING`, last packed item off the dock → `CHECKED_OUT`, last item back
+→ `RETURNED`. The returns station's old private `maybeAutoAdvanceProject` is gone —
+it calls in here. Three rules when you touch this:
+
+1. **Never hand-roll another "patch `projects.status` as a side effect".** Add a
+   row to `AUTO_STATUS_RULES` and call `maybeAutoAdvanceProjectStatus` ONCE at the
+   end of the mutation that did the real work — never inside a per-item loop, and
+   never before the writes it inspects have landed.
+2. **Never automate a move INTO `COMPLETED`/`INVOICED`.** Closing a job out is a
+   human's call. `CONFIRMED` has exactly ONE sanctioned rule — `PAYMENT_SETTLED`
+   (#1236): in this business payment IS the confirmation. It is safe only because
+   it re-checks the accepted-quote gate (failing CLOSED — it has nobody to collect
+   a justification from) and takes the same whole-project snapshot
+   `updateStatusNative` does. A table-level test pins it as the only rule that may
+   reach `CONFIRMED`, so a second can't inherit the exception by accident.
+3. **A new switch key goes on BOTH sides.** The rule table's `settingKey` lives in
+   `convex/lib/projectAutoStatus.ts`; `AUTO_STATUS_KEYS` + labels + toast copy live
+   in `src/lib/project-status-automation.ts` (convex can't import from `src/`).
+   `convex/projectAutoStatus.test.ts` asserts parity — absent = ON, so the stored
+   blob only ever records an opt-OUT.
+
+"Everything deployed" is a POSITIVE test — **no deployable row still has ordered
+quantity in the warehouse** (`stillInBuilding`), not "nothing is still `PACKED`".
+The absence-of-a-PACKED-marker version was wrong twice: a partially deployed bulk
+line rolls up to `{ status: CHECKED_OUT, prepStatus: PACKED }` on its FIRST unit
+out (`deriveOrderLineStatus` is a `some`), and never-prepped gear has no
+`prepStatus` at all — so one deployed item flipped a job with everything else
+still on the shelf, permanently (the `from` set stops matching, so it can't
+self-correct).
+
+Deployable mirrors the warehouse page's own `equipmentItems` filter: `type ??
+"EQUIPMENT"` is `EQUIPMENT`, not a container row, not a sub-hire GROUP wrapper.
+Scoping by type is what keeps services / labour / transport / MISC / sale lines —
+which sit at `CONFIRMED` for the life of the job — from pinning it at `PREPPING`.
+
+Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical work
+is the second way out of the money phase, for orgs that reconcile payments in Xero
+and never write a `payments` row. See FEATUREDOCS/76.
+
+### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
+The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
+the client has agreed and/or an invoice is out, but the money hasn't landed.
+**Never add "deposit invoice sent" or "deposit paid" as statuses.** Both are
+already facts on rows that own them — an `invoices` row at `ISSUED`, and
+`invoices.paymentStatus`, itself derived from `payments` — so a copy on the
+project would be a second source of truth for whether the client's money landed
+(R-3.1), and the two WILL disagree the first time a payment is voided.
+`src/lib/project-payment-progress.ts` computes the three sub-steps on read;
+`<PaymentProgressStrip>` renders them under the stepper, only at
+`AWAITING_PAYMENT`.
+
+Two things about it that look wrong and aren't:
+- **Its lock tier is `OPEN`, not `FINANCE_LOCKED`.** #988's quote-sent input
+  already locks the pricing of anything that came through a quote, and a
+  status-driven lock here makes `newVersionNative`'s `bypassQuoteLock` (which
+  resolves from STATUS alone) unable to reach its own exit — a client asking for
+  a change after approving could never be re-quoted. The residual gap (an invoice
+  issued with no quote behind it locks nothing) is PRE-EXISTING and belongs in
+  `resolveLockTier` as a third input with its own void-and-reissue exit.
+- **It IS in `HARD_PROJECT_STATUSES`.** The gear is held from the moment the job
+  is agreed. So the two same-named `isConfirmedOrLater` helpers now disagree for
+  this one status: `availabilityCore.ts`'s (stock) says true,
+  `projectLocks.ts`'s (money) says false. They ask different questions.
+
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
 (`validUntil < now && status === "SENT"`) and never stored, and the deprecated
@@ -480,7 +590,7 @@ server-owned — written only by `createNative` and `quotesWrites.newVersionNati
 (the older `projectVersionsWrites.saveVersionNative`/`promoteRevisionNative`,
 which used to also write them, were deleted in #1229 Phase 3 — superseded by
 `convex/versions.ts`'s `createNative`/`makeLiveNative` on the real,
-Phase-1/2-introduced `projectVersions` table, FEATUREDOCS/76 — do not confuse the
+Phase-1/2-introduced `projectVersions` table, FEATUREDOCS/78 — do not confuse the
 two "createNative"s or the two version programs), and stripped from client
 patches the same way `PROJECT_MONEY_ANCHORS` are. The invariant is "at most one
 **live** DRAFT, always at `liveRevision`" — a non-live DRAFT is a legitimate

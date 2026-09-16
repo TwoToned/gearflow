@@ -2,6 +2,8 @@
 
 import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
+import { toast } from "sonner";
+import { autoStatusToast } from "@/lib/project-status-automation";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { generateQuoteArtifact } from "@/server/finance-documents";
 import { api } from "../../convex/_generated/api";
@@ -28,6 +30,12 @@ import {
  * caller to act on (advance to QUOTED / CONFIRMED / CANCELLED), never something
  * the mutation applied itself — status is never forced by a quote verb, matching
  * the existing "issuing an invoice offers to advance to INVOICED" precedent.
+ *
+ * #1160 narrows that for SEND only: when the org leaves the "Quote sent" status
+ * automation on (the default), `sendNative` moves the job to QUOTED itself and
+ * reports it as `autoStatusChange`, leaving `offerStatusChange` null. The offer is
+ * now the OPT-OUT path, not the normal one. Accept/decline are unchanged — entering
+ * CONFIRMED commits stock and money, so it stays a human's explicit click.
  */
 export type QuoteStatusOffer = "QUOTED" | "CONFIRMED" | "CANCELLED" | null;
 
@@ -68,7 +76,7 @@ export function useQuoteWrites() {
      * every pre-Phase-6 caller. `project-quote-rail.tsx` (the OLDER,
      * live-revision-only Finance tab) doesn't pass one yet — wiring a UI
      * surface to target a non-live version when sending is a deliberate,
-     * documented follow-up (FEATUREDOCS/76's Phase 6 section), not attempted
+     * documented follow-up (FEATUREDOCS/78's Phase 6 section), not attempted
      * this phase. This threading exists so that follow-up is a call, not a
      * rewrite.
      */
@@ -80,6 +88,8 @@ export function useQuoteWrites() {
       id: string;
       version: number;
       validUntil: number;
+      /** Non-null when #1160's automation ALREADY moved the job to Quoted. */
+      autoStatusChange: "QUOTED" | null;
       offerStatusChange: QuoteStatusOffer;
       artifactReady: boolean;
     }> => {
@@ -145,10 +155,18 @@ export function useQuoteWrites() {
     markAccepted: async (
       quoteId: string,
       data: QuoteAcceptValues = {},
-    ): Promise<{ id: string; version: number; offerStatusChange: QuoteStatusOffer }> => {
+    ): Promise<{
+      id: string;
+      version: number;
+      autoStatusChange: "AWAITING_PAYMENT" | null;
+      offerStatusChange: QuoteStatusOffer;
+    }> => {
       const org = requireOrg();
       const parsed = quoteAcceptSchema.parse(data);
-      return await acceptM({
+      // #1236 — accepting moves the job to AWAITING_PAYMENT, not CONFIRMED: the
+      // client has agreed, the money hasn't landed. Announced rather than
+      // offered, matching send; the offer survives only for an opted-out org.
+      const res = await acceptM({
         id: quoteId,
         organizationId: org,
         acceptedAt: parsed.acceptedAt?.getTime(),
@@ -157,6 +175,9 @@ export function useQuoteWrites() {
         auditId: createId(),
         now: Date.now(),
       });
+      const copy = autoStatusToast(res.autoStatusChange);
+      if (copy) toast(copy.title, { description: copy.description });
+      return res;
     },
 
     markDeclined: async (

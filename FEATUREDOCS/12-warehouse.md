@@ -2,6 +2,14 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
+> **#1160** — deploying and checking in now advance the PROJECT's status too:
+> the last packed line leaving the dock moves the job to `CHECKED_OUT`, the last
+> outstanding line coming back moves it to `RETURNED` (the returns station's old
+> private auto-advance, generalised and extended to the project-scoped check-in).
+> Org-configurable, on by default. See
+> [76 — Project Status Automation](./76-project-status-automation.md).
+
+
 ## UI Terminology
 - "Check Out" is displayed as **"Deploy"** in the UI
 - "Check In" is displayed as **"Return"** in the UI

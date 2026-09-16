@@ -9,10 +9,11 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { assertClientContactBelongsToClient, assertRefInOrg } from "./lib/orgRef";
-import { requireCanUnlockPricing } from "./lib/projectLocks";
+import { requireCanUnlockPricing, pricingLockRaiseFields } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { resolveOrgQuoteConfig, resolveOrgDefaultTaxRate } from "./lib/orgSettings";
+import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { computeValidUntil, startOfDayInTimezone, QUOTE_VALIDITY_BOUNDS } from "./lib/quoteDates";
 import { loadTotalsBundle, computeTotals } from "./lib/recalc";
 import { resolveWriteVersionId, requireLiveVersionId } from "./lib/versionScope";
@@ -55,7 +56,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * "Project versioning v2" (parent #1221), superseded by the real
  * `projectVersions`-table verb set in `convex/versions.ts`
  * (`createNative`/`makeLiveNative`/`setLabelNative`/`deleteNative`). See
- * FEATUREDOCS/76's Phase 3 section.
+ * FEATUREDOCS/78's Phase 3 section.
  *
  * **#1230 Phase 4 note.** `unacceptNative` and `correctQuoteNative`, and every
  * check against `quotes.protected` (in `recallNative`/`deleteRecalledNative`/
@@ -64,7 +65,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * `markAcceptedNative` no longer sets `protected` either. `sendNative` now
  * SETS `projects.pricingLocked` (D55) and `recallNative` now CLEARS it (D56,
  * only for the live version's quote) — see `convex/lib/projectLocks.ts` and
- * FEATUREDOCS/76's Phase 4 section.
+ * FEATUREDOCS/78's Phase 4 section.
  *
  * **#1233 Phase 6 note ("quotes from any version" — the payoff of the whole
  * program).** `sendNative` now takes an optional `versionId` (a REAL
@@ -394,12 +395,7 @@ async function raisePricingLockIfLiveSend(
 ): Promise<void> {
   const { project, isLive, actor, now } = args;
   if (!isLive || project.pricingLocked === true) return;
-  await ctx.db.patch(project._id, {
-    pricingLocked: true,
-    pricingLockedAt: now,
-    pricingLockedById: actor.userId,
-    pricingLockedByName: actor.userName,
-  });
+  await ctx.db.patch(project._id, pricingLockRaiseFields(actor, now));
 }
 
 /** The exact shape `sendNative`'s handler builds as `sendFields` — named so
@@ -535,6 +531,8 @@ export const sendNative = mutation({
     id: v.string(),
     version: v.number(),
     validUntil: v.number(),
+    /** Non-null when #1160's automation ALREADY moved the job (UI confirms, never asks). */
+    autoStatusChange: v.union(v.literal("QUOTED"), v.null()),
     offerStatusChange: offerValidator,
   }),
   args: {
@@ -638,11 +636,21 @@ export const sendNative = mutation({
       createdAt: now,
     });
 
+    // #1160 — the job moves itself to QUOTED. `offerStatusChange` is kept, but is
+    // now only ever non-null when the automation did NOT act (the org opted out),
+    // so the send dialog's "Move it to QUOTED?" prompt is the fallback rather than
+    // the normal path. Status is still never decided by the browser either way.
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: organizationId, projectId, trigger: "QUOTE_SENT", actor, now,
+    });
+
     return {
       id: quoteId,
       version: revision,
       validUntil,
-      offerStatusChange: SEND_OFFERS_QUOTED_FROM.has(project.status ?? "") ? ("QUOTED" as const) : null,
+      autoStatusChange: autoStatus === "QUOTED" ? ("QUOTED" as const) : null,
+      offerStatusChange:
+        autoStatus === null && SEND_OFFERS_QUOTED_FROM.has(project.status ?? "") ? ("QUOTED" as const) : null,
     };
   },
 });
@@ -1160,12 +1168,14 @@ export const markAcceptedNative = mutation({
   returns: v.object({
     id: v.string(),
     version: v.number(),
-    offerStatusChange: offerValidator,
     madeLive: v.boolean(),
     /** `performMakeLive`'s own conflicts list (D6's "list, don't block" —
      *  same shape `versions.makeLiveNative` returns) when accepting made a
      *  version live. Empty when the accepted version was already live. */
     conflicts: v.array(v.string()),
+    /** #1236 — non-null when the automation moved the job to AWAITING_PAYMENT. */
+    autoStatusChange: v.union(v.literal("AWAITING_PAYMENT"), v.null()),
+    offerStatusChange: offerValidator,
   }),
   args: {
     id: v.string(),
@@ -1225,12 +1235,23 @@ export const markAcceptedNative = mutation({
       createdAt: now,
     });
 
+    // #1236 — accepting now moves the job to AWAITING_PAYMENT (the client has
+    // said yes; the money hasn't landed), NOT straight to CONFIRMED. The old
+    // "offer CONFIRMED" is the opt-out fallback, exactly as it is for send.
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: organizationId, projectId: project.id, trigger: "QUOTE_ACCEPTED", actor, now,
+    });
+
     return {
       id: quote.id,
       version: quote.version,
-      offerStatusChange: ACCEPT_OFFERS_CONFIRMED_FROM.has(project.status ?? "") ? ("CONFIRMED" as const) : null,
       madeLive,
       conflicts,
+      autoStatusChange: autoStatus === "AWAITING_PAYMENT" ? ("AWAITING_PAYMENT" as const) : null,
+      offerStatusChange:
+        autoStatus === null && ACCEPT_OFFERS_CONFIRMED_FROM.has(project.status ?? "")
+          ? ("CONFIRMED" as const)
+          : null,
     };
   },
 });

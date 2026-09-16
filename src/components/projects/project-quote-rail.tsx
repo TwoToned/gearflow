@@ -108,14 +108,14 @@ interface QuoteRailProjectVersion {
  * tab). `undefined` (every other embed site: the Overview tab's `QuoteCard`/
  * `QuoteManagerDialog`) behaves EXACTLY like `{ versions: [], viewing: null }`
  * — always targets the live version, byte-identical to every pre-follow-up
- * caller. FEATUREDOCS/76: Overview is deliberately live-only, same as every
+ * caller. FEATUREDOCS/78: Overview is deliberately live-only, same as every
  * other Overview card, so it doesn't opt in.
  */
 export interface QuoteRailVersionContext {
   /** Every real `projectVersions` row for the project (live + non-live) —
    *  used only to resolve a quote's own `versionId` to a human "v{N}" so a
    *  second SENT quote on another version is never ambiguous with THIS row's
-   *  own quote-revision number (a different counter — FEATUREDOCS/76's "two
+   *  own quote-revision number (a different counter — FEATUREDOCS/78's "two
    *  numbering schemes" note). */
   versions: QuoteRailProjectVersion[];
   /** Non-null only while the page is viewing a NON-live version. */
@@ -384,7 +384,7 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
  * (`viewingVersion` non-null), the header offers exactly one thing: send
  * THAT version's own quote, labelled unambiguously with the PROJECT version
  * number ("Send v{N}'s quote") rather than the quote-revision "v{N}" the live
- * branch below uses — the two are different counters (FEATUREDOCS/76's "two
+ * branch below uses — the two are different counters (FEATUREDOCS/78's "two
  * numbering schemes" note), and reusing the same word for both here is
  * exactly the ambiguity a version-aware label exists to avoid. The live-only
  * "Create quote v{revision+1}" verb doesn't apply to a specific non-live
@@ -472,7 +472,7 @@ function MultipleVersionsQuotedNotice({ count }: { count: number }) {
  * shared `QuoteDriftIndicator` component (Project Versioning v2 Phase 5,
  * #1231: that shared component is one of the surfaces `VersionStrip`
  * absorbs, but its drift STATE isn't rebuilt into the strip this phase —
- * see FEATUREDOCS/76's Phase 5 section). `diffSnapshotEntries`/
+ * see FEATUREDOCS/78's Phase 5 section). `diffSnapshotEntries`/
  * `summarizeDrift`/`describeDrift` (`src/lib/quote-drift.ts`,
  * `src/lib/project-snapshot-diff.ts`) are unchanged — only the shared
  * wrapper component is gone, not the underlying logic (R-3.1: this and
@@ -927,7 +927,7 @@ function projectVersionNumberFor(quote: QuoteRevisionDoc, allProjectVersions: Qu
  *  one project version" decision lives here instead of an inline `&&` chain
  *  in the caller. Deliberately worded "project version" (not another bare
  *  "v{N}") — `RevisionMeta`'s own "v{N}" a few pixels to the left is the
- *  QUOTE's revision number, a different counter (FEATUREDOCS/76). */
+ *  QUOTE's revision number, a different counter (FEATUREDOCS/78). */
 function ProjectVersionTag({ show, number }: { show: boolean; number: number | null }) {
   if (!show || number == null) return null;
   return <span className="t-micro text-fg-4">for project version {number}</span>;

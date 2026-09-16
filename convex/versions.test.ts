@@ -7,7 +7,7 @@
 // (`convex/projectVersionsWrites.ts`'s deleted `saveVersionNative`/
 // `promoteRevisionNative`, `convex/quotesWrites.ts`'s deleted
 // `repriceFromRevisionNative`/`deleteDraftNative`/`deleteVersionNative`/
-// `setQuoteProtectedNative`). See FEATUREDOCS/76's Phase 3 section.
+// `setQuoteProtectedNative`). See FEATUREDOCS/78's Phase 3 section.
 import { convexTest } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";

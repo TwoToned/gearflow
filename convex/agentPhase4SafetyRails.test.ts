@@ -278,6 +278,12 @@ describe("revertAgentWindow", () => {
         id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", modelId: "mdl1", assetId: "a1",
         quantity: 1, sortOrder: 0, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PENDING",
         isKitChild: false, createdAt: NOW, updatedAt: NOW,
+        // VERSION-SCOPE (#1228): must match the project's `liveVersionId` above —
+        // the ALL_CHECKED_OUT automation (#1160) this describe block exercises
+        // reads the line item's live version via `by_versionId`, so a row with
+        // no `versionId` is invisible to it and the auto-advance (and the
+        // revert this test asserts) silently never fires.
+        versionId: "v-p1-4", lineageId: "li1",
       });
     });
   }
@@ -310,12 +316,19 @@ describe("revertAgentWindow", () => {
       orgId: ORG, apiKeyId: KEY, fromMs: NOW - 1000, toMs: NOW + 1000, actor: ACTOR, now: NOW,
     });
 
+    // #1160 — the deploy also tripped the ALL_CHECKED_OUT automation, so the window
+    // carries a second, derived STATUS_CHANGE row. Both are reversed: undoing the
+    // deploy without the status would leave the job at Deployed with nothing out.
     expect(res.skipped).toEqual([]);
-    expect(res.reverted).toHaveLength(1);
-    expect(res.reverted[0].reverseOperation).toBe("warehouseWrites.undeployItems");
+    expect(res.reverted.map((r) => r.reverseOperation).sort()).toEqual([
+      "projectWrites.updateStatus",
+      "warehouseWrites.undeployItems",
+    ]);
 
     const asset = await t.run((ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).unique());
     expect(asset?.status).toBe("AVAILABLE");
+    const project = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).unique());
+    expect(project?.status).toBe("CONFIRMED");
   });
 
   test("a human-authored write in the same window is left alone (not agent-attributed)", async () => {

@@ -19,23 +19,64 @@ interface ParsedOrgDocumentConfig {
   paymentTermsDays: unknown;
 }
 
-/** Shared row-fetch + JSON parse behind `resolveOrgQuoteConfig`/`resolveOrgInvoiceConfig`
- *  (R-3.1 — one parse, not one per caller). `settings` is the JSON string of the
- *  `OrgSettings` TS shape (src/lib/org-settings-types.ts); an unparseable blob
- *  degrades to the documented defaults rather than failing the write. */
-async function loadOrgDocumentConfig(ctx: MutationCtx | QueryCtx, orgId: string): Promise<ParsedOrgDocumentConfig> {
+/** The org's settings JSON blob, parsed. The ONE row-fetch + `JSON.parse` behind
+ *  every consumer in this file (R-3.1 — one parse, not one per caller).
+ *  `settings` is the JSON string of the `OrgSettings` TS shape
+ *  (src/lib/org-settings-types.ts); an unparseable blob degrades to `{}` — i.e.
+ *  to the documented defaults — rather than failing the write that read it. */
+async function loadOrgSettingsBlob(
+  ctx: MutationCtx | QueryCtx,
+  orgId: string,
+): Promise<Record<string, unknown>> {
   const row = await ctx.db
     .query("orgSettings")
     .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
     .first();
-  let parsed: { timezone?: unknown; documents?: { quoteValidityDays?: unknown; paymentTermsDays?: unknown } } = {};
-  if (row?.settings) {
-    try {
-      parsed = JSON.parse(row.settings) as typeof parsed;
-    } catch {
-      parsed = {};
-    }
+  if (!row?.settings) return {};
+  try {
+    const parsed: unknown = JSON.parse(row.settings);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
   }
+}
+
+/** Mirrors `src/lib/project-status-automation.ts`'s `AutoStatusKey` — the
+ *  convex/src boundary has no shared module, so parity is proven by a test
+ *  instead (`convex/projectAutoStatus.test.ts`). */
+export type AutoStatusSettingKey =
+  | "quoteSent"
+  | "quoteAccepted"
+  | "invoiceIssued"
+  | "paymentSettled"
+  | "prepStarted"
+  | "allCheckedOut"
+  | "allReturned";
+
+/**
+ * Is a given status-automation trigger enabled for this org (#1160)? Absent —
+ * both the whole object and any individual key — means ENABLED, so every
+ * pre-#1160 org gets the automation with no backfill and the stored setting only
+ * ever records an explicit opt-OUT. Mirrors `isAutoStatusEnabled`
+ * (`src/lib/project-status-automation.ts`), which the settings UI reads.
+ */
+export async function resolveAutoStatusEnabled(
+  ctx: MutationCtx | QueryCtx,
+  orgId: string,
+  key: AutoStatusSettingKey,
+): Promise<boolean> {
+  const blob = await loadOrgSettingsBlob(ctx, orgId);
+  const automation = blob.projectStatusAutomation;
+  if (!automation || typeof automation !== "object") return true;
+  return (automation as Record<string, unknown>)[key] !== false;
+}
+
+/** Shared document-settings slice behind `resolveOrgQuoteConfig`/`resolveOrgInvoiceConfig`. */
+async function loadOrgDocumentConfig(ctx: MutationCtx | QueryCtx, orgId: string): Promise<ParsedOrgDocumentConfig> {
+  const parsed = (await loadOrgSettingsBlob(ctx, orgId)) as {
+    timezone?: unknown;
+    documents?: { quoteValidityDays?: unknown; paymentTermsDays?: unknown };
+  };
   return {
     timezone: typeof parsed.timezone === "string" && parsed.timezone ? parsed.timezone : undefined,
     quoteValidityDays: parsed.documents?.quoteValidityDays,

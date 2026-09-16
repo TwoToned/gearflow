@@ -616,7 +616,7 @@ export async function buildDocumentData(
   // NOT version-aware (it predates versioning entirely and filters by
   // `projectId` only), so a quote rendered for a NON-live version still
   // shows the project's LIVE services here, not that version's own. This
-  // matches FEATUREDOCS/76's existing "Labour/Services were never threaded
+  // matches FEATUREDOCS/78's existing "Labour/Services were never threaded
   // onto versionId" gap (Phase 5) — equipment/groups/categories above ARE
   // fully version-scoped via `buildDocumentLineItemData`'s `versionId`, only
   // this services append is not. Closing it means wiring

@@ -9,6 +9,7 @@
 // a global index must be org-checked).
 import { convexTest } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
@@ -26,6 +27,9 @@ const asUser = (orgId: string) => ({ subject: USER, orgId });
 function makeT() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  // #1236 — accepting a quote moves the project into AWAITING_PAYMENT, now an
+  // ACTIVE project status, so the dashboard counter is bumped here.
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 
@@ -121,12 +125,33 @@ describe("quotesWrites.sendNative", () => {
     expect(quotes[0]?.validityDays).toBe(7);
   });
 
-  test("offers QUOTED from ENQUIRY/QUOTING but never applies it itself", async () => {
+  // #1160 — sending now MOVES the job to QUOTED itself (the org can opt out), so
+  // the offer is the opt-out path rather than the normal one. The other quote verbs
+  // are unchanged: accept/decline still only offer.
+  test("advances QUOTING → QUOTED itself, and reports it instead of offering", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t, ORG, "QUOTING");
 
     const result = await send(t);
+    expect(result.autoStatusChange).toBe("QUOTED");
+    expect(result.offerStatusChange).toBeNull(); // nothing left to ask
+    expect((await getProject(t))?.status).toBe("QUOTED");
+  });
+
+  test("with the org opted out, it falls back to the passive offer and forces nothing", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t, ORG, "QUOTING");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", {
+        organizationId: ORG,
+        settings: JSON.stringify({ projectStatusAutomation: { quoteSent: false } }),
+      });
+    });
+
+    const result = await send(t);
+    expect(result.autoStatusChange).toBeNull();
     expect(result.offerStatusChange).toBe("QUOTED");
     expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
   });
@@ -765,14 +790,19 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
       id: "q1", organizationId: ORG, reason: "Too expensive", actor, auditId: "a2", now: NOW + 1, ...over,
     } as never);
 
-  test("accept records the date + reference and offers CONFIRMED", async () => {
+  // #1236 — accepting advances the job to AWAITING_PAYMENT (agreed, unpaid),
+  // NOT to CONFIRMED. Confirming is what payment does. The pre-#1236
+  // `offerStatusChange: "CONFIRMED"` survives only for an org that opted out.
+  test("accept records the date + reference and advances to AWAITING_PAYMENT", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
     await send(t);
 
     const result = await accept(t, { acceptanceRef: "PO-4821" });
-    expect(result.offerStatusChange).toBe("CONFIRMED");
+    expect(result.autoStatusChange).toBe("AWAITING_PAYMENT");
+    expect(result.offerStatusChange).toBeNull();
+    expect((await getProject(t))?.status).toBe("AWAITING_PAYMENT");
     const quotes = await getQuotes(t);
     expect(quotes[0]?.status).toBe("ACCEPTED");
     expect(quotes[0]?.acceptanceRef).toBe("PO-4821");
@@ -795,6 +825,25 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
     expect(quote?.status).toBe("ACCEPTED");
     expect(quote?.protected).toBeFalsy();
   });
+
+  test("with the org opted out, accept falls back to offering CONFIRMED", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", {
+        organizationId: ORG,
+        settings: JSON.stringify({ projectStatusAutomation: { quoteSent: false, quoteAccepted: false } }),
+      });
+    });
+    await send(t);
+
+    const result = await accept(t);
+    expect(result.autoStatusChange).toBeNull();
+    expect(result.offerStatusChange).toBe("CONFIRMED");
+    expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
+  });
+
 
   test("an EXPIRED revision cannot be accepted without a re-send", async () => {
     const t = makeT();
@@ -824,7 +873,9 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
     const result = await decline(t);
     expect(result.offerStatusChange).toBe("CANCELLED");
     expect((await getQuotes(t))[0]?.status).toBe("DECLINED");
-    expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
+    // The send above auto-advanced QUOTING → QUOTED (#1160); declining must not
+    // move it again — CANCELLED stays an offer, never applied.
+    expect((await getProject(t))?.status).toBe("QUOTED");
     await expect(decline(t, { reason: "x" })).rejects.toThrow(/at least 3/i);
   });
 
@@ -1018,6 +1069,27 @@ describe("quotesWrites — #1233 Phase 6 (quotes from any version)", () => {
       const quotes = await getQuotes(t);
       expect(quotes.find((q) => q.id === "q1")?.status).toBe("ACCEPTED");
       expect(quotes.find((q) => q.id === "q2")?.status).toBe("SUPERSEDED");
+    });
+
+    // #1236 — the make-live effect (Phase 6, D20) and the status-automation
+    // effect (#1236) are independent code paths composed in the same
+    // transaction; this proves they don't clobber each other's return fields.
+    test("accepting a NON-live version's quote that also triggers AWAITING_PAYMENT reports both effects, with offerStatusChange null", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await seedProject(t); // status: QUOTING — inside QUOTE_ACCEPTED's `from` set
+      await seedSecondVersion(t);
+      await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a1" });
+
+      const result = await accept(t, "q2");
+      expect(result.madeLive).toBe(true);
+      expect(result.conflicts).toEqual([]);
+      expect(result.autoStatusChange).toBe("AWAITING_PAYMENT");
+      expect(result.offerStatusChange).toBeNull();
+
+      const project = await getProject(t);
+      expect(project?.liveVersionId).toBe("v-p1-b");
+      expect(project?.status).toBe("AWAITING_PAYMENT");
     });
   });
 });

@@ -27,14 +27,14 @@ import type { ProjectVersionSummary } from "@/components/projects/project-versio
  * 2. **Viewing a non-live version** — info strip: this version is fully
  *    editable (§5's principle 3), it just isn't the one warehouse/
  *    availability/invoices follow. Offers "Make vN live" and "Back to live".
- * 3. **Live, pricing locked** — the ONLY lock state left (§4 of FEATUREDOCS/76
+ * 3. **Live, pricing locked** — the ONLY lock state left (§4 of FEATUREDOCS/78
  *    collapsed the old 4-tier system into one boolean). Carries the single
  *    "Unlock pricing" action (`unlockPricingNative`, `danger: "high"`,
  *    called directly via Convex mutation — no HTTP dispatcher involved, so
  *    no `confirm` plumbing needed here; the one click IS the confirmation).
  *
  * State (2) takes priority over state (3): `pricingLocked` describes the
- * LIVE version's money fields only (FEATUREDOCS/76's truth table) — while
+ * LIVE version's money fields only (FEATUREDOCS/78's truth table) — while
  * viewing a non-live version that flag says nothing about what's on screen.
  *
  * Drift ("this job no longer matches the sent quote") state D was a DEFERRED

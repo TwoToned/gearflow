@@ -102,6 +102,9 @@ const projectStatusIntent: Record<string, ColorIntent> = {
   ENQUIRY: "neutral",
   QUOTING: "info",
   QUOTED: "info",
+  // Waiting on someone else to act (the client's money), like PREPPING waits on
+  // the warehouse — warning, not success: nothing is settled yet.
+  AWAITING_PAYMENT: "warning",
   CONFIRMED: "success",
   PREPPING: "warning",
   CHECKED_OUT: "primary",

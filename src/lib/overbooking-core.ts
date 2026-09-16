@@ -177,6 +177,11 @@ export const PENCILLED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
  * hard-hold everything except optional lines" rule).
  */
 export const HARD_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  // #1236 — an agreed-but-unpaid job HARD-holds its gear. The client has said
+  // yes and/or an invoice is out; letting someone else book the same stock while
+  // a bank transfer clears is how you end up double-booked on the one job you
+  // were most sure of. CANCELLED still releases it, as it always did.
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",
@@ -267,6 +272,13 @@ export function sumBookingsByModel(
     if (li.modelId == null || !modelSet.has(li.modelId)) continue;
     if (li.status === "CANCELLED") continue;
     if (li.subHireId != null) continue;
+    // WS11 (#950) — a SALE line is never rental demand: NEW_STOCK draws from
+    // Model.saleStockQuantity (a separate pool), and FROM_RENTAL_STOCK already
+    // removed the unit from the rental pool at sale time (asset -> SOLD /
+    // bulkAsset.totalQuantity decremented, see convex/lib/saleStock.ts), which
+    // effectiveStock already reflects — counting it here too would
+    // double-subtract it and pencil a phantom overbooking on the rental model.
+    if (li.type === "SALE") continue;
 
     let p: ConvexProject | undefined;
     if (window) {
@@ -317,6 +329,9 @@ export type OverbookLineItem = {
    * all-hard behaviour unchanged.
    */
   isOptional?: boolean;
+  /** WS11 (#950) — excluded from rental demand when `"SALE"`; see the SALE
+   *  skip in `sumBookingsByModel`/`relevantOverbookModelIds`/`reconstructOverbookedStatus`. */
+  type?: string | null;
 };
 
 /** The raw-doc bundle `overbooking.bundle` returns. */
@@ -341,7 +356,7 @@ export function relevantOverbookModelIds(lineItems: OverbookLineItem[]): string[
   return [
     ...new Set(
       lineItems
-        .filter((li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null)
+        .filter((li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null && li.type !== "SALE")
         .map((li) => li.modelId!),
     ),
   ].sort();
@@ -368,7 +383,7 @@ export function reconstructOverbookedStatus(
   // Collect ALL equipment line items with a modelId (including kit children).
   // Sub-hire items represent third-party stock and never consume our inventory.
   const relevantItems = lineItems.filter(
-    (li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null,
+    (li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null && li.type !== "SALE",
   );
   if (relevantItems.length === 0) return overbookedMap;
 

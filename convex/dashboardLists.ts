@@ -16,7 +16,7 @@ import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope"
  * actions' getOrgContext; Phase 5 domain slice, #1001).
  */
 
-const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED"]);
+const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED", "AWAITING_PAYMENT"]);
 const HOME_INACTIVE_STATUSES = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);
 
 /**

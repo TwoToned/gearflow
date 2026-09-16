@@ -5,7 +5,7 @@ import { pickPlanFields } from "./versionPlanFields";
 
 /**
  * #1221 follow-up (closes Phase 5's "Equipment write-side gap" note,
- * FEATUREDOCS/76) — the WRITE-side counterpart to `resolveVersionId` above.
+ * FEATUREDOCS/78) — the WRITE-side counterpart to `resolveVersionId` above.
  * Every CREATE mutation on the four versioned plan tables (plus
  * `categorySlots`' owning-category create) used to hard-code
  * `versionId: requireLiveVersionId(project)`, so a new row could only ever
@@ -15,7 +15,7 @@ import { pickPlanFields } from "./versionPlanFields";
  * a read cannot (a line stamped onto a foreign version is a live, persisted
  * IDOR-shaped bug, not just a wrong response), so a supplied `versionId` is
  * ALWAYS validated against `project` before being trusted — never just
- * defaulted through like `resolveVersionId` does for reads (see FEATUREDOCS/76
+ * defaulted through like `resolveVersionId` does for reads (see FEATUREDOCS/78
  * Phase 2 "What's deferred" for why reads still don't do this).
  */
 export async function resolveWriteVersionId(

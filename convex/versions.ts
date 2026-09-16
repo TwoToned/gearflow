@@ -87,7 +87,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * `convex/quotesWrites.ts`) into ONE (`createNative`), and replaces
  * promote-as-restore with a pointer flip (`makeLiveNative`) — nothing is
  * overwritten, so no auto-capture is needed, and no dialog-blocking on
- * invoice state either (D6). See FEATUREDOCS/76's Phase 3 section for the
+ * invoice state either (D6). See FEATUREDOCS/78's Phase 3 section for the
  * full writeup, and CLAUDE.md's "Deleted mutations" note for what this
  * superseded.
  *

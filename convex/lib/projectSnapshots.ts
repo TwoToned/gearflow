@@ -113,7 +113,7 @@ export async function collectCurrentEntries(
 
   // LIVE-ONLY (#1228): this snapshot mechanism captures/restores the
   // project's CURRENT live plan only — it is unrelated to the new
-  // `projectVersions` table's own non-live versions (see FEATUREDOCS/76's
+  // `projectVersions` table's own non-live versions (see FEATUREDOCS/78's
   // callout on the two separate programs).
   const categories = (await liveRows(ctx, project, "projectCategories")).filter((c) => c.organizationId === orgId);
   for (const c of categories) out.push({ entityType: "category", entityId: c.id, data: stripDoc(c) });

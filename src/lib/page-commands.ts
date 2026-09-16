@@ -118,7 +118,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
     searchable: true,
     searchType: "project",
     searchHrefPrefix: "/warehouse",
-    searchStatusFilter: ["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
+    searchStatusFilter: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
     children: [
       {
         label: "Deploy",
@@ -130,7 +130,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
         searchType: "project",
         searchHrefPrefix: "/warehouse",
         searchHrefSuffix: "?tab=check-out",
-        searchStatusFilter: ["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
+        searchStatusFilter: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
       },
       {
         label: "Return",
@@ -142,7 +142,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
         searchType: "project",
         searchHrefPrefix: "/warehouse",
         searchHrefSuffix: "?tab=check-in",
-        searchStatusFilter: ["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
+        searchStatusFilter: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
       },
     ],
   },

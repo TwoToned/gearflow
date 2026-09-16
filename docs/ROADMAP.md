@@ -127,10 +127,25 @@ before any build. (iCal correctness already handled in Phase 0.)
 Net-new capability. Valuable, but not daily-pain — sequence after the core
 workflows are solid.
 
-### 3.1 — Project todo lists
-**Effort:** M
-Add Asana-style todo/task lists to projects so project management lives in
-RVLT Flow instead of scattered across chat and email.
+### 3.1 — Project todo lists → the Work layer
+**Effort:** M (v1, ✅ shipped as [FEATUREDOCS/50](../FEATUREDOCS/50-project-tasks.md)) ·
+**XL** (program) · **Tracking:** [#1240](https://github.com/TwoToned/gearflow/issues/1240)
+(sub-issues #1241–#1247)
+v1 added Asana-style todo/task lists to projects so project management lives in
+RVLT Flow instead of scattered across chat and email. It shipped as a per-project
+checklist and was never revisited. The follow-on program reframes it as one
+**work layer** under tasks, project management, client relationships and time:
+the existing `projectTasks` table **widened in place** (human tasks and
+system-generated work share one model — no new table, no copy migration), a
+stored per-user notification inbox, and three surfaces on top — **Today**, the
+project **Work** card/board, and the client record with next-step + timeline —
+plus the crew planner's confirmation and availability layer. System work is
+**derived from live indexed reads, never written by a cron**; only a human's
+decision about a signal is stored. Design:
+[`docs/designs/work-layer.md`](./designs/work-layer.md); build order in
+[`docs/designs/work-layer-build-plan.md`](./designs/work-layer-build-plan.md).
+Phases 0 → 0.5 → 1, then 2/3/4 in parallel, then 5. **Phase 4 (#1246) is the seam
+with 2.1 above** — whichever starts first, the other rebases onto it.
 
 ### 3.2 — Public API
 **Effort:** L
@@ -174,6 +189,17 @@ operator-facing list table to cards on mobile — see
 `docs/designs/archive/mobile-first-redesign.md` and
 `docs/designs/archive/mobile-data-table-framework.md`. Remaining mobile work
 should be scoped against what those docs didn't cover, not restarted.
+
+### 4.3 — QOL sweep
+**Effort:** M · **Status:** #1160 (status automation) shipped; the rest specced
+The "the app should do the obvious thing, and tell you it did" track. #1160 made
+a job's status a consequence of the work
+([FEATUREDOCS/76](../FEATUREDOCS/76-project-status-automation.md)); the four
+follow-ons — undo on warehouse actions, quote follow-up nudges, a date-move
+impact preview, haptics + a scan history strip — are specced in
+[`docs/designs/qol-sweep-2026-09.md`](./designs/qol-sweep-2026-09.md) with a
+decisions record and a build order. Each is independently shippable; none is a
+prerequisite for anything else in Phase 4.
 
 ---
 

@@ -19,6 +19,7 @@ import { startOfDayInTimezone } from "./lib/quoteDates";
 import { projectLiveRevision, findQuoteAtRevision, effectiveQuoteStatus } from "./lib/quoteState";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 
 /**
  * Invoice write mutations (WS1 #940) — browser-direct, standard 4-guard shape.
@@ -330,7 +331,12 @@ async function assertInvoiceQuoteAccepted(
 }
 
 export const issueNative = mutation({
-  returns: v.object({ id: v.string(), invoiceNumber: v.string() }),
+  returns: v.object({
+    id: v.string(),
+    invoiceNumber: v.string(),
+    /** #1236 — non-null when the automation moved the job to AWAITING_PAYMENT. */
+    autoStatus: v.union(v.string(), v.null()),
+  }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -411,7 +417,22 @@ export const issueNative = mutation({
       createdAt: now,
     });
 
-    return { id, invoiceNumber };
+    // #1236 — a job with an invoice out is waiting on money, even if nobody ever
+    // clicked "accept" on a quote (some jobs go straight to a full invoice). A
+    // no-op on a job already at AWAITING_PAYMENT or beyond.
+    //
+    // A CREDIT note is excluded: it is money going back to the client, the exact
+    // opposite of "waiting to be paid". (In practice its original invoice already
+    // fired this trigger — you can only credit an ISSUED one — but the rule should
+    // read correctly rather than rely on that.)
+    const autoStatus =
+      doc.kind === "CREDIT"
+        ? null
+        : await maybeAutoAdvanceProjectStatus(ctx, {
+            orgId, projectId: doc.projectId, trigger: "INVOICE_ISSUED", actor, now,
+          });
+
+    return { id, invoiceNumber, autoStatus };
   },
 });
 

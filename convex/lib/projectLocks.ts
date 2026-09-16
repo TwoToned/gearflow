@@ -29,7 +29,22 @@ import { hasPermission } from "./permissionsCore";
  * hand-maintained copy of this check would be a defect even in sync
  * (POLICY.md R-3.1).
  *
- * See FEATUREDOCS/76's Phase 4 section and
+ * **merge note (#1221 × #1236, "money phase" merge).** Main independently
+ * extended the OLD 4-tier system this phase deletes with an `AWAITING_PAYMENT`
+ * → OPEN tier entry and a `resolveLockTier({status, quoteState})` fold-in.
+ * Neither survives the merge as a tier concept — but the underlying intent
+ * ("a job whose pricing has gone to the client shouldn't silently reprice")
+ * is preserved by `pricingLocked` itself: `sendNative` raises it the moment a
+ * LIVE-version quote is sent (D55), long before AWAITING_PAYMENT is reached,
+ * so the two systems agree on the common path. `convex/lib/projectAutoStatus.ts`
+ * additionally raises it defensively on the two paths that reach
+ * AWAITING_PAYMENT/CONFIRMED WITHOUT a live-version send ever having happened
+ * (an invoice-first job with no quote at all, and accepting a NON-live
+ * quote's version via make-live) — see that module's own note. `isConfirmedOrLater`/
+ * `crossesIntoSnapshotStatus` below are kept from the OLD system verbatim
+ * (pipeline-position helpers, never part of the tier/lock rewrite).
+ *
+ * See FEATUREDOCS/78's Phase 4 section and
  * `convex/lib/projectLocks.test.ts` for the truth table + D54-D57 edge cases.
  */
 
@@ -119,6 +134,28 @@ export function pricedUnderLockOnInsert(defaultToZero: boolean | undefined): tru
  *  one stable marker. */
 export function afterLockAuditMetadata(wasLocked: boolean): Record<string, unknown> | undefined {
   return wasLocked ? { afterLock: true } : undefined;
+}
+
+/**
+ * The four-field patch that RAISES `pricingLocked` — one shape shared by
+ * every site that sets it (D55's `sendNative`, `updateStatusNative`'s
+ * CONFIRMED transition, `lockPricingNative`, and `projectAutoStatus.ts`'s
+ * defensive raise), so the fields can't drift apart between call sites
+ * (R-3.1). Callers `ctx.db.patch(project._id, { ...pricingLockRaiseFields(actor, now), ... })`,
+ * adding their own `updatedAt`/other fields to the same patch. Never clears
+ * the lock — that's each caller's own explicit, narrower-audience patch
+ * (D42/D56), not something this shared shape should make easy to get wrong.
+ */
+export function pricingLockRaiseFields(
+  actor: { userId: string; userName: string },
+  now: number,
+): { pricingLocked: true; pricingLockedAt: number; pricingLockedById: string; pricingLockedByName: string } {
+  return {
+    pricingLocked: true,
+    pricingLockedAt: now,
+    pricingLockedById: actor.userId,
+    pricingLockedByName: actor.userName,
+  };
 }
 
 // ─── The money guard (#1230's `assertPricingUnlocked`) ──────────────────────

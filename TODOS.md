@@ -777,3 +777,50 @@ cross-org isolation, validation). Full doc in [FEATUREDOCS/25](./FEATUREDOCS/25-
 **Depends on:** Nothing; large blast radius.
 **Estimate:** human ~2-3 weeks / CC ~2-3 hours
 **Priority:** P3
+
+## Observability & Performance (from the work-layer eng review, 2026-09-16)
+
+### Fill the empty "Before" column in the Convex measurement baseline
+**What:** `docs/designs/perf-convex-measurement-baseline.md` defines per-flow metrics (function
+calls, documents and bytes read, p50/p95, reactive re-runs after one mutation) and targets
+(kit-detail edit ≤1 refetch, docs read down ≥80%, asset list O(page) not O(org)) — but the
+"Before" column was never populated. Run the measurement pass and fill it in.
+**Why:** No claim about read-cost improvement in this codebase can currently be verified. During
+the work-layer engineering review, the choice between a scheduled sweep and live subscriptions
+had to be settled by reasoning about mechanism rather than by numbers, precisely because there is
+no baseline to compare against. The one hard figure available (6.05 GB/month, 77% from
+`overbooking.bundle`, `perf-convex-efficiency-2026-06.md:634`) came from a billing dashboard, not
+from this harness.
+**Pros:** Every future performance decision becomes evidence-based; the already-shipped Finding #0
+narrowing finally gets its re-measurement; the work-layer phase-1 exit criteria become checkable.
+**Cons:** Needs a measurement pass against a real deployment with representative data, and
+somebody has to decide what "representative" means for a two-user production org.
+**Context:** The baseline doc exists and is well-specified; only the numbers are missing. Start by
+running the listed flows against the dev deployment, then decide whether prod-scale numbers need a
+seeded org. Related open findings: #1 (asset/project list pages still whole-org collect) and #4
+(subscription fan-out) in `docs/designs/perf-convex-efficiency-2026-06.md:805-859`.
+**Depends on:** Nothing. Blocks confident verification of the work-layer read-cost claims.
+**Estimate:** human ~1 day / CC ~2 hours
+**Priority:** P2
+
+### Move the notification bell off whole-org reads
+**What:** `src/server/notifications.ts` `getNotifications` builds all nine derived notification
+types by reading the whole org on every render: `getProjectsByOrg`, `getAssetsByOrg`,
+`getMaintenanceRecordsByOrg`, `getCrewAssignmentsByOrg`, plus a model map. Replace each branch with
+a narrow indexed read.
+**Why:** It runs on every page that shows the bell, which is every page. The same whole-org pattern
+from scheduled code is already documented as the second-largest database consumer
+(`perf-convex-efficiency-2026-06.md:706-717`, Finding #0b, 371 MB/month). The work-layer phase 0
+moves mentions onto a stored `notifications` table with an org-prefixed index, which is the right
+shape, but the other eight types keep the old reads.
+**Pros:** Removes a whole-org read from a component present on every page; each of the nine types
+already has an indexed alternative (`by_organizationId_status` exists on assignments, invoices and
+quotes; maintenance has `by_organizationId_status_scheduledDate`).
+**Cons:** Nine separate branches, each needing its own narrower read and its own test. The
+`pending_invitation` branch reads Better-Auth tables in Postgres and cannot move to Convex.
+**Context:** Do this after work-layer phase 0, which establishes the stored-notification pattern
+and the org-prefixed index convention to copy. The dashboard "Needs attention" chip tray is a
+separate derived surface that deliberately stays derived — do not merge the two.
+**Depends on:** Work-layer phase 0 (for the pattern). Not blocking.
+**Estimate:** human ~2 days / CC ~1 hour
+**Priority:** P2

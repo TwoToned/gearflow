@@ -28,6 +28,11 @@ export const NEVER_COUNTED_STATUSES = [
   "ENQUIRY",
   "QUOTING",
   "QUOTED",
+  // #1236 — agreed but unpaid is still pipeline. An invoice has been raised, but
+  // the org's own model says the job isn't on until the money lands, so counting
+  // it as booked earnings would inflate the fleet's numbers with jobs that may
+  // never pay. It joins BOOKED_STATUSES the moment payment confirms it.
+  "AWAITING_PAYMENT",
   "CANCELLED",
 ] as const;
 

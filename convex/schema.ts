@@ -3571,6 +3571,6 @@ export default defineSchema({
   // the 4-tier lock system (#791/#792's FINANCIAL/FULL unlock sessions) it
   // supported no longer exists, replaced by the single `projects.pricingLocked`
   // boolean + `projectPricingLockWrites.ts`'s `lockPricingNative`/
-  // `unlockPricingNative`. See FEATUREDOCS/76's Phase 4 section.
+  // `unlockPricingNative`. See FEATUREDOCS/78's Phase 4 section.
 
 });

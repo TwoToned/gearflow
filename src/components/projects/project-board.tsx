@@ -25,6 +25,8 @@ type Hue = "rep" | "blue" | "ok" | "warn" | "red";
 const STAGES: { key: string; label: string; statuses: string[]; hue: Hue; live?: boolean }[] = [
   { key: "enquiry", label: "Enquiry", statuses: ["ENQUIRY"], hue: "rep" },
   { key: "quote", label: "Quote", statuses: ["QUOTING", "QUOTED"], hue: "blue" },
+  // #1236 — "waiting on money" is the column most worth seeing each morning.
+  { key: "payment", label: "Awaiting payment", statuses: ["AWAITING_PAYMENT"], hue: "warn" },
   { key: "confirmed", label: "Confirmed", statuses: ["CONFIRMED"], hue: "ok" },
   { key: "prep", label: "Prep", statuses: ["PREPPING"], hue: "warn" },
   { key: "out", label: "Out / on site", statuses: ["CHECKED_OUT", "ON_SITE"], hue: "red", live: true },

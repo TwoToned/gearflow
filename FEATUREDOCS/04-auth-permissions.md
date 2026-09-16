@@ -305,6 +305,32 @@ resolution" section above for the full mechanics.
 - Session stored in PostgreSQL `Session` table
 - Passkey RP ID configurable via `PASSKEY_RP_ID` env var (defaults to `localhost`)
 
+### ⚠️ `prisma/schema.prisma` must track the plugin columns Better Auth expects at runtime
+`better-auth` (and `@better-auth/passkey`/`@better-auth/sso`) are pinned `^1.7.4` in
+`package.json`, so a routine `pnpm-lock.yaml` dependency bump can silently resolve a
+newer patch/minor whose `admin()`/`twoFactor()`/`jwt()` plugins expect NEW columns —
+Better Auth's Prisma adapter validates its schema at **request time**, not build time,
+and throws `SCHEMA_MISMATCH` (never a `ConvexError`/typed error — Next just returns a
+bare 500) on every auth call once the columns are missing. This bit production on
+2026-09-16: the 1.6.25 → 1.7.4 resolution shipped in the 0.28.0 deps-group bump landed
+in `prisma/schema.prisma` was never regenerated, and the deploy pipeline's own two-step
+gap (`ci.yml` never runs against a real Postgres; migrations run in
+`docker-entrypoint.sh` at container start, so nothing in CI/build catches a schema
+mismatch before prod) let it reach main and deploy clean. `getSession` and
+`get-full-organization` 500'd for every user; see
+`prisma/migrations/20260916100000_fix_better_auth_schema_mismatch/`.
+
+**After bumping `better-auth`/`@better-auth/passkey`/`@better-auth/sso`, always run
+`prisma validate` against the plugin config in `src/lib/auth.ts` (or the framework's
+`generate` helper, if available) before merging** — a green `pnpm build`/`ci.yml` run
+proves nothing here, since the adapter only checks its schema against a live DB
+connection at runtime. Current plugin-required columns, for reference:
+- `admin()`: `user.banned`, `user.banReason`, `user.banExpires`, `session.impersonatedBy`
+- `twoFactor()`: `twoFactor.verified`, `twoFactor.failedVerificationCount`, `twoFactor.lockedUntil`
+- `jwt()`: `jwks.alg`, `jwks.crv` (this app pins `JWKS_ALG = "ES256"` — see
+  `src/lib/convex-auth-constants.ts` — so `alg`/`crv` are always `"ES256"`/`"P-256"`, never
+  Better Auth's EdDSA default)
+
 ## Auth Client Base URL & CORS (`src/lib/auth-client.ts`)
 The browser auth client resolves its `baseURL` from `window.location.origin` — **never** from `NEXT_PUBLIC_APP_URL`. The `/api/auth` handler is co-located with the app, so auth calls are always same-origin; there is no CORS preflight and no `Access-Control-Allow-Origin` requirement.
 

@@ -362,7 +362,7 @@ describe("groupTemplatesWrites.applyNative", () => {
 
   // ─── #1221 follow-up — applyNative now takes an optional `versionId` ────────
   // (closes Phase 5's Equipment write-side gap, extended to "Add group" →
-  // apply-template — see FEATUREDOCS/76 and unified-add-dialog.tsx's header).
+  // apply-template — see FEATUREDOCS/78 and unified-add-dialog.tsx's header).
   describe("#1221 versionId follow-up", () => {
     async function seedSecondVersionWithCategory(t: ReturnType<typeof makeT>) {
       await t.run(async (ctx) => {

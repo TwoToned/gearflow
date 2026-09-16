@@ -13,7 +13,7 @@ import { copyPlanGraph, VERSIONED_PLAN_TABLES } from "./lib/versionGraph";
  * (`saveVersionNative`/`promoteRevisionNative`, #1080/#1085/#1089) was
  * DELETED in Phase 3 (#1229) — replaced by the real `projectVersions`-table
  * verb set in `convex/versions.ts` (`createNative`/`makeLiveNative`/
- * `setLabelNative`/`deleteNative`). See FEATUREDOCS/76's Phase 3 section for
+ * `setLabelNative`/`deleteNative`). See FEATUREDOCS/78's Phase 3 section for
  * what changed and why. `LABEL_BOUNDS` below outlives that deletion — it's a
  * plain shared bound, not part of the deleted mutation's behaviour, and both
  * `quotesWrites.setQuoteLabelNative` and `convex/versions.ts` still import it
@@ -34,7 +34,7 @@ export const LABEL_BOUNDS = { max: 60 } as const;
 // ────────────────────────────────────────────────────────────────────────────
 // §6 step 2 MATERIALIZATION (#1228, Phase 2 of "Project versioning v2").
 // This is the NEW `projectVersions` table's own row-level mechanism
-// (FEATUREDOCS/76): giving a non-live `projectVersions` row REAL,
+// (FEATUREDOCS/78): giving a non-live `projectVersions` row REAL,
 // individually-queryable `by_versionId`-tagged plan rows of its own, rather
 // than a JSON blob (the OLDER "Project Version Switcher" program,
 // FEATUREDOCS/70, that used to live above this comment in this same file —

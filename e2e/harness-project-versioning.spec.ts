@@ -229,7 +229,7 @@ test.describe("harness: project versioning v2", () => {
    * spec was ALSO blocked on: `project-quote-rail.tsx` (the Finance tab) now
    * takes an optional `versionContext` and offers "Send v{N}'s quote" while
    * viewing a non-live version, targeting `useQuoteWrites().send({
-   * versionId })` — see FEATUREDOCS/76's Phase 6 section for the write-up.
+   * versionId })` — see FEATUREDOCS/78's Phase 6 section for the write-up.
    * jsdom-level coverage of that UI lives in
    * `src/components/projects/__tests__/project-quote-rail-versioning.smoke.test.tsx`
    * and `send-quote-dialog.smoke.test.tsx`'s own `targetVersion` block; THIS

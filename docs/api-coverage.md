@@ -42,8 +42,8 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 89 |
-| `medium` | 141 |
+| `high` | 90 |
+| `medium` | 140 |
 | `low` | 46 |
 
 ## Modules with no agent-reachable operation

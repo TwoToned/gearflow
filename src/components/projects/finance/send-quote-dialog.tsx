@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { SendQuoteStatusNotice } from "@/components/projects/finance/send-quote-status-notice";
 import type { QuoteStatusOffer } from "@/hooks/use-quote-writes";
 
 function todayStr(): string {
@@ -65,7 +66,7 @@ interface SendQuoteDialogProps {
    * showing a NON-live `projectVersions` row and the send should target it
    * instead of the live version. Threaded straight to
    * `useQuoteWrites().send()`'s own `versionId` arg (already wired to
-   * `sendNative`, FEATUREDOCS/76's Phase 6 section). `null`/omitted (the
+   * `sendNative`, FEATUREDOCS/78's Phase 6 section). `null`/omitted (the
    * Overview tab's `QuoteCard`) ⇒ live target, byte-identical to before this
    * follow-up.
    */
@@ -77,6 +78,8 @@ interface SentState {
   validUntil: number;
   quoteId: string;
   artifactReady: boolean;
+  /** #1160 — set when the job was ALREADY moved for you (confirm, don't ask). */
+  autoStatusChange: "QUOTED" | null;
   offerStatusChange: QuoteStatusOffer;
 }
 
@@ -162,6 +165,7 @@ export function SendQuoteDialog({
         validUntil: result.validUntil,
         quoteId: result.id,
         artifactReady: result.artifactReady,
+        autoStatusChange: result.autoStatusChange,
         offerStatusChange: result.offerStatusChange,
       });
       if (!result.artifactReady) {
@@ -309,7 +313,7 @@ function SendQuoteFormHeader({ revision, targetVersion }: { revision: number; ta
  *  comment (formerly inline here) for why a non-live target shows a note
  *  instead of the live figures: those figures are the LIVE project's own
  *  totals (the Finance tab's money breakdown was never made version-aware,
- *  FEATUREDOCS/76's Phase 5/6 sections), so showing them under a "Summary"
+ *  FEATUREDOCS/78's Phase 5/6 sections), so showing them under a "Summary"
  *  heading while sending a DIFFERENT version's quote would be an outright
  *  wrong number, not just a stale one. The document that actually gets
  *  rendered/stored IS correct — it's computed server-side from the target
@@ -556,14 +560,12 @@ function SendQuoteHandover({
         </Button>
       </div>
 
-      {sent.offerStatusChange && !statusMoved && projectStatus !== sent.offerStatusChange && (
-        <p className="rounded-[var(--radius)] border border-line px-3 py-2 text-sm">
-          This job is at {projectStatus}. Move it to {sent.offerStatusChange}?{" "}
-          <button type="button" className="font-semibold underline underline-offset-2" onClick={onMoveStatus}>
-            Move
-          </button>
-        </p>
-      )}
+      <SendQuoteStatusNotice
+        sent={sent}
+        projectStatus={projectStatus}
+        statusMoved={statusMoved}
+        onMoveStatus={onMoveStatus}
+      />
 
       <DialogFooter>
         <Button type="button" onClick={onDone}>

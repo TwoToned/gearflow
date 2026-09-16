@@ -22,6 +22,7 @@ import {
   crossesIntoSnapshotStatus,
   LOCKED_PROJECT_FIELDS,
   requireCanUnlockPricing,
+  pricingLockRaiseFields,
 } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { hasAcceptedQuote } from "./lib/quoteState";
@@ -198,12 +199,7 @@ export const updateStatusNative = mutation({
     // person lowers the flag, via `unlockPricingNative`.
     let pricingJustLocked = false;
     if (from !== status && status === "CONFIRMED" && project.pricingLocked !== true) {
-      await ctx.db.patch(project._id, {
-        pricingLocked: true,
-        pricingLockedAt: now,
-        pricingLockedById: actor.userId,
-        pricingLockedByName: actor.userName,
-      });
+      await ctx.db.patch(project._id, pricingLockRaiseFields(actor, now));
       pricingJustLocked = true;
     }
 

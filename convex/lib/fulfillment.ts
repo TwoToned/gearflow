@@ -629,7 +629,7 @@ export async function expandAccessoryChildLines(
     // an orphan row: `versionId` absent matches no `by_versionId` read at
     // all (not even the live one), so before this fix a child inserted here
     // was invisible everywhere, not just on a non-live version — see
-    // FEATUREDOCS/76's "closing the Equipment write-side gap" note.
+    // FEATUREDOCS/78's "closing the Equipment write-side gap" note.
     versionId: string | null | undefined;
   },
 ): Promise<void> {

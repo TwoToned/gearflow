@@ -94,7 +94,7 @@ function deriveQuoteView(
  * `QuoteDriftIndicator` component (Project Versioning v2 Phase 5, #1231:
  * that shared component is one of the surfaces `VersionStrip` absorbs, but
  * its drift STATE isn't rebuilt into the strip this phase — see
- * FEATUREDOCS/76's Phase 5 section). Same underlying logic as
+ * FEATUREDOCS/78's Phase 5 section). Same underlying logic as
  * `project-quote-rail.tsx`'s own inline copy (R-3.1: one diff/summarize/
  * describe pipeline, two thin renderers — the render shape differs enough
  * between the rail's banner and this card that a shared component wasn't

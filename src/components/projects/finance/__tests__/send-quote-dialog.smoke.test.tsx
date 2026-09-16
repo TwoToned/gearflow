@@ -118,7 +118,7 @@ describe("SendQuoteDialog smoke", () => {
  * #1233 (Phase 6) UI follow-up — `targetVersion` makes this SAME dialog send
  * a NON-live `projectVersions` row's quote instead of the live version's,
  * with a label/copy that can never be confused with the live branch's own
- * "v{N}" (a different counter — a quote-revision number, FEATUREDOCS/76).
+ * "v{N}" (a different counter — a quote-revision number, FEATUREDOCS/78).
  * `targetVersion` omitted (every test above) stays byte-identical to
  * pre-follow-up behaviour — this block only covers what's NEW.
  */

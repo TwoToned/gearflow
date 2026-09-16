@@ -142,7 +142,7 @@ function snapshotService(s: Doc<"projectServices">): CompareRowSnapshot {
 
 /** Standalone, priced, plan-visible line items — kit/accessory children,
  *  optional lines and cancelled lines are excluded from the row-level diff
- *  (a documented scope limit, see FEATUREDOCS/76's Phase 5b section): none
+ *  (a documented scope limit, see FEATUREDOCS/78's Phase 5b section): none
  *  of them can independently move `computeTotals`'s `total` on their own
  *  (kit children are excluded from every revenue bucket; optional/cancelled
  *  lines are excluded from every bucket outright), so leaving them out of

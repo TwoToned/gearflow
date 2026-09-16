@@ -7,6 +7,7 @@
 // cross-tenant IDOR protection on projectId/clientId (R-8.4.3).
 import { convexTest } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
@@ -24,6 +25,9 @@ const asUser = (orgId: string) => ({ subject: USER, orgId });
 function makeT() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  // issueNative auto-advances the project into AWAITING_PAYMENT (#1236), which is
+  // an ACTIVE project status — so the dashboard counter is now bumped here.
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 

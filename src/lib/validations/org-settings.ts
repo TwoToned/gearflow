@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { QUOTE_VALIDITY_BOUNDS } from "@/lib/quote-validity";
 import { isCountryEnabled } from "@/lib/countries";
+import { AUTO_STATUS_KEYS, type AutoStatusKey } from "@/lib/project-status-automation";
 
 /**
  * Global document settings (footer text, terms & conditions, quote
@@ -63,3 +64,17 @@ export const orgOperatingDetailsSchema = z.object({
 // unused-export ratchet baseline entry) — nothing outside this file needs to
 // name the shape yet, and an exported-but-unimported type is dead code
 // (R-4.2, the knip ratchet). Add one back only when a real consumer needs it.
+
+/**
+ * #1160 — project status automation opt-outs (`OrgSettings.projectStatusAutomation`).
+ * Every key is optional and absent means ENABLED, so this schema only ever
+ * validates the shape of an explicit opt-out; the default lives in one place,
+ * `isAutoStatusEnabled` (`src/lib/project-status-automation.ts`), never here.
+ * Keys are derived from `AUTO_STATUS_KEYS` rather than re-typed, so adding a
+ * trigger can't leave the validator behind (R-3.1/R-8.6.3).
+ */
+export const projectStatusAutomationSchema = z.object(
+  Object.fromEntries(AUTO_STATUS_KEYS.map((k) => [k, z.boolean().optional()])) as {
+    [K in AutoStatusKey]: z.ZodOptional<z.ZodBoolean>;
+  },
+).strict();

@@ -365,7 +365,7 @@ function formatSegment(seg: BridgeSegment, categoryLabel: (id: string | null) =>
 
 /**
  * The single new Convex read Phase 5b adds. SERVER-SIDE by deliberate
- * choice (see FEATUREDOCS/76's Phase 5b section for the full justification):
+ * choice (see FEATUREDOCS/78's Phase 5b section for the full justification):
  * the exactness invariant (`sum(segments) === totalB - totalA`) is only
  * provable against the SAME `computeTotals`/`loadTotalsBundle` this query
  * already runs server-side for every other totals path in this codebase —

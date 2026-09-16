@@ -1648,7 +1648,7 @@ describe("lineItemWrites.patchNative — revealPriceInRollup", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// #1221 follow-up (closes Phase 5's Equipment write-side gap, FEATUREDOCS/76):
+// #1221 follow-up (closes Phase 5's Equipment write-side gap, FEATUREDOCS/78):
 // addCustomNative / addNative / addKitNative / addLineItemSmartNative now take
 // an optional `versionId`, defaulting to live, validated against the project
 // (same org + project) before being trusted.

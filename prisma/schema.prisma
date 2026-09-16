@@ -18,6 +18,7 @@ model User {
   role          String   @default("user") // "user" or "admin" (site-level)
   banned        Boolean?
   banReason     String?
+  banExpires    DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -53,6 +54,7 @@ model Session {
   userId               String
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganizationId String?
+  impersonatedBy       String?
 
   @@map("session")
 }
@@ -97,6 +99,8 @@ model Jwks {
   privateKey String
   createdAt  DateTime  @default(now())
   expiresAt  DateTime?
+  alg        String?
+  crv        String?
 
   @@map("jwks")
 }
@@ -306,6 +310,7 @@ enum ProjectStatus {
   ENQUIRY
   QUOTING
   QUOTED
+  AWAITING_PAYMENT
   CONFIRMED
   PREPPING
   CHECKED_OUT
@@ -697,11 +702,14 @@ enum AccessoryAllocationMode {
 // ─── Better Auth Two-Factor Tables ──────────────────────────────────────────
 
 model TwoFactor {
-  id          String @id @default(cuid())
-  secret      String
-  backupCodes String
-  userId      String
-  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                      String    @id @default(cuid())
+  secret                  String
+  backupCodes             String
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verified                Boolean   @default(false)
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
 
   @@map("twoFactor")
 }

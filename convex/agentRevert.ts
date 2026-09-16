@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { isAgentAuthored } from "./activityLog";
 import { undeployItemsCore, unreturnItemsCore, undeployKitFull, unreturnKitFull } from "./warehouseOps";
+import { revertAutoAdvance } from "./lib/projectAutoStatus";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -82,51 +83,130 @@ function lineItemIdFromEntityName(entityName: unknown): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * May this caller move a project's status? `requireOrgPermission` throws, and
+ * here a refusal must SKIP one row rather than abort the whole window — so the
+ * throw is caught and turned into a boolean. Deliberately NOT a new
+ * `hasOrgPermission` helper: a second, non-throwing permission entry point is
+ * exactly the parallel authz path R-3.1 warns about. One gate, two callers.
+ */
+async function callerMayRevertStatus(
+  ctx: Parameters<typeof undeployItemsCore>[0],
+  orgId: string,
+): Promise<boolean> {
+  try {
+    await requireOrgPermission(ctx, orgId, "project", "update");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function attemptReverse(
+  ctx: Parameters<typeof undeployItemsCore>[0],
+  row: LogRow & { entityName?: unknown },
+  orgId: string,
+  userId: string,
+  userName: string,
+  now: number,
+): Promise<{ reverseOperation: string } | { skipReason: string }> {
+  if (!row.projectId) return { skipReason: "No projectId recorded on this entry." };
+
+  if (row.entityType === "kit") return await reverseKitAction(ctx, row, orgId, userId, now);
+
+  if (row.entityType === "asset") return await reverseAssetAction(ctx, row, orgId, userId, now);
+
+  if (row.entityType === "project" && row.action === "STATUS_CHANGE") {
+    return await reverseProjectStatus(ctx, row, orgId, userId, userName, now);
+  }
+
+  return { skipReason: `No reverse rule for entityType "${row.entityType}".` };
+}
+
+/** Reverse a kit-level CHECK_OUT / CHECK_IN. */
+async function reverseKitAction(
+  ctx: Parameters<typeof undeployItemsCore>[0],
+  row: LogRow,
+  orgId: string,
+  userId: string,
+  now: number,
+): Promise<{ reverseOperation: string } | { skipReason: string }> {
+  if (row.action === "CHECK_OUT") {
+    await undeployKitFull(ctx, { organizationId: orgId, projectId: row.projectId!, userId, kitId: row.entityId, now });
+    return { reverseOperation: "warehouseWrites.undeployKit" };
+  }
+  if (row.action === "CHECK_IN") {
+    await unreturnKitFull(ctx, { organizationId: orgId, projectId: row.projectId!, userId, kitId: row.entityId, now });
+    return { reverseOperation: "warehouseWrites.unreturnKit" };
+  }
+  return { skipReason: `No reverse rule for kit action "${row.action}".` };
+}
+
+/** Reverse an asset/line-level CHECK_OUT / CHECK_IN. */
+async function reverseAssetAction(
   ctx: Parameters<typeof undeployItemsCore>[0],
   row: LogRow & { entityName?: unknown },
   orgId: string,
   userId: string,
   now: number,
 ): Promise<{ reverseOperation: string } | { skipReason: string }> {
-  if (!row.projectId) return { skipReason: "No projectId recorded on this entry." };
-
-  if (row.entityType === "kit") {
-    if (row.action === "CHECK_OUT") {
-      await undeployKitFull(ctx, { organizationId: orgId, projectId: row.projectId, userId, kitId: row.entityId, now });
-      return { reverseOperation: "warehouseWrites.undeployKit" };
-    }
-    if (row.action === "CHECK_IN") {
-      await unreturnKitFull(ctx, { organizationId: orgId, projectId: row.projectId, userId, kitId: row.entityId, now });
-      return { reverseOperation: "warehouseWrites.unreturnKit" };
-    }
-    return { skipReason: `No reverse rule for kit action "${row.action}".` };
+  if (row.action === "CHECK_OUT") {
+    // entityId is assetId||lineItemId (warehouseWrites.checkOutItems); recover
+    // lineItemId from entityName when an assetId was pinned.
+    const lineItemId = row.assetId ? lineItemIdFromEntityName(row.entityName) : row.entityId;
+    if (!lineItemId) return { skipReason: "Could not recover the lineItemId for this checkout entry." };
+    await undeployItemsCore(ctx, {
+      organizationId: orgId, projectId: row.projectId!, userId,
+      items: [{ lineItemId, assetId: row.assetId }], now,
+    });
+    return { reverseOperation: "warehouseWrites.undeployItems" };
   }
-
-  if (row.entityType === "asset") {
-    if (row.action === "CHECK_OUT") {
-      // entityId is assetId||lineItemId (warehouseWrites.checkOutItems); recover
-      // lineItemId from entityName when an assetId was pinned.
-      const lineItemId = row.assetId ? lineItemIdFromEntityName(row.entityName) : row.entityId;
-      if (!lineItemId) return { skipReason: "Could not recover the lineItemId for this checkout entry." };
-      await undeployItemsCore(ctx, {
-        organizationId: orgId, projectId: row.projectId, userId,
-        items: [{ lineItemId, assetId: row.assetId }], now,
-      });
-      return { reverseOperation: "warehouseWrites.undeployItems" };
-    }
-    if (row.action === "CHECK_IN") {
-      // checkInItems always records entityId = lineItemId (never the assetId).
-      await unreturnItemsCore(ctx, {
-        organizationId: orgId, projectId: row.projectId, userId,
-        items: [{ lineItemId: row.entityId, assetId: row.assetId }], now,
-      });
-      return { reverseOperation: "warehouseWrites.unreturnItems" };
-    }
-    return { skipReason: `No reverse rule for asset action "${row.action}".` };
+  if (row.action === "CHECK_IN") {
+    // checkInItems always records entityId = lineItemId (never the assetId).
+    await unreturnItemsCore(ctx, {
+      organizationId: orgId, projectId: row.projectId!, userId,
+      items: [{ lineItemId: row.entityId, assetId: row.assetId }], now,
+    });
+    return { reverseOperation: "warehouseWrites.unreturnItems" };
   }
+  return { skipReason: `No reverse rule for asset action "${row.action}".` };
+}
 
-  return { skipReason: `No reverse rule for entityType "${row.entityType}".` };
+/**
+ * Reverse the derived STATUS_CHANGE row a deploy/return's automation wrote
+ * (#1160). Without it the window's revert leaves a job at Deployed with nothing
+ * deployed. Only the AUTOMATIC move is undone — a deliberate `updateStatusNative`
+ * carries no `autoAdvanceTrigger`.
+ *
+ * ⚠️ This needs its OWN permission check. `revertAgentWindow` gates on
+ * `warehouse:check_in` — the permission a human needs to undo the GEAR — and the
+ * `warehouse` role holds only `project: ["read"]`. Without this, a warehouse
+ * operator could walk a project's status backwards, and CONFIRMED →
+ * AWAITING_PAYMENT drops the lock tier FINANCE_LOCKED → OPEN, re-opening the
+ * project's money fields to someone who cannot edit them by any other route. The
+ * equivalent manual move (`updateStatusNative`) requires `project:update`, so
+ * this one does too.
+ *
+ * It SKIPS rather than throws: the operator's gear revert should still work, and
+ * the reason names exactly what did not happen.
+ */
+async function reverseProjectStatus(
+  ctx: Parameters<typeof undeployItemsCore>[0],
+  row: LogRow & { entityName?: unknown },
+  orgId: string,
+  userId: string,
+  userName: string,
+  now: number,
+): Promise<{ reverseOperation: string } | { skipReason: string }> {
+  if (!(await callerMayRevertStatus(ctx, orgId))) {
+    return { skipReason: "Reverting a project's status needs the `project:update` permission." };
+  }
+  const res = await revertAutoAdvance(ctx, {
+    orgId, projectId: row.projectId!, metadata: (row as { metadata?: unknown }).metadata,
+    actor: { userId, userName }, now,
+  });
+  if ("skipReason" in res) return res;
+  return { reverseOperation: "projectWrites.updateStatus" };
 }
 
 export const revertAgentWindow = mutation({
@@ -176,7 +256,7 @@ export const revertAgentWindow = mutation({
     for (const row of mine) {
       const common = { entryId: row.id, action: row.action, entityType: row.entityType, entityId: row.entityId };
       try {
-        const result = await attemptReverse(ctx, row, a.orgId, actor.userId, a.now);
+        const result = await attemptReverse(ctx, row, a.orgId, actor.userId, actor.userName, a.now);
         if ("skipReason" in result) {
           skipped.push({ ...common, reason: result.skipReason });
           continue;

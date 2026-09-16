@@ -37,7 +37,7 @@ export async function computeOverbookedStatus(
   projectId: string,
 ): Promise<Map<string, OverbookedInfo>> {
   const relevantItems = lineItems.filter(
-    (li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null,
+    (li) => li.modelId && li.status !== "CANCELLED" && li.subHireId == null && li.type !== "SALE",
   );
   if (relevantItems.length === 0) return new Map();
 

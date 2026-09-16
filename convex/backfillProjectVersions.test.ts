@@ -268,6 +268,60 @@ describe("backfillProjectVersions — creates one live version per project", () 
     expect(() => assertExpectedProjectCount(5, undefined)).not.toThrow();
     expect(() => assertExpectedProjectCount(5, 4)).toThrow(/expected 4/);
   });
+
+  // Regression for a real prod incident: `planProjectWork` used to re-run the
+  // four org-wide `by_organizationId` scans for EVERY un-migrated project in
+  // the page, so N un-migrated projects in one org multiplied the read cost
+  // by N — against real data (not these small fixtures) that blew Convex's
+  // per-function 16MB read limit outright on a single-org, 54-project
+  // deployment where every project was un-migrated on the first run. The fix
+  // fetches each org's rows once per page and groups by `projectId`. This
+  // test can't measure bytes read, so it proves the thing that fix could
+  // have gotten wrong instead: with several un-migrated projects sharing one
+  // org, each project ends up with EXACTLY its own rows — no cross-project
+  // leakage from the shared, grouped-by-org fetch.
+  test("several un-migrated projects in the SAME org, in the SAME page, each get exactly their own rows", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", project("p1", ORG));
+      await ctx.db.insert("projects", project("p2", ORG));
+      await ctx.db.insert("projects", project("p3", ORG));
+      await ctx.db.insert("projectCategories", category("c1", ORG, "p1"));
+      await ctx.db.insert("projectCategories", category("c2", ORG, "p2"));
+      await ctx.db.insert("projectCategories", category("c3", ORG, "p3"));
+      await ctx.db.insert("projectLineItems", lineItem("li1", ORG, "p1"));
+      await ctx.db.insert("projectLineItems", lineItem("li2a", ORG, "p2"));
+      await ctx.db.insert("projectLineItems", lineItem("li2b", ORG, "p2"));
+      await ctx.db.insert("projectLineItems", lineItem("li3", ORG, "p3"));
+    });
+
+    const result = await runBackfill(t);
+    expect(result).toEqual({ scanned: 3, versionsCreated: 3, childRowsStamped: 7 }); // 3 categories + 4 line items
+
+    const p1 = (await projById(t, "p1"))!;
+    const p2 = (await projById(t, "p2"))!;
+    const p3 = (await projById(t, "p3"))!;
+    expect(p1.liveVersionId).not.toBe(p2.liveVersionId);
+    expect(p2.liveVersionId).not.toBe(p3.liveVersionId);
+
+    // Each line item's versionId must match its OWN project's version — not
+    // a sibling project's, which is exactly the bug a shared, mis-grouped
+    // fetch would produce.
+    expect((await lineItemById(t, "li1"))!.versionId).toBe(p1.liveVersionId);
+    expect((await lineItemById(t, "li2a"))!.versionId).toBe(p2.liveVersionId);
+    expect((await lineItemById(t, "li2b"))!.versionId).toBe(p2.liveVersionId);
+    expect((await lineItemById(t, "li3"))!.versionId).toBe(p3.liveVersionId);
+    expect((await categoryById(t, "c1"))!.versionId).toBe(p1.liveVersionId);
+    expect((await categoryById(t, "c2"))!.versionId).toBe(p2.liveVersionId);
+    expect((await categoryById(t, "c3"))!.versionId).toBe(p3.liveVersionId);
+
+    expect(await verify(t)).toEqual({
+      totalProjects: 3,
+      projectsMissingLiveVersionId: 0,
+      projectsWithBadVersionPointer: 0,
+      projectsWithVersionCountNotOne: 0,
+    });
+  });
 });
 
 describe("projectVersionState — cross-tenant read safety (R-8.4.3)", () => {

@@ -215,8 +215,8 @@ test.describe("harness: project versioning v2", () => {
   /**
    * Spec 3 — quote from a non-live version.
    *
-   * #1233 (Phase 6) landed the BACKEND half this spec was blocked on:
-   * `quotesWrites.sendNative({ versionId })` can target any real
+   * #1233 (Phase 6) landed the BACKEND half this spec was originally blocked
+   * on: `quotesWrites.sendNative({ versionId })` can target any real
    * `projectVersions` row (D19 — two versions can hold SENT quotes at once),
    * `buildQuoteSnapshot`/the react-pdf pipeline render THAT version's own
    * content, and `markAcceptedNative` composes make-live (D20). This is
@@ -225,28 +225,94 @@ test.describe("harness: project versioning v2", () => {
    * make live) and `src/server/finance-documents.test.ts` (a non-live send
    * is frozen exactly like a live one).
    *
-   * **What's still missing, deliberately not built this phase (see
-   * FEATUREDOCS/76's Phase 6 section "What's deferred"):** a UI surface to
-   * actually CHOOSE which version to send from. `project-quote-rail.tsx`
-   * (the Finance tab) is the older, live-revision-only quote UI
-   * (FEATUREDOCS/70) and has no "send this non-live version's quote"
-   * affordance — `useQuoteWrites().send()` now accepts an optional
-   * `versionId` (threaded straight to `sendNative`) so that UI is a call
-   * away, but wiring a trigger + confirmation + a Finance tab that can
-   * display MULTIPLE simultaneously-SENT quotes (one per version, per D19)
-   * is real, separate UI work this phase's own "prioritize correctness over
-   * completeness" instruction says not to rush.
+   * **The #1221 follow-up (post-Phase 6) closed the missing UI half** this
+   * spec was ALSO blocked on: `project-quote-rail.tsx` (the Finance tab) now
+   * takes an optional `versionContext` and offers "Send v{N}'s quote" while
+   * viewing a non-live version, targeting `useQuoteWrites().send({
+   * versionId })` — see FEATUREDOCS/76's Phase 6 section for the write-up.
+   * jsdom-level coverage of that UI lives in
+   * `src/components/projects/__tests__/project-quote-rail-versioning.smoke.test.tsx`
+   * and `send-quote-dialog.smoke.test.tsx`'s own `targetVersion` block; THIS
+   * spec is the end-to-end proof that the real page wires it together: a
+   * client-assigned project, a real "New version", a real send, and the
+   * live version's `pricingLocked` staying untouched (D55 — only a LIVE
+   * send raises the lock).
    *
-   * Per this program's standing "don't fake it" rule, this spec stays
-   * `.skip()`'d rather than clicking a UI affordance that doesn't exist —
-   * un-skip it once that UI surface lands.
+   * **Honesty note** (same standing instruction as specs 1-2 above): this
+   * sandbox has no live Convex deployment and no way to run the seeded
+   * harness — this spec is written and believed correct against the actual
+   * app UI (every selector below is read from the real component source,
+   * not guessed — `project-wizard.tsx`'s edit-mode step reachability,
+   * `combobox-picker.tsx`'s "New client" affordance, `quick-create-client.tsx`'s
+   * field labels, `project-quote-rail.tsx`/`send-quote-dialog.tsx`'s own
+   * accessible names) but it has NOT been executed and confirmed green here.
    */
-  test.skip("quote from a non-live version — blocked on the UI surface to target a non-live version when sending (backend done, #1233)", async () => {
-    // Intentionally not implemented — the BACKEND capability this spec
-    // exercises now exists (see the docstring above and
-    // `convex/quotesWrites.test.ts`'s Phase 6 describe block for the
-    // Convex-level proof), but there is no UI path yet to choose a
-    // non-live version when sending a quote. Remove this `.skip()` and
-    // write the real click-through steps once that UI surface lands.
+  test("quote from a non-live version — sends it, keeps the live version's pricing unlocked (#1233 UI follow-up)", async ({ page }) => {
+    test.setTimeout(150_000);
+    const unique = Date.now();
+    const { projectUrl } = await setUpProjectWithOneLineItem(page, unique);
+
+    // ProjectQuoteRail requires a client before it'll render the quote
+    // workflow at all (ASSIGN_CLIENT_FOR_QUOTES_MESSAGE) — the creation
+    // wizard's "Continue" x3 flow in `setUpProjectWithOneLineItem` never set
+    // one, so assign it now via the edit page (same `ProjectWizard`, all
+    // steps reachable directly in edit mode).
+    await test.step("assign a client to the project (quick-create, then Save changes)", async () => {
+      await page.goto(`${projectUrl}/edit`);
+      await page.getByRole("button", { name: /select client/i }).click();
+      await page.getByRole("button", { name: "New client" }).click();
+
+      const quickCreate = page.getByRole("dialog", { name: "New client" });
+      await quickCreate.getByLabel("Name").fill(`E2E Versioning Client ${unique}`);
+      await quickCreate.getByRole("button", { name: "Create" }).click();
+      await expect(quickCreate).toBeHidden();
+
+      // Edit mode: every step is reachable directly (no need to click
+      // through Schedule/Site) — jump straight to Review and save.
+      await page.getByRole("button", { name: /review/i }).click();
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page).toHaveURL(/\/projects\/[^/]+$/, { timeout: 20000 });
+    });
+
+    await test.step("create a new (non-live) version on the Finance tab", async () => {
+      await page.getByRole("tab", { name: "Finance", exact: true }).click();
+      await page.getByRole("button", { name: "Project versions" }).click();
+      await page.getByRole("menuitem", { name: /new version/i }).click();
+      await expect(page).toHaveURL(/[?&]v=\d+/, { timeout: 20000 });
+      await expect(page.getByText(/a draft version, fully editable/i)).toBeVisible();
+    });
+
+    await test.step("send v2's quote — version-labelled, never the old quote-revision \"v1\"", async () => {
+      const sendTrigger = page.getByRole("button", { name: /send v2.s quote/i });
+      await expect(sendTrigger).toBeVisible();
+      await sendTrigger.click();
+
+      // The old live-only preview link must be ABSENT here (#987 — it always
+      // renders the LIVE project, never a specific non-live version).
+      await expect(page.getByRole("link", { name: /preview draft/i })).toHaveCount(0);
+
+      await page.getByRole("button", { name: /^send v2.s quote$/i }).click();
+      await expect(page.getByText(/v2.s quote sent/i)).toBeVisible({ timeout: 20000 });
+      // D55 — a non-live send never claims pricing is locked.
+      await expect(page.getByText(/pricing is now locked/i)).toHaveCount(0);
+      await page.getByRole("button", { name: "Done" }).click();
+    });
+
+    await test.step("the sent quote shows SENT, tagged to project version 2 — nothing hidden (D19)", async () => {
+      await expect(page.getByText("SENT")).toBeVisible();
+      await expect(page.getByText("for project version 2")).toBeVisible();
+    });
+
+    await test.step("back to live: v1's pricing is untouched — no lock, no non-live Send verb", async () => {
+      await page.getByRole("button", { name: /back to live/i }).click();
+      await expect(page).not.toHaveURL(/[?&]v=\d+/, { timeout: 20000 });
+      // State 1 (live, unlocked) renders NO strip at all — sending v2's
+      // quote must never raise `pricingLocked` on the live version.
+      await expect(page.locator("#version-strip")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /send v\d+.s quote/i })).toHaveCount(0);
+      // v2's SENT quote still lists here (project-scoped, not version-
+      // scoped, R-3.1) — it must not disappear just because live is viewed.
+      await expect(page.getByText("SENT")).toBeVisible();
+    });
   });
 });

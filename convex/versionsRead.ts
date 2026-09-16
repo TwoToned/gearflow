@@ -334,21 +334,33 @@ const PLAN_FIELD_DISPLAY_NAME: Partial<Record<PlanFieldName, string>> = {
   clientId: "Client",
 };
 
-function formatSegment(seg: BridgeSegment, categoryLabel: (id: string | null) => string | undefined, rowsByKey: Map<string, CompareRow>): { label: string; detail?: string } {
-  if (seg.state === "planField") {
-    const name = seg.planField ? (PLAN_FIELD_DISPLAY_NAME[seg.planField as PlanFieldName] ?? seg.planField) : "Plan change";
-    return { label: name, detail: "plan field" };
-  }
-  if (seg.kind === "service") {
-    return { label: `Labour — ${stateLabel(seg.state)}`, detail: `${seg.rowKeys.length} line${seg.rowKeys.length === 1 ? "" : "s"}` };
-  }
+function pluralLines(n: number): string {
+  return `${n} line${n === 1 ? "" : "s"}`;
+}
+
+function planFieldSegmentLabel(seg: BridgeSegment): { label: string; detail?: string } {
+  const name = seg.planField ? (PLAN_FIELD_DISPLAY_NAME[seg.planField as PlanFieldName] ?? seg.planField) : "Plan change";
+  return { label: name, detail: "plan field" };
+}
+
+function serviceSegmentLabel(seg: BridgeSegment): { label: string; detail?: string } {
+  return { label: `Labour — ${stateLabel(seg.state)}`, detail: pluralLines(seg.rowKeys.length) };
+}
+
+function categorySegmentLabel(seg: BridgeSegment, categoryLabel: (id: string | null) => string | undefined, rowsByKey: Map<string, CompareRow>): { label: string; detail?: string } {
   const cat = categoryLabel(seg.categoryId) ?? "Uncategorized";
   const rows = seg.rowKeys.map((k) => rowsByKey.get(k)).filter((r): r is CompareRow => !!r);
   const singleLabel = rows.length === 1 ? (rows[0].b?.label ?? rows[0].a?.label) : undefined;
   return {
-    label: singleLabel ? `${singleLabel}` : `${cat} — ${stateLabel(seg.state)}`,
-    detail: `${cat} · ${stateLabel(seg.state).toLowerCase()} · ${seg.rowKeys.length} line${seg.rowKeys.length === 1 ? "" : "s"}`,
+    label: singleLabel ?? `${cat} — ${stateLabel(seg.state)}`,
+    detail: `${cat} · ${stateLabel(seg.state).toLowerCase()} · ${pluralLines(seg.rowKeys.length)}`,
   };
+}
+
+function formatSegment(seg: BridgeSegment, categoryLabel: (id: string | null) => string | undefined, rowsByKey: Map<string, CompareRow>): { label: string; detail?: string } {
+  if (seg.state === "planField") return planFieldSegmentLabel(seg);
+  if (seg.kind === "service") return serviceSegmentLabel(seg);
+  return categorySegmentLabel(seg, categoryLabel, rowsByKey);
 }
 
 /**

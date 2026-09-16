@@ -81,6 +81,15 @@ function keyOf(row: { id: string; lineageId?: string }): string {
   return row.lineageId ?? row.id;
 }
 
+/** `v ?? null` as a call, not an inline `??` — keeps a comparison like
+ *  `orNull(a.x) !== orNull(b.x)` to a single decision point (the `!==`
+ *  doesn't count) instead of three (two `??`s plus the `!==`), which is
+ *  what actually drives several functions below over the complexity budget
+ *  (POLICY.md R-3.6) despite reading as "just one comparison". */
+function orNull<T>(v: T | undefined | null): T | null {
+  return v ?? null;
+}
+
 function snapshotLine(li: Doc<"projectLineItems">): CompareRowSnapshot {
   return {
     id: li.id,
@@ -144,6 +153,67 @@ function isComparableLine(li: Doc<"projectLineItems">): boolean {
   return !li.isKitChild && !li.isOptional && li.status !== "CANCELLED";
 }
 
+/** The comparable-field diff behind "changed" (D50) — split out so the
+ *  6-way boolean OR doesn't count against the caller's own cyclomatic
+ *  complexity (POLICY.md R-3.6). */
+function snapshotFieldsDiffer(a: CompareRowSnapshot, b: CompareRowSnapshot): boolean {
+  return (
+    a.lineTotal !== b.lineTotal ||
+    a.quantity !== b.quantity ||
+    a.unitPrice !== b.unitPrice ||
+    a.discount !== b.discount ||
+    a.status !== b.status ||
+    a.label !== b.label
+  );
+}
+
+/** Classifies ONE matched pair (present in both A and B) — the moved /
+ *  changed / unchanged branch of D50, split out of `buildRowsForKind` for
+ *  the same reason as `snapshotFieldsDiffer` above. */
+function buildMovedRow(
+  key: string,
+  kind: CompareRowKind,
+  snapA: CompareRowSnapshot,
+  snapB: CompareRowSnapshot,
+  movedFromCategoryId: string | null | undefined,
+  movedFromGroupId: string | null | undefined,
+): CompareRow {
+  return {
+    key,
+    kind,
+    state: "moved",
+    a: snapA,
+    b: snapB,
+    movedFromCategoryId,
+    movedFromGroupId,
+    alsoRepriced: snapshotFieldsDiffer(snapA, snapB),
+  };
+}
+
+function classifyMatchedPair<T extends { categoryId?: string; groupId?: string }>(
+  key: string,
+  kind: CompareRowKind,
+  a: T,
+  b: T,
+  snapA: CompareRowSnapshot,
+  snapB: CompareRowSnapshot,
+): CompareRow {
+  const categoryChanged = orNull(a.categoryId) !== orNull(b.categoryId);
+  const groupChanged = orNull(a.groupId) !== orNull(b.groupId);
+  if (!categoryChanged && !groupChanged) {
+    const state = snapshotFieldsDiffer(snapA, snapB) ? "changed" : "unchanged";
+    return { key, kind, state, a: snapA, b: snapB };
+  }
+  return buildMovedRow(
+    key,
+    kind,
+    snapA,
+    snapB,
+    categoryChanged ? orNull(a.categoryId) : undefined,
+    groupChanged ? orNull(a.groupId) : undefined,
+  );
+}
+
 function buildRowsForKind<T extends { id: string; lineageId?: string; categoryId?: string; groupId?: string }>(
   kind: CompareRowKind,
   aRows: T[],
@@ -167,35 +237,7 @@ function buildRowsForKind<T extends { id: string; lineageId?: string; categoryId
       continue;
     }
     if (!a || !b) continue; // unreachable — one of the two branches above always fires
-
-    const categoryChanged = (a.categoryId ?? null) !== (b.categoryId ?? null);
-    const groupChanged = (a.groupId ?? null) !== (b.groupId ?? null);
-    const snapA = snapshot(a);
-    const snapB = snapshot(b);
-    const fieldsChanged =
-      snapA.lineTotal !== snapB.lineTotal ||
-      snapA.quantity !== snapB.quantity ||
-      snapA.unitPrice !== snapB.unitPrice ||
-      snapA.discount !== snapB.discount ||
-      snapA.status !== snapB.status ||
-      snapA.label !== snapB.label;
-
-    if (categoryChanged || groupChanged) {
-      out.push({
-        key,
-        kind,
-        state: "moved",
-        a: snapA,
-        b: snapB,
-        movedFromCategoryId: categoryChanged ? (a.categoryId ?? null) : undefined,
-        movedFromGroupId: groupChanged ? (a.groupId ?? null) : undefined,
-        alsoRepriced: fieldsChanged,
-      });
-    } else if (fieldsChanged) {
-      out.push({ key, kind, state: "changed", a: snapA, b: snapB });
-    } else {
-      out.push({ key, kind, state: "unchanged", a: snapA, b: snapB });
-    }
+    out.push(classifyMatchedPair(key, kind, a, b, snapshot(a), snapshot(b)));
   }
   return out;
 }
@@ -257,72 +299,67 @@ function bucketKeyFor(row: CompareRow): string {
  * incremental-substitution technique and why it guarantees exactness with
  * zero duplication of `computeTotals`'s business rules.
  */
-export function buildMoneyBridge(bundleA: TotalsBundle, bundleB: TotalsBundle, rows: CompareRow[]): MoneyBridge {
-  const totalA = computeTotals(bundleA).total;
-  const totalB = computeTotals(bundleB).total;
+/** Mutable walk state threaded between the row-segment and plan-field
+ *  passes below — a plain object rather than several `let`s so both passes
+ *  can share and mutate it without adding closure/parameter noise to
+ *  `buildMoneyBridge` itself (POLICY.md R-3.6, the same motivation as the
+ *  other extractions in this file). */
+interface WalkState {
+  project: Doc<"projects">;
+  client: Doc<"clients"> | null;
+  runningTotal: number;
+  groupsMap: Map<string, Doc<"projectGroups">>;
+  linesMap: Map<string, Doc<"projectLineItems">>;
+  servicesMap: Map<string, Doc<"projectServices">>;
+}
 
-  // Working state — FULL row sets (not just the comparable subset), keyed by
-  // lineage, seeded from side A. Rows outside the comparable set (kit
-  // children, optional/cancelled lines) are never touched by the walk below
-  // and stay at side A's version throughout — safe, because none of them can
-  // move `total` (see `isComparableLine`'s comment); the reconciliation step
-  // at the end is the mechanical proof of that, not just an assertion.
-  const groupsMap = new Map(bundleA.groups.map((g) => [keyOf(g), g]));
-  const linesMap = new Map(bundleA.projectLines.map((l) => [keyOf(l), l]));
-  const servicesMap = new Map(bundleA.services.map((s) => [keyOf(s), s]));
-  const bGroupsByKey = new Map(bundleB.groups.map((g) => [keyOf(g), g]));
-  const bLinesByKey = new Map(bundleB.projectLines.map((l) => [keyOf(l), l]));
-  const bServicesByKey = new Map(bundleB.services.map((s) => [keyOf(s), s]));
+function walkBundle(state: WalkState, bundleA: TotalsBundle): TotalsBundle {
+  return {
+    ...bundleA,
+    project: state.project,
+    client: state.client,
+    groups: [...state.groupsMap.values()],
+    projectLines: [...state.linesMap.values()],
+    services: [...state.servicesMap.values()],
+  };
+}
 
-  // Explicit per-kind branches rather than a generic map-selector — a
-  // selector returning `groupsMap | linesMap | servicesMap` loses the
-  // correlation between "which map" and "which bMap", so TS can't prove a
-  // row read from `bMap` is assignable into `map` even though `r.kind`
-  // guarantees they're the same table. Applying the change directly here
-  // keeps that correlation type-safe.
-  function applyRowChange(r: CompareRow): void {
-    if (r.kind === "group") {
-      if (r.state === "removed") groupsMap.delete(r.key);
-      else {
-        const row = bGroupsByKey.get(r.key);
-        if (row) groupsMap.set(r.key, row);
-      }
-    } else if (r.kind === "service") {
-      if (r.state === "removed") servicesMap.delete(r.key);
-      else {
-        const row = bServicesByKey.get(r.key);
-        if (row) servicesMap.set(r.key, row);
-      }
-    } else {
-      if (r.state === "removed") linesMap.delete(r.key);
-      else {
-        const row = bLinesByKey.get(r.key);
-        if (row) linesMap.set(r.key, row);
-      }
+/** Explicit per-kind branches rather than a generic map-selector — a
+ *  selector returning `groupsMap | linesMap | servicesMap` loses the
+ *  correlation between "which map" and "which bMap", so TS can't prove a
+ *  row read from `bMap` is assignable into `map` even though `r.kind`
+ *  guarantees they're the same table. Applying the change directly here
+ *  keeps that correlation type-safe. */
+function applyRowChange(state: WalkState, bundleB: TotalsBundle, r: CompareRow): void {
+  if (r.kind === "group") {
+    if (r.state === "removed") state.groupsMap.delete(r.key);
+    else {
+      const row = bundleB.groups.find((g) => keyOf(g) === r.key);
+      if (row) state.groupsMap.set(r.key, row);
+    }
+  } else if (r.kind === "service") {
+    if (r.state === "removed") state.servicesMap.delete(r.key);
+    else {
+      const row = bundleB.services.find((s) => keyOf(s) === r.key);
+      if (row) state.servicesMap.set(r.key, row);
+    }
+  } else {
+    if (r.state === "removed") state.linesMap.delete(r.key);
+    else {
+      const row = bundleB.projectLines.find((l) => keyOf(l) === r.key);
+      if (row) state.linesMap.set(r.key, row);
     }
   }
+}
 
-  let runningProject: Doc<"projects"> = bundleA.project;
-  let runningClient: Doc<"clients"> | null = bundleA.client;
-
-  function currentBundle(): TotalsBundle {
-    return {
-      ...bundleA,
-      project: runningProject,
-      client: runningClient,
-      groups: [...groupsMap.values()],
-      projectLines: [...linesMap.values()],
-      services: [...servicesMap.values()],
-    };
-  }
-
-  let runningTotal = computeTotals(currentBundle()).total;
+/** The row-segment pass (D49) — buckets every non-unchanged row by
+ *  (state, category), applies each bucket to `state` in one step, and
+ *  records the resulting `computeTotals` delta as one segment. */
+function buildRowSegments(state: WalkState, bundleA: TotalsBundle, bundleB: TotalsBundle, rows: CompareRow[]): BridgeSegment[] {
   const segments: BridgeSegment[] = [];
-
-  // ── Row segments, grouped by (state, category) — D49. ──────────────────
-  const changedRows = rows.filter((r) => r.state !== "unchanged");
   const buckets = new Map<string, CompareRow[]>();
-  for (const r of changedRows) {
+  for (const r of rows) {
+    if (r.state === "unchanged") continue;
     const bk = bucketKeyFor(r);
     if (!buckets.has(bk)) buckets.set(bk, []);
     buckets.get(bk)!.push(r);
@@ -334,56 +371,97 @@ export function buildMoneyBridge(bundleA: TotalsBundle, bundleB: TotalsBundle, r
       // added / changed / moved / removed — see `applyRowChange`. A moved
       // row is replaced in exactly this ONE step, so it contributes to the
       // bridge exactly once even when it also repriced (D50).
-      applyRowChange(r);
+      applyRowChange(state, bundleB, r);
     }
-    const newTotal = computeTotals(currentBundle()).total;
-    const delta = round2(newTotal - runningTotal);
-    runningTotal = newTotal;
-    const [state, , categoryId] = bucketKey.split(":");
+    const newTotal = computeTotals(walkBundle(state, bundleA)).total;
+    const delta = round2(newTotal - state.runningTotal);
+    state.runningTotal = newTotal;
+    const [rowState, , categoryId] = bucketKey.split(":");
     segments.push({
       key: bucketKey,
-      state: state as CompareRowState,
+      state: rowState as CompareRowState,
       kind: bucketRows[0].kind,
       categoryId: categoryId === "__none__" || categoryId === "__service__" ? null : categoryId,
       amount: delta,
       rowKeys: bucketRows.map((r) => r.key),
     });
   }
+  return segments;
+}
 
-  // ── Plan-field segments — D48's "the rental window moving is a first-class
-  // segment with no row behind it" requirement, generalized to every plan
-  // field that actually feeds `computeTotals`'s `total` (discountPercent,
-  // taxRate — see the file header for why dates/notes/etc need no step: they
-  // don't move `total` at all, so there is nothing here to attribute to
-  // them). ─────────────────────────────────────────────────────────────
+function recordDelta(state: WalkState, bundleA: TotalsBundle): number {
+  const newTotal = computeTotals(walkBundle(state, bundleA)).total;
+  const delta = round2(newTotal - state.runningTotal);
+  state.runningTotal = newTotal;
+  return delta;
+}
+
+/** D48's "the rental window moving is a first-class segment with no row
+ *  behind it" requirement, generalized to every MONEY plan field
+ *  (discountPercent, taxRate — see the file header for why dates/notes/etc
+ *  need no step: they don't move `total` at all). */
+function buildMoneyFieldSegments(state: WalkState, bundleA: TotalsBundle, bundleB: TotalsBundle): BridgeSegment[] {
+  const segments: BridgeSegment[] = [];
   for (const field of MONEY_PLAN_FIELDS) {
     const aVal = bundleA.project[field] ?? null;
     const bVal = bundleB.project[field] ?? null;
     if (aVal === bVal) continue;
-    runningProject = { ...runningProject, [field]: bundleB.project[field] };
-    const newTotal = computeTotals(currentBundle()).total;
-    const delta = round2(newTotal - runningTotal);
-    runningTotal = newTotal;
+    state.project = { ...state.project, [field]: bundleB.project[field] };
+    const delta = recordDelta(state, bundleA);
     if (delta !== 0) {
       segments.push({ key: `planField:${field}`, state: "planField", kind: "planField", categoryId: null, amount: delta, rowKeys: [`planField:${field}`], planField: field });
     }
   }
+  return segments;
+}
 
-  // Client swap (taxExempt cascades through the tax calc) — same treatment.
-  const aClientKey = `${bundleA.client?.id ?? ""}:${bundleA.client?.taxExempt ?? false}`;
-  const bClientKey = `${bundleB.client?.id ?? ""}:${bundleB.client?.taxExempt ?? false}`;
-  if (aClientKey !== bClientKey) {
-    runningClient = bundleB.client;
-    runningProject = { ...runningProject, clientId: bundleB.project.clientId };
-    const newTotal = computeTotals(currentBundle()).total;
-    const delta = round2(newTotal - runningTotal);
-    runningTotal = newTotal;
-    if (delta !== 0) {
-      segments.push({ key: "planField:client", state: "planField", kind: "planField", categoryId: null, amount: delta, rowKeys: ["planField:client"], planField: "clientId" });
-    }
-  }
+/** Client swap (taxExempt cascades through the tax calc) — same treatment
+ *  as `buildMoneyFieldSegments`, split out because it isn't a per-field
+ *  loop (the identity comparison is a composite key, not a plain field
+ *  equality check). */
+function clientIdentityKey(client: Doc<"clients"> | null): string {
+  return `${orNull(client?.id) ?? ""}:${orNull(client?.taxExempt) ?? false}`;
+}
 
-  // ── Defensive reconciliation. By construction `runningTotal` should now
+function buildClientSegment(state: WalkState, bundleA: TotalsBundle, bundleB: TotalsBundle): BridgeSegment[] {
+  if (clientIdentityKey(bundleA.client) === clientIdentityKey(bundleB.client)) return [];
+  state.client = bundleB.client;
+  state.project = { ...state.project, clientId: bundleB.project.clientId };
+  const delta = recordDelta(state, bundleA);
+  if (delta === 0) return [];
+  return [{ key: "planField:client", state: "planField", kind: "planField", categoryId: null, amount: delta, rowKeys: ["planField:client"], planField: "clientId" }];
+}
+
+function buildPlanFieldSegments(state: WalkState, bundleA: TotalsBundle, bundleB: TotalsBundle): BridgeSegment[] {
+  return [...buildMoneyFieldSegments(state, bundleA, bundleB), ...buildClientSegment(state, bundleA, bundleB)];
+}
+
+export function buildMoneyBridge(bundleA: TotalsBundle, bundleB: TotalsBundle, rows: CompareRow[]): MoneyBridge {
+  const totalA = computeTotals(bundleA).total;
+  const totalB = computeTotals(bundleB).total;
+
+  // Working state — FULL row sets (not just the comparable subset), keyed by
+  // lineage, seeded from side A. Rows outside the comparable set (kit
+  // children, optional/cancelled lines) are never touched by the walk below
+  // and stay at side A's version throughout — safe, because none of them can
+  // move `total` (see `isComparableLine`'s comment); the reconciliation step
+  // at the end is the mechanical proof of that, not just an assertion.
+  const state: WalkState = {
+    project: bundleA.project,
+    client: bundleA.client,
+    runningTotal: 0,
+    groupsMap: new Map(bundleA.groups.map((g) => [keyOf(g), g])),
+    linesMap: new Map(bundleA.projectLines.map((l) => [keyOf(l), l])),
+    servicesMap: new Map(bundleA.services.map((s) => [keyOf(s), s])),
+  };
+  state.runningTotal = computeTotals(walkBundle(state, bundleA)).total;
+
+  const segments: BridgeSegment[] = [
+    ...buildRowSegments(state, bundleA, bundleB, rows),
+    ...buildPlanFieldSegments(state, bundleA, bundleB),
+  ];
+
+  // ── Defensive reconciliation. By construction `state.runningTotal` should now
   // equal `totalB` exactly (every row/plan-field input `computeTotals` reads
   // has been walked to side B's value). If classification ever missed a
   // computeTotals-relevant field, this closes the gap with an explicit,
@@ -392,7 +470,7 @@ export function buildMoneyBridge(bundleA: TotalsBundle, bundleB: TotalsBundle, r
   // real row, so it fails the "traces to rows" check by design) rather than
   // silently absorbing it. Every test fixture in `versionCompare.test.ts`
   // asserts this segment is NEVER produced. ─────────────────────────────
-  const leftover = round2(totalB - runningTotal);
+  const leftover = round2(totalB - state.runningTotal);
   if (Math.abs(leftover) >= 0.005) {
     segments.push({ key: "unexplained", state: "unexplained", kind: "mixed", categoryId: null, amount: leftover, rowKeys: [] });
   }

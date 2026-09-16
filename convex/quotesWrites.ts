@@ -8,7 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { assertClientContactBelongsToClient, assertRefInOrg } from "./lib/orgRef";
-import { assertLifecycleGuard, requireHardLockOverrideAllowed } from "./lib/projectLocks";
+import { requireCanUnlockPricing } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { resolveOrgQuoteConfig } from "./lib/orgSettings";
@@ -31,14 +31,15 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Quote revision mutations (#986 — Phase A of the finance version-control
- * program). Send / recall / new-version / accept / decline / unaccept /
- * correct / recall-then-delete over ONE shared counter, `projects.revision`:
+ * program). Send / recall / new-version / accept / decline / recall-then-delete
+ * over ONE shared counter, `projects.revision`:
  *
  * ```
  *   v1 DRAFT ─ send ─▶ v1 SENT ─ accept ─▶ v1 ACCEPTED ─▶ project may CONFIRM
- *        ▲               │ │ │  ◀── unaccept ──┘
- *        └─ recall ──────┘ │ └─ decline ─▶ v1 DECLINED
- *                          └─ new version ─▶ v2 DRAFT  (v1 → SUPERSEDED on v2's send)
+ *        ▲               │ │
+ *        └─ recall ──────┘ └─ decline ─▶ v1 DECLINED
+ *   (send also raises projects.pricingLocked — D55 — new version ─▶ v2 DRAFT,
+ *    v1 → SUPERSEDED on v2's send)
  * ```
  *
  * **#1229 Phase 3 note.** This file used to also carry `deleteDraftNative`
@@ -48,11 +49,16 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * "Project versioning v2" (parent #1221), superseded by the real
  * `projectVersions`-table verb set in `convex/versions.ts`
  * (`createNative`/`makeLiveNative`/`setLabelNative`/`deleteNative`). See
- * FEATUREDOCS/76's Phase 3 section. The `protected` field and the checks
- * against it in `recallNative`/`deleteRecalledNative`/`correctQuoteNative`
- * below are UNCHANGED (still enforced on any row that already has it set) —
- * only the mutation that let a caller SET/CLEAR it is gone, so a
- * pre-existing protected row can no longer be unprotected through this API.
+ * FEATUREDOCS/76's Phase 3 section.
+ *
+ * **#1230 Phase 4 note.** `unacceptNative` and `correctQuoteNative`, and every
+ * check against `quotes.protected` (in `recallNative`/`deleteRecalledNative`/
+ * the since-deleted `correctQuoteNative`), are DELETED — the whole protect/
+ * unprotect mechanism is gone along with the 4-tier lock system it propped up.
+ * `markAcceptedNative` no longer sets `protected` either. `sendNative` now
+ * SETS `projects.pricingLocked` (D55) and `recallNative` now CLEARS it (D56,
+ * only for the live version's quote) — see `convex/lib/projectLocks.ts` and
+ * FEATUREDOCS/76's Phase 4 section.
  *
  * Properties this file still guarantees, each with a test in
  * `quotesWrites.test.ts`:
@@ -80,15 +86,12 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * figure comes from `buildFinanceLines` plus the project's own recalc-owned
  * totals, exactly as the superseded `publishNative` did.
  *
- * **Permissions (decision 11).** Send / new-version / accept / decline / unaccept
- * check `invoice:publish` (owner/admin/manager). **Recall additionally requires
- * `isHardLockOverrideAllowed`** (org admin/owner, or one of the project's
+ * **Permissions (decision 11).** Send / new-version / accept / decline check
+ * `invoice:publish` (owner/admin/manager). **Recall additionally requires
+ * `canUnlockPricing`** (D42 — `invoice:publish` OR one of the project's
  * `projectManagers`) — un-sending a document the client may already be holding is
- * trust-sensitive in a way the other verbs are not. **Unaccept is deliberately
- * symmetric with Accept** (same audience, not the narrower owner-only bar
- * Correct uses) — it reverses the very action that audience just took, not a
- * separate "mutate a document a client may hold" decision. No new permission
- * resource is introduced.
+ * trust-sensitive in a way the other verbs are not. No new permission resource
+ * is introduced.
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
@@ -120,7 +123,7 @@ const offerValidator = v.union(
 );
 
 /** The 4-guard preamble every verb shares. `invoice:publish` is the audience for
- *  all five; recall layers `requireHardLockOverrideAllowed` on top. */
+ *  all five; recall layers `requireCanUnlockPricing` on top. */
 async function guardQuoteWrite(
   ctx: MutationCtx,
   orgId: string,
@@ -205,15 +208,11 @@ async function prepareSend(
   if (project.isTemplate) {
     throw new ConvexError({ code: "TEMPLATE_QUOTE", message: "Templates don't have quotes." });
   }
-  // Same financial gate every money-touching mutation uses, so a hard-locked
-  // (or status-FINANCE_LOCKED, e.g. CONFIRMED+) project can't emit a quote out
-  // of band. `bypassQuoteLock: true` (#988) because THIS is the mutation that
-  // freezes the current revision's own quote lock — gating it against its own
-  // not-yet-sent state would be a no-op (a fresh/DRAFT revision never raises
-  // the tier anyway) and gating a RESEND against the revision's own prior SENT
-  // state would be a chicken-and-egg deadlock. STATUS-driven tiers (CONFIRMED+
-  // / ON_SITE+ / COMPLETED+) are unaffected by this flag and still gate normally.
-  await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
+  // #1230: sending a quote is never gated by `pricingLocked` — it freezes the
+  // CURRENT figures into a snapshot, it doesn't set any LOCKED_*_FIELDS itself.
+  // Locking blocks direct money-field edits (unitPrice/discount/taxRate/...),
+  // not the act of sending what's already there. (This is also the mutation
+  // that RAISES the lock — see sendNative's own D55 note below.)
 
   // The recipient must belong to THIS project's client — otherwise a caller could
   // stamp another client's contact onto the revision and leak their PII onto the
@@ -333,6 +332,22 @@ export const sendNative = mutation({
     });
     await supersedeLiveQuotes(ctx, organizationId, projectId, quoteId, now);
 
+    // D55 (#1230) — sets the lock only when the version it sends IS the live
+    // one. `revision` above is ALWAYS `projectLiveRevision(project)` (see
+    // `prepareSend`) — sendNative has no way to send anything else yet — so
+    // this fires on every successful send. Idempotent: a resend of an
+    // already-locked project leaves `pricingLockedAt`/`pricingLockedById`
+    // untouched (D57 — status/quote events only ever RAISE the flag; only a
+    // person clears it via `unlockPricingNative`).
+    if (project.pricingLocked !== true) {
+      await ctx.db.patch(project._id, {
+        pricingLocked: true,
+        pricingLockedAt: now,
+        pricingLockedById: actor.userId,
+        pricingLockedByName: actor.userName,
+      });
+    }
+
     const sendFields = {
       status: "SENT" as const,
       snapshot,
@@ -412,7 +427,7 @@ export const sendNative = mutation({
  * (always `null` now) so this is an additive-only change for any caller.
  *
  * Narrower audience than the other verbs (decision 11): `invoice:publish` AND
- * `isHardLockOverrideAllowed`.
+ * `canUnlockPricing` (D42 — the renamed `isHardLockOverrideAllowed`).
  */
 export const recallNative = mutation({
   returns: v.object({ id: v.string(), version: v.number(), restoredQuoteId: v.union(v.string(), v.null()) }),
@@ -427,19 +442,13 @@ export const recallNative = mutation({
   handler: async (ctx, { id, organizationId, reason, actor: suppliedActor, auditId, now }) => {
     const actor = await guardQuoteWrite(ctx, organizationId, suppliedActor);
     const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
-    await requireHardLockOverrideAllowed(ctx, organizationId, project.id, actor.userId);
+    await requireCanUnlockPricing(ctx, organizationId, project.id, actor.userId);
 
     const trimmed = reason.trim();
     assertStrLen(trimmed, "reason", RECALL_REASON_BOUNDS);
 
     const label = quoteLabel(project.projectNumber, quote.version);
     assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "EXPIRED"], label, "recall");
-    if (quote.protected) {
-      throw new ConvexError({
-        code: "QUOTE_PROTECTED",
-        message: `${label} is protected — an owner must unprotect it before it can be recalled.`,
-      });
-    }
 
     // Unlink (never discard) the attached artifact so a resend is forced
     // through a real render (#1027) instead of attachQuoteArtifact's
@@ -457,6 +466,20 @@ export const recallNative = mutation({
       recalledPdfFileIds,
       updatedAt: now,
     });
+
+    // D56 (#1230) — the mirror of sendNative's D55: clears the lock only for
+    // the LIVE version's quote. Recalling an older, already-superseded-past
+    // revision (v1 still SENT while `newVersionNative` has since moved
+    // `liveRevision` to v2) must never unlock the live job.
+    const clearedPricingLock = quote.version === projectLiveRevision(project) && project.pricingLocked === true;
+    if (clearedPricingLock) {
+      await ctx.db.patch(project._id, {
+        pricingLocked: false,
+        pricingLockedAt: undefined,
+        pricingLockedById: undefined,
+        pricingLockedByName: undefined,
+      });
+    }
 
     // #1229 Phase 3 — the un-supersede branch that used to live here
     // ("with v2 recalled, v1 is once again the document the client is
@@ -477,9 +500,9 @@ export const recallNative = mutation({
       entityName: label,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Recalled quote ${label}`,
+      summary: `Recalled quote ${label}${clearedPricingLock ? " — pricing unlocked" : ""}`,
       details: { version: quote.version, restoredQuoteId },
-      metadata: { reason: trimmed },
+      metadata: clearedPricingLock ? { reason: trimmed, pricingUnlocked: true } : { reason: trimmed },
       projectId: project.id,
       createdAt: now,
     });
@@ -524,13 +547,11 @@ export const newVersionNative = mutation({
     if (project.isTemplate) {
       throw new ConvexError({ code: "TEMPLATE_QUOTE", message: "Templates don't have quotes." });
     }
-    // `bypassQuoteLock: true` (#988) — THIS is the sanctioned exit from a
-    // quote-derived lock ("cutting a new version is the unlock", decision 2).
-    // At call time the current revision is still the live SENT/ACCEPTED/etc.
-    // quote this mutation is about to move past, so gating against its own
-    // escalation would make the unlock action unreachable. STATUS-driven tiers
-    // (CONFIRMED+/ON_SITE+/COMPLETED+) still gate normally.
-    await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
+    // #1230: cutting a new version is never gated by `pricingLocked` either —
+    // it copies the outgoing revision's snapshot and opens a fresh DRAFT, it
+    // doesn't set any LOCKED_*_FIELDS itself. `pricingLocked` deliberately
+    // stays set across this call (D57 — "this job has a quote out" is still
+    // true; only a person lowers it via `unlockPricingNative`).
 
     const revision = projectRevision(project);
     const liveRevision = projectLiveRevision(project);
@@ -604,10 +625,11 @@ export const newVersionNative = mutation({
 
 /** Everything `deleteRecalledNative` must confirm before it starts writing —
  *  split out so the handler reads as a straight line (R-3.6, same reasoning as
- *  `prepareSend`). Order matters: state, then never-sent, then protected, then
- *  the typed confirmation last — so a caller fixing one rejection at a time
- *  sees the real blocker first rather than a confirmation prompt for an action
- *  that was never going to be allowed anyway. */
+ *  `prepareSend`). Order matters: state, then never-sent, then the typed
+ *  confirmation last — so a caller fixing one rejection at a time sees the
+ *  real blocker first rather than a confirmation prompt for an action that
+ *  was never going to be allowed anyway. (#1230 — the `protected` check that
+ *  used to sit here is gone along with the whole protect/unprotect mechanism.) */
 function assertRecalledDeletable(
   quote: Doc<"quotes">,
   label: string,
@@ -619,12 +641,6 @@ function assertRecalledDeletable(
     throw new ConvexError({
       code: "QUOTE_NEVER_SENT",
       message: `${label} was never sent — use the ordinary draft delete instead.`,
-    });
-  }
-  if (quote.protected) {
-    throw new ConvexError({
-      code: "QUOTE_PROTECTED",
-      message: `${label} is protected — an owner must unprotect it before it can be deleted.`,
     });
   }
   if (confirmLabel !== label) {
@@ -717,9 +733,8 @@ export const quoteSetLabelFields = {
  * is no path that skips the recall.
  *
  * **Owner-only** (`requireQuoteOwnerOnly` — stricter than Recall's own
- * admin/owner/PM audience), **blocked while `protected: true`** (an owner must
- * explicitly unprotect first — protection is the stronger guarantee), and
- * requires a server-validated typed confirmation: `confirmLabel` must match the
+ * `canUnlockPricing` audience) and requires a server-validated typed
+ * confirmation: `confirmLabel` must match the
  * revision's label EXACTLY, mirroring the client's typed-confirmation dialog so
  * a caller hitting this mutation directly (bypassing the UI) can't skip the
  * "type the version to confirm" step (R-8.6.4's browser-direct write bar).
@@ -849,14 +864,6 @@ export const markAcceptedNative = mutation({
       acceptedAt: stampedAcceptedAt,
       acceptedById: actor.userId,
       acceptanceRef: acceptanceRef?.trim() || undefined,
-      // #1030 — a client has committed to these exact numbers; protect the
-      // revision by default. #1229 Phase 3 deleted `setQuoteProtectedNative`
-      // (the only mutation that could clear this) — there is currently no
-      // way to unprotect an accepted revision through this API; `unaccept`
-      // below clears it as a side effect of reversing the acceptance itself.
-      protected: true,
-      protectedAt: now,
-      protectedById: actor.userId,
       updatedAt: now,
     });
 
@@ -938,174 +945,6 @@ export const markDeclinedNative = mutation({
 });
 
 /**
- * UNACCEPT (#1032) — the reverse of Accept: `ACCEPTED → SENT`, restoring the
- * pre-accept state. For the "accepted too soon" case — a client verbally
- * agreed then asked for a change, or a PM fat-fingered the button — recalling
- * (which only reaches `SENT`/`EXPIRED`) can't undo an acceptance, so this
- * fills that "fat-fingered the button" gap for Accept specifically.
- *
- * Clears the acceptance fields (`acceptedAt`/`acceptedById`/`acceptanceRef`)
- * AND the `protected` flag that Accept auto-set (#1030) in the SAME step —
- * protection existed only because this revision was accepted, so unaccepting
- * removes both together rather than requiring a separate unprotect first. This
- * is why unaccept, unlike Recall/Correction/recall-then-delete, is reachable
- * even while `protected: true`: it's undoing the exact action that set it.
- *
- * Deliberately does NOT touch the project's status. `hasAcceptedQuote` simply
- * reads false again afterwards — same as when a new version supersedes an
- * accepted revision. An already-`CONFIRMED` project stays `CONFIRMED`; the gate
- * in `projectWrites.updateStatusNative` only fires on the transition itself.
- */
-export const unacceptNative = mutation({
-  returns: v.object({ id: v.string(), version: v.number() }),
-  args: {
-    id: v.string(),
-    organizationId: v.string(),
-    actor: actorValidator,
-    auditId: v.string(),
-    now: v.number(),
-  },
-  handler: async (ctx, { id, organizationId, actor: suppliedActor, auditId, now }) => {
-    const actor = await guardQuoteWrite(ctx, organizationId, suppliedActor);
-    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
-
-    const label = quoteLabel(project.projectNumber, quote.version);
-    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["ACCEPTED"], label, "unapprove");
-
-    await ctx.db.patch(quote._id, {
-      status: "SENT",
-      acceptedAt: undefined,
-      acceptedById: undefined,
-      acceptanceRef: undefined,
-      protected: false,
-      protectedAt: undefined,
-      protectedById: undefined,
-      updatedAt: now,
-    });
-
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId,
-      action: "QUOTE_UNACCEPTED",
-      entityType: "quote",
-      entityId: quote.id,
-      entityName: label,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Unapproved quote ${label}`,
-      details: { version: quote.version },
-      projectId: project.id,
-      createdAt: now,
-    });
-
-    return { id: quote.id, version: quote.version };
-  },
-});
-
-/**
- * CORRECTION (#1031) — an audited in-place fix to a `SENT`/`ACCEPTED`
- * revision's `quoteDate`/`validUntil`, no version bump, no price change. This
- * is deliberately narrower than it might sound: it does NOT touch `sentAt`
- * (the system's true record of when the send actually happened — only the
- * date PRINTED ON THE DOCUMENT is correctable), and it does NOT touch
- * `snapshot`/pricing/structure at all — that's what New Version is for.
- *
- * Same shape as the recall path for the attached artifact: `pdfFileId` is
- * unlinked (pushed onto `recalledPdfFileIds`, never discarded) so the next
- * render is forced fresh rather than serving the pre-correction bytes. The PDF
- * itself isn't re-rendered here — that's the Node-side server action's job
- * (`generateQuoteArtifact`, `src/server/finance-documents.ts`), same division
- * of labour `sendNative` already has with its own auto-render step. The
- * "REISSUED — corrects vN sent X, edited by Y on Z" watermark on the reissued
- * PDF is separate follow-up work in the PDF pipeline (`document-layouts.ts` /
- * `document-composer.ts`), not built by this mutation.
- *
- * Owner-only (`requireQuoteOwnerOnly`) and blocked while `protected: true` —
- * same bar as recall-then-delete: this mutates a document a client may
- * already hold, so it gets the higher of the two audiences discussed for it
- * rather than Recall's narrower one.
- */
-export const correctQuoteNative = mutation({
-  returns: v.object({ id: v.string(), version: v.number(), quoteDate: v.number(), validUntil: v.number() }),
-  args: {
-    id: v.string(),
-    organizationId: v.string(),
-    /** The corrected date to print on the document. */
-    quoteDate: v.number(),
-    /** Defaults to the revision's own `validityDays`, then the org default. */
-    validityDays: v.optional(v.number()),
-    actor: actorValidator,
-    auditId: v.string(),
-    now: v.number(),
-  },
-  handler: async (ctx, { id, organizationId, quoteDate, validityDays, actor: suppliedActor, auditId, now }) => {
-    await assertWritesEnabled(ctx, "quote");
-    await enforceBrowserWriteLimit(ctx);
-    const actor = await resolveActor(ctx, suppliedActor);
-    await requireQuoteOwnerOnly(ctx, organizationId, actor.userId, "correct a sent quote's date");
-
-    assertNumRange(quoteDate, "quoteDate", DATE_BOUNDS);
-    assertNumRange(validityDays, "validityDays", { ...QUOTE_VALIDITY_BOUNDS, integer: true });
-
-    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
-    const label = quoteLabel(project.projectNumber, quote.version);
-    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "ACCEPTED"], label, "correct");
-    if (quote.protected) {
-      throw new ConvexError({
-        code: "QUOTE_PROTECTED",
-        message: `${label} is protected — an owner must unprotect it before it can be corrected.`,
-      });
-    }
-
-    const config = await resolveOrgQuoteConfig(ctx, organizationId);
-    const days = validityDays ?? quote.validityDays ?? config.quoteValidityDays;
-    const stampedQuoteDate = startOfDayInTimezone(quoteDate, config.timezone);
-    const newValidUntil = computeValidUntil(stampedQuoteDate, days, config.timezone);
-
-    // Same unlink-not-discard shape as recall (#1027): forces the next render
-    // through a real render instead of attachQuoteArtifact's guard silently
-    // keeping the pre-correction bytes attached under a since-corrected date.
-    const recalledPdfFileIds = quote.pdfFileId
-      ? [...(quote.recalledPdfFileIds ?? []), quote.pdfFileId]
-      : quote.recalledPdfFileIds;
-
-    await ctx.db.patch(quote._id, {
-      quoteDate: stampedQuoteDate,
-      validUntil: newValidUntil,
-      validityDays: days,
-      pdfFileId: undefined,
-      recalledPdfFileIds,
-      correctedAt: now,
-      correctedById: actor.userId,
-      updatedAt: now,
-    });
-
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId,
-      action: "QUOTE_CORRECTED",
-      entityType: "quote",
-      entityId: quote.id,
-      entityName: label,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Corrected quote ${label}'s date`,
-      details: {
-        version: quote.version,
-        previousQuoteDate: quote.quoteDate ?? null,
-        newQuoteDate: stampedQuoteDate,
-        previousValidUntil: quote.validUntil ?? null,
-        newValidUntil,
-      },
-      projectId: project.id,
-      createdAt: now,
-    });
-
-    return { id: quote.id, version: quote.version, quoteDate: stampedQuoteDate, validUntil: newValidUntil };
-  },
-});
-
-/**
  * The client-supplied field sets, exported for the Zod↔Convex parity test
  * (`convex/validationDrift.test.ts`, R-8.6.1) — each one pairs with the
  * correspondingly-named schema in `src/lib/validations/quote.ts`. Dates are
@@ -1143,15 +982,13 @@ export const agentOps: AgentOpsAnnotations = {
   // Genuinely irreversible — the one mutation in this file that deletes
   // storage bytes a client may already hold, not just unlinks/preserves them.
   deleteRecalledNative: { danger: "high" },
-  // Mutates dates on a document a client may already hold, forcing a re-render
-  // under the same revision number — same risk class as recall/send.
-  correctQuoteNative: { danger: "high" },
   // Cuts a fresh DRAFT at the next revision — the prior SENT/ACCEPTED quote the
   // client is holding is left untouched until that draft is itself sent.
   newVersionNative: { danger: "medium" },
+  // Un-sends AND, per D56, may clear projects.pricingLocked — lock-softening,
+  // same rubric as unlockPricingNative.
   recallNative: { danger: "high" },
+  // Freezes pricing (raises projects.pricingLocked, D55) and produces the
+  // document the client is holding.
   sendNative: { danger: "high" },
-  // Reverses a recorded client acceptance and drops it out of hasAcceptedQuote
-  // — same risk class as the accept/decline/recall quartet it undoes.
-  unacceptNative: { danger: "high" },
 };

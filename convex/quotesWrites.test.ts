@@ -198,11 +198,24 @@ describe("quotesWrites.sendNative", () => {
     await expect(send(t)).rejects.toThrow(/insufficient permissions/i);
   });
 
-  test("a FINANCE_LOCKED project (CONFIRMED+) without an open unlock session is rejected", async () => {
+  // #1230: `prepareSend`'s own `assertLifecycleGuard` call (which used to
+  // reject sending on an already-FINANCE_LOCKED/CONFIRMED+ project) is
+  // deleted — sendNative doesn't touch any of `LOCKED_*_FIELDS`, so there's
+  // nothing for the pricing lock to gate here. Sending IS the freeze moment
+  // (D55): it always succeeds and raises `pricingLocked`, idempotently, even
+  // on a project that's already locked (e.g. re-sending a CONFIRMED job).
+  test("sending on an already-CONFIRMED (pricing-locked) project succeeds — D55 is idempotent, not a gate", async () => {
     const t = makeT();
     await seedMember(t, "manager");
     await seedProject(t, ORG, "CONFIRMED");
-    await expect(send(t)).rejects.toThrow(/financials.*locked/i);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { pricingLocked: true, pricingLockedAt: NOW - 1000, pricingLockedById: "someone_else" });
+    });
+    await send(t);
+    const p = await getProject(t);
+    expect(p?.pricingLocked).toBe(true);
+    expect(p?.pricingLockedAt).toBe(NOW - 1000); // untouched — already locked, D55 is a no-op
   });
 
   test("mirrors its Zod bounds server-side (notes + validityDays)", async () => {
@@ -470,19 +483,21 @@ describe("quotesWrites.recallNative", () => {
     expect(quotes.find((q) => q.id === "q2")?.status).toBe("DRAFT");
   });
 
-  test("a manager can send but CANNOT recall; the project's PM can", async () => {
+  // #1230 (D42): canUnlockPricing = hasPermission(role, "invoice", "publish")
+  // || isProjectManagerOf — every verb's own base gate (`guardQuoteWrite`)
+  // already requires invoice:publish, so a manager (who has it) now passes
+  // recall's layered check directly, with no PM assignment needed — widened
+  // from the old admin/owner-only `isHardLockOverrideAllowed` role test.
+  // (The PM disjunct still matters for OTHER canUnlockPricing call sites
+  // whose base gate is the broader `project:update`, e.g.
+  // `projectWrites.updateStatusNative` — see projectWrites.test.ts.)
+  test("a manager can send AND recall directly — invoice:publish is canUnlockPricing's audience (D42)", async () => {
     const t = makeT();
     await seedMember(t, "manager");
     await seedProject(t);
     await send(t); // manager sends fine — invoice:publish
 
-    await expect(recall(t)).rejects.toThrow(/admins.*owners.*PM/i);
-
-    // Same manager, now an assigned PM on this project.
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER });
-    });
-    await recall(t, { auditId: "a5" });
+    await recall(t);
     expect((await getQuotes(t))[0]?.status).toBe("DRAFT");
   });
 
@@ -521,9 +536,12 @@ describe("quotesWrites.recallNative", () => {
     await expect(recall(t)).rejects.toThrow(/quote not found/i);
   });
 
-  // #1229 Phase 3 deleted `setQuoteProtectedNative` — seeds `protected`
-  // directly rather than through the deleted verb (see the file header note).
-  test("refuses to recall a protected quote (#1030)", async () => {
+  // #1230: the protect/unprotect mechanism (#1030's auto-protect-on-accept,
+  // and the check against it here) is deleted entirely along with the rest
+  // of the 4-tier lock system — a legacy `protected:true` row (pre-#1230,
+  // the field stays on the schema DEPRECATED for back-compat) no longer
+  // blocks a recall.
+  test("a legacy protected:true row no longer blocks recall (#1230 — protect/unprotect deleted)", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
@@ -533,16 +551,46 @@ describe("quotesWrites.recallNative", () => {
       await ctx.db.patch(quote!._id, { protected: true, protectedAt: NOW + 1, protectedById: USER });
     });
 
-    await expect(recall(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/protected/i);
-    expect((await getQuotes(t))[0]?.status).toBe("SENT"); // untouched
-
-    // Unprotecting (directly — no mutation does this anymore) clears the way again.
-    await t.run(async (ctx) => {
-      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
-      await ctx.db.patch(quote!._id, { protected: false, protectedAt: undefined, protectedById: undefined });
-    });
-    await recall(t, { auditId: "a5", now: NOW + 4 });
+    await recall(t, { auditId: "a3", now: NOW + 2 });
     expect((await getQuotes(t))[0]?.status).toBe("DRAFT");
+  });
+
+  // D55/D56 (#1230): sendNative raises projects.pricingLocked when it sends
+  // the LIVE version's quote; recallNative clears it again for that same
+  // live-version quote. A status revert never touches the flag (see
+  // projectWrites.test.ts — only a person lowers it, via unlockPricingNative).
+  test("D55/D56: send locks pricing, recall of the LIVE quote clears it again", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    expect((await getProject(t))?.pricingLocked).toBe(true);
+
+    await recall(t);
+    expect((await getProject(t))?.pricingLocked).toBe(false);
+  });
+
+  test("D56: recalling a SENT revision that is no longer the project's LIVE revision does NOT clear the lock", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 sent while it's the live revision — locks pricing
+    expect((await getProject(t))?.pricingLocked).toBe(true);
+
+    // Simulate a later promote moving `liveRevision` on to v2 (#1080/#1085)
+    // without going through another send — v1's quote row is untouched,
+    // still SENT, but is no longer the project's live revision.
+    await t.run(async (ctx) => {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(project!._id, { revision: 2, liveRevision: 2 });
+    });
+
+    // v1 is still SENT (never superseded), so recallNative's status check
+    // still lets it through — but D56 must not clear the lock: v2, not v1,
+    // is the live revision now.
+    await recall(t, { auditId: "a3", now: NOW + 2 });
+    expect((await getQuotes(t)).find((q) => q.id === "q1")?.status).toBe("DRAFT");
+    expect((await getProject(t))?.pricingLocked).toBe(true);
   });
 });
 
@@ -611,10 +659,13 @@ describe("quotesWrites.deleteRecalledNative — recall-then-delete, the one full
     ).rejects.toThrow(/never sent/i);
   });
 
-  // #1229 Phase 3 deleted `setQuoteProtectedNative` (the mutation that could
-  // SET/CLEAR `protected`) — the check itself, and the field, are unchanged,
-  // so this seeds `protected` directly rather than through the deleted verb.
-  test("refuses while protected — an owner must unprotect first", async () => {
+  // #1230: the whole protect/unprotect mechanism (setQuoteProtectedNative was
+  // already gone since #1229 Phase 3) is deleted — `assertRecalledDeletable`
+  // no longer checks `protected` at all. `protected`/`protectedAt`/
+  // `protectedById` stay on the schema (DEPRECATED, optional) only so a
+  // pre-#1230 row that still carries `true` doesn't fail the schema push —
+  // this proves a legacy `protected:true` row no longer blocks the delete.
+  test("a legacy protected:true row no longer blocks deletion (#1230 — protect/unprotect deleted)", async () => {
     const t = makeT();
     await recallThenDeleteSetup(t);
     await t.run(async (ctx) => {
@@ -622,18 +673,11 @@ describe("quotesWrites.deleteRecalledNative — recall-then-delete, the one full
       await ctx.db.patch(quote!._id, { protected: true, protectedAt: NOW + 2, protectedById: USER });
     });
 
-    await expect(del(t, { auditId: "a4", now: NOW + 3 })).rejects.toThrow(/protected/i);
-    expect(await getQuotes(t)).toHaveLength(1);
-
-    await t.run(async (ctx) => {
-      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
-      await ctx.db.patch(quote!._id, { protected: false, protectedAt: undefined, protectedById: undefined });
-    });
-    await del(t, { auditId: "a6", now: NOW + 5 });
+    await del(t, { auditId: "a4", now: NOW + 3 });
     expect(await getQuotes(t)).toHaveLength(0);
   });
 
-  test("an admin — passes isHardLockOverrideAllowed, but is NOT owner-only — is denied", async () => {
+  test("an admin — passes canUnlockPricing, but is NOT owner-only — is denied", async () => {
     const t = makeT();
     await seedMember(t, "admin");
     await seedProject(t);
@@ -685,117 +729,6 @@ describe("quotesWrites.deleteRecalledNative — recall-then-delete, the one full
   });
 });
 
-describe("quotesWrites.correctQuoteNative — audited in-place date fix, no version bump (#1031)", () => {
-  const correct = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
-    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.correctQuoteNative, {
-      id: "q1", organizationId: ORG, quoteDate: NOW + 5 * DAY, actor, auditId: "a2", now: NOW + 1, ...over,
-    } as never);
-
-  test("corrects quoteDate/validUntil, preserves the original validityDays, unlinks the artifact, never touches sentAt", async () => {
-    const t = makeT();
-    await seedMember(t, "owner");
-    await seedProject(t);
-    await send(t, { validityDays: 14 }); // sentAt = NOW, quoteDate = NOW, validUntil = NOW + 14d EOD
-    await t.run(async (ctx) => {
-      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
-      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1" });
-    });
-
-    const result = await correct(t);
-    // Same validityDays (14) re-anchored to the new quoteDate (NOW + 5d).
-    expect(result.quoteDate).toBe(Date.UTC(2023, 10, 19)); // NOW + 5 days, start of day UTC
-    expect(result.validUntil).toBe(Date.UTC(2023, 11, 3, 23, 59, 59, 999)); // Nov 19 + 14 days = Dec 3, end of day
-
-    const [quote] = await getQuotes(t);
-    expect(quote?.validityDays).toBe(14);
-    expect(quote?.sentAt).toBe(NOW); // untouched — system truth of when it was actually sent
-    expect(quote?.correctedAt).toBe(NOW + 1);
-    expect(quote?.correctedById).toBe(USER);
-    expect(quote?.pdfFileId).toBeFalsy();
-    expect(quote?.recalledPdfFileIds).toEqual(["storage_v1"]);
-  });
-
-  test("an explicit validityDays overrides the revision's original one", async () => {
-    const t = makeT();
-    await seedMember(t, "owner");
-    await seedProject(t);
-    await send(t, { validityDays: 14 });
-
-    const result = await correct(t, { validityDays: 7 });
-    expect(result.validUntil).toBe(Date.UTC(2023, 10, 26, 23, 59, 59, 999)); // Nov 19 + 7 days = Nov 26, end of day
-
-    expect((await getQuotes(t))[0]?.validityDays).toBe(7);
-  });
-
-  test("works on an ACCEPTED revision too, but is blocked once protect auto-fires (#1030)", async () => {
-    const t = makeT();
-    await seedMember(t, "owner");
-    await seedProject(t);
-    await send(t);
-    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
-      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
-    });
-
-    // ACCEPTED auto-protects (#1030) — correction is blocked until unprotected.
-    await expect(correct(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/protected/i);
-
-    // #1229 Phase 3 deleted `setQuoteProtectedNative` — unprotect directly.
-    await t.run(async (ctx) => {
-      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
-      await ctx.db.patch(quote!._id, { protected: false, protectedAt: undefined, protectedById: undefined });
-    });
-    const result = await correct(t, { auditId: "a5", now: NOW + 4 });
-    expect(result.version).toBe(1);
-    expect((await getQuotes(t))[0]?.status).toBe("ACCEPTED"); // status itself is untouched
-  });
-
-  test("refuses a DRAFT revision", async () => {
-    const t = makeT();
-    await seedMember(t, "owner");
-    await seedProject(t);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("quotes", {
-        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
-        snapshot: null, createdAt: NOW, updatedAt: NOW,
-      });
-    });
-
-    await expect(correct(t)).rejects.toThrow(/hasn't been sent yet/i);
-  });
-
-  test("validates quoteDate and validityDays bounds server-side", async () => {
-    const t = makeT();
-    await seedMember(t, "owner");
-    await seedProject(t);
-    await send(t);
-
-    await expect(correct(t, { validityDays: 0 })).rejects.toThrow(/at least 1/i);
-    await expect(correct(t, { validityDays: 400 })).rejects.toThrow(/at most 365/i);
-  });
-
-  test("a manager (passes invoice:publish) is NOT owner-only", async () => {
-    const t = makeT();
-    await seedMember(t, "manager");
-    await seedProject(t);
-    await send(t);
-
-    await expect(correct(t)).rejects.toThrow(/only an org owner/i);
-  });
-
-  test("rejects another org's quote (IDOR guard)", async () => {
-    const t = makeT();
-    await seedMember(t, "owner");
-    await seedMember(t, "owner", OTHER, "user_2");
-    await seedProject(t, OTHER);
-    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
-      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
-      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
-    });
-
-    await expect(correct(t)).rejects.toThrow(/quote not found/i);
-  });
-});
-
 describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
   const accept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
     t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
@@ -820,10 +753,11 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
     expect(quotes[0]?.acceptedById).toBe(USER);
   });
 
-  // Moved from the (now-deleted, #1229 Phase 3) `setQuoteProtectedNative`
-  // describe block — this is `markAcceptedNative`'s own auto-protect
-  // side effect (#1030), unaffected by that deletion.
-  test("accepting a quote auto-protects it", async () => {
+  // #1230: `markAcceptedNative`'s #1030 auto-protect side effect is deleted
+  // along with the whole protect/unprotect mechanism — accepting no longer
+  // stamps `protected` at all (the field stays on the schema, DEPRECATED,
+  // only for pre-#1230 rows that already carry it).
+  test("accepting a quote does not set the (deprecated) protected flag", async () => {
     const t = makeT();
     await seedMember(t, "owner");
     await seedProject(t);
@@ -833,8 +767,7 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
 
     const [quote] = await getQuotes(t);
     expect(quote?.status).toBe("ACCEPTED");
-    expect(quote?.protected).toBe(true);
-    expect(quote?.protectedById).toBe(USER);
+    expect(quote?.protected).toBeFalsy();
   });
 
   test("an EXPIRED revision cannot be accepted without a re-send", async () => {
@@ -895,100 +828,6 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
 
     await expect(accept(t)).rejects.toThrow(/quote not found/i);
     await expect(decline(t)).rejects.toThrow(/quote not found/i);
-  });
-});
-
-describe("quotesWrites.unacceptNative — the reverse of Accept (#1032)", () => {
-  const accept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
-    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
-      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1, ...over,
-    } as never);
-  const unaccept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
-    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.unacceptNative, {
-      id: "q1", organizationId: ORG, actor, auditId: "a3", now: NOW + 2, ...over,
-    } as never);
-
-  test("ACCEPTED → SENT, clearing acceptance fields and the auto-set protected flag", async () => {
-    const t = makeT();
-    await seedMember(t);
-    await seedProject(t);
-    await send(t);
-    await accept(t, { acceptanceRef: "PO-4821" });
-    expect((await getQuotes(t))[0]?.protected).toBe(true); // auto-set by accept
-
-    const result = await unaccept(t);
-    expect(result.version).toBe(1);
-    const quote = (await getQuotes(t))[0];
-    expect(quote?.status).toBe("SENT");
-    expect(quote?.acceptedAt).toBeUndefined();
-    expect(quote?.acceptedById).toBeUndefined();
-    expect(quote?.acceptanceRef).toBeUndefined();
-    expect(quote?.protected).toBe(false);
-  });
-
-  test("does not touch the project's status — an already-CONFIRMED project stays CONFIRMED", async () => {
-    const t = makeT();
-    await seedMember(t);
-    await seedProject(t);
-    await send(t);
-    await accept(t);
-    await t.run(async (ctx) => {
-      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      await ctx.db.patch(project!._id, { status: "CONFIRMED" });
-    });
-
-    await unaccept(t);
-    expect((await getProject(t))?.status).toBe("CONFIRMED");
-  });
-
-  test("refuses a SENT (never-accepted) revision", async () => {
-    const t = makeT();
-    await seedMember(t);
-    await seedProject(t);
-    await send(t);
-
-    await expect(unaccept(t)).rejects.toThrow(/hasn't been sent yet|is sent\./i);
-  });
-
-  test("a manager (not owner) can unaccept — same invoice:publish audience as accept itself", async () => {
-    const t = makeT();
-    await seedMember(t, "manager");
-    await seedProject(t);
-    await send(t);
-    await accept(t);
-
-    const result = await unaccept(t);
-    expect(result.version).toBe(1);
-  });
-
-  test("a viewer is denied (invoice:publish)", async () => {
-    const t = makeT();
-    await seedMember(t, "owner");
-    await seedProject(t);
-    await send(t);
-    await accept(t);
-    await t.run(async (ctx) => {
-      const member = await ctx.db.query("members").first();
-      await ctx.db.patch(member!._id, { role: "viewer" });
-    });
-
-    await expect(unaccept(t)).rejects.toThrow(/insufficient permissions/i);
-  });
-
-  test("rejects another org's quote (IDOR guard)", async () => {
-    const t = makeT();
-    await seedMember(t);
-    await seedMember(t, "owner", OTHER, "user_2");
-    await seedProject(t, OTHER);
-    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
-      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
-      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
-    });
-    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.markAcceptedNative, {
-      id: "q1", organizationId: OTHER, actor: { userId: "user_2", userName: "Bob" }, auditId: "a2", now: NOW + 1,
-    });
-
-    await expect(unaccept(t)).rejects.toThrow(/quote not found/i);
   });
 });
 

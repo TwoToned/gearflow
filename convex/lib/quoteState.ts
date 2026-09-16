@@ -185,26 +185,6 @@ export async function requireProjectInOrg(
   return project;
 }
 
-/**
- * The quote at the project's CURRENT revision, normalised, with NO time-based
- * `EXPIRED` resolution — #988 (Phase C)'s `resolveLockTier` treats `SENT` and
- * `EXPIRED` identically (both are "sent and not yet superseded by a new
- * version"), so distinguishing them isn't needed to gate a write. That in turn
- * means `assertLifecycleGuard` doesn't need a `now` argument threaded through
- * the ~25 existing gate sites that call it — none of them pass one today.
- * Null when no row exists at this revision yet (a project that has never
- * quoted, or a fresh `DRAFT` created by `newVersionNative`) — reads exactly
- * like a `DRAFT` for lock purposes.
- */
-export async function currentRevisionQuoteStatus(
-  ctx: QueryCtx | MutationCtx,
-  orgId: string,
-  projectId: string,
-  revision: number,
-): Promise<EffectiveQuoteStatus | null> {
-  const quote = await findQuoteAtRevision(ctx, orgId, projectId, revision);
-  return quote ? normalizeStoredQuoteStatus(quote.status) : null;
-}
 
 /** Human label for a revision — `<projectNumber> v<version>`. There is
  *  deliberately no quote number (decision 5): the project number is already the
@@ -215,15 +195,15 @@ export function quoteLabel(projectNumber: string, version: number): string {
 }
 
 /**
- * Strictly org OWNER — one tier above `isHardLockOverrideAllowed`
- * (`projectLocks.ts`, which also admits admins and the project's assigned
- * PM(s)). Reserved for the handful of quote actions where "a document a client
- * may already hold" is being permanently erased or protected from further
- * tampering (#1029/#1030): mutating something the client can no longer be
- * shown a corrected copy of deserves a strictly narrower audience than undoing
- * a lock. `hasPermission`'s "owner always passes" safety net (`permissionsCore.ts`)
- * makes a resource/action check unusable here — admins/managers can hold the
- * same `invoice:publish` grant, so only a direct role check is actually owner-only.
+ * Strictly org OWNER — one tier above `canUnlockPricing` (`projectLocks.ts`,
+ * which also admits admins/managers and the project's assigned PM(s)).
+ * Reserved for the handful of quote actions where "a document a client may
+ * already hold" is being permanently erased (#1029): mutating something the
+ * client can no longer be shown a corrected copy of deserves a strictly
+ * narrower audience than clearing a lock. `hasPermission`'s "owner always
+ * passes" safety net (`permissionsCore.ts`) makes a resource/action check
+ * unusable here — admins/managers can hold the same `invoice:publish` grant,
+ * so only a direct role check is actually owner-only.
  */
 export async function requireQuoteOwnerOnly(
   ctx: MutationCtx,

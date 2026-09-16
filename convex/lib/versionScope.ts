@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { pickPlanFields } from "./versionPlanFields";
 
 /**
  * #1221 follow-up (closes Phase 5's "Equipment write-side gap" note,
@@ -157,4 +158,34 @@ export async function resolveLiveVersionIdForProject(
  */
 export function resolveVersionId(project: Doc<"projects">, versionId?: string): string {
   return versionId ?? requireLiveVersionId(project);
+}
+
+/**
+ * #1233 (Phase 6, "Project versioning v2") — the read-time counterpart to
+ * `versions.makeLiveNative`'s plan-field swap: a `projects` doc SHAPED as if
+ * `targetVersionId` were live, for any read that needs to price/date a
+ * SPECIFIC version rather than always the live one (`loadTotalsBundle`,
+ * `buildFinanceLines`). Mirrors `src/lib/project-version-compose.ts`'s
+ * `composeProjectWithVersion` (the client-side "composed object"), but
+ * server-side and against the REAL `projectVersions` row rather than the
+ * already-resolved `getVersion` query response — same overlay semantics
+ * (`pickPlanFields` always includes every key, even as an explicit
+ * `undefined`, so a version that doesn't set a field CLEARS it rather than
+ * leaking the live project's value — see that module's own comment).
+ *
+ * A no-op (returns `project` unchanged, no extra read) when `targetVersionId`
+ * IS the live version — the overwhelming majority of calls — so this never
+ * adds a round trip to the live-only path.
+ */
+export async function resolveEffectiveProjectForVersion(
+  ctx: QueryCtx | MutationCtx,
+  project: Doc<"projects">,
+  targetVersionId: string,
+): Promise<Doc<"projects">> {
+  if (targetVersionId === project.liveVersionId) return project;
+  const version = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", targetVersionId)).first();
+  if (!version || version.organizationId !== project.organizationId || version.projectId !== project.id) {
+    throw new ConvexError(`resolveEffectiveProjectForVersion: version not found or cross-org/project: ${targetVersionId}`);
+  }
+  return { ...project, ...pickPlanFields(version) };
 }

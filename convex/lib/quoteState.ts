@@ -127,6 +127,40 @@ export async function findQuoteAtRevision(
     .first();
 }
 
+/**
+ * #1233 (Phase 6) — the per-`projectVersions`-row addressing key: the quote
+ * row (any status) currently targeting `versionId`, org-checked. A row
+ * created before this phase has no `versionId` stamped — callers that mean
+ * "the LIVE version's quote" should fall back to `findQuoteAtRevision`
+ * (`quotesWrites.ts`'s `prepareSend` does exactly this) rather than treating
+ * an old row as invisible here.
+ */
+export async function findQuoteForVersion(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  projectId: string,
+  versionId: string,
+): Promise<Doc<"quotes"> | null> {
+  return await ctx.db
+    .query("quotes")
+    .withIndex("by_projectId_versionId", (q) => q.eq("projectId", projectId).eq("versionId", versionId))
+    .filter((q) => q.eq(q.field("organizationId"), orgId))
+    .first();
+}
+
+/**
+ * #1233 — whether `quote` targets the project's CURRENT live version. A row
+ * with no `versionId` stamped (every pre-#1233 row) targets the live version
+ * by definition of the OLDER system this table used exclusively before this
+ * phase — so `versionId == null` reads as "live", not "unknown".
+ */
+export function quoteTargetsLiveVersion(
+  quote: Pick<Doc<"quotes">, "versionId">,
+  project: Pick<Doc<"projects">, "liveVersionId">,
+): boolean {
+  return quote.versionId == null || quote.versionId === project.liveVersionId;
+}
+
 /** The revision the client is currently holding — the one `SENT`/`ACCEPTED` (or
  *  since-expired) row. Null when nothing has been sent yet. */
 export async function findLiveQuote(

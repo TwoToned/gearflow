@@ -2695,6 +2695,19 @@ export default defineSchema({
     // the same spirit as "nothing deletes one" above. #1027/#1031.
     recalledPdfFileIds: v.optional(v.array(v.string())),
     snapshotId: v.optional(v.string()),
+    // #1233 (Phase 6, "Project versioning v2") — the REAL `projectVersions`
+    // row this revision's snapshot/lines were built from. Absent on every
+    // pre-#1233 row (the OLDER `projects.revision`/`liveRevision` program,
+    // FEATUREDOCS/70, had no concept of the newer `projectVersions` table at
+    // all) — readers that need "does this target the live version" treat a
+    // missing `versionId` as the live version, which was always true by
+    // construction of the old system. Stamped by `sendNative` on every send
+    // (new row or reused-on-resend), never by `newVersionNative` (which only
+    // opens a DRAFT — the versionId is decided at SEND time, in case the
+    // project's `liveVersionId` moved between draft and send). See
+    // `convex/versions.ts`'s ASCII diagram for the full version x quote state
+    // machine.
+    versionId: v.optional(v.string()),
     // #1085 — optional internal name for the version ("with LED wall", "client's
     // budget option"), settable via `saveVersionNative`. Never affects behaviour
     // or numbering. Internal by default (bounded ≤60 chars server-side via
@@ -2750,10 +2763,17 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
-    // The uniqueness guard for "exactly one quote row per (projectId, revision)".
+    // The uniqueness guard for "exactly one quote row per (projectId, revision)"
+    // — still load-bearing for the OLDER live-version revision-number lineage
+    // (`newVersionNative`'s draft-cutting flow is unchanged by #1233).
     .index("by_projectId_version", ["projectId", "version"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
+    .index("by_organizationId_status", ["organizationId", "status"])
+    // #1233 — the per-`projectVersions`-row addressing key: "the quote (if
+    // any) currently targeting THIS version". `versionId` is a GLOBAL value
+    // (not itself org-scoped), so every reader still org-checks the row, same
+    // as every other `by_projectId_*` index here.
+    .index("by_projectId_versionId", ["projectId", "versionId"]),
 
   // Invoice (WS1 #940) — Flow owns generation + numbering, Xero owns the ledger.
   // `invoiceNumber` is null until ISSUED (numbered at issue time via the shared

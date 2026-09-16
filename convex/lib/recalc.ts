@@ -2,7 +2,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { applyProjectAllocation } from "./allocation";
 import { deriveBillingSummary } from "./billingDerivation";
-import { versionRows, resolveVersionId } from "./versionScope";
+import { versionRows, resolveVersionId, resolveEffectiveProjectForVersion } from "./versionScope";
 
 /**
  * In-mutation project-totals recalculation (Phase 5, Option A — write-latency fix).
@@ -268,6 +268,11 @@ export async function loadTotalsBundle(
   if (!project || project.organizationId !== orgId) return null;
 
   const targetVersionId = resolveVersionId(project, versionId);
+  // #1233 — a non-live version's own discountPercent/taxRate/clientId (etc.)
+  // win over the live project's, so a totals bundle for THAT version prices
+  // it under ITS OWN terms, not whatever the live version currently has.
+  // No-op (same object, no extra read) when targetVersionId IS live.
+  const effectiveProject = await resolveEffectiveProjectForVersion(ctx, project, targetVersionId);
 
   const [groups, projectLines, allServices, assignments, allSubHires, invoices] = await Promise.all([
     versionRows(ctx, "projectGroups", targetVersionId),
@@ -281,15 +286,16 @@ export async function loadTotalsBundle(
       .collect(),
   ]);
 
-  // T3 (#1091) — org-checked once here (by_cuid is global).
-  const client = project.clientId
-    ? await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", project.clientId!)).first()
+  // T3 (#1091) — org-checked once here (by_cuid is global). Reads the
+  // EFFECTIVE (version-overlaid) clientId, not the live project's.
+  const client = effectiveProject.clientId
+    ? await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", effectiveProject.clientId!)).first()
     : null;
 
   const saleCostRefs = await loadSaleCostRefs(ctx, projectLines);
 
   return {
-    project,
+    project: effectiveProject,
     groups,
     projectLines,
     services: allServices.filter((s) => s.organizationId === orgId && s.status !== "CANCELLED"),

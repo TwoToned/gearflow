@@ -1,8 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -14,16 +12,72 @@ import { requireLiveVersionId } from "./lib/versionScope";
 import { listProjectVersions } from "./lib/projectVersionState";
 import { copyPlanGraph, VERSIONED_PLAN_TABLES, MAX_CLONABLE_PLAN_ROWS } from "./lib/versionGraph";
 import { versionRows } from "./lib/versionScope";
-import { carryRealityByLineage } from "./lib/versionReality";
 import { pickPlanFields } from "./lib/versionPlanFields";
-import { recalcProjectTotals } from "./lib/recalc";
-import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
-import { candidateBoardProjects } from "./lib/overbookingBoard";
-import { computePromoteOverbookingConflicts } from "./lib/overbookingConfirmImpact";
-import { fetchCandidateProjects, fetchGearData } from "./overbookingBoard";
-import { getProjectWindow } from "./lib/projectWindow";
+import { loadVersionInOrgProject, performMakeLive } from "./lib/makeLiveCore";
 import { LABEL_BOUNDS } from "./projectVersionsWrites";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+/**
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ THE VERSION x QUOTE STATE MACHINE (#1233, Phase 6, parent #1221)           │
+ * │ ────────────────────────────────────────────────────────────────────────  │
+ * │ Two independent state machines, joined only by `quotes.versionId`:        │
+ * │                                                                            │
+ * │  projectVersions       ready, exactly one is `projects.liveVersionId`     │
+ * │  (this file)           at any time — createNative/makeLiveNative/         │
+ * │                        setLabelNative/deleteNative, no quote awareness.   │
+ * │                                                                            │
+ * │  quotes                DRAFT ─ send ─▶ SENT ─┬─ accept ─▶ ACCEPTED        │
+ * │  (quotesWrites.ts)                    ▲      ├─ decline ─▶ DECLINED       │
+ * │                                        └recall┘                          │
+ * │                        (EXPIRED is derived on read, never stored)         │
+ * │                                                                            │
+ * │ EVERY `projectVersions` row may hold AT MOST ONE `quotes` row addressed   │
+ * │ by `(projectId, versionId)` (`by_projectId_versionId`) — the live         │
+ * │ version's OLDER revision-number lineage is the one exception, see below.  │
+ * │                                                                            │
+ * │  ┌──────────┐  sendNative({versionId:A})   ┌──────────┐                  │
+ * │  │ Version A│ ─────────────────────────────▶│ SENT (A) │                 │
+ * │  │(non-live)│                                └────┬─────┘                │
+ * │  └──────────┘                                     │ accept               │
+ * │                                                    ▼                     │
+ * │  ┌──────────┐  sendNative({versionId:B})   ┌──────────┐  makeLiveNative  │
+ * │  │ Version B│ ─────────────────────────────▶│ SENT (B) │  (B) — D20:     │
+ * │  │  (live)  │                                └──────────┘  accept COMPOSES│
+ * │  └──────────┘                                              make-live, NOT│
+ * │                                                              the other way│
+ * │ D19 — sending A and B are INDEPENDENT: SENT(A) and SENT(B) coexist,       │
+ * │ neither supersedes the other (cross-version supersede REMOVED — the      │
+ * │ pre-#1229 un-supersede-on-recall branch this echoes was already gone,    │
+ * │ verified, not reintroduced). "Quote two options" IS this diagram.        │
+ * │                                                                            │
+ * │ D20 — accepting ANY version's SENT quote:                                │
+ * │   1. if that version isn't live: performMakeLive(...) flips the pointer  │
+ * │      (`convex/lib/makeLiveCore.ts` — the SAME code `makeLiveNative` runs, │
+ * │      not a second implementation, R-3.1)                                 │
+ * │   2. quote -> ACCEPTED                                                   │
+ * │   3. EVERY OTHER open (SENT/EXPIRED) quote on the project, ACROSS EVERY   │
+ * │      version -> SUPERSEDED. At most one ACCEPTED per project, always.    │
+ * │                                                                            │
+ * │ D55/D56 — `pricingLocked` (on `projects`, LIVE version only) is raised by │
+ * │ sendNative and cleared by recallNative ONLY when the version being sent/  │
+ * │ recalled IS `project.liveVersionId` at that moment — quoting a           │
+ * │ speculative non-live option never freezes/unfreezes the live job's       │
+ * │ pricing. `quoteTargetsLiveVersion` (`convex/lib/quoteState.ts`) is the    │
+ * │ one check both sites use.                                                │
+ * │                                                                            │
+ * │ Re-send (recall -> send again) REUSES the same `quotes` row — status back │
+ * │ to SENT, the old PDF pushed onto `recalledPdfFileIds`, nothing            │
+ * │ superseded (#1027's existing recall/resend shape, unchanged by #1233).   │
+ * │                                                                            │
+ * │ The live version's OLDER revision-number lineage (`newVersionNative`,    │
+ * │ untouched by #1233): v1 SENT, "new version" opens v2 DRAFT — sending v2   │
+ * │ (still targeting the SAME live `projectVersions` row) supersedes v1, the  │
+ * │ one supersede-on-send case #1233 KEEPS (same-version, newer revision) —   │
+ * │ scoped by `targetVersionId` equality in `supersedeLiveQuotes`, not        │
+ * │ removed outright.                                                        │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ */
 
 /**
  * The real `projectVersions`-table verb set (#1229, Phase 3 of "Project
@@ -44,20 +98,6 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
-
-async function loadVersionInOrgProject(
-  ctx: MutationCtx,
-  versionId: string,
-  organizationId: string,
-  projectId: string,
-  fnName: string,
-): Promise<Doc<"projectVersions">> {
-  const version = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", versionId)).first();
-  if (!version || version.organizationId !== organizationId || version.projectId !== projectId) {
-    throw new ConvexError(`versions.${fnName}: version not found or cross-org/project: ${versionId}`);
-  }
-  return version;
-}
 
 /**
  * NEW VERSION (§4.4) — replaces `newVersionNative`/`saveVersionNative`/
@@ -147,39 +187,6 @@ export const createNative = mutation({
   },
 });
 
-/** Re-derive availability for `projectId`'s own gear when the rental window
- *  moved as part of a make-live (design §5.2) — reusing the existing board
- *  aggregation (`overbookingBoard.ts`) rather than a new check. Ported
- *  unchanged from the deleted `promoteRevisionNative`'s own
- *  `deriveDateMoveConflicts` (R-3.1: the "did the window move, and did that
- *  create a shortage" logic doesn't change just because the mutation that
- *  triggers it does). A no-op when the make-live didn't move either date. */
-async function deriveDateMoveConflicts(
-  ctx: MutationCtx,
-  organizationId: string,
-  projectId: string,
-  before: Pick<Doc<"projects">, "rentalStartDate" | "rentalEndDate" | "projectStartDate" | "projectEndDate">,
-  after: Doc<"projects">,
-): Promise<string[]> {
-  const beforeWindow = getProjectWindow(before);
-  const afterWindow = getProjectWindow(after);
-  const windowMoved = afterWindow.start !== beforeWindow.start || afterWindow.end !== beforeWindow.end;
-  if (!windowMoved || afterWindow.start == null || afterWindow.end == null) return [];
-
-  const window = { start: afterWindow.start, end: afterWindow.end };
-  const projectDocsById = await fetchCandidateProjects(ctx, organizationId, window.end);
-  projectDocsById.set(after.id, after);
-  const candidateProjects = candidateBoardProjects([...projectDocsById.values()], window);
-  const candidateProjectIds = candidateProjects.map((p) => p.id);
-  const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, organizationId, candidateProjectIds, projectDocsById);
-  const overbookingRows = computePromoteOverbookingConflicts(
-    projectId, window, candidateProjects, lineItems, models, assets, bulkAssetsForModels,
-  );
-  return overbookingRows.map(
-    (row) => `Moving the rental window created a shortage of ${row.qty} × ${row.modelName} (also booked on ${row.projectNumbers.join(", ")}).`,
-  );
-}
-
 /**
  * MAKE LIVE (§4.4/§4.8) — replaces `promoteRevisionNative`. A POINTER FLIP,
  * not a restore: nothing is overwritten, so there is no auto-capture step
@@ -195,25 +202,12 @@ async function deriveDateMoveConflicts(
  * │                                                                      │
  * │  1. permission check (project:update) — NO lock gate                │
  * │                                                                      │
- * │  2. outgoing = project.liveVersionId ; incoming = K                 │
- * │                                                                      │
- * │  3. carryRealityByLineage(outgoing -> incoming)                     │
- * │       for each outgoing line with units/checks/maintenance/threads: │
- * │         match by lineageId  ─▶ re-point reality onto incoming line  │
- * │                              (qty conflict? ─▶ listed, not blocked) │
- * │         no match            ─▶ new `unplanned` line on incoming,    │
- * │                                 reality re-pointed onto IT           │
- * │                                                                      │
- * │  4. swap plan fields (PLAN_FIELDS, convex/lib/versionPlanFields.ts): │
- * │       outgoing.projectVersions row  <- current `projects` fields    │
- * │       `projects` fields             <- incoming.projectVersions row │
- * │                                                                      │
- * │  5. project.liveVersionId = K                                       │
- * │                                                                      │
- * │  6. recalcProjectTotals(project)  -> writes projects.* (now reads   │
- * │       K's rows, since liveVersionId already points at K)            │
- * │     deriveDateMoveConflicts(before, after) -> availability/         │
- * │       overbooking re-check if the rental window moved               │
+ * │  2-6. performMakeLive (convex/lib/makeLiveCore.ts) — outgoing/       │
+ * │       incoming resolution, carryRealityByLineage, plan-field swap,   │
+ * │       liveVersionId flip, recalc + date-move conflict re-check.      │
+ * │       #1233 (Phase 6): the SAME steps `markAcceptedNative` runs when │
+ * │       accepting a non-live version's quote (D20) — extracted here so │
+ * │       there is exactly one implementation (R-3.1), not two.          │
  * └─────────────────────────────────────────────────────────────────────┘
  */
 export const makeLiveNative = mutation({
@@ -245,58 +239,13 @@ export const makeLiveNative = mutation({
       throw new ConvexError({ code: "TEMPLATE_NO_VERSIONS", message: "Templates don't have versions to make live." });
     }
 
-    const incoming = await loadVersionInOrgProject(ctx, versionId, organizationId, projectId, "makeLiveNative");
-    if (incoming.contentState !== "ready") {
-      throw new ConvexError({
-        code: "VERSION_NOT_READY",
-        message: `Version ${incoming.number} has no captured content — it can't be made live.`,
-      });
-    }
-
-    // Step 2.
-    const outgoingId = requireLiveVersionId(project);
-    if (outgoingId === versionId) {
-      throw new ConvexError({ code: "VERSION_ALREADY_LIVE", message: `Version ${incoming.number} is already live.` });
-    }
-    const outgoing = await loadVersionInOrgProject(ctx, outgoingId, organizationId, projectId, "makeLiveNative");
-
-    // Step 3.
-    const { conflicts, unplannedLineItemIds } = await carryRealityByLineage(ctx, {
-      organizationId, projectId, outgoingVersionId: outgoingId, incomingVersionId: versionId, now,
-    });
-
-    // Step 4 — the outgoing version's plan moves onto ITS OWN row (it was
-    // living on `projects` by virtue of being live); `projects` picks up the
-    // incoming version's plan.
-    await ctx.db.patch(outgoing._id, pickPlanFields(project));
-    await ctx.db.patch(project._id, { ...pickPlanFields(incoming), liveVersionId: versionId, updatedAt: now });
-
-    // Step 5 is the `liveVersionId` patch above.
-
-    // Step 6.
-    const taxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
-    await recalcProjectTotals(ctx, projectId, organizationId, taxRate, now);
-    const afterProject = await requireProjectInOrg(ctx, projectId, organizationId);
-    conflicts.push(...(await deriveDateMoveConflicts(ctx, organizationId, projectId, project, afterProject)));
-
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId,
-      action: "PROJECT_VERSION_MADE_LIVE",
-      entityType: "project",
-      entityId: projectId,
-      entityName: project.projectNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary:
-        `Made v${incoming.number} live (was v${outgoing.number})` +
-        (conflicts.length > 0 ? ` — ${conflicts.length} item(s) need manual review` : ""),
-      details: { fromVersionId: outgoingId, fromNumber: outgoing.number, toVersionId: versionId, toNumber: incoming.number, conflicts, unplannedLineItemIds },
-      projectId,
-      createdAt: now,
-    });
-
-    return { liveVersionId: versionId, previousLiveVersionId: outgoingId, conflicts, unplannedLineItemIds };
+    const result = await performMakeLive(ctx, { organizationId, projectId, project, versionId, actor, auditId, now });
+    return {
+      liveVersionId: result.liveVersionId,
+      previousLiveVersionId: result.previousLiveVersionId,
+      conflicts: result.conflicts,
+      unplannedLineItemIds: result.unplannedLineItemIds,
+    };
   },
 });
 

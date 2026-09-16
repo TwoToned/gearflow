@@ -152,9 +152,12 @@ pnpm exec convex deploy --preview-name "$(git rev-parse --abbrev-ref HEAD)" \
 ```
 
 `CONVEX_DEPLOY_KEY` must be a **preview** deploy key (Convex dashboard → Project
-Settings → Deploy keys → Preview). A preview key is structurally incapable of
-writing to prod or the shared dev deployment — the CLI rejects it — which is the
-real guarantee when unattended sessions share one credential. Do **not** set
+Settings → Deploy keys → Preview). By Convex's key scoping, a preview key reaches
+only preview deployments, never prod or the shared dev one — that scoping, not
+anyone's discipline, is what makes it safe for unattended sessions to share one
+credential. Never hand a session a prod key, and never run a bare
+`pnpm exec convex deploy` (no `--preview-name`): with a prod key in the
+environment that deploys to production. Do **not** set
 `CONVEX_DEPLOYMENT`: it pins every session to a single deployment and re-creates
 the collision a preview key exists to prevent.
 
@@ -162,10 +165,12 @@ Three things that are easy to get wrong:
 - `convex dev` has **no** preview flags. `--preview-run` is a *seed function
   name* on `convex deploy`, not a deployment name; the name flags are
   `--preview-name` / `--preview-create`.
-- Preview deployments start with **no environment variables**. Set
-  `CONVEX_AUTH_ISSUER` / `CONVEX_AUTH_JWKS_URL` as project-level defaults in the
-  dashboard, or auth is dead on every preview (`convex/auth.config.ts` reads them
-  at push time).
+- Preview deployments do **not** inherit the prod or dev deployment's environment
+  variables; they get the project-level defaults. `CONVEX_AUTH_ISSUER` /
+  `CONVEX_AUTH_JWKS_URL` are set as project defaults (verified 2026-09-16: a
+  fresh preview came up carrying both), which is what keeps auth alive on a
+  preview — `convex/auth.config.ts` reads them at push time. Clear those defaults
+  and every new preview is born with auth dead.
 - Previews auto-delete 5 days after creation (14 on paid plans) and count toward
   the team's deployment limit — relevant if you keep many worktrees alive.
 

@@ -150,15 +150,20 @@ export async function findQuoteForVersion(
 
 /**
  * #1233 — whether `quote` targets the project's CURRENT live version. A row
- * with no `versionId` stamped (every pre-#1233 row) targets the live version
- * by definition of the OLDER system this table used exclusively before this
- * phase — so `versionId == null` reads as "live", not "unknown".
+ * with no `versionId` stamped (every pre-#1233 row) falls back to the OLDER
+ * revision-number check (`version === projectLiveRevision(project)`) — NOT a
+ * blind "no versionId means live": a pre-#1233 row can be an OLDER, no-longer-
+ * live revision that `newVersionNative` has since moved past (the exact case
+ * D56 exists to get right — recalling that older revision must never unlock
+ * a job whose CURRENT live revision is a newer, still-SENT one), and it never
+ * got a `versionId` stamped because it predates this field entirely.
  */
 export function quoteTargetsLiveVersion(
-  quote: Pick<Doc<"quotes">, "versionId">,
-  project: Pick<Doc<"projects">, "liveVersionId">,
+  quote: Pick<Doc<"quotes">, "versionId" | "version">,
+  project: Pick<Doc<"projects">, "liveVersionId" | "revision" | "liveRevision">,
 ): boolean {
-  return quote.versionId == null || quote.versionId === project.liveVersionId;
+  if (quote.versionId != null) return quote.versionId === project.liveVersionId;
+  return quote.version === projectLiveRevision(project);
 }
 
 /** The revision the client is currently holding — the one `SENT`/`ACCEPTED` (or

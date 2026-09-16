@@ -570,24 +570,50 @@ describe("quotesWrites.recallNative", () => {
     expect((await getProject(t))?.pricingLocked).toBe(false);
   });
 
-  test("D56: recalling a SENT revision that is no longer the project's LIVE revision does NOT clear the lock", async () => {
+  test("D56: recalling a SENT quote whose version is no longer LIVE does NOT clear the lock (#1233)", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
-    await send(t); // v1 sent while it's the live revision — locks pricing
+    await send(t); // v1 sent while its version ("v-p1") is live — locks pricing, stamps versionId: "v-p1"
+    expect((await getProject(t))?.pricingLocked).toBe(true);
+    expect((await getQuotes(t)).find((q) => q.id === "q1")?.versionId).toBe("v-p1");
+
+    // A REAL make-live to a second version — the reachable #1233 way
+    // `liveVersionId` moves. v1's quote row is untouched, still SENT, but
+    // its `versionId` ("v-p1") is no longer the project's live version.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: "v-p1-b", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(project!._id, { liveVersionId: "v-p1-b" });
+    });
+
+    // v1 is still SENT (never superseded), so recallNative's status check
+    // still lets it through — but D56 must not clear the lock: "v-p1-b", not
+    // "v-p1", is the live version now.
+    await recall(t, { auditId: "a3", now: NOW + 2 });
+    expect((await getQuotes(t)).find((q) => q.id === "q1")?.status).toBe("DRAFT");
+    expect((await getProject(t))?.pricingLocked).toBe(true);
+  });
+
+  // Pre-#1233 rows (no `versionId` stamped) fall back to the OLDER
+  // revision-number check — the same scenario the deleted `promoteRevisionNative`
+  // used to be able to produce, preserved here as a back-compat proof that a
+  // legacy row without `versionId` still behaves exactly as it did before
+  // Phase 6 (`quoteTargetsLiveVersion`'s fallback branch, `quoteState.ts`).
+  test("D56 back-compat: a pre-#1233 row (no versionId) falls back to the revision-number check", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
     expect((await getProject(t))?.pricingLocked).toBe(true);
 
-    // Simulate a later promote moving `liveRevision` on to v2 (#1080/#1085)
-    // without going through another send — v1's quote row is untouched,
-    // still SENT, but is no longer the project's live revision.
     await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { versionId: undefined });
       const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       await ctx.db.patch(project!._id, { revision: 2, liveRevision: 2 });
     });
 
-    // v1 is still SENT (never superseded), so recallNative's status check
-    // still lets it through — but D56 must not clear the lock: v2, not v1,
-    // is the live revision now.
     await recall(t, { auditId: "a3", now: NOW + 2 });
     expect((await getQuotes(t)).find((q) => q.id === "q1")?.status).toBe("DRAFT");
     expect((await getProject(t))?.pricingLocked).toBe(true);
@@ -828,6 +854,171 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
 
     await expect(accept(t)).rejects.toThrow(/quote not found/i);
     await expect(decline(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
+// #1233 (Phase 6, parent #1221) — "quotes from any version". `seedProject`
+// seeds ONE version ("v-p1", live). These tests add a SECOND, non-live
+// version ("v-p1-b") with its own line item, so `sendNative({versionId})`
+// has real, distinguishable content to freeze from either target.
+describe("quotesWrites — #1233 Phase 6 (quotes from any version)", () => {
+  async function seedSecondVersion(t: ReturnType<typeof makeT>, orgId = ORG) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", {
+        id: "v-p1-b", organizationId: orgId, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1",
+      });
+      await ctx.db.insert("projectLineItems", {
+        id: "l2", organizationId: orgId, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        isKitChild: false, isOptional: false, description: "Budget PA", quantity: 1, unitPrice: 50, lineTotal: 50,
+        versionId: "v-p1-b", lineageId: "l2",
+      });
+    });
+  }
+
+  const sendVersion = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.sendNative, sendArgs(over) as never);
+
+  test("D19: two versions of one project hold SENT quotes simultaneously — neither supersedes the other", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await seedSecondVersion(t);
+
+    // Version A ("v-p1", live) — quote q1.
+    const resultA = await sendVersion(t, { id: "q1", versionId: "v-p1", auditId: "a1" });
+    expect(resultA.version).toBe(1);
+    // Version B ("v-p1-b", non-live) — quote q2, a DIFFERENT row.
+    const resultB = await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a2", now: NOW + 1 });
+    expect(resultB.version).toBe(2); // a fresh number off the same allocator
+
+    const quotes = await getQuotes(t);
+    const qA = quotes.find((q) => q.id === "q1");
+    const qB = quotes.find((q) => q.id === "q2");
+    expect(qA?.status).toBe("SENT");
+    expect(qB?.status).toBe("SENT"); // NOT superseded by qA
+    expect(qA?.versionId).toBe("v-p1");
+    expect(qB?.versionId).toBe("v-p1-b");
+
+    // Each froze ITS OWN version's line items, not the other's.
+    const snapA = qA?.snapshot as { lines: { description: string }[]; total: number };
+    const snapB = qB?.snapshot as { lines: { description: string }[]; total: number };
+    expect(snapA.lines.some((l) => l.description === "PA System")).toBe(true);
+    expect(snapA.lines.some((l) => l.description === "Budget PA")).toBe(false);
+    expect(snapB.lines.some((l) => l.description === "Budget PA")).toBe(true);
+    expect(snapB.lines.some((l) => l.description === "PA System")).toBe(false);
+    expect(snapB.total).toBe(50);
+  });
+
+  test("D55: sending the LIVE version locks pricing; sending a NON-live version does not", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await seedSecondVersion(t);
+
+    await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a1" });
+    expect((await getProject(t))?.pricingLocked).toBeFalsy();
+
+    await sendVersion(t, { id: "q1", versionId: "v-p1", auditId: "a2", now: NOW + 1 });
+    expect((await getProject(t))?.pricingLocked).toBe(true);
+  });
+
+  test("re-sending a version reuses its row: status back to SENT, old PDF pushed onto recalledPdfFileIds, nothing superseded", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await seedSecondVersion(t);
+
+    await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a1" });
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q2")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_old_1" });
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q2", organizationId: ORG, reason: "Fix a typo before resending", actor, auditId: "a2", now: NOW + 1,
+    });
+    let quotes = await getQuotes(t);
+    expect(quotes).toHaveLength(1); // same row, not a new one
+    expect(quotes.find((q) => q.id === "q2")?.status).toBe("DRAFT");
+    expect(quotes.find((q) => q.id === "q2")?.recalledPdfFileIds).toEqual(["storage_old_1"]);
+
+    await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a3", now: NOW + 2 });
+    quotes = await getQuotes(t);
+    expect(quotes).toHaveLength(1); // STILL the same row — reused, not a second one
+    const reused = quotes.find((q) => q.id === "q2");
+    expect(reused?.status).toBe("SENT");
+    expect(reused?.pdfFileId).toBeUndefined(); // cleared by recall; forces a fresh render
+    expect(reused?.recalledPdfFileIds).toEqual(["storage_old_1"]); // preserved, not erased
+  });
+
+  test("sendNative validates versionId against the project — cross-project version is rejected", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "RVLT-2026-0088", name: "Other Gig", status: "QUOTING", isTemplate: false, revision: 1, liveVersionId: "v-p2", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+
+    await expect(sendVersion(t, { id: "q1", versionId: "v-p2" })).rejects.toThrow();
+  });
+
+  describe("D20: accept = make live", () => {
+    const accept = (t: ReturnType<typeof makeT>, id: string, over: Partial<Record<string, unknown>> = {}) =>
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+        id, organizationId: ORG, actor, auditId: "acc1", now: NOW + 2, ...over,
+      } as never);
+
+    test("accepting a NON-live version's quote makes that version live", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await seedProject(t);
+      await seedSecondVersion(t);
+      await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a1" });
+
+      const result = await accept(t, "q2");
+      expect(result.madeLive).toBe(true);
+      expect((await getQuotes(t)).find((q) => q.id === "q2")?.status).toBe("ACCEPTED");
+
+      const project = await getProject(t);
+      expect(project?.liveVersionId).toBe("v-p1-b");
+      // The accepted version's own content ("Budget PA") is now what recalc
+      // priced onto the live project.
+      expect(project?.total).toBe(50);
+    });
+
+    test("accepting supersedes every OTHER open quote across every version — at most one ACCEPTED per project", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await seedProject(t);
+      await seedSecondVersion(t);
+      await sendVersion(t, { id: "q1", versionId: "v-p1", auditId: "a1" });
+      await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a2", now: NOW + 1 });
+
+      await accept(t, "q2");
+
+      const quotes = await getQuotes(t);
+      expect(quotes.find((q) => q.id === "q2")?.status).toBe("ACCEPTED");
+      expect(quotes.find((q) => q.id === "q1")?.status).toBe("SUPERSEDED");
+      expect(quotes.find((q) => q.id === "q1")?.supersededByQuoteId).toBe("q2");
+    });
+
+    test("accepting the ALREADY-live version's quote does not call make-live but still supersedes other open quotes", async () => {
+      const t = makeT();
+      await seedMember(t);
+      await seedProject(t);
+      await seedSecondVersion(t);
+      await sendVersion(t, { id: "q1", versionId: "v-p1", auditId: "a1" });
+      await sendVersion(t, { id: "q2", versionId: "v-p1-b", auditId: "a2", now: NOW + 1 });
+
+      const result = await accept(t, "q1");
+      expect(result.madeLive).toBe(false);
+      expect((await getProject(t))?.liveVersionId).toBe("v-p1");
+
+      const quotes = await getQuotes(t);
+      expect(quotes.find((q) => q.id === "q1")?.status).toBe("ACCEPTED");
+      expect(quotes.find((q) => q.id === "q2")?.status).toBe("SUPERSEDED");
+    });
   });
 });
 

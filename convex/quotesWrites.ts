@@ -1,4 +1,5 @@
 import { v, ConvexError } from "convex/values";
+import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -11,16 +12,21 @@ import { assertClientContactBelongsToClient, assertRefInOrg } from "./lib/orgRef
 import { requireCanUnlockPricing } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { buildFinanceLines } from "./lib/financeSnapshot";
-import { resolveOrgQuoteConfig } from "./lib/orgSettings";
+import { resolveOrgQuoteConfig, resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { computeValidUntil, startOfDayInTimezone, QUOTE_VALIDITY_BOUNDS } from "./lib/quoteDates";
+import { loadTotalsBundle, computeTotals } from "./lib/recalc";
+import { resolveWriteVersionId, requireLiveVersionId } from "./lib/versionScope";
+import { performMakeLive } from "./lib/makeLiveCore";
 import {
   effectiveQuoteStatus,
   findQuoteAtRevision,
+  findQuoteForVersion,
   isLiveQuoteStatus,
   listProjectQuotes,
   projectLiveRevision,
   projectRevision,
   quoteLabel,
+  quoteTargetsLiveVersion,
   requireProjectInOrg,
   requireQuoteInOrg,
   requireQuoteOwnerOnly,
@@ -60,21 +66,46 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * only for the live version's quote) — see `convex/lib/projectLocks.ts` and
  * FEATUREDOCS/76's Phase 4 section.
  *
+ * **#1233 Phase 6 note ("quotes from any version" — the payoff of the whole
+ * program).** `sendNative` now takes an optional `versionId` (a REAL
+ * `projectVersions` row id, Phase 1-3's table, not a revision number) and can
+ * target ANY version, live or not. Two versions of one project can hold
+ * `SENT` quotes SIMULTANEOUSLY — "quote two options" — because cross-version
+ * supersede is gone (D19); only a same-live-version newer revision (the OLDER
+ * `newVersionNative` draft-cutting lineage, unchanged) still supersedes.
+ * Accepting a NON-live version's quote now COMPOSES `versions.makeLiveNative`
+ * (via the shared `performMakeLive`, `convex/lib/makeLiveCore.ts`) — accept
+ * IS make-live, per D20 — and supersedes every other open quote ACROSS EVERY
+ * version, enforcing "at most one ACCEPTED per project". `pricingLocked`
+ * (D55/D56) keys off `quoteTargetsLiveVersion`, not the revision number, so
+ * quoting a speculative non-live option never freezes/unfreezes the live
+ * job's pricing. See `convex/versions.ts`'s ASCII state-machine diagram for
+ * the full picture — this file's own diagram above is the OLDER, still-valid
+ * revision-number-only view; the two compose via `quotes.versionId`.
+ *
  * Properties this file still guarantees, each with a test in
  * `quotesWrites.test.ts`:
  *
- * - **Exactly one quote row per `(projectId, revision)`** — `by_projectId_version`
- *   is the uniqueness guard.
- * - **At most one live (`SENT`/`ACCEPTED`) row** — the document the client is
- *   currently holding.
+ * - **At most one quote row per `(projectId, versionId)`** (Phase 6,
+ *   `by_projectId_versionId`) — the version-scoped uniqueness guard. The
+ *   OLDER **`(projectId, revision)`** guard (`by_projectId_version`) still
+ *   holds too, for the live version's own revision-number lineage.
+ * - **At most one live (`SENT`/`ACCEPTED`) row PER VERSION** — cross-version,
+ *   MULTIPLE live rows are now the whole point (D19).
+ * - **At most one `ACCEPTED` row per PROJECT, ever** (D20, Phase 6) — accepting
+ *   one supersedes every other open quote, across every version.
  * - **`projects.revision` is monotonic for any revision that was ever SENT** —
  *   never decremented, never reused. A recalled-then-re-sent revision keeps
- *   its number.
- * - **Supersede fires on SEND, not on draft.** v1 stays `SENT` while v2 is a
- *   draft, so cutting a draft never invalidates the client's document. That is
- *   the difference between version control and a delete button. (Recall no
- *   longer un-supersedes a displaced revision on the way back — #1229 Phase 3
- *   removed that branch; see `recallNative`'s own comment.)
+ *   its number. Phase 6 also allocates from it for a non-live version's FIRST
+ *   send (there is no `newVersionNative`-style draft-opening step for a
+ *   non-live target) — see `prepareSend`.
+ * - **Supersede fires on SEND, not on draft, and only WITHIN the same target
+ *   version.** v1 stays `SENT` while v2 is a draft FOR THE SAME (live)
+ *   version, so cutting a draft never invalidates the client's document —
+ *   that's the difference between version control and a delete button.
+ *   Sending version B never supersedes version A's quote (D19). (Recall no
+ *   longer un-supersedes a displaced revision on the way back either —
+ *   #1229 Phase 3 removed that branch; see `recallNative`'s own comment.)
  *
  * Every mutation takes the standard 4-guard browser-direct shape
  * (FEATUREDOCS/54): `assertWritesEnabled`, `enforceBrowserWriteLimit`,
@@ -170,38 +201,90 @@ function assertQuoteStatusIs(
   });
 }
 
-/** The money snapshot frozen onto a revision at send. Built entirely server-side
- *  from `buildFinanceLines` + the project's recalc-owned totals (R-9.3). */
+/**
+ * The money snapshot frozen onto a revision at send. Built entirely
+ * server-side from `buildFinanceLines` + a freshly-computed totals bundle
+ * (R-9.3) — **never** the LIVE `project.subtotal`/`total`/etc fields
+ * directly, because those describe the LIVE version only (`recalc.ts`'s
+ * file-header comment) and this snapshot may be for a NON-live `versionId`
+ * (#1233, Phase 6).
+ *
+ * For the LIVE version this is byte-identical to reading `project.*`
+ * directly — `loadTotalsBundle`/`computeTotals` are PROVEN (the differential
+ * test, `convex/recalcSplit.differential.test.ts`) to compute exactly what
+ * `recalcProjectTotals` already persisted — so this is a value-neutral
+ * hardening for the live case (the snapshot no longer depends on nothing
+ * having changed `projects.*` between the last recalc and this send) and the
+ * CORRECTNESS fix for the non-live case (that version's own discount/tax,
+ * via `resolveEffectiveProjectForVersion`, not the live version's).
+ */
 async function buildQuoteSnapshot(
   ctx: MutationCtx,
   project: Doc<"projects">,
   notes: string | undefined,
+  versionId: string,
 ): Promise<Record<string, unknown>> {
-  const lines = await buildFinanceLines(ctx, project.id, project.organizationId);
+  const orgId = project.organizationId;
+  const lines = await buildFinanceLines(ctx, project.id, orgId, versionId);
+  const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
+  const bundle = await loadTotalsBundle(ctx, project.id, orgId, orgDefaultTaxRate, versionId);
+  // `bundle` is only null when the project itself has vanished mid-transaction
+  // — unreachable in practice (prepareSend already loaded the same project a
+  // moment earlier, inside the same mutation), but this is the freeze moment
+  // for a client-facing document, so fail toward an all-zero snapshot rather
+  // than letting `computeTotals` see a null bundle.
+  if (!bundle) {
+    return { lines, subtotal: 0, discountPercent: 0, discountAmount: 0, taxRate: null, taxAmount: 0, total: 0, notes: notes ?? null };
+  }
+  const totals = computeTotals(bundle);
   return {
     lines,
-    subtotal: Number(project.subtotal) || 0,
-    discountPercent: Number(project.discountPercent) || 0,
-    discountAmount: Number(project.discountAmount) || 0,
-    taxRate: project.taxRate != null ? Number(project.taxRate) : null,
-    taxAmount: Number(project.taxAmount) || 0,
-    total: Number(project.total) || 0,
+    subtotal: totals.subtotal,
+    discountPercent: Number(bundle.project.discountPercent) || 0,
+    discountAmount: totals.discountAmount,
+    taxRate: bundle.project.taxRate != null ? Number(bundle.project.taxRate) : null,
+    taxAmount: totals.taxAmount,
+    total: totals.total,
     notes: notes ?? null,
   };
 }
 
 /**
  * Everything `sendNative` must establish before it starts writing: the project is
- * real, in-org, not a template, not hard-locked; the recipient (if any) belongs to
- * this project's client; the current revision has an editable draft (or none yet);
- * and the client-minted id isn't a duplicate. Split out of the handler so the
- * write path reads as a straight line (R-3.6).
+ * real, in-org, not a template, not hard-locked; the target version is real and
+ * ready; the recipient (if any) belongs to this project's client; the target
+ * has an editable draft (or none yet); and the client-minted id isn't a
+ * duplicate. Split out of the handler so the write path reads as a straight
+ * line (R-3.6).
+ *
+ * #1233 (Phase 6) — the addressing key is now the TARGET VERSION
+ * (`targetVersionId`, resolved/validated via `resolveWriteVersionId`, default
+ * live), not a bare revision number. Two branches:
+ *
+ * - **Live target** — byte-identical to the pre-Phase-6 behaviour: the row a
+ *   send freezes is whichever revision is `projectLiveRevision(project)` (see
+ *   the #1080/#1097 note kept below), found via `findQuoteAtRevision`. A row
+ *   sent before this phase has no `versionId` yet — it is still found here
+ *   and gets one stamped by `sendNative` on this very send.
+ * - **Non-live target** — addressed by `findQuoteForVersion` instead (no
+ *   revision-number lineage exists for a version that was never live). A
+ *   first-ever send for this version allocates a FRESH number off the SAME
+ *   `projects.revision` allocator `newVersionNative` uses ("the highest
+ *   version number ever handed out") — see `sendNative`'s own bump.
  */
 async function prepareSend(
   ctx: MutationCtx,
-  args: { organizationId: string; projectId: string; id: string; recipientContactId?: string; now: number },
-): Promise<{ project: Doc<"projects">; revision: number; label: string; existing: Doc<"quotes"> | null; quoteId: string }> {
-  const { organizationId, projectId, id, recipientContactId, now } = args;
+  args: { organizationId: string; projectId: string; id: string; recipientContactId?: string; versionId?: string; now: number },
+): Promise<{
+  project: Doc<"projects">;
+  revision: number;
+  label: string;
+  existing: Doc<"quotes"> | null;
+  quoteId: string;
+  targetVersionId: string;
+  isLive: boolean;
+}> {
+  const { organizationId, projectId, id, recipientContactId, versionId, now } = args;
 
   await assertRefInOrg(ctx, "projects", projectId, organizationId);
   const project = await requireProjectInOrg(ctx, projectId, organizationId);
@@ -214,6 +297,13 @@ async function prepareSend(
   // not the act of sending what's already there. (This is also the mutation
   // that RAISES the lock — see sendNative's own D55 note below.)
 
+  // #1233 — validated against `project` (same org/project, contentState
+  // "ready") the same way every other CREATE call site on the versioned plan
+  // tables validates a caller-supplied `versionId` — a send landing on a
+  // foreign project's version would be a persisted, IDOR-shaped bug.
+  const targetVersionId = await resolveWriteVersionId(ctx, project, versionId);
+  const isLive = targetVersionId === requireLiveVersionId(project);
+
   // The recipient must belong to THIS project's client — otherwise a caller could
   // stamp another client's contact onto the revision and leak their PII onto the
   // document (the same check the project's own contact picker makes).
@@ -224,22 +314,32 @@ async function prepareSend(
     await assertClientContactBelongsToClient(ctx, recipientContactId, project.clientId, organizationId);
   }
 
-  // #1080/#1097 — the row a send freezes is whichever revision is LIVE, not
-  // necessarily the allocator's high-water mark: the OLDER `promoteRevisionNative`
-  // (deleted in #1229 Phase 3) could point `liveRevision` at an older number
-  // while `revision` stayed ahead of it, and a project promoted under that
-  // now-gone mutation may still carry a decoupled pair. `newVersionNative`
-  // already keys off `liveRevision` for the same reason — this keeps
-  // `sendNative` in line so such a row still sends the right revision rather
-  // than silently targeting the wrong one.
-  const revision = projectLiveRevision(project);
+  let revision: number;
+  let existing: Doc<"quotes"> | null;
+  if (isLive) {
+    // #1080/#1097 — the row a send freezes is whichever revision is LIVE, not
+    // necessarily the allocator's high-water mark: the OLDER `promoteRevisionNative`
+    // (deleted in #1229 Phase 3) could point `liveRevision` at an older number
+    // while `revision` stayed ahead of it, and a project promoted under that
+    // now-gone mutation may still carry a decoupled pair. `newVersionNative`
+    // already keys off `liveRevision` for the same reason — this keeps
+    // `sendNative` in line so such a row still sends the right revision rather
+    // than silently targeting the wrong one.
+    revision = projectLiveRevision(project);
+    existing = await findQuoteAtRevision(ctx, organizationId, projectId, revision);
+  } else {
+    existing = await findQuoteForVersion(ctx, organizationId, projectId, targetVersionId);
+    revision = existing ? existing.version : projectRevision(project) + 1;
+  }
+
   const label = quoteLabel(project.projectNumber, revision);
-  const existing = await findQuoteAtRevision(ctx, organizationId, projectId, revision);
   if (existing) {
     if (effectiveQuoteStatus(existing, now) !== "DRAFT") {
       throw new ConvexError({
         code: "QUOTE_ALREADY_SENT",
-        message: `${label} has already been sent. Create v${revision + 1} to change it.`,
+        message: isLive
+          ? `${label} has already been sent. Create v${revision + 1} to change it.`
+          : `${label} has already been sent. Recall it first to make changes.`,
       });
     }
   } else {
@@ -248,21 +348,40 @@ async function prepareSend(
     if (dup) throw new ConvexError({ code: "DUPLICATE", message: "Quote already exists" });
   }
 
-  return { project, revision, label, existing, quoteId: existing?.id ?? id };
+  return { project, revision, label, existing, quoteId: existing?.id ?? id, targetVersionId, isLive };
 }
 
-/** Supersede-on-SEND (never on draft): whatever the client was holding stops
- *  being the current document the moment a newer revision goes out. */
+/**
+ * Supersede-on-SEND (never on draft): whatever the client was holding for
+ * THIS TARGET VERSION stops being the current document the moment a newer
+ * revision of it goes out. #1233 (D19) — scoped to `targetVersionId`: sending
+ * version B never supersedes version A's quote (cross-version supersede is
+ * gone), but a same-live-version newer revision (the OLDER `newVersionNative`
+ * draft-cutting lineage) still supersedes exactly as before.
+ *
+ * A pre-Phase-6 row with no `versionId` stamped only ever counts as "same
+ * version as `targetVersionId`" when the target IS live AND the old row's
+ * OWN revision-number check (`quoteTargetsLiveVersion`) says it currently
+ * targets live too — NOT a blind "no versionId means live", which would
+ * wrongly supersede an older, already-past revision the live lineage has
+ * since moved beyond (the same care `recallNative`'s D56 check takes).
+ */
 async function supersedeLiveQuotes(
   ctx: MutationCtx,
   orgId: string,
   projectId: string,
   keepQuoteId: string,
+  targetVersionId: string,
+  project: Doc<"projects">,
   now: number,
 ): Promise<void> {
+  const targetIsLive = targetVersionId === requireLiveVersionId(project);
   for (const other of await listProjectQuotes(ctx, orgId, projectId)) {
     if (other.id === keepQuoteId) continue;
     if (!isLiveQuoteStatus(effectiveQuoteStatus(other, now))) continue;
+    const otherTargetsSameVersion =
+      other.versionId != null ? other.versionId === targetVersionId : targetIsLive && quoteTargetsLiveVersion(other, project);
+    if (!otherTargetsSameVersion) continue;
     await ctx.db.patch(other._id, { status: "SUPERSEDED", supersededByQuoteId: keepQuoteId, updatedAt: now });
   }
 }
@@ -303,20 +422,25 @@ export const sendNative = mutation({
      *  question about what the other options were. Ignored (never stamped)
      *  when the revision has no `label` set — there is nothing to print. */
     labelOnDocument: v.optional(v.boolean()),
+    /** #1233 (Phase 6) — the REAL `projectVersions` row to quote from.
+     *  Additive-only: omitted ⇒ the project's live version, byte-identical
+     *  to every pre-Phase-6 call site. Validated against `project` (same
+     *  org/project, `contentState: "ready"`) inside `prepareSend`. */
+    versionId: v.optional(v.string()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
   handler: async (ctx, args) => {
-    const { id, organizationId, projectId, quoteDate, validityDays, recipientContactId, notes, labelOnDocument, auditId, now } = args;
+    const { id, organizationId, projectId, quoteDate, validityDays, recipientContactId, notes, labelOnDocument, versionId, auditId, now } = args;
     const actor = await guardQuoteWrite(ctx, organizationId, args.actor);
 
     assertStrLen(notes, "notes", NOTES_BOUNDS);
     assertNumRange(quoteDate, "quoteDate", DATE_BOUNDS);
     assertNumRange(validityDays, "validityDays", { ...QUOTE_VALIDITY_BOUNDS, integer: true });
 
-    const { project, revision, label, existing, quoteId } = await prepareSend(ctx, {
-      organizationId, projectId, id, recipientContactId, now,
+    const { project, revision, label, existing, quoteId, targetVersionId, isLive } = await prepareSend(ctx, {
+      organizationId, projectId, id, recipientContactId, versionId, now,
     });
 
     const config = await resolveOrgQuoteConfig(ctx, organizationId);
@@ -326,20 +450,22 @@ export const sendNative = mutation({
     const stampedQuoteDate = startOfDayInTimezone(quoteDate, config.timezone);
     const validUntil = computeValidUntil(stampedQuoteDate, days, config.timezone);
 
-    const snapshot = await buildQuoteSnapshot(ctx, project, notes);
+    const snapshot = await buildQuoteSnapshot(ctx, project, notes, targetVersionId);
     const snapshotId = await captureProjectSnapshot(ctx, {
       orgId: organizationId, project, reason: "QUOTE_SENT", revision, actor, now,
     });
-    await supersedeLiveQuotes(ctx, organizationId, projectId, quoteId, now);
+    // #1233 (D19) — scoped to `targetVersionId`: sending version B never
+    // supersedes version A's quote. A same-LIVE-version newer revision (the
+    // OLDER `newVersionNative` draft-cutting lineage) still supersedes.
+    await supersedeLiveQuotes(ctx, organizationId, projectId, quoteId, targetVersionId, project, now);
 
-    // D55 (#1230) — sets the lock only when the version it sends IS the live
-    // one. `revision` above is ALWAYS `projectLiveRevision(project)` (see
-    // `prepareSend`) — sendNative has no way to send anything else yet — so
-    // this fires on every successful send. Idempotent: a resend of an
+    // #1233 (was: "not is this the FIRST send", now: "is TARGET VERSION the
+    // LIVE one"), per D55 — sending a NON-live (speculative) version's quote
+    // must never freeze the live job's pricing. Idempotent: a resend of an
     // already-locked project leaves `pricingLockedAt`/`pricingLockedById`
     // untouched (D57 — status/quote events only ever RAISE the flag; only a
     // person clears it via `unlockPricingNative`).
-    if (project.pricingLocked !== true) {
+    if (isLive && project.pricingLocked !== true) {
       await ctx.db.patch(project._id, {
         pricingLocked: true,
         pricingLockedAt: now,
@@ -352,6 +478,11 @@ export const sendNative = mutation({
       status: "SENT" as const,
       snapshot,
       snapshotId,
+      // #1233 — stamped on EVERY send (new row or reused-on-resend), so a
+      // pre-Phase-6 row gets backfilled the moment it's next sent, and
+      // `quoteTargetsLiveVersion`/`findQuoteForVersion` always have a real
+      // value to read going forward.
+      versionId: targetVersionId,
       quoteDate: stampedQuoteDate,
       validUntil,
       validityDays: days,
@@ -373,6 +504,24 @@ export const sendNative = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, sendFields);
     } else {
+      // #1233 — a brand-new row for a NON-live target's first-ever send
+      // consumes a fresh number off the SAME allocator `newVersionNative`
+      // uses ("the highest version number ever handed out") — bump it so a
+      // later live-lineage `newVersionNative` call never collides with it.
+      // The live-target branch never reaches here with a number ahead of
+      // `projects.revision` (see `prepareSend`), so this is a no-op then.
+      //
+      // Pin `liveRevision` EXPLICITLY at its current resolved value before
+      // bumping `revision` out from under it: `projectLiveRevision` falls
+      // back to `revision` whenever `liveRevision` is absent, so bumping the
+      // shared allocator for a NON-live send would otherwise silently shift
+      // what the LIVE branch resolves "the live revision" to on ITS OWN next
+      // first-ever send — a real collision (proven by
+      // `quotesWrites.test.ts`'s "D55: sending the LIVE version locks
+      // pricing; sending a NON-live version does not").
+      if (!isLive && revision > projectRevision(project)) {
+        await ctx.db.patch(project._id, { revision, liveRevision: projectLiveRevision(project), updatedAt: now });
+      }
       await ctx.db.insert("quotes", {
         id: quoteId,
         organizationId,
@@ -393,8 +542,8 @@ export const sendNative = mutation({
       entityName: label,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Sent quote ${label}`,
-      details: { version: revision, quoteDate: stampedQuoteDate, validUntil, total: snapshot.total },
+      summary: `Sent quote ${label}${isLive ? "" : " (non-live version)"}`,
+      details: { version: revision, versionId: targetVersionId, isLive, quoteDate: stampedQuoteDate, validUntil, total: snapshot.total },
       projectId,
       createdAt: now,
     });
@@ -467,11 +616,13 @@ export const recallNative = mutation({
       updatedAt: now,
     });
 
-    // D56 (#1230) — the mirror of sendNative's D55: clears the lock only for
-    // the LIVE version's quote. Recalling an older, already-superseded-past
-    // revision (v1 still SENT while `newVersionNative` has since moved
-    // `liveRevision` to v2) must never unlock the live job.
-    const clearedPricingLock = quote.version === projectLiveRevision(project) && project.pricingLocked === true;
+    // D56 (#1230, generalised #1233) — the mirror of sendNative's D55: clears
+    // the lock only for the LIVE VERSION's quote (`quoteTargetsLiveVersion`,
+    // versionId-aware with a revision-number fallback for pre-#1233 rows).
+    // Recalling an older, already-superseded-past revision (v1 still SENT
+    // while `newVersionNative` has since moved `liveRevision` to v2), or a
+    // NON-live version's own quote, must never unlock the live job.
+    const clearedPricingLock = quoteTargetsLiveVersion(quote, project) && project.pricingLocked === true;
     if (clearedPricingLock) {
       await ctx.db.patch(project._id, {
         pricingLocked: false,
@@ -832,9 +983,39 @@ export const deleteRecalledNative = mutation({
  * ACCEPT — `SENT → ACCEPTED`, the thing that unblocks `CONFIRMED`
  * (`projectWrites.updateStatusNative`). An EXPIRED revision cannot be accepted:
  * the client's window closed, and re-sending is the honest way to reopen it.
+ *
+ * **#1233 (Phase 6, D20) — accept = make live.** Accepting a NON-live
+ * version's quote first composes `performMakeLive` (`convex/lib/
+ * makeLiveCore.ts` — the SAME pointer-flip code `versions.makeLiveNative`
+ * runs, not a second implementation) to flip `projects.liveVersionId` onto
+ * that version, THEN marks the quote accepted, THEN supersedes every other
+ * OPEN (SENT/EXPIRED) quote on the project ACROSS EVERY version — enforcing
+ * "at most one ACCEPTED per project, ever". Accepting the ALREADY-live
+ * version's quote skips the make-live step (a no-op pointer flip would only
+ * throw `VERSION_ALREADY_LIVE`) but still runs the cross-version supersede.
+ *
+ * **Confirmation-gate note (CLAUDE.md's agent/API rubric)** — `markAcceptedNative`
+ * is already `danger: "high"` (see `agentOps` below), so the API dispatcher
+ * already requires `confirm: true` before ANY call reaches this mutation.
+ * Composing `performMakeLive` (itself `danger: "high"` as a standalone
+ * operation) inside an ALREADY-gated `danger: "high"` call does not need a
+ * SECOND confirmation layer — the one human confirmation on the accept call
+ * covers both effects (they happen atomically, in the same transaction, as
+ * one irreversible-feeling action from the caller's point of view). No
+ * separate `agentOps` note is added for this composition; flagged here
+ * instead, in the one place the composition happens.
  */
 export const markAcceptedNative = mutation({
-  returns: v.object({ id: v.string(), version: v.number(), offerStatusChange: offerValidator }),
+  returns: v.object({
+    id: v.string(),
+    version: v.number(),
+    offerStatusChange: offerValidator,
+    madeLive: v.boolean(),
+    /** `performMakeLive`'s own conflicts list (D6's "list, don't block" —
+     *  same shape `versions.makeLiveNative` returns) when accepting made a
+     *  version live. Empty when the accepted version was already live. */
+    conflicts: v.array(v.string()),
+  }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -859,6 +1040,30 @@ export const markAcceptedNative = mutation({
     const config = await resolveOrgQuoteConfig(ctx, organizationId);
     const stampedAcceptedAt = startOfDayInTimezone(acceptedAt ?? now, config.timezone);
 
+    // D20 — accept-of-a-non-live-version's quote makes that version live
+    // FIRST, so everything downstream (the activity log, the caller's
+    // refetch) already sees the flip. `quote.versionId` is absent on a
+    // pre-#1233 row, which by construction always targeted the live version
+    // (the OLDER system had no other kind of quote) — nothing to flip then.
+    const quoteVersionId = quote.versionId ?? requireLiveVersionId(project);
+    const madeLive = quoteVersionId !== requireLiveVersionId(project);
+    let conflicts: string[] = [];
+    if (madeLive) {
+      const result = await performMakeLive(ctx, {
+        organizationId,
+        projectId: project.id,
+        project,
+        versionId: quoteVersionId,
+        actor,
+        // A FRESH id — this is a second, distinct activity-log entry from the
+        // accept entry below, not a reuse of the caller's own `auditId`.
+        auditId: createId(),
+        now,
+        summaryPrefix: `Accepted ${label} — made`,
+      });
+      conflicts = result.conflicts;
+    }
+
     await ctx.db.patch(quote._id, {
       status: "ACCEPTED",
       acceptedAt: stampedAcceptedAt,
@@ -866,6 +1071,19 @@ export const markAcceptedNative = mutation({
       acceptanceRef: acceptanceRef?.trim() || undefined,
       updatedAt: now,
     });
+
+    // D20 — at most one ACCEPTED per project, ever: every OTHER open
+    // (SENT/EXPIRED) quote on the project, ACROSS EVERY version, is
+    // superseded the moment one is accepted. Unlike `sendNative`'s own
+    // supersede (D19, same-version only), this one is deliberately
+    // cross-version — accepting IS the decision between the options quoted.
+    let supersededCount = 0;
+    for (const other of await listProjectQuotes(ctx, organizationId, project.id)) {
+      if (other.id === quote.id) continue;
+      if (!isLiveQuoteStatus(effectiveQuoteStatus(other, now))) continue;
+      await ctx.db.patch(other._id, { status: "SUPERSEDED", supersededByQuoteId: quote.id, updatedAt: now });
+      supersededCount += 1;
+    }
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -876,8 +1094,8 @@ export const markAcceptedNative = mutation({
       entityName: label,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Marked quote ${label} accepted`,
-      details: { version: quote.version, acceptedAt: stampedAcceptedAt, acceptanceRef: acceptanceRef ?? null },
+      summary: `Marked quote ${label} accepted${madeLive ? " (made its version live)" : ""}${supersededCount > 0 ? ` — superseded ${supersededCount} other open quote(s)` : ""}`,
+      details: { version: quote.version, versionId: quoteVersionId, madeLive, supersededCount, acceptedAt: stampedAcceptedAt, acceptanceRef: acceptanceRef ?? null },
       projectId: project.id,
       createdAt: now,
     });
@@ -886,6 +1104,8 @@ export const markAcceptedNative = mutation({
       id: quote.id,
       version: quote.version,
       offerStatusChange: ACCEPT_OFFERS_CONFIRMED_FROM.has(project.status ?? "") ? ("CONFIRMED" as const) : null,
+      madeLive,
+      conflicts,
     };
   },
 });

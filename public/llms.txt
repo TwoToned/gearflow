@@ -457,8 +457,6 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectTasksWrites.createNative` (mutation, scope: project:update)
 - `projectTasksWrites.deleteNative` (mutation, scope: project:update)
 - `projectTasksWrites.updateNative` (mutation, scope: project:update)
-- `projectVersionsEquipment.bundle` (query, scope: project:read)
-- `projectVersionsRead.listVersions` (query, scope: project:read)
 - `projectWrites.archiveNative` (mutation, scope: project:update)
 - `projectWrites.createNative` (mutation, scope: project:create)
 - `projectWrites.deleteNative` (mutation, scope: project:delete)
@@ -475,6 +473,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `versions.deleteNative` (mutation, scope: project:update)
 - `versions.makeLiveNative` (mutation, scope: project:update)
 - `versions.setLabelNative` (mutation, scope: project:update)
+- `versionsRead.getVersion` (query, scope: project:read)
+- `versionsRead.listForProject` (query, scope: project:read)
 - `warehouseDetail.bundle` (query, scope: project:read)
 
 ### reports

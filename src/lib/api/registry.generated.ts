@@ -42480,90 +42480,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "projectVersionsEquipment.bundle",
-    "module": "projectVersionsEquipment",
-    "fn": "bundle",
-    "kind": "query",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "projectId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "snapshotId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "61511c17783376ef",
-    "returnsSha": "b85ce482b7f4f88b",
-    "stability": "tracks-app",
-    "summary": "Assemble a captured version's Equipment tab bundle (categories/groups/line items/sub-hires) for read-only rendering.",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectVersionsRead.listVersions",
-    "module": "projectVersionsRead",
-    "fn": "listVersions",
-    "kind": "query",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "now",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "projectId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "8f3456c860a78207",
-    "returnsSha": "9a8c3234cbac91e4",
-    "stability": "tracks-app",
-    "summary": "List a project's versions with state, date and total for the switcher.",
-    "danger": "low",
-    "mcpTier": 1,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "projectVersionsWrites.materializeVersionRowsNative",
     "module": "projectVersionsWrites",
     "fn": "materializeVersionRowsNative",
@@ -55989,6 +55905,85 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": "Rename a version's internal label.",
     "danger": "low",
     "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versionsRead.getVersion",
+    "module": "versionsRead",
+    "fn": "getVersion",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8749a3b1e4e406bf",
+    "returnsSha": "ce781a64bde92909",
+    "stability": "tracks-app",
+    "summary": "Read one project version's plan-field snapshot, for viewing a non-live version's dates/pricing terms.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versionsRead.listForProject",
+    "module": "versionsRead",
+    "fn": "listForProject",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "30c9f4ff58edef6c",
+    "returnsSha": "af782f4230cd2190",
+    "stability": "tracks-app",
+    "summary": "List a project's versions (number, label, live, content state) for the version switcher/panel.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },

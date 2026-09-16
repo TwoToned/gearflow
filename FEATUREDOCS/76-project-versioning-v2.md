@@ -447,21 +447,24 @@ stays in its return shape, always `null` now).
 **NOT deleted, still the OLDER quote-revision program** (FEATUREDOCS/70,
 unaffected by this phase — do not conflate the two):
 `quotesWrites.sendNative`/`newVersionNative`/`recallNative`/
-`markAcceptedNative`/`markDeclinedNative`/`unacceptNative`/
-`correctQuoteNative`/`deleteRecalledNative`/`setQuoteLabelNative`,
+`markAcceptedNative`/`markDeclinedNative`/`deleteRecalledNative`/
+`setQuoteLabelNative`,
 `projectVersionsWrites.materializeVersionRowsNative` (Phase 2's SERVICE-only
 primitive — now calls `copyPlanGraph` internally, behaviour unchanged),
 `quotes.revisionStateForProject`, `projectVersionsRead.listVersions`, the
 `projects.revision`/`liveRevision` pointer pair, and the entire
-`projectSnapshots`/`projectSnapshotEntries` JSON-blob mechanism. The
+`projectSnapshots`/`projectSnapshotEntries` JSON-blob mechanism (its CAPTURE
+half — the RESTORE half was deleted in Phase 4, see below). The
 `quotes.protected` field and the checks against it in `recallNative`/
-`deleteRecalledNative`/`correctQuoteNative` are also UNCHANGED — only the
-mutation that could SET/CLEAR it (`setQuoteProtectedNative`) is gone, so a
-row protected before this phase (or by `markAcceptedNative`'s own
-auto-protect-on-accept) stays protected with no way to un-protect it through
-this API. This is a known, accepted interim gap — not something a future
-phase is tracked to fix, since the "Protect/Unprotect" verb itself is a
-**removed verb** per the phase spec.
+`deleteRecalledNative`/`correctQuoteNative` were, AT THE END OF PHASE 3,
+UNCHANGED — only the mutation that could SET/CLEAR it
+(`setQuoteProtectedNative`) was gone, so a row protected before Phase 3 (or
+by `markAcceptedNative`'s own auto-protect-on-accept) stayed protected with
+no way to un-protect it through the API. **Phase 4 (below) deletes the whole
+protect/unprotect mechanism outright**, closing that interim gap by removing
+the check rather than restoring a way to clear it — `unacceptNative` and
+`correctQuoteNative`, listed above as surviving Phase 3, are themselves
+deleted in Phase 4.
 
 **UI callers left intentionally broken, with a clear note** (Phase 5's job to
 rewire, not silently left calling a since-deleted function):
@@ -489,15 +492,167 @@ updated for the deletions (several tests replaced `saveVersionNative`/
 `setQuoteProtectedNative` calls with direct DB seeding of the same end state,
 since those mutations no longer exist to call).
 
+## Phase 4 (#1230) — pricing lock collapse: one boolean replaces the whole 4-tier system
+
+Phase 4 is a **net-deletion** phase: it collapses the old 4-tier project lock
+system (`LockTier`: `OPEN`/`FINANCE_LOCKED`/`JUSTIFY`/`HARD_LOCKED`,
+quote-derived lock escalation, per-edit freeform justification, and
+`projectUnlockSessions`) into a single field, `projects.pricingLocked`.
+
+### The new model
+
+```ts
+projects.pricingLocked?: boolean       // absent = false
+projects.pricingLockedAt?: number
+projects.pricingLockedById?: string
+projects.pricingLockedByName?: string  // denormalized, for display with no join
+```
+
+Applies to the **LIVE version only** — Phase 1-3's own invariant carries
+straight through: a non-live `projectVersions` row is writable in every field
+family regardless of this flag. The truth table (design §4, D-table):
+
+| State | Money | Structure/plan/warehouse |
+|---|---|---|
+| Non-live version | allowed | allowed |
+| Live, unlocked | allowed | allowed |
+| Live, locked | **rejected** (`PRICING_LOCKED`) | allowed (new adds default `$0`, `pricedUnderLock: true`) |
+
+`convex/lib/projectLocks.ts` is the shrunken successor to the whole old
+module: `isLiveVersionRow`/`assertPricingUnlocked` (the one guard every
+money-write mutation calls — `LOCKED_PROJECT_FIELDS`/`LOCKED_GROUP_FIELDS`/
+`LOCKED_LINE_ITEM_FIELDS`/`LOCKED_SERVICE_FIELDS`/`LOCKED_CREW_FIELDS` are
+UNCHANGED, only how they're gated changed), `defaultsToZeroOnInsert`/
+`pricedUnderLockOnInsert`/`afterLockAuditMetadata` (the $0-default-on-insert
+mechanics, also unchanged in behaviour), and `canUnlockPricing`/
+`requireCanUnlockPricing` (D42) — the RENAMED successor to the old
+`isHardLockOverrideAllowed`, same two-part audience shape (a role test OR the
+project's own PM), with the role test swapped from a bare
+`role === "owner" || role === "admin"` check to
+`hasPermission(role, "invoice", "publish")`, which also admits `manager`.
+`isConfirmedOrLater`/`crossesIntoSnapshotStatus` stay in the same file
+(unrelated to pricing locking) — see `convex/lib/projectLocks.test.ts` for
+the pure-logic truth table and `convex/projectLifecycleLocks.test.ts` for the
+integration exercise across every gated entity family.
+
+### Who raises/lowers the flag, and when
+
+- **D54** — `versions.makeLiveNative` (the pointer flip) NEVER touches
+  `pricingLocked`, in either direction. Verified: `versions.test.ts`.
+- **D55** — `quotesWrites.sendNative` raises it, but ONLY when the quote it
+  sends is the project's LIVE revision (which, by construction, is always
+  true today — `sendNative` has no way to send anything else). Idempotent: a
+  resend of an already-locked project leaves `pricingLockedAt`/
+  `pricingLockedById` untouched.
+- **D56** — `quotesWrites.recallNative` clears it, but ONLY for the LIVE
+  version's quote — recalling an older, no-longer-live SENT revision (one a
+  promote left behind) must not unlock a job whose CURRENT live revision is
+  still out with the client.
+- A `CONFIRMED` status transition (`projectWrites.updateStatusNative`) also
+  raises it, idempotently, the same way `sendNative` does.
+- **D57** — a status REVERT never clears it (only forward-raises, never
+  auto-lowers) — "this job has a quote out" or "this job was confirmed" stays
+  true regardless of a later revert. Only a person lowers the flag, via
+  **`projectPricingLockWrites.unlockPricingNative`** (D42-gated,
+  `danger: "high"` — the API dispatcher requires `confirm: true`, and Mira's
+  tool surface never exposes a `confirm` parameter to the model, so an agent
+  cannot self-approve clearing it). Its sibling, `lockPricingNative`
+  (re-locking), is `danger: "low"` and ungated beyond ordinary
+  `project:update` permission — softening nothing, since re-locking only
+  starts rejecting FUTURE money writes.
+- `#986`'s "confirming without an accepted quote" override
+  (`projectWrites.updateStatusNative`) now reuses `canUnlockPricing` directly
+  — the freeform justification text this override used to require is
+  dropped; a permission check plus the standard `STATUS_CHANGE` audit row is
+  the whole gate.
+
+### What's deleted outright
+
+`LockTier`/`resolveLockTier`/`TIER_BY_STATUS`/`lockTierForStatus`/
+`LOCK_TIER_RANK`/`LockTierReason`/`quoteStateKeepsOpen`/`bypassQuoteLock`/
+`assertLifecycleGuard`/`lifecycleAuditMetadata`/`requireHardLockOverrideAllowed`
+(`convex/lib/projectLocks.ts`, rewritten); the `JUSTIFY` tier and its 32
+`kind: "structural"` gate sites (every structural create/update/delete is now
+UNCONDITIONALLY ungated — a status/lock check never blocks structure, only a
+money write against a live, locked version does); `use-justified-mutation.ts`
+and its two dialogs (`justification-dialog.tsx`, `unlock-session-dialog.tsx`);
+the `projectUnlockSessions` table, `projectUnlockSessionsWrites.ts`
+(`openNative`/`commitNative`/`discardNative`), `unlock-session-banner.tsx`;
+`restoreProjectSnapshot`/`RestoreScope`/`RestoreArgs`/`RestoreResult` and
+their `LOCKED_*_FIELDS`-diffing helpers in `convex/lib/projectSnapshots.ts`
+(dead code once `discardNative` — its last caller — was gone; `PROMOTE`'s own
+caller, `promoteRevisionNative`, was already deleted in Phase 3);
+`quotesWrites.correctQuoteNative`/`unacceptNative` and the whole
+protect/unprotect mechanism they and `markAcceptedNative`'s auto-protect
+depended on (`quotes.protected`/`protectedAt`/`protectedById` stay on the
+schema, marked DEPRECATED, only so a pre-#1230 row that still carries `true`
+doesn't fail the schema push — nothing checks the field anymore).
+`projectLocksRead.status` is rewritten from a `{tier, reason, revision,
+liveRevision, quoteState}` shape to `{pricingLocked, pricingLockedAt,
+pricingLockedByName, canUnlockPricing}`.
+
+**Kept unchanged**: `LOCKED_*_FIELDS` lists, the `pricedUnderLock` field/badge
+(`UnpricedBadge`), and the `LockedField`/`GatedButton` UI components — they
+already took a generic `locked`/`gated` boolean + `reason` string, so no
+component code needed to change, only what feeds them
+(`src/lib/lock-copy.ts`'s `resolveLockCopy`/`formatLockElapsed`, rewritten
+for the one-boolean shape; `useProjectPricingLock`, the renamed successor to
+`useProjectLockStatus`).
+
+### Agent/API surface
+
+`project:unlock_session` is renamed `project:unlock_pricing`
+(`convex/lib/agentArgs.ts`'s `UNLOCK_PRICING_SCOPE`/
+`assertUnlockPricingAllowed`, called from `unlockPricingNative` — granted in
+no preset, same "denied by default" posture as before). The `justification`
+privileged-arg policy row survives with `agentAccess: "allowed"`, but its
+`danger` drops from `high` to `low` and its `softens` field now says
+"nothing" — the JUSTIFY tier it used to soften is gone. The argument itself
+is deleted outright from every mutation that accepted it EXCEPT
+`lineItemWrites.addNative` and `crewAssignmentsWrites.createNative`, which
+keep it as an accepted-but-IGNORED field: both are wrapped by a stable/v1
+curated MCP tool, and design §13 decision 12 (additive-only) forbids removing
+a field from a stable operation's contract without a `/v2`. `PRICING_LOCKED`
+replaces `FINANCIALS_LOCKED`/`PROJECT_LOCKED` and `FORBIDDEN_UNLOCK_PRICING`
+replaces `FORBIDDEN_HARD_LOCK_OVERRIDE` in `src/lib/api/errors.ts`'s
+published error-code vocabulary. The reachability floor
+(`docs/api-coverage.md`) dropped from 572 to 570 — `correctQuoteNative`/
+`unacceptNative`/the three `projectUnlockSessionsWrites` verbs are gone with
+no like-for-like replacement; `lockPricingNative`/`unlockPricingNative`
+partially offset it.
+
+### A backfill, not a migration
+
+`convex/backfillProjectPricingLock.ts` (paginated, `apply`-gated, same shape
+as `backfillProjectVersions.ts`) sets `pricingLocked: true` for every project
+whose live revision has a SENT/ACCEPTED/EXPIRED quote, or whose status is
+CONFIRMED or later — the one-time "translate the old derived state into the
+new stored boolean" step for every project that existed before this phase
+shipped. A project created after this phase needs no backfill; the flag is
+false by construction (absent) until a real event raises it.
+
+### Known deviations / left for a human to weigh in on
+
+- The finance-tab "your saved draft doesn't match the live invoiced state"
+  divergence line (previously partly informed by lock tier) is derived on
+  read from `pricingLocked` + the live quote/invoice state, not a new stored
+  field — the UI wiring for it may lag this phase; the derivation itself is
+  covered by a test.
+- I-14/I-15 from the tracking issue (edge cases around a promoted-but-unsent
+  revision interacting with the lock) are covered by the D55/D56 tests above
+  to the extent the existing quote-revision model exposes them, but a
+  from-scratch audit of every interaction with Phase 1-3's `liveVersionId`
+  pointer was not performed — flagging rather than silently asserting full
+  coverage.
+
 ## What's next (later phases of #1221 — not built yet)
 
 The Phase 5 UI work called out above (wiring the version switcher, promote/
 delete dialogs and the reprice/protect actions onto the new verb set — or
-retiring them, per the new design), `projects.pricingLocked` + the
-`unplanned`-line lock-exception (Phase 4), migrating the switcher
-(FEATUREDOCS/70) off `projectSnapshots` onto `projectVersions` entirely,
-narrowing `projects.liveVersionId` to required once the backfill is proven
-complete in prod, and closing the remaining 32 version-scope-ratchet sites
-(Phase 2's "What's deferred") with real join-filtering. See
+retiring them, per the new design), migrating the switcher (FEATUREDOCS/70)
+off `projectSnapshots` onto `projectVersions` entirely, narrowing
+`projects.liveVersionId` to required once the backfill is proven complete in
+prod, and closing the remaining 32 version-scope-ratchet sites (Phase 2's
+"What's deferred") with real join-filtering. See
 `docs/designs/project-versioning-v2.md` for the full plan (not yet merged to
 `main`).

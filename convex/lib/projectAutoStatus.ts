@@ -9,7 +9,7 @@ import { captureProjectSnapshot } from "./projectSnapshots";
 import { hasAcceptedQuote } from "./quoteState";
 import { resolveAutoStatusEnabled, type AutoStatusSettingKey } from "./orgSettings";
 import { assertWritesEnabled } from "./writeGuard";
-import { requireLiveVersionId, liveRows } from "./versionScope";
+import { requireLiveVersionId } from "./versionScope";
 
 /**
  * Project status automation (#1160) — the ONE place a job's status moves on its

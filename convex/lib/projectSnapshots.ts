@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { liveRows, requireLiveVersionId } from "./versionScope";
+import { liveRows } from "./versionScope";
 
 /**
  * Whole-project snapshot CAPTURE (#792). Storage is PARENT ROW

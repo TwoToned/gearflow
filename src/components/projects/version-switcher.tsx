@@ -270,13 +270,16 @@ interface ProjectVersionSwitcherProps {
  * total, switches `?v=`, and now — the part that used to be Finance-tab-only
  * or entirely unwired — lets you act on a version without leaving the header:
  *
- * - **Add version** (footer) — `saveVersionNative`, reachable from ANY live
- *   state including a never-sent draft. This is the fix for "can't make v2
- *   unless v1's quote is sent": that block was `newVersionNative`
- *   (`project-quote-rail.tsx`'s "Create quote v{N+1}"), which exists for a
- *   different job — the sanctioned exit from a quote-sent lock — and is left
- *   untouched here (R-3.1: two mutations, two distinct jobs, not one merged
- *   into the other).
+ * - **Add version** (footer) — calls `use-project-version-writes.ts`'s
+ *   `saveVersion`, reachable from ANY live state including a never-sent
+ *   draft. This is the fix for "can't make v2 unless v1's quote is sent":
+ *   that block was `newVersionNative` (`project-quote-rail.tsx`'s "Create
+ *   quote v{N+1}"), which exists for a different job — the sanctioned exit
+ *   from a quote-sent lock — and is left untouched here (R-3.1: two
+ *   mutations, two distinct jobs, not one merged into the other). NOTE
+ *   (#1229 Phase 3): the underlying `saveVersionNative` mutation was
+ *   deleted, superseded by `versions.createNative` — `saveVersion` currently
+ *   throws until this dialog is rewired in Phase 5.
  * - **Make live…** — the same `PromoteVersionDialog` `VersionReadOnlyBar` and
  *   `ProjectQuoteRail` already open (one dialog, three entry points now).
  * - **Send quote…** — the same `SendQuoteDialog` the rail uses, only ever

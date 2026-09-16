@@ -44,11 +44,7 @@ export function useQuoteWrites() {
   const acceptM = useMutation(api.quotesWrites.markAcceptedNative);
   const unacceptM = useMutation(api.quotesWrites.unacceptNative);
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
-  const repriceFromRevisionM = useMutation(api.quotesWrites.repriceFromRevisionNative);
-  const deleteDraftM = useMutation(api.quotesWrites.deleteDraftNative);
-  const deleteVersionM = useMutation(api.quotesWrites.deleteVersionNative);
   const deleteRecalledM = useMutation(api.quotesWrites.deleteRecalledNative);
-  const setProtectedM = useMutation(api.quotesWrites.setQuoteProtectedNative);
   const setLabelM = useMutation(api.quotesWrites.setQuoteLabelNative);
   const correctM = useMutation(api.quotesWrites.correctQuoteNative);
 
@@ -187,52 +183,43 @@ export function useQuoteWrites() {
       });
     },
 
-    /** "Use v2's pricing for v4" (#989 §8.1) — cut the next draft revision
-     *  seeded with an earlier revision's money fields. Structure (gear,
-     *  quantities, dates) is untouched. */
+    /**
+     * #1229 Phase 3 note: "reprice from revision" was one of the three
+     * overlapping "create a version" mutations (`repriceFromRevisionNative`)
+     * collapsed into `versions.createNative` on the real `projectVersions`
+     * table (`convex/versions.ts`) — this quote-row-based verb no longer
+     * exists server-side. Left as a clear, throwing stub (rather than a
+     * removed method + broken call site) so `reprice-from-revision-dialog.tsx`
+     * still compiles: it already catches and toasts this error. Rewiring the
+     * dialog onto `versions.createNative` is Phase 5's UI work.
+     */
     repriceFromRevision: async (
-      projectId: string,
-      sourceQuoteId: string,
+      _projectId: string,
+      _sourceQuoteId: string,
     ): Promise<{ id: string; version: number; sourceVersion: number }> => {
-      const org = requireOrg();
-      return await repriceFromRevisionM({
-        id: createId(),
-        organizationId: org,
-        projectId,
-        sourceQuoteId,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
+      throw new Error(
+        "Reprice from revision is temporarily unavailable — project versioning has moved to the new versions.* mutations (#1229) and this action's UI hasn't been rebuilt on them yet.",
+      );
     },
 
-    /** Undo a fat-fingered "new version" (#1028) — only reachable for a DRAFT
-     *  that has never been sent; the server rejects anything with send history
-     *  (that's `deleteRecalled` below). Rolls `projects.revision` back. */
-    deleteDraft: async (quoteId: string): Promise<{ id: string; deletedVersion: number; revision: number }> => {
-      const org = requireOrg();
-      return await deleteDraftM({
-        id: quoteId,
-        organizationId: org,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
+    /**
+     * #1229 Phase 3 note: `deleteDraftNative`/`deleteVersionNative` (the
+     * quote-row-based "delete a version" verbs) were deleted, replaced by
+     * `versions.deleteNative` on the real `projectVersions` table. Left as
+     * clear, throwing stubs — see `repriceFromRevision`'s comment above for
+     * why — so `delete-version-dialog.tsx` still compiles.
+     */
+    deleteDraft: async (_quoteId: string): Promise<{ id: string; deletedVersion: number; revision: number }> => {
+      throw new Error(
+        "Deleting a draft version is temporarily unavailable — project versioning has moved to the new versions.* mutations (#1229) and this action's UI hasn't been rebuilt on them yet.",
+      );
     },
 
-    /** Delete a saved-but-never-sent version (#1080/#1097) — the version-list
-     *  counterpart to `deleteDraft` above for a NON-live never-sent row (one
-     *  `saveVersion`/an auto-capture left behind). Touches neither
-     *  `revision` nor `liveRevision`. */
-    deleteVersion: async (quoteId: string): Promise<{ id: string; deletedVersion: number }> => {
-      const org = requireOrg();
-      return await deleteVersionM({
-        id: quoteId,
-        organizationId: org,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
+    /** See `deleteDraft`'s comment immediately above. */
+    deleteVersion: async (_quoteId: string): Promise<{ id: string; deletedVersion: number }> => {
+      throw new Error(
+        "Deleting a saved version is temporarily unavailable — project versioning has moved to the new versions.* mutations (#1229) and this action's UI hasn't been rebuilt on them yet.",
+      );
     },
 
     /** Rename a version's internal label from the row (#1080/#1097) — never a
@@ -273,21 +260,21 @@ export function useQuoteWrites() {
       });
     },
 
-    /** Protect/unprotect (#1030) — owner-only soft lock independent of quote
-     *  status. While protected, Recall and Correction both refuse. */
-    setProtected: async (
-      quoteId: string,
-      protect: boolean,
-    ): Promise<{ id: string; version: number; protected: boolean }> => {
-      const org = requireOrg();
-      return await setProtectedM({
-        id: quoteId,
-        organizationId: org,
-        protect,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
+    /**
+     * #1229 Phase 3 note: Protect/Unprotect (`setQuoteProtectedNative`) was a
+     * "Removed verb" per the phase spec — deleted, no replacement. The
+     * `protected` field and the checks against it in Recall/Correction/
+     * recall-then-delete are UNCHANGED (still enforced on any row that
+     * already has it set), so a row protected before this phase — or by
+     * `markAcceptedNative`'s own auto-protect-on-accept — stays protected;
+     * there is just no longer a way to toggle it through this API. Left as a
+     * clear, throwing stub so `project-quote-rail.tsx`'s protect toggle still
+     * compiles — see `repriceFromRevision`'s comment above for the pattern.
+     */
+    setProtected: async (_quoteId: string, _protect: boolean): Promise<{ id: string; version: number; protected: boolean }> => {
+      throw new Error(
+        "Protecting/unprotecting a quote is no longer available — this verb was retired in #1229 Phase 3. An accepted quote's protection clears automatically when it's unaccepted.",
+      );
     },
 
     /** Correction (#1031) — an audited fix to the date PRINTED on a SENT/

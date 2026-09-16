@@ -39,8 +39,9 @@ interface SendQuoteDialogProps {
   /** The revision this send will freeze — `projects.revision` before the send. */
   revision: number;
   /** #1080/#1097 — the outgoing draft's internal label, if one was set (via
-   *  "Rename version" on the row, or carried over from `saveVersionNative`).
-   *  Drives the "print this label on the document" checkbox below. */
+   *  "Rename version" on the row, or set at create time — `saveVersionNative`,
+   *  which used to offer that, was deleted in #1229 Phase 3). Drives the
+   *  "print this label on the document" checkbox below. */
   currentLabel?: string;
   subtotal: number | null;
   taxAmount: number | null;

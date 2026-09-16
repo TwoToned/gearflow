@@ -752,7 +752,11 @@ function QuoteRevisionRow({
   const flags = quoteRowFlags(quote);
   // Promotable = a non-live revision with captured state — not restricted to
   // SENT/ACCEPTED (a DECLINED or SUPERSEDED revision can still be made live
-  // again, same precondition `promoteRevisionNative` enforces server-side).
+  // again). NOTE (#1229 Phase 3): the server-side mutation this UI action
+  // calls (`use-project-version-writes.ts`'s `promoteRevision`) currently
+  // throws — `promoteRevisionNative` was deleted, superseded by
+  // `versions.makeLiveNative`, and this dialog's Phase 5 rewiring hasn't
+  // landed yet.
   const canPromote = !isLive && quote.snapshotId != null;
 
   return (

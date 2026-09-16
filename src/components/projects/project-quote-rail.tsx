@@ -24,9 +24,10 @@ import { diffSnapshotEntries, type SnapshotEntryLike } from "@/lib/project-snaps
 import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { quoteStatusIntent, intentToBadgeStatus } from "@/lib/status-colors";
+import { quoteStatusIntent, intentToBadgeStatus, intentStyles, intentBorderClass } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
 import { useCanDo, useIsOwner } from "@/lib/use-permissions";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -77,6 +78,48 @@ interface QuoteRevisionDoc {
   /** #1080/#1097 — internal name for the version, editable from the row.
    *  Printed on the document only when `labelOnDocument` was stamped at send. */
   label?: string;
+  /** #1233 (Phase 6) — the REAL `projectVersions` row this revision's snapshot
+   *  was built from. Absent on every pre-#1233 row (treated as targeting the
+   *  live version, same fallback `convex/lib/quoteState.ts` uses server-side).
+   *  Used only to resolve a project-version "v{N}" tag for display — never to
+   *  gate a verb, which stays keyed on `effectiveStatus` exactly as before. */
+  versionId?: string;
+}
+
+/** A single project version, the subset `ProjectQuoteRail` needs for display
+ *  and for targeting a send (#1233 Phase 6 UI follow-up). Mirrors
+ *  `ProjectVersionSummary` (`project-version-context.tsx`) rather than
+ *  importing it directly, so this file doesn't have to know about the
+ *  context's full shape (R-3.6) — the one caller that has a real
+ *  `ProjectVersionSummary` (`ProjectFinancePanel`) narrows it down. Not
+ *  exported — only used inside this file; `QuoteRailVersionContext` below
+ *  (which IS exported, `ProjectFinancePanel` builds one) carries the same
+ *  shape out to callers structurally, so a second exported name for it would
+ *  be redundant (R-4.2 — knip flags an unused exported type). */
+interface QuoteRailProjectVersion {
+  id: string;
+  number: number;
+  label?: string;
+}
+
+/**
+ * #1233 (Phase 6) UI follow-up — threaded down by the ONE caller under
+ * `ProjectVersionProvider` that needs it (`ProjectFinancePanel`, the Finance
+ * tab). `undefined` (every other embed site: the Overview tab's `QuoteCard`/
+ * `QuoteManagerDialog`) behaves EXACTLY like `{ versions: [], viewing: null }`
+ * — always targets the live version, byte-identical to every pre-follow-up
+ * caller. FEATUREDOCS/76: Overview is deliberately live-only, same as every
+ * other Overview card, so it doesn't opt in.
+ */
+export interface QuoteRailVersionContext {
+  /** Every real `projectVersions` row for the project (live + non-live) —
+   *  used only to resolve a quote's own `versionId` to a human "v{N}" so a
+   *  second SENT quote on another version is never ambiguous with THIS row's
+   *  own quote-revision number (a different counter — FEATUREDOCS/76's "two
+   *  numbering schemes" note). */
+  versions: QuoteRailProjectVersion[];
+  /** Non-null only while the page is viewing a NON-live version. */
+  viewing: QuoteRailProjectVersion | null;
 }
 
 /** The lineage subset of an invoice this rail needs (#1080/#1097) — `sourceRevision`
@@ -112,6 +155,8 @@ interface ProjectQuoteRailProps {
    *  the parent (`ProjectFinancePanel` already queries `invoices.listForProject`
    *  for its own ledger) and passed down rather than a second query (R-3.1). */
   invoices?: InvoiceLineageDoc[];
+  /** #1233 (Phase 6) UI follow-up — see `QuoteRailVersionContext`'s own doc. */
+  versionContext?: QuoteRailVersionContext;
 }
 
 /** The quote row at `liveRevision`, if any — pulled out to a plain function
@@ -121,13 +166,78 @@ function findLiveQuote(quotes: QuoteRevisionDoc[], liveRevision: number): QuoteR
   return quotes.find((q) => q.version === liveRevision) ?? null;
 }
 
+interface QuoteRailDerivedVersionState {
+  viewingVersion: QuoteRailProjectVersion | null;
+  allProjectVersions: QuoteRailProjectVersion[];
+  /** The viewed version's OWN quote row, if any (Phase 6's `quotes.versionId`). */
+  viewedVersionQuote: QuoteRevisionDoc | null;
+  /** Mirrors `assertSendTargetIsWritable` server-side exactly
+   *  (`convex/quotesWrites.ts`): writable only when there's no existing row
+   *  for the target version, or that row is still a DRAFT — computed here so
+   *  the header never offers a click the server would just reject. */
+  viewedVersionQuoteWritable: boolean;
+  sendCurrentLabel: string | undefined;
+  /** #1233 (D19) — count of quotes currently SENT/EXPIRED/ACCEPTED, across
+   *  every version. `quotes` already lists EVERY row regardless of target
+   *  version (R-3.1 — no new query), so nothing is hidden by construction;
+   *  this only drives whether `MultipleVersionsQuotedNotice` renders. */
+  outWithClientCount: number;
+}
+
+/**
+ * #1233 (Phase 6) UI follow-up — every version-aware derived value
+ * `ProjectQuoteRail` needs, computed in ONE place so the component's own body
+ * stays a straight line of prop-passing (R-3.6 — the same reason
+ * `findLiveQuote`/`quoteRowFlags` are already standalone functions in this
+ * file rather than inlined into the component, which was already at its
+ * complexity budget before this follow-up).
+ */
+/** #1233 — the viewed version's own quote row, if any, plus whether a send
+ *  targeting it is writable. Split out purely to keep
+ *  `resolveQuoteRailVersionState` (and transitively `ProjectQuoteRail`)
+ *  within complexity budget (R-3.6). Mirrors `assertSendTargetIsWritable`
+ *  server-side exactly (`convex/quotesWrites.ts`) — writable only when
+ *  there's no existing row for the target version, or that row is still a
+ *  DRAFT — so the header never offers a click the server would just reject. */
+function resolveViewedVersionQuote(
+  quotes: QuoteRevisionDoc[],
+  viewingVersion: QuoteRailProjectVersion | null,
+): { quote: QuoteRevisionDoc | null; writable: boolean } {
+  if (!viewingVersion) return { quote: null, writable: false };
+  const quote = quotes.find((q) => q.versionId === viewingVersion.id) ?? null;
+  return { quote, writable: quote == null || quote.effectiveStatus === "DRAFT" };
+}
+
+/** #1233 (D19) — count of quotes currently SENT/EXPIRED/ACCEPTED, across
+ *  every version. Split out for the same complexity-budget reason as
+ *  `resolveViewedVersionQuote` above. */
+function countOutWithClientQuotes(quotes: QuoteRevisionDoc[]): number {
+  return quotes.filter((q) => {
+    const flags = quoteRowFlags(q);
+    return flags.isHeldByClient || flags.isAccepted;
+  }).length;
+}
+
+function resolveQuoteRailVersionState(
+  quotes: QuoteRevisionDoc[],
+  versionContext: QuoteRailVersionContext | undefined,
+  liveQuoteForPromote: QuoteRevisionDoc | null,
+): QuoteRailDerivedVersionState {
+  const viewingVersion = versionContext?.viewing ?? null;
+  const allProjectVersions = versionContext?.versions ?? [];
+  const { quote: viewedVersionQuote, writable: viewedVersionQuoteWritable } = resolveViewedVersionQuote(quotes, viewingVersion);
+  const sendCurrentLabel = viewingVersion ? (viewedVersionQuote?.label ?? viewingVersion.label) : liveQuoteForPromote?.label;
+  const outWithClientCount = countOutWithClientQuotes(quotes);
+  return { viewingVersion, allProjectVersions, viewedVersionQuote, viewedVersionQuoteWritable, sendCurrentLabel, outWithClientCount };
+}
+
 /** Every embed site (`ProjectFinancePanel`, `QuoteManagerDialog`) must assign a
  *  client before rendering `<ProjectQuoteRail>` — checked at the call site
  *  rather than inside the rail itself, which is already at its complexity
  *  budget (R-3.6). Shared here so the message can't drift between sites. */
 export const ASSIGN_CLIENT_FOR_QUOTES_MESSAGE = "Assign a client to this project to generate quotes.";
 
-export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total, invoices }: ProjectQuoteRailProps) {
+export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total, invoices, versionContext }: ProjectQuoteRailProps) {
   // Frozen at mount: `now` only drives the DERIVED expiry read, and a value that
   // changed every render would re-subscribe the queries on every render.
   const [now] = useState(() => Date.now());
@@ -162,6 +272,18 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   const hiddenCount = quotes.length - visibleQuotes.length;
   const liveQuoteForPromote = findLiveQuote(quotes, liveRevision);
 
+  // #1233 (Phase 6) UI follow-up — `viewingVersion` is non-null ONLY while
+  // the Finance tab is showing a non-live `projectVersions` row (threaded in
+  // via `versionContext`; every other embed site omits it, so this is always
+  // null there — see `QuoteRailVersionContext`'s own doc).
+  const {
+    viewingVersion,
+    allProjectVersions,
+    viewedVersionQuoteWritable,
+    sendCurrentLabel,
+    outWithClientCount,
+  } = resolveQuoteRailVersionState(quotes, versionContext, liveQuoteForPromote);
+
   return (
     <div className="space-y-2">
       <QuoteRailHeader
@@ -171,7 +293,11 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         onSend={() => setSendOpen(true)}
         onCreateNextVersion={() => newVersionMutation.mutate(undefined)}
         creatingNextVersion={newVersionMutation.isPending}
+        viewingVersion={viewingVersion}
+        viewedVersionQuoteWritable={viewedVersionQuoteWritable}
       />
+
+      <MultipleVersionsQuotedNotice count={outWithClientCount} />
 
       {orgId && (
         <InlineQuoteDrift
@@ -200,6 +326,7 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         invoices={invoices}
         projectId={projectId}
         now={now}
+        allProjectVersions={allProjectVersions}
         onAccept={setAcceptTarget}
         onDecline={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
         onRecall={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
@@ -231,11 +358,12 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         orgId={orgId}
         clientId={clientId}
         revision={liveRevision}
-        currentLabel={liveQuoteForPromote?.label}
+        currentLabel={sendCurrentLabel}
         subtotal={subtotal}
         taxAmount={taxAmount}
         total={total}
         projectStatus={projectStatus}
+        targetVersion={viewingVersion}
       />
 
       <QuoteRailTargetDialogs
@@ -251,6 +379,23 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   );
 }
 
+/**
+ * #1233 (Phase 6) UI follow-up — while viewing a non-live version
+ * (`viewingVersion` non-null), the header offers exactly one thing: send
+ * THAT version's own quote, labelled unambiguously with the PROJECT version
+ * number ("Send v{N}'s quote") rather than the quote-revision "v{N}" the live
+ * branch below uses — the two are different counters (FEATUREDOCS/76's "two
+ * numbering schemes" note), and reusing the same word for both here is
+ * exactly the ambiguity a version-aware label exists to avoid. The live-only
+ * "Create quote v{revision+1}" verb doesn't apply to a specific non-live
+ * version at all (there's no per-version revision lineage to advance — see
+ * `versions.createNative`/the Versions panel for how a NEW `projectVersions`
+ * row gets made), so it's never offered here. When the viewed version
+ * already has a non-draft quote (SENT/ACCEPTED/…), no button is shown at all
+ * — the row's own actions (Recall, Accept, Decline) are the way forward, the
+ * same way the live branch relies on row actions once nothing is "the open
+ * draft" left to send.
+ */
 function QuoteRailHeader({
   revision,
   liveRevision,
@@ -258,6 +403,8 @@ function QuoteRailHeader({
   onSend,
   onCreateNextVersion,
   creatingNextVersion,
+  viewingVersion,
+  viewedVersionQuoteWritable,
 }: {
   revision: number;
   liveRevision: number;
@@ -265,12 +412,20 @@ function QuoteRailHeader({
   onSend: () => void;
   onCreateNextVersion: () => void;
   creatingNextVersion: boolean;
+  viewingVersion: QuoteRailProjectVersion | null;
+  viewedVersionQuoteWritable: boolean;
 }) {
   return (
     <div className="flex items-center justify-between">
       <h3 className="t-overline text-fg-3">Quote</h3>
       <CanDo resource="invoice" action="publish">
-        {hasOpenDraft ? (
+        {viewingVersion ? (
+          viewedVersionQuoteWritable && (
+            <Button type="button" variant="line" size="sm" onClick={onSend}>
+              <Send className="h-3.5 w-3.5" /> Send v{viewingVersion.number}&rsquo;s quote
+            </Button>
+          )
+        ) : hasOpenDraft ? (
           // #1080/#1097 — sends whatever is LIVE, not necessarily the
           // allocator's high-water mark (a promote can leave them apart).
           <Button type="button" variant="line" size="sm" onClick={onSend}>
@@ -282,6 +437,32 @@ function QuoteRailHeader({
           </Button>
         )}
       </CanDo>
+    </div>
+  );
+}
+
+/** #1233 (D19) — cross-version visibility banner: `quotes` already lists
+ *  every quote row for the project regardless of target version (project-
+ *  scoped, not version-scoped, R-3.1 — no new query), so nothing is hidden
+ *  by construction; this only makes "more than one is out with the client
+ *  right now" impossible to miss by scanning the list. Same visual language
+ *  as `VersionStrip`'s own info state (`intentStyles`/`intentBorderClass`). */
+function MultipleVersionsQuotedNotice({ count }: { count: number }) {
+  if (count <= 1) return null;
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-[var(--radius)] border-l-[3px] px-3 py-2 text-sm",
+        intentBorderClass("info"),
+        intentStyles.info.bg,
+        intentStyles.info.text,
+      )}
+    >
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span>
+        {count} quotes are currently with the client at once, across different versions of this project — sending one
+        version&rsquo;s quote never cancels another&rsquo;s (see the version tag on each row below).
+      </span>
     </div>
   );
 }
@@ -358,6 +539,7 @@ function QuoteRevisionList({
   invoices,
   projectId,
   now,
+  allProjectVersions,
   onAccept,
   onDecline,
   onRecall,
@@ -375,6 +557,10 @@ function QuoteRevisionList({
   invoices?: InvoiceLineageDoc[];
   projectId: string;
   now: number;
+  /** #1233 — every real `projectVersions` row, for the per-row "v{N}" tag
+   *  (`RevisionMeta`). Empty when the caller didn't opt in (Overview) — the
+   *  tag then never renders, same as today. */
+  allProjectVersions: QuoteRailProjectVersion[];
   onAccept: (quote: QuoteRevisionDoc) => void;
   onDecline: (quote: QuoteRevisionDoc) => void;
   onRecall: (quote: QuoteRevisionDoc) => void;
@@ -395,6 +581,7 @@ function QuoteRevisionList({
             isLive={quote.version === liveRevision}
             invoicesForVersion={invoices?.filter((inv) => inv.sourceRevision === quote.version) ?? []}
             projectId={projectId}
+            allProjectVersions={allProjectVersions}
             onAccept={() => onAccept(quote)}
             onDecline={() => onDecline(quote)}
             onRecall={() => onRecall(quote)}
@@ -601,6 +788,7 @@ function QuoteRevisionRow({
   isLive,
   invoicesForVersion,
   projectId,
+  allProjectVersions,
   onAccept,
   onDecline,
   onRecall,
@@ -613,6 +801,7 @@ function QuoteRevisionRow({
   isLive: boolean;
   invoicesForVersion: InvoiceLineageDoc[];
   projectId: string;
+  allProjectVersions: QuoteRailProjectVersion[];
   onAccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
@@ -627,7 +816,7 @@ function QuoteRevisionRow({
     <li className="flex flex-col gap-1.5 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
       <div className="flex items-center justify-between gap-2">
         <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onView}>
-          <RevisionMeta quote={quote} isLive={isLive} now={now} />
+          <RevisionMeta quote={quote} isLive={isLive} now={now} allProjectVersions={allProjectVersions} />
         </button>
         <div className="flex shrink-0 items-center gap-1.5">
           <QuoteDocumentAction quote={quote} projectId={projectId} />
@@ -723,11 +912,43 @@ function QuoteDocumentAction({ quote, projectId }: { quote: QuoteRevisionDoc; pr
   );
 }
 
-function RevisionMeta({ quote, isLive, now }: { quote: QuoteRevisionDoc; isLive: boolean; now: number }) {
+/** #1233 — resolve a quote's own `versionId` to its project version's human
+ *  number, for the row tag below. A quote with no `versionId` (every pre-
+ *  #1233 row) is treated as targeting the live version, same fallback
+ *  `convex/lib/quoteState.ts` uses server-side — so it's deliberately given
+ *  no tag rather than a wrong one. */
+function projectVersionNumberFor(quote: QuoteRevisionDoc, allProjectVersions: QuoteRailProjectVersion[]): number | null {
+  if (!quote.versionId) return null;
+  return allProjectVersions.find((v) => v.id === quote.versionId)?.number ?? null;
+}
+
+/** #1233 — split out of `RevisionMeta` purely to keep that function's own
+ *  complexity within budget (R-3.6): the "only shown once there's more than
+ *  one project version" decision lives here instead of an inline `&&` chain
+ *  in the caller. Deliberately worded "project version" (not another bare
+ *  "v{N}") — `RevisionMeta`'s own "v{N}" a few pixels to the left is the
+ *  QUOTE's revision number, a different counter (FEATUREDOCS/76). */
+function ProjectVersionTag({ show, number }: { show: boolean; number: number | null }) {
+  if (!show || number == null) return null;
+  return <span className="t-micro text-fg-4">for project version {number}</span>;
+}
+
+function RevisionMeta({
+  quote,
+  isLive,
+  now,
+  allProjectVersions,
+}: {
+  quote: QuoteRevisionDoc;
+  isLive: boolean;
+  now: number;
+  allProjectVersions: QuoteRailProjectVersion[];
+}) {
   // A DRAFT carries no frozen money — its figures are the project's live totals
   // until it is sent, so the row deliberately shows no amount.
   const total = (quote.snapshot as { total?: number } | null)?.total;
   const isSuperseded = quote.effectiveStatus === "SUPERSEDED";
+  const projectVersionNumber = projectVersionNumberFor(quote, allProjectVersions);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       {/* SUPERSEDED earns no pill — a dead revision doesn't earn a filled shape
@@ -742,6 +963,7 @@ function RevisionMeta({ quote, isLive, now }: { quote: QuoteRevisionDoc; isLive:
           version can sit above a newer one, so a recency word would fight
           what's on screen. */}
       {isLive && <Badge status="ok">Live</Badge>}
+      <ProjectVersionTag show={allProjectVersions.length > 1} number={projectVersionNumber} />
       {quote.label && <span className="truncate text-fg-4">&ldquo;{quote.label}&rdquo;</span>}
       {total != null && <span className="tabular-nums text-fg-4">{formatCurrency(total)}</span>}
       {quote.sentAt != null && <span className="text-fg-4">sent {formatDate(new Date(quote.sentAt))}</span>}

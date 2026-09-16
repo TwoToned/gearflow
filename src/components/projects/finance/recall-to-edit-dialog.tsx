@@ -27,7 +27,7 @@ import { formatDate } from "@/lib/formatters";
 
 const RECALL_TO_EDIT_REASON = "Recalled to edit from the project's lock strip.";
 
-export interface RecallToEditLiveQuote {
+interface RecallToEditLiveQuote {
   id: string;
   version: number;
   sentAt?: number | null;

@@ -1633,6 +1633,15 @@ export default defineSchema({
     // near the CategorySlot table for the full rationale; identical treatment.
     versionId: v.optional(v.string()),
     lineageId: v.optional(v.string()),
+    // #1229 Phase 3 (project versioning v2) — stamped `true` ONLY by
+    // `versions.makeLiveNative`'s reality carry-over
+    // (`convex/lib/versionReality.ts`) when an outgoing version's real-world
+    // footprint (checked-out units, check records, maintenance links,
+    // threads) has no matching line in the incoming version's plan. The same
+    // structural-write allowance an on-site add gets — never client-set,
+    // never priced (unitPrice: 0; nothing was ever agreed for it under the
+    // new plan). Absent = planned, the pre-feature shape, no backfill.
+    unplanned: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

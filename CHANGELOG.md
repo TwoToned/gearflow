@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Jobs now move themselves through the lifecycle as the work happens.** Send a
   quote and the job goes to Quoted; the client approves it and the job goes to
   Awaiting payment; pack the first item and it goes to Prepping; once nothing is
-  left packed on the dock it goes to Deployed; when the last outstanding item is
-  checked back in it goes to Returned. Status stops being a field someone has to
+  gear is left in the building it goes to Deployed; when the last outstanding item
+  is checked back in it goes to Returned. Status stops being a field someone has to
   remember to change, so the board reflects reality instead of the last person
   who thought about it. Moves are forward-only, and Completed and Invoiced are
   never automatic — closing a job out stays a deliberate click. Every automatic
@@ -36,7 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Confirming still needs an accepted quote. If a payment lands on a job that was
   never formally approved, the job waits for a human rather than confirming
-  itself.
+  itself. Voiding the payment that confirmed a job walks it back to Awaiting
+  payment, so a mis-keyed payment can simply be corrected.
+
+  You don't have to record payments in Flow for this to work. If you reconcile
+  in Xero instead, an agreed job still appears in the warehouse and still moves
+  itself forward as you prep and deploy it — and Awaiting payment is a status you
+  can set by hand anywhere you'd set any other.
 
 ### Changed
 

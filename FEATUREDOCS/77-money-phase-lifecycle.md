@@ -71,6 +71,10 @@ inherit forward-only-from-an-explicit-set, the org opt-out, and the audited
 | `INVOICE_ISSUED` | `invoicesWrites.issueNative` | `ENQUIRY`/`QUOTING`/`QUOTED` | `AWAITING_PAYMENT` |
 | `PAYMENT_SETTLED` | `paymentsWrites.recordNative` | `AWAITING_PAYMENT` | `CONFIRMED` |
 
+`PREP_STARTED` and `ALL_CHECKED_OUT` also take `AWAITING_PAYMENT` as a `from` —
+physical work is the second way out of the money phase, for orgs that never
+record a payment in Flow. See FEATUREDOCS/76.
+
 **Two doors, one room.** Accepting and invoicing both open the money phase,
 because some jobs go straight to a full invoice with no accept step. Whichever
 happens first moves the job; the second is then a no-op, because the `from` set
@@ -80,6 +84,23 @@ moves nothing.
 **Only a FULL settlement confirms.** `recordNative` fires `PAYMENT_SETTLED`
 only when the recomputed `paymentStatus` is `PAID`. A partial payment leaves the
 job exactly where it was.
+
+**A CREDIT note never confirms, and never invoices.** `createCreditNative`
+stores a credit's `total` as `-original.total`, so *any* positive amount recorded
+against one satisfies `amountPaid >= total` and reads as `PAID`. Both
+`recordNative` and `issueNative` skip the automation for `kind === "CREDIT"`:
+money moving on a credit is a refund going out, the opposite of the client paying.
+The same negative total is why `computePaymentProgress` excludes credits from the
+"Invoice sent" step and from `allSettled`, while still folding their value into
+`invoicedTotal` as the reduction it is.
+
+**Voiding the settling payment undoes the confirm.** `paymentsWrites.voidNative`
+calls `revertAutoAdvanceByTrigger`, which reverses the move only when it is still
+the project's most recent status change — a later manual decision is never stamped
+over — and only when no other non-CREDIT invoice on the project is still `PAID`.
+Without it a mis-keyed payment confirmed a job permanently: the void unwound the
+money, but `PAYMENT_SETTLED`'s `from` set no longer matched, so re-recording the
+payment correctly was a no-op.
 
 ### Why CONFIRMED is now automatable, and what that cost
 
@@ -123,8 +144,9 @@ the lifecycle. These are the decisions, not accidents:
 | `UPCOMING_STATUSES` (dashboard) | Yes | An agreed job is absolutely upcoming. |
 | `activeStatuses` (`src/server/projects.ts`) | Yes | That list means "not dead" — it starts at `ENQUIRY`. |
 | `NEVER_COUNTED_STATUSES` (ROI) | **Yes** | Pipeline, not revenue. The org's own model says the job isn't on until the money lands, so counting it as booked earnings would inflate the fleet's numbers with jobs that may never pay. It joins `BOOKED_STATUSES` the moment payment confirms it. |
-| `ACTIVE_PROJECT_STATUSES` (dashboard counters, sharded counters) | No | "Active" there means work in flight, which starts at CONFIRMED. |
-| `WAREHOUSE_STATUSES` | No | Nothing to prep until it's confirmed. |
+| `ACTIVE_PROJECT_STATUSES` (dashboard counters, sharded counters) | **Yes** | The job is agreed and its gear is held. No backfill is needed: no row has ever sat at this status, so every project reaching it does so through a patch that bumps the counters with both the old and the new status. |
+| `WAREHOUSE_STATUSES` (both copies) + `warehouse-display`'s active/prepping sets | **Yes** | The gear is held from the moment the job is agreed, so it has to be pickable. Leaving it out stranded every org that reconciles payments in Xero: the job entered the money phase and vanished from the only screen that could move it on. |
+| Upcoming-project notifications (`notifications.ts`, `notification-email-sender.ts`) | **Yes** | A job starting in 72 hours needs its warning whether or not the money has landed. |
 | `CONFIRMED_OR_LATER_STATUSES` (`financeOrg`) | No | It means literally at-or-after CONFIRMED. |
 
 ### Why the lock tier stays OPEN
@@ -163,6 +185,14 @@ Phase 3 native decommission moved `Project` to Convex. It is kept only so
 `src/server/projects.ts` types its active-status list against. The migration is
 safe inside Prisma's transaction (PG 12+) because the new value is added but
 never *used* in the same transaction.
+
+### The manual route in
+
+`AWAITING_PAYMENT` is a first-class option everywhere a project status is
+picked — the detail page's `allStatuses`, the project table's `filterOptions`,
+the wizard's `STATUS_OPTIONS`, the board column, and the warehouse landing's
+`statusLabels`. Automation is a convenience, never the only way in or out: a
+status the automation can reach but a human cannot set by hand is a trap.
 
 **No data backfill.** No existing row can be `AWAITING_PAYMENT`, and no existing
 project needs to become one — jobs already past the money phase are already

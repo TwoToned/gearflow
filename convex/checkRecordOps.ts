@@ -149,8 +149,11 @@ export const prepItems = mutation({
       });
       touched.add(item.lineItemId);
     }
-    // Once per batch, after every unit has landed — never inside the loop.
-    await autoAdvanceOnPrep(ctx, a);
+    // Once per batch, after every unit has landed — never inside the loop, and
+    // only if the batch actually prepped something (an empty `items` array is a
+    // no-op, not "the warehouse started prepping" — it would write a false audit
+    // row and move the job with nothing on the bench). Mirrors prepKitsBatch.
+    if (touched.size > 0) await autoAdvanceOnPrep(ctx, a);
     return { ids: [...touched] };
   },
 });

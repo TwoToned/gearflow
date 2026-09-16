@@ -420,9 +420,17 @@ export const issueNative = mutation({
     // #1236 — a job with an invoice out is waiting on money, even if nobody ever
     // clicked "accept" on a quote (some jobs go straight to a full invoice). A
     // no-op on a job already at AWAITING_PAYMENT or beyond.
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
-      orgId, projectId: doc.projectId, trigger: "INVOICE_ISSUED", actor, now,
-    });
+    //
+    // A CREDIT note is excluded: it is money going back to the client, the exact
+    // opposite of "waiting to be paid". (In practice its original invoice already
+    // fired this trigger — you can only credit an ISSUED one — but the rule should
+    // read correctly rather than rely on that.)
+    const autoStatus =
+      doc.kind === "CREDIT"
+        ? null
+        : await maybeAutoAdvanceProjectStatus(ctx, {
+            orgId, projectId: doc.projectId, trigger: "INVOICE_ISSUED", actor, now,
+          });
 
     return { id, invoiceNumber, autoStatus };
   },

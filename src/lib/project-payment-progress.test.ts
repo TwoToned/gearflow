@@ -128,3 +128,45 @@ describe("computePaymentProgress", () => {
     expect(states(p)).toEqual(["current", "done", "pending"]);
   });
 });
+
+// ─── CREDIT notes ──────────────────────────────────────────────────────────
+// `createCreditNative` stores a credit's `total` as `-original.total`. Treating
+// it as an ordinary invoice lit the "Invoice sent" step on a refund and — because
+// `amountPaid >= total` is trivially true for a negative total — rendered
+// nonsense like "$1,000.00 of $0.00".
+
+describe("credit notes", () => {
+  const compute = (a: { invoices: PaymentProgressInvoice[] }) =>
+    computePaymentProgress({ quotes: [quote({ effectiveStatus: "ACCEPTED" })], invoices: a.invoices, ...fmt });
+  const step = (p: ReturnType<typeof computePaymentProgress>, key: string) => p.steps.find((s) => s.key === key)!;
+  const issued = (over: Partial<PaymentProgressInvoice> = {}): PaymentProgressInvoice => ({
+    kind: "FULL", status: "ISSUED", paymentStatus: "UNPAID", total: 1000, amountPaid: 0, ...over,
+  });
+
+  test("a credit note is not an invoice sent", () => {
+    const r = compute({ invoices: [issued({ kind: "CREDIT", total: -1000, paymentStatus: "PAID" })] });
+    expect(step(r, "invoiced").state).not.toBe("done");
+    expect(r.allSettled).toBe(false);
+  });
+
+  test("a credit reduces what is owed", () => {
+    const r = compute({ invoices: [issued(), issued({ kind: "CREDIT", total: -400 })] });
+    expect(r.invoicedTotal).toBe(600);
+    expect(r.outstanding).toBe(600);
+  });
+
+  test("a credit that cancels the invoice settles the phase", () => {
+    const r = compute({ invoices: [issued(), issued({ kind: "CREDIT", total: -1000 })] });
+    expect(r.outstanding).toBe(0);
+    expect(r.allSettled).toBe(true);
+    expect(step(r, "paid").state).toBe("done");
+  });
+
+  test("a credit's own paymentStatus never settles the phase on its own", () => {
+    const r = compute({
+      invoices: [issued({ amountPaid: 0 }), issued({ kind: "CREDIT", total: -100, paymentStatus: "PAID", amountPaid: 500 })],
+    });
+    expect(r.paidTotal).toBe(0);
+    expect(r.allSettled).toBe(false);
+  });
+});

@@ -56,6 +56,8 @@ import {
 } from "@/components/ui/motion";
 
 const WAREHOUSE_STATUSES = [
+  // Mirrors convex/warehouseList.ts — see the note there on #1236.
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",
@@ -64,6 +66,7 @@ const WAREHOUSE_STATUSES = [
 ];
 
 const statusLabels: Record<string, string> = {
+  AWAITING_PAYMENT: "Awaiting payment",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",

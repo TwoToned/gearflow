@@ -121,15 +121,27 @@ export const AUTO_STATUS_RULES: Record<AutoStatusTrigger, AutoStatusRule> = {
     settingKey: "paymentSettled",
     because: "an invoice was paid in full",
   },
+  // Both warehouse triggers accept AWAITING_PAYMENT as a `from`. Without it the
+  // money phase is a one-way door for any org that reconciles payments in Xero
+  // rather than recording them in Flow (the product's stated model — see
+  // FEATUREDOCS/66): the job enters AWAITING_PAYMENT on accept, PAYMENT_SETTLED
+  // never fires because no `payments` row is ever written, and no downstream
+  // trigger would take it. Physical work is now the second way out.
+  //
+  // This skips CONFIRMED, and with it the confirm snapshot — deliberately, and
+  // not a new hole: `crossesIntoSnapshotStatus` only ever fires on landing
+  // exactly at CONFIRMED, so the manual `updateStatusNative` path has always
+  // skipped it the same way on a QUOTED → PREPPING move. The automation does
+  // what a human does, no more.
   PREP_STARTED: {
     to: "PREPPING",
-    from: ["CONFIRMED"],
+    from: ["AWAITING_PAYMENT", "CONFIRMED"],
     settingKey: "prepStarted",
     because: "the warehouse started prepping",
   },
   ALL_CHECKED_OUT: {
     to: "CHECKED_OUT",
-    from: ["CONFIRMED", "PREPPING"],
+    from: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING"],
     settingKey: "allCheckedOut",
     because: "the last packed item was deployed",
   },
@@ -141,29 +153,78 @@ export const AUTO_STATUS_RULES: Record<AutoStatusTrigger, AutoStatusRule> = {
   },
 };
 
-/** Any line still sitting packed on the dock, waiting to go out.
+/**
+ * Is this row still physically in the building?
  *
- *  This is the server-side twin of `isInPreppedStage`
- *  (src/components/warehouse/warehouse-types.ts) reduced to its core: a line is
- *  waiting iff it is PACKED and has not left / come back / been cancelled.
- *  Deliberately keyed off `prepStatus` rather than line `type`: a services /
- *  labour / transport / sale line is never PACKED, so it can't hold a job at
- *  PREPPING forever — which a "is every EQUIPMENT line CHECKED_OUT?" test would.
+ * The line-level twin of the warehouse page's own stage test
+ * (`isInPickPrepStage || isInPreppedStage`, src/components/warehouse/warehouse-types.ts),
+ * reduced to what a single line row can answer without loading its units.
  *
- *  Two indexed range scans, not a whole-project collect: a packed-and-waiting
- *  line rolls up to `PREPPED` (`deriveOrderLineStatus`) when it is unit-backed,
- *  and stays `CONFIRMED` on the paths that patch the line row directly
- *  (`checkRecordOps`' kit prep). Both shapes are checked. */
-async function anyPackedWaiting(ctx: MutationCtx, projectId: string): Promise<boolean> {
-  for (const status of ["PREPPED", "CONFIRMED"] as const) {
-    const waiting = await ctx.db
+ * Scoped to EQUIPMENT because only physically picked gear ever leaves the
+ * warehouse: a SERVICE / LABOUR / TRANSPORT / MISC / SALE line sits at
+ * CONFIRMED for the life of the job and would pin the project at PREPPING
+ * forever. Container rows are warehouse bookkeeping, and a sub-hire GROUP
+ * wrapper is never deployed itself (its children are), so both are skipped
+ * exactly the way the warehouse page skips them.
+ *
+ * This replaces an "is anything still PACKED?" test, which was wrong twice:
+ *   - a partially deployed bulk line rolls up to `{ status: CHECKED_OUT,
+ *     prepStatus: PACKED }` (`deriveOrderLineStatus` is a `some`), so deploying
+ *     one of three units read as "nothing left packed" and flipped the job with
+ *     two units still on the dock; and
+ *   - it was vacuously true for gear nobody had prepped, so deploying one item
+ *     out of ten never-prepped lines flipped the whole job too.
+ * Both are now positive tests — a row is out when its ordered quantity has
+ * actually left — rather than the absence of a PACKED marker.
+ */
+function stillInBuilding(line: Doc<"projectLineItems">, hasChildren: boolean): boolean {
+  if (!isDeployableRow(line, hasChildren)) return false;
+  const status = line.status ?? "";
+  if (status === "CANCELLED" || status === "RETURNED") return false;
+  const qty = line.quantity ?? 0;
+  if (qty <= 0) return false; // exhausted original left behind by a prep-split
+  if (status !== "CHECKED_OUT") return true;
+  // Absent (not zero) means no per-unit counter was ever kept for this row — a
+  // legacy deploy, or a path that patches the line straight to CHECKED_OUT. The
+  // status is all there is to go on, so take it. Prep explicitly writes `0`, so
+  // absent and zero are genuinely different here.
+  const out = line.checkedOutQuantity;
+  if (out == null) return false;
+  return out + (line.returnedQuantity ?? 0) < qty;
+}
+
+/** Is this row the kind of thing that physically leaves the warehouse? Mirrors
+ *  the warehouse page's own `equipmentItems` filter. */
+function isDeployableRow(line: Doc<"projectLineItems">, hasChildren: boolean): boolean {
+  if ((line.type ?? "EQUIPMENT") !== "EQUIPMENT") return false;
+  if (line.isContainerLineItem) return false;
+  // A sub-hire GROUP wrapper is never deployed itself — its children are.
+  return !(line.subHireId != null && !line.isKitChild && !line.kitId && hasChildren);
+}
+
+/** The whole `ALL_CHECKED_OUT` question in ONE indexed scan of the project's
+ *  lines, org-filtered (`by_projectId` is a GLOBAL index — R-8.4.3).
+ *
+ *  A collect rather than a `.first()` because the sub-hire wrapper test needs to
+ *  know which rows are somebody's parent, and because the predicate can't be
+ *  expressed as an index range. Both halves of the condition come off the same
+ *  list, so the scan happens once. */
+async function deployState(
+  ctx: MutationCtx,
+  orgId: string,
+  projectId: string,
+): Promise<{ stillInBuilding: boolean; anyOut: boolean }> {
+  const lines = (
+    await ctx.db
       .query("projectLineItems")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", status))
-      .filter((q) => q.eq(q.field("prepStatus"), "PACKED"))
-      .first();
-    if (waiting) return true;
-  }
-  return false;
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .collect()
+  ).filter((l) => l.organizationId === orgId);
+  const parentIds = new Set(lines.map((l) => l.parentLineItemId).filter((id): id is string => id != null));
+  return {
+    stillInBuilding: lines.some((l) => stillInBuilding(l, parentIds.has(l.id))),
+    anyOut: lines.some((l) => l.status === "CHECKED_OUT"),
+  };
 }
 
 /** Existence check only (never a collect) — one CHECKED_OUT line is enough. */
@@ -202,10 +263,12 @@ async function conditionMet(
       // gate the MANUAL confirm would have hit, and the automation must not be a
       // way around it.
       return await hasAcceptedQuote(ctx, orgId, projectId, now);
-    case "ALL_CHECKED_OUT":
-      // Nothing left on the dock AND something actually went out — otherwise a
-      // job whose gear was never prepped would "finish" deploying instantly.
-      return !(await anyPackedWaiting(ctx, projectId)) && (await anyCheckedOut(ctx, projectId));
+    case "ALL_CHECKED_OUT": {
+      // Nothing deployable left in the building AND something actually went out
+      // (a job with no EQUIPMENT lines at all must not "finish" deploying).
+      const state = await deployState(ctx, orgId, projectId);
+      return !state.stillInBuilding && state.anyOut;
+    }
     case "ALL_RETURNED":
       return !(await anyCheckedOut(ctx, projectId));
   }
@@ -417,5 +480,43 @@ async function auditRevert(
     },
     projectId: a.project.id,
     createdAt: a.now,
+  });
+}
+
+/**
+ * Undo the auto-advance a given trigger made, when the fact behind it stops
+ * being true — the counterpart to `maybeAutoAdvanceProjectStatus`.
+ *
+ * `revertAutoAdvance` above is driven by a specific audit row an operator picked
+ * (agentRevert's window). This one is driven by the EVENT: voiding the payment
+ * that settled an invoice has to walk the project back out of CONFIRMED, or a
+ * mis-keyed payment confirms a job permanently — re-recording it correctly is a
+ * no-op, because `PAYMENT_SETTLED`'s `from` set no longer matches.
+ *
+ * It only ever reverses the project's MOST RECENT status change, and only when
+ * that change was this trigger's own automatic move. Anything since — a manual
+ * `updateStatusNative`, a different trigger, a warehouse advance — means the
+ * current status is somebody's later decision, and stamping an older value over
+ * it would be silent data loss rather than a revert.
+ */
+export async function revertAutoAdvanceByTrigger(
+  ctx: MutationCtx,
+  a: { orgId: string; projectId: string; trigger: AutoStatusTrigger; actor: Actor; now: number },
+): Promise<{ from: string; to: string } | { skipReason: string }> {
+  const latest = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", a.orgId).eq("projectId", a.projectId))
+    .order("desc")
+    .filter((q) => q.and(q.eq(q.field("entityType"), "project"), q.eq(q.field("action"), "STATUS_CHANGE")))
+    .first();
+  if (!latest) return { skipReason: "This project has no recorded status change to reverse." };
+
+  const meta = ((latest as { metadata?: unknown }).metadata ?? {}) as Record<string, unknown>;
+  if (meta.autoAdvanceTrigger !== a.trigger) {
+    return { skipReason: "The project's last status change wasn't this automation — leaving it alone." };
+  }
+
+  return await revertAutoAdvance(ctx, {
+    orgId: a.orgId, projectId: a.projectId, metadata: meta, actor: a.actor, now: a.now,
   });
 }

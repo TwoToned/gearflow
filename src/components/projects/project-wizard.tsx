@@ -54,7 +54,8 @@ const TYPE_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: "ENQUIRY", label: "Enquiry" }, { value: "QUOTING", label: "Quoting" },
-  { value: "QUOTED", label: "Quoted" }, { value: "CONFIRMED", label: "Confirmed" },
+  { value: "QUOTED", label: "Quoted" }, { value: "AWAITING_PAYMENT", label: "Awaiting payment" },
+  { value: "CONFIRMED", label: "Confirmed" },
   { value: "PREPPING", label: "Prepping" }, { value: "CHECKED_OUT", label: "Checked out" },
   { value: "ON_SITE", label: "On site" }, { value: "RETURNED", label: "Returned" },
   { value: "COMPLETED", label: "Completed" }, { value: "INVOICED", label: "Invoiced" },

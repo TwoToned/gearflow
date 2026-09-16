@@ -133,6 +133,7 @@ const allStatuses = [
   "ENQUIRY",
   "QUOTING",
   "QUOTED",
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",

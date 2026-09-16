@@ -47,15 +47,33 @@ async function seedProject(t: T, status: string, opts: { orgId?: string; isTempl
   });
 }
 
-/** One line item, shaped by the two fields every rule actually reads. */
-async function seedLine(t: T, id: string, status: string, prepStatus?: string) {
+/** One line item, shaped by the fields the deploy/return rules actually read.
+ *  `type` defaults to EQUIPMENT — the same default `warehouseList` applies to a
+ *  row that predates the column. */
+async function seedLine(
+  t: T,
+  id: string,
+  status: string,
+  prepStatus?: string,
+  extra: {
+    type?: string;
+    quantity?: number;
+    checkedOutQuantity?: number;
+    returnedQuantity?: number;
+    isContainerLineItem?: boolean;
+  } = {},
+) {
   await t.run(async (ctx) => {
     await ctx.db.insert("projectLineItems", {
       id,
       organizationId: ORG,
       projectId: PROJ,
-      quantity: 1,
+      quantity: extra.quantity ?? 1,
       status: status as never,
+      ...(extra.type ? { type: extra.type as never } : {}),
+      ...(extra.checkedOutQuantity != null ? { checkedOutQuantity: extra.checkedOutQuantity } : {}),
+      ...(extra.returnedQuantity != null ? { returnedQuantity: extra.returnedQuantity } : {}),
+      ...(extra.isContainerLineItem ? { isContainerLineItem: true } : {}),
       ...(prepStatus ? { prepStatus: prepStatus as never } : {}),
     });
   });
@@ -321,6 +339,12 @@ describe("PREP_STARTED", () => {
     expect(await advance(t, "PREP_STARTED")).toBeNull();
   });
 
+  test("starts prep straight out of AWAITING_PAYMENT (#1236 — the money phase is not a one-way door)", async () => {
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    expect(await advance(t, "PREP_STARTED")).toBe("PREPPING");
+  });
+
   test("a re-prep during a partial return doesn't drag the job back from ON_SITE", async () => {
     const t = makeT();
     await seedProject(t, "ON_SITE");
@@ -332,7 +356,7 @@ describe("PREP_STARTED", () => {
 // ─── ALL_CHECKED_OUT ───────────────────────────────────────────────────────
 
 describe("ALL_CHECKED_OUT", () => {
-  test("advances once nothing is left packed on the dock", async () => {
+  test("advances once every deployable line has left the building", async () => {
     const t = makeT();
     await seedProject(t, "PREPPING");
     await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
@@ -356,19 +380,88 @@ describe("ALL_CHECKED_OUT", () => {
     expect(await advance(t, "ALL_CHECKED_OUT")).toBeNull();
   });
 
-  test("non-gear lines never hold the job back — a service line is never PACKED", async () => {
+  // The bug this condition was rewritten for. A bulk line rolls up to
+  // `{ status: CHECKED_OUT, prepStatus: PACKED }` the moment its FIRST unit goes
+  // out (deriveOrderLineStatus is a `some`), so the old "is any line still
+  // PACKED?" test read one-of-three as "the dock is clear" and flipped the job
+  // with two units still in the building — permanently, since the trigger's
+  // `from` set no longer matched once it had moved.
+  test("a partially deployed bulk line still holds the job back", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "bulk", "CHECKED_OUT", "PACKED", { quantity: 3, checkedOutQuantity: 1 });
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBeNull();
+    expect(await projectStatus(t)).toBe("PREPPING");
+  });
+
+  test("…and advances once the rest of that same line goes out", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "bulk", "CHECKED_OUT", "PACKED", { quantity: 3, checkedOutQuantity: 3 });
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
+  });
+
+  test("a partly returned line is not mistaken for a partly deployed one", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    // All 3 went out, 1 has come back: checkedOutQuantity is decremented on return.
+    await seedLine(t, "bulk", "CHECKED_OUT", "PACKED", { quantity: 3, checkedOutQuantity: 2, returnedQuantity: 1 });
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
+  });
+
+  // The second half of the same bug: "nothing is PACKED" was vacuously TRUE for
+  // gear nobody had prepped yet, so deploying one item out of ten untouched
+  // lines flipped the whole job to Deployed.
+  test("never-prepped gear holds the job back — it is still in the building", async () => {
     const t = makeT();
     await seedProject(t, "PREPPING");
     await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
-    await seedLine(t, "svc", "CONFIRMED"); // no prepStatus — a service/labour/sale line
+    await seedLine(t, "li2", "CONFIRMED"); // no prepStatus, never picked
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBeNull();
+    expect(await projectStatus(t)).toBe("PREPPING");
+  });
+
+  test("non-gear lines never hold the job back", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
+    for (const type of ["SERVICE", "LABOUR", "TRANSPORT", "MISC", "SALE"]) {
+      await seedLine(t, `ng_${type}`, "CONFIRMED", undefined, { type });
+    }
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
+  });
+
+  test("a container row is warehouse bookkeeping, not gear", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
+    await seedLine(t, "case", "CONFIRMED", "PACKED", { isContainerLineItem: true });
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
+  });
+
+  test("a cancelled or returned line is not still in the building", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
+    await seedLine(t, "li2", "CANCELLED", "PACKED");
+    await seedLine(t, "li3", "RETURNED", "PACKED");
     expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
   });
 
   test("a job where nothing ever went out does not 'finish' deploying", async () => {
     const t = makeT();
     await seedProject(t, "PREPPING");
-    await seedLine(t, "svc", "CONFIRMED");
+    await seedLine(t, "svc", "CONFIRMED", undefined, { type: "SERVICE" });
     expect(await advance(t, "ALL_CHECKED_OUT")).toBeNull();
+  });
+
+  // #1236 — the money phase must not be a one-way door for an org that never
+  // records a payment in Flow.
+  test("drags a job forward out of AWAITING_PAYMENT", async () => {
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
   });
 });
 

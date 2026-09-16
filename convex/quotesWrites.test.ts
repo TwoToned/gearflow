@@ -9,6 +9,7 @@
 // a global index must be org-checked).
 import { convexTest } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
@@ -26,6 +27,9 @@ const asUser = (orgId: string) => ({ subject: USER, orgId });
 function makeT() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  // #1236 — accepting a quote moves the project into AWAITING_PAYMENT, now an
+  // ACTIVE project status, so the dashboard counter is bumped here.
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 

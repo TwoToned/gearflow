@@ -15,8 +15,8 @@ moments now advance it on their own:
 | Trigger | Fires when | From | To |
 |---|---|---|---|
 | `QUOTE_SENT` | a quote revision is sent to the client | `ENQUIRY` / `QUOTING` | `QUOTED` |
-| `PREP_STARTED` | the warehouse packs the first item | `CONFIRMED` | `PREPPING` |
-| `ALL_CHECKED_OUT` | nothing is left packed on the dock | `CONFIRMED` / `PREPPING` | `CHECKED_OUT` |
+| `PREP_STARTED` | the warehouse packs the first item | `AWAITING_PAYMENT` / `CONFIRMED` | `PREPPING` |
+| `ALL_CHECKED_OUT` | every deployable line has left the building | `AWAITING_PAYMENT` / `CONFIRMED` / `PREPPING` | `CHECKED_OUT` |
 | `ALL_RETURNED` | the last outstanding item is checked back in | `CHECKED_OUT` / `ON_SITE` | `RETURNED` |
 | `QUOTE_ACCEPTED` | the client accepts a quote | `ENQUIRY` / `QUOTING` / `QUOTED` | `AWAITING_PAYMENT` |
 | `INVOICE_ISSUED` | an invoice is issued | `ENQUIRY` / `QUOTING` / `QUOTED` | `AWAITING_PAYMENT` |
@@ -88,27 +88,65 @@ mutation that did the real work):
    session never silently spans a status change" — the old returns copy skipped
    this), and a lock-tier-annotated `STATUS_CHANGE` audit row.
 
-## Why "all deployed" is measured in PACKED lines, not EQUIPMENT lines
+## What "all deployed" means
 
-`anyPackedWaiting` asks "is any line still sitting packed on the dock?" —
-`prepStatus === "PACKED"` and status not `CHECKED_OUT`/`RETURNED`/`CANCELLED`. It
-is the server-side twin of `isInPreppedStage`
-(`src/components/warehouse/warehouse-types.ts`) reduced to its core.
+`stillInBuilding` asks, per line row, **"does this row still have ordered
+quantity in the warehouse?"** — the line-level twin of the warehouse page's own
+stage test (`isInPickPrepStage || isInPreppedStage`,
+`src/components/warehouse/warehouse-types.ts`), reduced to what a line row can
+answer without loading its units. A row counts when it is deployable gear, has
+quantity, is not `CANCELLED`/`RETURNED`, and either has not left at all or has
+left only partly (`checkedOutQuantity + returnedQuantity < quantity`).
 
-The obvious alternative — "is every `EQUIPMENT` line `CHECKED_OUT`?" — is wrong in
-a way that only shows up in production: a services line, a labour line, a sale
-line, a sub-hire going direct to site and a never-prepped optional all sit at
-`CONFIRMED` forever and would hold the job at `PREPPING` permanently. Keying off
-`prepStatus` sidesteps the whole taxonomy question, because **only gear that was
-physically picked is ever `PACKED`**.
+**Deployable** mirrors the warehouse page's own `equipmentItems` filter:
+`type ?? "EQUIPMENT"` is `EQUIPMENT`, not a container row, and not a sub-hire
+GROUP wrapper (never deployed itself — its children are). Scoping by type is
+what keeps a services / labour / transport / MISC / sale line — which sits at
+`CONFIRMED` for the life of the job — from pinning the project at `PREPPING`
+forever.
 
-Two shapes of waiting line exist and both are checked: a unit-backed line rolls
-up to `PREPPED` (`deriveOrderLineStatus`), while the direct kit-prep path patches
-the line row to `CONFIRMED` + `PACKED`. Both are indexed range scans on
-`by_projectId_status`, never a whole-project collect.
+### Why this is a positive test and not "is anything still PACKED?"
 
-The advance also requires at least one `CHECKED_OUT` line, so a job whose gear was
-never prepped doesn't "finish" deploying the moment someone looks at it.
+The original condition asked whether any line was still `prepStatus === "PACKED"`
+and not yet out. That double negative was wrong twice, and both ways flipped a
+job to Deployed with gear still on the shelf — permanently, because once moved,
+the trigger's `from` set no longer matched and it could never self-correct:
+
+1. **A partially deployed line is invisible to it.** `deriveOrderLineStatus` is a
+   `some`, so a bulk line rolls up to `{ status: CHECKED_OUT, prepStatus: PACKED }`
+   the moment its FIRST unit goes out. Deploy one of three assets and the old
+   scan — which only looked at lines at `PREPPED`/`CONFIRMED` — saw nothing left
+   packed and moved the job with two units still in the building.
+2. **It is vacuously true for gear nobody prepped.** A line that was never picked
+   has no `prepStatus` at all, so ten untouched lines plus one deployed item read
+   as "the dock is clear".
+
+Counting ordered quantity that hasn't left closes both, and a row whose
+`checkedOutQuantity` is *absent* (rather than `0` — prep writes an explicit zero)
+is taken at its status, since no per-unit counter was ever kept for it.
+
+One indexed `by_projectId` scan, org-filtered (that index is GLOBAL — R-8.4.3),
+answers both halves of the condition: nothing left in the building, **and** at
+least one `CHECKED_OUT` line, so a job with no gear on it doesn't "finish"
+deploying the moment someone looks at it.
+
+### Why the warehouse triggers accept `AWAITING_PAYMENT`
+
+Both `PREP_STARTED` and `ALL_CHECKED_OUT` take `AWAITING_PAYMENT` as a `from`.
+Without it the money phase is a one-way door for any org that reconciles payments
+in Xero rather than recording them in Flow (the product's stated model — see
+FEATUREDOCS/66): the job enters `AWAITING_PAYMENT` on accept, `PAYMENT_SETTLED`
+never fires because no `payments` row is ever written, and nothing downstream
+would take it. Physical work is the second way out. `AWAITING_PAYMENT` is also on
+the warehouse landing (`WAREHOUSE_STATUSES`, both copies) and counts as an ACTIVE
+project status, so the gear can actually be worked — it is in
+`HARD_PROJECT_STATUSES` already, so the stock was being held either way.
+
+This skips `CONFIRMED`, and with it the confirm snapshot — deliberately, and not
+a new hole: `crossesIntoSnapshotStatus` only ever fires on landing exactly at
+`CONFIRMED`, so the manual `updateStatusNative` path has always skipped it the
+same way on a `QUOTED → PREPPING` move. The automation does what a human does, no
+more.
 
 ## The org opt-out
 
@@ -168,6 +206,16 @@ guards make it safe:
 - It refuses if the project has moved on since (`statusTo` is no longer current) —
   whatever is there now is someone's later decision, and stamping an older value
   over it would be silent data loss, not a revert.
+
+`revertAutoAdvanceByTrigger` is the same undo driven by the EVENT rather than by
+an operator-picked audit row: it finds the project's most recent `STATUS_CHANGE`,
+checks it was that trigger's own automatic move, and hands it to
+`revertAutoAdvance`. `paymentsWrites.voidNative` uses it — voiding the payment
+that settled a job has to walk the status back out of `CONFIRMED`, or a mis-keyed
+payment confirms the job permanently (the void unwinds the money, but
+`PAYMENT_SETTLED`'s `from` set no longer matches, so re-recording it correctly is
+a no-op). It stands down when another non-CREDIT invoice on the project is still
+`PAID` — that invoice is its own reason for the job to be confirmed.
 
 ## What changed for check-in
 

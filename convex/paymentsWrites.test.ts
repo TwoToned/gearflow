@@ -7,6 +7,7 @@
 // and cross-tenant IDOR protection.
 import { convexTest } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
@@ -23,6 +24,8 @@ const asUser = (orgId: string) => ({ subject: USER, orgId });
 function makeT() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  // #1236 — settling an invoice moves the project between ACTIVE statuses.
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 
@@ -270,5 +273,113 @@ describe("paymentsWrites.voidNative", () => {
         id: "pay1", orgId: ORG, reason: "trying anyway", actor, auditId: "a4", now: NOW + 2,
       }),
     ).rejects.toThrow(/forbidden|permission/i);
+  });
+});
+
+// ─── #1236, the money phase ────────────────────────────────────────────────
+
+describe("paymentsWrites — the PAYMENT_SETTLED automation", () => {
+  const atAwaitingPayment = async (t: ReturnType<typeof makeT>) => {
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { status: "AWAITING_PAYMENT" });
+    });
+  };
+  const projectStatus = (t: ReturnType<typeof makeT>) =>
+    t.run(async (ctx) => (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())?.status);
+
+  const setup = async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await seedIssuedInvoice(t); // total: 1100
+    await atAwaitingPayment(t);
+    return t;
+  };
+
+  test("settling an invoice in full confirms the job", async () => {
+    const t = await setup();
+    const res = await record(t, { amount: 1100 });
+    expect((res as { autoStatus: string | null }).autoStatus).toBe("CONFIRMED");
+    expect(await projectStatus(t)).toBe("CONFIRMED");
+  });
+
+  test("a partial payment leaves the job in the money phase", async () => {
+    const t = await setup();
+    await record(t, { amount: 275 });
+    expect(await projectStatus(t)).toBe("AWAITING_PAYMENT");
+  });
+
+  // A mis-keyed payment used to confirm a job permanently: the void unwound the
+  // money but not the status, and PAYMENT_SETTLED's `from` set no longer matched,
+  // so re-recording it correctly could never re-advance.
+  test("voiding that payment walks the job back out of CONFIRMED", async () => {
+    const t = await setup();
+    await record(t, { amount: 1100 });
+    expect(await projectStatus(t)).toBe("CONFIRMED");
+
+    await t.withIdentity(asUser(ORG)).mutation(api.paymentsWrites.voidNative, {
+      id: "pay1", orgId: ORG, reason: "keyed against the wrong invoice", actor, auditId: "a9", now: NOW + 2,
+    });
+
+    expect(await projectStatus(t)).toBe("AWAITING_PAYMENT");
+    const inv = await getInvoice(t);
+    expect(inv?.paymentStatus).toBe("UNPAID");
+  });
+
+  test("…and the corrected payment can then confirm it again", async () => {
+    const t = await setup();
+    await record(t, { amount: 1100 });
+    await t.withIdentity(asUser(ORG)).mutation(api.paymentsWrites.voidNative, {
+      id: "pay1", orgId: ORG, reason: "keyed against the wrong invoice", actor, auditId: "a9", now: NOW + 2,
+    });
+    await record(t, { id: "pay2", amount: 1100, auditId: "a10", now: NOW + 3 });
+    expect(await projectStatus(t)).toBe("CONFIRMED");
+  });
+
+  test("a void that leaves the invoice still PAID does not move the job", async () => {
+    const t = await setup();
+    await record(t, { id: "payA", amount: 1100, auditId: "aA" });
+    await record(t, { id: "payB", amount: 1100, auditId: "aB", now: NOW + 2 });
+    expect(await projectStatus(t)).toBe("CONFIRMED");
+
+    await t.withIdentity(asUser(ORG)).mutation(api.paymentsWrites.voidNative, {
+      id: "payB", orgId: ORG, reason: "duplicate entry", actor, auditId: "aC", now: NOW + 3,
+    });
+
+    expect((await getInvoice(t))?.paymentStatus).toBe("PAID");
+    expect(await projectStatus(t)).toBe("CONFIRMED");
+  });
+
+  test("a void never stamps over a later manual decision", async () => {
+    const t = await setup();
+    await record(t, { amount: 1100 });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { status: "PREPPING" });
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.paymentsWrites.voidNative, {
+      id: "pay1", orgId: ORG, reason: "wrong invoice", actor, auditId: "a9", now: NOW + 2,
+    });
+
+    expect(await projectStatus(t)).toBe("PREPPING");
+  });
+
+  // A CREDIT note's total is NEGATIVE (`-original.total`), so ANY positive amount
+  // recorded against it satisfies `amountPaid >= total` and reads as PAID.
+  test("money moving on a CREDIT note never confirms the job", async () => {
+    const t = await setup();
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createCreditNative, {
+      id: "cn1", orgId: ORG, creditForInvoiceId: "i1", actor, auditId: "a7", now: NOW + 1,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "cn1", orgId: ORG, autoNumber, actor, auditId: "a8", now: NOW + 1,
+    });
+    expect(await projectStatus(t)).toBe("AWAITING_PAYMENT");
+
+    const res = await record(t, { id: "refund1", invoiceId: "cn1", amount: 500, auditId: "a11", now: NOW + 2 });
+    expect((res as { autoStatus: string | null }).autoStatus).toBeNull();
+    expect(await projectStatus(t)).toBe("AWAITING_PAYMENT");
   });
 });

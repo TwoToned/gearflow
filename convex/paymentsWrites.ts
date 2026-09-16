@@ -10,7 +10,7 @@ import * as enums from "./lib/validators";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
+import { maybeAutoAdvanceProjectStatus, revertAutoAdvanceByTrigger } from "./lib/projectAutoStatus";
 
 /**
  * Payment write mutations (#1055) — browser-direct, standard 4-guard shape,
@@ -143,8 +143,12 @@ export const recordNative = mutation({
     // partial payment leaves the job exactly where it was. The rule itself
     // re-checks the accepted-quote gate the manual confirm enforces and takes
     // the same snapshot, so this is not a way around either.
+    // A CREDIT note is excluded: its `total` is NEGATIVE (`createCreditNative`
+    // stores `-original.total`), so ANY positive amount recorded against it
+    // satisfies `amountPaid >= total` and reads as PAID. Money moving on a
+    // credit is a refund going OUT, never the client's payment coming in.
     const autoStatus =
-      paymentStatus === "PAID"
+      paymentStatus === "PAID" && invoice.kind !== "CREDIT"
         ? await maybeAutoAdvanceProjectStatus(ctx, {
             orgId, projectId: invoice.projectId, trigger: "PAYMENT_SETTLED", actor, now,
           })
@@ -153,6 +157,17 @@ export const recordNative = mutation({
     return { id, autoStatus };
   },
 });
+
+/** Is any non-CREDIT invoice on this project still settled in full? A second
+ *  paid invoice is its own reason for the job to be confirmed, so voiding a
+ *  payment against one of them must not walk the status back. */
+async function anyInvoiceSettled(ctx: MutationCtx, orgId: string, projectId: string): Promise<boolean> {
+  const invoices = await ctx.db
+    .query("invoices")
+    .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+    .take(200);
+  return invoices.some((i) => i.kind !== "CREDIT" && i.status !== "VOID" && i.paymentStatus === "PAID");
+}
 
 export const voidNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -182,7 +197,25 @@ export const voidNative = mutation({
     if (!invoice) throw new ConvexError("Invoice not found: " + payment.invoiceId);
 
     await ctx.db.patch(payment._id, { voidedAt: now, voidedById: actor.userId, voidReason: reason, updatedAt: now });
-    await recomputeInvoicePaymentState(ctx, invoice, now);
+    const paymentStatus = await recomputeInvoicePaymentState(ctx, invoice, now);
+
+    // #1236 — voiding the payment that settled the job has to walk the status
+    // back out of CONFIRMED too. Without this a mis-keyed payment confirms a job
+    // permanently: the void unwinds the money, but `PAYMENT_SETTLED`'s `from` set
+    // no longer matches, so re-recording it correctly can never re-advance.
+    //
+    // Only when NOTHING else on the project is settled — another fully-paid
+    // invoice is its own reason for the job to be confirmed — and only when the
+    // automation's move is still the project's most recent status change
+    // (`revertAutoAdvanceByTrigger` refuses otherwise, so a later manual decision
+    // is never stamped over). The caller holds `invoice:void_payment`; the tier
+    // drop this causes (CONFIRMED FINANCE_LOCKED → AWAITING_PAYMENT OPEN) re-opens
+    // money fields to someone who by definition may already edit the money.
+    if (paymentStatus !== "PAID" && !(await anyInvoiceSettled(ctx, orgId, invoice.projectId))) {
+      await revertAutoAdvanceByTrigger(ctx, {
+        orgId, projectId: invoice.projectId, trigger: "PAYMENT_SETTLED", actor, now,
+      });
+    }
 
     await writeActivityLog(ctx, {
       id: auditId,

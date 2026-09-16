@@ -7,8 +7,10 @@ sold product). **Stage:** has users (the company runs on it daily at flow.rvlt.a
 **Binding constraint:** [`DESIGN.md`](../../DESIGN.md). **Governing policy:** [`POLICY.md`](../../POLICY.md).
 **Wireframes:** [`mockups/work-layer-wireframes.html`](./mockups/work-layer-wireframes.html)
 (intentionally rough — hierarchy and interaction shape only; DESIGN.md governs visuals).
-**Review status:** three adversarial cold-read passes (independent reviewer, no session
-context): 16 → 14 → 7 findings, all applied. The one standing concern is recorded in §19.
+**Review status:** three adversarial cold-read passes on the original (16 → 14 → 7 findings,
+all applied), then a full `/plan-eng-review` on 2026-09-16 — 13 decisions (R1–R13) plus an
+independent outside voice. The review record, what was reused, what is out of scope, the failure
+modes and the parallelisation plan are in §20.
 **Companion docs:** FEATUREDOCS [50](../../FEATUREDOCS/50-project-tasks.md) (current tasks),
 [55](../../FEATUREDOCS/55-project-collaboration.md) (comments), [63](../../FEATUREDOCS/63-client-contacts.md),
 [31](../../FEATUREDOCS/31-crew-management.md), [17](../../FEATUREDOCS/17-notifications.md),
@@ -337,248 +339,277 @@ Wireframe board 4.
 - **Copy voice:** operator voice on buttons and empty states; plain and personality-free on
   overdue, declined, rotting and conflict rows (DESIGN.md §9).
 
-## 9. System-generated work
+## 9. System-generated work — derived, not stored
 
-Each source has a **dedupe key**, a **create condition**, a **resolve condition**, a default
-**assignee rule** and a **stage**.
+> **Revised by the engineering review, 2026-09-16 (decision R3).** The original version of this
+> section specified a 15-minute Convex cron that recomputed each project's readiness and wrote a
+> row per problem, with dedupe keys, reopen/cancel/cascade rules and a per-tick budget. The
+> review established that `projectReadiness.forProject`'s gear section calls
+> `fetchCandidateProjects` (which scans the org's entire project history, uncapped, over two
+> indexes) plus `fetchGearData` (line items of every overlapping project), so running it once per
+> project per tick is quadratic in org size. Production already carries 6.05 GB of database I/O a
+> month with two active users, 4.66 GB of it from a single query
+> (`docs/designs/perf-convex-efficiency-2026-06.md:634`). **There is no cron in this program.**
 
-**How they are created and resolved.** Two mechanisms, never a third:
-- **Write-time hooks** inside the mutations that already exist (status transitions, offer
-  responses, comment writes, quote send/accept, invoice issue): immediate, no cron needed.
-- **A scheduled sweep** for the *time-based* conditions only (expiring, unanswered, overdue,
-  no-next-step, readiness re-evaluation): a Convex cron every **15 minutes** (the existing
-  cadence), bounded **per source** (see "Per-source bounds" below) with a per-tick cap and a
-  cursor so one tick never scans the whole org. The sweep runs as an **internal function**
-  (crons carry no identity, so it cannot call the public auth-guarded queries) and calls the
-  shared pure helpers those queries wrap. All Convex crons are **dormant until
-  `ENABLE_CONVEX_CRONS === "true"`** on the deployment (`convex/scheduledJobs.ts`); flipping
-  it on prod is a phase-1 exit criterion. Until then the hook-driven sources work and the
-  time-based ones simply don't fire.
+**The rule.** A signal the app can already compute is never stored. Triage runs live indexed
+reads. Only a human's *decision about* a signal is persisted, in `workSignalStates` (§10.3).
 
-**Dedupe and lifecycle rules.** `by_organizationId_sourceKey` is a non-unique index, so the
-rules below are enforced in the writer, not by the index:
-- At most **one open** item per `sourceKey`. If the condition recurs after an auto-resolve, the
-  **most recent row is reopened** (status back to `todo`, `autoResolvedAt` cleared, an activity
-  row "reopened: condition recurred"), so a flapping check leaves one row with a history, not
-  a pile.
-- Resolved items flip to `done` with `autoResolvedAt`; they are **never hard-deleted**.
-- A human may assign, snooze or add subtasks to a system item. A human may also **cancel** one
-  ("won't fix"): it stays `cancelled` and the sweep will not reopen it until the condition has
-  *cleared and recurred* — cancel is "mute this occurrence", not "delete". Delete is not
-  offered on system items; the ⋯ menu says why.
-- **Cascade:** when the source entity is deleted or archived (project, assignment, quote), its
-  open system items are cancelled with reason `source_removed` inside the same mutation.
-- **Readiness bound:** gear / crew / services / pricing come from the shared helpers behind
-  `projectReadiness.forProject` (`computeProject*Readiness`, `readPricingReadiness` — bounded
-  range scans per project), called from the internal sweep, never through the public query.
-  **Conflicts are the exception:** `reservationConflicts.projectConflicts` loads the whole org
-  graph (`loadOrgGraph()`, five org-wide collects — the registered R-8.3.3 "one-shot reads
-  only" exception), so it must **not** be called per project. The sweep loads that graph
-  **once per tick** and derives every active project's conflict check from the one load; if
-  the perf baseline (`perf-convex-measurement-baseline.md`) shows even one load per 15 min is
-  too heavy on the largest org, conflicts drop to hook-driven only (on line-item and date
-  writes) — a phase-1 measurement, not an assumption.
-- **Per-source bounds:** the sweep is bounded *per source* over that source's own indexed
-  candidate set, not per project: `SENT` quotes by `validUntil`, `OFFERED` assignments by
-  `offeredAt`, open work by `by_organizationId_status_dueDate` (covers project-less personal
-  items), overdue invoices by due date, maintenance records by
-  `by_organizationId_status_scheduledDate`, and active non-template projects (status not in
-  COMPLETED / INVOICED / CANCELLED) for readiness and overbooking only. Each set has a
-  per-tick cap and a cursor.
-- **Cancelled rows still track the condition:** when a cancelled system item's condition
-  clears, the sweep stamps `autoResolvedAt` and leaves `status: "cancelled"`; a later
-  recurrence therefore reopens it. Without that stamp "cleared and recurred" is undetectable.
+This deletes, in one stroke: the sweep, per-source budgets, dedupe keys, the reopen rule, the
+cancel rule, the cascade-on-delete rule, the `autoResolvedAt` stamp, and phase 1's dependency on
+`ENABLE_CONVEX_CRONS` being flipped in production. Nothing can go stale, because nothing is a
+copy.
 
-**Assignee rules** (the only three): `pm` = `projects.projectManagerId`, else the earliest
-`projectManagers` row, else unassigned; `ops` = the org's ops lead (`workDefaults.opsLeadUserId`,
-a new Settings → Project defaults field), else unassigned; `user` = a specific user id. An
-unassigned item shows in the project Work card only.
+```
+            WRITE                         READ (live, indexed)
+              │                                    │
+  comment mentions you                    workTriage.forMe(orgId)
+              │                                    │
+              ▼                        ┌───────────┴───────────┐
+   notifications row  ◄────────────────┤ mentions (own rows)   │
+   (the ONLY event we store, §10.2)    │ crew declined/unans.  │  by_organizationId_status
+              │                        │ quotes expiring       │  by_organizationId_status
+              ▼                        │ work overdue/due-soon │  by_org_status_dueDate
+         bell + Triage                 └───────────┬───────────┘
+                                                   │  minus
+                                       workSignalStates (snoozed /
+                                       dismissed / assigned by a human)
+```
 
-| Source | Key | Creates when | Resolves when | Assignee | Stage | Phase |
-|---|---|---|---|---|---|---|
-| Readiness: gear / crew / services / pricing / conflicts | `readiness:<check>:<projectId>` | check is `blocking` or `warning` (existing `project-readiness-checks.ts`, unchanged) | check passes | pm | prep | 1 |
-| Mention | `mention:<commentId>:<userId>` | a comment mentions the user | user replies, resolves, or dismisses | user (the mentioned user) | — | 1 |
-| Crew declined | `crew:declined:<assignmentId>` | assignment → `DECLINED` | assignment cancelled or the service reaches `crewCountRequired` | pm | prep | 1 |
-| Quote expiring | `quote:expiring:<quoteId>` | `SENT` and `validUntil − now ≤ 3d` | not `SENT` | pm | quote | 1 |
-| Overbooking | `overbook:<projectId>:<modelId>` | `overbookingBoard` hard or pencilled overage | resolved | pm | prep | 2 |
-| Overdue return | `return:overdue:<projectId>` | existing derived notification condition | checked in | ops | return | 2 |
-| Sub-hire overdue | `subhire:overdue:<subHireId>` | existing condition | returned | ops | return | 2 |
-| Maintenance due | `maint:due:<maintenanceRecordId>` | existing per-record condition (`scheduledDate` past, not completed) | record completed / cancelled | ops | — | 2 |
-| Quote out, no next step | `quote:nonext:<quoteId>` | `SENT ≥ 24h` and no open `follow_up` linked to the client | a next step exists or quote leaves `SENT` | pm | quote | 3 |
-| Invoice overdue | `invoice:overdue:<invoiceId>` | balance past due | paid / voided | pm | close | 3 |
-| Crew unanswered | `crew:unanswered:<assignmentId>` | `OFFERED ≥ 48h` | responded | pm | prep | 4 |
+**Phase-1 Triage sources** (decision R4 — event-driven only; all indexed, none needs a
+whole-org collect, so none trips the collect ratchet):
 
-Three of the nine derived `AppNotification` types in `src/server/notifications.ts`
-(`overdue_return`, `overdue_maintenance`, `pending_offers`) map onto rows above; the other six
-(invitations, join requests, timesheets, flagged assets, incidents, upcoming projects) stay
-derived and org-wide. Division of labour from phase 0 on: the derived counts keep feeding the
-dashboard **"Needs attention" chip tray** (unchanged); the **bell** switches to stored per-user
-rows (§10.2); the *actionable* per-person copy of each condition becomes a work item. **One
-rule for volume:** creating or reassigning a work item — human or system — emits exactly one
-notification to its assignee, typed `assigned` (or `mentioned` for a `mention:*` item, so a
-mention is one item and one notification, never two). A system item is never *also* mirrored
-as a notification of its own type.
+| Signal | Read | Default owner | Human can |
+|---|---|---|---|
+| Mentioned in a comment | own `notifications` rows | the mentioned user | reply, make a task, dismiss |
+| Crew declined | `crewAssignments.by_organizationId_status` = DECLINED | project PM | re-offer, find cover, snooze |
+| Crew unanswered | same index, OFFERED + `offeredAt` older than the org's threshold | project PM | nudge, re-offer, snooze |
+| Quote expiring | `quotes.by_organizationId_status` = SENT, then `validUntil` in JS | project PM | open quote, snooze |
+| Work overdue / due soon | `by_organizationId_status_dueDate` | its assignee | do it, snooze, reschedule |
+
+Quote status is read through `effectiveQuoteStatus()` (`convex/lib/quoteState.ts`), never the
+stored column, so an expired quote is never shown as live.
+
+**Gear shortage, overbooking and asset conflicts are NOT in Triage** (decision R4). They already
+have two homes people open deliberately: the project Overview readiness checklist and the
+Overbookings board. The dashboard uses the cheap `overbookingBoard.counts` query and only
+`/overbookings` loads the full bundle (`src/app/(app)/dashboard/page.tsx:213`); putting the full
+board behind a page held open all day would reverse that decision and land the heaviest read in
+the app on the most-visited screen.
+
+**Signal identity.** Every derived signal has a deterministic `sourceKey`
+(`crew:declined:<assignmentId>`, `quote:expiring:<quoteId>`, `mention:<commentId>:<userId>`).
+That key is what `workSignalStates` stores a decision against, and what a materialised item
+carries if a human promotes a signal into a real task. Keys are stable across recomputation
+because they name the underlying row, not the computation.
+
+**Orphans.** If the underlying entity is deleted, its derived signal simply stops being computed
+and any `workSignalStates` row for it never matches again. Harmless, but it accumulates: a
+`workSignalStates` row whose `sourceKey` has produced no signal for 90 days is pruned by the
+existing dismissal-prune pattern (`notificationDismissals`).
+
+**Day boundaries.** Every "overdue", "due soon", "today" and "hides until start" comparison
+resolves in the **organisation's timezone** through the existing helpers in
+`convex/lib/quoteDates.ts` and `convex/lib/orgSettings.ts` — never the browser's zone, never UTC.
+
+**What the derived model cannot do.** Assigning a system signal to someone who is not its default
+owner requires materialising it as a real work item first (one row, one mutation, keyed by the
+same `sourceKey`). That is the accepted cost of R3 and the reason `workSignalStates` carries an
+optional `promotedWorkItemId`.
 
 ## 10. Data model and architecture
 
+> **Revised by the engineering review, 2026-09-16 (decisions R1, R2, R6, R7).** No new
+> `workItems` table: the existing `projectTasks` table is **widened in place**. Convex cannot
+> rename a table, so a rename means create-copy-repoint-delete, and `@convex-dev/migrations` is
+> not installed (`convex/convex.config.ts` registers only the rate limiter and sharded counter),
+> so any copy is hand-rolled. Widening preserves every row id, every `entityType: "ProjectTask"`
+> audit row, every deep link, every saved view, and all 17 registry operations — which also
+> keeps the agent-reachability floor (573, `docs/api-coverage.md`) safe by construction, since
+> nothing is ever subtracted. The product says "work"; the table keeps its name. A cosmetic
+> rename stays available later and is not worth a migration on its own.
+
 Everything below follows the Convex rules in CLAUDE.md: `ConvexError` only, `requireOrgReadFor`
 with a resource on every new read, colocated `agentOps` with danger classes, browser-direct
-`*Native` mutations mirror their Zod bounds server-side (`fieldGuards.ts`), every doc fetched by
-a global index is org-checked (the `by_cuid` ratchet), `assertBulkSizeOk` on bulk ops, and the
-registry / OpenAPI / MCP manifest regenerated and committed with the change.
+`*Native` mutations mirroring their Zod bounds server-side (`fieldGuards.ts`), every doc fetched
+by a global index org-checked (the `by_cuid` ratchet sits at baseline **0** — a single new
+public `by_cuid` read without a `require*Org*` call or an inline `organizationId` comparison
+fails CI), `assertBulkSizeOk` on bulk ops, and the registry / OpenAPI / MCP manifest regenerated
+and committed together.
 
-### 10.1 `workItems` (extends and renames `projectTasks`)
+### 10.1 `projectTasks`, widened (no new table)
 
 ```ts
-workItems: defineTable({
-  id: v.string(), organizationId: v.string(),
-  kind: v.union(v.literal("task"), v.literal("follow_up"), v.literal("system")),
-  title: v.string(), description: v.optional(v.string()),          // markdown-lite, no editor lib
-  status: v.union(v.literal("todo"), v.literal("in_progress"), v.literal("done"), v.literal("cancelled")),
-  priority: v.optional(enums.ProjectTaskPriority),                 // unchanged LOW/NORMAL/HIGH
-  projectId: v.optional(v.string()),                               // was required
-  stage: v.optional(v.union(v.literal("quote"), v.literal("prep"), v.literal("load_in"), v.literal("show"), v.literal("return"), v.literal("close"))),
-  parentId: v.optional(v.string()),                                // one level
-  assigneeUserId: v.optional(v.string()), assigneeCrewId: v.optional(v.string()), // XOR (kept)
-  startDate: v.optional(v.number()),                               // epoch ms at org-tz midnight
-  dueDate: v.optional(v.number()), dueTime: v.optional(v.string()), // dueTime = "HH:mm" in the org tz
-  scheduledStart: v.optional(v.number()), scheduledEnd: v.optional(v.number()),
-  snoozedUntil: v.optional(v.number()),
-  estimateMinutes: v.optional(v.number()),
-  tags: v.optional(v.array(v.string())),                           // FEATUREDOCS/26 shape, free-form
-  sourceKey: v.optional(v.string()), sourceType: v.optional(v.string()), autoResolvedAt: v.optional(v.number()),
-  sortOrder: v.optional(v.number()),
-  isPrivate: v.optional(v.boolean()),                              // default rule is open question 1 (§14)
-  createdById: v.optional(v.string()), completedAt: v.optional(v.number()),
-  createdAt: v.optional(v.number()), updatedAt: v.optional(v.number()),
-  // Added in the phase that ships them (widen then, not now):
-  //   templateId (phase 1), recurrence + watcherUserIds (phase 2)
-})
-  .index("by_cuid", ["id"])
-  .index("by_organizationId", ["organizationId"])
-  .index("by_organizationId_projectId", ["organizationId", "projectId"])
-  .index("by_organizationId_sourceKey", ["organizationId", "sourceKey"])
-  .index("by_organizationId_kind_status", ["organizationId", "kind", "status"])   // the sweep's "open system items" read
-  .index("by_organizationId_assigneeUserId_status", ["organizationId", "assigneeUserId", "status"])  // org-prefixed: users are multi-org, no global assignee index (R-8.4.3)
-  .index("by_organizationId_assigneeCrewId_status", ["organizationId", "assigneeCrewId", "status"])
-  .index("by_organizationId_status_dueDate", ["organizationId", "status", "dueDate"])
-  .index("by_parentId", ["parentId"])
-  .searchIndex("search_title", { searchField: "title", filterFields: ["organizationId"] }),
+// EXISTING fields keep their names and semantics. Added in phase 0:
+kind: v.optional(v.union(v.literal("task"), v.literal("follow_up"))),   // absent = "task"
+stage: v.optional(WorkStage),              // quote | prep | load_in | show | return | close
+parentId: v.optional(v.string()),          // one level of subtasks; replaces `checklist`
+startDate: v.optional(v.number()),         // org-tz midnight; hides the row until then
+dueTime: v.optional(v.string()),           // "HH:mm" in the org timezone
+scheduledStart: v.optional(v.number()), scheduledEnd: v.optional(v.number()),  // agenda block
+snoozedUntil: v.optional(v.number()),
+estimateMinutes: v.optional(v.number()),
+tags: v.optional(v.array(v.string())),     // FEATUREDOCS/26 shape, free-form strings
+sourceKey: v.optional(v.string()),         // set only when a human promotes a derived signal
+isPrivate: v.optional(v.boolean()),
+// CHANGED: projectId becomes optional (personal and client-scoped work has no project)
+// KEPT for one release, then dropped: checklist (v.any()) — see the migration below
+// Added in a later phase, not now: templateId (1), recurrence + watcherUserIds (2)
 
-workItemLinks: defineTable({
-  id: v.string(), organizationId: v.string(), workItemId: v.string(),
-  entityType: v.string(),   // client | contact | quote | invoice | service | crewAssignment | asset | lineItem | location
-  entityId: v.string(), createdAt: v.optional(v.number()),
-})
-  .index("by_cuid", ["id"])
-  .index("by_workItemId", ["workItemId"])
-  .index("by_organizationId_entity", ["organizationId", "entityType", "entityId"]),
-
-workTemplates: defineTable({ id, organizationId, onStatus: enums.ProjectStatus, title, stage, offsetDays, offsetFrom: "trigger" | "start" | "end", assigneeRule: "pm" | "ops" | userId, priority?, sortOrder, isActive })
-  // offsetFrom "trigger" = days after the status transition ("+1d"); "start"/"end" = relative to the project window ("event −5d")
-  .index("by_cuid", ["id"]).index("by_organizationId_onStatus", ["organizationId", "onStatus"]),
+// New indexes (all org-prefixed — users are multi-org, so no global assignee index):
+.index("by_organizationId_assigneeUserId_status", ["organizationId", "assigneeUserId", "status"])
+.index("by_organizationId_assigneeCrewId_status", ["organizationId", "assigneeCrewId", "status"])
+.index("by_organizationId_status_dueDate",        ["organizationId", "status", "dueDate"])
+.index("by_parentId",                             ["parentId"])
+.searchIndex("search_title", { searchField: "title", filterFields: ["organizationId"] })
 ```
 
-- Links live in a join table because Convex cannot index inside an array and "all work for
-  this client" must be an indexed read (R-8.3 read amplification, `perf-convex-efficiency`).
-- **Stage default from lifecycle status** (one table, in a plain `src/lib` module shared by
-  Zod, Convex and UI — R-3.1):
+`status` gains `"cancelled"`. Priority is unchanged. **Module naming matters:** the new
+operations live in `convex/projectTasks.ts` / `convex/projectTasksWrites.ts`, because
+`convex/xtenantExhaustive.test.ts` sweep B seeds rows by treating the module name as a schema
+table name — a module that does not match the table silently drops out of the sweep.
 
-  | Project status | Default stage |
-  |---|---|
-  | ENQUIRY, QUOTING, QUOTED | `quote` |
-  | CONFIRMED, PREPPING | `prep` |
-  | CHECKED_OUT | `load_in` |
-  | ON_SITE | `show` |
-  | RETURNED | `return` |
-  | COMPLETED, INVOICED | `close` |
-  | CANCELLED | no default (existing stage kept) |
+**Stage defaults from the project's lifecycle status**, resolved once in the shared vocabulary
+module (§10.6), never inline:
 
-- **Migration** (widen → migrate → narrow, `convex-migration-helper`): add the new table, copy
-  every `projectTasks` row **preserving its cuid `id`** (audit rows, deep links and
-  `savedTableViews` keep working; `entityType: "ProjectTask"` audit rows are labelled alongside
-  the new `WorkItem` label on `/activity`), with `kind: "task"` and `stage` from the table
-  above. Each checklist entry `{ id, text, done }` becomes a child row: `id` preserved, `title =
-  text`, `status = done ? "done" : "todo"`, `completedAt = parent.updatedAt` when done, no
-  assignee or dates, `sortOrder` = array index. Point reads/writes at `workItems`, keep
-  `projectTasks` read-only for one release, then drop. The Convex schema is hand-merged, never
-  regenerated (CLAUDE.md). The registry regen must keep the agent-reachable count at or above
-  the **reachability floor (573, `docs/api-coverage.md`)**: the new `workItems` ops replace the
-  17 `projectTasks` ops one-for-one or better, or the floor is lowered in a visible diff.
-- **Privacy (proposed, open question 1):** an item with no `projectId` and no links defaults to
-  `isPrivate` (visible to its assignee and org admins only). Anything linked to a project or
-  client is org-visible under normal RBAC.
+| Project status | Default stage |
+|---|---|
+| ENQUIRY, QUOTING, QUOTED | `quote` |
+| CONFIRMED, PREPPING | `prep` |
+| CHECKED_OUT | `load_in` |
+| ON_SITE | `show` |
+| RETURNED | `return` |
+| COMPLETED, INVOICED | `close` |
+| CANCELLED | none — an existing stage is kept |
 
-### 10.2 `notifications` (stored, per user)
+**Subtasks.** A child row carries `parentId`, inherits `projectId` and `organizationId` from its
+parent, and has no `stage` and no `sourceKey`. Cascade rules are a **regression surface**:
+`convex/projectWrites.ts:961` (delete) and `:1056` (clone) already sweep tasks and must now
+sweep their children too. Both get a test (§ test plan).
+
+### 10.2 `notifications` — the one thing phase 0 stores that it did not before
 
 ```ts
 notifications: defineTable({
   id: v.string(), organizationId: v.string(), userId: v.string(),
-  type: v.string(),          // assigned | mentioned | due_soon | overdue | comment_reply | work_resolved  (system conditions arrive as `assigned`, §9)
+  type: v.string(),          // mentioned | assigned | comment_reply | due_soon | overdue
   entityType: v.string(), entityId: v.string(),
   title: v.string(), body: v.optional(v.string()), href: v.string(),
   dedupeKey: v.string(), readAt: v.optional(v.number()), archivedAt: v.optional(v.number()),
   createdAt: v.number(),
 })
   .index("by_cuid", ["id"])
-  .index("by_organizationId_userId_readAt", ["organizationId", "userId", "readAt"])   // users are multi-org: every read is org-scoped
+  .index("by_organizationId_userId_readAt",    ["organizationId", "userId", "readAt"])
   .index("by_organizationId_userId_createdAt", ["organizationId", "userId", "createdAt"])
-  .index("by_organizationId_dedupeKey", ["organizationId", "dedupeKey"]),
+  .index("by_organizationId_dedupeKey",        ["organizationId", "dedupeKey"]),
 ```
 
-- The bell reads stored rows (unread count is a sharded counter per (org, user), like
-  `dashboardCounters`). The nine derived org-wide types keep feeding the dashboard chip tray
-  only (§9).
-- `userNotificationPreferences` gains the new types. The email digest reuses the existing cron
-  and the `notificationEmailLogs` dedupe ledger (not the generic `sentEmails` idempotency
-  table). **PWA web push is phase 2** (nothing exists today; needs a VAPID key pair, a
-  `pushSubscriptions` table and a service-worker handler).
-- Retention: archived rows pruned after 90 days by the existing prune pass pattern.
+- Written **inside** the mutation that causes it — a mention row is inserted in the same
+  transaction as the comment (`convex/collaborationWrites.ts`), so the comment and the
+  notification commit together or not at all. This is deliberately unlike `logActivity`, which
+  is best-effort because it crosses into another system; this does not.
+- **One notification per event.** Creating or reassigning a work item emits exactly one, typed
+  `assigned`; a mention emits exactly one, typed `mentioned`. A derived signal emits none — it is
+  computed, so there is nothing to announce twice.
+- The **bell** switches to these stored rows. The dashboard "Needs attention" chip tray keeps
+  using the nine derived org-wide types in `src/server/notifications.ts`, unchanged. Note that
+  `getNotifications` currently performs whole-org reads on every render
+  (`getProjectsByOrg` / `getAssetsByOrg` / `getCrewAssignmentsByOrg`); moving the bell off it is
+  a read-cost improvement, not a regression.
+- Unread count is a plain indexed query on `by_organizationId_userId_readAt`. **No sharded
+  counter** — that component exists for hot-row write contention on shared org counters, and a
+  per-user unread count is neither hot nor shared.
+- `userNotificationPreferences` gains the new types. The email digest reuses the existing
+  15-minute cron and its `notificationEmailLogs` dedupe ledger. Web push is phase 2.
 
-### 10.3 Unified timeline (read model first, writers second)
+### 10.3 `workSignalStates` — a human's decision about a derived signal
 
-Phase 0 ships `timeline.forEntity(entityType, entityId)` — a read model that unions
-`activityEvents`, `activityLogs`, `comments`, work-item events and finance events for a client
-or contact, sorted, capped and org-checked. It needs `activityEvents` to carry denormalised
-`clientId` / `contactId` (an index, not a scan). Phase 3 consolidates writers: `activityEvents`
-becomes the one human-facing feed; `activityLogs` stays the audit trail (R-8.9). The `/activity`
-page gets its missing `WorkItem` label in phase 0.
+```ts
+workSignalStates: defineTable({
+  id: v.string(), organizationId: v.string(), userId: v.string(),
+  sourceKey: v.string(),                      // deterministic, names the underlying row (§9)
+  state: v.union(v.literal("snoozed"), v.literal("dismissed"), v.literal("promoted")),
+  snoozedUntil: v.optional(v.number()),
+  promotedWorkItemId: v.optional(v.string()),  // set when promoted to a real row
+  createdAt: v.number(), updatedAt: v.number(),
+})
+  .index("by_cuid", ["id"])
+  .index("by_organizationId_userId_sourceKey", ["organizationId", "userId", "sourceKey"])
+  .index("by_organizationId_sourceKey",        ["organizationId", "sourceKey"]),
+```
 
-### 10.4 Agenda engine
+Rows exist **only** for signals a human acted on. A dismissal is per-user, so one PM clearing a
+signal never hides it from another. Pruned after 90 days of producing no signal.
 
-`src/lib/agenda.ts` (pure) normalises shifts, services, project windows, work blocks and
-follow-ups into `AgendaItem { id, kind, start, end, allDay, title, href, status, actorIds }`;
-`convex/agenda.ts` serves a person's or a project's items for a range. One `<AgendaGrid>`
-(day / week / month, `date-fns`, no FullCalendar) is introduced by Today and then adopted by
-the project timeline row view, the crew planner and the Schedule page one at a time. The four
-existing calendars are retired as they are replaced, never rewritten in one go.
+### 10.4 The checklist migration (the only data migration in the program)
 
-### 10.5 Permissions and API surface
+The untyped `checklist: v.any()` blob becomes subtask rows, using the repo's house pattern
+(`convex/backfillProjectWindow.ts` + `scripts/convex-backfill-project-window.ts`): a public
+mutation gated by `requireService`, `paginate({ cursor, numItems: numItems ?? 300 })`, an
+`apply` flag that defaults to a dry run, returning `{ scanned, updated, isDone, continueCursor }`,
+driven by a `tsx` script that takes a fresh client per page, with a colocated test.
 
-- New RBAC resource **`work`** in `permissionsCore.RESOURCES` with an explicit per-role grant
-  (the `warehouse` built-in role holds `project: ["read"]` only today, so "same as
-  `project:update`" would lock the ops lead — a D1 daily user and the §9 assignee for returns —
-  out of their own work):
+Each entry `{ id, text, done }` becomes a child row: **id preserved**, `title = text`,
+`status = done ? "done" : "todo"`, `completedAt = parent.updatedAt` when done, no assignee, no
+dates, `sortOrder` = array index. The blob is left in place for one release (expand-contract:
+Convex functions deploy before the app image), then dropped.
 
-  | Role (`rolePermissions` keys) | `work` |
-  |---|---|
-  | owner, admin, manager | read, create, update, delete |
-  | member | read, create, update |
-  | warehouse | read, create, update |
-  | viewer | read |
+### 10.5 Permissions — a new `work` resource
 
-  (`crew` is a *resource*, not a role; a crew-linked user is a member or warehouse account
-  and reads their own items through `requireSelfScope`.)
+The warehouse role holds `project: ["read"]` only (`convex/lib/permissionsCore.ts:161`), so
+gating work on `project:update` would leave an ops lead unable to complete their own item —
+a day-one blocker given decision D1. Phase 0 adds `work` to `RESOURCES` (19 → 20):
 
-  Personal-scope reads (my Today) use `requireSelfScope`; project- and org-scoped reads use
-  `requireOrgReadFor(ctx, orgId, "work")`. OAuth scope narrowing picks the resource up from
-  `RESOURCES` automatically. Editing another person's *private* item needs `work:delete`-tier
-  roles (open question 6).
-- `agentOps`: create/update/complete = `medium`, delete + bulk delete = `high` (confirm gate),
-  `list_my_work` = `low`. No new privileged args.
-- Webhook events `work.created`, `work.completed`, `work.auto_resolved`.
-- FEATUREDOCS: 50 is rewritten as the work-layer doc; 17, 55, 63, 31, 69 updated in the same
-  PRs as the code (R-5.2); ARCHITECTURE.md row updated.
+| Role | `work` |
+|---|---|
+| owner, admin, manager | read, create, update, delete |
+| member | read, create, update |
+| warehouse | read, create, update |
+| viewer | read |
+
+(`crew` is a *resource*, not a role. A crew-linked user holds a member or warehouse account and
+reads their own items through `requireSelfScope`.)
+
+Same-PR consumers: `src/lib/permissions.ts` (`PERMISSION_REGISTRY`),
+`src/lib/permissions.test.ts` (asserts the list is exactly 19 — must become 20),
+`src/lib/api/oauth/rbac-scopes.ts` (`RESOURCE_LABELS` / `ACTION_LABELS`; scope narrowing itself
+iterates `RESOURCES` and needs no change), and
+`src/components/settings/permission-matrix.tsx` (throws if a registry entry is missing).
+Project-scoped reads use `requireOrgReadFor(ctx, orgId, "work")`; personal-scope reads use
+`requireSelfScope`.
+
+### 10.6 One shared vocabulary module
+
+`convex/lib/permissionsCore.ts` already proves an import-free module bundles into both the Next
+and Convex runtimes. Status, priority, kind, stage, the status-to-stage map and the display
+labels live in one such module, imported by the Convex validators, the Zod schemas and the UI.
+This replaces the two hand-synced copies that exist today (`convex/lib/validators.ts:453` and
+`src/lib/project-tasks.ts:6`) rather than adding a third.
+
+### 10.7 Reactivity posture (decision R13)
+
+Convex re-runs a query and re-pushes to every viewer whenever anything inside its read set is
+written. The app shell holds **no** always-on subscriptions today, so Today would be the first
+page to introduce a permanent background cost, on the page people never close. Reactivity is
+therefore spent where the user is the one causing the change:
+
+| Data | Posture | Why |
+|---|---|---|
+| **My work** | **Live subscription** | I am the writer. Ticking something off must feel instant, and the read set is my own rows |
+| **My day** (shifts, services) | One-shot, refresh on focus + slow interval | Someone else's edit, and the schedule changes a few times a day |
+| **Signals** (quotes, crew, invoices by status) | One-shot, refresh on focus + slow interval | Changes hourly at most; a live wire over org-wide status ranges is the exact shape that produced the 4.66 GB query |
+
+On-demand panels carry a visible "as of" timestamp so stale never reads as absent. Each bucket
+is **capped server-side** with a count ("312 more"), not client-paginated — there is no
+virtualisation library in the tree and this page must not introduce one.
+
+### 10.8 API surface
+
+`agentOps`: create / update / complete = `medium`; delete and bulk delete = `high` (confirmation
+gate); reads = `low`. No new privileged arguments. New browser-direct `reorderNative` (the
+existing `reorderMany` is `requireService`-gated and unreachable from the browser). Webhook
+events `work.created` and `work.completed`. Curated Mira and MCP tools land in the continuous
+track. `scripts/org-export-tables.ts` classifies the two new tables and bumps
+`EXPECTED_TABLE_COUNT` 119 → 121, or `convex/orgExport.test.ts` fails.
 
 ## 11. What is deliberately *not* built
 
@@ -604,24 +635,30 @@ existing calendars are retired as they are replaced, never rewritten in one go.
 **Recommendation: B.** A's items land inside phases 1–2 anyway; C's best idea (Triage) lands as
 a bucket inside Today without upending the home page.
 
-## 13. Phasing (approach B)
+## 13. Phasing — evidence first (revised 2026-09-16, decision R10)
 
-Each phase ships behind its own PR set, updates its FEATUREDOCS, and is usable on its own.
-Effort is dual-scale: human team / Claude Code.
+> The engineering review's outside voice made the point the plan had made about itself and then
+> ignored: §17 asks for a week of logging where work actually arrives from, and a morning
+> watching the ops lead plan their day. Neither has happened. The original phase 0 committed to
+> the schema change, the permission change and the data migration **before** that evidence.
+> The sequence below inverts it. The one piece that cannot be composed from what already exists
+> is the mentions inbox, because Convex cannot index the `mentionUserIds` array, so nothing can
+> answer "who was mentioned" without a stored row. That piece goes first. Everything else waits.
 
 | Phase | Ships | Exit criteria | Effort |
 |---|---|---|---|
-| **0 · Spine** | `workItems` + `workItemLinks` + migration (ids preserved); `notifications` table + bell reads it; mention → notification; `work` resource + grant table; registry/OpenAPI/MCP regenerated (reachability floor held); `/activity` labels; timeline read model v1; org-tz day-boundary helper | All 18 dedicated task tests (plus `review2Bulk`) green on the new table; a mention shows in the bell within one subscription tick; xtenant exhaustive sweep passes for every new op | 2 wks / 3 d |
-| **1 · Today** | `/today` (buckets, Triage, peek with subtasks + comments, keyboard verbs, quick-add grammar v1, agenda column v1 = shifts + services + blocks); phase-1 sources from §9 (readiness ×5 via the shared helpers from an internal sweep, conflicts from one org-graph load per tick, mention, crew declined, quote expiring); `workTemplates` v1 (adds `templateId`) seeded on `CONFIRMED`; `/my-tasks` redirects | `ENABLE_CONVEX_CRONS` on in prod; PMs open Today daily (PostHog); zero mentions lost; templates seed idempotently; one sweep tick measured under every per-source cap **and** the single conflicts graph load measured against the perf baseline on the largest org | 3 wks / 4 d |
-| **2 · Project** | Work tab (list/board/calendar, filters, `reorderNative` DnD), Overview Work card **replacing** the readiness panel (no coexistence), phase-2 sources (overbooking, overdue return, sub-hire overdue, maintenance due) + the `ops` assignee setting, timeline row view, recurrence + watchers (fields and `every mon` grammar added now), board revived at `/projects?view=board` with drag-to-advance | Readiness panel deleted with no lost check; board drop honours locks | 3 wks / 4 d |
-| **3 · Client** | Client + contact timeline (writers consolidated), Log call/email/note, Next step + rotting, phase-3 sources (`quote:nonext`, invoice overdue), Pipeline view, Work-by-client | Every SENT quote has a dated next step within 24h (target 95%) | 3 wks / 4 d |
-| **4 · Crew time** | Planner badges + offer age, `crew:unanswered` source + 24h nudge, bulk availability requests, `crewTimeEntries.workItemId` + planned vs actual (derived), call-time reminder emails | Median decline → re-offer < 4 business hours; planner shows a confirmation state on 100% of shifts | 3 wks / 4 d |
-| **5 · Relationships** (own mini-design before build) | `contactLinks` (a contact across clients and venues), venue rooms, OT estimate at booking (needs 2.1's rate rules) | A contact can be opened from a venue and a client and show one timeline | 2 wks / 3 d |
-| **Continuous** | Mira/MCP curated tools, ⌘K commands, search index, iCal "my work" feed, PostHog events, PWA push (after phase 1), docs | — | in-phase |
+| **0 · Mentions inbox** | `notifications` table; the mention hook writing one row inside the comment transaction; bell reads stored rows; per-type preferences; `/activity` gains its missing task labels | A mention reaches the bell within one tick; zero mentions lost over a week; no change to any existing task behaviour | 3 days / 4 hrs |
+| **0.5 · Today, composed** | `/today` assembled **read-only** from readers that already exist (`myOpenTasks`, crew shifts and services for the day, quotes and crew signals by status) plus the mention inbox. Buckets, peek, keyboard navigation, the agenda column. No schema change, no new resource, no migration. `/my-tasks` redirects | Opened daily by both named user groups for two weeks; the week-long log (§17) collected against a real page | 1 wk / 1 d |
+| **1 · The spine, informed** | Widen `projectTasks` in place; the shared vocabulary module; `work` resource **additively** (see R11); subtasks + the checklist migration in the order R12 sets; quick-add, snooze, promote-a-signal, templates | Migration proven id-preserving, idempotent and no-op in dry run against a copy of prod; the vocabulary matches the log, not a guess | 2 wks / 3 d |
+| **2 · Project** | Work tab (list / board / calendar, filters, drag reorder), Overview Work card replacing the readiness panel, timeline row, recurrence, the revived board with drag-to-advance, web push | Readiness panel deleted with no lost check; a board drop honours lifecycle locks | 3 wks / 4 d |
+| **3 · Client** | `workItemLinks` + the unified timeline read model (both deferred here); client and contact timeline; Log call / email / note; Next step + rotting; Pipeline view | Every sent quote carries a dated next step within 24 hours (target 95%) | 3 wks / 4 d |
+| **4 · Crew time** | Planner confirmation badges + offer age, unanswered nudge, bulk availability requests, planned vs actual, call-time reminders | Median decline to re-offer under 4 business hours | 3 wks / 4 d |
+| **5 · Relationships** (own mini-design) | Contacts across clients and venues, venue rooms, OT estimate at booking | A contact opens from a venue and a client with one timeline | 2 wks / 3 d |
 
-Phase 4 is the seam with ROADMAP 2.1 (crew & services overhaul): 2.1 owns services, rates and
-the offer flow; this program owns the planner's confirmation/availability layer and the shared
-agenda engine. If 2.1 starts first, phase 4 rebases onto it.
+**Why 0.5 is not throwaway.** The page, its buckets, its keyboard model and its peek panel are
+the deliverable. Phase 1 changes where the rows come from, not what the page is. If a composed
+Today does not get opened daily, that is the cheapest possible discovery that phases 2 to 5 are
+not worth building.
 
 ## 14. Open questions
 
@@ -650,25 +687,32 @@ agenda engine. If 2.1 starts first, phase 4 rebases onto it.
 
 ## 16. Dependencies and risks
 
-- **Migration of `projectTasks`** is the only irreversible step; it is widen → migrate →
-  narrow with the old table kept read-only for one release.
-- **POLICY.md gates that will bite:** DRY (one `stage` union in a plain `src/lib` module shared
-  by Zod, Convex and UI — R-3.1); server authority on every rule (rotting, thresholds, seeding —
-  R-9.3); Zod on every body (R-8.2.3); the `by_cuid` ratchet on every new read; danger classes
-  on every new mutation; docs in the same PR (R-5.2).
-- **Notification volume:** dedupe keys, the one-`assigned`-per-item rule (§9) and per-type
-  preferences are mandatory from phase 0, or the inbox becomes the new "Needs attention" chip
-  tray.
-- **Crons are off by default** (`ENABLE_CONVEX_CRONS`, `convex/scheduledJobs.ts`); every
-  time-based source depends on that flag being on in prod. Hook-driven sources do not.
-- **Timezones:** every day boundary goes through the org-tz helper; a UTC or browser-tz
-  bucket would put an Australian PM's "Today" a day out.
-- **Reachability floor** (`docs/api-coverage.md`, 573): replacing the 17 `projectTasks` ops
-  must not drop the agent-reachable count silently.
-- **Four calendars → one engine** is incremental by design; never a big-bang rewrite.
-- **No rich text**: descriptions are markdown-lite textareas with `@` typeahead; a real editor
-  is a separate decision.
-- **Crew overhaul (2.1) overlap:** phase 4 is explicitly the seam; both docs must cross-link.
+- **The checklist migration is the only irreversible step left** (§10.4). It runs dry first, is
+  idempotent, preserves ids, and executes after the widened schema is live. Rehearse it against
+  a copy of production data, not just seeded fixtures.
+- **The guard choice is the expensive mistake.** A new read on the bare `requireOrgRead` instead
+  of `requireOrgReadFor(ctx, orgId, "work")`, or a write left on `requireService`, classifies the
+  operation as agent-unreachable. The reachability floor auto-ratchets **up** and never down, so
+  the error surfaces later, after the schema has merged. Get it right in the first commit.
+- **`xtenant-bycuid-ratchet` sits at baseline 0.** One new public `by_cuid` read without a
+  `require*Org*` call or an inline `organizationId` comparison in the same function body fails CI
+  on the first offender.
+- **Module names must equal table names** for `xtenantExhaustive` sweep B to seed rows; a new
+  module that does not match silently drops out of the cross-tenant sweep rather than failing.
+- **Notification volume:** dedupe keys, the one-notification-per-event rule (§10.2) and per-type
+  preferences are mandatory from phase 0, or the bell becomes the new chip tray.
+- **Timezones:** every day boundary goes through `convex/lib/quoteDates.ts`; a UTC or
+  browser-timezone bucket puts an Australian PM's "Today" a day out.
+- **No cron dependency.** With §9 derived, `ENABLE_CONVEX_CRONS` is no longer on the phase-1
+  critical path. It returns only if a future phase adds a genuinely time-triggered source.
+- **Read cost on Today.** Three subscriptions, all indexed, no whole-org collect. The failure
+  mode to watch is bucket size, which is capped server-side; there is no virtualisation library
+  and this page must not introduce one.
+- **No rich text**: descriptions stay markdown-lite textareas with an `@` typeahead.
+- **Two registered exceptions expire soon** and both underpin readers this program reads around:
+  `reservationConflicts-orgGraph` (2026-10-25) and `overbookingBoard-sale-stock-models`
+  (2026-10-26). Neither is created by this work, but phase 2 leans on the board.
+- **Crew overhaul (2.1) overlap:** phase 4 is the seam; both docs cross-link.
 
 ## 17. The assignment
 
@@ -697,10 +741,144 @@ Two things, before phase 1 is designed in detail:
 
 ## 19. Reviewer concerns (standing)
 
-- **Sweep read cost is a measurement, not a design fact.** The third review pass established
-  that the conflicts check depends on a whole-org graph load. §9 now limits it to one load per
-  tick with a fallback to hook-driven only, but whether even that is affordable on the largest
-  org is unknown until phase 1 measures it against
-  [`perf-convex-measurement-baseline.md`](./perf-convex-measurement-baseline.md). Treat it as
-  a phase-1 gate, and do not let readiness sources slip into calling public queries from the
-  cron.
+- **The sweep-cost concern recorded on 2026-09-15 is resolved, not deferred.** It was the reason
+  the engineering review replaced the cron with derived signals (§9, decision R3). Nothing in
+  phases 0 to 2 now runs a scheduled recomputation, so the open question "can we afford one
+  org-graph load every 15 minutes" no longer needs answering to ship.
+- **What remains measurable rather than known:** bucket sizes on Today for a heavy user, and the
+  read cost of the three subscriptions against the largest org. Both are phase-1 exit criteria
+  and both are cheap to measure, unlike the thing they replaced.
+- **`docs/designs/perf-convex-measurement-baseline.md` still has an empty "Before" column.** Any
+  claim this program makes about read-cost improvement is unverifiable until someone fills it in.
+
+---
+
+## 20. Engineering review record (2026-09-16)
+
+Run with `/plan-eng-review` against phases 0 and 1. Nine decisions, taken one at a time. Two
+codebase audits backed the findings: read-cost of the org-wide readers, and the CI gate surface a
+new table or operation must clear.
+
+### 20.1 Decisions
+
+| # | Finding | Decision | Effect |
+|---|---|---|---|
+| R1 | Convex cannot rename a table and no migration framework is installed, so `workItems` means copy-repoint-delete | **Widen `projectTasks` in place** | Removes the program's only irreversible structural step; ids, audit rows, deep links, saved views and 17 registry ops untouched |
+| R2 | `workItemLinks` and the timeline read model have no phase 0/1 consumer | **Both deferred to phase 3** | Two fewer subsystems carried through CI unused; shapes decided with the screen that needs them |
+| R3 | The 15-minute sweep would run a quadratic per-project read; prod is already 6.05 GB/month with 77% from one query | **Derive system work, store only a human's decision** | Deletes the cron, dedupe keys, reopen/cancel/cascade rules and the `ENABLE_CONVEX_CRONS` dependency |
+| R4 | The dashboard deliberately uses the cheap counts query; only `/overbookings` loads the full board | **Triage carries event-driven signals only** | Keeps the heaviest read off a page held open all day; gear and overbooking keep their existing homes |
+| R5 | The warehouse role holds `project:read` only, so ops leads cannot complete their own work | **Add a `work` RBAC resource in phase 0** | Today is usable by both named daily-user groups on day one |
+| R6 | `checklist: v.any()` plus `parentId` would be two ways to say one thing | **Migrate the blob to subtask rows** | One validated representation; subtasks gain owners and dates |
+| R7 | Status and priority are hand-synced in two files; the plan would make it six | **One shared vocabulary module** | A rename becomes a compile error instead of a runtime rejection |
+| R8 | 27 of 31 phase 0/1 code paths had no test, including 3 migration paths and 2 regressions | **Close all 27, including 3 browser tests** | Migration proven before it runs; the permission gap caught by a test, not a user |
+| R9 | Six card-level subscriptions walk into open Finding #4 | **Three subscriptions grouped by change rate** | A keystroke re-runs one small query, not the page |
+| R10 | The plan's own field research (§17) had not been done, yet phase 0 committed to the migration | **Invert the sequence**: mentions inbox, then a composed read-only Today, then the spine | No irreversible step taken before the evidence; Today reaches users in days |
+| R11 | `apiKeys.scopes` is a frozen stored string, so repointing task ops to `work:*` would break every issued key, OAuth grant and cached Mira key | **The `work` resource lands additively** | Task ops accept `work:X` **or** `project:X` during transition; presets widened; no key is invalidated |
+| R12 | Every task reader collects with no parent concept (`convex/projectTasks.ts:34`, `:80`, `:178`) | **Reader filters ship and deploy before the backfill runs** | Checklist rows can never surface as top-level tasks in the three UIs |
+| R13 | The app shell holds no always-on subscriptions; Today would be the first, on the page nobody closes | **Live only for my own work; signals and agenda on demand** | Reactivity spent where the user is the writer |
+
+### 20.2 What already exists (reused, not rebuilt)
+
+| Need | Existing thing | Verdict |
+|---|---|---|
+| Task storage, RBAC, rate limiting, audit | `projectTasks` + `projectTasksWrites` (18 tests) | Widened, not replaced |
+| Comments, threads, mentions | `commentThreads` / `comments` with `mentionUserIds` | Reused; only the notification write is new |
+| Org-timezone day boundaries | `convex/lib/quoteDates.ts`, `convex/lib/orgSettings.ts` | Reused verbatim |
+| Derived org-wide signals | `overbookingBoard`, `projectReadiness`, `reservationConflicts` | Left where they are; Triage does not call them (R4) |
+| Quote state truth | `effectiveQuoteStatus()` in `convex/lib/quoteState.ts` | Reused; never read the stored column |
+| Paginated data migration | `convex/backfillProjectWindow.ts` + driver script + test | Copied as the pattern for R6 |
+| Both-runtime shared module | `convex/lib/permissionsCore.ts` | Copied as the pattern for R7 |
+| Saved views, tags, drag and drop | `savedTableViews`, free-form `tags`, dnd-kit in the Equipment tab | Reused |
+| Email digest + dedupe | 15-minute notification cron + `notificationEmailLogs` | Reused |
+| Dead code to revive | `project-board.tsx` (7-column kanban, disabled) | Revived in phase 2 |
+
+### 20.3 NOT in scope
+
+| Deferred | Why |
+|---|---|
+| Renaming the table to `workItems` | A table name is not a product surface; not worth a copy migration (R1) |
+| `workItemLinks`, unified timeline | No phase 0/1 consumer; phase 3 owns both (R2) |
+| Any scheduled recomputation | Derived signals make it unnecessary (R3) |
+| Gear, overbooking and conflict signals in Triage | They have two homes already, and the read is the most expensive in the app (R4) |
+| Outbound client email, portal, payments | Decision D3 stands |
+| Auto-scheduling, timers, PM-side time logging | A planner that reshuffles you is noise in this business |
+| Rich-text editor, list virtualisation, charting | None exists in the tree; each is its own decision |
+| Crew-facing Today, SMS | Decision D1: crew stay on the email and token flow |
+| Web push | Phase 2; needs a key pair, a subscriptions table and a service worker |
+
+### 20.4 Failure modes for every new code path
+
+| Path | Realistic production failure | Test? | Handled? | User sees |
+|---|---|---|---|---|
+| Checklist migration | Re-run duplicates every subtask | Yes (idempotency) | Yes, guard on existing child | Nothing; it no-ops |
+| Checklist migration | Partial run leaves half a task migrated | Yes (cursor resume) | Yes, page-at-a-time with both shapes readable | Nothing |
+| Mention → notification | Notification insert throws, comment already written | Yes | Yes, same transaction, both roll back | Comment fails with a clear error |
+| Triage derive | A referenced project was deleted mid-read | Yes | Yes, signal simply stops computing | Row disappears |
+| Triage derive | Snoozed signal reappears early on a timezone edge | Yes (unit) | Yes, org-tz boundary | Row returns a day late at worst |
+| `reorderNative` | Two people reorder at once | Yes | Convex transaction ordering | Last write wins, list re-renders |
+| Bucket cap | A user with 400 overdue items | Yes | Yes, server cap + count | "312 more" instead of a hang |
+| Subtask cascade | Project deleted, children orphaned | Yes (regression) | Yes, cascade sweeps children | Nothing left behind |
+| Work assigned to a departed member | Assignee no longer in the org | Yes | Falls back to unassigned on the project card | Item shows as unassigned |
+| **Silent-failure check** | None of the above is both untested and unhandled | — | — | — |
+
+### 20.5 Worktree parallelisation
+
+| Step | Modules touched | Depends on |
+|---|---|---|
+| A1 Vocabulary module + permissions resource | `convex/lib/`, `src/lib/`, `src/components/settings/` | — |
+| A2 Schema widen + indexes | `convex/schema.ts`, `scripts/org-export-tables.ts` | — |
+| B1 Work operations + guards | `convex/projectTasks*.ts` | A1, A2 |
+| B2 Notifications table + bell | `convex/notifications*.ts`, `src/components/layout/` | A2 |
+| B3 Checklist migration | `convex/backfill*.ts`, `scripts/` | A2, B1 |
+| C1 Today page | `src/app/(app)/today/`, `src/lib/work-*` | B1 |
+| C2 Triage derive | `convex/workTriage.ts` | B1, B2 |
+
+```
+Lane A: A1 + A2          (parallel with each other, both independent)
+            │
+Lane B: B1 ─┼─ B2        (B1 and B2 parallel once A lands; B3 after B1)
+            │
+Lane C: C1 ─┴─ C2        (parallel once B lands)
+```
+
+Launch A1 and A2 in parallel worktrees and merge both. Then B1 and B2 in parallel, B3 after B1.
+Then C1 and C2 in parallel. **Conflict flag:** A1 and B1 both touch `convex/lib/`, so A1 must
+merge before B1 starts rather than running alongside it.
+
+### 20.6 Outside voice (independent agent, no session context)
+
+Codex was unavailable, so the cold read ran as an independent agent with the revised plan and no
+conversation history. Four objections, all recorded here because two changed the plan:
+
+1. **"Killing the cron did not remove the read cost, it made it unbounded."** Bounded off-screen
+   ticks were replaced by always-open subscriptions over org-wide index ranges, on the page
+   people never close. Indexed means cheap per run, not bounded run count. **Accepted in part →
+   R13:** reactivity kept only where the user is the writer. The read sets in question are small
+   and low-churn, unlike the query that produced the 4.66 GB bill, so this is a posture change
+   rather than a reversal.
+2. **"Ship Today with no schema change and do the field research first."** **Accepted → R10.**
+3. **"Backfill before readers equals visible corruption."** Verified against
+   `convex/projectTasks.ts:34`, `:80`, `:178` — every read collects with no parent concept.
+   **Accepted → R12.** Both reviewers agree, so this was applied as a correction rather than put
+   to a decision.
+4. **"The `work` resource is not additive."** Verified: `apiKeys.scopes` is
+   `v.optional(v.string())`, frozen at mint and at OAuth consent, and
+   `src/lib/api-key-presets.ts:38` hand-maintains the resource list. **Accepted → R11.**
+
+One challenge is **unresolved and cheap to settle**: the outside voice argues the warehouse
+permission gap may be theoretical, since an ops lead in a two-user organisation is probably a
+`member`, who already holds `project:update`. Count the members per role in production before
+phase 1 spends effort on R5. If nobody holds the `warehouse` role, R5 shrinks to a rename.
+
+### 20.6 Completion summary
+
+| Section | Result |
+|---|---|
+| Step 0 scope challenge | Scope reduced: table copy removed, two subsystems deferred |
+| Architecture | 4 issues, all resolved |
+| Code quality | 1 issue, resolved |
+| Tests | Coverage map produced, 27 gaps identified, all scheduled |
+| Performance | 1 issue, resolved |
+| Failure modes | 0 critical gaps (no path is both untested and unhandled) |
+| Outside voice | Ran (independent agent); 4 objections, 3 accepted, 1 open and cheap to settle |
+| Unresolved decisions | One: does anyone actually hold the `warehouse` role in production? |

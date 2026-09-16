@@ -275,14 +275,17 @@ describe("dispatch — confirmation gate (Phase 4, #1000)", () => {
     expect(result.status).toBe(201);
   });
 
-  // lineItemWrites.patchNative is classified `medium`, but `justification` itself
-  // carries `danger: "high"` in the privileged-arg policy table — supplying one
-  // escalates THIS call to confirm-required without reclassifying the operation.
+  // lineItemWrites.patchNative is classified `medium`, but `allowOverbook`
+  // itself carries `danger: "high"` in the privileged-arg policy table —
+  // supplying `true` escalates THIS call to confirm-required without
+  // reclassifying the operation. (`justification` used to be this example's
+  // arg, but #1230 deleted the JUSTIFY tier it softened — its policy danger
+  // dropped to `low`, so it no longer escalates anything.)
   test("a medium-danger op escalates to confirm-required when it supplies a privileged arg whose OWN policy danger is high", async () => {
     const result = await dispatch(
       "lineItemWrites.patchNative",
       {
-        args: { id: "li1", orgId: "org_A", set: {}, clear: [], justification: "Client asked for a change on site." },
+        args: { id: "li1", orgId: "org_A", set: {}, clear: [], allowOverbook: true },
         idempotencyKey: "idem-key-12345",
       },
       auth(),
@@ -291,17 +294,17 @@ describe("dispatch — confirmation gate (Phase 4, #1000)", () => {
     expect(result.status).toBe(409);
     const body = result.body as unknown as { error: { code: string; details: { summary: string } } };
     expect(body.error.code).toBe("CONFIRMATION_REQUIRED");
-    expect(body.error.details.summary).toMatch(/justification/);
+    expect(body.error.details.summary).toMatch(/allowOverbook/);
     expect(mockClient.mutation).not.toHaveBeenCalled();
   });
 
-  test("the same op with an EMPTY justification does not escalate (nothing is actually being invoked)", async () => {
+  test("the same op with allowOverbook:false does not escalate (nothing is actually being invoked)", async () => {
     idempotencyClient.mutation.mockResolvedValueOnce({ status: "CLAIMED" }).mockResolvedValueOnce(null);
     mockClient.mutation.mockResolvedValueOnce({ id: "li1" });
 
     const result = await dispatch(
       "lineItemWrites.patchNative",
-      { args: { id: "li1", orgId: "org_A", set: {}, clear: [], justification: "" }, idempotencyKey: "idem-key-12345" },
+      { args: { id: "li1", orgId: "org_A", set: {}, clear: [], allowOverbook: false }, idempotencyKey: "idem-key-12345" },
       auth(),
       "req_16",
     );

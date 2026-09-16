@@ -49,50 +49,48 @@ async function seedMember(t: T, role: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// projectUnlockSessionsWrites.openNative — denied by default, scope-gated
+// projectPricingLockWrites.unlockPricingNative — denied by default, scope-gated
+// (#1230, successor to the deleted `projectUnlockSessionsWrites.openNative`'s
+// `project:unlock_session` scope — renamed `project:unlock_pricing`).
 // ────────────────────────────────────────────────────────────────────────────
 
-describe("privileged capability — project:unlock_session (denied by default)", () => {
+describe("privileged capability — project:unlock_pricing (denied by default)", () => {
   async function seed(t: T, role = "owner") {
     await seedMember(t, role);
     await t.run(async (ctx) => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "COMPLETED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
-        liveVersionId: "v-p1",
+        liveVersionId: "v-p1", pricingLocked: true, pricingLockedAt: NOW - 1000, pricingLockedById: "someone_else",
       });
       await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
   }
 
-  const openArgs = {
-    projectId: "p1", orgId: ORG, scope: "FULL" as const,
-    justification: "Fixing a data-entry mistake after completion.",
-    actor: ACTOR, auditId: "log1", now: NOW,
-  };
+  const unlockArgs = { id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
 
-  test("an agent key with no unlock_session scope is rejected, even holding project:update", async () => {
+  test("an agent key with no unlock_pricing scope is rejected, even holding project:update and canUnlockPricing (owner)", async () => {
     const t = makeT();
     await seed(t);
     await seedKey(t, ["project:update"]);
     await expect(
-      t.withIdentity(asAgent).mutation(api.projectUnlockSessionsWrites.openNative, openArgs),
-    ).rejects.toThrow(/missing.*'project:unlock_session'/i);
+      t.withIdentity(asAgent).mutation(api.projectPricingLockWrites.unlockPricingNative, unlockArgs),
+    ).rejects.toThrow(/missing.*'project:unlock_pricing'/i);
   });
 
   test("an agent key WITH the explicit scope succeeds (the scope exists, it's just granted by no preset)", async () => {
     const t = makeT();
     await seed(t);
-    await seedKey(t, ["project:update", "project:unlock_session"]);
-    const res = await t.withIdentity(asAgent).mutation(api.projectUnlockSessionsWrites.openNative, openArgs);
-    expect(res.sessionId).toBeTruthy();
+    await seedKey(t, ["project:update", "project:unlock_pricing"]);
+    const res = await t.withIdentity(asAgent).mutation(api.projectPricingLockWrites.unlockPricingNative, unlockArgs);
+    expect(res.pricingLocked).toBe(false);
   });
 
   test("a browser user (owner) is unaffected — the scope check is agent-only", async () => {
     const t = makeT();
     await seed(t);
-    const res = await t.withIdentity(asUser).mutation(api.projectUnlockSessionsWrites.openNative, openArgs);
-    expect(res.sessionId).toBeTruthy();
+    const res = await t.withIdentity(asUser).mutation(api.projectPricingLockWrites.unlockPricingNative, unlockArgs);
+    expect(res.pricingLocked).toBe(false);
   });
 });
 
@@ -354,27 +352,29 @@ describe("gate parity — user token vs agent token", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        // #1230: status alone no longer locks money — the explicit boolean does.
         status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW, total: 0,
-        liveVersionId: "v-p1-5",
+        liveVersionId: "v-p1-5", pricingLocked: true,
       });
       await ctx.db.insert("projectVersions", { id: "v-p1-5", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("projectLineItems", {
         id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, unitPrice: 10,
         sortOrder: 0, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PENDING",
         isKitChild: false, createdAt: NOW, updatedAt: NOW,
+        versionId: "v-p1-5", lineageId: "li1",
       });
     });
   }
 
-  test("FINANCIALS_LOCKED fires identically for both", async () => {
+  test("PRICING_LOCKED fires identically for both (#1230 — renamed from FINANCIALS_LOCKED)", async () => {
     const t = makeT();
     await seedConfirmed(t);
     const patch = {
       id: "li1", orgId: ORG, set: { unitPrice: 99 }, clear: [], entityName: "Line item",
       allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
     };
-    await expect(t.withIdentity(asAgent).mutation(api.lineItemWrites.patchNative, patch)).rejects.toThrow(/FINANCIALS_LOCKED/);
-    await expect(t.withIdentity(asUser).mutation(api.lineItemWrites.patchNative, { ...patch, auditId: "log2" })).rejects.toThrow(/FINANCIALS_LOCKED/);
+    await expect(t.withIdentity(asAgent).mutation(api.lineItemWrites.patchNative, patch)).rejects.toThrow(/PRICING_LOCKED/);
+    await expect(t.withIdentity(asUser).mutation(api.lineItemWrites.patchNative, { ...patch, auditId: "log2" })).rejects.toThrow(/PRICING_LOCKED/);
   });
 
   // The CAP is deliberately different by kind (agent 50 vs human 500 — the whole

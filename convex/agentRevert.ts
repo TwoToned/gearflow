@@ -37,8 +37,8 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  *
  * Deliberately NOT agent-reachable in practice: {@link assertRevertAgentWindowAllowed}
  * requires an explicit scope granted in no preset, same "denied by default"
- * posture as `project:unlock_session` — an agent must never be able to revert
- * its own (or another key's) writes.
+ * posture as `project:unlock_pricing` (#1230, renamed from `project:unlock_session`)
+ * — an agent must never be able to revert its own (or another key's) writes.
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });

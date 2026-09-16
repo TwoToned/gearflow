@@ -60,14 +60,23 @@ export const PRIVILEGED_ARG_POLICIES: readonly PrivilegedArgPolicy[] = [
   },
   {
     arg: "justification",
-    softens: "assertLifecycleGuard's JUSTIFY tier (ON_SITE / RETURNED projects)",
+    softens:
+      "NOTHING, as of #1230 (Phase 4, \"Project versioning v2\" parent #1221) — " +
+      "`assertLifecycleGuard`'s JUSTIFY tier (ON_SITE / RETURNED projects) this " +
+      "argument used to soften is deleted along with the rest of the 4-tier lock " +
+      "system. It survives as an accepted-but-IGNORED arg on the two mutations " +
+      "wrapped by a stable/v1 curated MCP tool (`lineItemWrites.addNative`, " +
+      "`crewAssignmentsWrites.createNative`) purely because a stable operation's " +
+      "fields may only be ADDED, never removed (design §13 decision 12) — removing " +
+      "the arg outright would need a /v2. Every other mutation that used to accept " +
+      "it had the arg deleted outright (not stable, no contract to preserve).",
     agentAccess: "allowed",
-    danger: "high",
+    danger: "low",
     rationale:
-      "Decision 1: this IS the human-equivalent act, so denying it would just make agents " +
-      "useless on live projects. Bounded by `danger: high` -> `confirm: true`, and the audit " +
-      "row already carries the justification plus apiKeyId, so agent-authored justifications " +
-      "are reviewable as a filterable set rather than buried.",
+      "A no-op arg gates nothing, so there is nothing left to bound with `confirm: " +
+      "true`. Kept in this register (rather than removed) because the CI scanner " +
+      "flags ANY arg literally named `justification` regardless of whether it does " +
+      "anything — this row is what satisfies that gate for the two stable holdouts.",
   },
   {
     arg: "emitSideEffects",

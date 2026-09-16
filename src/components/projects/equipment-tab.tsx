@@ -24,13 +24,8 @@ import {
 } from "@/hooks/use-native-line-item-writes";
 import { useEquipmentDnd, type DraggedRowClone } from "@/hooks/use-equipment-dnd";
 import { useCanDo } from "@/lib/use-permissions";
-import { Plus, FolderPlus, FolderTree, Pencil, Trash2, ChevronDown as ChevronDownIcon } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { FolderTree, Pencil, Trash2 } from "lucide-react";
+import { EquipmentAddMenuTrigger } from "./equipment-add-menu-trigger";
 import { toast } from "sonner";
 import { ConvexError } from "convex/values";
 
@@ -121,6 +116,23 @@ interface EquipmentTabProps {
    *  chained hand-off deep link (`?modelId=` on this tab's URL), never by
    *  an ordinary tab visit. */
   autoOpenAddModelId?: string;
+  /** Project Versioning v2, Phase 5 (#1231) — the version being VIEWED
+   *  (`?v=`'s resolved id), or undefined for the project's live version.
+   *  Threaded straight to `equipmentTab.bundle`'s own `versionId` arg so
+   *  every existing/edited row on screen belongs to the viewed version. */
+  versionId?: string;
+  /** Set (to a short reason) while viewing a NON-LIVE version — greys the
+   *  "Add ▾" trigger with a tooltip instead of hiding it (D15). Existing
+   *  rows on that version stay fully editable (price/qty/reorder/delete all
+   *  operate on an already-versioned row id, which is unambiguous); only
+   *  NEW inserts are gated here, because every create mutation this tab
+   *  calls (`lineItemWrites.addNative` etc.) still stamps the row onto the
+   *  project's LIVE version unconditionally — Phases 1-4 added `versionId`
+   *  to every READ this tab needs, but never extended the CREATE mutations
+   *  with a target-version argument. Gating the one entry point that would
+   *  otherwise silently misfile a new line under the wrong version is safer
+   *  than leaving it enabled — see FEATUREDOCS/76's Phase 5 section. */
+  addDisabledReason?: string;
 }
 
 /** `useSortable()`'s `transform`/`transition` turned into an inline style —
@@ -413,7 +425,7 @@ function UncategorizedHeader({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId, versionId, addDisabledReason }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isMobile = useIsMobile();
@@ -524,6 +536,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     dnd.orderOverlay,
     dnd.groupOrderOverlay,
     dnd.categoryOrderOverlay,
+    versionId,
   );
 
   // #1230: removing a line item/group is structural — never gated by the
@@ -1469,44 +1482,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     else selection.toggle(sortableId, true);
   };
 
-  // Primary "Add ▾" menu (item / group / category). The three add actions reuse
-  // the exact handlers the old three buttons triggered (UnifiedAddDialog,
-  // AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. Rendered
-  // either inline in the in-panel toolbar (fallback) or portalled onto the tab
-  // row when the page supplies `addMenuSlot`.
-  // #1230: adding is always structural (never gated by the pricing lock —
-  // a locked project just defaults a new add's price to $0 + Unpriced badge),
-  // so the Add ▾ menu is never gated anymore — no dead-end paths to protect
-  // against.
+  // Primary "Add ▾" menu (item / group / category) — extracted to
+  // `equipment-add-menu-trigger.tsx` (Phase 5, #1231) so its two render
+  // paths (normal menu vs. greyed+tooltipped while viewing a non-live
+  // version, `addDisabledReason`) are independently testable. The three add
+  // actions reuse the exact handlers the old three buttons triggered
+  // (UnifiedAddDialog, AddGroupToolbarDialog, AddCategoryDialog) — no
+  // behaviour change. Rendered either inline in the in-panel toolbar
+  // (fallback) or portalled onto the tab row when the page supplies
+  // `addMenuSlot`. #1230: adding is always structural (never gated by the
+  // pricing lock — a locked project just defaults a new add's price to $0 +
+  // Unpriced badge), so this is never gated by the PRICING lock.
   const addMenu = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm" className="gap-1.5" data-tour-anchor="tour-equipment-add">
-          <Plus className="h-3.5 w-3.5" />
-          Add
-          <ChevronDownIcon className="h-3 w-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onClick={() => {
-            setUnifiedAddTarget({});
-            setShowUnifiedAdd(true);
-          }}
-        >
-          <Plus className="mr-2 h-3.5 w-3.5" />
-          Add item
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>
-          <FolderPlus className="mr-2 h-3.5 w-3.5" />
-          Add group
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setShowAddCategory(true)}>
-          <FolderTree className="mr-2 h-3.5 w-3.5" />
-          Add category
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <EquipmentAddMenuTrigger
+      disabledReason={addDisabledReason}
+      onAddItem={() => {
+        setUnifiedAddTarget({});
+        setShowUnifiedAdd(true);
+      }}
+      onAddGroup={() => setShowAddGroupFromToolbar(true)}
+      onAddCategory={() => setShowAddCategory(true)}
+    />
   );
 
   return (

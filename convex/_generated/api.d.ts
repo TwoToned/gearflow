@@ -286,6 +286,7 @@ import type * as testTagRecords from "../testTagRecords.js";
 import type * as testTagRecordsWrites from "../testTagRecordsWrites.js";
 import type * as userNotificationPreferences from "../userNotificationPreferences.js";
 import type * as users from "../users.js";
+import type * as versions from "../versions.js";
 import type * as warehouseCloseWrites from "../warehouseCloseWrites.js";
 import type * as warehouseCloses from "../warehouseCloses.js";
 import type * as warehouseDashboardTokens from "../warehouseDashboardTokens.js";
@@ -588,6 +589,7 @@ declare const fullApi: ApiFromModules<{
   testTagRecordsWrites: typeof testTagRecordsWrites;
   userNotificationPreferences: typeof userNotificationPreferences;
   users: typeof users;
+  versions: typeof versions;
   warehouseCloseWrites: typeof warehouseCloseWrites;
   warehouseCloses: typeof warehouseCloses;
   warehouseDashboardTokens: typeof warehouseDashboardTokens;

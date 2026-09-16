@@ -7,10 +7,20 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 
 /**
- * Integration coverage for the #957 lifecycle-lock program (#791 finance
- * soft-lock, #793 ON_SITE justification gate, #792 hard-lock + snapshots).
- * Exercises the shared `assertLifecycleGuard` through real mutations rather
- * than re-testing its pure logic (see convex/lib/projectLocks.test.ts).
+ * Integration coverage for the #1230 (Phase 4 of "Project versioning v2",
+ * parent #1221) pricing-lock program — the SHRUNKEN successor to the deleted
+ * 4-tier lock system (#791 finance soft-lock, #793 ON_SITE justification
+ * gate, #792 hard-lock + unlock sessions) this file used to cover. Exercises
+ * `assertPricingUnlocked`/`defaultsToZeroOnInsert` through real mutations
+ * across every gated entity family, rather than re-testing the pure logic
+ * (see `convex/lib/projectLocks.test.ts` for that).
+ *
+ * The truth table (design §4, D-table):
+ *   non-live version           → money/structure/plan/warehouse all allowed
+ *   live version, unlocked     → all allowed
+ *   live version, locked       → money locked (one click to clear via
+ *                                 unlockPricingNative); structure/plan/
+ *                                 warehouse still allowed (new adds $0-default)
  */
 const modules = import.meta.glob("./**/*.ts");
 function makeT() {
@@ -25,7 +35,6 @@ const USER = "user_1";
 const NOW = 1_700_000_000_000;
 const asUser = () => ({ subject: USER, orgId: ORG });
 const ACTOR = { userId: USER, userName: "Alice" };
-const JUSTIFICATION = "Client requested a change on site during load-in.";
 
 async function member(t: ReturnType<typeof makeT>, role: string) {
   await t.run(async (ctx) => {
@@ -35,6 +44,9 @@ async function member(t: ReturnType<typeof makeT>, role: string) {
   });
 }
 
+/** A project with a live version `v-p1`, optionally `pricingLocked`, and
+ *  optionally an ADDITIONAL non-live version `v-other` — the fixture every
+ *  truth-table test needs to prove the non-live-version exemption. */
 async function project(t: ReturnType<typeof convexTest>, status: string, extra: Record<string, unknown> = {}) {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
@@ -44,14 +56,10 @@ async function project(t: ReturnType<typeof convexTest>, status: string, extra: 
       liveVersionId: "v-p1",
     });
     await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projectVersions", { id: "v-other", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
   });
 }
 
-/** #986 — advancing to CONFIRMED now requires an ACCEPTED quote revision (or an
- *  admin override with a justification). Tests below whose subject is snapshot
- *  capture, not the acceptance gate, satisfy it directly rather than routing
- *  through the whole send/accept flow. The gate itself is covered in
- *  convex/projectWrites.test.ts. */
 async function acceptedQuote(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     await ctx.db.insert("quotes", {
@@ -61,121 +69,270 @@ async function acceptedQuote(t: ReturnType<typeof convexTest>) {
   });
 }
 
-describe("#791 finance soft-lock — projectWrites.updateNative", () => {
-  test("member cannot edit a locked money field on a CONFIRMED project with no open session", async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// The truth table, exercised across every gated entity family.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("assertPricingUnlocked truth table — project field (projectWrites.updateNative)", () => {
+  test("live + unlocked: a money field (taxRate) is editable", async () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "CONFIRMED");
+    await t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
+      id: "p1", orgId: ORG, set: { taxRate: 20 }, clear: [], actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(Number(p?.taxRate)).toBe(20);
+  });
+
+  test("live + locked: the same money field is rejected (PRICING_LOCKED)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await expect(
       t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
         id: "p1", orgId: ORG, set: { taxRate: 20 }, clear: [], actor: ACTOR, auditId: "log1", now: NOW,
       }),
-    ).rejects.toThrow(/FINANCIALS_LOCKED|locked/i);
+    ).rejects.toThrow(/PRICING_LOCKED|pricing is locked/i);
   });
 
-  test("non-money fields stay editable on a CONFIRMED project", async () => {
+  test("live + locked: a non-money field (name) stays editable", async () => {
     const t = makeT();
     await member(t, "member");
-    await project(t, "CONFIRMED");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
       id: "p1", orgId: ORG, set: { name: "Renamed Gig" }, clear: [], actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.name).toBe("Renamed Gig");
-    });
+    const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.name).toBe("Renamed Gig");
   });
 
-  test("with an open FINANCIAL session, the money field edit succeeds and is tagged with the session id", async () => {
+  test("clearing the lock (unlockPricingNative) writes an activity row and re-opens the money field", async () => {
     const t = makeT();
-    await member(t, "member");
-    await project(t, "CONFIRMED");
-    const { sessionId } = await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
+    await member(t, "owner");
+    await project(t, "CONFIRMED", { pricingLocked: true, pricingLockedAt: NOW - 1000, pricingLockedById: USER, pricingLockedByName: "Alice" });
+    await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.unlockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "unlock1", now: NOW,
     });
-    await t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
-      id: "p1", orgId: ORG, set: { taxRate: 20 }, clear: [], actor: ACTOR, auditId: "log2", now: NOW + 1,
-    });
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(Number(p?.taxRate)).toBe(20);
-      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log2")).first();
-      expect((log?.metadata as { unlockSessionId?: string } | undefined)?.unlockSessionId).toBe(sessionId);
-    });
-  });
+    const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.pricingLocked).toBe(false);
+    const log = await t.run((ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "unlock1")).first());
+    expect(log?.action).toBe("PRICING_UNLOCKED");
 
-  test("an OPEN-tier project is never gated", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "QUOTED");
     await t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
-      id: "p1", orgId: ORG, set: { taxRate: 20 }, clear: [], actor: ACTOR, auditId: "log1", now: NOW,
+      id: "p1", orgId: ORG, set: { taxRate: 25 }, clear: [], actor: ACTOR, auditId: "log2", now: NOW + 1,
     });
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(Number(p?.taxRate)).toBe(20);
-    });
+    expect(Number((await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first()))?.taxRate)).toBe(25);
   });
 });
 
-describe("#791 $0 default on add — lineItemWrites.addCustomNative", () => {
-  const fields = { description: "Extra cable", quantity: 1, unitPrice: 500, discount: 50 };
+describe("assertPricingUnlocked truth table — line item (lineItemWrites.patchNative)", () => {
+  async function seedLine(t: ReturnType<typeof makeT>, versionId = "v-p1") {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1,
+        isKitChild: false, versionId, lineageId: "li1",
+      });
+    });
+  }
 
-  test("locked with no session: unitPrice is forced to 0 server-side (ignores the client value)", async () => {
+  test("live + unlocked: unitPrice is editable", async () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "CONFIRMED");
+    await seedLine(t);
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+      id: "li1", orgId: ORG, set: { unitPrice: 200 }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(Number(li?.unitPrice)).toBe(200);
+  });
+
+  test("live + locked: unitPrice is rejected", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await seedLine(t);
+    await expect(
+      t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+        id: "li1", orgId: ORG, set: { unitPrice: 200 }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
+      }),
+    ).rejects.toThrow(/PRICING_LOCKED|pricing is locked/i);
+  });
+
+  test("live + locked: a structural field (description) stays editable", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await seedLine(t);
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+      id: "li1", orgId: ORG, set: { description: "Speaker (updated)" }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(li?.description).toBe("Speaker (updated)");
+  });
+
+  // THE single most important invariant of the whole phase: a non-live
+  // version's own row is writable in every field family regardless of the
+  // project's pricingLocked flag.
+  test("locked project, but the row belongs to a NON-LIVE version: unitPrice is still editable", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await seedLine(t, "v-other");
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+      id: "li1", orgId: ORG, set: { unitPrice: 999 }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(Number(li?.unitPrice)).toBe(999);
+  });
+});
+
+describe("assertPricingUnlocked truth table — group price (projectGroupsWrites.updateGroupPriceNative)", () => {
+  async function seedGroup(t: ReturnType<typeof makeT>, versionId = "v-p1") {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectGroups", {
+        id: "g1", organizationId: ORG, projectId: "p1", title: "Wireless Mic Kit", price: 1000, sortOrder: 0,
+        versionId, lineageId: "g1",
+      });
+    });
+  }
+
+  test("live + unlocked: price is editable", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED");
+    await seedGroup(t);
+    await t.withIdentity(asUser()).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 1400, now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    const g = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first());
+    expect(Number(g?.price)).toBe(1400);
+  });
+
+  test("live + locked: price is rejected", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await seedGroup(t);
+    await expect(
+      t.withIdentity(asUser()).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+        id: "g1", orgId: ORG, price: 1400, now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/PRICING_LOCKED|pricing is locked/i);
+  });
+
+  test("locked project, but the group belongs to a NON-LIVE version: price is still editable", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await seedGroup(t, "v-other");
+    await t.withIdentity(asUser()).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 1400, now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    const g = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first());
+    expect(Number(g?.price)).toBe(1400);
+  });
+});
+
+describe("assertPricingUnlocked truth table — crew assignment (crewAssignmentsWrites.updateNative, unversioned — always follows the live job)", () => {
+  async function seedAssignment(t: ReturnType<typeof makeT>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", isActive: true });
+      await ctx.db.insert("crewAssignments", {
+        id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", status: "PENDING", isProjectManager: false,
+        createdAt: NOW, updatedAt: NOW,
+      });
+    });
+  }
+  const patchArgs = (rateOverride: number) => ({
+    id: "a1", orgId: ORG, crewMemberId: "c1", status: "PENDING" as const, isProjectManager: false,
+    rateOverride, now: NOW, actor: ACTOR, auditId: "log1",
+  });
+
+  test("live + unlocked: rateOverride is editable", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await project(t, "CONFIRMED");
+    await seedAssignment(t);
+    await t.withIdentity(asUser()).mutation(api.crewAssignmentsWrites.updateNative, patchArgs(500));
+    const a = await t.run((ctx) => ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "a1")).first());
+    expect(a?.rateOverride).toBe(500);
+  });
+
+  test("live + locked: rateOverride is rejected", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await seedAssignment(t);
+    await expect(
+      t.withIdentity(asUser()).mutation(api.crewAssignmentsWrites.updateNative, patchArgs(500)),
+    ).rejects.toThrow(/PRICING_LOCKED|pricing is locked/i);
+  });
+
+  test("live + locked: a structural field (status) stays editable", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await seedAssignment(t);
+    await t.withIdentity(asUser()).mutation(api.crewAssignmentsWrites.updateNative, {
+      id: "a1", orgId: ORG, crewMemberId: "c1", status: "CONFIRMED" as const, isProjectManager: false,
+      now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    const a = await t.run((ctx) => ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "a1")).first());
+    expect(a?.status).toBe("CONFIRMED");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// $0 default on a structural add while locked — pricedUnderLock (the Unpriced
+// badge's real signal, stored at insert time, never inferred later).
+// ─────────────────────────────────────────────────────────────────────────────
+describe("pricedUnderLock — $0-default on structural add while locked", () => {
+  const fields = { description: "Extra cable", quantity: 1, unitPrice: 500, discount: 50 };
+
+  test("locked: unitPrice is forced to 0 server-side (ignores the client value) and pricedUnderLock is stamped", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
       id: "li1", organizationId: ORG, projectId: "p1", fields, actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li?.unitPrice).toBe(0);
-      expect(li?.discount).toBeUndefined();
-      // The Unpriced badge's real signal (bug fix, follow-up to #990): stored at
-      // insert time, not inferred later from "currently locked + currently $0".
-      expect(li?.pricedUnderLock).toBe(true);
-    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(li?.unitPrice).toBe(0);
+    expect(li?.discount).toBeUndefined();
+    expect(li?.pricedUnderLock).toBe(true);
   });
 
-  test("unlocked (OPEN tier): the client's price is kept, and pricedUnderLock is never set", async () => {
+  test("unlocked: the client's price is kept, and pricedUnderLock is never set", async () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "QUOTED");
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
       id: "li1", organizationId: ORG, projectId: "p1", fields, actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(Number(li?.unitPrice)).toBe(500);
-      expect(li?.pricedUnderLock).toBeFalsy();
-    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(Number(li?.unitPrice)).toBe(500);
+    expect(li?.pricedUnderLock).toBeFalsy();
   });
 
-  test("inside an open session, auto-pricing resumes (the client's price is kept), pricedUnderLock stays unset", async () => {
+  test("after unlockPricingNative clears the lock, auto-pricing resumes for a subsequent add", async () => {
     const t = makeT();
-    await member(t, "member");
-    await project(t, "CONFIRMED");
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
+    await member(t, "owner");
+    await project(t, "CONFIRMED", { pricingLocked: true });
+    await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.unlockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "unlock1", now: NOW,
     });
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
       id: "li1", organizationId: ORG, projectId: "p1", fields, actor: ACTOR, auditId: "log1", now: NOW + 1,
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(Number(li?.unitPrice)).toBe(500);
-      expect(li?.pricedUnderLock).toBeFalsy();
-    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(Number(li?.unitPrice)).toBe(500);
+    expect(li?.pricedUnderLock).toBeFalsy();
   });
-});
 
-describe("pricedUnderLock — the Unpriced badge's real cause, not an inference (bug fix)", () => {
   test("a line item that's been $0 since BEFORE any lock existed does NOT retroactively earn the badge once the project locks", async () => {
     const t = makeT();
     await member(t, "member");
-    // OPEN-tier project — a deliberate $0 line (e.g. no catalog rate, or a
-    // genuinely free item) added with nothing locked yet.
     await project(t, "QUOTED");
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
       id: "li1", organizationId: ORG, projectId: "p1",
@@ -184,48 +341,40 @@ describe("pricedUnderLock — the Unpriced badge's real cause, not an inference 
     });
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li?.unitPrice).toBe(0);
       expect(li?.pricedUnderLock).toBeFalsy();
     });
-    // The project later locks (e.g. quote sent, status advances) — the row's
-    // OWN pricedUnderLock is untouched by that transition; only a write to
-    // the row itself can ever set it.
+    // The project later locks (a person locks it, or a status/quote event
+    // does) — the row's OWN pricedUnderLock is untouched by that transition;
+    // only a write to the row itself can ever set it.
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      await ctx.db.patch(p!._id, { status: "CONFIRMED" });
+      await ctx.db.patch(p!._id, { pricingLocked: true });
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li?.pricedUnderLock).toBeFalsy();
-    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(li?.pricedUnderLock).toBeFalsy();
   });
 
-  test("patchNative's unitPrice edit clears a stale pricedUnderLock once a human deliberately prices the row", async () => {
+  test("patchNative's unitPrice edit clears a stale pricedUnderLock once a human deliberately prices the row (after unlocking)", async () => {
     const t = makeT();
-    await member(t, "member");
-    await project(t, "CONFIRMED");
+    await member(t, "owner");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
       id: "li1", organizationId: ORG, projectId: "p1",
       fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
       actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li?.pricedUnderLock).toBe(true);
+    expect((await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first()))?.pricedUnderLock).toBe(true);
+
+    await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.unlockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "unlock1", now: NOW + 1,
     });
-    const { sessionId } = await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW + 1,
-    });
-    expect(sessionId).toBeTruthy();
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
       id: "li1", orgId: ORG, entityName: "Extra cable", allowOverbook: false,
       set: { unitPrice: 120, updatedAt: NOW + 2 }, clear: [], actor: ACTOR, auditId: "log2", now: NOW + 2,
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(Number(li?.unitPrice)).toBe(120);
-      expect(li?.pricedUnderLock).toBe(false);
-    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(Number(li?.unitPrice)).toBe(120);
+    expect(li?.pricedUnderLock).toBe(false);
   });
 
   test("a browser-direct caller cannot set pricedUnderLock via patchNative's set object", async () => {
@@ -239,23 +388,18 @@ describe("pricedUnderLock — the Unpriced badge's real cause, not an inference 
     });
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
       id: "li1", orgId: ORG, entityName: "Cable", allowOverbook: false,
-      // duration is a locked field but NOT unitPrice, so this stays a
-      // "structural"-ish touch — pricedUnderLock must not flip just because
-      // a caller stuffs it into `set`.
       set: { notes: "updated", pricedUnderLock: true, updatedAt: NOW + 1 } as Record<string, unknown>,
       clear: [], actor: ACTOR, auditId: "log2", now: NOW + 1,
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li?.notes).toBe("updated");
-      expect(li?.pricedUnderLock).toBeFalsy();
-    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(li?.notes).toBe("updated");
+    expect(li?.pricedUnderLock).toBeFalsy();
   });
 
-  test("a locked group create defaults price to $0 and sets pricedUnderLock; updateGroupPriceNative clears it", async () => {
+  test("a locked group create defaults price to $0 and sets pricedUnderLock; updateGroupPriceNative clears it (after unlocking)", async () => {
     const t = makeT();
-    await member(t, "member");
-    await project(t, "CONFIRMED");
+    await member(t, "owner");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await t.withIdentity(asUser()).mutation(api.projectGroupsWrites.createGroupNative, {
       id: "g1", orgId: ORG, projectId: "p1", title: "Wireless Mic Kit",
       price: 1400, discount: 210, discountMode: "$",
@@ -266,29 +410,24 @@ describe("pricedUnderLock — the Unpriced badge's real cause, not an inference 
       expect(g?.price).toBeUndefined();
       expect(g?.pricedUnderLock).toBe(true);
     });
-    const { sessionId } = await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW + 1,
+
+    await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.unlockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "unlock1", now: NOW + 1,
     });
-    expect(sessionId).toBeTruthy();
-    // A deliberate discountMode toggle (the exact user report this fix covers) —
-    // re-setting price/discount through the group's own price mutation must
-    // clear the flag; a group's OWN price edit never touches sibling line items.
     await t.withIdentity(asUser()).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
       id: "g1", orgId: ORG, price: 1400, discount: 15, discountMode: "%",
       now: NOW + 2, actor: ACTOR, auditId: "log2",
     });
-    await t.run(async (ctx) => {
-      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
-      expect(Number(g?.price)).toBe(1400);
-      expect(g?.discountMode).toBe("%");
-      expect(g?.pricedUnderLock).toBe(false);
-    });
+    const g = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first());
+    expect(Number(g?.price)).toBe(1400);
+    expect(g?.discountMode).toBe("%");
+    expect(g?.pricedUnderLock).toBe(false);
   });
 
   test("addKitNative under lock flags the kit PARENT line, not its (already-excluded) member children", async () => {
     const t = makeT();
     await member(t, "member");
-    await project(t, "CONFIRMED");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await t.run(async (ctx) => {
       await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "TTP00001", name: "RF Kit 1", status: "AVAILABLE" });
     });
@@ -297,178 +436,72 @@ describe("pricedUnderLock — the Unpriced badge's real cause, not an inference 
       unitPrice: 400, pricingMode: "KIT_PRICE", kitLabel: "TTP00001 - RF Kit 1",
       actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const parent = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kl1")).first();
-      expect(parent?.unitPrice).toBe(0);
-      expect(parent?.pricedUnderLock).toBe(true);
-    });
+    const parent = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kl1")).first());
+    expect(parent?.unitPrice).toBe(0);
+    expect(parent?.pricedUnderLock).toBe(true);
   });
 });
 
-describe("#793 ON_SITE justification gate", () => {
-  const fields = { description: "Extra cable", quantity: 1 };
-
-  test("a structural add on an ON_SITE project without a justification is rejected", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "ON_SITE");
-    await expect(
-      t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-        id: "li1", organizationId: ORG, projectId: "p1", fields, actor: ACTOR, auditId: "log1", now: NOW,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED|describe why/i);
-  });
-
-  test("a too-short justification is also rejected", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "ON_SITE");
-    await expect(
-      t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-        id: "li1", organizationId: ORG, projectId: "p1", fields, justification: "too short", actor: ACTOR, auditId: "log1", now: NOW,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED|describe why/i);
-  });
-
-  test("a valid justification succeeds and is persisted to the audit row", async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// #1230: structural writes are never gated by status alone anymore — the
+// JUSTIFY (ON_SITE) and HARD_LOCKED (COMPLETED/INVOICED) tiers are deleted.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("structural writes are ungated regardless of status (#1230 — JUSTIFY/HARD_LOCKED deleted)", () => {
+  test("a structural add on an ON_SITE project succeeds with no justification", async () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "ON_SITE");
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1", fields, justification: JUSTIFICATION, actor: ACTOR, auditId: "log1", now: NOW,
+      id: "li1", organizationId: ORG, projectId: "p1", fields: { description: "Extra cable", quantity: 1 }, actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect((log?.metadata as { justification?: string } | undefined)?.justification).toBe(JUSTIFICATION);
-    });
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(li).not.toBeNull();
   });
 
-  test("an open session suppresses the per-edit justification prompt (no double-prompt)", async () => {
+  test("a structural add on a COMPLETED project succeeds — no unlock session needed", async () => {
     const t = makeT();
     await member(t, "member");
-    await project(t, "ON_SITE");
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
-    });
+    await project(t, "COMPLETED");
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1", fields, actor: ACTOR, auditId: "log1", now: NOW + 1,
+      id: "li1", organizationId: ORG, projectId: "p1", fields: { description: "x", quantity: 1, unitPrice: 100 }, actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li).not.toBeNull();
-    });
+    // COMPLETED alone (pricingLocked absent) doesn't lock money either —
+    // only CONFIRMED's own status-transition or a sent quote raises the flag.
+    const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(Number(li?.unitPrice)).toBe(100);
   });
 
-  test("crew-assignment create on ON_SITE requires justification too", async () => {
+  test("crew-assignment create on ON_SITE succeeds with no justification", async () => {
     const t = makeT();
     await member(t, "manager"); // crew:create needs manager+
     await project(t, "ON_SITE");
     await t.run(async (ctx) => {
       await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Sam", lastName: "Rigger" });
     });
-    await expect(
-      t.withIdentity(asUser()).mutation(api.crewAssignmentsWrites.createNative, {
-        id: "asg1", orgId: ORG, projectId: "p1", crewMemberId: "cm1", now: NOW, actor: ACTOR, auditId: "log1",
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
-  });
-});
-
-describe("#792 hard lock (COMPLETED/INVOICED)", () => {
-  test("every gate site rejects without an open FULL session", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "COMPLETED");
-    await expect(
-      t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-        id: "li1", organizationId: ORG, projectId: "p1", fields: { description: "x", quantity: 1 }, actor: ACTOR, auditId: "log1", now: NOW,
-      }),
-    ).rejects.toThrow(/PROJECT_LOCKED/i);
+    await t.withIdentity(asUser()).mutation(api.crewAssignmentsWrites.createNative, {
+      id: "asg1", orgId: ORG, projectId: "p1", crewMemberId: "cm1", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    const asg = await t.run((ctx) => ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "asg1")).first());
+    expect(asg).not.toBeNull();
   });
 
-  test("opening a FULL session is denied to a plain member (not admin/owner/PM)", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "COMPLETED");
-    await expect(
-      t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-        projectId: "p1", orgId: ORG, scope: "FULL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
-      }),
-    ).rejects.toThrow(/FORBIDDEN_HARD_LOCK_OVERRIDE|not allowed/i);
-  });
-
-  test("an org admin CAN open a FULL session, and structural writes then succeed", async () => {
-    const t = makeT();
-    await member(t, "admin");
-    await project(t, "COMPLETED");
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FULL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
-    });
-    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1", fields: { description: "x", quantity: 1, unitPrice: 100 }, actor: ACTOR, auditId: "log1", now: NOW + 1,
-    });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(Number(li?.unitPrice)).toBe(100); // auto-pricing resumes inside an open session
-    });
-  });
-
-  test("a project's assigned PM (not admin/owner) can also open a FULL session", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "COMPLETED");
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER, addedAt: NOW });
-    });
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FULL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
-    });
-    await t.run(async (ctx) => {
-      const session = await ctx.db.query("projectUnlockSessions").withIndex("by_projectId_outcome", (q) => q.eq("projectId", "p1").eq("outcome", "OPEN")).first();
-      expect(session?.scope).toBe("FULL");
-    });
-  });
-
-  test("reverting status out of COMPLETED requires the same audience + a justification", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "COMPLETED");
-    await expect(
-      t.withIdentity(asUser()).mutation(api.projectWrites.updateStatusNative, {
-        id: "p1", orgId: ORG, status: "ON_SITE", actor: ACTOR, auditId: "log1", now: NOW,
-      }),
-    ).rejects.toThrow(/FORBIDDEN_HARD_LOCK_OVERRIDE|not allowed/i);
-
-    await member(t, "admin");
-    await expect(
-      t.withIdentity(asUser()).mutation(api.projectWrites.updateStatusNative, {
-        id: "p1", orgId: ORG, status: "ON_SITE", actor: ACTOR, auditId: "log2", now: NOW,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
-
-    await t.withIdentity(asUser()).mutation(api.projectWrites.updateStatusNative, {
-      id: "p1", orgId: ORG, status: "ON_SITE", justification: JUSTIFICATION, actor: ACTOR, auditId: "log3", now: NOW,
-    });
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.status).toBe("ON_SITE");
-    });
-  });
-
-  test("COMPLETED -> INVOICED is a normal forward move — no audience/justification gate", async () => {
+  test("reverting status out of COMPLETED needs no audience/justification gate", async () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "COMPLETED");
     await t.withIdentity(asUser()).mutation(api.projectWrites.updateStatusNative, {
-      id: "p1", orgId: ORG, status: "INVOICED", actor: ACTOR, auditId: "log1", now: NOW,
+      id: "p1", orgId: ORG, status: "ON_SITE", actor: ACTOR, auditId: "log1", now: NOW,
     });
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.status).toBe("INVOICED");
-    });
+    const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("ON_SITE");
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// #792 snapshot capture at CONFIRMED/COMPLETED — untouched by this phase (a
+// whole-project version SNAPSHOT is a separate mechanism from pricing locking;
+// crossesIntoSnapshotStatus is unrelated to assertPricingUnlocked).
+// ─────────────────────────────────────────────────────────────────────────────
 describe("#792 snapshot capture at CONFIRMED/COMPLETED", () => {
   test("a forward crossing into CONFIRMED captures a snapshot with the project + its line items", async () => {
     const t = makeT();
@@ -516,343 +549,129 @@ describe("#792 snapshot capture at CONFIRMED/COMPLETED", () => {
   });
 });
 
-describe("#791 unlock-session lifecycle", () => {
-  test("at most one open session per project", async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// projectPricingLockWrites — lockPricingNative (danger:low, ungated re-lock)
+// vs. unlockPricingNative (danger:high at the dispatcher, D42-gated here).
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectPricingLockWrites.lockPricingNative / unlockPricingNative", () => {
+  test("lockPricingNative: any project:update caller (a plain member) can re-lock", async () => {
     const t = makeT();
     await member(t, "member");
-    await project(t, "CONFIRMED");
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "log1", now: NOW,
+    await project(t, "QUOTED");
+    const res = await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.lockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW,
     });
+    expect(res.pricingLocked).toBe(true);
+    const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.pricingLocked).toBe(true);
+    expect(p?.pricingLockedById).toBe(USER);
+    const log = await t.run((ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first());
+    expect(log?.action).toBe("PRICING_LOCKED");
+  });
+
+  test("lockPricingNative is idempotent — re-locking an already-locked project is a no-op patch, no duplicate audit noise", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED", { pricingLocked: true, pricingLockedAt: NOW - 5000, pricingLockedById: "someone_else" });
+    await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.lockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.pricingLockedAt).toBe(NOW - 5000); // untouched — no-op
+    expect(p?.pricingLockedById).toBe("someone_else");
+    const log = await t.run((ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first());
+    expect(log).toBeNull(); // no audit row on the no-op path
+  });
+
+  test("unlockPricingNative: a plain member (no invoice:publish, not PM) is denied", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await expect(
-      t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-        projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "log2", now: NOW + 1,
+      t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.unlockPricingNative, {
+        id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW,
       }),
-    ).rejects.toThrow(/SESSION_ALREADY_OPEN/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
   });
 
-  test("save & relock commits the session; a subsequent edit is rejected again", async () => {
+  test("unlockPricingNative: the project's assigned PM can clear it even without invoice:publish", async () => {
     const t = makeT();
     await member(t, "member");
-    await project(t, "CONFIRMED");
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "log1", now: NOW,
-    });
-    await t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
-      id: "p1", orgId: ORG, set: { taxRate: 20 }, clear: [], actor: ACTOR, auditId: "log2", now: NOW + 1,
-    });
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.commitNative, {
-      projectId: "p1", orgId: ORG, actor: ACTOR, auditId: "log3", now: NOW + 2,
-    });
+    await project(t, "CONFIRMED", { pricingLocked: true });
     await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(Number(p?.taxRate)).toBe(20); // committed change survives relock
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER });
     });
+    await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.unlockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.pricingLocked).toBe(false);
+  });
+
+  test("unlockPricingNative is idempotent — clearing an already-unlocked project is a no-op, no audit row", async () => {
+    const t = makeT();
+    await member(t, "owner");
+    await project(t, "QUOTED");
+    await t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.unlockPricingNative, {
+      id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    const log = await t.run((ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first());
+    expect(log).toBeNull();
+  });
+
+  test("rejects another org's project (IDOR guard)", async () => {
+    const t = makeT();
+    await member(t, "owner");
+    await project(t, "QUOTED");
     await expect(
-      t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
-        id: "p1", orgId: ORG, set: { taxRate: 30 }, clear: [], actor: ACTOR, auditId: "log4", now: NOW + 3,
+      t.withIdentity(asUser()).mutation(api.projectPricingLockWrites.lockPricingNative, {
+        id: "p1", orgId: "org_2", actor: ACTOR, auditId: "log1", now: NOW,
       }),
-    ).rejects.toThrow(/FINANCIALS_LOCKED/i);
-  });
-
-  test("discard restores the FINANCIAL fields captured at open, but keeps structural adds ($0)", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "CONFIRMED");
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "log1", now: NOW,
-    });
-    await t.withIdentity(asUser()).mutation(api.projectWrites.updateNative, {
-      id: "p1", orgId: ORG, set: { taxRate: 20 }, clear: [], actor: ACTOR, auditId: "log2", now: NOW + 1,
-    });
-    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1", fields: { description: "Added mid-session", quantity: 1, unitPrice: 250 }, actor: ACTOR, auditId: "log3", now: NOW + 2,
-    });
-    const { conflicts } = await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.discardNative, {
-      projectId: "p1", orgId: ORG, actor: ACTOR, auditId: "log4", now: NOW + 3,
-    });
-    expect(conflicts).toEqual([]);
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(Number(p?.taxRate)).toBe(10); // reverted to the pre-unlock value
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li).not.toBeNull(); // the add survives (structural changes aren't rolled back)
-      expect(li?.unitPrice).toBe(0); // but its price reverts to $0/unpriced
-    });
-  });
-
-  test("a forward status transition auto-commits an open session", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "CONFIRMED");
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "log1", now: NOW,
-    });
-    await t.withIdentity(asUser()).mutation(api.projectWrites.updateStatusNative, {
-      id: "p1", orgId: ORG, status: "PREPPING", actor: ACTOR, auditId: "log2", now: NOW + 1,
-    });
-    await t.run(async (ctx) => {
-      const session = await ctx.db
-        .query("projectUnlockSessions")
-        .withIndex("by_projectId", (q) => q.eq("projectId", "p1"))
-        .first();
-      expect(session?.outcome).toBe("COMMITTED");
-    });
+    ).rejects.toThrow(/organization mismatch|insufficient permissions|not found/i);
   });
 });
 
-/**
- * #988 (Phase C) — the quote-send lock folds into `assertLifecycleGuard` as a
- * SECOND input, not a second mechanism: an OPEN-status project (ENQUIRY/
- * QUOTING/QUOTED) whose current revision has already been SENT resolves to
- * FINANCE_LOCKED too, with `reason: "QUOTE_SENT"`. Exercises the real quote
- * mutations rather than hand-inserted rows wherever the flow matters (the
- * sanctioned-exit tests) — see convex/lib/projectLocks.test.ts for the pure
- * `resolveLockTier` truth table.
- */
-describe("#988 quote-derived lock tier", () => {
-  async function sentQuote(t: ReturnType<typeof makeT>, version = 1, extra: Record<string, unknown> = {}) {
-    await t.run(async (ctx) => {
-      await ctx.db.insert("quotes", {
-        id: `q${version}`, organizationId: ORG, projectId: "p1", version, status: "SENT",
-        snapshot: null, sentAt: NOW, ...extra,
-      });
-    });
-  }
-
-  test("a SENT quote locks money fields on an otherwise-OPEN (QUOTED) project", async () => {
+// ─────────────────────────────────────────────────────────────────────────────
+// projectLocksRead.status — the read every UI surface (chip/strip) consumes.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectLocksRead.status", () => {
+  test("reports pricingLocked, who/when, and canUnlockPricing for the caller's own role", async () => {
     const t = makeT();
     await member(t, "member");
-    await project(t, "QUOTED");
-    await sentQuote(t);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false,
-        versionId: "v-p1",
-        lineageId: "li1",
-      });
-    });
-    await expect(
-      t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
-        id: "li1", orgId: ORG, set: { unitPrice: 200 }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
-      }),
-    ).rejects.toThrow(/FINANCIALS_LOCKED|locked/i);
-  });
-
-  test("structural fields stay editable under a quote-derived lock (FINANCE_LOCKED's structural gate starts at ON_SITE, not here)", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "QUOTED");
-    await sentQuote(t);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false,
-        versionId: "v-p1",
-        lineageId: "li1",
-      });
-    });
-    await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
-      id: "li1", orgId: ORG, set: { description: "Speaker (updated)" }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
-    });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li?.description).toBe("Speaker (updated)");
-    });
-  });
-
-  test("a new add $0-defaults under a quote-derived lock, exactly like a CONFIRMED project", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "QUOTED");
-    await sentQuote(t);
-    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1",
-      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
-      actor: ACTOR, auditId: "log1", now: NOW,
-    });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(li?.unitPrice).toBe(0);
-    });
-  });
-
-  test("an unlock session is still a valid exit while the quote is sent", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "QUOTED");
-    await sentQuote(t);
-    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
-      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
-    });
-    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1",
-      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
-      actor: ACTOR, auditId: "log1", now: NOW + 1,
-    });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(Number(li?.unitPrice)).toBe(500); // auto-pricing resumes inside an open session
-    });
-  });
-
-  test("a sent quote on an ALREADY status-locked (COMPLETED) project softens nothing", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "COMPLETED");
-    await sentQuote(t);
-    await expect(
-      t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-        id: "li1", organizationId: ORG, projectId: "p1", fields: { description: "x", quantity: 1 }, actor: ACTOR, auditId: "log1", now: NOW,
-      }),
-    ).rejects.toThrow(/PROJECT_LOCKED/i);
-  });
-
-  test("sanctioned exit: newVersionNative is NOT blocked by the very lock it's cutting past", async () => {
-    const t = makeT();
-    await member(t, "manager"); // invoice:publish
-    await project(t, "QUOTED");
-    await sentQuote(t); // v1 SENT — would otherwise raise the tier to FINANCE_LOCKED
-    const res = await t.withIdentity(asUser()).mutation(api.quotesWrites.newVersionNative, {
-      id: "q2", organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: "logv2", now: NOW + 1,
-    });
-    expect(res.version).toBe(2);
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.revision).toBe(2);
-      const q2 = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q2")).first();
-      expect(q2?.status).toBe("DRAFT");
-    });
-  });
-
-  test("after cutting v2, pricing is open again — the current revision's quote is a fresh DRAFT", async () => {
-    const t = makeT();
-    await member(t, "manager");
-    await project(t, "QUOTED");
-    await sentQuote(t);
-    await t.withIdentity(asUser()).mutation(api.quotesWrites.newVersionNative, {
-      id: "q2", organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: "logv2", now: NOW + 1,
-    });
-    // No unlock session needed — v1's SENT lock no longer applies once v2 (a
-    // fresh DRAFT) is the project's current revision.
-    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1",
-      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
-      actor: ACTOR, auditId: "log1", now: NOW + 2,
-    });
-    await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(Number(li?.unitPrice)).toBe(500);
-    });
-  });
-
-  test("sanctioned exit: sendNative isn't blocked sending v1 for the very first time", async () => {
-    const t = makeT();
-    await member(t, "manager");
-    await project(t, "QUOTED"); // no quote row yet at all
-    const res = await t.withIdentity(asUser()).mutation(api.quotesWrites.sendNative, {
-      id: "q1", organizationId: ORG, projectId: "p1", quoteDate: NOW, actor: ACTOR, auditId: "logsend", now: NOW,
-    });
-    expect(res.version).toBe(1);
-  });
-
-  test("projectLocksRead.status reports reason QUOTE_SENT + the revision + quote state", async () => {
-    const t = makeT();
-    await member(t, "member");
-    await project(t, "QUOTED");
-    await sentQuote(t);
+    await project(t, "CONFIRMED", { pricingLocked: true, pricingLockedAt: NOW, pricingLockedById: USER, pricingLockedByName: "Alice" });
     const status = await t.withIdentity(asUser()).query(api.projectLocksRead.status, { projectId: "p1", orgId: ORG });
-    expect(status?.tier).toBe("FINANCE_LOCKED");
-    expect(status?.reason).toBe("QUOTE_SENT");
-    expect(status?.revision).toBe(1);
-    expect(status?.quoteState).toBe("SENT");
+    expect(status?.pricingLocked).toBe(true);
+    expect(status?.pricingLockedAt).toBe(NOW);
+    expect(status?.pricingLockedByName).toBe("Alice");
+    expect(status?.canUnlockPricing).toBe(false); // plain member, not PM
   });
 
-  test("projectLocksRead.status reports STATUS-driven FINANCE_LOCKED unaffected by quote state on a CONFIRMED project", async () => {
+  test("canUnlockPricing is true for an owner", async () => {
     const t = makeT();
-    await member(t, "member");
-    await project(t, "CONFIRMED");
+    await member(t, "owner");
+    await project(t, "CONFIRMED", { pricingLocked: true });
     const status = await t.withIdentity(asUser()).query(api.projectLocksRead.status, { projectId: "p1", orgId: ORG });
-    expect(status?.tier).toBe("FINANCE_LOCKED");
-    expect(status?.reason).toBe("STATUS");
-    expect(status?.quoteState).toBeNull();
-  });
-});
-
-/**
- * #1080/#1100 (Phase 5) — the QUOTE_SENT escalation must check the LIVE
- * revision's quote (`projectLiveRevision`), never the allocator's
- * (`projectRevision`, the high-water mark). Once a promote (#1089) has moved
- * `liveRevision` behind `revision` — e.g. a saved-but-never-sent v4 sitting
- * ahead of a promoted, SENT, live v2 — checking the allocator would read v4's
- * still-DRAFT quote and wrongly resolve OPEN even though v2 is out with the
- * client. This is the exact scenario recall-to-edit (Phase 5) has to gate
- * correctly: editing a promoted SENT revision must be refused (FINANCE_LOCKED)
- * so the recall-to-edit exit is even reachable.
- */
-describe("#1080/#1100 the quote-sent lock follows liveRevision, not the allocator", () => {
-  type QuoteStatus = "DRAFT" | "SENT" | "ACCEPTED" | "DECLINED" | "SUPERSEDED" | "EXPIRED" | "PUBLISHED";
-  async function quoteAt(t: ReturnType<typeof makeT>, version: number, status: QuoteStatus, extra: Record<string, unknown> = {}) {
-    await t.run(async (ctx) => {
-      await ctx.db.insert("quotes", {
-        id: `q${version}`, organizationId: ORG, projectId: "p1", version, status,
-        snapshot: null, ...extra,
-      });
-    });
-  }
-
-  test("a promoted (non-allocator-max) live revision that's SENT still locks money fields", async () => {
-    const t = makeT();
-    await member(t, "member");
-    // revision (allocator) sits at 4 — v3/v4 were saved-but-never-sent
-    // versions — while liveRevision points back at v2, the promoted, SENT
-    // revision actually live on the project (design decision 1).
-    await project(t, "QUOTED", { revision: 4, liveRevision: 2 });
-    await quoteAt(t, 1, "SUPERSEDED");
-    await quoteAt(t, 2, "SENT", { sentAt: NOW });
-    await quoteAt(t, 3, "DRAFT");
-    await quoteAt(t, 4, "DRAFT");
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false,
-        versionId: "v-p1",
-        lineageId: "li1",
-      });
-    });
-    await expect(
-      t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
-        id: "li1", orgId: ORG, set: { unitPrice: 200 }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
-      }),
-    ).rejects.toThrow(/FINANCIALS_LOCKED|locked/i);
+    expect(status?.canUnlockPricing).toBe(true);
   });
 
-  test("projectLocksRead.status reports the LIVE revision's quote state and both revision numbers", async () => {
+  test("reports pricingLocked:false for an unlocked project", async () => {
     const t = makeT();
     await member(t, "member");
-    await project(t, "QUOTED", { revision: 4, liveRevision: 2 });
-    await quoteAt(t, 2, "SENT", { sentAt: NOW });
-    await quoteAt(t, 4, "DRAFT");
+    await project(t, "QUOTED");
     const status = await t.withIdentity(asUser()).query(api.projectLocksRead.status, { projectId: "p1", orgId: ORG });
-    expect(status?.tier).toBe("FINANCE_LOCKED");
-    expect(status?.reason).toBe("QUOTE_SENT");
-    expect(status?.revision).toBe(4);
-    expect(status?.liveRevision).toBe(2);
-    expect(status?.quoteState).toBe("SENT");
+    expect(status?.pricingLocked).toBe(false);
   });
 
-  test("a promoted live revision that's still DRAFT (never sent) stays OPEN even with a SENT row at the allocator's max", async () => {
+  test("returns null when the projectId belongs to a different org than orgId claims (IDOR guard, by_cuid is global)", async () => {
     const t = makeT();
     await member(t, "member");
-    // Inverse of the bug: liveRevision (2) is an unsent DRAFT, while the
-    // allocator's max (v4) happens to be SENT. The lock must follow the LIVE
-    // revision and stay OPEN — a SENT row elsewhere never leaks in.
-    await project(t, "QUOTED", { revision: 4, liveRevision: 2 });
-    await quoteAt(t, 2, "DRAFT");
-    await quoteAt(t, 4, "SENT", { sentAt: NOW });
-    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
-      id: "li1", organizationId: ORG, projectId: "p1",
-      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
-      actor: ACTOR, auditId: "log1", now: NOW,
-    });
+    // No "p1" under ORG at all — only under a different org, same id.
+    // `by_cuid` is a global index, so the read must org-check the row it
+    // finds rather than trust the caller's own `orgId`/membership.
     await t.run(async (ctx) => {
-      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
-      expect(Number(li?.unitPrice)).toBe(500); // not $0-defaulted — the project read as OPEN
+      await ctx.db.insert("projects", { id: "p1", organizationId: "org_2", projectNumber: "P-1", name: "Their Gig", status: "QUOTED", isTemplate: false, pricingLocked: true });
     });
+    const status = await t.withIdentity(asUser()).query(api.projectLocksRead.status, { projectId: "p1", orgId: ORG });
+    expect(status).toBeNull();
   });
 });

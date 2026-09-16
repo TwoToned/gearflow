@@ -287,7 +287,9 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
 
   // Gap fix: reorderCategoriesNative previously never called assertLifecycleGuard,
   // so a locked project's categories could be silently reordered.
-  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  // #1230: reordering is structural — never gated by the pricing lock, so it
+  // succeeds regardless of project status, with no justification argument.
+  test("succeeds on an ON_SITE project — structural, never gated", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
@@ -301,14 +303,8 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
         lineageId: "c2",
       });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
-        orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
-      orgId: ORG, orderedIds: ["c2", "c1"], now: NOW + 1, actor: ACTOR,
-      justification: "Client requested a change while on site today.",
+      orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR,
     });
     await t.run(async (ctx) => {
       const c2 = await ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "c2")).first();
@@ -316,7 +312,7 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
     });
   });
 
-  test("rejects on a HARD_LOCKED (COMPLETED) project with no open FULL unlock session", async () => {
+  test("succeeds on a COMPLETED project — HARD_LOCKED is deleted (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
@@ -330,10 +326,8 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
         lineageId: "c2",
       });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
-        orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR, justification: "Doesn't matter — HARD_LOCKED needs a session, not a reason.",
-      }),
-    ).rejects.toThrow(/PROJECT_LOCKED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
+      orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR,
+    });
   });
 });

@@ -473,7 +473,7 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
   // Gap fix: reorderGroupsNative previously never called assertLifecycleGuard,
   // so a locked project's groups could be silently reordered. Mirrors the
   // equivalent lineItemWrites.reorderNative coverage.
-  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  test("succeeds on an ON_SITE project — structural, never gated (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
@@ -490,14 +490,8 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
         lineageId: "g2",
       });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
-        orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
-      orgId: ORG, orderedIds: ["g2", "g1"], now: NOW + 1, actor: ACTOR,
-      justification: "Client requested a change while on site today.",
+      orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR,
     });
     await t.run(async (ctx) => {
       const g2 = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g2")).first();
@@ -505,7 +499,7 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
     });
   });
 
-  test("rejects on a HARD_LOCKED (COMPLETED) project with no open FULL unlock session", async () => {
+  test("succeeds on a COMPLETED project — HARD_LOCKED is deleted (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
@@ -522,11 +516,9 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
         lineageId: "g2",
       });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
-        orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR, justification: "Doesn't matter — HARD_LOCKED needs a session, not a reason.",
-      }),
-    ).rejects.toThrow(/PROJECT_LOCKED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
+      orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR,
+    });
   });
 });
 

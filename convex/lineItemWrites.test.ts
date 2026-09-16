@@ -949,9 +949,9 @@ describe("lineItemWrites.reorderNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, { orgId: ORG, items: [], now: NOW })).rejects.toThrow(/insufficient permissions/i);
   });
 
-  // #988 (Phase C) — reorderNative was FEATUREDOCS/62's "deliberately deferred"
-  // gate site; it's now a structural gate like every other line-item write.
-  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  // #1230: reorderNative is structural — never gated by the pricing lock, so
+  // it succeeds on an ON_SITE project with no justification argument.
+  test("succeeds on an ON_SITE project — structural, never gated", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
@@ -960,14 +960,8 @@ describe("lineItemWrites.reorderNative", () => {
       await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "l1", id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 0 });
       await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "l2", id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 1 });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, {
-        orgId: ORG, items: [{ id: "l2", sortOrder: 0 }, { id: "l1", sortOrder: 1 }], now: NOW,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, {
-      orgId: ORG, items: [{ id: "l2", sortOrder: 0 }, { id: "l1", sortOrder: 1 }], now: NOW + 1,
-      justification: "Client requested a change while on site today.",
+      orgId: ORG, items: [{ id: "l2", sortOrder: 0 }, { id: "l1", sortOrder: 1 }], now: NOW,
     });
     await t.run(async (ctx) => {
       const l2 = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l2")).first();

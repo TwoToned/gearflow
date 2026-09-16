@@ -17,7 +17,7 @@ import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
-import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+import { assertPricingUnlocked, afterLockAuditMetadata, defaultsToZeroOnInsert } from "./lib/projectLocks";
 import { liveRows, requireLiveVersionId } from "./lib/versionScope";
 
 /**
@@ -443,8 +443,6 @@ export const createServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -454,12 +452,12 @@ export const createServiceNative = mutation({
 
     if (!a.title) throw new ConvexError("Title is required");
     const svcProject = await requireProjectInOrg(ctx, a.projectId, a.orgId);
-    // #791: adding a crew-less service while locked defaults costTotal to $0
-    // (server-enforced) — a crew-attached service's cost keeps auto-deriving from
-    // the crew rate table below regardless (issue #796 single source of truth).
-    // #793: adding is a structural mutation at JUSTIFY+.
-    const guard = await assertLifecycleGuard(ctx, svcProject, { kind: "structural", justification: a.justification });
-    if (guard.defaultToZero && (!a.crew || a.crew.length === 0)) {
+    // Adding is structural — never gated. While pricing is locked, a new
+    // crew-less service still defaults costTotal to $0 (a crew-attached
+    // service's cost keeps auto-deriving from the crew rate table below
+    // regardless — issue #796 single source of truth).
+    const defaultToZero = defaultsToZeroOnInsert(svcProject);
+    if (defaultToZero && (!a.crew || a.crew.length === 0)) {
       a.costTotal = 0;
     }
     // Validate the default crew role even when no crew members are attached (it's stored
@@ -565,7 +563,7 @@ export const createServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "created", entityId: a.id, entityName: a.title,
       summary: `Created ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: a.projectId,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
     });
 
     return { id: a.id };
@@ -594,8 +592,6 @@ export const updateServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #791/#793: required (one or the other, never both) once locked.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -606,18 +602,15 @@ export const updateServiceNative = mutation({
     if (!a.title) throw new ConvexError("Title is required");
     const existing = await requireServiceInOrg(ctx, a.id, a.orgId);
 
-    // #791/#793 lock gate: this mutation resends the WHOLE service form (incl.
-    // unchanged pricing) on every save, so "touches money" means the incoming
-    // price fields actually DIFFER from the stored row, not merely present.
+    // #1230: this mutation resends the WHOLE service form (incl. unchanged
+    // pricing) on every save, so "touches money" means the incoming price
+    // fields actually DIFFER from the stored row — only that case is gated.
     const moneyChanged =
       (a.unitPrice ?? null) !== (existing.unitPrice ?? null) ||
       (a.discount ?? null) !== (existing.discount ?? null) ||
       (a.costTotal ?? null) !== (existing.costTotal ?? null);
     const svcUpdateProject = await requireProjectInOrg(ctx, existing.projectId, a.orgId);
-    const guard = await assertLifecycleGuard(ctx, svcUpdateProject, {
-      kind: moneyChanged ? "financial" : "structural",
-      justification: a.justification,
-    });
+    if (moneyChanged) assertPricingUnlocked(svcUpdateProject, existing.versionId);
 
     const { fields, serviceDate, serviceEndDate } = buildServiceFields(a);
 
@@ -752,7 +745,6 @@ export const updateServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "updated", entityId: a.id, entityName: a.title,
       summary: `Updated ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: existing.projectId,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -766,8 +758,6 @@ export const deleteServiceNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
     id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -777,8 +767,8 @@ export const deleteServiceNative = mutation({
 
     const service = await requireServiceInOrg(ctx, a.id, a.orgId);
     const { projectId, title, type } = service;
-    const delSvcProject = await requireProjectInOrg(ctx, projectId, a.orgId);
-    const guard = await assertLifecycleGuard(ctx, delSvcProject, { kind: "structural", justification: a.justification });
+    // Delete is structural — never gated.
+    await requireProjectInOrg(ctx, projectId, a.orgId);
     await cascadeDeleteService(ctx, service, a.orgId);
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -788,7 +778,6 @@ export const deleteServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "deleted", entityId: a.id, entityName: title,
       summary: `Deleted ${SERVICE_TYPE_LABELS[type]} service "${title}"`, projectId,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -838,8 +827,6 @@ export const bulkDeleteServicesNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #988: required once a touched project is JUSTIFY+ and no session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -849,20 +836,11 @@ export const bulkDeleteServicesNative = mutation({
     if (a.ids.length === 0) return { deleted: 0, skipped: 0 };
 
     const projectIds = new Set<string>();
-    // #988: gate once per distinct project this selection touches (deleting is
-    // structural — #793's JUSTIFY-tier per-edit gate, same "kind" a single
-    // deleteServiceNative uses). Mirrors patchManyNative/removeManyNative's
-    // per-project dedup for a multi-project bulk write.
-    const guardedProjectIds = new Set<string>();
     let deleted = 0, skipped = 0;
+    // Deleting is structural — never gated.
     for (const id of a.ids) {
       const service = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!service || service.organizationId !== a.orgId) { skipped++; continue; }
-      if (!guardedProjectIds.has(service.projectId)) {
-        const svcProject = await requireProjectInOrg(ctx, service.projectId, a.orgId);
-        await assertLifecycleGuard(ctx, svcProject, { kind: "structural", justification: a.justification });
-        guardedProjectIds.add(service.projectId);
-      }
       projectIds.add(service.projectId);
       await cascadeDeleteService(ctx, service, a.orgId);
       deleted++;
@@ -898,8 +876,6 @@ export const bulkUpdateServiceStatusNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #988: required once a touched project is JUSTIFY+ and no session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -909,17 +885,11 @@ export const bulkUpdateServiceStatusNative = mutation({
     if (a.ids.length === 0) return { updated: 0, skipped: 0 };
 
     const projectIds = new Set<string>();
-    // #988: a status change is structural, gated once per distinct project.
-    const guardedProjectIds = new Set<string>();
     let updated = 0, skipped = 0;
+    // A status change is structural — never gated.
     for (const id of a.ids) {
       const service = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!service || service.organizationId !== a.orgId) { skipped++; continue; }
-      if (!guardedProjectIds.has(service.projectId)) {
-        const svcProject = await requireProjectInOrg(ctx, service.projectId, a.orgId);
-        await assertLifecycleGuard(ctx, svcProject, { kind: "structural", justification: a.justification });
-        guardedProjectIds.add(service.projectId);
-      }
       await ctx.db.patch(service._id, { status: a.status, updatedAt: a.now });
       projectIds.add(service.projectId);
       updated++;
@@ -991,8 +961,6 @@ export const generateServicesNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #988: required once the project is JUSTIFY+ and no session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -1001,9 +969,9 @@ export const generateServicesNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const project = await requireProjectInOrg(ctx, a.projectId, a.orgId);
-    // #988: generating is an add (structural) — a $0-priced template while
-    // locked mirrors createServiceNative's own defaultToZero handling below.
-    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
+    // Generating is an add (structural) — never gated. A $0-priced template
+    // while locked mirrors createServiceNative's own defaultToZero handling.
+    const defaultToZero = defaultsToZeroOnInsert(project);
     // WS2 (#941) — service generation reads the PROJECT window (falls back to
     // rental when unset), not the deprecated loadIn/loadOut/event* fields.
     const window = getProjectWindow(project);
@@ -1105,9 +1073,9 @@ export const generateServicesNative = mutation({
 
     if (toCreate.length === 0) return { created: 0 };
 
-    // #988: locked with no open session — every generated service lands at
-    // $0/unpriced, same as a manually-added one (createServiceNative).
-    if (guard.defaultToZero) {
+    // Pricing locked — every generated service lands at $0/unpriced, same as
+    // a manually-added one (createServiceNative).
+    if (defaultToZero) {
       for (const svc of toCreate) svc.unitPrice = null;
     }
 
@@ -1151,7 +1119,7 @@ export const generateServicesNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "generated", entityId: a.projectId, entityName: project.name,
       summary: `Generated ${created} services for ${project.projectNumber}`, projectId: a.projectId,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
     });
 
     return { created };
@@ -1172,8 +1140,6 @@ export const cloneServicesNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #988: required once the TARGET project is JUSTIFY+ and no session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -1183,9 +1149,9 @@ export const cloneServicesNative = mutation({
 
     const target = await requireProjectInOrg(ctx, a.targetProjectId, a.orgId);
     const source = await requireProjectInOrg(ctx, a.sourceProjectId, a.orgId);
-    // #988: gated on the TARGET only — that's where the new (add) services
-    // land; the source project isn't written to.
-    const guard = await assertLifecycleGuard(ctx, target, { kind: "structural", justification: a.justification });
+    // Cloning is an add (structural) — never gated. Evaluated on the TARGET
+    // only — that's where the new services land; the source isn't written to.
+    const defaultToZero = defaultsToZeroOnInsert(target);
 
     // LIVE-ONLY (#1228) — a clone copies FROM the source's live plan.
     const sourceServices = (await liveRows(ctx, source, "projectServices"))
@@ -1242,12 +1208,12 @@ export const cloneServicesNative = mutation({
       // #988: locked target with no open session — the clone is an add, so its
       // copied money fields land at $0/unset exactly like a manually-added
       // service (createServiceNative), never the source's live pricing.
-      const unitPrice = guard.defaultToZero ? null : (svc.unitPrice ?? null);
-      const discount = guard.defaultToZero ? null : (svc.discount ?? null);
-      const lineTotal = guard.defaultToZero ? null : (svc.lineTotal ?? null);
-      const costTotal = guard.defaultToZero ? null : (svc.costTotal ?? null);
-      const chargeRateOverride = guard.defaultToZero ? null : (svc.chargeRateOverride ?? null);
-      const crewChargeTotal = guard.defaultToZero ? null : (svc.crewChargeTotal ?? null);
+      const unitPrice = defaultToZero ? null : (svc.unitPrice ?? null);
+      const discount = defaultToZero ? null : (svc.discount ?? null);
+      const lineTotal = defaultToZero ? null : (svc.lineTotal ?? null);
+      const costTotal = defaultToZero ? null : (svc.costTotal ?? null);
+      const chargeRateOverride = defaultToZero ? null : (svc.chargeRateOverride ?? null);
+      const crewChargeTotal = defaultToZero ? null : (svc.crewChargeTotal ?? null);
       await ctx.db.insert("projectServices", {
         id: newServiceId,
         organizationId: a.orgId,
@@ -1320,7 +1286,7 @@ export const cloneServicesNative = mutation({
       action: "cloned", entityId: a.targetProjectId, entityName: target.name,
       summary: `Cloned ${cloned} services from ${source.projectNumber} to ${target.projectNumber}`,
       projectId: a.targetProjectId,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
     });
 
     return { cloned };
@@ -1341,8 +1307,6 @@ export const convertLineItemToServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #988: required once the project is JUSTIFY+ and no session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -1353,9 +1317,9 @@ export const convertLineItemToServiceNative = mutation({
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.lineItemId)).first();
     if (!line || line.organizationId !== a.orgId) throw new ConvexError("Line item not found");
     const convertProject = await requireProjectInOrg(ctx, line.projectId, a.orgId);
-    // #988: converting creates a new service (an add) linked to the line — its
-    // copied pricing is gated the same way createServiceNative's is.
-    const guard = await assertLifecycleGuard(ctx, convertProject, { kind: "structural", justification: a.justification });
+    // Converting creates a new service (an add) linked to the line — never
+    // gated; its copied pricing is defaulted the same way createServiceNative's is.
+    const defaultToZero = defaultsToZeroOnInsert(convertProject);
 
     const typeMap: Record<string, string> = { TRANSPORT: "DELIVERY", LABOUR: "LABOUR", SERVICE: "MISC" };
     const serviceType = typeMap[line.type ?? "EQUIPMENT"] || "MISC";
@@ -1378,11 +1342,11 @@ export const convertLineItemToServiceNative = mutation({
     const sortOrder = existingForProject.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
 
     const pricingType = line.pricingType && String(line.pricingType) !== "" ? line.pricingType : null;
-    // #988: locked with no open session — the converted service is an add, so
-    // its copied pricing lands at $0/unset, never the line's live price.
-    const unitPrice = guard.defaultToZero ? null : (line.unitPrice ?? null);
-    const discount = guard.defaultToZero ? null : (line.discount ?? null);
-    const lineTotal = guard.defaultToZero ? null : (line.lineTotal ?? null);
+    // Pricing locked — the converted service is an add, so its copied pricing
+    // lands at $0/unset, never the line's live price.
+    const unitPrice = defaultToZero ? null : (line.unitPrice ?? null);
+    const discount = defaultToZero ? null : (line.discount ?? null);
+    const lineTotal = defaultToZero ? null : (line.lineTotal ?? null);
     await ctx.db.insert("projectServices", {
       id: a.serviceId,
       organizationId: a.orgId,
@@ -1411,7 +1375,7 @@ export const convertLineItemToServiceNative = mutation({
       action: "converted", entityId: a.serviceId, entityName: line.description || SERVICE_TYPE_LABELS[serviceType],
       summary: `Converted line item "${line.description}" to ${SERVICE_TYPE_LABELS[serviceType]} service`,
       projectId: line.projectId,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
     });
 
     return { id: a.serviceId };

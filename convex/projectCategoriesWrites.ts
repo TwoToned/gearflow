@@ -7,11 +7,10 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertProjectInOrg } from "./projectLineItems";
-import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 import * as enums from "./lib/validators";
 import { liveRows, requireLiveVersionId } from "./lib/versionScope";
 
-/** Fetch a project by cuid, confirm it's the caller's org (needed for the tier check). */
+/** Fetch a project by cuid, confirm it's the caller's org. */
 async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId: string) {
   const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
   if (!p || p.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
@@ -128,10 +127,8 @@ export const createCategoryNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, projectId, name, now, actor: suppliedActor, auditId, justification }) => {
+  handler: async (ctx, { id, orgId, projectId, name, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -141,8 +138,8 @@ export const createCategoryNative = mutation({
     // that references it (by_cuid/by_projectId are GLOBAL — else a member could attach a
     // category to another org's project).
     await assertProjectInOrg(ctx, projectId, orgId);
+    // Creating a category is structural — never gated.
     const catProject = await requireProjectForGuard(ctx, projectId, orgId);
-    const guard = await assertLifecycleGuard(ctx, catProject, { kind: "structural", justification });
 
     // Idempotent: a retried create with the same cuid short-circuits (no dup row,
     // no second audit — the by_cuid index is global so re-check org on a hit).
@@ -180,7 +177,6 @@ export const createCategoryNative = mutation({
       action: "created",
       entityName: name,
       summary: `Created category "${name}"`,
-      metadata: lifecycleAuditMetadata(guard, justification),
     });
 
     return { id, sortOrder };
@@ -214,18 +210,16 @@ export const updateCategoryNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, name, sortOrder, pricingDisplay, now, actor: suppliedActor, auditId, justification }) => {
+  handler: async (ctx, { id, orgId, name, sortOrder, pricingDisplay, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const category = await requireCategoryInOrg(ctx, id, orgId);
-    const updCatProject = await requireProjectForGuard(ctx, category.projectId, orgId);
-    const guard = await assertLifecycleGuard(ctx, updCatProject, { kind: "structural", justification });
+    // Rename/reorder/pricingDisplay are all structural — never gated.
+    await requireProjectForGuard(ctx, category.projectId, orgId);
     if (name !== undefined) assertValidName(name);
 
     const patch: {
@@ -256,12 +250,9 @@ export const updateCategoryNative = mutation({
       summary: displayChanged
         ? `Updated category "${category.name}" — pricing display ${storedPricingDisplay(category.pricingDisplay)} -> ${pricingDisplay}`
         : `Updated category "${category.name}"`,
-      metadata: {
-        ...lifecycleAuditMetadata(guard, justification),
-        ...(displayChanged
-          ? { pricingDisplay: { from: storedPricingDisplay(category.pricingDisplay), to: pricingDisplay } }
-          : {}),
-      },
+      metadata: displayChanged
+        ? { pricingDisplay: { from: storedPricingDisplay(category.pricingDisplay), to: pricingDisplay } }
+        : undefined,
     });
 
     // Realtime collaboration feed event (only on a rename) — uses the NEW name,
@@ -306,18 +297,16 @@ export const deleteCategoryNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, now, actor: suppliedActor, auditId, justification }) => {
+  handler: async (ctx, { id, orgId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const category = await requireCategoryInOrg(ctx, id, orgId);
+    // Delete is structural — never gated.
     const delCatProject = await requireProjectForGuard(ctx, category.projectId, orgId);
-    const guard = await assertLifecycleGuard(ctx, delCatProject, { kind: "structural", justification });
 
     // 1. Groups in this category (by_categoryId is global — org-filter).
     const groups = (
@@ -374,7 +363,6 @@ export const deleteCategoryNative = mutation({
       action: "deleted",
       entityName: category.name,
       summary: `Deleted category "${category.name}" — ${n} items moved to uncategorized`,
-      metadata: lifecycleAuditMetadata(guard, justification),
     });
 
     return { ok: true, movedLineItems: n };
@@ -393,28 +381,20 @@ export const reorderCategoriesNative = mutation({
     orderedIds: v.array(v.string()),
     now: v.number(),
     actor: actorValidator,
-    // Required once a touched project is JUSTIFY+ and no unlock session is open —
-    // this mutation previously bypassed the lifecycle lock entirely.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, orderedIds, now, actor: suppliedActor, justification }) => {
+  handler: async (ctx, { orgId, orderedIds, now, actor: suppliedActor }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     await resolveActor(ctx, suppliedActor);
 
-    const guardedProjectIds = new Set<string>();
+    // Reordering is structural — never gated.
     for (let i = 0; i < orderedIds.length; i++) {
       const doc = await ctx.db
         .query("projectCategories")
         .withIndex("by_cuid", (q) => q.eq("id", orderedIds[i]))
         .first();
       if (doc && doc.organizationId === orgId) {
-        if (!guardedProjectIds.has(doc.projectId)) {
-          const project = await requireProjectForGuard(ctx, doc.projectId, orgId);
-          await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
-          guardedProjectIds.add(doc.projectId);
-        }
         await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: now });
       }
     }

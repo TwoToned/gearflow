@@ -163,54 +163,103 @@ for overdue, module hues for wayfinding only, hard offset shadows, sentence case
 overdue row), all §8 state-matrix states, §9.1 focus/disabled/invalid states, 44px touch
 targets on mobile.
 
-### 8.1 Today (`/today`, replaces `/my-tasks`)
+### 8.1 Today (`/today`) — revised by the design review, 2026-09-16
 
-Wireframe board 1.
+Two versions exist. **Composed Today** is phase 0.5 and ships first. **Full Today** is phase 1.
+The difference is not read versus write: it is which columns exist.
 
-- **Header:** "Today · Tuesday 15 September · 4 on the floor · 3 to triage". Actions: *Plan my
-  day* (opens the This week bucket expanded for dragging into Today), *New* (`C`).
-- **Quick-add bar** (`Q` focuses it from anywhere on the page): live token parsing, chips
-  rendered as the user types, tokens stripped from the title. Grammar v1: dates/times in plain
-  English (`fri 2pm`, `tomorrow`, `in 3 days`, `mon 06:30`); `@Project name` (fuzzy, existing
-  `globalSearch` project index); a contact or client name resolves to a link chip; `!high` /
-  `!low`; `est 45m`. (`every mon` joins the grammar in phase 2 with recurrence.) `Enter`
-  creates; `⇧Enter` creates and opens the peek.
-- **Left column — Agenda.** A day column from the agenda engine (§10.4): my crew shifts,
-  services on projects I manage or am assigned to, calls (work items with a time), time-blocked
-  work items, project windows as all-day bands. Drag a work item from the right onto the column
-  to set `scheduledStart/End`; drag it back to clear. **No auto-scheduling.** "Now" line.
-- **Right column — My work.** Buckets in this order: **Triage** (inbound: mentions, declined /
-  unanswered crew offers, quotes about to expire with no next step, any new system item),
-  **Overdue**, **Today**, **This week** (collapsed by default), **Later**, **Someday** (parked,
-  no date, visually dimmed). Start-dated items stay hidden until their start date (Things
-  rule). Snoozed items reappear at `snoozedUntil`. **Every day boundary** (Today, Overdue,
-  start-date reveal, the `≤ 3d` / `≥ 7d` / "day before" rules in §9) is computed in the **org
-  timezone** from org settings through the existing `quoteDates` helper — never the browser's
-  zone and never UTC. A user linked to a crew record (`crewMembers.userId`) sees items assigned
-  to that crew record in their Today, exactly as `myOpenTasks` does now.
-- **Row anatomy:** status circle (click cycles, `D` marks done, un-done allowed), title,
-  context line (project or client · stage · due), right-side meta (estimate chip, source badge
-  `auto` / `mention` / `template`, assignee avatar). Overdue uses the error intent
-  (`bg-out-soft text-t-out`), never brand red (§1 red disambiguation). Left-edge red bar on
-  hover, no full-row tint.
-- **Triage row actions** are contextual one-liners: *Re-offer*, *Reply*, *Make task*, *Set
-  next step*, *Snooze*. Deciding is one keystroke; an item leaves Triage the moment it is
-  assigned, dated, snoozed or done.
-- **Peek** (`Space`, `Esc` closes, `↵` opens the full page at `/work/[id]`): title, context,
-  properties (status, assignee, start · due, linked entities as chips, source, estimate ·
-  logged), subtasks (inline add, one level), comments (existing thread panel, inline `@`
-  typeahead — upgrade from the current dropdown picker), activity. Everything editable inline;
-  no modal.
-- **Keyboard:** `C` new · `Q` quick-add · `Space` peek · `D` done · `S` snooze (menu:
-  tomorrow / next week / pick) · `A` assign · `P` priority · `T` move to Today · `↑↓ j k`
-  navigate · `⌘K` anything. All single-key shortcuts obey DESIGN.md §4 (off inside inputs and
-  dialogs; listed in the `?` overlay).
-- **States:** empty Today (Kalam caption + mascot allowed: "Nothing on you today. The crew's
-  jealous."); empty Triage (plain: "Nothing to triage"); loading skeletons match row shapes;
-  error = left-bar notice with retry; viewer role sees read-only circles (as today).
-- **Mobile:** single column, buckets stacked, agenda collapsed to a "Next up" strip; bottom
-  sheet for peek. Today is *not* added to the 5-item bottom nav (DESIGN.md §16) — it is
-  reachable from the dashboard "My work" zone and the sidebar.
+| Capability | Composed (0.5) | Full (1) | Why |
+|---|---|---|---|
+| Buckets, day rail, peek, keyboard | yes | yes | Reads that already exist |
+| Done / un-done | yes | yes | `updateNative` exists and is guarded |
+| Reply to a mention, re-offer crew, mark notification read | yes | yes | Existing mutations |
+| Snooze, time-block, personal items, subtasks, stage grouping, quick-add | no | yes | Each needs a new column |
+
+**Layout (decision D4A — work first, day as context).** The work list is the wide left column
+and the page's anchor. The day sits in a narrower right rail as read-only context, matching the
+two-column detail layout used across the app. The same item never appears in both: a scheduled
+item shows in the day rail with a marker in its list row, not twice.
+
+```
+┌──────────────────────────────────────────┬──────────────────────┐
+│  Good morning, Jayden                    │  Your day   as of 8:42│
+│  Tuesday 16 September                    │  ─────────────────────│
+│                                          │  07:00 Load-in        │
+│  Overdue ──────────────────────  (only   │        Gala Dinner    │
+│  ○ Confirm venue access   1d late         │  10:00 Call · Sarah   │
+│                                          │  13:00 Dispatch · AGM │
+│  Today ────────────────────────────────  │  15:00 Site visit     │
+│  ○ Build quote v2        Uni Open Day    │                       │
+│  ○ Book LX crew   2 of 4   Gala Dinner   │  Needs you  as of 8:42│
+│  ● Send deposit invoice     done         │  ─────────────────────│
+│                                          │  Sam declined AGM     │
+│  Triage ─────────────────────  3         │  Quote v1 expires 2d  │
+│  ○ Tom mentioned you in LX notes         │                       │
+│                                          │                       │
+│  Later ──────────────────────  11  ›     │                       │
+└──────────────────────────────────────────┴──────────────────────┘
+```
+
+- **Bucket order** is Overdue, Today, Triage, Later. Your own commitments come before other
+  people's arrivals. Overdue renders **only when non-empty**. Later is one collapsed row with a
+  count, replacing the separate This week / Later / Someday buckets.
+- **Buckets are sections, not cards (D7A).** Each is a `SectionHeader` label with its extending
+  hairline rule, rows running continuously beneath. No per-bucket border or shadow — four
+  bordered boxes in a column is the dashboard-card mosaic the app-UI rules forbid.
+- **Header (D6, blended).** Greeting plus date, matching the dashboard's established pattern. No
+  permanent counts, and never an overdue tally. The orientation line carries operator voice when
+  the day is clear and goes plain the moment an Overdue section exists (DESIGN.md §9 bans
+  personality in overdue contexts).
+- **Freshness (D5A).** The day rail and the Needs-you rail are on-demand (§10.7), so each header
+  carries a muted "as of 8:42" in caption type with a refresh control beside it. They refresh on
+  tab focus and on a slow interval, and never blank while refreshing. The work list is live and
+  carries no timestamp.
+- **Row anatomy:** status circle, title, context line (project · stage · due), right-side meta
+  (source badge, assignee avatar). Overdue uses the error intent (`bg-out-soft text-t-out`),
+  never brand red (§1). Left-edge 2px red bar on hover, no full-row tint (DESIGN.md Tables).
+  Source badges (`auto` / `mention` / `template`) map to existing intents through
+  `status-colors.ts` — never hand-rolled classes.
+- **Day rail entries** use module hues for wayfinding (§3.7): crew shifts purple, services green,
+  project windows blue. Text on any hue fill follows the on-fill rule, never assumed white.
+- **Peek (D8A):** a **non-modal, page-level side panel**, not a Dialog and not a Sheet. A modal
+  would set the body pointer-events lock, and the panel contains nested menus (mention typeahead,
+  snooze menu) — the documented click-swallowing footgun. Non-modal also keeps the list
+  arrow-navigable while the panel is open. Focus moves to the panel heading on open and returns
+  to the originating row on `Esc`. Radius `--r-lg`.
+- **Keyboard:** `Space` peek · `D` done · `↑↓ j k` navigate · `Esc` close · `⌘K` anything. Phase 1
+  adds `C` new · `Q` quick-add · `S` snooze · `A` assign · `P` priority · `T` today. All obey
+  DESIGN.md §4 and appear in the `?` overlay. Drag-to-schedule (phase 1) has a keyboard
+  equivalent through the row menu; drag is never the only path.
+- **Navigation (D10A):** Today replaces Dashboard in the mobile bottom nav and becomes the
+  landing page after login. The dashboard moves to the account menu, and its "My work" zone is
+  removed so the same rows do not render twice. This changes DESIGN.md §16, which must be updated
+  in the same PR along with both `app-sidebar.tsx` and `mobile-nav.tsx`.
+- **Touch (D9A):** the status circle stays visually small with a full 44px invisible hit area via
+  the existing `.touch-target` utility. Tapping anywhere else on the row opens the item. Rows stay
+  compact; no swipe gesture in v1.
+- **Responsive:** desktop two columns; tablet drops the day rail below the work list; phone single
+  column with the day rail collapsed to a "Next up" strip and peek as a bottom sheet.
+- **Accessibility:** buckets are real headings with list semantics. The live work list announces
+  count changes only, never per-row updates. Viewer role renders static circles.
+
+**Interaction states.** Every cell says what the user *sees*.
+
+| Surface | Loading | Empty | Error | Stale | Partial |
+|---|---|---|---|---|---|
+| Work list | Skeleton rows matching row shape | Mascot + handwritten line, the all-clear reward | Left-bar notice with retry, list stays | n/a (live) | Buckets render as they resolve |
+| Day rail | Skeleton blocks | "Nothing scheduled" plain caption | Left-bar notice, keeps last good data | "as of" timestamp greys | Shows what loaded |
+| Needs you | Skeleton rows | "Nothing needs you" plain | Left-bar notice, keeps last good data | "as of" timestamp greys | Shows what loaded |
+| Peek | Skeleton in panel | n/a | "This item was removed" + close | n/a | n/a |
+| Whole page | Full skeleton, 200ms minimum | First-run: what Today will show once work exists | Recoverable notice, never a full-page replacement | Offline banner, page stays usable | One rail can fail while the list works |
+
+A completed write that fails reverts the row and raises a toast naming what failed. First-run is
+distinct from empty: a new user sees an explanation of what will appear here, not an all-clear.
+
+**Morning arc.** Opens the page, wants to know nothing is on fire. Overdue is absent or short.
+Today is a short committed list. Triage says who needs something. Two or three actions, then the
+page is closed or left open as reference. The all-clear is the emotional payoff and gets the
+mascot; everything else stays plain. "Plan my day" does not exist in phase 0.5 because there is
+nothing to plan with; it arrives in phase 1 with snooze and time-blocking.
 
 ### 8.2 Work item (`/work/[id]` and the peek)
 
@@ -882,3 +931,72 @@ phase 1 spends effort on R5. If nobody holds the `warehouse` role, R5 shrinks to
 | Failure modes | 0 critical gaps (no path is both untested and unhandled) |
 | Outside voice | Ran (independent agent); 4 objections, 3 accepted, 1 open and cheap to settle |
 | Unresolved decisions | One: does anyone actually hold the `warehouse` role in production? |
+
+---
+
+## 21. Design review record (2026-09-16)
+
+Run with `/plan-design-review` against §8.1 and the wireframes, focused on the version that ships
+first. The mockup generator is not built in this checkout, so the HTML wireframes are the visual
+reference. DESIGN.md was binding throughout.
+
+### 21.1 Ratings
+
+| Pass | Before | After | What moved it |
+|---|---|---|---|
+| 0 · Overall completeness | 5/10 | 9/10 | The version shipping first now has a design |
+| 1 · Information architecture | 4/10 | 9/10 | Work is the anchor, day is context, bucket order inverted |
+| 2 · Interaction states | 3/10 | 9/10 | Full state table including staleness and partial load |
+| 3 · Journey and emotional arc | 2/10 | 9/10 | Morning arc, all-clear reward, no shaming counts |
+| 4 · AI slop risk | 7/10 | 9/10 | Buckets became sections, killing the card mosaic |
+| 5 · Design system alignment | 6/10 | 9/10 | Components named, peek container decided, hues assigned |
+| 6 · Responsive and accessibility | 3/10 | 8/10 | Touch targets, focus return, live-region policy, bottom nav |
+| 7 · Unresolved decisions | — | 0 open | All eight resolved into the plan |
+
+### 21.2 Decisions
+
+| # | Finding | Decision |
+|---|---|---|
+| D3A | "Read-only" was wrong and would produce a page you cannot use | Phase 0.5 is **composed**: every write that already exists is included. Only new columns are deferred |
+| D4A | Two competing organising principles, and inbound work came first | Work list anchors the page, day rail is context, order is Overdue, Today, Triage, Later |
+| D5A | On-demand panels made staleness a visible state with no treatment | Quiet "as of" timestamp, refresh on focus, never blanks |
+| D6 | A permanent overdue count is a daily reminder of failure | Greeting and date, no counts, Overdue renders only when non-empty, personality drops when it appears |
+| D7A | Four bordered buckets is the card mosaic the app rules forbid | Buckets are sections with a labelled rule |
+| D8A | Nested menus inside a modal hit the documented pointer-events lock | Peek is a non-modal page-level panel; list stays arrow-navigable |
+| D9A | A 12px status circle fails the 44px touch minimum | Small circle, full 44px invisible hit area, no swipe gesture |
+| D10A | Today was unreachable on phones: no sidebar and no bottom-nav slot | Today takes the dashboard's bottom-nav slot and becomes the landing page; the dashboard's my-work zone is removed |
+
+### 21.3 What already exists (reused, not rebuilt)
+
+`SectionHeader` for bucket labels, `StatusIndicator` and `intentStyles` for every status colour,
+`PersonAvatar` for assignees, `EmptyState` with the spot illustrations and the mascot for the
+all-clear, `Skeleton` for loading, `useKeyboardShortcut` for the verb keys, the motion utilities
+for row entrance, the `.touch-target` utility for the 44px hit area, the two-column detail layout
+for the page shell, and the greeting pattern the dashboard already uses.
+
+### 21.4 NOT in scope
+
+| Deferred | Why |
+|---|---|
+| Quick-add, snooze, drag-to-schedule, subtasks | Each needs a column that phase 0.5 does not add |
+| "Plan my day" ritual | Nothing to plan with until snooze and time-blocking exist |
+| Swipe-to-complete on phones | Undiscoverable with no other swipe actions in the app to build on |
+| A distinct module hue for Today | It is personal scope, not a module; it keeps the Projects blue that My tasks uses today |
+| Density toggle, saved views on Today | Phase 2 concern once the list is long enough to need them |
+
+### 21.5 Follow-on doc changes required in the same PR
+
+DESIGN.md §16 lists the five bottom-nav items and requires any change to be applied to both
+`app-sidebar.tsx` and `mobile-nav.tsx`. Decision D10A changes that list, so §16 and its decisions
+log need updating alongside the code, and the dashboard layout section needs its "My work" zone
+removed.
+
+### 21.6 Approved mockup
+
+| Screen | Path | Direction |
+|---|---|---|
+| Composed Today (phase 0.5) | `~/.gstack/projects/gearflow/designs/today-20260916/today-composed.html` (+ `.png`) | Work list anchors the page, day and needs-you rails on the right with freshness stamps, buckets as sections, non-modal peek, Today in the phone bar. Rough wireframe: hierarchy and interaction only, DESIGN.md governs every visual. |
+
+The earlier four-board set in `mockups/work-layer-wireframes.html` still describes the project,
+client and crew surfaces. Its Today board (board 1) is **superseded** by the above: it shows the
+pre-review layout with bordered buckets, Triage first and a header count.

@@ -2,7 +2,14 @@ FROM node:22-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966
 WORKDIR /app
 
 # curl: required by Coolify's container health check (slim has neither curl nor wget)
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# ca-certificates: the PostHog sourcemap CLI is a Rust binary that reads the
+# SYSTEM trust store (/etc/ssl/certs), unlike Node which bundles its own. slim
+# ships no CA bundle and `--no-install-recommends` skips curl's recommended
+# ca-certificates, so without this the build dies at runAfterProductionCompile:
+#   posthog-rs panicked: reqwest::Error { kind: Builder,
+#   source: General("No CA certificates were loaded from the system") }
+# and POSTHOG_SOURCEMAPS_REQUIRED=true (below) makes that fatal by design.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # corepack ships with node:22 — activates the exact pnpm version pinned in
 # package.json's "packageManager" field via corepack's own signed release

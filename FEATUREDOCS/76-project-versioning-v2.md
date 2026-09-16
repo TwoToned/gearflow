@@ -645,14 +645,219 @@ false by construction (absent) until a real event raises it.
   pointer was not performed — flagging rather than silently asserting full
   coverage.
 
-## What's next (later phases of #1221 — not built yet)
+## Phase 5 (#1231) — the UI: one switcher, one panel, one strip
 
-The Phase 5 UI work called out above (wiring the version switcher, promote/
-delete dialogs and the reprice/protect actions onto the new verb set — or
-retiring them, per the new design), migrating the switcher (FEATUREDOCS/70)
-off `projectSnapshots` onto `projectVersions` entirely, narrowing
+Phase 5 wires Phases 1-4's backend into the actual project-detail page. It
+reads from the REAL `projectVersions` table via a new browser-facing read
+module, `convex/versionsRead.ts` (`listForProject` — the summary list the
+header pill and Versions panel both subscribe to; `getVersion` — a single
+version's PLAN FIELDS for the composed object below), and writes through
+the existing `convex/versions.ts` verb set (`createNative`/`makeLiveNative`/
+`setLabelNative`/`deleteNative`, Phase 3) via a rewritten
+`src/hooks/use-project-version-writes.ts`.
+
+### The composed object (D32) — real now, not just the Phase 0 spike
+
+`src/lib/project-version-compose.ts`'s `composeProjectWithVersion(project,
+viewingPlanFields)` shallow-merges the viewed version's PLAN FIELDS bag
+(`versionsRead.getVersion`) onto the live project. `src/app/(app)/
+projects/[id]/page.tsx` computes this ONCE, right after the project loads,
+via a new standalone hook `useProjectVersionState` (`project-version-
+context.tsx`, split out of the context Provider so page.tsx can call it
+BEFORE the provider's own JSX) — then feeds the composed object to
+`getProjectWindowDates`, the Notes tab, and the Labour tab's window-date
+props, unmodified, exactly as the Phase 0 spike predicted. `ProjectVersion
+Provider` itself is now a thin context wrapper that just takes this
+precomputed `value`.
+
+**Known, documented limit**: only the plan-field SCALARS are composed.
+Resolved relations (the client's name, the location object) still come from
+the LIVE project's own `projectDetail.bundle` join, so they can lag a
+non-live version's own `clientId`/`locationId` if that version was created
+under a different client/location. Fully resolving version-scoped relations
+is follow-up work, flagged in `composeProjectWithVersion`'s own comment, not
+silently assumed away.
+
+### VersionStrip — three states, one query
+
+`src/components/projects/version-strip.tsx` replaces `ProjectLockStrip` +
+`VersionReadOnlyBar` (both deleted) with one component:
+
+1. **Absent** — live, unlocked, nothing to say.
+2. **Viewing a non-live version** — info strip, "Make vN live" + "Back to
+   live". Takes priority over state 3: `pricingLocked` describes the LIVE
+   version's money fields only, and says nothing about what's on screen.
+3. **Live, pricing locked** — the single lock state left post-#1230, with
+   the one-click "Unlock pricing" action (`unlockPricingNative`, called
+   directly via `useMutation` — confirmed by inspecting `use-project-lock.ts`'s
+   existing pattern, NOT through the HTTP API dispatcher, so no `confirm`
+   plumbing was needed for this UI action).
+
+The mockup's states D (drift: "this job no longer matches the sent quote")
+and E ("pricing unlocked by a person, re-lock") are a **deliberate
+deferral** — not built into the strip this phase. The underlying drift
+SIGNAL still exists (inlined into `project-quote-rail.tsx`'s
+`InlineQuoteDrift` and `overview/quote-card.tsx`'s own copy, both replacing
+the deleted shared `QuoteDriftIndicator` — same `diffSnapshotEntries`/
+`summarizeDrift`/`describeDrift` pipeline, R-3.1), just not folded into
+`VersionStrip` yet.
+
+### Header pill + Versions panel — the two verb surfaces
+
+`version-switcher.tsx` (rewritten) is the `v4 · Live ▾` header pill: lists
+every version, "New version", a disabled "Compare" stub (§5's principle 6 —
+tracked separately as #1232, not built), and "Manage versions…" (also bound
+to the `V` keyboard shortcut, disabled while typing or another dialog/menu
+is open, DESIGN.md §4). `versions-panel.tsx` (new, a Radix `Sheet`) is the
+ONLY place a version is created, renamed, made live or deleted — switching
+also lives there as a convenience, not a duplicate authority. Both consume
+`ProjectVersionSummary`/`useProjectVersion()` from the rewritten
+`project-version-context.tsx`.
+
+`finance/make-live-dialog.tsx` (new) replaces `PromoteVersionDialog`: states
+what changes before it runs (design §5.5), then lists `makeLiveNative`'s
+`conflicts: string[]` after a successful flip — never blocks on them (§4.4/
+D6). Opened from the strip, the pill's row actions, and the panel — one
+dialog, three entry points, same as the old `PromoteVersionDialog`'s reuse
+pattern.
+
+### The Equipment tab — read-side is real; write-side has a discovered gap
+
+`EquipmentTab` now takes `versionId` (threaded straight into
+`useNativeEquipmentTab` → `equipmentTab.bundle`'s own already-version-aware
+arg, Phase 2/#1228) and `addDisabledReason`. Viewing a non-live version
+therefore renders that version's REAL rows through the REAL component — not
+a projection — with `EquipmentAddMenuTrigger` (`equipment-add-menu-trigger.tsx`,
+split out of `equipment-tab.tsx` for independent testability) greyed and
+tooltipped instead of hidden (D15).
+
+**Important discovery, not in the Phase 1-4 writeup**: every CREATE mutation
+this tab calls (`lineItemWrites.addNative` and its siblings in
+`projectGroupsWrites.ts`/`projectCategoriesWrites.ts`/
+`projectServicesWrites.ts` — 13 call sites) stamps
+`versionId: requireLiveVersionId(project)` **unconditionally** — Phase 2 made
+every READ version-aware but never extended the WRITE side with a target-
+version argument. EXISTING-row edits (price/qty/notes, delete, reorder) are
+unaffected — they operate on an already-versioned row's own `id`, so they
+correctly land wherever that row already lives, live or not. Only NEW
+inserts are at risk of silently landing on the wrong (live) version. Rather
+than ship an "Add" menu that would silently misfile new lines, Phase 5
+GREYS the Add trigger while viewing a non-live version (`addDisabledReason`)
+— a narrower version of principle 3's "same add menu" ideal, chosen for
+correctness over completeness. Closing this for real needs `versionId`
+arguments added to those 13 create mutations (additive-only, same pattern
+Phase 2 used for reads) — flagged here as the single highest-priority
+follow-up, not silently left as a TODO.
+
+### Labour and Finance tabs — scoped out of version-awareness this phase
+
+Neither tab was threaded with `versionId` this phase (the mockups' one
+worked read-path example is Equipment; `projectServices.listByProject` is
+ALSO already version-aware server-side per Phase 2, so wiring
+`ServicesPanel` is a smaller lift than Equipment's data-reconstruction path
+— left for a follow-up, not attempted here for time). Both render their
+LIVE data regardless of `?v=`, now flagged with a `VersionNotTrackedNote`
+(the same "Tasks/Files aren't versioned" component Tasks/Files already
+used) rather than silently showing stale-looking figures with no
+indication. The Notes tab, by contrast, IS fully version-aware for free —
+`crewNotes`/`internalNotes`/`clientNotes` are PLAN FIELDS, so the composed
+object already carries the viewed version's own text; it renders read-only
+while viewing non-live (notes writes patch the live `projects` row only,
+same gap class as the Equipment "Add" issue above).
+
+### Deleted, verified gone
+
+`project-version-projection.ts`, `convex/projectVersionsEquipment.ts` (+
+test), `version-projected-equipment.tsx`, `version-projected-labour.tsx`,
+`version-projected-finance.tsx`, `version-readonly-bar.tsx`,
+`quote-drift-indicator.tsx`, `reprice-from-revision-dialog.tsx`,
+`promote-version-dialog.tsx` (+ its smoke test), `delete-version-dialog.tsx`,
+`project-lock-strip.tsx`. `use-justified-mutation.ts`/`justification-
+dialog.tsx`/`unlock-session-dialog.tsx`/`unlock-session-banner.tsx` were
+already gone (Phase 4). `RecallToEditDialog` never existed under that name
+in this codebase — verified absent, not assumed.
+
+Also removed as **newly-orphaned** once the above lost their only callers
+(not literally named in the issue's delete list, but dead by construction
+once their sole importers were gone — R-3.1/POLICY.md dead-code discipline):
+`convex/projectVersionsRead.ts` (+ test — the OLD quote-revision-based
+`listVersions` the deleted switcher used), `promote-conflicts-panel.tsx` (+
+test), and three throwing stubs in `use-quote-writes.ts`
+(`repriceFromRevision`/`deleteDraft`/`deleteVersion` — their only callers,
+the deleted dialogs, are gone). `project-quote-rail.tsx` (the OLDER, still-
+alive quote-revision program, FEATUREDOCS/70) had its Promote/Reprice/
+Delete-draft row actions and drift-indicator import removed (their
+underlying mutations were already throwing stubs since Phase 3) — Send/
+Accept/Decline/Recall/View/Rename/Delete-recalled are untouched.
+
+### Testing
+
+jsdom smoke tests that actually OPEN each surface (mirroring
+`model-roi-tab.smoke.test.tsx`'s TooltipProvider-crash pattern):
+`version-strip.smoke.test.tsx` (all 3 states + priority ordering),
+`version-switcher.smoke.test.tsx` (opens the menu, lists/switches versions,
+New version, disabled Compare, Manage → panel, `V` shortcut incl. the
+input-focused/no-op case), `versions-panel.smoke.test.tsx` (opens as a
+dialog, row eligibility, rename/delete/make-live including the conflicts
+path), `finance/__tests__/make-live-dialog.smoke.test.tsx` (states what
+changes, conflicts list, Cancel/Done), `project-version-compose.test.ts`
+(pure-function coverage of the overlay/clear semantics).
+
+The Equipment-tab render-parity requirement (convex/
+equipmentTabVersionParity.test.ts already proves the DATA is parity) is
+covered at the UI level NOT by mounting the full ~2,700-line `EquipmentTab`
+(impractical — dnd-kit, seven browser-direct write hooks, several Convex
+subscriptions) but by two narrower, honest proofs that together establish
+the same thing: `equipment-add-menu-trigger.smoke.test.tsx` (the ONE place
+`EquipmentTab` branches on `addDisabledReason` — its two states, isolated)
+and `use-native-equipment-tab.test.ts` (a `renderHook` test proving
+`versionId` reaches `equipmentTab.bundle`'s own query args, and that the
+data path is otherwise IDENTICAL regardless of which version is being
+read). Since Phase 5's only other change to `EquipmentTab` is threading
+`versionId` straight through with no other conditional, these two tests
+together prove the "identical apart from greyed verbs" claim by
+construction rather than a brute-force DOM diff.
+
+### E2E (I-20)
+
+`e2e/harness-project-versioning.spec.ts`, three specs, `harness-*` E2E
+convention (`E2E_HARNESS=1`, `resetHarnessDb()` per file): (1) switch to a
+non-live version, edit an EXISTING line, switch back — the edit is on the
+version, live is untouched (deliberately exercises an edit, not a new add,
+given the write-side gap above); (2) make live with a warehouse conflict —
+lists it, flips anyway, checked-out gear stays on the job; (3) quote from a
+non-live version — `.skip()`'d with a comment, blocked on Phase 6 (#1233),
+which doesn't exist yet. **Honesty note**: this sandbox has no live Convex
+deployment and no way to run the seeded harness — specs 1-2 are written and
+believed correct (mirroring `harness-revenue-path.spec.ts`'s/
+`harness-create-inventory.spec.ts`'s already-proven register → onboard →
+model → asset → project chain) but NOT executed and confirmed green here.
+
+### DESIGN.md conformance
+
+No violations found worth flagging beyond the usual: `VersionStrip`/
+`versions-panel.tsx`/`make-live-dialog.tsx` all reuse existing tokens
+(`intentStyles`/`intentBorderClass`, `t-overline`/`text-caption`, the
+`--r`/`--r-lg` radius scale, hard-offset shadows via existing `Button`/
+`Dialog`/`Sheet` primitives) rather than introducing new ad hoc styling: no
+new colours, no uppercase text, `SelectValue` isn't used (no `<Select>` in
+this surface), every `Tooltip` has its own `TooltipProvider`
+(`GatedButton`'s and `EquipmentAddMenuTrigger`'s own, per CLAUDE.md), and no
+Base UI popover is nested inside a Radix modal Dialog anywhere here (the
+Versions panel is a Radix `Sheet`; the Make-live/Rename/Delete dialogs it
+opens are plain Radix `Dialog`s, sibling-stacked, not nested popovers).
+
+### What's next (later phases of #1221 — not built yet)
+
+Closing the Equipment-tab write-side gap (the 13 create-mutation call sites
+above); wiring `ServicesPanel`/Labour and Finance onto `versionId` the same
+way Equipment now is; Compare (#1232); Phase 6's quote-from-a-non-live-
+version workflow (#1233), which E2E spec 3 is blocked on; folding drift
+(state D) and the unlocked-by-a-person notice (state E) into `VersionStrip`;
+migrating the OLDER switcher's remaining surface (FEATUREDOCS/70) off
+`projectSnapshots` onto `projectVersions` entirely; narrowing
 `projects.liveVersionId` to required once the backfill is proven complete in
-prod, and closing the remaining 32 version-scope-ratchet sites (Phase 2's
+prod; and closing the remaining 32 version-scope-ratchet sites (Phase 2's
 "What's deferred") with real join-filtering. See
 `docs/designs/project-versioning-v2.md` for the full plan (not yet merged to
 `main`).

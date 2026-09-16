@@ -30,11 +30,13 @@ export type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT"
  *  so a version-viewing render can reproduce the live Equipment tab's exact
  *  table (sub-hire groups, and the `categorySlots`-driven combined order of
  *  project groups + sub-hire groups + standalone line items) instead of the
- *  simplified "not captured" fallback. Kept in lockstep with two other
- *  redeclarations of this union: `convex/projectLocksRead.ts`'s `ENTRY_RETURNS`
- *  and `src/lib/project-version-projection.ts`'s local type (R-3.1 — one closed
- *  union, never a silently-widened `v.string()`). See FEATUREDOCS/70's
- *  "Phase 6" section. */
+ *  simplified "not captured" fallback. Kept in lockstep with
+ *  `convex/projectLocksRead.ts`'s `ENTRY_RETURNS` redeclaration of this union
+ *  (R-3.1 — one closed union, never a silently-widened `v.string()`). See
+ *  FEATUREDOCS/70's "Phase 6" section. (`src/lib/project-version-projection.ts`,
+ *  the switcher-UI's own copy of this union, was deleted in Phase 5 of
+ *  Project Versioning v2, #1231 — the switcher no longer projects from
+ *  snapshots.) */
 export type SnapshotEntityType =
   | "project"
   | "category"

@@ -1,199 +1,192 @@
 // @vitest-environment node
+//
+// Pure-logic unit coverage for `convex/lib/projectLocks.ts` (#1230, Phase 4 of
+// "Project versioning v2", parent #1221) — the shrunken successor to the old
+// `resolveLockTier`/`LockTier` truth table this file used to cover. The
+// integration-level exercise through real mutations (multi-entity, real DB
+// writes) lives in `convex/projectLifecycleLocks.test.ts`; this file is the
+// synchronous, side-effect-free half: `isLiveVersionRow`/`assertPricingUnlocked`/
+// `defaultsToZeroOnInsert`/`pricedUnderLockOnInsert`/`afterLockAuditMetadata`
+// need no `convexTest` harness at all.
+import { convexTest } from "convex-test";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";
+import schema from "../schema";
 import {
-  lockTierForStatus,
+  isLiveVersionRow,
+  defaultsToZeroOnInsert,
+  pricedUnderLockOnInsert,
+  afterLockAuditMetadata,
+  assertPricingUnlocked,
+  canUnlockPricing,
+  requireCanUnlockPricing,
   isConfirmedOrLater,
   crossesIntoSnapshotStatus,
-  isForwardStatusMove,
-  isRevertOutOfHardLock,
-  shouldDefaultToZero,
-  lifecycleAuditMetadata,
-  resolveLockTier,
-  type LockTier,
 } from "./projectLocks";
 
-describe("lockTierForStatus", () => {
-  test.each([
-    ["ENQUIRY", "OPEN"],
-    ["QUOTING", "OPEN"],
-    ["QUOTED", "OPEN"],
-    ["CONFIRMED", "FINANCE_LOCKED"],
-    ["PREPPING", "FINANCE_LOCKED"],
-    ["CHECKED_OUT", "FINANCE_LOCKED"],
-    ["ON_SITE", "JUSTIFY"],
-    ["RETURNED", "JUSTIFY"],
-    ["COMPLETED", "HARD_LOCKED"],
-    ["INVOICED", "HARD_LOCKED"],
-    ["CANCELLED", "OPEN"],
-  ] as const)("%s -> %s", (status, tier) => {
-    expect(lockTierForStatus(status)).toBe(tier);
+const modules = import.meta.glob("../**/*.ts");
+function makeT() {
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t, "rateLimiter");
+  return t;
+}
+
+const ORG = "org_1";
+const USER = "user_1";
+
+describe("isLiveVersionRow", () => {
+  test("a row with no versionId always reads as live (projects itself, crewAssignments)", () => {
+    expect(isLiveVersionRow({ liveVersionId: "v1" }, undefined)).toBe(true);
+    expect(isLiveVersionRow({ liveVersionId: "v1" }, null)).toBe(true);
   });
 
-  test("null/undefined status reads OPEN", () => {
-    expect(lockTierForStatus(null)).toBe("OPEN");
-    expect(lockTierForStatus(undefined)).toBe("OPEN");
+  test("a project with no liveVersionId yet reads every row as live (un-backfilled — the safe default)", () => {
+    expect(isLiveVersionRow({ liveVersionId: undefined }, "v2")).toBe(true);
   });
 
-  test("isConfirmedOrLater mirrors the tier boundary", () => {
-    expect(isConfirmedOrLater("QUOTED")).toBe(false);
-    expect(isConfirmedOrLater("CONFIRMED")).toBe(true);
-    expect(isConfirmedOrLater("COMPLETED")).toBe(true);
-    expect(isConfirmedOrLater("CANCELLED")).toBe(false);
+  test("a versioned row matching liveVersionId is live; a different versionId is not", () => {
+    expect(isLiveVersionRow({ liveVersionId: "v1" }, "v1")).toBe(true);
+    expect(isLiveVersionRow({ liveVersionId: "v1" }, "v2")).toBe(false);
   });
 });
 
-// #988 (Phase C) — the quote-send lock folds into the SAME tier resolver.
-// Full truth table across every status × every quote state, since this is the
-// safety-critical function every gate site relies on.
-describe("resolveLockTier", () => {
-  const ALL_STATUSES = [
-    "ENQUIRY", "QUOTING", "QUOTED",
-    "CONFIRMED", "PREPPING", "CHECKED_OUT",
-    "ON_SITE", "RETURNED",
-    "COMPLETED", "INVOICED",
-    "CANCELLED",
-  ] as const;
-  const STATUSLESS = [null, undefined] as const;
-  const OPEN_KEEPING_QUOTE_STATES = [undefined, null, "DRAFT"] as const;
-  const ESCALATING_QUOTE_STATES = ["SENT", "ACCEPTED", "DECLINED", "SUPERSEDED", "EXPIRED"] as const;
-  const ALL_QUOTE_STATES = [...OPEN_KEEPING_QUOTE_STATES, ...ESCALATING_QUOTE_STATES] as const;
-
-  describe("status alone already resolves a non-OPEN tier — quote state never overrides it", () => {
-    const NON_OPEN_STATUSES = ALL_STATUSES.filter((s) => lockTierForStatus(s) !== "OPEN");
-
-    test.each(NON_OPEN_STATUSES)("%s", (status) => {
-      const expectedTier = lockTierForStatus(status);
-      for (const quoteState of ALL_QUOTE_STATES) {
-        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: expectedTier, reason: "STATUS" });
-      }
-      // Omitting quoteState entirely resolves identically.
-      expect(resolveLockTier({ status })).toEqual({ tier: expectedTier, reason: "STATUS" });
-    });
+describe("defaultsToZeroOnInsert / pricedUnderLockOnInsert", () => {
+  test("defaults to zero iff pricingLocked === true (not just truthy)", () => {
+    expect(defaultsToZeroOnInsert({ pricingLocked: true })).toBe(true);
+    expect(defaultsToZeroOnInsert({ pricingLocked: false })).toBe(false);
+    expect(defaultsToZeroOnInsert({ pricingLocked: undefined })).toBe(false);
   });
 
-  describe("status alone resolves OPEN (ENQUIRY/QUOTING/QUOTED/CANCELLED) — quote state decides", () => {
-    const OPEN_STATUSES = ALL_STATUSES.filter((s) => lockTierForStatus(s) === "OPEN");
+  test("pricedUnderLockOnInsert stores `true` or absent — never `false`", () => {
+    expect(pricedUnderLockOnInsert(true)).toBe(true);
+    expect(pricedUnderLockOnInsert(false)).toBeUndefined();
+    expect(pricedUnderLockOnInsert(undefined)).toBeUndefined();
+  });
+});
 
-    test.each(OPEN_STATUSES)("%s + no quote / DRAFT quote stays OPEN", (status) => {
-      for (const quoteState of OPEN_KEEPING_QUOTE_STATES) {
-        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "OPEN", reason: "STATUS" });
-      }
-    });
+describe("afterLockAuditMetadata", () => {
+  test("stamps afterLock:true only when the write happened while locked", () => {
+    expect(afterLockAuditMetadata(true)).toEqual({ afterLock: true });
+    expect(afterLockAuditMetadata(false)).toBeUndefined();
+  });
+});
 
-    test.each(OPEN_STATUSES)("%s + a quote that's gone out (SENT/ACCEPTED/DECLINED/SUPERSEDED/EXPIRED) escalates to FINANCE_LOCKED", (status) => {
-      for (const quoteState of ESCALATING_QUOTE_STATES) {
-        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "FINANCE_LOCKED", reason: "QUOTE_SENT" });
-      }
-    });
-
-    test.each(STATUSLESS)("null/undefined status behaves exactly like an OPEN status", (status) => {
-      for (const quoteState of OPEN_KEEPING_QUOTE_STATES) {
-        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "OPEN", reason: "STATUS" });
-      }
-      for (const quoteState of ESCALATING_QUOTE_STATES) {
-        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "FINANCE_LOCKED", reason: "QUOTE_SENT" });
-      }
-    });
+describe("assertPricingUnlocked — the truth table", () => {
+  test("unlocked project: never throws, live or not, versioned or not", () => {
+    const project = { pricingLocked: false, liveVersionId: "v1" };
+    expect(() => assertPricingUnlocked(project)).not.toThrow();
+    expect(() => assertPricingUnlocked(project, "v1")).not.toThrow();
+    expect(() => assertPricingUnlocked(project, "v2")).not.toThrow();
   });
 
-  test("monotonicity property: no (status, quoteState) pair EVER resolves to a lower tier than status alone", () => {
-    // A simple total order sufficient for this property: OPEN is the floor,
-    // everything else is at or above it, and HARD_LOCKED is the ceiling.
-    // Quote state, per the rule above, can only move OPEN -> FINANCE_LOCKED —
-    // it never touches (let alone lowers) any already-locked status tier.
-    const rank: Record<LockTier, number> = { OPEN: 0, FINANCE_LOCKED: 1, JUSTIFY: 1, HARD_LOCKED: 2 };
-    for (const status of [...ALL_STATUSES, ...STATUSLESS]) {
-      const floor = rank[lockTierForStatus(status)];
-      for (const quoteState of ALL_QUOTE_STATES) {
-        const { tier } = resolveLockTier({ status, quoteState });
-        expect(rank[tier]).toBeGreaterThanOrEqual(floor);
-      }
+  test("locked project, no versionId (unversioned table): throws PRICING_LOCKED", () => {
+    const project = { pricingLocked: true, liveVersionId: "v1" };
+    expect(() => assertPricingUnlocked(project)).toThrow(/pricing is locked/i);
+  });
+
+  test("locked project, versionId === liveVersionId: throws PRICING_LOCKED", () => {
+    const project = { pricingLocked: true, liveVersionId: "v1" };
+    expect(() => assertPricingUnlocked(project, "v1")).toThrow(/pricing is locked/i);
+  });
+
+  // The single most important invariant of the whole phase: a non-live
+  // version is writable in every field family regardless of pricingLocked.
+  test("locked project, versionId !== liveVersionId (a non-live version): NEVER throws", () => {
+    const project = { pricingLocked: true, liveVersionId: "v1" };
+    expect(() => assertPricingUnlocked(project, "v2")).not.toThrow();
+    expect(() => assertPricingUnlocked(project, "v3")).not.toThrow();
+  });
+
+  test("locked project with no liveVersionId yet (un-backfilled): every versionId reads as live — throws", () => {
+    const project = { pricingLocked: true, liveVersionId: undefined };
+    expect(() => assertPricingUnlocked(project, "v2")).toThrow(/pricing is locked/i);
+  });
+
+  test("the thrown error carries the ConvexError code PRICING_LOCKED", () => {
+    const project = { pricingLocked: true, liveVersionId: "v1" };
+    try {
+      assertPricingUnlocked(project);
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect((e as { data?: { code?: string } }).data?.code).toBe("PRICING_LOCKED");
+    }
+  });
+});
+
+describe("canUnlockPricing / requireCanUnlockPricing (D42)", () => {
+  async function seedMember(t: ReturnType<typeof makeT>, role: string) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role });
+    });
+  }
+  async function seedPm(t: ReturnType<typeof makeT>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER });
+    });
+  }
+
+  test("owner/admin/manager (invoice:publish) can unlock without being the PM", async () => {
+    const t = makeT();
+    for (const role of ["owner", "admin", "manager"]) {
+      await t.run(async (ctx) => {
+        const existing = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", ORG).eq("userId", USER)).first();
+        if (existing) await ctx.db.patch(existing._id, { role });
+        else await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role });
+      });
+      const allowed = await t.run((ctx) => canUnlockPricing(ctx, ORG, "p1", USER));
+      expect(allowed).toBe(true);
     }
   });
 
-  test("a SENT quote on an already-HARD_LOCKED project softens nothing (still HARD_LOCKED, reason STATUS)", () => {
-    expect(resolveLockTier({ status: "COMPLETED", quoteState: "SENT" })).toEqual({ tier: "HARD_LOCKED", reason: "STATUS" });
+  test("member/viewer (no invoice:publish) cannot unlock unless also the project's PM", async () => {
+    const t = makeT();
+    await seedMember(t, "member");
+    expect(await t.run((ctx) => canUnlockPricing(ctx, ORG, "p1", USER))).toBe(false);
+
+    await seedPm(t);
+    expect(await t.run((ctx) => canUnlockPricing(ctx, ORG, "p1", USER))).toBe(true);
+  });
+
+  test("a PM row belonging to a different org never satisfies the audience (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: "org_2", projectId: "p1", userId: USER });
+    });
+    expect(await t.run((ctx) => canUnlockPricing(ctx, ORG, "p1", USER))).toBe(false);
+  });
+
+  test("requireCanUnlockPricing throws FORBIDDEN_UNLOCK_PRICING for a disallowed caller, resolves for an allowed one", async () => {
+    const t = makeT();
+    await seedMember(t, "member");
+    await expect(t.run((ctx) => requireCanUnlockPricing(ctx, ORG, "p1", USER))).rejects.toThrow(
+      /admins\/owners\/managers.*PM/i,
+    );
+
+    await seedPm(t);
+    // No throw is the only contract (`Promise<void>`) — convex-test's `t.run`
+    // serializes an undefined return as `null`, so assert falsy rather than
+    // the exact literal.
+    await expect(t.run((ctx) => requireCanUnlockPricing(ctx, ORG, "p1", USER))).resolves.toBeFalsy();
   });
 });
 
-describe("crossesIntoSnapshotStatus", () => {
-  test("forward advance into CONFIRMED snapshots", () => {
+describe("isConfirmedOrLater / crossesIntoSnapshotStatus (unrelated to pricing locking)", () => {
+  test("isConfirmedOrLater is true from CONFIRMED through INVOICED, false before", () => {
+    expect(isConfirmedOrLater("QUOTED")).toBe(false);
+    expect(isConfirmedOrLater("CONFIRMED")).toBe(true);
+    expect(isConfirmedOrLater("ON_SITE")).toBe(true);
+    expect(isConfirmedOrLater("COMPLETED")).toBe(true);
+    expect(isConfirmedOrLater("INVOICED")).toBe(true);
+    expect(isConfirmedOrLater(null)).toBe(false);
+    expect(isConfirmedOrLater(undefined)).toBe(false);
+  });
+
+  test("crossesIntoSnapshotStatus fires on a forward advance or a re-crossing, never a no-op or an unrelated status", () => {
     expect(crossesIntoSnapshotStatus("QUOTED", "CONFIRMED")).toBe(true);
-  });
-  test("forward advance into COMPLETED snapshots", () => {
-    expect(crossesIntoSnapshotStatus("RETURNED", "COMPLETED")).toBe(true);
-  });
-  test("a revert-then-re-advance re-crossing into CONFIRMED ALSO snapshots (versioned, never overwritten)", () => {
-    expect(crossesIntoSnapshotStatus("ON_SITE", "CONFIRMED")).toBe(true);
-  });
-  test("no-op status set does not snapshot", () => {
-    expect(crossesIntoSnapshotStatus("CONFIRMED", "CONFIRMED")).toBe(false);
-  });
-  test("a move that lands elsewhere does not snapshot", () => {
-    expect(crossesIntoSnapshotStatus("QUOTED", "PREPPING")).toBe(false);
-    expect(crossesIntoSnapshotStatus("CONFIRMED", "CANCELLED")).toBe(false);
-  });
-});
-
-describe("isForwardStatusMove", () => {
-  test("later pipeline status is forward", () => {
-    expect(isForwardStatusMove("QUOTED", "CONFIRMED")).toBe(true);
-  });
-  test("earlier pipeline status is not forward", () => {
-    expect(isForwardStatusMove("ON_SITE", "CONFIRMED")).toBe(false);
-  });
-  test("CANCELLED is off-pipeline — never forward either direction", () => {
-    expect(isForwardStatusMove("CONFIRMED", "CANCELLED")).toBe(false);
-    expect(isForwardStatusMove("CANCELLED", "CONFIRMED")).toBe(false);
-  });
-});
-
-describe("isRevertOutOfHardLock", () => {
-  test("COMPLETED -> INVOICED stays HARD_LOCKED, not a revert", () => {
-    expect(isRevertOutOfHardLock("COMPLETED", "INVOICED")).toBe(false);
-  });
-  test("COMPLETED -> ON_SITE reverts out of the hard lock", () => {
-    expect(isRevertOutOfHardLock("COMPLETED", "ON_SITE")).toBe(true);
-  });
-  test("INVOICED -> RETURNED reverts out of the hard lock", () => {
-    expect(isRevertOutOfHardLock("INVOICED", "RETURNED")).toBe(true);
-  });
-  test("a move that never enters HARD_LOCKED is not a revert", () => {
-    expect(isRevertOutOfHardLock("CONFIRMED", "QUOTED")).toBe(false);
-  });
-});
-
-describe("shouldDefaultToZero", () => {
-  test("OPEN tier never defaults to zero", () => {
-    expect(shouldDefaultToZero("OPEN", null)).toBe(false);
-  });
-  test("a locked tier with no open session defaults to zero", () => {
-    expect(shouldDefaultToZero("FINANCE_LOCKED", null)).toBe(true);
-    expect(shouldDefaultToZero("JUSTIFY", null)).toBe(true);
-    expect(shouldDefaultToZero("HARD_LOCKED", null)).toBe(true);
-  });
-  test("any open session (either scope) suspends the zero-default — PM is deliberately pricing", () => {
-    const financialSession = { scope: "FINANCIAL" } as never;
-    const fullSession = { scope: "FULL" } as never;
-    expect(shouldDefaultToZero("FINANCE_LOCKED", financialSession)).toBe(false);
-    expect(shouldDefaultToZero("HARD_LOCKED", fullSession)).toBe(false);
-  });
-});
-
-describe("lifecycleAuditMetadata", () => {
-  test("no justification, no session -> undefined (nothing to audit)", () => {
-    expect(lifecycleAuditMetadata({ tier: "OPEN", openSession: null })).toBeUndefined();
-  });
-  test("a justification is recorded with its tier", () => {
-    expect(lifecycleAuditMetadata({ tier: "JUSTIFY", openSession: null }, "  swapped the LED wall  ")).toEqual({
-      justification: "swapped the LED wall",
-      lockTier: "JUSTIFY",
-    });
-  });
-  test("an open session tags the write with its id, even with no justification", () => {
-    const session = { id: "sess_1" } as never;
-    expect(lifecycleAuditMetadata({ tier: "FINANCE_LOCKED", openSession: session })).toEqual({
-      unlockSessionId: "sess_1",
-    });
+    expect(crossesIntoSnapshotStatus("PREPPING", "COMPLETED")).toBe(true);
+    expect(crossesIntoSnapshotStatus("CONFIRMED", "CONFIRMED")).toBe(false); // no-op re-assert
+    expect(crossesIntoSnapshotStatus("QUOTED", "ON_SITE")).toBe(false); // not landing on CONFIRMED/COMPLETED
+    expect(crossesIntoSnapshotStatus("CONFIRMED", "QUOTING")).toBe(false); // a revert, not a crossing INTO
   });
 });

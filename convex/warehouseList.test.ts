@@ -17,14 +17,35 @@ describe("warehouseList.bundle", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("clients", { id: "cl1", organizationId: ORG, name: "Acme" });
       // In pipeline: pB CONFIRMED (later start), pA RETURNED (earlier start, has client + items).
-      await ctx.db.insert("projects", { id: "pB", organizationId: ORG, projectNumber: "PB", name: "PB", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW + 2 * DAY });
-      await ctx.db.insert("projects", { id: "pA", organizationId: ORG, projectNumber: "PA", name: "PA", status: "RETURNED", isTemplate: false, rentalStartDate: NOW + DAY, clientId: "cl1" });
+      await ctx.db.insert("projects", { id: "pB", organizationId: ORG, projectNumber: "PB", name: "PB", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW + 2 * DAY,
+        liveVersionId: "v-pB",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pB", organizationId: ORG, projectId: "pB", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pA", organizationId: ORG, projectNumber: "PA", name: "PA", status: "RETURNED", isTemplate: false, rentalStartDate: NOW + DAY, clientId: "cl1",
+        liveVersionId: "v-pA",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pA", organizationId: ORG, projectId: "pA", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Excluded: non-pipeline status, template, other org.
-      await ctx.db.insert("projects", { id: "pEnq", organizationId: ORG, projectNumber: "PE", name: "PE", status: "ENQUIRY", isTemplate: false, rentalStartDate: NOW });
-      await ctx.db.insert("projects", { id: "pTpl", organizationId: ORG, projectNumber: "PT", name: "PT", status: "CONFIRMED", isTemplate: true, rentalStartDate: NOW });
-      await ctx.db.insert("projects", { id: "pX", organizationId: "org_other", projectNumber: "PX", name: "PX", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "pA", status: "CHECKED_OUT", type: "EQUIPMENT", isKitChild: false });
-      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "pA", status: "CONFIRMED", type: "SERVICE", isKitChild: false });
+      await ctx.db.insert("projects", { id: "pEnq", organizationId: ORG, projectNumber: "PE", name: "PE", status: "ENQUIRY", isTemplate: false, rentalStartDate: NOW,
+        liveVersionId: "v-pEnq",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pEnq", organizationId: ORG, projectId: "pEnq", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pTpl", organizationId: ORG, projectNumber: "PT", name: "PT", status: "CONFIRMED", isTemplate: true, rentalStartDate: NOW,
+        liveVersionId: "v-pTpl",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pTpl", organizationId: ORG, projectId: "pTpl", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pX", organizationId: "org_other", projectNumber: "PX", name: "PX", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW,
+        liveVersionId: "v-pX",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pX", organizationId: "org_other", projectId: "pX", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "pA", status: "CHECKED_OUT", type: "EQUIPMENT", isKitChild: false,
+        versionId: "v-pA",
+        lineageId: "li1",
+      });
+      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "pA", status: "CONFIRMED", type: "SERVICE", isKitChild: false,
+        versionId: "v-pA",
+        lineageId: "li2",
+      });
     });
     const res = await t.withIdentity(asUser(ORG)).query(api.warehouseList.bundle, { orgId: ORG });
     // Sorted by rentalStartDate asc; ENQUIRY / template / other-org excluded.

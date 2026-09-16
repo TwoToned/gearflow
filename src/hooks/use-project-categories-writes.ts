@@ -34,12 +34,15 @@ export function useProjectCategoryWrites() {
   };
 
   return {
-    create: async (projectId: string, name: string): Promise<void> => {
+    // #1221 follow-up — `versionId` (optional) is the version this new
+    // category lands on, defaulting to live (server-side) when omitted.
+    create: async (projectId: string, name: string, versionId?: string): Promise<void> => {
       await createM({
         id: createId(),
         orgId: requireOrg(),
         projectId,
         name,
+        versionId,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
@@ -62,7 +65,6 @@ export function useProjectCategoryWrites() {
     setPricingDisplay: async (
       categoryId: string,
       pricingDisplay: CategoryPricingDisplay,
-      opts: { justification?: string } = {},
     ): Promise<void> => {
       await updateM({
         id: categoryId,
@@ -71,7 +73,6 @@ export function useProjectCategoryWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification: opts.justification,
       });
     },
     remove: async (categoryId: string): Promise<void> => {
@@ -83,16 +84,13 @@ export function useProjectCategoryWrites() {
         auditId: createId(),
       });
     },
-    /** `justification` — required once a touched project is JUSTIFY+ with no
-     *  open unlock session (drag-and-drop reorder routes this through
-     *  useJustifiedMutation). */
-    reorder: async (args: { orderedIds: string[]; justification?: string }): Promise<void> => {
+    /** Structural — never gated by pricingLocked (#1230). */
+    reorder: async (args: { orderedIds: string[] }): Promise<void> => {
       await reorderM({
         orgId: requireOrg(),
         orderedIds: args.orderedIds,
         now: Date.now(),
         actor: actor(),
-        justification: args.justification,
       });
     },
   };

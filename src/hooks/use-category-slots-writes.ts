@@ -35,13 +35,10 @@ export function useCategorySlotWrites() {
   };
 
   return {
-    /** `justification` — required once the group's project is JUSTIFY+ with no
-     *  open unlock session (drag-and-drop cross-category move routes this
-     *  through useJustifiedMutation). */
+    /** Structural — never gated by pricingLocked (#1230). */
     moveSubHireGroup: async (args: {
       groupId: string;
       categoryId: string | null;
-      justification?: string;
     }): Promise<void> => {
       await moveSubHireGroupM({
         groupId: args.groupId,
@@ -51,14 +48,12 @@ export function useCategorySlotWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification: args.justification,
       });
     },
 
     moveProjectGroup: async (args: {
       groupId: string;
       categoryId: string | null;
-      justification?: string;
     }): Promise<void> => {
       await moveProjectGroupM({
         groupId: args.groupId,
@@ -68,14 +63,12 @@ export function useCategorySlotWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification: args.justification,
       });
     },
 
     reorderMixed: async (args: {
       categoryId: string;
       orderedIds: string[];
-      justification?: string;
     }): Promise<void> => {
       await reorderMixedM({
         orgId: requireOrg(),
@@ -83,7 +76,6 @@ export function useCategorySlotWrites() {
         items: args.orderedIds.map((prefixedId) => ({ prefixedId, newSlotId: createId() })),
         now: Date.now(),
         actor: actor(),
-        justification: args.justification,
       });
     },
 

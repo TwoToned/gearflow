@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-16
+
+### Added
+
+- **A project can now hold more than one version of its plan at once — and quote
+  more than one of them.** Save an alternate ("High End PA" vs. "Budget PA"),
+  switch between them, keep editing whichever one is open, and send a quote from
+  either without the other's document being touched. The client can hold two
+  live quotes on the same job; accepting one makes that version the live plan
+  and supersedes the rest. Switching versions never changes what you can do on
+  the page — every tab, every add, every edit works the same on a saved
+  alternative as it does on the live plan, with warehouse actions greyed out
+  (not hidden) until that version is made live.
+- **Compare mode.** Pick two versions and see one money bridge: what was added,
+  removed, repriced, or moved between them, walking from one total to the
+  other, each step traceable back to the rows behind it. A version's status
+  strip flags when its sent quote has drifted from what's currently priced, and
+  clicking it opens the same comparison.
+- **Pricing lock is now one switch.** A job's price freezes the moment a quote
+  goes out or it's confirmed, and clears with one click from whoever's allowed
+  to reopen it — replacing four overlapping lock states and a separate
+  "unlock session" flow with a single, always-visible rule. A declined quote no
+  longer freezes pricing on an enquiry that's still open.
+
+### Changed
+
+- Make-live (switching which version is the active plan) is now an instant,
+  reversible pointer flip instead of a destructive restore — nothing is
+  overwritten, so there's no more "auto-saved before switching" clutter, and a
+  version can be made live even while an invoice is already out.
+- Recalling a quote, editing an unsent job, and adding equipment mid-project no
+  longer route through a 4-tier lock or a separate unlock-session dialog.
+
+### Removed
+
+- The old "restore a snapshot" version switcher, its read-only projected views,
+  and the separate unlock-session mechanism are gone, replaced by the above.
+
 ## [0.28.0] - 2026-09-15
 
 ### Added

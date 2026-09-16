@@ -7,6 +7,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -75,7 +76,7 @@ export const projectCrew = query({
       ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect().then((rows) => rows.filter((a) => a.organizationId === orgId)),
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded by the org's crew roster (name resolution) — see docs/exceptions.md R-8.3.3
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
-      ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect().then((rows) => rows.filter((s) => s.organizationId === orgId)),
+      liveRows(ctx, project, "projectServices").then((rows) => rows.filter((s) => s.organizationId === orgId)),
     ]);
     const memberById = new Map(members.map((m) => [m.id, m]));
     const roleById = new Map(roles.map((r) => [r.id, r]));

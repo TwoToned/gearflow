@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
-import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { TagInput } from "@/components/ui/tag-input";
@@ -142,14 +142,13 @@ export function ProjectWizard({
 
   const isEditing = !!project;
 
-  // #990 — `discountPercent` is a LOCKED_PROJECT_FIELDS entry
+  // #1230 — `discountPercent` is a LOCKED_PROJECT_FIELDS entry
   // (convex/lib/projectLocks.ts). `taxRate` is likewise locked but has no
   // field in this form (org-default only, resolved server-side) — nothing to
   // wrap. Skipped entirely on create (no project yet to be locked).
-  const [wizardLockNow] = useState(() => Date.now());
-  const wizardLockStatus = useProjectLockStatus(isEditing ? project.id : undefined, orgId, wizardLockNow);
-  const discountLocked = isEditing && !wizardLockStatus.loading && wizardLockStatus.tier !== "OPEN" && !wizardLockStatus.hasOpenSession;
-  const discountLockReason = resolveLockCopy(wizardLockStatus, wizardLockNow).oneLiner;
+  const wizardLockStatus = useProjectPricingLock(isEditing ? project.id : undefined, orgId);
+  const discountLocked = isEditing && wizardLockStatus.pricingLocked;
+  const discountLockReason = resolveLockCopy(wizardLockStatus).oneLiner;
   const isTemplate = isTemplateProp ?? project?.isTemplate ?? false;
 
   const initialManagerIds = (project?.projectManagers ?? []).map((pm) => pm.user.id);

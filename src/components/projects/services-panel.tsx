@@ -81,10 +81,8 @@ import { Label } from "@/components/ui/label";
 import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
-import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
-import { JustificationDialog } from "./justification-dialog";
 import {
   Dialog,
   DialogContent,
@@ -236,19 +234,10 @@ export function ServicesPanel({
 
   const svcWrites = useProjectServiceWrites();
 
-  // #990 — prompts for a reason at ON_SITE+ with no open unlock session.
-  const [panelLockNow] = useState(() => Date.now());
-  const panelLockStatus = useProjectLockStatus(projectId, orgId, panelLockNow);
-  const justifiedRemoveService = useJustifiedMutation(
-    (args: { id: string; justification?: string }) => svcWrites.remove(args.id, args.justification),
-    panelLockStatus,
-  );
-  const justifiedBulkRemoveServices = useJustifiedMutation(
-    (args: { ids: string[]; justification?: string }) => svcWrites.bulkDelete(args.ids, args.justification),
-    panelLockStatus,
-  );
-  const panelHardLocked = !panelLockStatus.loading && panelLockStatus.tier === "HARD_LOCKED" && !panelLockStatus.hasOpenSession;
-  const panelLockReason = resolveLockCopy(panelLockStatus, panelLockNow).oneLiner;
+  // #1230: adding/deleting a service is structural — never gated by the
+  // pricing lock, so no lock status or justification wrapper is needed here
+  // (the edit dialog's own `svcLockStatus`, further down, still gates money
+  // fields).
 
   const invalidateAll = () => {
     refreshProjectServices(projectId);
@@ -258,7 +247,7 @@ export function ServicesPanel({
   };
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => justifiedRemoveService.run({ id }),
+    mutationFn: (id: string) => svcWrites.remove(id),
     onSuccess: () => {
       toast.success("Service deleted");
       setDeleteTarget(null);
@@ -286,7 +275,7 @@ export function ServicesPanel({
     allServiceIds.length > 0 && selectedServiceIds.length === allServiceIds.length;
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => justifiedBulkRemoveServices.run({ ids }),
+    mutationFn: (ids: string[]) => svcWrites.bulkDelete(ids),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       toast.success(`Deleted ${r.deleted} service${r.deleted === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -365,22 +354,8 @@ export function ServicesPanel({
         <div className="flex items-center justify-between gap-2">
           <CanDo resource="project" action="update">
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Quick Add — gated wholesale at HARD_LOCKED (#990 surface 4),
-                  same reasoning as the Equipment tab's Add ▾ menu: every path
-                  out of it is server-rejected at this tier. */}
-              {panelHardLocked ? (
-                <GatedButton
-                  size="sm"
-                  gated
-                  reason={panelLockReason}
-                  exitLabel="Open full unlock session"
-                  onExit={scrollToLockStrip}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add service
-                  <ChevronDown className="h-3 w-3" />
-                </GatedButton>
-              ) : (
+              {/* #1230: adding is structural — never gated by the pricing
+                  lock, so the Add ▾ menu is never gated anymore. */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm">
@@ -428,7 +403,6 @@ export function ServicesPanel({
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
-              )}
 
               {/* Generate / Regenerate */}
               {hasProjectDates && (
@@ -636,10 +610,6 @@ export function ServicesPanel({
           pending={bulkDeleteMut.isPending}
           onConfirm={() => bulkDeleteMut.mutate(selectedServiceIds)}
         />
-
-        {/* #990 — justification prompts backing deleteMutation/bulkDeleteMut above. */}
-        <JustificationDialog {...justifiedRemoveService.dialogProps} />
-        <JustificationDialog {...justifiedBulkRemoveServices.dialogProps} />
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
@@ -1497,10 +1467,9 @@ function ServiceDialog({
   // (`createServiceNative`'s `guard.defaultToZero`). `chargeRateOverride` is
   // NOT in that gate today, so it's deliberately left editable here too —
   // wrapping it would be a UI lie the server doesn't back up.
-  const [svcLockNow] = useState(() => Date.now());
-  const svcLockStatus = useProjectLockStatus(open ? projectId : undefined, orgId, svcLockNow);
-  const svcMoneyLocked = !svcLockStatus.loading && svcLockStatus.tier !== "OPEN" && !svcLockStatus.hasOpenSession;
-  const svcLockReason = resolveLockCopy(svcLockStatus, svcLockNow).oneLiner;
+  const svcLockStatus = useProjectPricingLock(open ? projectId : undefined, orgId);
+  const svcMoneyLocked = svcLockStatus.pricingLocked;
+  const svcLockReason = resolveLockCopy(svcLockStatus).oneLiner;
 
   const matchingTemplate = preselectedType
     ? templates.find((t) => t.type === preselectedType && t.isActive)

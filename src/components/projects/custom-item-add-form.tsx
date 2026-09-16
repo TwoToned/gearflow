@@ -59,6 +59,9 @@ interface CustomItemAddFormProps {
   onInvalidate: () => void;
   /** Close the surrounding dialog. */
   onClose: () => void;
+  /** #1221 follow-up — the version this new line lands on (the version
+   *  currently being viewed on the Equipment tab). Absent = live. */
+  versionId?: string;
 }
 
 export function CustomItemAddForm({
@@ -68,6 +71,7 @@ export function CustomItemAddForm({
   defaultGroupId,
   onInvalidate,
   onClose,
+  versionId,
 }: CustomItemAddFormProps) {
   const lineItemWrites = useLineItemWrites();
   const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
@@ -112,6 +116,7 @@ export function CustomItemAddForm({
       });
       return lineItemWrites.addCustom(projectId, parsed, {
         groupName: resolveGroupName(parsed.groupId),
+        versionId,
       });
     },
     onSuccess: () => {

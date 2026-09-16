@@ -54,29 +54,54 @@ async function seed(t: T) {
     await ctx.db.insert("projects", {
       id: "P1", organizationId: ORG, projectNumber: "P1", name: "Under inspection", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + 5 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P1",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P1", organizationId: ORG, projectId: "P1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P2", organizationId: ORG, projectNumber: "P2", name: "Overlapping", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW + 1 * DAY, rentalEndDate: NOW + 3 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P2",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P2", organizationId: ORG, projectId: "P2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P3", organizationId: ORG, projectNumber: "P3", name: "Overlapping but cancelled", status: "CANCELLED",
       isTemplate: false, rentalStartDate: NOW + 1 * DAY, rentalEndDate: NOW + 3 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P3",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P3", organizationId: ORG, projectId: "P3", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P4", organizationId: ORG, projectNumber: "P4", name: "Non-overlapping", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW + 30 * DAY, rentalEndDate: NOW + 33 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P4",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P4", organizationId: ORG, projectId: "P4", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P5", organizationId: ORG, projectNumber: "P5", name: "Ancient history", status: "RETURNED",
       isTemplate: false, rentalStartDate: NOW - 400 * DAY, rentalEndDate: NOW - 395 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P5",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P5", organizationId: ORG, projectId: "P5", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
 
-    await ctx.db.insert("projectLineItems", { id: "L1", organizationId: ORG, projectId: "P1", modelId: "mdl", status: "CONFIRMED", quantity: 2, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L2", organizationId: ORG, projectId: "P2", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L3", organizationId: ORG, projectId: "P3", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L4", organizationId: ORG, projectId: "P4", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L5", organizationId: ORG, projectId: "P5", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
+    await ctx.db.insert("projectLineItems", { id: "L1", organizationId: ORG, projectId: "P1", modelId: "mdl", status: "CONFIRMED", quantity: 2, type: "EQUIPMENT",
+      versionId: "v-P1",
+      lineageId: "L1",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L2", organizationId: ORG, projectId: "P2", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P2",
+      lineageId: "L2",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L3", organizationId: ORG, projectId: "P3", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P3",
+      lineageId: "L3",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L4", organizationId: ORG, projectId: "P4", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P4",
+      lineageId: "L4",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L5", organizationId: ORG, projectId: "P5", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P5",
+      lineageId: "L5",
+    });
   });
 }
 
@@ -159,8 +184,13 @@ describe("overbooking.bundle — scoped vs unscoped parity", () => {
         rentalStartDate: NOW + 60 * DAY, rentalEndDate: NOW + 63 * DAY,
         projectStartDate: NOW + 1 * DAY, projectEndDate: NOW + 2 * DAY,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-P6",
       });
-      await ctx.db.insert("projectLineItems", { id: "L6", organizationId: ORG, projectId: "P6", modelId: "mdl", status: "CONFIRMED", quantity: 10, type: "EQUIPMENT" });
+      await ctx.db.insert("projectVersions", { id: "v-P6", organizationId: ORG, projectId: "P6", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "L6", organizationId: ORG, projectId: "P6", modelId: "mdl", status: "CONFIRMED", quantity: 10, type: "EQUIPMENT",
+        versionId: "v-P6",
+        lineageId: "L6",
+      });
     });
     const modelIds = relevantOverbookModelIds(p1LineItems);
     const scoped = await t.withIdentity(asUser).query(api.overbooking.bundle, {

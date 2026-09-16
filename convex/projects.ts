@@ -5,6 +5,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { createLiveVersionForProject } from "./lib/projectVersionState";
 
 /**
  * Thin CRUD for Project (Convex table "projects"). GENERATED — Phase 2/5.
@@ -216,6 +217,12 @@ export const create = mutation({
   handler: async (ctx, args) => {
     await requireService(ctx);
     const _id = await ctx.db.insert("projects", args);
+    // #1228 — bootstrap version 1 + liveVersionId (see createLiveVersionForProject's
+    // comment: mandatory on every project-creating write path).
+    await createLiveVersionForProject(ctx, {
+      orgId: args.organizationId, projectId: args.id, projectDocId: _id,
+      now: args.createdAt ?? Date.now(), createdById: "system",
+    });
     await bumpCountersForTable(ctx, "projects", null, args);
     return _id;
   },
@@ -279,6 +286,11 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("projects", args);
+    // #1228 — see the identical note on `create` above.
+    await createLiveVersionForProject(ctx, {
+      orgId: args.organizationId, projectId: args.id, projectDocId: _id,
+      now: args.createdAt ?? Date.now(), createdById: "system",
+    });
     await bumpCountersForTable(ctx, "projects", null, args);
     return { _id, created: true };
   },
@@ -469,7 +481,13 @@ export const createWithUniqueNumber = mutation({
     // #986/#1085 — a real project starts at revision 1 (its first quote is v1)
     // AND liveRevision 1 (its first version is, trivially, its live one), same
     // as projectWrites.createNative. Templates carry no revision at all.
-    await ctx.db.insert("projects", args.isTemplate ? args : { ...args, revision: 1, liveRevision: 1 });
+    const newDocId = await ctx.db.insert("projects", args.isTemplate ? args : { ...args, revision: 1, liveRevision: 1 });
+    // #1228 — bootstrap version 1 + liveVersionId (mandatory on every
+    // project-creating write path; see createLiveVersionForProject's comment).
+    await createLiveVersionForProject(ctx, {
+      orgId: args.organizationId, projectId: args.id, projectDocId: newDocId,
+      now: args.createdAt ?? Date.now(), createdById: "system",
+    });
     await bumpCountersForTable(ctx, "projects", null, args);
     return { created: true, id: args.id };
   },

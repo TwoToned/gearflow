@@ -9,27 +9,25 @@ import {
   Eye,
   FileText,
   History,
-  Lock,
   Pencil,
-  RotateCcw,
   Send,
-  Sparkles,
   Trash2,
   Undo2,
-  Unlock,
   XCircle,
 } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { useQuoteWrites } from "@/hooks/use-quote-writes";
-import type { PromoteRevisionResult } from "@/hooks/use-project-version-writes";
 import { generateQuoteArtifact } from "@/server/finance-documents";
+import { diffSnapshotEntries, type SnapshotEntryLike } from "@/lib/project-snapshot-diff";
+import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { quoteStatusIntent, intentToBadgeStatus } from "@/lib/status-colors";
+import { quoteStatusIntent, intentToBadgeStatus, intentStyles, intentBorderClass } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
 import { useCanDo, useIsOwner } from "@/lib/use-permissions";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,15 +36,9 @@ import { Input } from "@/components/ui/input";
 import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
-import { DeleteVersionDialog } from "@/components/projects/finance/delete-version-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
-import { CorrectQuoteDialog } from "@/components/projects/finance/correct-quote-dialog";
 import { DeleteRecalledDialog } from "@/components/projects/finance/delete-recalled-dialog";
 import { QuoteRevisionViewerDialog } from "@/components/projects/finance/quote-revision-viewer-dialog";
-import { RepriceFromRevisionDialog } from "@/components/projects/finance/reprice-from-revision-dialog";
-import { QuoteDriftIndicator } from "@/components/projects/finance/quote-drift-indicator";
-import { PromoteVersionDialog } from "@/components/projects/finance/promote-version-dialog";
-import { PromoteConflictsPanel } from "@/components/projects/finance/promote-conflicts-panel";
 
 /**
  * The Finance tab's QUOTE section (#989) — the structured workflow that
@@ -83,13 +75,51 @@ interface QuoteRevisionDoc {
    *  given. Null on a never-sent draft, and on a sent revision whose render
    *  failed (which is what the retry action is for). */
   pdfFileId?: string;
-  /** Soft lock (#1030) — while true, Recall/Correction/recall-then-delete all
-   *  refuse server-side; the row hides those actions rather than offering a
-   *  button that will just error. */
-  protected?: boolean;
   /** #1080/#1097 — internal name for the version, editable from the row.
    *  Printed on the document only when `labelOnDocument` was stamped at send. */
   label?: string;
+  /** #1233 (Phase 6) — the REAL `projectVersions` row this revision's snapshot
+   *  was built from. Absent on every pre-#1233 row (treated as targeting the
+   *  live version, same fallback `convex/lib/quoteState.ts` uses server-side).
+   *  Used only to resolve a project-version "v{N}" tag for display — never to
+   *  gate a verb, which stays keyed on `effectiveStatus` exactly as before. */
+  versionId?: string;
+}
+
+/** A single project version, the subset `ProjectQuoteRail` needs for display
+ *  and for targeting a send (#1233 Phase 6 UI follow-up). Mirrors
+ *  `ProjectVersionSummary` (`project-version-context.tsx`) rather than
+ *  importing it directly, so this file doesn't have to know about the
+ *  context's full shape (R-3.6) — the one caller that has a real
+ *  `ProjectVersionSummary` (`ProjectFinancePanel`) narrows it down. Not
+ *  exported — only used inside this file; `QuoteRailVersionContext` below
+ *  (which IS exported, `ProjectFinancePanel` builds one) carries the same
+ *  shape out to callers structurally, so a second exported name for it would
+ *  be redundant (R-4.2 — knip flags an unused exported type). */
+interface QuoteRailProjectVersion {
+  id: string;
+  number: number;
+  label?: string;
+}
+
+/**
+ * #1233 (Phase 6) UI follow-up — threaded down by the ONE caller under
+ * `ProjectVersionProvider` that needs it (`ProjectFinancePanel`, the Finance
+ * tab). `undefined` (every other embed site: the Overview tab's `QuoteCard`/
+ * `QuoteManagerDialog`) behaves EXACTLY like `{ versions: [], viewing: null }`
+ * — always targets the live version, byte-identical to every pre-follow-up
+ * caller. FEATUREDOCS/78: Overview is deliberately live-only, same as every
+ * other Overview card, so it doesn't opt in.
+ */
+export interface QuoteRailVersionContext {
+  /** Every real `projectVersions` row for the project (live + non-live) —
+   *  used only to resolve a quote's own `versionId` to a human "v{N}" so a
+   *  second SENT quote on another version is never ambiguous with THIS row's
+   *  own quote-revision number (a different counter — FEATUREDOCS/78's "two
+   *  numbering schemes" note). */
+  versions: QuoteRailProjectVersion[];
+  /** Non-null only while the page is viewing a NON-live version. */
+  viewing: QuoteRailProjectVersion | null;
 }
 
 /** The lineage subset of an invoice this rail needs (#1080/#1097) — `sourceRevision`
@@ -125,6 +155,8 @@ interface ProjectQuoteRailProps {
    *  the parent (`ProjectFinancePanel` already queries `invoices.listForProject`
    *  for its own ledger) and passed down rather than a second query (R-3.1). */
   invoices?: InvoiceLineageDoc[];
+  /** #1233 (Phase 6) UI follow-up — see `QuoteRailVersionContext`'s own doc. */
+  versionContext?: QuoteRailVersionContext;
 }
 
 /** The quote row at `liveRevision`, if any — pulled out to a plain function
@@ -134,28 +166,87 @@ function findLiveQuote(quotes: QuoteRevisionDoc[], liveRevision: number): QuoteR
   return quotes.find((q) => q.version === liveRevision) ?? null;
 }
 
+interface QuoteRailDerivedVersionState {
+  viewingVersion: QuoteRailProjectVersion | null;
+  allProjectVersions: QuoteRailProjectVersion[];
+  /** The viewed version's OWN quote row, if any (Phase 6's `quotes.versionId`). */
+  viewedVersionQuote: QuoteRevisionDoc | null;
+  /** Mirrors `assertSendTargetIsWritable` server-side exactly
+   *  (`convex/quotesWrites.ts`): writable only when there's no existing row
+   *  for the target version, or that row is still a DRAFT — computed here so
+   *  the header never offers a click the server would just reject. */
+  viewedVersionQuoteWritable: boolean;
+  sendCurrentLabel: string | undefined;
+  /** #1233 (D19) — count of quotes currently SENT/EXPIRED/ACCEPTED, across
+   *  every version. `quotes` already lists EVERY row regardless of target
+   *  version (R-3.1 — no new query), so nothing is hidden by construction;
+   *  this only drives whether `MultipleVersionsQuotedNotice` renders. */
+  outWithClientCount: number;
+}
+
+/**
+ * #1233 (Phase 6) UI follow-up — every version-aware derived value
+ * `ProjectQuoteRail` needs, computed in ONE place so the component's own body
+ * stays a straight line of prop-passing (R-3.6 — the same reason
+ * `findLiveQuote`/`quoteRowFlags` are already standalone functions in this
+ * file rather than inlined into the component, which was already at its
+ * complexity budget before this follow-up).
+ */
+/** #1233 — the viewed version's own quote row, if any, plus whether a send
+ *  targeting it is writable. Split out purely to keep
+ *  `resolveQuoteRailVersionState` (and transitively `ProjectQuoteRail`)
+ *  within complexity budget (R-3.6). Mirrors `assertSendTargetIsWritable`
+ *  server-side exactly (`convex/quotesWrites.ts`) — writable only when
+ *  there's no existing row for the target version, or that row is still a
+ *  DRAFT — so the header never offers a click the server would just reject. */
+function resolveViewedVersionQuote(
+  quotes: QuoteRevisionDoc[],
+  viewingVersion: QuoteRailProjectVersion | null,
+): { quote: QuoteRevisionDoc | null; writable: boolean } {
+  if (!viewingVersion) return { quote: null, writable: false };
+  const quote = quotes.find((q) => q.versionId === viewingVersion.id) ?? null;
+  return { quote, writable: quote == null || quote.effectiveStatus === "DRAFT" };
+}
+
+/** #1233 (D19) — count of quotes currently SENT/EXPIRED/ACCEPTED, across
+ *  every version. Split out for the same complexity-budget reason as
+ *  `resolveViewedVersionQuote` above. */
+function countOutWithClientQuotes(quotes: QuoteRevisionDoc[]): number {
+  return quotes.filter((q) => {
+    const flags = quoteRowFlags(q);
+    return flags.isHeldByClient || flags.isAccepted;
+  }).length;
+}
+
+function resolveQuoteRailVersionState(
+  quotes: QuoteRevisionDoc[],
+  versionContext: QuoteRailVersionContext | undefined,
+  liveQuoteForPromote: QuoteRevisionDoc | null,
+): QuoteRailDerivedVersionState {
+  const viewingVersion = versionContext?.viewing ?? null;
+  const allProjectVersions = versionContext?.versions ?? [];
+  const { quote: viewedVersionQuote, writable: viewedVersionQuoteWritable } = resolveViewedVersionQuote(quotes, viewingVersion);
+  const sendCurrentLabel = viewingVersion ? (viewedVersionQuote?.label ?? viewingVersion.label) : liveQuoteForPromote?.label;
+  const outWithClientCount = countOutWithClientQuotes(quotes);
+  return { viewingVersion, allProjectVersions, viewedVersionQuote, viewedVersionQuoteWritable, sendCurrentLabel, outWithClientCount };
+}
+
 /** Every embed site (`ProjectFinancePanel`, `QuoteManagerDialog`) must assign a
  *  client before rendering `<ProjectQuoteRail>` — checked at the call site
  *  rather than inside the rail itself, which is already at its complexity
  *  budget (R-3.6). Shared here so the message can't drift between sites. */
 export const ASSIGN_CLIENT_FOR_QUOTES_MESSAGE = "Assign a client to this project to generate quotes.";
 
-export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total, invoices }: ProjectQuoteRailProps) {
+export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total, invoices, versionContext }: ProjectQuoteRailProps) {
   // Frozen at mount: `now` only drives the DERIVED expiry read, and a value that
   // changed every render would re-subscribe the queries on every render.
   const [now] = useState(() => Date.now());
   const [reasonTarget, setReasonTarget] = useState<ReasonTarget | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [acceptTarget, setAcceptTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [unacceptTarget, setUnacceptTarget] = useState<QuoteRevisionDoc | null>(null);
   const [viewerTarget, setViewerTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [repriceTarget, setRepriceTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [deleteDraftTarget, setDeleteDraftTarget] = useState<QuoteRevisionDoc | null>(null);
   const [deleteRecalledTarget, setDeleteRecalledTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [correctTarget, setCorrectTarget] = useState<QuoteRevisionDoc | null>(null);
   const [labelTarget, setLabelTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [promoteTarget, setPromoteTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [promoteResult, setPromoteResult] = useState<PromoteRevisionResult | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   const quotes = useAuthedQuery(api.quotes.listForProject, orgId ? { orgId, projectId, now } : "skip");
@@ -181,6 +272,18 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   const hiddenCount = quotes.length - visibleQuotes.length;
   const liveQuoteForPromote = findLiveQuote(quotes, liveRevision);
 
+  // #1233 (Phase 6) UI follow-up — `viewingVersion` is non-null ONLY while
+  // the Finance tab is showing a non-live `projectVersions` row (threaded in
+  // via `versionContext`; every other embed site omits it, so this is always
+  // null there — see `QuoteRailVersionContext`'s own doc).
+  const {
+    viewingVersion,
+    allProjectVersions,
+    viewedVersionQuoteWritable,
+    sendCurrentLabel,
+    outWithClientCount,
+  } = resolveQuoteRailVersionState(quotes, versionContext, liveQuoteForPromote);
+
   return (
     <div className="space-y-2">
       <QuoteRailHeader
@@ -190,23 +293,27 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         onSend={() => setSendOpen(true)}
         onCreateNextVersion={() => newVersionMutation.mutate(undefined)}
         creatingNextVersion={newVersionMutation.isPending}
+        viewingVersion={viewingVersion}
+        viewedVersionQuoteWritable={viewedVersionQuoteWritable}
       />
 
-      <QuoteRailDriftIndicator
-        projectId={projectId}
-        orgId={orgId}
-        revision={revision}
-        liveQuote={liveQuote}
-        quotes={quotes}
-        onSeeWhatChanged={setViewerTarget}
-      />
+      <MultipleVersionsQuotedNotice count={outWithClientCount} />
+
+      {orgId && (
+        <InlineQuoteDrift
+          projectId={projectId}
+          orgId={orgId}
+          revision={revision}
+          liveQuote={liveQuote}
+          quotes={quotes}
+          onSeeWhatChanged={setViewerTarget}
+        />
+      )}
 
       <p className="t-micro text-fg-4">
         Sending freezes pricing at that revision — to change prices afterwards, create the next version.
         Flow doesn&rsquo;t email clients; sending records the send and generates the document for you.
       </p>
-
-      <PromoteConflictsPanel result={promoteResult} onDismiss={() => setPromoteResult(null)} />
 
       <QuoteRevisionList
         quotes={quotes}
@@ -219,40 +326,20 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         invoices={invoices}
         projectId={projectId}
         now={now}
+        allProjectVersions={allProjectVersions}
         onAccept={setAcceptTarget}
-        onUnaccept={setUnacceptTarget}
         onDecline={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
         onRecall={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
         onView={setViewerTarget}
-        onDeleteDraft={setDeleteDraftTarget}
         onDeleteRecalled={setDeleteRecalledTarget}
-        onCorrect={setCorrectTarget}
         onEditLabel={setLabelTarget}
-        onPromote={setPromoteTarget}
       />
 
       <UnacceptedLiveQuoteNotice liveQuote={liveQuote} hasAcceptedQuote={hasAcceptedQuote} />
 
       <ReasonDialog target={reasonTarget} onClose={() => setReasonTarget(null)} />
 
-      <UnacceptDialog target={unacceptTarget} onClose={() => setUnacceptTarget(null)} />
-
-      <DeleteVersionDialog target={deleteDraftTarget} liveRevision={liveRevision} onClose={() => setDeleteDraftTarget(null)} />
-
       <EditLabelDialog target={labelTarget} onClose={() => setLabelTarget(null)} />
-
-      <PromoteVersionDialogHost
-        promoteTarget={promoteTarget}
-        orgId={orgId}
-        projectId={projectId}
-        liveRevision={liveRevision}
-        liveQuoteForPromote={liveQuoteForPromote}
-        onClose={() => setPromoteTarget(null)}
-        onPromoted={(result) => {
-          setPromoteResult(result);
-          setPromoteTarget(null);
-        }}
-      />
 
       {deleteRecalledTarget && (
         <DeleteRecalledDialog
@@ -260,17 +347,6 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
           onOpenChange={(open) => !open && setDeleteRecalledTarget(null)}
           quoteId={deleteRecalledTarget.id}
           label={`${projectNumber} v${deleteRecalledTarget.version}`}
-        />
-      )}
-
-      {correctTarget && (
-        <CorrectQuoteDialog
-          open={!!correctTarget}
-          onOpenChange={(open) => !open && setCorrectTarget(null)}
-          quoteId={correctTarget.id}
-          version={correctTarget.version}
-          currentQuoteDate={correctTarget.quoteDate}
-          currentValidityDays={correctTarget.validityDays}
         />
       )}
 
@@ -282,70 +358,44 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         orgId={orgId}
         clientId={clientId}
         revision={liveRevision}
-        currentLabel={liveQuoteForPromote?.label}
+        currentLabel={sendCurrentLabel}
         subtotal={subtotal}
         taxAmount={taxAmount}
         total={total}
         projectStatus={projectStatus}
+        targetVersion={viewingVersion}
       />
 
       <QuoteRailTargetDialogs
         projectId={projectId}
         orgId={orgId}
-        revision={revision}
-        hasOpenDraft={hasOpenDraft}
         quotes={quotes}
         acceptTarget={acceptTarget}
         onCloseAccept={() => setAcceptTarget(null)}
         viewerTarget={viewerTarget}
         onCloseViewer={() => setViewerTarget(null)}
-        onReprice={() => {
-          setRepriceTarget(viewerTarget);
-          setViewerTarget(null);
-        }}
-        repriceTarget={repriceTarget}
-        onCloseReprice={() => setRepriceTarget(null)}
       />
     </div>
   );
 }
 
-/** Split out of `ProjectQuoteRail` purely to keep that function's branch count
- *  down (R-3.6) — the eligibility check (a target is set, org resolved, and
- *  that target has captured state to promote from) lives here instead. */
-function PromoteVersionDialogHost({
-  promoteTarget,
-  orgId,
-  projectId,
-  liveRevision,
-  liveQuoteForPromote,
-  onClose,
-  onPromoted,
-}: {
-  promoteTarget: QuoteRevisionDoc | null;
-  orgId: string | undefined;
-  projectId: string;
-  liveRevision: number;
-  liveQuoteForPromote: QuoteRevisionDoc | null;
-  onClose: () => void;
-  onPromoted: (result: PromoteRevisionResult) => void;
-}) {
-  if (!promoteTarget || !orgId || !promoteTarget.snapshotId) return null;
-  return (
-    <PromoteVersionDialog
-      open
-      onOpenChange={(open) => !open && onClose()}
-      projectId={projectId}
-      orgId={orgId}
-      targetRevision={promoteTarget.version}
-      targetSnapshotId={promoteTarget.snapshotId}
-      liveRevision={liveRevision}
-      liveHasSnapshot={liveQuoteForPromote?.snapshotId != null}
-      onPromoted={onPromoted}
-    />
-  );
-}
-
+/**
+ * #1233 (Phase 6) UI follow-up — while viewing a non-live version
+ * (`viewingVersion` non-null), the header offers exactly one thing: send
+ * THAT version's own quote, labelled unambiguously with the PROJECT version
+ * number ("Send v{N}'s quote") rather than the quote-revision "v{N}" the live
+ * branch below uses — the two are different counters (FEATUREDOCS/78's "two
+ * numbering schemes" note), and reusing the same word for both here is
+ * exactly the ambiguity a version-aware label exists to avoid. The live-only
+ * "Create quote v{revision+1}" verb doesn't apply to a specific non-live
+ * version at all (there's no per-version revision lineage to advance — see
+ * `versions.createNative`/the Versions panel for how a NEW `projectVersions`
+ * row gets made), so it's never offered here. When the viewed version
+ * already has a non-draft quote (SENT/ACCEPTED/…), no button is shown at all
+ * — the row's own actions (Recall, Accept, Decline) are the way forward, the
+ * same way the live branch relies on row actions once nothing is "the open
+ * draft" left to send.
+ */
 function QuoteRailHeader({
   revision,
   liveRevision,
@@ -353,6 +403,8 @@ function QuoteRailHeader({
   onSend,
   onCreateNextVersion,
   creatingNextVersion,
+  viewingVersion,
+  viewedVersionQuoteWritable,
 }: {
   revision: number;
   liveRevision: number;
@@ -360,12 +412,20 @@ function QuoteRailHeader({
   onSend: () => void;
   onCreateNextVersion: () => void;
   creatingNextVersion: boolean;
+  viewingVersion: QuoteRailProjectVersion | null;
+  viewedVersionQuoteWritable: boolean;
 }) {
   return (
     <div className="flex items-center justify-between">
       <h3 className="t-overline text-fg-3">Quote</h3>
       <CanDo resource="invoice" action="publish">
-        {hasOpenDraft ? (
+        {viewingVersion ? (
+          viewedVersionQuoteWritable && (
+            <Button type="button" variant="line" size="sm" onClick={onSend}>
+              <Send className="h-3.5 w-3.5" /> Send v{viewingVersion.number}&rsquo;s quote
+            </Button>
+          )
+        ) : hasOpenDraft ? (
           // #1080/#1097 — sends whatever is LIVE, not necessarily the
           // allocator's high-water mark (a promote can leave them apart).
           <Button type="button" variant="line" size="sm" onClick={onSend}>
@@ -381,7 +441,44 @@ function QuoteRailHeader({
   );
 }
 
-function QuoteRailDriftIndicator({
+/** #1233 (D19) — cross-version visibility banner: `quotes` already lists
+ *  every quote row for the project regardless of target version (project-
+ *  scoped, not version-scoped, R-3.1 — no new query), so nothing is hidden
+ *  by construction; this only makes "more than one is out with the client
+ *  right now" impossible to miss by scanning the list. Same visual language
+ *  as `VersionStrip`'s own info state (`intentStyles`/`intentBorderClass`). */
+function MultipleVersionsQuotedNotice({ count }: { count: number }) {
+  if (count <= 1) return null;
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-[var(--radius)] border-l-[3px] px-3 py-2 text-sm",
+        intentBorderClass("info"),
+        intentStyles.info.bg,
+        intentStyles.info.text,
+      )}
+    >
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span>
+        {count} quotes are currently with the client at once, across different versions of this project — sending one
+        version&rsquo;s quote never cancels another&rsquo;s (see the version tag on each row below).
+      </span>
+    </div>
+  );
+}
+
+/**
+ * "This job no longer matches v<N>" (#989 §6.5) — inlined from the deleted
+ * shared `QuoteDriftIndicator` component (Project Versioning v2 Phase 5,
+ * #1231: that shared component is one of the surfaces `VersionStrip`
+ * absorbs, but its drift STATE isn't rebuilt into the strip this phase —
+ * see FEATUREDOCS/78's Phase 5 section). `diffSnapshotEntries`/
+ * `summarizeDrift`/`describeDrift` (`src/lib/quote-drift.ts`,
+ * `src/lib/project-snapshot-diff.ts`) are unchanged — only the shared
+ * wrapper component is gone, not the underlying logic (R-3.1: this and
+ * `overview/quote-card.tsx`'s own inline copy both call the same functions).
+ */
+function InlineQuoteDrift({
   projectId,
   orgId,
   revision,
@@ -390,24 +487,44 @@ function QuoteRailDriftIndicator({
   onSeeWhatChanged,
 }: {
   projectId: string;
-  orgId: string | undefined;
+  orgId: string;
   revision: number;
   liveQuote: { id: string; snapshotId?: string | null; version: number } | null | undefined;
   quotes: QuoteRevisionDoc[];
   onSeeWhatChanged: (quote: QuoteRevisionDoc) => void;
 }) {
-  if (!orgId) return null;
+  const snapshotId = liveQuote?.snapshotId ?? null;
+  const version = liveQuote?.version ?? revision;
+  const snapshotEntries = useAuthedQuery(
+    api.projectLocksRead.snapshotEntries,
+    snapshotId ? { snapshotId, orgId } : "skip",
+  );
+  const currentEntries = useAuthedQuery(
+    api.projectLocksRead.currentEntries,
+    snapshotId ? { projectId, orgId } : "skip",
+  );
+
+  if (!snapshotId || snapshotEntries === undefined || currentEntries === undefined) return null;
+  const rows = diffSnapshotEntries(snapshotEntries as SnapshotEntryLike[], currentEntries as SnapshotEntryLike[]);
+  const summary = summarizeDrift(rows);
+  if (!summary.hasDrift) return null;
+
   return (
-    <QuoteDriftIndicator
-      projectId={projectId}
-      orgId={orgId}
-      snapshotId={liveQuote?.snapshotId ?? null}
-      version={liveQuote?.version ?? revision}
-      onSeeWhatChanged={() => {
-        const q = quotes.find((qt) => qt.id === liveQuote?.id);
-        if (q) onSeeWhatChanged(q);
-      }}
-    />
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius)] border-l-[3px] border-l-warn bg-warn-soft px-3 py-2 text-sm text-warn">
+      <span>
+        This job no longer matches v{version} — {describeDrift(summary)}.
+      </span>
+      <button
+        type="button"
+        className="shrink-0 font-semibold underline underline-offset-2"
+        onClick={() => {
+          const q = quotes.find((qt) => qt.id === liveQuote?.id);
+          if (q) onSeeWhatChanged(q);
+        }}
+      >
+        See what changed
+      </button>
+    </div>
   );
 }
 
@@ -422,16 +539,13 @@ function QuoteRevisionList({
   invoices,
   projectId,
   now,
+  allProjectVersions,
   onAccept,
-  onUnaccept,
   onDecline,
   onRecall,
   onView,
-  onDeleteDraft,
   onDeleteRecalled,
-  onCorrect,
   onEditLabel,
-  onPromote,
 }: {
   quotes: QuoteRevisionDoc[];
   visibleQuotes: QuoteRevisionDoc[];
@@ -443,16 +557,16 @@ function QuoteRevisionList({
   invoices?: InvoiceLineageDoc[];
   projectId: string;
   now: number;
+  /** #1233 — every real `projectVersions` row, for the per-row "v{N}" tag
+   *  (`RevisionMeta`). Empty when the caller didn't opt in (Overview) — the
+   *  tag then never renders, same as today. */
+  allProjectVersions: QuoteRailProjectVersion[];
   onAccept: (quote: QuoteRevisionDoc) => void;
-  onUnaccept: (quote: QuoteRevisionDoc) => void;
   onDecline: (quote: QuoteRevisionDoc) => void;
   onRecall: (quote: QuoteRevisionDoc) => void;
   onView: (quote: QuoteRevisionDoc) => void;
-  onDeleteDraft: (quote: QuoteRevisionDoc) => void;
   onDeleteRecalled: (quote: QuoteRevisionDoc) => void;
-  onCorrect: (quote: QuoteRevisionDoc) => void;
   onEditLabel: (quote: QuoteRevisionDoc) => void;
-  onPromote: (quote: QuoteRevisionDoc) => void;
 }) {
   if (quotes.length === 0) {
     return <p className="t-micro text-fg-4">No quote yet — sending creates v{revision}.</p>;
@@ -467,16 +581,13 @@ function QuoteRevisionList({
             isLive={quote.version === liveRevision}
             invoicesForVersion={invoices?.filter((inv) => inv.sourceRevision === quote.version) ?? []}
             projectId={projectId}
+            allProjectVersions={allProjectVersions}
             onAccept={() => onAccept(quote)}
-            onUnaccept={() => onUnaccept(quote)}
             onDecline={() => onDecline(quote)}
             onRecall={() => onRecall(quote)}
             onView={() => onView(quote)}
-            onDeleteDraft={() => onDeleteDraft(quote)}
             onDeleteRecalled={() => onDeleteRecalled(quote)}
-            onCorrect={() => onCorrect(quote)}
             onEditLabel={() => onEditLabel(quote)}
-            onPromote={() => onPromote(quote)}
             now={now}
           />
         ))}
@@ -512,32 +623,27 @@ function UnacceptedLiveQuoteNotice({
 
 /** The three revision-scoped dialogs (accept / viewer / reprice) — each keyed
  *  off its own "target" state, so only one mounts at a time. */
+/** #1231 note: "Reprice from revision" is gone — `repriceFromRevisionNative`
+ *  was deleted in #1229 Phase 3, superseded by `versions.createNative`
+ *  ("New version from vN"), now exclusively a Versions panel verb. The
+ *  viewer dialog's own Reprice button is disabled (`canReprice={false}`)
+ *  rather than removed, so its layout doesn't shift. */
 function QuoteRailTargetDialogs({
   projectId,
   orgId,
-  revision,
-  hasOpenDraft,
   quotes,
   acceptTarget,
   onCloseAccept,
   viewerTarget,
   onCloseViewer,
-  onReprice,
-  repriceTarget,
-  onCloseReprice,
 }: {
   projectId: string;
   orgId: string | undefined;
-  revision: number;
-  hasOpenDraft: boolean;
   quotes: QuoteRevisionDoc[];
   acceptTarget: QuoteRevisionDoc | null;
   onCloseAccept: () => void;
   viewerTarget: QuoteRevisionDoc | null;
   onCloseViewer: () => void;
-  onReprice: () => void;
-  repriceTarget: QuoteRevisionDoc | null;
-  onCloseReprice: () => void;
 }) {
   const previousQuote = viewerTarget
     ? (quotes.find((q) => q.version === viewerTarget.version - 1) ?? null)
@@ -562,22 +668,8 @@ function QuoteRailTargetDialogs({
           orgId={orgId}
           quote={viewerTarget}
           previousQuote={previousQuote}
-          canReprice={!hasOpenDraft}
-          nextVersion={revision + 1}
-          onReprice={onReprice}
-        />
-      )}
-
-      {repriceTarget && orgId && repriceTarget.snapshotId && (
-        <RepriceFromRevisionDialog
-          open={!!repriceTarget}
-          onOpenChange={(open) => !open && onCloseReprice()}
-          projectId={projectId}
-          orgId={orgId}
-          sourceQuoteId={repriceTarget.id}
-          sourceSnapshotId={repriceTarget.snapshotId}
-          sourceVersion={repriceTarget.version}
-          nextVersion={revision + 1}
+          canReprice={false}
+          nextVersion={viewerTarget.version + 1}
         />
       )}
     </>
@@ -598,72 +690,62 @@ export function quoteRowFlags(quote: QuoteRevisionDoc) {
   // A sent-or-expired revision is the one the client is holding: it can be
   // recalled or declined. Only a still-valid one can be accepted.
   const isHeldByClient = isSent || quote.effectiveStatus === "EXPIRED";
-  const isProtected = !!quote.protected;
   const everSent = quote.sentAt != null || quote.publishedAt != null;
   // A DRAFT with send history is sitting here because of a Recall (#1027) —
   // it needs the stricter recall-then-delete flow (#1029), not the ordinary
   // never-sent draft delete (#1028).
   const isRecalledDraft = quote.effectiveStatus === "DRAFT" && everSent;
   const isNeverSentDraft = quote.effectiveStatus === "DRAFT" && !everSent;
-  return { isSent, isAccepted, isHeldByClient, isProtected, isRecalledDraft, isNeverSentDraft };
+  return { isSent, isAccepted, isHeldByClient, isRecalledDraft, isNeverSentDraft };
 }
 
 /**
  * Every state-transition action for a revision, collapsed into ONE overflow
- * menu (#1038) instead of a wall of pill buttons that wrapped across 2-3
- * lines on mobile with a sent-and-unprotected row (Mark accepted / Declined /
- * Recall could join Correct date / Protect, all as separate buttons). Same
- * two audiences as before — `invoice:publish` (`useCanDo`, mirrors `<CanDo>`)
- * for the standard cluster, owner-only (`useIsOwner`) for protect/correct/
- * delete-permanently — just read as booleans up front so both clusters can
- * merge into one action list instead of two side-by-side button groups.
- * `requireQuoteOwnerOnly`/the `invoice:publish` permission check are still the
- * real server-side gates; this is UX only.
+ * menu (#1038) instead of a wall of pill buttons. Same two audiences as
+ * before — `invoice:publish` (`useCanDo`, mirrors `<CanDo>`) for the standard
+ * cluster, owner-only (`useIsOwner`) for delete-permanently — read as
+ * booleans up front so both clusters can merge into one action list instead
+ * of two side-by-side button groups. `requireQuoteOwnerOnly`/the
+ * `invoice:publish` permission check are still the real server-side gates;
+ * this is UX only.
+ *
+ * #1230 note: Unapprove (`unacceptNative`), Correct date (`correctQuoteNative`)
+ * and Protect/Unprotect are DELETED — the whole protect/unprotect mechanism
+ * (and its lock-tier plumbing) is gone. Recall (`recallNative`) survives
+ * unchanged and is no longer gated on a `protected` check.
  */
-/** The `invoice:publish` cluster's actions — accept/decline/recall/delete-draft. */
+/** The `invoice:publish` cluster's actions — accept/decline/recall/rename.
+ *  #1231 note: "Delete draft" is gone — `deleteDraftNative` was deleted in
+ *  #1229 Phase 3, superseded by `versions.deleteNative`; deleting a version
+ *  is now exclusively a Versions panel verb (design §5.1, "one control to
+ *  switch, one place to manage"), not a per-quote-row action here. */
 export function standardQuoteRowActions(
   flags: ReturnType<typeof quoteRowFlags>,
   handlers: {
     onAccept: () => void;
-    onUnaccept: () => void;
     onDecline: () => void;
     onRecall: () => void;
-    onDeleteDraft: () => void;
     onEditLabel: () => void;
   },
 ): RowAction[] {
-  const { isSent, isAccepted, isHeldByClient, isProtected, isNeverSentDraft } = flags;
+  const { isSent, isHeldByClient } = flags;
   const actions: RowAction[] = [];
   actions.push({ key: "rename", label: "Rename version", icon: Pencil, onClick: handlers.onEditLabel });
   if (isSent) actions.push({ key: "accept", label: "Mark accepted", icon: CheckCircle2, onClick: handlers.onAccept });
-  if (isAccepted) actions.push({ key: "unaccept", label: "Unapprove", icon: RotateCcw, onClick: handlers.onUnaccept });
   if (isHeldByClient) actions.push({ key: "decline", label: "Declined", icon: XCircle, onClick: handlers.onDecline });
-  if (isHeldByClient && !isProtected) actions.push({ key: "recall", label: "Recall", icon: Undo2, onClick: handlers.onRecall });
-  if (isNeverSentDraft) actions.push({ key: "delete-draft", label: "Delete draft", icon: Trash2, onClick: handlers.onDeleteDraft, destructive: true });
+  if (isHeldByClient) actions.push({ key: "recall", label: "Recall", icon: Undo2, onClick: handlers.onRecall });
   return actions;
 }
 
-/** The owner-only cluster's actions (#1026 follow-up program) —
- *  protect/unprotect, correct-date, recall-then-delete. */
+/** The owner-only cluster's actions — recall-then-delete (#1029) survives;
+ *  protect/unprotect and correct-date are deleted (#1230). */
 export function ownerOnlyQuoteRowActions(
   flags: ReturnType<typeof quoteRowFlags>,
-  handlers: { onCorrect: () => void; onDeleteRecalled: () => void; onToggleProtect: () => void; protectPending: boolean },
+  handlers: { onDeleteRecalled: () => void },
 ): RowAction[] {
-  const { isSent, isAccepted, isProtected, isRecalledDraft } = flags;
+  const { isRecalledDraft } = flags;
   const actions: RowAction[] = [];
-  if ((isSent || isAccepted) && !isProtected) {
-    actions.push({ key: "correct", label: "Correct date", icon: Pencil, onClick: handlers.onCorrect });
-  }
-  if (isSent || isAccepted) {
-    actions.push({
-      key: "protect",
-      label: isProtected ? "Unprotect" : "Protect",
-      icon: isProtected ? Unlock : Lock,
-      onClick: handlers.onToggleProtect,
-      loading: handlers.protectPending,
-    });
-  }
-  if (isRecalledDraft && !isProtected) {
+  if (isRecalledDraft) {
     actions.push({ key: "delete-recalled", label: "Delete permanently", icon: Trash2, onClick: handlers.onDeleteRecalled, destructive: true });
   }
   return actions;
@@ -673,111 +755,78 @@ function QuoteRowActions({
   quote,
   flags,
   onAccept,
-  onUnaccept,
   onDecline,
   onRecall,
-  onDeleteDraft,
   onDeleteRecalled,
-  onCorrect,
   onEditLabel,
 }: {
   quote: QuoteRevisionDoc;
   flags: ReturnType<typeof quoteRowFlags>;
   onAccept: () => void;
-  onUnaccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
-  onDeleteDraft: () => void;
   onDeleteRecalled: () => void;
-  onCorrect: () => void;
   onEditLabel: () => void;
 }) {
   const canPublish = useCanDo("invoice", "publish");
   const isOwner = useIsOwner();
-  const quoteWrites = useQuoteWrites();
-  const protectMutation = useServerMutation({
-    mutationFn: (next: boolean) => quoteWrites.setProtected(quote.id, next),
-    onSuccess: (r) => toast.success(r.protected ? `Protected v${quote.version}` : `Unprotected v${quote.version}`),
-    onError: (e) => toast.error(e.message),
-  });
 
   const actions: RowAction[] = [
-    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onUnaccept, onDecline, onRecall, onDeleteDraft, onEditLabel }) : []),
-    ...(isOwner
-      ? ownerOnlyQuoteRowActions(flags, {
-          onCorrect,
-          onDeleteRecalled,
-          onToggleProtect: () => protectMutation.mutate(!flags.isProtected),
-          protectPending: protectMutation.isPending,
-        })
-      : []),
+    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onDecline, onRecall, onEditLabel }) : []),
+    ...(isOwner ? ownerOnlyQuoteRowActions(flags, { onDeleteRecalled }) : []),
   ];
 
   return <RowActionsMenu actions={actions} label={`v${quote.version} actions`} />;
 }
 
+/** #1231 note: the row's "Make live" button is gone — making a version live
+ *  is now exclusively the header pill / Versions panel's job (design §5.1),
+ *  not a per-quote-row action wired onto a QUOTE revision number that may no
+ *  longer line up 1:1 with a `projectVersions` row's own number. */
 function QuoteRevisionRow({
   quote,
   isLive,
   invoicesForVersion,
   projectId,
+  allProjectVersions,
   onAccept,
-  onUnaccept,
   onDecline,
   onRecall,
   onView,
-  onDeleteDraft,
   onDeleteRecalled,
-  onCorrect,
   onEditLabel,
-  onPromote,
   now,
 }: {
   quote: QuoteRevisionDoc;
   isLive: boolean;
   invoicesForVersion: InvoiceLineageDoc[];
   projectId: string;
+  allProjectVersions: QuoteRailProjectVersion[];
   onAccept: () => void;
-  onUnaccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
   onView: () => void;
-  onDeleteDraft: () => void;
   onDeleteRecalled: () => void;
-  onCorrect: () => void;
   onEditLabel: () => void;
-  onPromote: () => void;
   now: number;
 }) {
   const flags = quoteRowFlags(quote);
-  // Promotable = a non-live revision with captured state — not restricted to
-  // SENT/ACCEPTED (a DECLINED or SUPERSEDED revision can still be made live
-  // again, same precondition `promoteRevisionNative` enforces server-side).
-  const canPromote = !isLive && quote.snapshotId != null;
 
   return (
     <li className="flex flex-col gap-1.5 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
       <div className="flex items-center justify-between gap-2">
         <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onView}>
-          <RevisionMeta quote={quote} isLive={isLive} now={now} />
+          <RevisionMeta quote={quote} isLive={isLive} now={now} allProjectVersions={allProjectVersions} />
         </button>
         <div className="flex shrink-0 items-center gap-1.5">
           <QuoteDocumentAction quote={quote} projectId={projectId} />
-          {canPromote && (
-            <Button type="button" variant="line" size="sm" onClick={onPromote}>
-              <Sparkles className="h-3.5 w-3.5" /> Make live
-            </Button>
-          )}
           <QuoteRowActions
             quote={quote}
             flags={flags}
             onAccept={onAccept}
-            onUnaccept={onUnaccept}
             onDecline={onDecline}
             onRecall={onRecall}
-            onDeleteDraft={onDeleteDraft}
             onDeleteRecalled={onDeleteRecalled}
-            onCorrect={onCorrect}
             onEditLabel={onEditLabel}
           />
         </div>
@@ -863,11 +912,43 @@ function QuoteDocumentAction({ quote, projectId }: { quote: QuoteRevisionDoc; pr
   );
 }
 
-function RevisionMeta({ quote, isLive, now }: { quote: QuoteRevisionDoc; isLive: boolean; now: number }) {
+/** #1233 — resolve a quote's own `versionId` to its project version's human
+ *  number, for the row tag below. A quote with no `versionId` (every pre-
+ *  #1233 row) is treated as targeting the live version, same fallback
+ *  `convex/lib/quoteState.ts` uses server-side — so it's deliberately given
+ *  no tag rather than a wrong one. */
+function projectVersionNumberFor(quote: QuoteRevisionDoc, allProjectVersions: QuoteRailProjectVersion[]): number | null {
+  if (!quote.versionId) return null;
+  return allProjectVersions.find((v) => v.id === quote.versionId)?.number ?? null;
+}
+
+/** #1233 — split out of `RevisionMeta` purely to keep that function's own
+ *  complexity within budget (R-3.6): the "only shown once there's more than
+ *  one project version" decision lives here instead of an inline `&&` chain
+ *  in the caller. Deliberately worded "project version" (not another bare
+ *  "v{N}") — `RevisionMeta`'s own "v{N}" a few pixels to the left is the
+ *  QUOTE's revision number, a different counter (FEATUREDOCS/78). */
+function ProjectVersionTag({ show, number }: { show: boolean; number: number | null }) {
+  if (!show || number == null) return null;
+  return <span className="t-micro text-fg-4">for project version {number}</span>;
+}
+
+function RevisionMeta({
+  quote,
+  isLive,
+  now,
+  allProjectVersions,
+}: {
+  quote: QuoteRevisionDoc;
+  isLive: boolean;
+  now: number;
+  allProjectVersions: QuoteRailProjectVersion[];
+}) {
   // A DRAFT carries no frozen money — its figures are the project's live totals
   // until it is sent, so the row deliberately shows no amount.
   const total = (quote.snapshot as { total?: number } | null)?.total;
   const isSuperseded = quote.effectiveStatus === "SUPERSEDED";
+  const projectVersionNumber = projectVersionNumberFor(quote, allProjectVersions);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       {/* SUPERSEDED earns no pill — a dead revision doesn't earn a filled shape
@@ -882,6 +963,7 @@ function RevisionMeta({ quote, isLive, now }: { quote: QuoteRevisionDoc; isLive:
           version can sit above a newer one, so a recency word would fight
           what's on screen. */}
       {isLive && <Badge status="ok">Live</Badge>}
+      <ProjectVersionTag show={allProjectVersions.length > 1} number={projectVersionNumber} />
       {quote.label && <span className="truncate text-fg-4">&ldquo;{quote.label}&rdquo;</span>}
       {total != null && <span className="tabular-nums text-fg-4">{formatCurrency(total)}</span>}
       {quote.sentAt != null && <span className="text-fg-4">sent {formatDate(new Date(quote.sentAt))}</span>}
@@ -959,61 +1041,11 @@ function EditLabelDialogContent({ target, onClose }: { target: QuoteRevisionDoc;
   );
 }
 
-/** Unapprove (#1032) — the reverse of "Mark accepted". A plain confirm, no
- *  reason field: unlike Recall/Decline, this reverses the SAME action Accept
- *  just took rather than recording a separate business decision, so there's
- *  nothing new to justify. Clears the acceptance fields and the `protected`
- *  flag Accept auto-set, in one step (server-side, `unacceptNative`). Real
- *  `Dialog`, not a bare click — this is still a high-danger reversal (CLAUDE.md
- *  §"Danger classification"), so it gets the same "are you sure" beat as
- *  `DeleteDraftDialog`. */
-function UnacceptDialog({ target, onClose }: { target: QuoteRevisionDoc | null; onClose: () => void }) {
-  const quoteWrites = useQuoteWrites();
-  const [pending, setPending] = useState(false);
-
-  async function confirm() {
-    if (!target) return;
-    setPending(true);
-    try {
-      await quoteWrites.unaccept(target.id);
-      toast.success(`Unapproved v${target.version} — it's back to sent`);
-      onClose();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to unapprove");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!target} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Unapprove v{target?.version}</DialogTitle>
-          <DialogDescription>
-            Reverses the acceptance — this revision goes back to sent, and the project loses its
-            confirm-eligibility on this quote until it&rsquo;s re-accepted. The document already sent to
-            the client is unaffected.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="line" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button type="button" loading={pending} onClick={() => void confirm()}>
-            Unapprove
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /** Recall and decline both take a bounded reason, so both route through ONE
  *  Dialog rather than two near-identical ones. (Radix `Dialog` — there is no
- *  `AlertDialog` in this codebase.) Row-scoped only — the top-level lock
- *  strip's own recall exit is `<RecallToEditDialog>` (#1080/#1100, Phase 5),
- *  a one-click confirm rather than this free-text reason form. */
+ *  `AlertDialog` in this codebase.) #1230 deleted the top-level lock strip's
+ *  own one-click "Recall to edit" exit (the quote-derived lock it existed for
+ *  is gone) — this row-scoped reason form is now the only recall path. */
 function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClose: () => void }) {
   const [reason, setReason] = useState("");
   const quoteWrites = useQuoteWrites();

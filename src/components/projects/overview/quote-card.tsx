@@ -14,8 +14,9 @@ import { Panel } from "@/components/ui/card";
 import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
-import { QuoteDriftIndicator } from "@/components/projects/finance/quote-drift-indicator";
 import { QuoteManagerDialog } from "@/components/projects/finance/quote-manager-dialog";
+import { diffSnapshotEntries, type SnapshotEntryLike } from "@/lib/project-snapshot-diff";
+import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
 import { OverviewCardHeader, OverviewAmount, OverviewMetaList, OverviewActions } from "./card-parts";
 
 interface QuoteCardProps {
@@ -88,6 +89,52 @@ function deriveQuoteView(
   };
 }
 
+/**
+ * "This job no longer matches v<N>" — inlined from the deleted shared
+ * `QuoteDriftIndicator` component (Project Versioning v2 Phase 5, #1231:
+ * that shared component is one of the surfaces `VersionStrip` absorbs, but
+ * its drift STATE isn't rebuilt into the strip this phase — see
+ * FEATUREDOCS/78's Phase 5 section). Same underlying logic as
+ * `project-quote-rail.tsx`'s own inline copy (R-3.1: one diff/summarize/
+ * describe pipeline, two thin renderers — the render shape differs enough
+ * between the rail's banner and this card that a shared component wasn't
+ * worth reintroducing).
+ */
+function InlineQuoteDrift({
+  projectId,
+  orgId,
+  snapshotId,
+  version,
+  onSeeWhatChanged,
+}: {
+  projectId: string;
+  orgId: string;
+  snapshotId: string;
+  version: number;
+  onSeeWhatChanged?: () => void;
+}) {
+  const snapshotEntries = useAuthedQuery(api.projectLocksRead.snapshotEntries, { snapshotId, orgId });
+  const currentEntries = useAuthedQuery(api.projectLocksRead.currentEntries, { projectId, orgId });
+
+  if (snapshotEntries === undefined || currentEntries === undefined) return null;
+  const rows = diffSnapshotEntries(snapshotEntries as SnapshotEntryLike[], currentEntries as SnapshotEntryLike[]);
+  const summary = summarizeDrift(rows);
+  if (!summary.hasDrift) return null;
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius)] border-l-[3px] border-l-warn bg-warn-soft px-3 py-2 text-caption text-warn">
+      <span>
+        This job no longer matches v{version} — {describeDrift(summary)}.
+      </span>
+      {onSeeWhatChanged && (
+        <button type="button" className="shrink-0 font-semibold underline underline-offset-2" onClick={onSeeWhatChanged}>
+          See what changed
+        </button>
+      )}
+    </div>
+  );
+}
+
 function QuoteCardBody({
   amount,
   revision,
@@ -118,7 +165,7 @@ function QuoteCardBody({
 
       {live?.snapshotId && (
         <div className="mt-3">
-          <QuoteDriftIndicator
+          <InlineQuoteDrift
             projectId={projectId}
             orgId={orgId}
             snapshotId={live.snapshotId}

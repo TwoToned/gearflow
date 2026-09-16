@@ -41,30 +41,50 @@ async function seed(t: T) {
     await ctx.db.insert("projects", {
       id: "P1", organizationId: ORG, projectNumber: "P1", name: "Confirmed overbook", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + 5 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P1",
     });
-    await ctx.db.insert("projectLineItems", { id: "L1", organizationId: ORG, projectId: "P1", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
+    await ctx.db.insert("projectVersions", { id: "v-P1", organizationId: ORG, projectId: "P1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projectLineItems", { id: "L1", organizationId: ORG, projectId: "P1", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P1",
+      lineageId: "L1",
+    });
 
     // P2: QUOTED, in range, books 2 more of the same model -> pencilled collision.
     await ctx.db.insert("projects", {
       id: "P2", organizationId: ORG, projectNumber: "P2", name: "Quoted collision", status: "QUOTED",
       isTemplate: false, rentalStartDate: NOW + 2 * DAY, rentalEndDate: NOW + 6 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P2",
     });
-    await ctx.db.insert("projectLineItems", { id: "L2", organizationId: ORG, projectId: "P2", modelId: "mdl", status: "QUOTED", quantity: 2, type: "EQUIPMENT" });
+    await ctx.db.insert("projectVersions", { id: "v-P2", organizationId: ORG, projectId: "P2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projectLineItems", { id: "L2", organizationId: ORG, projectId: "P2", modelId: "mdl", status: "QUOTED", quantity: 2, type: "EQUIPMENT",
+      versionId: "v-P2",
+      lineageId: "L2",
+    });
 
     // NOISE: an ancient, long-settled RETURNED booking of the same model, far
     // outside the range — must not surface (same shape as overbooking.test.ts's P5).
     await ctx.db.insert("projects", {
       id: "P_ancient", organizationId: ORG, projectNumber: "P_ANCIENT", name: "Ancient history", status: "RETURNED",
       isTemplate: false, rentalStartDate: NOW - 400 * DAY, rentalEndDate: NOW - 395 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P_ancient",
     });
-    await ctx.db.insert("projectLineItems", { id: "L_ancient", organizationId: ORG, projectId: "P_ancient", modelId: "mdl", status: "CONFIRMED", quantity: 50, type: "EQUIPMENT" });
+    await ctx.db.insert("projectVersions", { id: "v-P_ancient", organizationId: ORG, projectId: "P_ancient", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projectLineItems", { id: "L_ancient", organizationId: ORG, projectId: "P_ancient", modelId: "mdl", status: "CONFIRMED", quantity: 50, type: "EQUIPMENT",
+      versionId: "v-P_ancient",
+      lineageId: "L_ancient",
+    });
 
     // NOISE: a far-future CONFIRMED project, well outside the range.
     await ctx.db.insert("projects", {
       id: "P_future", organizationId: ORG, projectNumber: "P_FUTURE", name: "Far future", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW + 100 * DAY, rentalEndDate: NOW + 103 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P_future",
     });
-    await ctx.db.insert("projectLineItems", { id: "L_future", organizationId: ORG, projectId: "P_future", modelId: "mdl", status: "CONFIRMED", quantity: 50, type: "EQUIPMENT" });
+    await ctx.db.insert("projectVersions", { id: "v-P_future", organizationId: ORG, projectId: "P_future", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projectLineItems", { id: "L_future", organizationId: ORG, projectId: "P_future", modelId: "mdl", status: "CONFIRMED", quantity: 50, type: "EQUIPMENT",
+      versionId: "v-P_future",
+      lineageId: "L_future",
+    });
 
     // Sale stock (WS11 #950): a model with negative Model.saleStockQuantity
     // and NO project demand, plus a NEW_STOCK sale line that drew it down.
@@ -72,10 +92,14 @@ async function seed(t: T) {
     await ctx.db.insert("projects", {
       id: "P_sale", organizationId: ORG, projectNumber: "P-SALE", name: "Tape order", status: "CONFIRMED",
       isTemplate: false, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P_sale",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P_sale", organizationId: ORG, projectId: "P_sale", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projectLineItems", {
       id: "L_sale", organizationId: ORG, projectId: "P_sale", modelId: "mdl_sale", status: "CONFIRMED",
       quantity: 4, type: "SALE", saleMode: "NEW_STOCK",
+      versionId: "v-P_sale",
+      lineageId: "L_sale",
     });
 
     // Services missing crew: crewCountRequired 2, only 1 CONFIRMED assignment (a
@@ -84,6 +108,8 @@ async function seed(t: T) {
     await ctx.db.insert("crewMembers", { id: "C2", organizationId: ORG, firstName: "Sam", lastName: "Rigger", isActive: true, status: "ACTIVE" });
     await ctx.db.insert("projectServices", {
       id: "S1", organizationId: ORG, projectId: "P1", type: "BUMP_IN", title: "Bump-in", date: NOW + 1 * DAY, crewCountRequired: 2,
+      versionId: "v-P1",
+      lineageId: "S1",
     });
     await ctx.db.insert("crewAssignments", {
       id: "CA1", organizationId: ORG, projectId: "P1", crewMemberId: "C1", serviceId: "S1", status: "CONFIRMED",
@@ -104,7 +130,9 @@ async function seed(t: T) {
     await ctx.db.insert("projects", {
       id: "P3", organizationId: ORG, projectNumber: "P3", name: "Double-booked", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW + 2 * DAY, rentalEndDate: NOW + 3 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P3",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P3", organizationId: ORG, projectId: "P3", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("crewAssignments", {
       id: "CA4", organizationId: ORG, projectId: "P3", crewMemberId: "C1", status: "CONFIRMED",
       startDate: NOW + 2 * DAY, endDate: NOW + 3 * DAY,

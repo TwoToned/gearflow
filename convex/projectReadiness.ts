@@ -11,6 +11,7 @@ import {
   computeProjectPricingReadiness,
   type ReadinessGearSection,
 } from "./lib/projectReadiness";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Lines and groups a lifecycle lock forced to $0, with a usable label on each.
@@ -24,9 +25,14 @@ import {
  * through to the generic label rather than leaking that org's model name.
  */
 async function readPricingReadiness(ctx: QueryCtx, orgId: string, projectId: string) {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  // Missing/cross-org project: same graceful-empty behaviour the old
+  // by_projectId reads had (no version id to resolve without a project row).
+  if (!project || project.organizationId !== orgId) return computeProjectPricingReadiness(projectId, [], []);
+  // LIVE-ONLY (#1228) — the readiness checklist checks the live plan.
   const [ownLines, ownGroups] = await Promise.all([
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    liveRows(ctx, project, "projectLineItems"),
+    liveRows(ctx, project, "projectGroups"),
   ]);
   const scopedLines = ownLines.filter((li) => li.organizationId === orgId);
 
@@ -115,14 +121,15 @@ export const forProject = query({
         ctx,
         orgId,
         candidates.map((p) => p.id),
+        projectDocsById,
       );
       gear = computeProjectGearReadiness(projectId, range, candidates, lineItems, models, assets, bulkAssetsForModels);
     }
 
-    // ── Crew ────────────────────────────────────────────────────────────────
+    // ── Crew ──────────────────────────────────────────────────────────────── LIVE-ONLY (#1228) for services.
     const [assignments, services] = await Promise.all([
       ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-      ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+      liveRows(ctx, project, "projectServices"),
     ]);
     const crew = computeProjectCrewReadiness(
       projectId,

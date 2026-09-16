@@ -69,11 +69,17 @@ export function useNativeEquipmentTab(
   /** Categories' sibling of `orderOverlay`/`groupOrderOverlay` (use-equipment-dnd.ts's
    *  `resolveCategoryDragAction`) — see `CategoryOrderEdit`'s doc comment. */
   categoryOrderOverlay?: ReadonlyMap<string, CategoryOrderEdit>,
+  /** Project Versioning v2, Phase 5 (#1231) — the version being VIEWED
+   *  (`?v=`'s resolved id), or undefined to read the project's live version.
+   *  Threads straight through to `equipmentTab.bundle`'s own optional
+   *  `versionId` arg (Phase 2, #1228 — already version-aware; this is the
+   *  first UI caller to actually pass it). */
+  versionId?: string,
 ): NativeEquipmentTab {
   const enabled = !!projectId && !!orgId;
   const rawBundle = useAuthedQuery(
     api.equipmentTab.bundle,
-    enabled ? { projectId: projectId!, orgId: orgId! } : "skip",
+    enabled ? { projectId: projectId!, orgId: orgId!, versionId } : "skip",
   );
 
   // Overlay optimistic line-item edits (Phase 5d), the line-item drag-and-drop

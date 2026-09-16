@@ -29,7 +29,10 @@ async function member(t: ReturnType<typeof makeT>, role: string) {
     // (none of them are about the lock feature).
     const existing = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
     if (!existing) {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     }
   });
 }
@@ -41,7 +44,10 @@ describe("projectCategoriesWrites.createCategoryNative", () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectCategories", { id: "existing", organizationId: ORG, projectId: "p1", name: "Lights", sortOrder: 3 });
+      await ctx.db.insert("projectCategories", { id: "existing", organizationId: ORG, projectId: "p1", name: "Lights", sortOrder: 3,
+        versionId: "v-p1",
+        lineageId: "existing",
+      });
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, args);
     expect(res.sortOrder).toBe(4); // max(3)+1
@@ -101,7 +107,10 @@ describe("projectCategoriesWrites.updateCategoryNative", () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "c1",
+      });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.updateCategoryNative, args);
     await t.run(async (ctx) => {
@@ -127,7 +136,10 @@ describe("projectCategoriesWrites.updateCategoryNative", () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "c1",
+      });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.updateCategoryNative, { id: "c1", orgId: ORG, sortOrder: 7, now: NOW, actor: ACTOR, auditId: "log1" });
     await t.run(async (ctx) => {
@@ -166,12 +178,24 @@ describe("projectCategoriesWrites.deleteCategoryNative", () => {
   async function seedCascade(t: ReturnType<typeof makeT>) {
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "c1", title: "Mics", sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "c1",
+      });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "c1", title: "Mics", sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "g1",
+      });
       await ctx.db.insert("categorySlots", { id: "slCat", projectCategoryId: "c1", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "slGrp", projectCategoryId: "c1", projectGroupId: "g1", sortOrder: 1 });
-      await ctx.db.insert("projectLineItems", { id: "liInGroup", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "c1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
-      await ctx.db.insert("projectLineItems", { id: "liInCat", organizationId: ORG, projectId: "p1", categoryId: "c1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+      await ctx.db.insert("projectLineItems", { id: "liInGroup", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "c1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false,
+        versionId: "v-p1",
+        lineageId: "liInGroup",
+      });
+      await ctx.db.insert("projectLineItems", { id: "liInCat", organizationId: ORG, projectId: "p1", categoryId: "c1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false,
+        versionId: "v-p1",
+        lineageId: "liInCat",
+      });
     });
   }
 
@@ -224,8 +248,14 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "A", sortOrder: 0 });
-      await ctx.db.insert("projectCategories", { id: "c2", organizationId: ORG, projectId: "p1", name: "B", sortOrder: 1 });
+      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "A", sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "c1",
+      });
+      await ctx.db.insert("projectCategories", { id: "c2", organizationId: ORG, projectId: "p1", name: "B", sortOrder: 1,
+        versionId: "v-p1",
+        lineageId: "c2",
+      });
       await ctx.db.insert("projectCategories", { id: "cOther", organizationId: "org_other", projectId: "p9", name: "X", sortOrder: 5 });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
@@ -257,22 +287,24 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
 
   // Gap fix: reorderCategoriesNative previously never called assertLifecycleGuard,
   // so a locked project's categories could be silently reordered.
-  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  // #1230: reordering is structural — never gated by the pricing lock, so it
+  // succeeds regardless of project status, with no justification argument.
+  test("succeeds on an ON_SITE project — structural, never gated", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "ON_SITE" });
-      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "A", sortOrder: 0 });
-      await ctx.db.insert("projectCategories", { id: "c2", organizationId: ORG, projectId: "p1", name: "B", sortOrder: 1 });
+      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "A", sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "c1",
+      });
+      await ctx.db.insert("projectCategories", { id: "c2", organizationId: ORG, projectId: "p1", name: "B", sortOrder: 1,
+        versionId: "v-p1",
+        lineageId: "c2",
+      });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
-        orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
-      orgId: ORG, orderedIds: ["c2", "c1"], now: NOW + 1, actor: ACTOR,
-      justification: "Client requested a change while on site today.",
+      orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR,
     });
     await t.run(async (ctx) => {
       const c2 = await ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "c2")).first();
@@ -280,18 +312,78 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
     });
   });
 
-  test("rejects on a HARD_LOCKED (COMPLETED) project with no open FULL unlock session", async () => {
+  test("succeeds on a COMPLETED project — HARD_LOCKED is deleted (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "COMPLETED" });
-      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "A", sortOrder: 0 });
-      await ctx.db.insert("projectCategories", { id: "c2", organizationId: ORG, projectId: "p1", name: "B", sortOrder: 1 });
+      await ctx.db.insert("projectCategories", { id: "c1", organizationId: ORG, projectId: "p1", name: "A", sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "c1",
+      });
+      await ctx.db.insert("projectCategories", { id: "c2", organizationId: ORG, projectId: "p1", name: "B", sortOrder: 1,
+        versionId: "v-p1",
+        lineageId: "c2",
+      });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
+      orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR,
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1221 follow-up — createCategoryNative now takes an optional `versionId`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectCategoriesWrites — #1221 versionId follow-up", () => {
+  const args = { id: "c1", orgId: ORG, projectId: "p1", name: "Audio", now: NOW, actor: ACTOR, auditId: "log1" };
+
+  async function seedSecondVersion(t: ReturnType<typeof makeT>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: "v-p1-b", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+  }
+
+  test("defaults to the live version when versionId is absent", async () => {
+    const t = makeT();
+    await member(t, "member");
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, args);
+    expect(res.sortOrder).toBe(0);
+    const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "c1")).first());
+    expect(cat?.versionId).toBe("v-p1");
+  });
+
+  test("targets the named non-live version, sortOrder scoped to it", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedSecondVersion(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, { ...args, versionId: "v-p1-b" });
+    expect(res.sortOrder).toBe(0); // independent bucket from v-p1's own categories
+    const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "c1")).first());
+    expect(cat?.versionId).toBe("v-p1-b");
+  });
+
+  test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pOther", organizationId: "org_2", projectNumber: "PO", name: "Foreign", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW, liveVersionId: "v-other" });
+      await ctx.db.insert("projectVersions", { id: "v-other", organizationId: "org_2", projectId: "pOther", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.reorderCategoriesNative, {
-        orgId: ORG, orderedIds: ["c2", "c1"], now: NOW, actor: ACTOR, justification: "Doesn't matter — HARD_LOCKED needs a session, not a reason.",
-      }),
-    ).rejects.toThrow(/PROJECT_LOCKED/i);
+      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, { ...args, versionId: "v-other" }),
+    ).rejects.toThrow();
+  });
+
+  test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW, liveVersionId: "v-p2" });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, { ...args, versionId: "v-p2" }),
+    ).rejects.toThrow();
   });
 });

@@ -37,10 +37,14 @@ async function member(t: T, role: string) {
 }
 
 async function seedProject(t: T, id = "p1", status: Doc<"projects">["status"] = "CONFIRMED") {
+  const versionId = `v-${id}`;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: ORG, projectNumber: `P-${id}`, name: "Gig", status,
-      total: 0, taxRate: 10,
+      total: 0, taxRate: 10, liveVersionId: versionId,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: ORG, projectId: id, number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1",
     });
   });
 }

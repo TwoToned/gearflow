@@ -28,11 +28,19 @@ async function member(t: T, role: string) {
   });
 }
 
+function versionIdFor(id: string, orgId: string): string {
+  return `v-${id}-${orgId}`;
+}
+
 async function seedProject(t: T, id = "p1", orgId = ORG, extra: Record<string, unknown> = {}) {
+  const versionId = versionIdFor(id, orgId);
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-      total: 0, taxRate: 10, ...extra,
+      total: 0, taxRate: 10, liveVersionId: versionId, ...extra,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -60,7 +68,7 @@ async function seedSubHire(t: T, id = "sh1", orgId = ORG, extra: Record<string, 
 
 async function seedProjectGroup(t: T, id: string, projectId: string, orgId = ORG, extra: Record<string, unknown> = {}) {
   await t.run(async (ctx) => {
-    await ctx.db.insert("projectGroups", { id, organizationId: orgId, projectId, title: "PG", ...extra });
+    await ctx.db.insert("projectGroups", { id, organizationId: orgId, projectId, versionId: versionIdFor(projectId, orgId), lineageId: id, title: "PG", ...extra });
   });
 }
 
@@ -255,8 +263,8 @@ describe("deleteSubHireNative", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "X", quantity: 1, sortOrder: 0 });
       await ctx.db.insert("subHireGroups", { id: "g1", subHireId: "sh1", title: "Grp", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li_parent", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "Grp", quantity: 1, lineTotal: 0, isKitChild: false, subHireId: "sh1", status: "QUOTED" });
-      await ctx.db.insert("projectLineItems", { id: "li_child", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "X", quantity: 1, lineTotal: 100, isKitChild: true, parentLineItemId: "li_parent", subHireId: "sh1", status: "QUOTED" });
+      await ctx.db.insert("projectLineItems", { id: "li_parent", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "Grp", quantity: 1, lineTotal: 0, isKitChild: false, subHireId: "sh1", status: "QUOTED", versionId: versionIdFor("p1", ORG), lineageId: "li_parent",});
+      await ctx.db.insert("projectLineItems", { id: "li_child", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "X", quantity: 1, lineTotal: 100, isKitChild: true, parentLineItemId: "li_parent", subHireId: "sh1", status: "QUOTED", versionId: versionIdFor("p1", ORG), lineageId: "li_child",});
     });
     await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.deleteSubHireNative, {
       id: "sh1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logd",
@@ -275,7 +283,7 @@ describe("deleteSubHireNative", () => {
     await seedSupplier(t);
     await seedSubHire(t, "sh1", ORG, { status: "CONFIRMED" });
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "X", quantity: 1, lineTotal: 100, isKitChild: false, subHireId: "sh1", status: "CHECKED_OUT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "X", quantity: 1, lineTotal: 100, isKitChild: false, subHireId: "sh1", status: "CHECKED_OUT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.deleteSubHireNative, { id: "sh1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logd" }),
@@ -546,7 +554,7 @@ describe("removeSubHireItemNative", () => {
     await seedSubHire(t, "sh1", ORG, { status: "CONFIRMED" });
     await t.run(async (ctx) => {
       await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "X", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "X", quantity: 1, lineTotal: 100, isKitChild: false, subHireId: "sh1", subHireItemId: "it1", status: "CHECKED_OUT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "X", quantity: 1, lineTotal: 100, isKitChild: false, subHireId: "sh1", subHireItemId: "it1", status: "CHECKED_OUT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.removeSubHireItemNative, { itemId: "it1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logr" }),
@@ -833,7 +841,7 @@ describe("changeSubHireProjectNative", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", quantity: 1, unitCharge: 100, unitCost: 0, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, sortOrder: 0 });
       // An existing generated line on the OLD project.
-      await ctx.db.insert("projectLineItems", { id: "li_old", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "Rig", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, subHireId: "sh1", subHireItemId: "it1", status: "QUOTED" });
+      await ctx.db.insert("projectLineItems", { id: "li_old", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "Rig", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, subHireId: "sh1", subHireItemId: "it1", status: "QUOTED", versionId: versionIdFor("p1", ORG), lineageId: "li_old",});
     });
     await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.changeSubHireProjectNative, {
       subHireId: "sh1", orgId: ORG, newProjectId: "p2", now: NOW + 1, actor: ACTOR, auditId: "logcp",

@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 //
-// #990 (Phase E) "legible lock" smoke tests — renders the actual overlay
-// components OPEN (not just a closed trigger) per CLAUDE.md's overlay-test
-// rule, and for the tooltip-driven surfaces (`LockedField`, `GatedButton`,
-// `ProjectLockChip`, `ProjectLockGlyph`) actually opens the tooltip via
-// focus rather than asserting on the closed DOM.
+// #990 (Phase E) "legible lock" smoke tests, shrunk for #1230's single
+// pricingLocked boolean — renders the actual overlay components OPEN (not
+// just a closed trigger) per CLAUDE.md's overlay-test rule, and for the
+// tooltip-driven surfaces (`LockedField`, `GatedButton`, `ProjectLockChip`,
+// `ProjectLockGlyph`) actually opens the tooltip via focus rather than
+// asserting on the closed DOM. `LockedField`/`GatedButton` are unchanged by
+// #1230 (still a plain `locked`/`gated` boolean + `reason` string) —
+// `ProjectLockChip`/`ProjectLockGlyph`/`resolveLockCopy`/`formatLockElapsed`
+// are the SHRUNKEN successors of #990's tier-based versions.
 import React from "react";
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 beforeAll(() => {
@@ -47,7 +51,7 @@ describe("LockedField smoke", () => {
   it("renders a locked field as a disabled fieldset and opens its tooltip with the reason + exit", async () => {
     const onExit = () => {};
     render(
-      <LockedField locked reason="Pricing locked — this job is confirmed." exitLabel="Unlock financials" onExit={onExit}>
+      <LockedField locked reason="Pricing locked — this job is confirmed." exitLabel="Unlock pricing" onExit={onExit}>
         <Input aria-label="Price" defaultValue="100" />
       </LockedField>,
     );
@@ -66,7 +70,7 @@ describe("LockedField smoke", () => {
 
     await openByFocus(fieldset);
     expect(screen.getByText(/Pricing locked — this job is confirmed\./)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Unlock financials" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Unlock pricing" })).toBeTruthy();
   });
 });
 
@@ -87,8 +91,8 @@ describe("GatedButton smoke", () => {
     render(
       <GatedButton
         gated
-        reason="Locked — this job is completed."
-        exitLabel="Open full unlock session"
+        reason="Pricing locked — this job is confirmed."
+        exitLabel="Unlock pricing"
         onExit={() => {}}
         onClick={() => (clicked = true)}
       >
@@ -106,103 +110,84 @@ describe("GatedButton smoke", () => {
     expect(clicked).toBe(false);
 
     await openByFocus(button);
-    expect(screen.getByText(/Locked — this job is completed\./)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open full unlock session" })).toBeTruthy();
+    expect(screen.getByText(/Pricing locked — this job is confirmed\./)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Unlock pricing" })).toBeTruthy();
   });
 });
 
 describe("ProjectLockChip smoke", () => {
-  it("renders nothing for OPEN with no open session — absence is the state", () => {
-    const { container } = render(<ProjectLockChip status={{ tier: "OPEN", loading: false }} now={Date.now()} />);
+  it("renders nothing while loading", () => {
+    const { container } = render(<ProjectLockChip status={{ pricingLocked: false, loading: true }} />);
     expect(container.textContent).toBe("");
   });
 
-  it("renders 'Pricing locked' for FINANCE_LOCKED and opens its tooltip", async () => {
-    render(<ProjectLockChip status={{ tier: "FINANCE_LOCKED", reason: "STATUS", loading: false }} now={Date.now()} />);
+  it("renders nothing when pricing is open — absence is the state", () => {
+    const { container } = render(<ProjectLockChip status={{ pricingLocked: false, loading: false }} />);
+    expect(container.textContent).toBe("");
+  });
+
+  it("renders 'Pricing locked' and opens its tooltip", async () => {
+    render(<ProjectLockChip status={{ pricingLocked: true, pricingLockedByName: "Bob", loading: false }} />);
     const chip = screen.getByRole("button", { name: /Pricing locked/i });
     expect(chip).toBeTruthy();
     await openByFocus(chip);
-    expect(screen.getByText(/Pricing locked — this job is confirmed\./)).toBeTruthy();
-  });
-
-  it("renders the live 'Unlocked by' state while a session is open", () => {
-    render(
-      <ProjectLockChip
-        status={{
-          tier: "FINANCE_LOCKED",
-          hasOpenSession: true,
-          openSession: { scope: "FINANCIAL", justification: "Client requested a discount.", openedByName: "Bob", openedAt: Date.now() - 5 * 60_000, snapshotId: "snap1" },
-          loading: false,
-        }}
-        now={Date.now()}
-      />,
-    );
-    expect(screen.getByRole("button", { name: /Unlocked by Bob/i })).toBeTruthy();
+    expect(screen.getByRole("tooltip").textContent).toMatch(/Pricing locked/);
   });
 });
 
 describe("ProjectLockGlyph smoke", () => {
-  it("renders nothing for an OPEN-tier status", () => {
+  it("renders nothing for a pre-CONFIRMED status", () => {
     const { container } = render(<ProjectLockGlyph status="QUOTING" />);
     expect(container.textContent).toBe("");
   });
 
-  it("renders the glyph for a CONFIRMED (FINANCE_LOCKED) status and opens its tooltip", async () => {
+  it("renders the glyph for a CONFIRMED status and opens its tooltip", async () => {
     render(<ProjectLockGlyph status="CONFIRMED" />);
     const glyph = screen.getByLabelText(/Pricing locked/i);
     await openByFocus(glyph);
     expect(screen.getByText(/Pricing locked — this job is confirmed\./)).toBeTruthy();
   });
 
-  it("renders the glyph for a COMPLETED (HARD_LOCKED) status", () => {
+  // #1230: HARD_LOCKED is deleted — CONFIRMED and COMPLETED render the
+  // identical glyph/label now (`isConfirmedOrLater`, status-only).
+  it("renders the SAME glyph/label for a COMPLETED status — no separate HARD_LOCKED wording", () => {
     render(<ProjectLockGlyph status="COMPLETED" />);
-    expect(screen.getByLabelText(/^Locked/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Pricing locked — this job is confirmed\./i)).toBeTruthy();
   });
 });
 
 describe("resolveLockCopy / formatLockElapsed", () => {
-  const now = Date.UTC(2026, 6, 28, 12, 0, 0);
-
-  it("every tier × reason combination produces distinct, non-empty copy — never colour-only", () => {
-    const cases: LockCopyStatus[] = [
-      { tier: "OPEN" },
-      { tier: "FINANCE_LOCKED", reason: "STATUS", revision: 2 },
-      { tier: "FINANCE_LOCKED", reason: "QUOTE_SENT", revision: 2 },
-      { tier: "JUSTIFY", reason: "STATUS" },
-      { tier: "HARD_LOCKED", reason: "STATUS" },
-    ];
-    const seen = new Set<string>();
-    for (const status of cases) {
-      const copy = resolveLockCopy(status, now);
-      expect(copy.headline.length).toBeGreaterThan(0);
-      expect(copy.oneLiner.length).toBeGreaterThan(0);
-      seen.add(copy.oneLiner);
-    }
-    expect(seen.size).toBe(cases.length);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("QUOTE_SENT names the next version as the exit", () => {
-    const copy = resolveLockCopy({ tier: "FINANCE_LOCKED", reason: "QUOTE_SENT", revision: 2 }, now);
-    expect(copy.exitLabel).toBe("Create quote v3");
+  it("pricing open produces distinct, non-empty, unlocked copy", () => {
+    const copy = resolveLockCopy({ pricingLocked: false });
+    expect(copy.chipLabel).toBeNull();
+    expect(copy.exitLabel).toBeNull();
+    expect(copy.headline.length).toBeGreaterThan(0);
+    expect(copy.oneLiner.length).toBeGreaterThan(0);
   });
 
-  it("an open session's copy carries the elapsed time and the justification", () => {
-    const copy = resolveLockCopy(
-      {
-        tier: "FINANCE_LOCKED",
-        hasOpenSession: true,
-        openSession: { scope: "FINANCIAL", justification: "Client added two movers", openedByName: "Jayden", openedAt: now - 12 * 60_000, snapshotId: "s1" },
-      },
-      now,
-    );
-    expect(copy.headline).toContain("12m");
-    expect(copy.headline).toContain("Jayden");
-    expect(copy.detail).toContain("Client added two movers");
+  it("pricing locked produces a distinct chip label, exit CTA and non-empty copy", () => {
+    const copy = resolveLockCopy({ pricingLocked: true, pricingLockedByName: "Jayden" });
+    expect(copy.chipLabel).toBe("Pricing locked");
+    expect(copy.exitLabel).toBe("Unlock pricing");
+    expect(copy.headline.length).toBeGreaterThan(0);
+    expect(copy.oneLiner).not.toBe(resolveLockCopy({ pricingLocked: false }).oneLiner);
+    expect(copy.detail).toContain("Jayden");
   });
 
-  it("formats elapsed time per the §7.2 spec: minutes, hours+minutes, then a 3h+ ceiling", () => {
-    expect(formatLockElapsed(now - 12 * 60_000, now)).toBe("12m");
-    expect(formatLockElapsed(now - 64 * 60_000, now)).toBe("1h 4m");
-    expect(formatLockElapsed(now - 4 * 60 * 60_000, now)).toBe("3h+");
+  it("formats elapsed time: same day, yesterday, N days ago, then a locale date", () => {
+    const now = Date.UTC(2026, 6, 28, 12, 0, 0);
+    expect(formatLockElapsed(now - 60_000, now)).toBe("today");
+    expect(formatLockElapsed(now - 25 * 60 * 60_000, now)).toBe("yesterday");
+    expect(formatLockElapsed(now - 3 * 86_400_000, now)).toBe("3d ago");
+    expect(formatLockElapsed(now - 10 * 86_400_000, now)).toBe(new Date(now - 10 * 86_400_000).toLocaleDateString());
+  });
+
+  it("a LockCopyStatus with no pricingLockedAt omits the elapsed-time clause", () => {
+    const copy = resolveLockCopy({ pricingLocked: true } satisfies LockCopyStatus);
+    expect(copy.detail).not.toMatch(/\(/);
   });
 });

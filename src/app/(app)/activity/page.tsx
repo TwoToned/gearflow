@@ -73,8 +73,12 @@ const actionLabels: Record<string, string> = {
   INVOICE_DOCUMENT_STORED: "Invoice PDF Stored",
   INVOICE_XERO_SYNCED: "Synced to Xero",
   INVOICE_XERO_SYNC_FAILED: "Xero Sync Failed",
-  // Project lock/unlock (convex/projectUnlockSessionsWrites.ts — locking itself
-  // rides on STATUS_CHANGE, see the lockTierFrom/lockTierTo metadata note below)
+  // Project pricing lock (#1230, convex/projectPricingLockWrites.ts)
+  PRICING_LOCKED: "Pricing Locked",
+  PRICING_UNLOCKED: "Pricing Unlocked",
+  // DEPRECATED (#1230, Phase 4) — the old 4-tier unlock-session mechanism was
+  // deleted; these labels are kept only so a pre-#1230 project's historical
+  // activity log still renders nicely, never emitted by any code path now.
   UNLOCK_OPENED: "Unlock Opened",
   UNLOCK_COMMITTED: "Unlock Saved & Relocked",
   UNLOCK_DISCARDED: "Unlock Discarded",

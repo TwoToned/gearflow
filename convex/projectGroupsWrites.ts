@@ -9,11 +9,12 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
-import { assertLifecycleGuard, lifecycleAuditMetadata, pricedUnderLockOnInsert } from "./lib/projectLocks";
+import { assertPricingUnlocked, afterLockAuditMetadata, defaultsToZeroOnInsert, pricedUnderLockOnInsert } from "./lib/projectLocks";
 import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { upsertSlotForLineItem } from "./categorySlotsWrites";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -231,11 +232,13 @@ export const createGroupNative = mutation({
     // #1012 — entry shape of the discount above ($ off vs % of `price × quantity`).
     // Display only; `discount` stays the resolved flat dollar amount.
     discountMode: v.optional(enums.DiscountMode),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the
+    // version this new group lands on, defaulting to live when absent.
+    // Validated against `project` (same org + project) by resolveWriteVersionId.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectGroup");
@@ -248,11 +251,14 @@ export const createGroupNative = mutation({
     // org's/project's id, a cross-tenant dangling reference.
     const project = await getProjectInOrg(ctx, a.projectId, a.orgId, new Map());
     if (!project) throw new ConvexError("Project not found");
+    const targetVersionId = await resolveWriteVersionId(ctx, project, a.versionId);
 
-    // #791: creating a group while locked defaults it to $0/unpriced (server-
-    // enforced). #793: creating a group is a structural mutation at JUSTIFY+.
-    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
-    if (guard.defaultToZero) {
+    // Creating is structural — never gated (#1230: only a MONEY write against
+    // the LIVE version's already-set price is gated). While pricing is locked,
+    // a new group still defaults to $0/unpriced instead of any auto-price.
+    // #1221: never gated for a non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(project, targetVersionId);
+    if (defaultToZero) {
       a.price = undefined;
       a.discount = undefined;
       a.discountMode = undefined; // #1012: no amount, no entry shape
@@ -278,15 +284,12 @@ export const createGroupNative = mutation({
       return { id: a.id, sortOrder: existing.sortOrder ?? 0 };
     }
 
-    // by_projectId is GLOBAL — org-filter, then max(sortOrder)+1 within the
-    // (project, category) bucket (null category is its own bucket).
+    // #1221: max(sortOrder)+1 within the (TARGET version, category) bucket
+    // (was LIVE-ONLY, #1228) — null category is its own bucket.
     const bucket = a.categoryId ?? null;
-    const siblings = (
-      await ctx.db
-        .query("projectGroups")
-        .withIndex("by_projectId", (q) => q.eq("projectId", a.projectId))
-        .collect()
-    ).filter((g) => g.organizationId === a.orgId && (g.categoryId ?? null) === bucket);
+    const siblings = (await versionRows(ctx, "projectGroups", targetVersionId)).filter(
+      (g) => g.organizationId === a.orgId && (g.categoryId ?? null) === bucket,
+    );
     const sortOrder = siblings.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1) + 1;
 
     // Capture the inserted _id (patch THIS directly if ever needed — never re-query
@@ -295,6 +298,8 @@ export const createGroupNative = mutation({
       id: a.id,
       organizationId: a.orgId,
       projectId: a.projectId,
+      versionId: targetVersionId,
+      lineageId: a.id,
       categoryId: a.categoryId || undefined,
       title: a.title,
       description: a.description || undefined,
@@ -305,7 +310,7 @@ export const createGroupNative = mutation({
       // Record the ACTUAL cause of a $0/unset price at create time, so the
       // Unpriced badge stops inferring it from "currently locked" (see the
       // schema comment on `pricedUnderLock`).
-      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
+      pricedUnderLock: pricedUnderLockOnInsert(defaultToZero),
       suggestedPrice: 0,
       sortOrder,
       createdAt: a.now,
@@ -321,7 +326,7 @@ export const createGroupNative = mutation({
       action: "created",
       entityName: a.title,
       summary: `Created group "${a.title}"`,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
     });
 
     return { id: a.id, sortOrder };
@@ -361,8 +366,6 @@ export const updateGroupNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #791/#793: required (one or the other, never both) once locked.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectGroup");
@@ -372,18 +375,12 @@ export const updateGroupNative = mutation({
 
     const group = await requireGroupInOrg(ctx, a.id, a.orgId);
 
-    // #791/#793: this mutation's only fields are title/description/quantity/
-    // sortOrder — all structural. Formerly rentalPeriod/rentalQuantity were
-    // locked GROUP financial fields routed through the FINANCIAL gate; #943
-    // retired both (suggested price now derives purely from the project's own
-    // rental dates, see recomputeGroupSuggestedById above), so nothing left on
-    // this mutation can touch money.
+    // #1230: this mutation's only fields are title/description/quantity/
+    // sortOrder/xero*/revealPriceInRollup — all structural (revealPriceInRollup
+    // moves no amount, it only decides whether an amount the group already has
+    // is printed — see src/lib/category-pricing-display.ts). Never gated.
     const groupProject = await getProjectInOrg(ctx, group.projectId, a.orgId, new Map());
     if (!groupProject) throw new ConvexError("Project not found");
-    const guard = await assertLifecycleGuard(ctx, groupProject, {
-      kind: "structural",
-      justification: a.justification,
-    });
 
     if (a.title !== undefined) assertValidTitle(a.title);
     if (a.description !== undefined) assertValidDescription(a.description || undefined);
@@ -417,7 +414,6 @@ export const updateGroupNative = mutation({
       action: "updated",
       entityName: group.title,
       summary: `Updated group "${group.title}"`,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -483,15 +479,17 @@ export const updateGroupPriceNative = mutation({
     if (a.discount != null) assertValidDiscount(a.discount);
     const group = await requireGroupInOrg(ctx, a.id, a.orgId);
 
-    // #791: a group's flat price/discount is a locked financial field.
+    // #1230: a group's flat price/discount is a MONEY write — gated by
+    // `pricingLocked` on the LIVE version only (a non-live version's own
+    // group is always writable regardless of the flag).
     const priceProject = await getProjectInOrg(ctx, group.projectId, a.orgId, new Map());
     if (!priceProject) throw new ConvexError("Project not found");
-    const guard = await assertLifecycleGuard(ctx, priceProject, { kind: "financial" });
+    assertPricingUnlocked(priceProject, group.versionId);
 
-    // Reaching here means the "financial" guard passed — a deliberate price set (open
-    // tier or open unlock session), never `defaultToZero`. Clears any stale
-    // `pricedUnderLock` from an earlier locked add — the price is no longer a
-    // lock artifact once a human has explicitly set it.
+    // Reaching here means the guard passed (pricing isn't locked, or this is a
+    // non-live version) — a deliberate price set, never `defaultToZero`.
+    // Clears any stale `pricedUnderLock` from an earlier locked add — the
+    // price is no longer a lock artifact once a human has explicitly set it.
     const patch: Record<string, unknown> = { price: a.price, pricedUnderLock: false, updatedAt: a.now };
     if (a.discount !== undefined) {
       patch.discount = a.discount;
@@ -511,7 +509,6 @@ export const updateGroupPriceNative = mutation({
       action: "updated",
       entityName: group.title,
       summary: `Set price on group "${group.title}" to $${a.price.toFixed(2)}`,
-      metadata: lifecycleAuditMetadata(guard),
     });
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -534,8 +531,6 @@ export const deleteGroupNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectGroup");
@@ -546,22 +541,20 @@ export const deleteGroupNative = mutation({
     const group = await requireGroupInOrg(ctx, a.id, a.orgId);
     const deleteGroupProject = await getProjectInOrg(ctx, group.projectId, a.orgId, new Map());
     if (!deleteGroupProject) throw new ConvexError("Project not found");
-    const guard = await assertLifecycleGuard(ctx, deleteGroupProject, { kind: "structural", justification: a.justification });
+    // Delete is structural — never gated.
 
-    // Lines in this group (by_projectId is global — org-filter). Clear groupId only
-    // (keep categoryId so items land standalone in the same category).
-    const lines = (
-      await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", group.projectId))
-        .collect()
-    ).filter((li) => li.organizationId === a.orgId && li.groupId === a.id);
+    // Lines in this group. LIVE-ONLY (#1228). Clear groupId only (keep
+    // categoryId so items land standalone in the same category).
+    const lines = (await liveRows(ctx, deleteGroupProject, "projectLineItems")).filter(
+      (li) => li.organizationId === a.orgId && li.groupId === a.id,
+    );
     for (const li of lines) {
       await ctx.db.patch(li._id, { groupId: undefined, updatedAt: a.now });
     }
 
     // Cascade: the group's category slots, then the group itself.
     const slots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", a.id))
       .collect();
@@ -578,7 +571,6 @@ export const deleteGroupNative = mutation({
       action: "deleted",
       entityName: group.title,
       summary: `Deleted group "${group.title}" — ${n} items moved to standalone`,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -599,10 +591,6 @@ export const reorderGroupsNative = mutation({
     orderedIds: v.array(v.string()),
     now: v.number(),
     actor: actorValidator,
-    // Required once a touched project is JUSTIFY+ and no unlock session is open —
-    // same gate reorderNative (line items) and moveLineItemNative already apply;
-    // this mutation previously bypassed the lifecycle lock entirely.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectGroup");
@@ -610,20 +598,13 @@ export const reorderGroupsNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "project", "manage_line_items");
     await resolveActor(ctx, a.actor);
 
-    const projectCache = new Map<string, Doc<"projects"> | null>();
-    const guardedProjectIds = new Set<string>();
+    // Reordering is structural (sortOrder-only, no money touched) — never gated.
     for (let i = 0; i < a.orderedIds.length; i++) {
       const doc = await ctx.db
         .query("projectGroups")
         .withIndex("by_cuid", (q) => q.eq("id", a.orderedIds[i]))
         .first();
       if (doc && doc.organizationId === a.orgId) {
-        if (!guardedProjectIds.has(doc.projectId)) {
-          const project = await getProjectInOrg(ctx, doc.projectId, a.orgId, projectCache);
-          if (!project) throw new ConvexError("Project not found");
-          await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
-          guardedProjectIds.add(doc.projectId);
-        }
         await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: a.now });
       }
     }
@@ -649,8 +630,6 @@ export const moveLineItemNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectGroup");
@@ -663,7 +642,7 @@ export const moveLineItemNative = mutation({
 
     const moveProject = await getProjectInOrg(ctx, line.projectId, a.orgId, new Map());
     if (!moveProject) throw new ConvexError("Project not found");
-    const guard = await assertLifecycleGuard(ctx, moveProject, { kind: "structural", justification: a.justification });
+    // Moving a line between groups/categories is structural — never gated.
 
     // Validate the destination refs are the caller's org + THIS line's project (no
     // cross-tenant / cross-project dangling reference).
@@ -733,7 +712,6 @@ export const moveLineItemNative = mutation({
       action: "updated",
       entityName: line.description ?? "Line item",
       summary: `Moved line item to ${a.targetGroupId ? "group" : "standalone"}`,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -760,8 +738,6 @@ export const moveLineItemsNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: checked once per distinct project this bulk selection touches.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectGroup");
@@ -776,10 +752,10 @@ export const moveLineItemsNative = mutation({
 
     const affectedGroupIds = new Set<string>();
     const affectedProjectIds = new Set<string>();
-    const guardedProjectIds = new Set<string>();
     let skipped = 0;
     let moved = 0;
 
+    // Moving lines between groups/categories is structural — never gated.
     for (const id of a.lineItemIds) {
       const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       // Missing / cross-org rows are skipped (parity with listByIdsForOrg dropping them).
@@ -794,12 +770,6 @@ export const moveLineItemsNative = mutation({
       if (destProject != null && line.projectId !== destProject) {
         skipped++;
         continue;
-      }
-      if (!guardedProjectIds.has(line.projectId)) {
-        const lineProject = await getProjectInOrg(ctx, line.projectId, a.orgId, new Map());
-        if (!lineProject) { skipped++; continue; }
-        await assertLifecycleGuard(ctx, lineProject, { kind: "structural", justification: a.justification });
-        guardedProjectIds.add(line.projectId);
       }
       if (line.groupId) affectedGroupIds.add(line.groupId);
       await ctx.db.patch(line._id, {

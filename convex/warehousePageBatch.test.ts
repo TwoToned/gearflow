@@ -30,6 +30,8 @@ const baseLine = (id: string, extra: Record<string, unknown>) => ({
   id,
   organizationId: ORG,
   projectId: "p1",
+  versionId: "v-p1",
+  lineageId: id,
   type: "EQUIPMENT" as const,
   quantity: 1,
   sortOrder: 0,
@@ -40,6 +42,17 @@ const baseLine = (id: string, extra: Record<string, unknown>) => ({
   updatedAt: NOW,
   ...extra,
 });
+
+/** #1228 — checkRecordOps.prepKitsBatch / warehouseOps.syncContainersBatch both
+ *  resolve the project's live version now. */
+async function seedProject(t: T) {
+  await t.run(async (ctx) => {
+    for (const id of ["p1", "p2"]) {
+      await ctx.db.insert("projects", { id, organizationId: ORG, projectNumber: id.toUpperCase(), name: "Gig", status: "CONFIRMED", isTemplate: false, liveVersionId: `v-${id}`, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: `v-${id}`, organizationId: ORG, projectId: id, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    }
+  });
+}
 
 const lineById = (t: T, id: string) =>
   t.run(async (ctx) => (await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique()));
@@ -56,12 +69,13 @@ describe("checkRecordOps.prepKitsBatch — bulk single-call + partial-success", 
       await ctx.db.insert("projectLineItems", baseLine("kl2", { kitId: "k2", isKitChild: false }));
       await ctx.db.insert("projectLineItems", baseLine("c2", { parentLineItemId: "kl2", isKitChild: true }));
       // Cross-project parent (same org, different project) — must be skipped.
-      await ctx.db.insert("projectLineItems", { ...baseLine("klX", { kitId: "kx", isKitChild: false }), projectId: "p2" });
+      await ctx.db.insert("projectLineItems", { ...baseLine("klX", { kitId: "kx", isKitChild: false }), projectId: "p2", versionId: "v-p2" });
     });
   }
 
   test("preps every eligible kit tree; skips cross-project / missing with per-item errors", async () => {
     const t = makeT();
+    await seedProject(t);
     await seedKits(t);
 
     const res = await t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepKitsBatch, {
@@ -86,6 +100,7 @@ describe("checkRecordOps.prepKitsBatch — bulk single-call + partial-success", 
 
   test("a cross-org parent id can't be prepped through another org's batch", async () => {
     const t = makeT();
+    await seedProject(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { ...baseLine("klO", { kitId: "ko", isKitChild: false }), organizationId: OTHER });
     });
@@ -104,6 +119,7 @@ describe("checkRecordOps.prepKitsBatch — bulk single-call + partial-success", 
 
   test("a non-service (user) token cannot call the batch", async () => {
     const t = makeT();
+    await seedProject(t);
     await seedKits(t);
     await expect(
       t.withIdentity({ subject: USER, orgId: ORG }).mutation(api.checkRecordOps.prepKitsBatch, {
@@ -139,6 +155,7 @@ describe("warehouseOps.syncContainersBatch — bulk single-call container roll-u
 
   test("rolls up N containers in one call — deployed→CHECKED_OUT, returned→RETURNED, mixed→no-op", async () => {
     const t = makeT();
+    await seedProject(t);
     await seedContainers(t);
 
     const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.syncContainersBatch, {
@@ -164,6 +181,7 @@ describe("warehouseOps.syncContainersBatch — bulk single-call container roll-u
 
   test("a non-service (user) token cannot call the batch", async () => {
     const t = makeT();
+    await seedProject(t);
     await seedContainers(t);
     await expect(
       t.withIdentity({ subject: USER, orgId: ORG }).mutation(api.warehouseOps.syncContainersBatch, {

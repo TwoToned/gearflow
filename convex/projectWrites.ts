@@ -18,20 +18,14 @@ import { getKitByCuid } from "./lib/kits";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 import {
-  assertLifecycleGuard,
+  assertPricingUnlocked,
   crossesIntoSnapshotStatus,
-  getOpenUnlockSession,
-  isRevertOutOfHardLock,
-  lifecycleAuditMetadata,
   LOCKED_PROJECT_FIELDS,
-  lockTierForStatus,
-  LOCK_TIER_RANK,
-  requireHardLockOverrideAllowed,
-  requireJustification,
+  requireCanUnlockPricing,
+  pricingLockRaiseFields,
 } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { hasAcceptedQuote } from "./lib/quoteState";
-import { autoCommitOpenSession } from "./projectUnlockSessionsWrites";
 
 /** Forward status transitions that a project's open BLOCKING comments must gate
  *  (parity with src/server/projects.ts BLOCKED_FORWARD_PROJECT_STATUSES). */
@@ -47,6 +41,8 @@ import { setAssetsStatus } from "./warehouseOps";
 import { removeLineItemCascadeCore } from "./projectLineItems";
 import { deleteCrewAssignmentCascadeCore } from "./crewAssignments";
 import { deleteAllForProjectCore } from "./projectCategories";
+import { liveRows, versionRows } from "./lib/versionScope";
+import { listProjectVersions, createLiveVersionForProject } from "./lib/projectVersionState";
 
 /**
  * Native PROJECT write mutations (Phase 5) — the MONEY-FREE project writes only:
@@ -130,13 +126,9 @@ export const updateStatusNative = mutation({
     // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
     // Expand-contract (mirrors convex/lineItemWrites.ts).
     emitSideEffects: v.optional(v.boolean()),
-    // #792: required only when this move REVERTS the project OUT of the
-    // HARD_LOCKED tier (COMPLETED/INVOICED → anything earlier) — audience +
-    // justification checked below. Ignored for every other transition.
-    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
@@ -157,51 +149,25 @@ export const updateStatusNative = mutation({
       await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
     }
 
-    // #792: reverting OUT of HARD_LOCKED (COMPLETED/INVOICED → earlier) is a
-    // trivial bypass of the hard lock unless restricted the same as opening a
-    // FULL unlock session — audience (admin/owner/PM) + a bounded justification,
-    // audited. COMPLETED → INVOICED stays HARD_LOCKED on both ends and is NOT a
-    // revert (normal forward move, ungated here).
-    //
-    // Unified with the unlock-session mechanism (not a second lock system): an
-    // OPEN FULL session already satisfies the SAME "deliberately correcting a
-    // hard-locked project" intent this check exists for — `assertLifecycleGuard`
-    // grants the identical escape for every other HARD_LOCKED write, so this is
-    // the one outlier that used to demand a brand-new justification even while a
-    // FULL session sat open. A FINANCIAL session does NOT count here, matching
-    // `assertLifecycleGuard`'s own FULL-only rule for HARD_LOCKED. No session
-    // (or a FINANCIAL one) still requires the caller's own justification, same
-    // as before.
-    let revertJustification: string | undefined;
-    if (from !== status && isRevertOutOfHardLock(from, status)) {
-      await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
-      const openSession = await getOpenUnlockSession(ctx, orgId, id);
-      if (openSession?.scope === "FULL") {
-        revertJustification = openSession.justification;
-      } else {
-        requireJustification(
-          justification,
-          "Reverting a completed project's status requires a justification (at least 10 characters).",
-        );
-        revertJustification = justification?.trim();
-      }
-    }
+    // #1230: the HARD_LOCKED tier (and its revert-out-of gate) is deleted along
+    // with the rest of the 4-tier lock system — #987 already made a client's
+    // stored document immutable regardless of project status, so a status
+    // revert out of COMPLETED/INVOICED needs no separate protection. A status
+    // change is always structural — never gated.
 
     // #986 (decision 3): a project may not advance to CONFIRMED until a quote
     // revision has been ACCEPTED — confirming a job the client never agreed to
-    // price is the failure the whole revision model exists to prevent. Overridable
-    // by the SAME narrow audience that can open a full unlock session (org
-    // admins/owners + this project's PMs) with the SAME bounded justification, so
-    // there is no new permission and no second copy of the bounds (R-3.1).
+    // price is the failure the whole revision model exists to prevent.
+    // Overridable by `canUnlockPricing`'s audience (D42 — owner/admin/manager,
+    // or this project's own PM). #1230 drops the freeform justification text
+    // this override used to require — `logActivity` already records who/what/
+    // when on every write, so a permission check is the whole gate now.
     // Deliberately only on an actual transition INTO CONFIRMED: re-saving a
     // project that is already CONFIRMED never re-prompts, and a later revision
     // superseding the accepted one doesn't retroactively invalidate the status.
-    if (from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now))) {
-      await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
-      requireJustification(
-        justification,
-        "This project has no accepted quote. Confirming anyway requires a justification (at least 10 characters).",
-      );
+    const confirmingWithoutQuote = from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now));
+    if (confirmingWithoutQuote) {
+      await requireCanUnlockPricing(ctx, orgId, id, actor.userId);
     }
 
     await ctx.db.patch(project._id, { status, updatedAt: now });
@@ -226,28 +192,16 @@ export const updateStatusNative = mutation({
       }
     }
 
-    // #957 precedence: "a forward status transition auto-commits any open
-    // session with an audit note — a session never silently spans a status
-    // change." Applied on every actual status change, not only forward ones,
-    // so a revert can't leave a stale session straddling two tiers either.
-    if (from !== status) {
-      await autoCommitOpenSession(ctx, orgId, id, project.projectNumber, actor, now);
+    // The whole rule (#1230, D-table): pricing locks when the project REACHES
+    // CONFIRMED. Idempotent (never re-stamps an already-locked project) and
+    // one-directional — a later revert (CONFIRMED -> QUOTING) deliberately
+    // does NOT clear it (D57): "this job has a quote out" stays true; only a
+    // person lowers the flag, via `unlockPricingNative`.
+    let pricingJustLocked = false;
+    if (from !== status && status === "CONFIRMED" && project.pricingLocked !== true) {
+      await ctx.db.patch(project._id, pricingLockRaiseFields(actor, now));
+      pricingJustLocked = true;
     }
-
-    // Locking itself has no dedicated status-change verb (unlocking does — see
-    // the explicit UNLOCK_OPENED/COMMITTED/DISCARDED actions in
-    // projectUnlockSessionsWrites.ts) — a status move can cross a lock-tier
-    // boundary in either direction, so stamp that onto THIS row rather than
-    // inventing a second action a caller would have to also watch for.
-    const fromTier = lockTierForStatus(from);
-    const toTier = lockTierForStatus(status);
-    const tierDelta = LOCK_TIER_RANK[toTier] - LOCK_TIER_RANK[fromTier];
-    const lockTierSuffix =
-      tierDelta > 0
-        ? ` — project locked (${toTier})`
-        : tierDelta < 0
-          ? ` — project unlocked (${toTier})`
-          : "";
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -258,21 +212,9 @@ export const updateStatusNative = mutation({
       entityName: project.projectNumber,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${lockTierSuffix}`,
+      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${pricingJustLocked ? " — pricing locked" : ""}`,
       details: { changes: [{ field: "status", from, to: status }] },
-      metadata: {
-        ...(tierDelta !== 0 ? { lockTierFrom: fromTier, lockTierTo: toTier } : {}),
-        ...(revertJustification
-          ? {
-              justification: revertJustification,
-              // Distinguishes "typed a fresh reason" from "an already-open FULL
-              // unlock session covered it" in the audit trail (#792 unification).
-              justificationSource: justification?.trim() ? "manual" : "unlock_session",
-            }
-          : justification?.trim()
-            ? { justification: justification.trim() } // CONFIRMED-without-quote gate path, unchanged
-            : {}),
-      },
+      metadata: pricingJustLocked ? { pricingLocked: true } : undefined,
       projectId: id,
       createdAt: now,
     });
@@ -417,12 +359,13 @@ const PROJECT_MONEY_ANCHORS = [
  *
  * `liveRevision` (#1080/#1085) is the NEW pointer at the version currently
  * projected onto the live tables — `revision` stays the allocator (highest
- * number ever handed out). Written only by `createNative` (seeded to 1) and the
- * version mutations (`quotesWrites.newVersionNative`,
- * `projectVersionsWrites.saveVersionNative`, and Phase 2's promote). A
- * client-settable `liveRevision` would let a browser caller point the project at
- * an arbitrary version with no restore, silently desyncing the live tables from
- * what the pointer claims is live.
+ * number ever handed out). Written only by `createNative` (seeded to 1) and
+ * `quotesWrites.newVersionNative` (the older `saveVersionNative`/promote
+ * mutations that also used to write it were deleted in #1229 Phase 3,
+ * superseded by `convex/versions.ts`'s `createNative`/`makeLiveNative` on the
+ * real `projectVersions` table). A client-settable `liveRevision` would let a
+ * browser caller point the project at an arbitrary version with no restore,
+ * silently desyncing the live tables from what the pointer claims is live.
  */
 const PROJECT_SERVER_OWNED = ["revision", "liveRevision"] as const;
 
@@ -520,10 +463,11 @@ export const updateNative = mutation({
     // no client-renumbered revisions, no in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
 
-    // #791/#792 finance soft-lock: setting or clearing a locked project field
-    // on a FINANCE_LOCKED+ project requires an open unlock session.
+    // #1230: setting or clearing a locked project field (taxRate/discountPercent)
+    // is a MONEY write, gated by `pricingLocked` — the project row itself is
+    // always "live" (no versionId concept on `projects`).
     const touchesLockedField = LOCKED_PROJECT_FIELDS.some((f) => f in setObj || clear.includes(f));
-    const lockGuard = touchesLockedField ? await assertLifecycleGuard(ctx, project, { kind: "financial" }) : null;
+    if (touchesLockedField) assertPricingUnlocked(project);
 
     // Bound-check the recalc-INPUT money fields — `set` is v.any() (Convex only
     // enforces "is a number", not range/finiteness), and a browser-direct caller
@@ -616,7 +560,6 @@ export const updateNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Updated project ${project.projectNumber} - ${name}`,
-      metadata: lockGuard ? lifecycleAuditMetadata(lockGuard) : undefined,
       projectId: id,
       createdAt: now,
     });
@@ -801,7 +744,18 @@ export const createNative = mutation({
       (insertFields as Record<string, unknown>).liveRevision = 1;
     }
 
-    await ctx.db.insert("projects", insertFields);
+    const newProjectDocId = await ctx.db.insert("projects", insertFields);
+    // #1228 — bootstrap version 1 + liveVersionId so this project's plan
+    // rows are visible to every by_versionId-family read from the moment it
+    // exists (see createLiveVersionForProject's own comment for why this is
+    // mandatory, not optional, on every project-creating write path).
+    await createLiveVersionForProject(ctx, {
+      orgId: fields.organizationId,
+      projectId: fields.id,
+      projectDocId: newProjectDocId,
+      now,
+      createdById: actor.userId,
+    });
     await bumpProjectCounters(ctx, fields.organizationId, null, insertFields);
 
     await writeActivityLog(ctx, {
@@ -902,11 +856,13 @@ export const deleteNative = mutation({
     }
 
     // ── Step 0: scan the project's line items (org-filtered) → collect the assets
-    // and kits to free. by_projectId is a project-scoped index; the org re-check is
-    // defensive (a project's lines always share its org).
+    // and kits to free.
+    // VERSION-SCOPE: all-versions — deleting the whole project entity must
+    // cascade EVERY version's rows, not just the live one (#1228).
+    const deleteVersions = await listProjectVersions(ctx, orgId, id);
     const lineItems = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((li) => li.organizationId === orgId);
+      await Promise.all(deleteVersions.map((v) => versionRows(ctx, "projectLineItems", v.id)))
+    ).flat().filter((li) => li.organizationId === orgId);
 
     const checkedOutAssetIds: string[] = [];
     const checkedOutKitIds: string[] = [];
@@ -961,9 +917,10 @@ export const deleteNative = mutation({
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);
     for (const r of tasks) await ctx.db.delete(r._id);
+    // VERSION-SCOPE: all-versions — see the line-items note above.
     const services = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((r) => r.organizationId === orgId);
+      await Promise.all(deleteVersions.map((v) => versionRows(ctx, "projectServices", v.id)))
+    ).flat().filter((r) => r.organizationId === orgId);
     for (const r of services) await ctx.db.delete(r._id);
 
     // Step 7 — grouping (categories / groups / slots).
@@ -976,9 +933,10 @@ export const deleteNative = mutation({
     ).filter((r) => r.organizationId === orgId);
     for (const r of rollups) await ctx.db.delete(r._id);
 
-    // Step 9 — #792: lifecycle snapshots + entries + unlock sessions (no FK to
-    // cascade automatically — extend this list, don't forget it, the way
-    // projectModelRevenues above was once missed).
+    // Step 9 — #792: lifecycle snapshots + entries (no FK to cascade
+    // automatically — extend this list, don't forget it, the way
+    // projectModelRevenues above was once missed). #1230 deleted the
+    // `projectUnlockSessions` table entirely — nothing left to cascade there.
     const snapshots = (
       await ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((s) => s.organizationId === orgId);
@@ -989,10 +947,6 @@ export const deleteNative = mutation({
       for (const e of entries) await ctx.db.delete(e._id);
       await ctx.db.delete(snap._id);
     }
-    const unlockSessions = (
-      await ctx.db.query("projectUnlockSessions").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((s) => s.organizationId === orgId);
-    for (const s of unlockSessions) await ctx.db.delete(s._id);
 
     // Finally — project row + active-project counter + DELETE audit.
     await bumpProjectCounters(ctx, orgId, project, null);
@@ -1047,7 +1001,7 @@ export const deleteTemplateNative = mutation({
       throw new ConvexError({ code: "NOT_A_TEMPLATE", message: "That ID points at a project, not a template." });
     }
 
-    // Project managers / tasks / services (org-filtered inline deletes).
+    // Project managers / tasks (org-filtered inline deletes).
     const pms = (
       await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);
@@ -1056,18 +1010,21 @@ export const deleteTemplateNative = mutation({
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);
     for (const r of tasks) await ctx.db.delete(r._id);
+    // VERSION-SCOPE: all-versions — deleting the whole template entity must
+    // cascade EVERY version's rows, not just the live one (#1228).
+    const templateDeleteVersions = await listProjectVersions(ctx, orgId, id);
     const services = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((r) => r.organizationId === orgId);
+      await Promise.all(templateDeleteVersions.map((v) => versionRows(ctx, "projectServices", v.id)))
+    ).flat().filter((r) => r.organizationId === orgId);
     for (const r of services) await ctx.db.delete(r._id);
 
     // Grouping (categories / groups / slots).
     await deleteAllForProjectCore(ctx, id);
 
-    // Template line items (top-level cascade → children + units).
+    // Template line items (top-level cascade → children + units). VERSION-SCOPE: all-versions.
     const lineItems = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((li) => li.organizationId === orgId);
+      await Promise.all(templateDeleteVersions.map((v) => versionRows(ctx, "projectLineItems", v.id)))
+    ).flat().filter((li) => li.organizationId === orgId);
     for (const li of lineItems) {
       if (li.parentLineItemId == null) await removeLineItemCascadeCore(ctx, li.id);
     }
@@ -1192,7 +1149,7 @@ export const duplicateNative = mutation({
     if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A project with code "${newProjectNumber}" already exists.` });
 
     // 1. New project row (children below reference its id).
-    await ctx.db.insert("projects", {
+    const newProjectDocId = await ctx.db.insert("projects", {
       id: newId,
       organizationId: orgId,
       projectNumber: newProjectNumber,
@@ -1203,11 +1160,16 @@ export const duplicateNative = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // #1228 — bootstrap version 1 + liveVersionId (see createNative's identical
+    // note). Every row inserted below is stamped with THIS new version's id and
+    // a FRESH lineageId (a duplicate starts its own lineage — it does not
+    // inherit the source's).
+    const newVersionId = await createLiveVersionForProject(ctx, {
+      orgId, projectId: newId, projectDocId: newProjectDocId, now, createdById: actor.userId,
+    });
 
-    // 2. Categories (sorted) → catIdMap.
-    const sourceCategories = (
-      await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    )
+    // 2. Categories (sorted) → catIdMap. LIVE-ONLY read of the source (#1228).
+    const sourceCategories = (await liveRows(ctx, source, "projectCategories"))
       .filter((c) => c.organizationId === orgId)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     const catIdMap = new Map<string, string>();
@@ -1218,6 +1180,8 @@ export const duplicateNative = mutation({
         id: nid,
         organizationId: orgId,
         projectId: newId,
+        versionId: newVersionId,
+        lineageId: nid,
         name: cat.name,
         sortOrder: cat.sortOrder ?? 0,
         createdAt: now,
@@ -1225,10 +1189,8 @@ export const duplicateNative = mutation({
       });
     }
 
-    // 3. Groups → groupIdMap (categoryId remapped).
-    const sourceGroups = (
-      await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    ).filter((g) => g.organizationId === orgId);
+    // 3. Groups → groupIdMap (categoryId remapped). LIVE-ONLY read (#1228).
+    const sourceGroups = (await liveRows(ctx, source, "projectGroups")).filter((g) => g.organizationId === orgId);
     const groupIdMap = new Map<string, string>();
     const groupById = new Map<string, (typeof sourceGroups)[number]>();
     for (const g of sourceGroups) groupById.set(g.id, g);
@@ -1239,6 +1201,8 @@ export const duplicateNative = mutation({
         id: nid,
         organizationId: orgId,
         projectId: newId,
+        versionId: newVersionId,
+        lineageId: nid,
         ...(group.categoryId ? { categoryId: catIdMap.get(group.categoryId) } : {}),
         title: group.title,
         ...(group.description != null ? { description: group.description } : {}),
@@ -1254,9 +1218,10 @@ export const duplicateNative = mutation({
     // 4. Line items — parents then their children. A parent's remapped
     //    category/group is inherited by its children (parity with the server's
     //    copyLineItem, which passes newCategoryId/newGroupId down to children).
-    const allLines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    ).filter((li) => li.organizationId === orgId) as unknown as SrcLine[];
+    // LIVE-ONLY read of the source (#1228).
+    const allLines = (await liveRows(ctx, source, "projectLineItems")).filter(
+      (li) => li.organizationId === orgId,
+    ) as unknown as SrcLine[];
     const childrenByParent = new Map<string, SrcLine[]>();
     for (const li of allLines) {
       if (li.isKitChild && li.parentLineItemId) {
@@ -1286,6 +1251,8 @@ export const duplicateNative = mutation({
         id: newParentId,
         organizationId: orgId,
         projectId: newId,
+        versionId: newVersionId,
+        lineageId: newParentId,
         ...(newCatId ? { categoryId: newCatId } : {}),
         ...(newGroupId ? { groupId: newGroupId } : {}),
         ...(li.type ? { type: li.type } : {}),
@@ -1313,10 +1280,13 @@ export const duplicateNative = mutation({
       } as Record<string, unknown> as never);
 
       for (const child of childrenByParent.get(li.id) ?? []) {
+        const newChildId = createId();
         await ctx.db.insert("projectLineItems", {
-          id: createId(),
+          id: newChildId,
           organizationId: orgId,
           projectId: newId,
+          versionId: newVersionId,
+          lineageId: newChildId,
           ...(newCatId ? { categoryId: newCatId } : {}),
           ...(newGroupId ? { groupId: newGroupId } : {}),
           ...(child.type ? { type: child.type } : {}),
@@ -1407,7 +1377,7 @@ export const saveAsTemplateNative = mutation({
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "create");
-    await resolveActor(ctx, suppliedActor);
+    const templateActor = await resolveActor(ctx, suppliedActor);
 
     // templateNumber/templateName — same "never Zod-parsed client-side" gap as
     // duplicateNative (see its comment); the ONLY bound check either ever gets (R-8.6.2).
@@ -1431,7 +1401,7 @@ export const saveAsTemplateNative = mutation({
 
     // 1. Template project row. Parity: saveAsTemplate copies FEWER scalars than
     //    duplicate — no taxRate, no billingWeeksOverride/DaysOverride.
-    await ctx.db.insert("projects", {
+    const newTemplateDocId = await ctx.db.insert("projects", {
       id: newId,
       organizationId: orgId,
       projectNumber: templateNumber,
@@ -1453,11 +1423,17 @@ export const saveAsTemplateNative = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // #1228 — bootstrap version 1 + liveVersionId (see createNative's note);
+    // every copied line below carries this new version's id + a fresh lineageId.
+    const newTemplateVersionId = await createLiveVersionForProject(ctx, {
+      orgId, projectId: newId, projectDocId: newTemplateDocId, now, createdById: templateActor.userId,
+    });
 
     // 2. Line items — parents then children. ★ categoryId/groupId OMITTED (parity).
-    const allLines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    ).filter((li) => li.organizationId === orgId) as unknown as SrcLine[];
+    // LIVE-ONLY read of the source (#1228).
+    const allLines = (await liveRows(ctx, source, "projectLineItems")).filter(
+      (li) => li.organizationId === orgId,
+    ) as unknown as SrcLine[];
     const childrenByParent = new Map<string, SrcLine[]>();
     for (const li of allLines) {
       if (li.isKitChild && li.parentLineItemId) {
@@ -1476,6 +1452,8 @@ export const saveAsTemplateNative = mutation({
         id: newParentId,
         organizationId: orgId,
         projectId: newId,
+        versionId: newTemplateVersionId,
+        lineageId: newParentId,
         ...(li.type ? { type: li.type } : {}),
         ...(li.modelId ? { modelId: li.modelId } : {}),
         ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
@@ -1501,10 +1479,13 @@ export const saveAsTemplateNative = mutation({
       } as Record<string, unknown> as never);
 
       for (const child of childrenByParent.get(li.id) ?? []) {
+        const newChildId = createId();
         await ctx.db.insert("projectLineItems", {
-          id: createId(),
+          id: newChildId,
           organizationId: orgId,
           projectId: newId,
+          versionId: newTemplateVersionId,
+          lineageId: newChildId,
           ...(child.type ? { type: child.type } : {}),
           ...(child.modelId ? { modelId: child.modelId } : {}),
           ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),

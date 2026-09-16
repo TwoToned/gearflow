@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import { getProjectWindow } from "./lib/projectWindow";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
  * BROWSER-facing native replacement for the warehouse LANDING list
@@ -75,12 +76,11 @@ export const bundle = query({
       string,
       Array<{ status: string; type: string; isKitChild: boolean }>
     >();
+    // LIVE-ONLY (#1228) — the warehouse landing counts the live plan.
     await Promise.all(
       pipeline.map(async (p) => {
-        const rows = await ctx.db
-          .query("projectLineItems")
-          .withIndex("by_projectId", (q) => q.eq("projectId", p.id))
-          .collect();
+        const versionId = await resolveLiveVersionIdForProject(ctx, p.id, orgId);
+        const rows = await versionRows(ctx, "projectLineItems", versionId);
         lineItemsByProject.set(
           p.id,
           rows.map((li) => ({

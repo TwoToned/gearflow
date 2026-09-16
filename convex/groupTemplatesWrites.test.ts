@@ -29,13 +29,17 @@ async function member(t: ReturnType<typeof convexTest>, role: string) {
 // ─── saveGroupAsTemplateNative ────────────────────────────────────────────────
 describe("groupTemplatesWrites.saveGroupAsTemplateNative", () => {
   async function seedGroup(t: ReturnType<typeof makeT>, orgId = ORG) {
+    // #1228 — every project needs a live projectVersions row + liveVersionId.
+    const versionId = `v-p1-${orgId}`;
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: orgId, projectId: "p1", title: "Stage Rig", sortOrder: 0 });
+      await ctx.db.insert("projects", { id: "p1", organizationId: orgId, projectNumber: "P-1", name: "Gig", status: "CONFIRMED", isTemplate: false, liveVersionId: versionId, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: versionId, organizationId: orgId, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: orgId, projectId: "p1", versionId, lineageId: "g1", title: "Stage Rig", sortOrder: 0 });
       // model line (templatable), kit line (templatable), free-text line (dropped), kit-child (dropped)
-      await ctx.db.insert("projectLineItems", { id: "liModel", organizationId: orgId, projectId: "p1", groupId: "g1", modelId: "m1", quantity: 2, sortOrder: 0, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
-      await ctx.db.insert("projectLineItems", { id: "liKit", organizationId: orgId, projectId: "p1", groupId: "g1", kitId: "k1", quantity: 1, sortOrder: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
-      await ctx.db.insert("projectLineItems", { id: "liFree", organizationId: orgId, projectId: "p1", groupId: "g1", description: "Labour", quantity: 1, sortOrder: 2, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
-      await ctx.db.insert("projectLineItems", { id: "liChild", organizationId: orgId, projectId: "p1", groupId: "g1", modelId: "m9", quantity: 1, sortOrder: 3, isKitChild: true, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "liModel", organizationId: orgId, projectId: "p1", versionId, lineageId: "liModel", groupId: "g1", modelId: "m1", quantity: 2, sortOrder: 0, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "liKit", organizationId: orgId, projectId: "p1", versionId, lineageId: "liKit", groupId: "g1", kitId: "k1", quantity: 1, sortOrder: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "liFree", organizationId: orgId, projectId: "p1", versionId, lineageId: "liFree", groupId: "g1", description: "Labour", quantity: 1, sortOrder: 2, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "liChild", organizationId: orgId, projectId: "p1", versionId, lineageId: "liChild", groupId: "g1", modelId: "m9", quantity: 1, sortOrder: 3, isKitChild: true, status: "CONFIRMED", type: "EQUIPMENT" });
     });
   }
   const args = { templateId: "tpl1", orgId: ORG, groupId: "g1", name: "Stage Kit", description: "reusable", now: NOW, actor: ACTOR, auditId: "log1" };
@@ -66,8 +70,10 @@ describe("groupTemplatesWrites.saveGroupAsTemplateNative", () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Empty", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "liFree", organizationId: ORG, projectId: "p1", groupId: "g1", description: "Labour", quantity: 1, sortOrder: 0, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED", isTemplate: false, liveVersionId: "v-p1-empty", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: "v-p1-empty", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", versionId: "v-p1-empty", lineageId: "g1", title: "Empty", sortOrder: 0 });
+      await ctx.db.insert("projectLineItems", { id: "liFree", organizationId: ORG, projectId: "p1", versionId: "v-p1-empty", lineageId: "liFree", groupId: "g1", description: "Labour", quantity: 1, sortOrder: 0, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.saveGroupAsTemplateNative, args),
@@ -224,15 +230,20 @@ describe("groupTemplatesWrites.applyNative", () => {
       await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "K1", name: "Rack", status: opts.kitStatus ?? "AVAILABLE" });
       // projectCategory the args reference (categoryId "cat1") — applyNative now
       // org-validates that FK, so it must exist in the org/project.
-      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "p1", name: "Cat", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "cat1", name: "Cat", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED",
         total: 999, taxRate: 10,
         ...(opts.projectDates ? { rentalStartDate: NOW, rentalEndDate: NOW + 86_400_000 } : {}),
+        liveVersionId: "v-p1",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Pre-existing standalone (ungrouped) line — bills into equipmentRevenue so
       // project.total is non-zero and proves recalc ran over the whole project.
-      await ctx.db.insert("projectLineItems", { id: "liStandalone", organizationId: ORG, projectId: "p1", quantity: 1, lineTotal: 50, sortOrder: 0, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "liStandalone", organizationId: ORG, projectId: "p1", quantity: 1, lineTotal: 50, sortOrder: 0, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1",
+        lineageId: "liStandalone",
+      });
     });
   }
   const args = {
@@ -302,8 +313,14 @@ describe("groupTemplatesWrites.applyNative", () => {
     await seedBase(t, { projectDates: true });
     // Another overlapping project already books kit k1 (a non-child kit parent line).
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P-2", name: "Other", status: "CONFIRMED", rentalStartDate: NOW, rentalEndDate: NOW + 86_400_000 });
-      await ctx.db.insert("projectLineItems", { id: "liOtherKit", organizationId: ORG, projectId: "p2", kitId: "k1", quantity: 1, sortOrder: 0, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P-2", name: "Other", status: "CONFIRMED", rentalStartDate: NOW, rentalEndDate: NOW + 86_400_000,
+        liveVersionId: "v-p2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "liOtherKit", organizationId: ORG, projectId: "p2", kitId: "k1", quantity: 1, sortOrder: 0, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p2",
+        lineageId: "liOtherKit",
+      });
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args);
     expect(res.kitWarnings).toHaveLength(1);
@@ -325,7 +342,10 @@ describe("groupTemplatesWrites.applyNative", () => {
     await member(t, "member");
     await t.run(async (ctx) => {
       await ctx.db.insert("groupTemplates", { id: "tpl1", organizationId: "org_other", name: "Theirs", createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED" });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED",
+        liveVersionId: "v-p1-2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1-2", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args),
@@ -338,5 +358,91 @@ describe("groupTemplatesWrites.applyNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // ─── #1221 follow-up — applyNative now takes an optional `versionId` ────────
+  // (closes Phase 5's Equipment write-side gap, extended to "Add group" →
+  // apply-template — see FEATUREDOCS/78 and unified-add-dialog.tsx's header).
+  describe("#1221 versionId follow-up", () => {
+    async function seedSecondVersionWithCategory(t: ReturnType<typeof makeT>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectVersions", { id: "v-p1-b", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+        // A category on the NON-live version, since applyNative's categoryId
+        // arg is org-checked but not itself version-checked (pre-existing,
+        // same laxity as its sibling createGroupNative's own categoryId
+        // check) — the fixture still targets a category that plausibly
+        // belongs to the version being written to.
+        await ctx.db.insert("projectCategories", { id: "cat1-b", organizationId: ORG, projectId: "p1", versionId: "v-p1-b", lineageId: "cat1-b", name: "Cat v2", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      });
+    }
+
+    test("defaults to the live version when versionId is absent", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args);
+      await t.run(async (ctx) => {
+        const group = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first();
+        expect(group?.versionId).toBe("v-p1");
+        const mLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "mLine1")).first();
+        expect(mLine?.versionId).toBe("v-p1");
+        const kLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kLine1")).first();
+        expect(kLine?.versionId).toBe("v-p1");
+      });
+    });
+
+    test("targets the named non-live version — group, model line, AND expanded kit children all land there", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await seedSecondVersionWithCategory(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, { ...args, categoryId: "cat1-b", versionId: "v-p1-b" });
+      await t.run(async (ctx) => {
+        const group = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first();
+        expect(group?.versionId).toBe("v-p1-b");
+        const mLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "mLine1")).first();
+        expect(mLine?.versionId).toBe("v-p1-b");
+        const kLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kLine1")).first();
+        expect(kLine?.versionId).toBe("v-p1-b");
+        // Kit's expanded serialized-member child also lands on the target version.
+        const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "kLine1")).collect();
+        expect(kids).toHaveLength(1);
+        expect(kids[0].versionId).toBe("v-p1-b");
+        // LIVE version's totals are untouched by a non-live apply (recalc is
+        // always LIVE-ONLY persist) — the pre-seeded standalone line is all
+        // that's billed.
+        const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+        expect(project?.total).toBe(55);
+      });
+    });
+
+    test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "pOther", organizationId: "org_2", projectNumber: "PO", name: "Foreign", status: "QUOTED", liveVersionId: "v-other" });
+        await ctx.db.insert("projectVersions", { id: "v-other", organizationId: "org_2", projectId: "pOther", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, { ...args, versionId: "v-other" }),
+      ).rejects.toThrow();
+      // Nothing landed — the whole apply is atomic.
+      const group = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first());
+      expect(group).toBeNull();
+    });
+
+    test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other Gig", status: "QUOTED", liveVersionId: "v-p2" });
+        await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, { ...args, versionId: "v-p2" }),
+      ).rejects.toThrow();
+    });
   });
 });

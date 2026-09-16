@@ -478,8 +478,7 @@ export function InlineEditableDiscount({
   );
 }
 
-/** Reads a `ConvexError`'s structured `data.code`, the pattern
- *  `use-justified-mutation.ts` already uses for `JUSTIFICATION_REQUIRED`. */
+/** Reads a `ConvexError`'s structured `data.code`. */
 function convexErrorCode(e: unknown): string | undefined {
   if (!(e instanceof ConvexError) || typeof e.data !== "object" || e.data === null) return undefined;
   const code = (e.data as { code?: unknown }).code;

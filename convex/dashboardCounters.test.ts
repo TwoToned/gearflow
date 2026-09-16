@@ -44,18 +44,45 @@ async function seed(t: ReturnType<typeof convexTest>) {
 
     // Projects: 2 active (CONFIRMED, ON_SITE), 1 template (excluded), 1 QUOTED (not active),
     // 1 overdue (CHECKED_OUT, past rentalEndDate) with a checked-out line item.
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "P1", status: "CONFIRMED", isTemplate: false });
-    await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "P2", status: "ON_SITE", isTemplate: false });
-    await ctx.db.insert("projects", { id: "pt", organizationId: ORG, projectNumber: "PT", name: "PT", status: "CONFIRMED", isTemplate: true });
-    await ctx.db.insert("projects", { id: "pq", organizationId: ORG, projectNumber: "PQ", name: "PQ", status: "QUOTED", isTemplate: false });
-    await ctx.db.insert("projects", { id: "pov", organizationId: ORG, projectNumber: "POV", name: "POV", status: "CHECKED_OUT", isTemplate: false, rentalEndDate: NOW - DAY });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "P1", status: "CONFIRMED", isTemplate: false,
+      liveVersionId: "v-p1",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "P2", status: "ON_SITE", isTemplate: false,
+      liveVersionId: "v-p2",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projects", { id: "pt", organizationId: ORG, projectNumber: "PT", name: "PT", status: "CONFIRMED", isTemplate: true,
+      liveVersionId: "v-pt",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-pt", organizationId: ORG, projectId: "pt", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projects", { id: "pq", organizationId: ORG, projectNumber: "PQ", name: "PQ", status: "QUOTED", isTemplate: false,
+      liveVersionId: "v-pq",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-pq", organizationId: ORG, projectId: "pq", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projects", { id: "pov", organizationId: ORG, projectNumber: "POV", name: "POV", status: "CHECKED_OUT", isTemplate: false, rentalEndDate: NOW - DAY,
+      liveVersionId: "v-pov",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-pov", organizationId: ORG, projectId: "pov", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
 
     // p2 + pov are active (ON_SITE / CHECKED_OUT). p1 active (CONFIRMED). pov also overdue.
     // overdueReturns: CHECKED_OUT line items in pov.
-    await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "pov", status: "CHECKED_OUT", quantity: 1 });
-    await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "pov", status: "CHECKED_OUT", quantity: 1 });
-    await ctx.db.insert("projectLineItems", { id: "li3", organizationId: ORG, projectId: "pov", status: "RETURNED", quantity: 1 }); // not counted
-    await ctx.db.insert("projectLineItems", { id: "li4", organizationId: ORG, projectId: "p1", status: "CHECKED_OUT", quantity: 1 }); // p1 not overdue
+    await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "pov", status: "CHECKED_OUT", quantity: 1,
+      versionId: "v-pov",
+      lineageId: "li1",
+    });
+    await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "pov", status: "CHECKED_OUT", quantity: 1,
+      versionId: "v-pov",
+      lineageId: "li2",
+    });
+    await ctx.db.insert("projectLineItems", { id: "li3", organizationId: ORG, projectId: "pov", status: "RETURNED", quantity: 1,
+      versionId: "v-pov",
+      lineageId: "li3",
+    }); // not counted
+    await ctx.db.insert("projectLineItems", { id: "li4", organizationId: ORG, projectId: "p1", status: "CHECKED_OUT", quantity: 1,
+      versionId: "v-p1",
+      lineageId: "li4",
+    }); // p1 not overdue
 
     // Crew: 2 ACTIVE, 1 INACTIVE (excluded).
     const crew = (id: string, status: string) =>
@@ -124,8 +151,14 @@ describe("dashboardCounters", () => {
       // One genuinely due record for a positive control.
       await ctx.db.insert("maintenanceRecords", { id: "mr_due", organizationId: ORG, title: "due", type: "REPAIR", status: "IN_PROGRESS", scheduledDate: NOW - DAY });
       // Non-terminal project with NO rentalEndDate — swept by the lt range, must be excluded.
-      await ctx.db.insert("projects", { id: "p_nd", organizationId: ORG, projectNumber: "PND", name: "PND", status: "CHECKED_OUT", isTemplate: false });
-      await ctx.db.insert("projectLineItems", { id: "li_nd", organizationId: ORG, projectId: "p_nd", status: "CHECKED_OUT", quantity: 1 });
+      await ctx.db.insert("projects", { id: "p_nd", organizationId: ORG, projectNumber: "PND", name: "PND", status: "CHECKED_OUT", isTemplate: false,
+        liveVersionId: "v-p_nd",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p_nd", organizationId: ORG, projectId: "p_nd", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "li_nd", organizationId: ORG, projectId: "p_nd", status: "CHECKED_OUT", quantity: 1,
+        versionId: "v-p_nd",
+        lineageId: "li_nd",
+      });
     });
     // No reconcile → countersReady false, but the date-derived metrics still compute.
     const stats = await t.withIdentity(asUser(ORG)).query(api.dashboardStats.bundle, { orgId: ORG, now: NOW });

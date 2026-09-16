@@ -9,14 +9,12 @@ import { generateQuoteArtifact } from "@/server/finance-documents";
 import { api } from "../../convex/_generated/api";
 import {
   quoteAcceptSchema,
-  quoteCorrectSchema,
   quoteDeclineSchema,
   quoteDeleteRecalledSchema,
   quoteRecallSchema,
   quoteSendSchema,
   quoteSetLabelSchema,
   type QuoteAcceptValues,
-  type QuoteCorrectValues,
   type QuoteDeclineValues,
   type QuoteDeleteRecalledValues,
   type QuoteRecallValues,
@@ -50,15 +48,9 @@ export function useQuoteWrites() {
   const recallM = useMutation(api.quotesWrites.recallNative);
   const newVersionM = useMutation(api.quotesWrites.newVersionNative);
   const acceptM = useMutation(api.quotesWrites.markAcceptedNative);
-  const unacceptM = useMutation(api.quotesWrites.unacceptNative);
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
-  const repriceFromRevisionM = useMutation(api.quotesWrites.repriceFromRevisionNative);
-  const deleteDraftM = useMutation(api.quotesWrites.deleteDraftNative);
-  const deleteVersionM = useMutation(api.quotesWrites.deleteVersionNative);
   const deleteRecalledM = useMutation(api.quotesWrites.deleteRecalledNative);
-  const setProtectedM = useMutation(api.quotesWrites.setQuoteProtectedNative);
   const setLabelM = useMutation(api.quotesWrites.setQuoteLabelNative);
-  const correctM = useMutation(api.quotesWrites.correctQuoteNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -78,9 +70,20 @@ export function useQuoteWrites() {
      * "document failed — retry" state in the rail rather than a silent gap. That
      * is why `artifactReady` is reported rather than thrown.
      */
+    /**
+     * `versionId` (#1233, Phase 6) — the REAL `projectVersions` row to
+     * quote from; omitted ⇒ the project's live version, byte-identical to
+     * every pre-Phase-6 caller. `project-quote-rail.tsx` (the OLDER,
+     * live-revision-only Finance tab) doesn't pass one yet — wiring a UI
+     * surface to target a non-live version when sending is a deliberate,
+     * documented follow-up (FEATUREDOCS/78's Phase 6 section), not attempted
+     * this phase. This threading exists so that follow-up is a call, not a
+     * rewrite.
+     */
     send: async (
       projectId: string,
       data: QuoteSendValues = {},
+      versionId?: string,
     ): Promise<{
       id: string;
       version: number;
@@ -101,6 +104,7 @@ export function useQuoteWrites() {
         recipientContactId: parsed.recipientContactId || undefined,
         notes: parsed.notes || undefined,
         labelOnDocument: parsed.labelOnDocument || undefined,
+        versionId,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),
@@ -176,22 +180,6 @@ export function useQuoteWrites() {
       return res;
     },
 
-    /** Unapprove (#1032) — the reverse of `markAccepted`: `ACCEPTED → SENT`,
-     *  clearing the acceptance fields and the protected flag Accept auto-set,
-     *  in one step. Same `invoice:publish` audience as accept itself; no
-     *  reason is collected (it undoes the same action, not a separate
-     *  business decision the way recall/decline are). */
-    unaccept: async (quoteId: string): Promise<{ id: string; version: number }> => {
-      const org = requireOrg();
-      return await unacceptM({
-        id: quoteId,
-        organizationId: org,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-    },
-
     markDeclined: async (
       quoteId: string,
       data: QuoteDeclineValues,
@@ -202,54 +190,6 @@ export function useQuoteWrites() {
         id: quoteId,
         organizationId: org,
         reason: parsed.reason,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-    },
-
-    /** "Use v2's pricing for v4" (#989 §8.1) — cut the next draft revision
-     *  seeded with an earlier revision's money fields. Structure (gear,
-     *  quantities, dates) is untouched. */
-    repriceFromRevision: async (
-      projectId: string,
-      sourceQuoteId: string,
-    ): Promise<{ id: string; version: number; sourceVersion: number }> => {
-      const org = requireOrg();
-      return await repriceFromRevisionM({
-        id: createId(),
-        organizationId: org,
-        projectId,
-        sourceQuoteId,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-    },
-
-    /** Undo a fat-fingered "new version" (#1028) — only reachable for a DRAFT
-     *  that has never been sent; the server rejects anything with send history
-     *  (that's `deleteRecalled` below). Rolls `projects.revision` back. */
-    deleteDraft: async (quoteId: string): Promise<{ id: string; deletedVersion: number; revision: number }> => {
-      const org = requireOrg();
-      return await deleteDraftM({
-        id: quoteId,
-        organizationId: org,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-    },
-
-    /** Delete a saved-but-never-sent version (#1080/#1097) — the version-list
-     *  counterpart to `deleteDraft` above for a NON-live never-sent row (one
-     *  `saveVersion`/an auto-capture left behind). Touches neither
-     *  `revision` nor `liveRevision`. */
-    deleteVersion: async (quoteId: string): Promise<{ id: string; deletedVersion: number }> => {
-      const org = requireOrg();
-      return await deleteVersionM({
-        id: quoteId,
-        organizationId: org,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),
@@ -294,62 +234,10 @@ export function useQuoteWrites() {
       });
     },
 
-    /** Protect/unprotect (#1030) — owner-only soft lock independent of quote
-     *  status. While protected, Recall and Correction both refuse. */
-    setProtected: async (
-      quoteId: string,
-      protect: boolean,
-    ): Promise<{ id: string; version: number; protected: boolean }> => {
-      const org = requireOrg();
-      return await setProtectedM({
-        id: quoteId,
-        organizationId: org,
-        protect,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-    },
-
-    /** Correction (#1031) — an audited fix to the date PRINTED on a SENT/
-     *  ACCEPTED revision. No version bump, no price change, `sentAt` (the
-     *  system's true send record) is never touched. Owner-only, blocked while
-     *  protected. Clears the attached artifact so the next document render is
-     *  forced fresh, then renders it immediately — same `artifactReady`
-     *  never-throws shape as `send`, so a render failure doesn't undo the
-     *  already-committed date fix. No visible marker distinguishes a
-     *  corrected document from an original one on the page itself; the
-     *  record of the correction lives in the activity log and
-     *  `correctedAt`/`correctedById`, not on the PDF. */
-    correct: async (
-      quoteId: string,
-      data: QuoteCorrectValues,
-    ): Promise<{
-      id: string;
-      version: number;
-      quoteDate: number;
-      validUntil: number;
-      artifactReady: boolean;
-    }> => {
-      const org = requireOrg();
-      const parsed = quoteCorrectSchema.parse(data);
-      const result = await correctM({
-        id: quoteId,
-        organizationId: org,
-        quoteDate: parsed.quoteDate.getTime(),
-        validityDays: parsed.validityDays,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-
-      let artifactReady = true;
-      try {
-        await generateQuoteArtifact(result.id);
-      } catch {
-        artifactReady = false;
-      }
-      return { ...result, artifactReady };
-    },
+    // #1230 note: Protect/Unprotect (already a removed verb, #1229 Phase 3)
+    // and Correction (`correctQuoteNative`) are DELETED — the whole
+    // protect/unprotect mechanism is gone, so there is nothing left to gate
+    // a "correct a sent quote's date" verb on. `quotes.protected` itself is
+    // schema-deprecated (never read/written by any code path anymore).
   };
 }

@@ -32,14 +32,25 @@ describe("projectCosts.operationalCosts", () => {
         id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Job",
         total: 1000, equipmentRevenue: 800, serviceCostTotal: 100, labourCostTotal: 50, subHireCostTotal: 25,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // counted service (non-cancelled, has a charge set)
-      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", lineTotal: 200, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", lineTotal: 200, createdAt: NOW, updatedAt: NOW,
+        versionId: "v-p1",
+        lineageId: "s1",
+      });
       // excluded: cancelled (even though charged)
-      await ctx.db.insert("projectServices", { id: "s2", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CANCELLED", lineTotal: 999, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectServices", { id: "s2", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CANCELLED", lineTotal: 999, createdAt: NOW, updatedAt: NOW,
+        versionId: "v-p1",
+        lineageId: "s2",
+      });
       // excluded: no charge set (lineTotal unset) — billable is derived from the
       // charge, not a separate showOnDocuments flag
-      await ctx.db.insert("projectServices", { id: "s3", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectServices", { id: "s3", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+        versionId: "v-p1",
+        lineageId: "s3",
+      });
       // maintenance: one counted, one cancelled
       await ctx.db.insert("maintenanceRecords", { id: "mr1", organizationId: ORG, projectId: "p1", type: "REPAIR", status: "SCHEDULED", title: "Fix", reportedById: USER, cost: 40, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("maintenanceRecords", { id: "mr2", organizationId: ORG, projectId: "p1", type: "REPAIR", status: "CANCELLED", title: "X", reportedById: USER, cost: 999, createdAt: NOW, updatedAt: NOW });
@@ -63,7 +74,9 @@ describe("projectCosts.operationalCosts", () => {
         total: 1000, equipmentRevenue: 700, saleRevenue: 300, saleCostTotal: 120,
         serviceCostTotal: 0, labourCostTotal: 0, subHireCostTotal: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-2",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-2", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     const r = await t.withIdentity(asUser).query(api.projectCosts.operationalCosts, { projectId: "p1", orgId: ORG });
     expect(r.saleRevenue).toBe(300);
@@ -76,7 +89,10 @@ describe("projectCosts.operationalCosts", () => {
     const t = makeT();
     await seedMember(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "pX", organizationId: OTHER, projectNumber: "P-X", name: "Other", total: 5000, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { id: "pX", organizationId: OTHER, projectNumber: "P-X", name: "Other", total: 5000, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-pX",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pX", organizationId: OTHER, projectId: "pX", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     const r = await t.withIdentity(asUser).query(api.projectCosts.operationalCosts, { projectId: "pX", orgId: ORG });
     expect(r.total).toBe(0);

@@ -21,6 +21,40 @@ the `VERSION_SAVED`/`PRE_PROMOTE` snapshot reasons. Phase 2 (#1089, merged) —
 revision can be made live, but editing it afterwards is still refused by the
 existing quote-derived lock until that phase lands.
 
+> **⚠️ Not to be confused with "Project versioning v2" (#1226, parent #1221,
+> `docs/designs/project-versioning-v2.md`).** That is a SEPARATE, newer
+> program that eventually SUPERSEDES the snapshot-based model this whole doc
+> describes, replacing the numeric-only `revision`/`liveRevision` pair with a
+> real `projectVersions` table (one row per version) and `versionId`/
+> `lineageId` FKs stamped directly onto `projectCategories`/`projectGroups`/
+> `projectLineItems`/`projectServices`/`categorySlots`, plus `projects.liveVersionId`
+> pointing at the live row. Phase 1 of that program (#1226) landed the table,
+> the columns and a one-time backfill (`convex/backfillProjectVersions.ts`) —
+> **purely additive**: every project (templates included) now has exactly one
+> `projectVersions` row and a `liveVersionId`, and every current child row is
+> stamped, but NOTHING on this page (or anywhere else in the app) reads any of
+> it yet. The switcher, the read-only bar and everything else below this line
+> still run entirely on `revision`/`liveRevision`/`projectSnapshots` — this
+> doc stays accurate until a later phase of #1221 actually migrates the read
+> path, at which point this doc gets rewritten, not just appended to.
+>
+> **Update (2026-09-16, Phase 5 of #1221, #1231):** that later phase landed —
+> partially. The header dropdown described below, the read-only bar, "Make vN
+> live" (the promote dialog) and the version-projected Equipment/Labour/
+> Finance tabs are ALL DELETED, replaced by `version-switcher.tsx` (the new
+> header pill), `versions-panel.tsx`, `version-strip.tsx` and
+> `finance/make-live-dialog.tsx` — all running on the REAL `projectVersions`
+> table, not `projectSnapshots`. **What this doc still accurately describes**:
+> `ProjectQuoteRail` (the Finance tab's quote section) and the whole quote-
+> revision/send/accept/decline/recall/snapshot workflow underneath it —
+> Phase 5 only removed that rail's now-dead Promote/Reprice/Delete-draft
+> actions and drift-indicator import (their mutations were already throwing
+> stubs since #1229 Phase 3); Send/Accept/Decline/Recall/View/Rename/Delete-
+> recalled are unchanged and this doc's description of them still holds. See
+> FEATUREDOCS/78's Phase 5 section for the full picture, including the
+> documented gap (new equipment/group/category/service inserts on a non-live
+> version still land on the live one).
+
 ## The model (unchanged from Phase 1, restated for this phase)
 
 ```

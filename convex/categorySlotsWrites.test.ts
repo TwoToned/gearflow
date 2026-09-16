@@ -28,18 +28,27 @@ async function member(t: ReturnType<typeof convexTest>, role: string) {
 }
 
 /** A minimal project so recalcProjectTotals has a row to sweep + patch. */
+/** #1228 — deterministic per-(project,org) version id. */
+function versionIdFor(id: string, orgId: string): string {
+  return `v-${id}-${orgId}`;
+}
+
 async function seedProject(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) {
+  const versionId = versionIdFor(id, orgId);
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-      total: 999,
+      total: 999, liveVersionId: versionId,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1",
     });
   });
 }
 
 async function seedCategory(t: ReturnType<typeof makeT>, id: string, projectId = "p1", orgId = ORG) {
   await t.run(async (ctx) => {
-    await ctx.db.insert("projectCategories", { id, organizationId: orgId, projectId, name: id, sortOrder: 0 });
+    await ctx.db.insert("projectCategories", { id, organizationId: orgId, projectId, versionId: versionIdFor(projectId, orgId), lineageId: id, name: id, sortOrder: 0 });
   });
 }
 
@@ -58,8 +67,7 @@ describe("categorySlotsWrites.moveSubHireGroupToCategory", () => {
       // Top-level synthetic parent line for the sub-hire group.
       await ctx.db.insert("projectLineItems", {
         id: "li1", organizationId: ORG, projectId: "p1", subHireId: "sh1", subHireGroupId: "shg1",
-        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
-      });
+        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
   }
 
@@ -141,22 +149,17 @@ describe("categorySlotsWrites.moveSubHireGroupToCategory", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 
-  // Gap fix: moveSubHireGroupToCategory previously never called assertLifecycleGuard.
-  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  // #1230: moving a sub-hire group's placement is structural — succeeds on an
+  // ON_SITE (or any status) project with no gate at all, no justification arg.
+  test("succeeds on an ON_SITE project — structural, never gated", async () => {
     const t = makeT();
     await seedSubHireGroup(t);
     await seedCategory(t, "cat1");
     await t.run(async (ctx) => {
       await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "ON_SITE" });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveSubHireGroupToCategory, {
-        groupId: "shg1", orgId: ORG, categoryId: "cat1", slotId: "sl1", now: NOW, actor: ACTOR, auditId: "log1",
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveSubHireGroupToCategory, {
-      groupId: "shg1", orgId: ORG, categoryId: "cat1", slotId: "sl1", now: NOW + 1, actor: ACTOR, auditId: "log1",
-      justification: "Client requested a change while on site today.",
+      groupId: "shg1", orgId: ORG, categoryId: "cat1", slotId: "sl1", now: NOW, actor: ACTOR, auditId: "log1",
     });
     await t.run(async (ctx) => {
       const shg = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", "shg1")).first();
@@ -173,11 +176,10 @@ describe("categorySlotsWrites.moveProjectGroupToCategory", () => {
     await seedCategory(t, "cat1");
     await seedCategory(t, "cat2");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
       await ctx.db.insert("projectLineItems", {
         id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1",
-        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
-      });
+        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
       await ctx.db.insert("categorySlots", { id: "slOld", projectCategoryId: "cat1", projectGroupId: "g1", sortOrder: 0 });
     });
   }
@@ -248,7 +250,7 @@ describe("categorySlotsWrites.moveProjectGroupToCategory", () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: "org_other", projectId: "p9", title: "Theirs", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: "org_other", projectId: "p9", title: "Theirs", sortOrder: 0, versionId: versionIdFor("p9", "org_other"), lineageId: "g1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveProjectGroupToCategory, {
@@ -267,19 +269,17 @@ describe("categorySlotsWrites.moveProjectGroupToCategory", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 
-  // Gap fix: moveProjectGroupToCategory previously never called assertLifecycleGuard.
-  test("rejects on a HARD_LOCKED (COMPLETED) project with no open FULL unlock session", async () => {
+  // #1230: HARD_LOCKED (and the whole 4-tier system) is deleted — moving a
+  // group's placement is structural and succeeds on a COMPLETED project too.
+  test("succeeds on a COMPLETED project — structural, never gated", async () => {
     const t = makeT();
     await seedProjectGroup(t);
     await t.run(async (ctx) => {
       await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "COMPLETED" });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveProjectGroupToCategory, {
-        groupId: "g1", orgId: ORG, categoryId: "cat2", slotId: "slNew", now: NOW, actor: ACTOR, auditId: "log1",
-        justification: "Doesn't matter — HARD_LOCKED needs a session, not a reason.",
-      }),
-    ).rejects.toThrow(/PROJECT_LOCKED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveProjectGroupToCategory, {
+      groupId: "g1", orgId: ORG, categoryId: "cat2", slotId: "slNew", now: NOW, actor: ACTOR, auditId: "log1",
+    });
   });
 });
 
@@ -291,7 +291,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     await seedProject(t);
     await seedCategory(t, "cat1");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
       await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "sup1", createdById: USER, projectId: "p1", orderNumber: "SO-1" });
       await ctx.db.insert("subHireGroups", { id: "shg1", subHireId: "sh1", title: "SHG", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "slPg", projectCategoryId: "cat1", projectGroupId: "g1", sortOrder: 0 });
@@ -322,7 +322,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     await seedProject(t);
     await seedCategory(t, "cat1");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
     });
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
       orgId: ORG, categoryId: "cat1",
@@ -365,25 +365,18 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 
-  // Gap fix: reorderMixedGroupsInCategory previously never called assertLifecycleGuard.
-  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  // #1230: reordering is display-only/structural — succeeds on an ON_SITE
+  // project too, no gate, no justification arg.
+  test("succeeds on an ON_SITE project — structural, never gated", async () => {
     const t = makeT();
     await seedMixed(t);
     await t.run(async (ctx) => {
       await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "ON_SITE" });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
-        orgId: ORG, categoryId: "cat1",
-        items: [{ prefixedId: "shg-shg1", newSlotId: "n1" }, { prefixedId: "pg-g1", newSlotId: "n2" }],
-        now: NOW, actor: ACTOR,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
       orgId: ORG, categoryId: "cat1",
       items: [{ prefixedId: "shg-shg1", newSlotId: "n1" }, { prefixedId: "pg-g1", newSlotId: "n2" }],
-      now: NOW + 1, actor: ACTOR,
-      justification: "Client requested a change while on site today.",
+      now: NOW, actor: ACTOR,
     });
     await t.run(async (ctx) => {
       const shgSlot = (await ctx.db.query("categorySlots").withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", "shg1")).collect())[0];
@@ -396,7 +389,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     const t = makeT();
     await seedMixed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", description: "Standalone", quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", description: "Standalone", quantity: 1, versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     // Line item first, then the sub-hire group, then the project group.
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
@@ -423,7 +416,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     await seedMixed(t);
     await seedCategory(t, "cat2");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat2", description: "Elsewhere", quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat2", description: "Elsewhere", quantity: 1, versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
@@ -438,7 +431,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     const t = makeT();
     await seedMixed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", groupId: "g1", description: "Grouped", quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", groupId: "g1", description: "Grouped", quantity: 1, versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
@@ -460,9 +453,9 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
     await seedProject(t);
     await t.run(async (ctx) => {
       // Existing category so create-at-end computes sortOrder 1.
-      await ctx.db.insert("projectCategories", { id: "cat0", organizationId: ORG, projectId: "p1", name: "cat0", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectCategories", { id: "cat0", organizationId: ORG, projectId: "p1", name: "cat0", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "cat0",});
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, {
       ...base, slot: { projectGroupId: "g1" },
@@ -493,7 +486,7 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "sup1", createdById: USER, projectId: "p1", orderNumber: "SO-1" });
       await ctx.db.insert("subHireGroups", { id: "shg1", subHireId: "sh1", title: "SHG", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", subHireId: "sh1", subHireGroupId: "shg1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", subHireId: "sh1", subHireGroupId: "shg1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, {
       ...base, slot: { subHireGroupId: "shg1" },
@@ -524,7 +517,7 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "pOther", title: "Elsewhere", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "pOther", title: "Elsewhere", sortOrder: 0, versionId: versionIdFor("pOther", ORG), lineageId: "g1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, {
@@ -541,5 +534,68 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
         ...base, slot: { projectGroupId: "g1" },
       }),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // ── #1221 follow-up — optional `versionId`, default live, validated ────────
+  describe("#1221 versionId follow-up", () => {
+    async function seedSecondVersion(t: ReturnType<typeof makeT>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectVersions", { id: `${versionIdFor("p1", ORG)}-b`, organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      });
+    }
+
+    test("defaults to the live version when versionId is absent", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1" });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" } });
+      const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "catNew")).first());
+      expect(cat?.versionId).toBe(versionIdFor("p1", ORG));
+    });
+
+    test("targets the named non-live version when the moved group already lives there", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      const nonLive = `${versionIdFor("p1", ORG)}-b`;
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: nonLive, lineageId: "g1" });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" }, versionId: nonLive });
+      const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "catNew")).first());
+      expect(cat?.versionId).toBe(nonLive);
+    });
+
+    test("rejects when the moved group lives in a DIFFERENT version than the target", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      const nonLive = `${versionIdFor("p1", ORG)}-b`;
+      await t.run(async (ctx) => {
+        // Group is on LIVE, but the caller asks for the non-live target.
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" }, versionId: nonLive }),
+      ).rejects.toThrow(/does not belong to the target version/i);
+    });
+
+    test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedProject(t, "pOther", "org_2");
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" }, versionId: versionIdFor("pOther", "org_2") }),
+      ).rejects.toThrow();
+    });
   });
 });

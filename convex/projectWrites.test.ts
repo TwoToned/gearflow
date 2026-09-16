@@ -22,9 +22,12 @@ const SERVICE = { subject: "gearflow-service", svc: true };
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 const ACTOR = { userId: USER, userName: "Alice" };
 
+/** #1228 — every project needs a live projectVersions row + liveVersionId,
+ *  or every by_versionId-family read/write on it throws. */
 async function seedProject(t: ReturnType<typeof convexTest>, role?: string, isTemplate = false, status = "CONFIRMED") {
   await t.run(async (ctx) => {
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status, isTemplate, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status, isTemplate, liveVersionId: "v1", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     if (role) await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
   });
 }
@@ -141,10 +144,10 @@ describe("projectWrites.updateStatusNative", () => {
 });
 
 // #986 (decision 3) — a project may not advance to CONFIRMED until a quote
-// revision has been ACCEPTED. Overridable by the SAME narrow audience that can
-// open a full unlock session (org admins/owners + this project's PMs) with the
-// SAME bounded justification as #792/#793 — no new permission, no second copy of
-// the bounds (R-3.1).
+// revision has been ACCEPTED. Overridable by `canUnlockPricing`'s audience
+// (org admins/owners/managers + this project's PMs) — #1230 drops the
+// freeform justification text this override used to require; a permission
+// check plus the standard STATUS_CHANGE audit row is the whole gate now.
 describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#986)", () => {
   const toConfirmed = { id: "p1", orgId: ORG, status: "CONFIRMED" as const, actor: ACTOR, auditId: "log1", now: NOW };
 
@@ -159,10 +162,10 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
 
   test("blocks the move when no quote revision has been accepted", async () => {
     const t = makeT();
-    await seedProject(t, "owner", false, "QUOTED");
+    await seedProject(t, "member", false, "QUOTED");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
     expect(p?.status).toBe("QUOTED");
   });
@@ -178,16 +181,16 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
 
   test("a merely SENT (unaccepted) revision does not satisfy the gate", async () => {
     const t = makeT();
-    await seedProject(t, "owner", false, "QUOTED");
+    await seedProject(t, "member", false, "QUOTED");
     await seedAcceptedQuote(t, "SENT");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
   });
 
   test("another org's accepted quote never satisfies the gate (IDOR guard)", async () => {
     const t = makeT();
-    await seedProject(t, "owner", false, "QUOTED");
+    await seedProject(t, "member", false, "QUOTED");
     await t.run(async (ctx) => {
       // Same projectId, different org — `by_projectId` is a GLOBAL index.
       await ctx.db.insert("quotes", {
@@ -196,41 +199,29 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
   });
 
-  test("an admin/owner overrides with a bounded justification, which is audited", async () => {
+  test("an admin/owner overrides with no accepted quote — audited, and locks pricing", async () => {
     const t = makeT();
     await seedProject(t, "owner", false, "QUOTED");
 
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, justification: "too short" }),
-    ).rejects.toThrow(/no accepted quote/i);
-
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-      ...toConfirmed,
-      justification: "Client confirmed verbally on site; PO to follow.",
-    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       expect(p?.status).toBe("CONFIRMED");
+      expect(p?.pricingLocked).toBe(true);
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.metadata).toEqual({
-        lockTierFrom: "OPEN",
-        lockTierTo: "FINANCE_LOCKED",
-        justification: "Client confirmed verbally on site; PO to follow.",
-      });
+      expect(log?.summary).toMatch(/pricing locked/i);
+      expect(log?.metadata).toEqual({ pricingLocked: true });
     });
   });
 
-  test("a non-PM member cannot override even with a justification", async () => {
+  test("a non-PM member cannot override", async () => {
     const t = makeT();
     await seedProject(t, "member", false, "QUOTED");
     await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-        ...toConfirmed,
-        justification: "Client confirmed verbally on site; PO to follow.",
-      }),
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
     ).rejects.toThrow(/admins.*owners.*PM/i);
   });
 
@@ -240,10 +231,7 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
     await t.run(async (ctx) => {
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER });
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-      ...toConfirmed,
-      justification: "Client confirmed verbally on site; PO to follow.",
-    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
     expect(p?.status).toBe("CONFIRMED");
   });
@@ -265,119 +253,49 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
 
   test("RE-crossing into CONFIRMED is gated again (parity with the snapshot re-crossing rule)", async () => {
     const t = makeT();
-    await seedProject(t, "owner");
+    await seedProject(t, "member");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
       ...toConfirmed, status: "PREPPING" as const,
     });
     // Coming back needs the gate — pricing may have moved while it was reverted.
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, auditId: "log2" }),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
   });
 });
 
-// #792 — reverting a project's status OUT of HARD_LOCKED (COMPLETED/INVOICED →
-// earlier) requires the same admin/owner/PM audience as opening a full unlock
-// session, plus a bounded justification — UNLESS an OPEN FULL unlock session
-// already covers it (unified with `assertLifecycleGuard`'s own escape for every
-// other HARD_LOCKED write, rather than demanding a second, brand-new reason).
-describe("projectWrites.updateStatusNative — hard-lock revert (#792)", () => {
+// #1230: the HARD_LOCKED tier (COMPLETED/INVOICED) and its revert-out-of gate
+// (#792) are deleted along with the rest of the 4-tier lock system — #987
+// already made a client's stored finance document immutable regardless of
+// project status, so a status revert out of COMPLETED/INVOICED needs no
+// separate protection. A status change is always structural — never gated —
+// and it does NOT touch projects.pricingLocked either way (D57: only a
+// person lowers the lock, via unlockPricingNative).
+describe("projectWrites.updateStatusNative — status reverts are ungated (#1230)", () => {
   const revert = { id: "p1", orgId: ORG, status: "QUOTING" as const, actor: ACTOR, auditId: "log1", now: NOW };
 
-  async function seedUnlockSession(
-    t: ReturnType<typeof makeT>,
-    scope: "FINANCIAL" | "FULL",
-    outcome: "OPEN" | "COMMITTED" = "OPEN",
-  ) {
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectUnlockSessions", {
-        id: "sess1", organizationId: ORG, projectId: "p1", scope,
-        justification: "Client requested a correction after the invoice was voided.",
-        openedBy: USER, openedByName: "Alice", openedAt: NOW - 1000,
-        snapshotId: "snap1", outcome,
-        ...(outcome === "COMMITTED" ? { closedAt: NOW - 500, closedBy: USER } : {}),
-      });
-    });
-  }
-
-  test("blocks the revert with no justification and no open session", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
-    ).rejects.toThrow(/justification/i);
-    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
-    expect(p?.status).toBe("INVOICED");
-  });
-
-  test("a non-admin/non-PM member is denied regardless of justification", async () => {
+  test("a member can revert INVOICED -> QUOTING with no justification and no session", async () => {
     const t = makeT();
     await seedProject(t, "member", false, "INVOICED");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-        ...revert,
-        justification: "Client asked us to redo the whole quote from scratch.",
-      }),
-    ).rejects.toThrow(/admins.*owners.*PM/i);
-  });
-
-  test("an admin/owner with a valid typed justification succeeds — audited as manual", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-      ...revert,
-      justification: "Client asked us to redo the whole quote from scratch.",
-    });
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.status).toBe("QUOTING");
-      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.metadata).toEqual({
-        lockTierFrom: "HARD_LOCKED",
-        lockTierTo: "OPEN",
-        justification: "Client asked us to redo the whole quote from scratch.",
-        justificationSource: "manual",
-      });
-    });
-  });
-
-  test("an OPEN FULL unlock session satisfies the gate with no justification arg — audited as unlock_session", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await seedUnlockSession(t, "FULL");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert);
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("QUOTING");
+  });
+
+  test("reverting does not clear an existing pricingLocked flag (D57)", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "INVOICED");
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.status).toBe("QUOTING");
-      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.metadata).toEqual({
-        lockTierFrom: "HARD_LOCKED",
-        lockTierTo: "OPEN",
-        justification: "Client requested a correction after the invoice was voided.",
-        justificationSource: "unlock_session",
-      });
+      if (p) await ctx.db.patch(p._id, { pricingLocked: true, pricingLockedAt: NOW - 1000, pricingLockedById: USER, pricingLockedByName: "Alice" });
     });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert);
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("QUOTING");
+    expect(p?.pricingLocked).toBe(true); // only unlockPricingNative lowers it
   });
 
-  test("an OPEN FINANCIAL (not FULL) unlock session does NOT satisfy the gate", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await seedUnlockSession(t, "FINANCIAL");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
-    ).rejects.toThrow(/justification/i);
-  });
-
-  test("a COMMITTED (already-closed) FULL session does NOT satisfy the gate — a fresh justification is still required", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await seedUnlockSession(t, "FULL", "COMMITTED");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
-    ).rejects.toThrow(/justification/i);
-  });
-
-  test("COMPLETED -> INVOICED is not a revert (stays HARD_LOCKED) — ungated regardless of session/justification", async () => {
+  test("COMPLETED -> INVOICED (not a revert either way) is ungated", async () => {
     const t = makeT();
     await seedProject(t, "member", false, "COMPLETED");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...revert, status: "INVOICED" as const });
@@ -471,7 +389,8 @@ describe("projectWrites.updateNative", () => {
   test("clear removes a field", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, clientNotes: "x", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, clientNotes: "x", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await t.withIdentity(SERVICE).mutation(api.projectWrites.updateNative, { ...uargs, set: { updatedAt: NOW }, clear: ["clientNotes"] });
     await t.run(async (ctx) => {
@@ -487,7 +406,8 @@ describe("projectWrites.updateNative", () => {
   test("strips forged money totals + isTemplate from a client set (injection guard)", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, total: 500, margin: 100, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, total: 500, margin: 100, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
@@ -514,9 +434,9 @@ describe("projectWrites.updateNative", () => {
   });
   test("rejects an out-of-bounds money field a browser caller bypassing Zod could forge", async () => {
     const t = makeT();
-    // OPEN tier (#957) — this test is specifically about the money-field BOUNDS
-    // check (assertProjectMoneyFields), not the finance lock; a locked project
-    // would reject the write with FINANCIALS_LOCKED before ever reaching it.
+    // Unlocked project (#957) — this test is specifically about the money-field
+    // BOUNDS check (assertProjectMoneyFields), not the pricing lock; a locked
+    // project would reject the write with PRICING_LOCKED before ever reaching it.
     await seedProject(t, "member", false, "QUOTED");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { taxRate: 150, updatedAt: NOW }, clear: [] }),
@@ -742,7 +662,8 @@ describe("projectWrites.createNative", () => {
   test("returns created:false + no insert/audit on a number clash", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "existing", organizationId: ORG, projectNumber: "P-100", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-existing", id: "existing", organizationId: ORG, projectNumber: "P-100", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-existing", organizationId: ORG, projectId: "existing", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     const res = await t.withIdentity(SERVICE).mutation(api.projectWrites.createNative, cargs);
     expect(res).toEqual({ created: false, id: "existing" });
@@ -878,22 +799,23 @@ describe("projectWrites.deleteNative", () => {
   async function seedFullCancelledProject(t: ReturnType<typeof convexTest>, role = "owner") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // The org's default location (the delete mutation org-validates defaultLocationId).
       await ctx.db.insert("locations", { id: "loc1", organizationId: ORG, name: "Warehouse", createdAt: NOW, updatedAt: NOW });
 
       // A loose serialized asset, checked out on a line.
       await ctx.db.insert("assets", { id: "asset_loose", organizationId: ORG, modelId: "model1", assetTag: "A-1", status: "CHECKED_OUT", isActive: true, locationId: "old_loc", createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "li_loose", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_loose", quantity: 1, status: "CHECKED_OUT", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "li_loose", id: "li_loose", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_loose", quantity: 1, status: "CHECKED_OUT", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectLineItemUnits", { id: "unit_loose", organizationId: ORG, lineItemId: "li_loose", assetId: "asset_loose", status: "CHECKED_OUT", ordinal: 0, createdAt: NOW, updatedAt: NOW });
 
       // A checked-out kit + its serialized member asset + the kit parent line.
       await ctx.db.insert("kits", { id: "kit1", organizationId: ORG, assetTag: "K-1", name: "Kit One", status: "CHECKED_OUT", locationId: "old_loc", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("assets", { id: "asset_kit", organizationId: ORG, modelId: "model1", assetTag: "A-2", status: "CHECKED_OUT", isActive: true, locationId: "old_loc", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("kitSerializedItems", { id: "ksi1", organizationId: ORG, kitId: "kit1", assetId: "asset_kit", addedById: USER, addedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "li_kit", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", kitId: "kit1", quantity: 1, status: "CHECKED_OUT", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "li_kit", id: "li_kit", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", kitId: "kit1", quantity: 1, status: "CHECKED_OUT", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
       // A kit-child line + unit (must be cascaded via the parent).
-      await ctx.db.insert("projectLineItems", { id: "li_kit_child", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_kit", quantity: 1, status: "CHECKED_OUT", sortOrder: 2, isKitChild: true, parentLineItemId: "li_kit", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "li_kit_child", id: "li_kit_child", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_kit", quantity: 1, status: "CHECKED_OUT", sortOrder: 2, isKitChild: true, parentLineItemId: "li_kit", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectLineItemUnits", { id: "unit_kit_child", organizationId: ORG, lineItemId: "li_kit_child", assetId: "asset_kit", status: "CHECKED_OUT", ordinal: 0, createdAt: NOW, updatedAt: NOW });
 
       // Crew assignment → shift → time entry.
@@ -904,11 +826,11 @@ describe("projectWrites.deleteNative", () => {
       // PM / task / service.
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER, addedAt: NOW });
       await ctx.db.insert("projectTasks", { id: "task1", organizationId: ORG, projectId: "p1", title: "Load in", createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectServices", { id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Labour", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectServices", { versionId: "v-p1", lineageId: "svc1", id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Labour", createdAt: NOW, updatedAt: NOW });
 
       // Grouping: category + group + slots.
-      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "p1", title: "Stage", sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { versionId: "v-p1", lineageId: "cat1", id: "cat1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { versionId: "v-p1", lineageId: "grp1", id: "grp1", organizationId: ORG, projectId: "p1", title: "Stage", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "slot_cat", projectCategoryId: "cat1", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "slot_grp", projectCategoryId: "cat1", projectGroupId: "grp1", sortOrder: 0 });
 
@@ -964,7 +886,8 @@ describe("projectWrites.deleteNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs),
@@ -975,7 +898,8 @@ describe("projectWrites.deleteNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "T", status: "CANCELLED", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "T", status: "CANCELLED", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs),
@@ -986,7 +910,8 @@ describe("projectWrites.deleteNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs)).rejects.toThrow(/insufficient permissions/i);
   });
@@ -1013,10 +938,11 @@ describe("projectWrites.deleteTemplateNative", () => {
   async function seedTemplate(t: ReturnType<typeof convexTest>, role = "owner", isTemplate = true) {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "tli1", organizationId: ORG, projectId: "t1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-t1", id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-t1", organizationId: ORG, projectId: "t1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { versionId: "v-t1", lineageId: "tli1", id: "tli1", organizationId: ORG, projectId: "t1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "tpm1", organizationId: ORG, projectId: "t1", userId: USER, addedAt: NOW });
-      await ctx.db.insert("projectCategories", { id: "tcat1", organizationId: ORG, projectId: "t1", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { versionId: "v-t1", lineageId: "tcat1", id: "tcat1", organizationId: ORG, projectId: "t1", name: "Audio", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "tslot1", projectCategoryId: "tcat1", sortOrder: 0 });
       await ctx.db.insert("projectModelRevenues", { id: "tpmr1", organizationId: ORG, projectId: "t1", modelId: "model1", allocatedRevenue: 0, updatedAt: NOW });
     });
@@ -1099,7 +1025,8 @@ describe("projectWrites.createNative auto-number", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" });
       // 260701 already exists (e.g. entered manually) — the auto loop must skip past it.
-      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "260701", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-taken", id: "taken", organizationId: ORG, projectNumber: "260701", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-taken", organizationId: ORG, projectId: "taken", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     expect(await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, autoArgs("a1", "log1"))).toEqual({ created: true, id: "a1" });
     await t.run(async (ctx) => {
@@ -1127,17 +1054,18 @@ describe("projectWrites.duplicateNative", () => {
   async function seedSource(t: ReturnType<typeof convexTest>, role = "owner") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, taxRate: 5, discountPercent: 0, tags: ["a"], createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 100, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, taxRate: 5, discountPercent: 0, tags: ["a"], createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: ORG, projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectCategories", { versionId: "v-src", lineageId: "cat1", id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { versionId: "v-src", lineageId: "grp1", id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 100, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       // Grouped parent + kit child.
-      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 50, lineTotal: 50, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", childKind: "KIT", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp1", id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 50, lineTotal: 50, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lc1", id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", childKind: "KIT", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       // Ungrouped standalone line (bills its own lineTotal).
-      await ctx.db.insert("projectLineItems", { id: "lp2", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 30, lineTotal: 30, isKitChild: false, status: "CONFIRMED", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp2", id: "lp2", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 30, lineTotal: 30, isKitChild: false, status: "CONFIRMED", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "src", userId: USER, addedAt: NOW });
       // NOT copied:
-      await ctx.db.insert("projectServices", { id: "svc1", organizationId: ORG, projectId: "src", type: "LABOUR", title: "Labour", costTotal: 20, lineTotal: 40, showOnDocuments: true, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectServices", { versionId: "v-src", lineageId: "svc1", id: "svc1", organizationId: ORG, projectId: "src", type: "LABOUR", title: "Labour", costTotal: 20, lineTotal: 40, showOnDocuments: true, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectTasks", { id: "task1", organizationId: ORG, projectId: "src", title: "Load in", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("crewAssignments", { id: "ca1", organizationId: ORG, projectId: "src", crewMemberId: "cm1", status: "CONFIRMED", estimatedCost: 200, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("categorySlots", { id: "slot1", projectCategoryId: "cat1", sortOrder: 0 });
@@ -1159,21 +1087,21 @@ describe("projectWrites.duplicateNative", () => {
       expect(proj?.taxRate).toBe(5); // scalar copied
 
       // Categories — new id, same name.
-      const cats = (await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      const cats = (await ctx.db.query("projectCategories").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect());
       expect(cats.length).toBe(1);
       expect(cats[0].id).not.toBe("cat1");
       expect(cats[0].name).toBe("Audio");
       const newCatId = cats[0].id;
 
       // Groups — new id, categoryId remapped to the NEW category.
-      const groups = (await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      const groups = (await ctx.db.query("projectGroups").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect());
       expect(groups.length).toBe(1);
       expect(groups[0].id).not.toBe("grp1");
       expect(groups[0].categoryId).toBe(newCatId);
       const newGroupId = groups[0].id;
 
       // Line items — parents + children, remapped, status QUOTED.
-      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect());
       expect(lines.length).toBe(3);
       const parents = lines.filter((l) => !l.isKitChild);
       const children = lines.filter((l) => l.isKitChild);
@@ -1198,7 +1126,7 @@ describe("projectWrites.duplicateNative", () => {
       expect(pms[0].userId).toBe(USER);
 
       // NOT copied.
-      expect((await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect()).length).toBe(0);
       expect((await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
       expect((await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
 
@@ -1213,7 +1141,8 @@ describe("projectWrites.duplicateNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
-      await ctx.db.insert("projects", { id: "src", organizationId: "other_org", projectNumber: "SRC-1", name: "Foreign", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: "other_org", projectNumber: "SRC-1", name: "Foreign", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: "other_org", projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/not found/i);
   });
@@ -1222,7 +1151,8 @@ describe("projectWrites.duplicateNative", () => {
     const t = makeT();
     await seedSource(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "P-DUP", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-taken", id: "taken", organizationId: ORG, projectNumber: "P-DUP", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-taken", organizationId: ORG, projectId: "taken", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/already exists/i);
   });
@@ -1237,8 +1167,9 @@ describe("projectWrites.duplicateNative", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
       // Source project has NO taxRate of its own, so the copy falls back to the org default.
-      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: ORG, projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp1", id: "lp1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("orgSettings", { organizationId: ORG, defaultTaxRate: 7 });
     });
     // A malicious/stale client sends 99 — must be ignored in favor of the orgSettings row (7).
@@ -1275,12 +1206,13 @@ describe("projectWrites.saveAsTemplateNative", () => {
   async function seedSource(t: ReturnType<typeof convexTest>, role = "owner") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 0, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: ORG, projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectCategories", { versionId: "v-src", lineageId: "cat1", id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { versionId: "v-src", lineageId: "grp1", id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 0, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       // A grouped parent + child — the template must copy the LINES but drop category/group.
-      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 40, lineTotal: 40, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp1", id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 40, lineTotal: 40, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lc1", id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "src", userId: USER, addedAt: NOW });
     });
   }
@@ -1298,7 +1230,7 @@ describe("projectWrites.saveAsTemplateNative", () => {
       expect(tpl?.projectNumber).toBe("TPL-0001");
 
       // Lines copied — parent + child — but category/group OMITTED.
-      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect());
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", tpl!.liveVersionId!)).collect());
       expect(lines.length).toBe(2);
       for (const l of lines) {
         expect(l.status).toBe("QUOTED");
@@ -1310,8 +1242,8 @@ describe("projectWrites.saveAsTemplateNative", () => {
       expect(child.parentLineItemId).toBe(parent.id);
 
       // No categories / groups / PMs copied.
-      expect((await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
-      expect((await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectCategories").withIndex("by_versionId", (q) => q.eq("versionId", tpl!.liveVersionId!)).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectGroups").withIndex("by_versionId", (q) => q.eq("versionId", tpl!.liveVersionId!)).collect()).length).toBe(0);
       expect((await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
 
       // Recalc ran: no groups on the copy → equipmentRevenue = the ungrouped parent's
@@ -1324,7 +1256,8 @@ describe("projectWrites.saveAsTemplateNative", () => {
     const t = makeT();
     await seedSource(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "TPL-0001", name: "Taken", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-taken", id: "taken", organizationId: ORG, projectNumber: "TPL-0001", name: "Taken", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-taken", organizationId: ORG, projectId: "taken", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, tplArgs)).rejects.toThrow(/already exists/i);
   });

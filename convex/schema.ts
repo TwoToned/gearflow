@@ -1360,6 +1360,46 @@ export default defineSchema({
     // (belt-and-braces, not a correctness dependency — the coalesce already
     // makes every pre-existing project read correctly).
     liveRevision: v.optional(v.number()),
+    // #1226 — Phase 1 of "Project versioning v2" (parent #1221,
+    // docs/designs/project-versioning-v2.md §4.2/§6/§7). Points at the
+    // `projectVersions` row that is this project's LIVE version — a real FK,
+    // unlike the numeric-only `revision`/`liveRevision` pair above (the
+    // OLDER snapshot-based version-switching model, `projectVersionsWrites.ts`
+    // / `projectSnapshots`, which this program supersedes in a later phase —
+    // the two are independent for now, do not conflate them). Optional on
+    // arrival so every pre-existing project row stays valid; the backfill
+    // (`backfillProjectVersions.ts`) stamps one onto every project INCLUDING
+    // templates. Narrowing to required is a later step once the backfill is
+    // proven complete in prod (not part of this PR). SERVER-OWNED, same
+    // treatment as `revision`/`liveRevision` — Phase 1 has no writer of this
+    // field other than the backfill; a later phase adds the real mutations.
+    // NOTHING reads this field yet — it is purely additive in this phase.
+    liveVersionId: v.optional(v.string()),
+    // #1230 — Phase 4 of "Project versioning v2" (parent #1221): the whole
+    // 4-tier lock system (LockTier/JUSTIFY/HARD_LOCKED/unlock sessions)
+    // collapses to this ONE boolean. Applies to the LIVE version only — a
+    // non-live `projectVersions` row is always writable in every field family
+    // regardless of this flag (see `convex/lib/projectLocks.ts`'s
+    // `assertPricingUnlocked`). Optional on arrival; absent ⇒ false (matches
+    // every pre-#1230 project — `backfillProjectPricingLock.ts` sets it true
+    // wherever a live SENT/ACCEPTED quote or a CONFIRMED+ status already
+    // implies pricing should read as locked, so nothing silently unlocks the
+    // moment this ships). SERVER-OWNED: written only by
+    // `projectPricingLockWrites.ts`'s `lockPricingNative`/`unlockPricingNative`,
+    // `quotesWrites.sendNative` (sets true when it sends the LIVE revision),
+    // `quotesWrites.recallNative` (clears it when it recalls the LIVE
+    // revision's quote), and `projectWrites.updateStatusNative` (sets true on
+    // a transition INTO CONFIRMED) — never touched by `versions.makeLiveNative`
+    // (a pointer flip changes nothing about "does this job have a quote out",
+    // D54) and never cleared by a status revert (D57 — only a person lowers
+    // it, via `unlockPricingNative`).
+    pricingLocked: v.optional(v.boolean()),
+    pricingLockedAt: v.optional(v.number()),
+    pricingLockedById: v.optional(v.string()),
+    // Denormalized at write time (same pattern as the deleted
+    // `projectUnlockSessions.openedByName`) so the lock strip can render "locked
+    // by X" with no extra join.
+    pricingLockedByName: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isTemplate: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
@@ -1390,6 +1430,104 @@ export default defineSchema({
   // (No project search index: the app never picks a project in a combobox — projects
   // are created/edited, never selected — so its `convex/search.ts` query was removed
   // 2026-07-07. Re-add both alongside a real single-select project picker.)
+
+  // ProjectVersion — #1226, Phase 1 of "Project versioning v2" (parent #1221,
+  // docs/designs/project-versioning-v2.md §4.2/§6/§7). A real row per version
+  // of a project, replacing the numeric-only `revision`/`liveRevision`
+  // counters (above) with an actual entity a child row can point at. This
+  // phase only adds the table + columns and backfills exactly one version per
+  // project (`backfillProjectVersions.ts`) — NOTHING in the app reads this
+  // table or the new `versionId`/`lineageId`/`liveVersionId` columns yet, so
+  // it changes no existing behaviour. A later phase adds the save/switch/
+  // promote mutations and wires reads up to it.
+  //
+  // `number` — v1..vN, allocated by the PROJECT (not global), never reused.
+  // No uniqueness constraint exists at the Convex-index level (CLAUDE.md);
+  // enforced by construction instead — this phase's backfill gives every
+  // project exactly one version, numbered 1, so no collision is possible yet.
+  // A later phase's allocator must continue to hand out numbers by reading
+  // this project's current max and never reusing one.
+  //
+  // `contentState` — "ready" (this version's content is fully represented,
+  // either by its own PLAN FIELDS + the live tables' versionId-tagged rows
+  // for the live version, or eventually by a captured snapshot for a
+  // non-live one) vs "missing" (a pre-versioning revision — e.g. a sent quote
+  // from before this program existed — whose exact content was never
+  // captured and can't be reconstructed). This phase's backfill only ever
+  // writes "ready": it creates ONE version representing each project's
+  // CURRENT state, which by definition it can fully represent by tagging the
+  // live rows. "missing" is for a future phase that may synthesize
+  // placeholder rows for un-capturable history.
+  //
+  // PLAN FIELDS (rentalStartDate .. clientNotes below) are present ONLY on a
+  // NON-live version (the swap model, later phase): a live version's plan
+  // lives on `projects` itself, which is what the live tables' versionId tag
+  // points at. This phase's backfill creates only LIVE versions, so it never
+  // populates any of them — they exist here so the column shape is already
+  // correct for the phase that starts writing non-live versions.
+  //
+  // Deliberately NO totals fields (a non-live version's totals depend partly
+  // on live crew assignments and sub-hire costs matched by lineage —
+  // `convex/lib/recalc.ts` — which drift without anyone touching the
+  // version; a stored copy would go stale, R-3.1) and NO `pricingLocked`
+  // (that's one boolean on `projects`, added in a later phase — Phase 4).
+  projectVersions: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    number: v.number(),
+    label: v.optional(v.string()), // bounded ≤60 by the writer, mirrors quotes.label
+    basedOnVersionId: v.optional(v.string()),
+    createdAt: v.number(),
+    createdById: v.string(),
+    contentState: v.union(v.literal("ready"), v.literal("missing")),
+    // Plan fields — see block comment above. Mirrors the shape/types of the
+    // matching field on `projects` 1:1 (R-3.1: one definition of what a
+    // project's plan looks like, not a hand-maintained second copy).
+    rentalStartDate: v.optional(v.number()),
+    rentalEndDate: v.optional(v.number()),
+    projectStartDate: v.optional(v.number()),
+    projectStartTime: v.optional(v.string()),
+    projectEndDate: v.optional(v.number()),
+    projectEndTime: v.optional(v.string()),
+    loadInDate: v.optional(v.number()),
+    loadInTime: v.optional(v.string()),
+    eventStartDate: v.optional(v.number()),
+    eventStartTime: v.optional(v.string()),
+    eventEndDate: v.optional(v.number()),
+    eventEndTime: v.optional(v.string()),
+    loadOutDate: v.optional(v.number()),
+    loadOutTime: v.optional(v.string()),
+    billingWeeksOverride: v.optional(v.number()),
+    billingDaysOverride: v.optional(v.number()),
+    taxRate: v.optional(v.number()),
+    discountPercent: v.optional(v.number()),
+    discountAmount: v.optional(v.number()),
+    depositPercent: v.optional(v.number()),
+    clientId: v.optional(v.string()),
+    clientContactId: v.optional(v.string()),
+    locationId: v.optional(v.string()),
+    siteContactName: v.optional(v.string()),
+    siteContactPhone: v.optional(v.string()),
+    siteContactEmail: v.optional(v.string()),
+    type: v.optional(enums.ProjectType),
+    description: v.optional(v.string()),
+    crewNotes: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
+    clientNotes: v.optional(v.string()),
+  })
+    // Point lookup for a project's numbered versions + the future allocator's
+    // "what's the max number so far" scan. `projectId` alone is a GLOBAL
+    // index (same shape as `quotes.by_projectId_version` /
+    // `by_cuid` elsewhere) — every reader MUST also check `organizationId`
+    // against the caller's own org (see convex/lib/projectVersionState.ts).
+    .index("by_projectId_number", ["projectId", "number"])
+    .index("by_organizationId", ["organizationId"])
+    // Not in the issue's literal index list, but every other table in this
+    // schema (Prisma-mirrored or Convex-native) carries a `by_cuid` lookup on
+    // its stored cuid `id` — `basedOnVersionId` will need exactly this once a
+    // later phase starts resolving it.
+    .index("by_cuid", ["id"]),
 
   // ProjectLineItem
   projectLineItems: defineTable({
@@ -1516,20 +1654,42 @@ export default defineSchema({
     // convex/lib/xeroAccountCascade.ts.
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
+    // #1226 Phase 1 (project versioning v2) — see projectCategories' comment
+    // near the CategorySlot table for the full rationale; identical treatment.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
+    // #1229 Phase 3 (project versioning v2) — stamped `true` ONLY by
+    // `versions.makeLiveNative`'s reality carry-over
+    // (`convex/lib/versionReality.ts`) when an outgoing version's real-world
+    // footprint (checked-out units, check records, maintenance links,
+    // threads) has no matching line in the incoming version's plan. The same
+    // structural-write allowance an on-site add gets — never client-set,
+    // never priced (unitPrice: 0; nothing was ever agreed for it under the
+    // new plan). Absent = planned, the pre-feature shape, no backfill.
+    unplanned: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
-    // Composite: max(sortOrder) for a project via .order("desc").first() (1 doc)
-    // instead of collecting ALL of a project's lines to reduce the max (O(N) per
+    // #1228 Phase 2 (project versioning v2) — `by_projectId` DELETED on
+    // purpose (the deliberate breaking change, docs/designs/project-versioning-v2.md
+    // §4.9): every plan read must go through the version-scoped family below so a
+    // stray read can never silently see a non-live version's rows. See
+    // convex/lib/versionScope.ts (liveRows/versionRows) and
+    // scripts/version-scope-ratchet.mjs.
+    .index("by_versionId", ["versionId"])
+    // Lineage resolution — "the same logical row across versions" (find this
+    // lineage's row inside a given version, e.g. materialize/promote/compare).
+    .index("by_versionId_lineageId", ["versionId", "lineageId"])
+    // Composite: max(sortOrder) for a VERSION via .order("desc").first() (1 doc)
+    // instead of collecting ALL of a version's lines to reduce the max (O(N) per
     // add, O(N^2) across a bulk add). Used by nextLineSort.
-    .index("by_projectId_sortOrder", ["projectId", "sortOrder"])
-    // Composite: range-scan a project's lines by status (e.g. CHECKED_OUT) instead
-    // of collecting ALL of a project's lines and JS-filtering. Used by
+    .index("by_versionId_sortOrder", ["versionId", "sortOrder"])
+    // Composite: range-scan a version's lines by status (e.g. CHECKED_OUT) instead
+    // of collecting ALL of a version's lines and JS-filtering. Used by
     // warehouseOps.checkInBulkTotals (the hottest status-filtered read).
-    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_versionId_status", ["versionId", "status"])
     // Composite: range-scan an org's CHECKED_OUT lines ORG-WIDE (no project
     // pre-selection) instead of collecting the whole org's lines and JS-filtering.
     // Used by warehouseReturns.bundle (WS5 returns station board, issue #944) —
@@ -1628,12 +1788,20 @@ export default defineSchema({
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
+    // #1226 Phase 1 (project versioning v2) — `versionId` names the
+    // `projectVersions` row this row belongs to; `lineageId` is the stable
+    // identity that survives a version swap (absent here ⇒ this row's own
+    // `id`, per the backfill). #1228 Phase 2 — now the READ index: see the
+    // `by_projectId` deletion note on projectLineItems above.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"]),
+    .index("by_versionId", ["versionId"])
+    .index("by_versionId_lineageId", ["versionId", "lineageId"]),
 
   // CategorySlot
   categorySlots: defineTable({
@@ -1650,6 +1818,19 @@ export default defineSchema({
     // a different category, clears this slot the same way a group leaving a
     // category clears its own).
     lineItemId: v.optional(v.string()),
+    // #1226 Phase 1 — see projectCategories' comment above; identical
+    // treatment. This table has no organizationId/projectId of its own
+    // (PARENT_JOIN via projectCategoryId), so the backfill resolves the
+    // owning project through its projectCategoryId. #1228 Phase 2 — this
+    // table never had a `by_projectId` index (no `projectId` column to key
+    // one on) and gets NO `by_versionId` index either: every read reaches it
+    // via `by_projectCategoryId`/`by_projectGroupId`/`by_lineItemId`/
+    // `by_subHireGroupId` (a PARENT_JOIN off an already version-scoped
+    // parent row), so `scripts/version-scope-ratchet.mjs` covers this table
+    // by checking those parent-join reads carry a live-filter marker, not by
+    // looking for a `by_versionId` index that would never exist here.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1696,12 +1877,17 @@ export default defineSchema({
     // a model/kit, so it has no level-2 equivalent in the cascade.
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
+    // #1226 Phase 1 — see projectCategories' comment above; identical
+    // treatment. #1228 Phase 2 — now the READ index, see that same note.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
+    .index("by_versionId", ["versionId"])
+    .index("by_versionId_lineageId", ["versionId", "lineageId"])
     .index("by_categoryId", ["categoryId"]),
 
   // ProjectManager
@@ -2448,16 +2634,22 @@ export default defineSchema({
     // Xero-gated. See convex/lib/xeroAccountCascade.ts resolveServiceAccountCode.
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
+    // #1226 Phase 1 (project versioning v2) — see projectCategories' comment
+    // near the CategorySlot table for the full rationale; identical
+    // treatment. #1228 Phase 2 — now the READ index, see that same note.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
+    .index("by_versionId", ["versionId"])
+    .index("by_versionId_lineageId", ["versionId", "lineageId"])
     .index("by_lineItemId", ["lineItemId"])
     .index("by_crewRoleId", ["crewRoleId"])
-    .index("by_projectId_type", ["projectId", "type"])
-    .index("by_projectId_date", ["projectId", "date"])
+    .index("by_versionId_type", ["versionId", "type"])
+    .index("by_versionId_date", ["versionId", "date"])
     // WS3 (#942) — range-scan an org's services by `date` for the Overbookings &
     // Gaps board's "services missing crew" section (bounded [MIN_TS, rangeEnd]
     // scan, the dashboardStats.ts MIN_TS idiom). `by_projectId_date` only serves a
@@ -2503,6 +2695,19 @@ export default defineSchema({
     // the same spirit as "nothing deletes one" above. #1027/#1031.
     recalledPdfFileIds: v.optional(v.array(v.string())),
     snapshotId: v.optional(v.string()),
+    // #1233 (Phase 6, "Project versioning v2") — the REAL `projectVersions`
+    // row this revision's snapshot/lines were built from. Absent on every
+    // pre-#1233 row (the OLDER `projects.revision`/`liveRevision` program,
+    // FEATUREDOCS/70, had no concept of the newer `projectVersions` table at
+    // all) — readers that need "does this target the live version" treat a
+    // missing `versionId` as the live version, which was always true by
+    // construction of the old system. Stamped by `sendNative` on every send
+    // (new row or reused-on-resend), never by `newVersionNative` (which only
+    // opens a DRAFT — the versionId is decided at SEND time, in case the
+    // project's `liveVersionId` moved between draft and send). See
+    // `convex/versions.ts`'s ASCII diagram for the full version x quote state
+    // machine.
+    versionId: v.optional(v.string()),
     // #1085 — optional internal name for the version ("with LED wall", "client's
     // budget option"), settable via `saveVersionNative`. Never affects behaviour
     // or numbering. Internal by default (bounded ≤60 chars server-side via
@@ -2531,20 +2736,21 @@ export default defineSchema({
     recalledById: v.optional(v.string()),
     recallReason: v.optional(v.string()),
     supersededByQuoteId: v.optional(v.string()),
-    // Protect (#1030) — a soft lock independent of status. Owner-only to set/
-    // unset (stricter than Recall's audience — see requireQuoteOwnerOnly).
-    // While true: Recall, Correction and recall-then-delete all refuse. Set
-    // automatically the moment a revision reaches ACCEPTED; an owner can still
-    // explicitly unprotect if a genuine correction is later needed.
+    // DEPRECATED (#1230, Phase 4 of "Project versioning v2") — Protect (#1030)
+    // was a soft lock independent of status; #1229 Phase 3 already removed the
+    // only mutation that could SET/CLEAR it, and Phase 4 removes the checks
+    // against it too (`correctQuoteNative`/`unacceptNative` deleted;
+    // `recallNative`/`deleteRecalledNative` no longer read it). Kept optional
+    // here — never read or written by any code path — only because a real
+    // pre-#1230 row may already have `protected: true` stored, and Convex
+    // rejects a schema push that drops a field an existing document still
+    // carries (same precedent as `projects.depositPercent` above).
     protected: v.optional(v.boolean()),
     protectedAt: v.optional(v.number()),
     protectedById: v.optional(v.string()),
-    // Correction (#1031) — an audited in-place fix to quoteDate/validUntil on a
-    // SENT/ACCEPTED revision, no version bump, no price change. `sentAt` is
-    // deliberately NEVER rewritten here (it is the system's true record of when
-    // the send actually happened); these two mark the most recent correction so
-    // the reissued PDF can print "REISSUED — corrects vN sent <sentAt>, edited
-    // by <correctedById> on <correctedAt>" without re-deriving it.
+    // DEPRECATED (#1230) — Correction (#1031) was an audited in-place fix to
+    // quoteDate/validUntil; `correctQuoteNative` (its only writer) is deleted
+    // in Phase 4. Kept optional for the same reason as `protected` above.
     correctedAt: v.optional(v.number()),
     correctedById: v.optional(v.string()),
     // DEPRECATED (pre-#986) — backfilled into sentAt/sentById.
@@ -2557,10 +2763,17 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
-    // The uniqueness guard for "exactly one quote row per (projectId, revision)".
+    // The uniqueness guard for "exactly one quote row per (projectId, revision)"
+    // — still load-bearing for the OLDER live-version revision-number lineage
+    // (`newVersionNative`'s draft-cutting flow is unchanged by #1233).
     .index("by_projectId_version", ["projectId", "version"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
+    .index("by_organizationId_status", ["organizationId", "status"])
+    // #1233 — the per-`projectVersions`-row addressing key: "the quote (if
+    // any) currently targeting THIS version". `versionId` is a GLOBAL value
+    // (not itself org-scoped), so every reader still org-checks the row, same
+    // as every other `by_projectId_*` index here.
+    .index("by_projectId_versionId", ["projectId", "versionId"]),
 
   // Invoice (WS1 #940) — Flow owns generation + numbering, Xero owns the ledger.
   // `invoiceNumber` is null until ISSUED (numbered at issue time via the shared
@@ -3293,6 +3506,11 @@ export default defineSchema({
     // and by `quotesWrites.newVersionNative` (capturing the revision it moves
     // past). PRE_PROMOTE (#1085, consumed starting Phase 2) — the auto-capture
     // of the live state immediately before a promote overwrites it.
+    // UNLOCK is DEPRECATED (#1230, Phase 4) — `projectUnlockSessionsWrites.ts`
+    // (its only writer) is deleted along with the whole unlock-session
+    // mechanism; kept in the union only because a pre-#1230 project's history
+    // may already have a row with this reason (same reasoning as `quotes.
+    // protected` above) — never written from now on.
     reason: v.union(
       v.literal("CONFIRMED"),
       v.literal("COMPLETED"),
@@ -3349,28 +3567,10 @@ export default defineSchema({
     .index("by_snapshotId_entityType", ["snapshotId", "entityType"])
     .index("by_snapshotId_entityId", ["snapshotId", "entityId"]),
 
-  // ProjectUnlockSession — at most one OPEN row per project (enforced in the
-  // open mutation). `scope: "FINANCIAL"` is #791's finance-only unlock;
-  // `scope: "FULL"` is #792's hard-lock override (restricted audience). Both
-  // share this table/lifecycle — see convex/projectUnlockSessionsWrites.ts.
-  projectUnlockSessions: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    projectId: v.string(),
-    scope: v.union(v.literal("FINANCIAL"), v.literal("FULL")),
-    justification: v.string(),
-    openedBy: v.string(),
-    openedByName: v.optional(v.string()),
-    openedAt: v.number(),
-    snapshotId: v.string(),
-    outcome: v.union(v.literal("OPEN"), v.literal("COMMITTED"), v.literal("DISCARDED")),
-    closedAt: v.optional(v.number()),
-    closedBy: v.optional(v.string()),
-    closeNote: v.optional(v.string()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
-    .index("by_projectId_outcome", ["projectId", "outcome"]),
+  // ProjectUnlockSession — DELETED (#1230, Phase 4 of "Project versioning v2"):
+  // the 4-tier lock system (#791/#792's FINANCIAL/FULL unlock sessions) it
+  // supported no longer exists, replaced by the single `projects.pricingLocked`
+  // boolean + `projectPricingLockWrites.ts`'s `lockPricingNative`/
+  // `unlockPricingNative`. See FEATUREDOCS/78's Phase 4 section.
 
 });

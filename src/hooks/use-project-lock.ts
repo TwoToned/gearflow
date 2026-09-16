@@ -7,106 +7,64 @@ import { mapNativeWriteError } from "@/lib/native-writes";
 import { api } from "../../convex/_generated/api";
 
 /**
- * #957 lifecycle-lock status + unlock-session hooks. `useProjectLockStatus`
- * is the one reactive read every gated surface (banner, lock icons,
- * useJustifiedMutation) subscribes to; `useUnlockSession` opens/commits/
- * discards a session (#791 FINANCIAL scope, #792 FULL scope — same mutations,
- * different `scope` + server-checked audience).
+ * #1230 pricing-lock hook — the successor to #957's `useProjectLockStatus` /
+ * `useUnlockSession` (deleted along with the 4-tier lock system + unlock
+ * sessions). One reactive `projectLocksRead.status` subscription backs every
+ * lock surface (chip, strip, `<LockedField>`/`<GatedButton>` tooltips), plus
+ * `lock`/`unlock` actions.
  */
 type ProjectLockStatus = ReturnType<typeof useQuery<typeof api.projectLocksRead.status>>;
 
-// #988/#989 — why `tier` is what it is (a bare status transition vs. a sent
-// quote raising the tier), plus the shared revision counter + the current
-// revision's quote state, so the Finance tab's lock summary and the alert
-// rail can both render from this ONE subscription instead of a second
-// round trip (finance-workflow-ux.md §2 "subscription ownership").
 function deriveLockStatus(status: ProjectLockStatus) {
   const {
-    tier = "OPEN",
-    openSession = null,
-    canOverrideHardLock = false,
-    reason = "STATUS",
-    revision = 1,
-    liveRevision = revision,
-    quoteState = null,
+    pricingLocked = false,
+    pricingLockedAt,
+    pricingLockedByName,
+    canUnlockPricing = false,
   } = status ?? {};
   return {
     loading: status === undefined,
-    tier,
-    openSession,
-    hasOpenSession: openSession != null,
-    canOverrideHardLock,
-    reason,
-    revision,
-    liveRevision,
-    quoteState,
+    pricingLocked,
+    pricingLockedAt,
+    pricingLockedByName,
+    canUnlockPricing,
   };
 }
 
-export function useProjectLockStatus(projectId: string | undefined, orgId: string | undefined, now?: number) {
+export function useProjectPricingLock(projectId: string | undefined, orgId: string | undefined) {
   const status = useQuery(
     api.projectLocksRead.status,
-    projectId && orgId ? { projectId, orgId, now } : "skip",
+    projectId && orgId ? { projectId, orgId } : "skip",
   );
-  return deriveLockStatus(status);
-}
-
-export function useUnlockSession(projectId: string | undefined, orgId: string | undefined) {
+  const derived = deriveLockStatus(status);
   const { data: session } = useSession();
-  const openM = useMutation(api.projectUnlockSessionsWrites.openNative);
-  const commitM = useMutation(api.projectUnlockSessionsWrites.commitNative);
-  const discardM = useMutation(api.projectUnlockSessionsWrites.discardNative);
+  const lockM = useMutation(api.projectPricingLockWrites.lockPricingNative);
+  const unlockM = useMutation(api.projectPricingLockWrites.unlockPricingNative);
 
   const enabled = !!orgId && !!projectId && !!session?.user;
   const actor = () => ({ userId: session!.user.id, userName: session!.user.name ?? "" });
 
-  const open = async (scope: "FINANCIAL" | "FULL", justification: string): Promise<void> => {
+  /** Re-lock — ungated (any `project:update` caller). */
+  const lock = async (): Promise<void> => {
     if (!enabled) throw new Error("Not ready");
     try {
-      await openM({
-        projectId: projectId!,
-        orgId: orgId!,
-        scope,
-        justification,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
+      await lockM({ id: projectId!, orgId: orgId!, actor: actor(), auditId: createId(), now: Date.now() });
     } catch (e) {
       throw mapNativeWriteError(e);
     }
   };
 
-  const commit = async (note?: string): Promise<void> => {
+  /** Clear the lock — one click, per the whole rule (D42's `canUnlockPricing`
+   *  audience, server-enforced regardless of what this hook's own
+   *  `canUnlockPricing` read shows). */
+  const unlock = async (): Promise<void> => {
     if (!enabled) throw new Error("Not ready");
     try {
-      await commitM({
-        projectId: projectId!,
-        orgId: orgId!,
-        note,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
+      await unlockM({ id: projectId!, orgId: orgId!, actor: actor(), auditId: createId(), now: Date.now() });
     } catch (e) {
       throw mapNativeWriteError(e);
     }
   };
 
-  const discard = async (): Promise<{ conflicts: string[] }> => {
-    if (!enabled) throw new Error("Not ready");
-    try {
-      return await discardM({
-        projectId: projectId!,
-        orgId: orgId!,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-    } catch (e) {
-      throw mapNativeWriteError(e);
-    }
-  };
-
-  return { enabled, open, commit, discard };
+  return { ...derived, lock, unlock };
 }

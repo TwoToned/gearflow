@@ -1,239 +1,224 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
-import { projectSnapshotEntries, type ProjectedView, type SnapshotEntryLike } from "@/lib/project-version-projection";
 
 /**
- * Phase 3 (#1080/#1093) — the version-switching seam. Which version is being
- * VIEWED is a per-user URL param (`?v=`), never a database field (design doc
- * §3.1) — two people can view different versions of the same project at once
- * and neither affects the other or the live data. Mounted once above the
- * tabs (`ProjectDetailPage`); every tab that wants to project a version reads
- * `useProjectVersion()` rather than fetching its own snapshot entries.
+ * Project Versioning v2, Phase 5 (#1231, parent #1221) — the version-
+ * switching seam, rebuilt on the REAL `projectVersions` table
+ * (`convex/versions.ts`/`convex/versionsRead.ts`, Phase 1-3) instead of the
+ * older `projects.revision`/`liveRevision` + `projectSnapshots` JSON-blob
+ * program (FEATUREDOCS/70). Which version is being VIEWED is still a
+ * per-user URL param (`?v=<number>`), never a database field (design §3.1)
+ * — two people can view different versions of the same project at once and
+ * neither affects the other or the live data.
+ *
+ * Mounted once above the tabs (`ProjectDetailPage`); every consumer that
+ * needs to know "which version, and is it live" reads `useProjectVersion()`
+ * rather than re-deriving it. The header pill (`version-switcher.tsx`), the
+ * Versions panel (`versions-panel.tsx`), `VersionStrip` and the Equipment
+ * tab's warehouse-verb greying all share this one context/one query — the
+ * "one control to switch, one place to manage" principle (§5.1) starts here:
+ * a single `versionsRead.listForProject` subscription, not the four
+ * overlapping reads the old lock-strip/read-only-bar/drift-indicator/
+ * switcher combination used.
  */
 
-export interface ProjectVersionListItem {
-  revision: number;
-  quoteId: string;
-  status: "DRAFT" | "SENT" | "ACCEPTED" | "DECLINED" | "SUPERSEDED" | "EXPIRED";
-  isLive: boolean;
+export interface ProjectVersionSummary {
+  id: string;
+  number: number;
   label?: string;
-  sentAt?: number;
-  acceptedAt?: number;
-  createdAt?: number;
-  snapshotId?: string;
-  snapshotReason?: "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT" | "VERSION_SAVED" | "PRE_PROMOTE";
-  hasSnapshot: boolean;
-  total: number | null;
-  /** The stored document artifact (#987) — absent on a DRAFT or a sent
-   *  revision whose render failed. Empty `quoteId` (the never-quoted
-   *  synthetic entry) never has one. */
-  pdfFileId?: string;
+  isLive: boolean;
+  contentState: "ready" | "missing";
+  createdAt: number;
+  createdById: string;
+  basedOnVersionId?: string;
 }
 
-interface ProjectVersionContextValue {
+/**
+ * #1232 (Phase 5b, parent #1221, design §5.1 D46-D53) — one side of a
+ * Compare. `number: null` means "the live version" (mirrors `viewingNumber`'s
+ * own null-means-live convention). `quoteSnapshot` is the drift entry point
+ * (`VersionStrip`'s "Quote total has moved..." line, D53) — a sent quote's
+ * frozen totals, never a live `projectVersions` row.
+ */
+export type CompareSide =
+  | { kind: "version"; number: number | null }
+  | { kind: "quoteSnapshot"; quoteId: string; label: string };
+
+export interface CompareModeState {
+  a: CompareSide;
+  b: CompareSide;
+}
+
+export interface ProjectVersionContextValue {
   projectId: string;
-  versions: ProjectVersionListItem[];
+  orgId: string | undefined;
+  versions: ProjectVersionSummary[];
   isLoadingVersions: boolean;
-  liveRevision: number | null;
-  /** Parsed from `?v=`; null when absent or malformed. */
-  viewingRevision: number | null;
-  /** True only when `viewingRevision` is a real, non-live revision. */
+  liveVersion: ProjectVersionSummary | null;
+  /** Parsed from `?v=`; null when absent, malformed, or the live version's
+   *  own number (viewing live is "no param", never "the live number"). */
+  viewingNumber: number | null;
+  /** True only once `versions` has loaded and `viewingNumber` resolves to a
+   *  real, non-live version — avoids a flash of "viewing" chrome while the
+   *  list is still loading. */
   isViewingVersion: boolean;
-  viewingVersion: ProjectVersionListItem | null;
-  /** Null while loading, while not viewing a version, or when the viewed
-   *  revision has no captured state (pre-versioning — see `hasCapturedState`). */
-  projected: ProjectedView | null;
-  isLoadingProjection: boolean;
-  /** False exactly when `isViewingVersion` is true but the target revision has
-   *  no snapshot — the design doc's "no captured state (pre-versioning)" case,
-   *  never rendered as an error page. */
-  hasCapturedState: boolean;
-  /** #1080/#1101 — the Equipment tab's bundle-assembly read
-   *  (`convex/projectVersionsEquipment.ts`), shaped like the LIVE
-   *  `equipmentTab.bundle` so `VersionProjectedEquipment` can run it through
-   *  the SAME `reconstructProjectCategories`/`reconstructUncategorized*`
-   *  functions the live tab uses (R-3.1) — sub-hire groups and the
-   *  `categorySlots` combined order included. `null` while loading, while not
-   *  viewing a captured version, or if the snapshot row itself can't be
-   *  resolved. An OLDER (pre-#1101) snapshot still resolves — it just has
-   *  empty sub-hire/categorySlot arrays, degrading gracefully to "groups then
-   *  standalone items" ordering with no sub-hire block, never an error. */
-  equipmentBundle: unknown;
-  isLoadingEquipmentBundle: boolean;
-  /** Updates `?v=` (preserving `?tab=` and any other params); null clears it. */
-  setViewingRevision: (revision: number | null) => void;
+  viewingVersion: ProjectVersionSummary | null;
+  /** The viewed version's PLAN FIELDS bag (`convex/versionsRead.ts`'s
+   *  `getVersion`) — feeds `composeProjectWithVersion`. `null` while loading
+   *  or whenever `isViewingVersion` is false. */
+  viewingPlanFields: Record<string, unknown> | null;
+  isLoadingViewingVersion: boolean;
+  /** #1233 (Phase 6) — the viewed version's DRIFT signal against its own
+   *  sent quote (`convex/versionsRead.ts`'s `quoteDriftForVersion`): null
+   *  while loading, while not viewing a non-live version, or when that
+   *  version has never had a quote sent. Feeds `VersionStrip`'s drift line. */
+  viewingQuoteDrift: {
+    quoteId: string;
+    quoteLabel: string;
+    quoteStatus: string;
+    sentTotal: number;
+    currentTotal: number;
+    driftAmount: number;
+  } | null;
+  /** Updates `?v=` (preserving every other param); `null` switches back to live. */
+  setViewingNumber: (number: number | null) => void;
+  /** #1232 — Compare mode is a MODE on this page, not a route (D46/D47): a
+   *  page-level toggle, not `?v=`-driven, so it never fights the browser
+   *  back button against ordinary version switching. `null` = compare is
+   *  off. Opened by the switcher's "Compare" menu item and by
+   *  `VersionStrip`'s drift line (D53). */
+  compare: CompareModeState | null;
+  openCompare: (a: CompareSide, b: CompareSide) => void;
+  closeCompare: () => void;
 }
 
 const ProjectVersionContext = createContext<ProjectVersionContextValue | null>(null);
 
-/** Digits only; anything else (a typo, a stray `?v=abc`) reads as "no version
- *  requested" rather than a parse error. */
-function parseRequestedRevision(param: string | null): number | null {
+/** Digits only; anything else (a typo, a stray `?v=abc`) reads as "no
+ *  version requested" rather than a parse error. */
+function parseRequestedNumber(param: string | null): number | null {
   if (param == null || !/^\d+$/.test(param)) return null;
   return Number(param);
 }
 
-function resolveLiveRevision(versions: ProjectVersionListItem[]): number | null {
-  const live = versions.find((v) => v.isLive);
-  return live ? live.revision : null;
+function versionsQueryArgs(orgId: string | undefined, projectId: string) {
+  return orgId ? { organizationId: orgId, projectId } : ("skip" as const);
 }
 
-function resolveViewingVersion(
-  versions: ProjectVersionListItem[],
-  requestedRevision: number | null,
-): ProjectVersionListItem | null {
-  if (requestedRevision == null) return null;
-  return versions.find((v) => v.revision === requestedRevision) ?? null;
-}
-
-/** Only "viewing a version" once the list has actually loaded and confirmed
- *  the requested revision isn't the live one — avoids a flash of read-only
- *  chrome for the live revision while `versions` is still loading. */
-function resolveIsViewingVersion(
-  requestedRevision: number | null,
-  isLoadingVersions: boolean,
-  liveRevision: number | null,
-): boolean {
-  if (requestedRevision == null || isLoadingVersions || liveRevision == null) return false;
-  return requestedRevision !== liveRevision;
-}
-
-/** The design doc's "no captured state (pre-versioning)" case — true unless
- *  actively viewing a version whose target revision has no snapshot. */
-function resolveHasCapturedState(isViewingVersion: boolean, viewingVersion: ProjectVersionListItem | null): boolean {
-  if (!isViewingVersion) return true;
-  return viewingVersion != null && viewingVersion.hasSnapshot;
-}
-
-/** Shared gate for BOTH captured-version reads (`snapshotEntries` and the
- *  equipment bundle) — split out purely to keep `ProjectVersionProvider`'s
- *  own branch count under R-3.6's ceiling; both reads are only meaningful
- *  while actively viewing a version that has something captured. */
-function shouldFetchCapturedVersion(isViewingVersion: boolean, hasCapturedState: boolean): boolean {
-  return isViewingVersion && hasCapturedState;
-}
-
-// The remaining small helpers below exist for the same R-3.6 reason as the
-// `resolve*` functions above — each inlined ternary/`&&` chain is itself a
-// branch ESLint's `complexity` rule counts against `ProjectVersionProvider`,
-// so query-args/loading/value derivation is factored out to plain functions
-// instead of living inline in the component body.
-
-function versionsQueryArgs(orgId: string | undefined, projectId: string, now: number | undefined) {
-  return orgId ? { projectId, orgId, now } : ("skip" as const);
-}
-
-/** `useAuthedQuery` reads `"skip"` while ungated, so "loading" is "gated open,
- *  but the query hasn't resolved yet" — reused for all three reads below. */
-function isLoadingGated(gateOpen: boolean, raw: unknown): boolean {
-  return gateOpen && raw === undefined;
-}
-
-function snapshotEntriesQueryArgs(orgId: string | undefined, snapshotId: string | undefined) {
-  return orgId && snapshotId ? { snapshotId, orgId } : ("skip" as const);
-}
-
-function equipmentBundleQueryArgs(
+function versionQueryArgs(
   orgId: string | undefined,
   projectId: string,
-  fetchCaptured: boolean,
-  snapshotId: string | undefined,
+  fetch: boolean,
+  versionId: string | undefined,
 ) {
-  return orgId && fetchCaptured && snapshotId ? { projectId, orgId, snapshotId } : ("skip" as const);
+  return orgId && fetch && versionId ? { organizationId: orgId, projectId, versionId } : ("skip" as const);
 }
 
-/** Both captured-version reads resolve to `null` (not `undefined`) outside
- *  their gate, so a consumer never has to separately check `fetchCaptured`
- *  itself. */
-function resolveGatedValue<T>(gateOpen: boolean, raw: T | null | undefined): T | null {
-  return gateOpen ? (raw ?? null) : null;
-}
-
-export function ProjectVersionProvider({
-  projectId,
-  orgId,
-  now,
-  children,
-}: {
-  projectId: string;
-  orgId: string | undefined;
-  now?: number;
-  children: React.ReactNode;
-}) {
+/**
+ * The state computation itself, as a standalone hook — split out of
+ * `ProjectVersionProvider` so `ProjectDetailPage` can call it directly,
+ * BEFORE the provider's own JSX, and derive the "composed object" (design
+ * §5 D32, `composeProjectWithVersion`) from its `viewingPlanFields` for the
+ * rest of the page to read. The provider below just re-exposes this same
+ * value over context so deeper components (the header pill, `VersionStrip`,
+ * tab slots) don't need it threaded through props.
+ */
+export function useProjectVersionState(projectId: string, orgId: string | undefined): ProjectVersionContextValue {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const versionsRaw = useAuthedQuery(api.projectVersionsRead.listVersions, versionsQueryArgs(orgId, projectId, now));
-  const versions = useMemo<ProjectVersionListItem[]>(() => versionsRaw ?? [], [versionsRaw]);
-  const isLoadingVersions = isLoadingGated(orgId != null, versionsRaw);
+  const versionsRaw = useAuthedQuery(api.versionsRead.listForProject, versionsQueryArgs(orgId, projectId));
+  const versions = useMemo<ProjectVersionSummary[]>(() => versionsRaw ?? [], [versionsRaw]);
+  const isLoadingVersions = orgId != null && versionsRaw === undefined;
 
-  const requestedRevision = parseRequestedRevision(searchParams.get("v"));
-  const liveRevision = useMemo(() => resolveLiveRevision(versions), [versions]);
-  const viewingVersion = useMemo(
-    () => resolveViewingVersion(versions, requestedRevision),
-    [versions, requestedRevision],
+  const requestedNumber = parseRequestedNumber(searchParams.get("v"));
+  const liveVersion = useMemo(() => versions.find((v) => v.isLive) ?? null, [versions]);
+  const requestedVersion = useMemo(
+    () => (requestedNumber == null ? null : (versions.find((v) => v.number === requestedNumber) ?? null)),
+    [versions, requestedNumber],
   );
-  const isViewingVersion = resolveIsViewingVersion(requestedRevision, isLoadingVersions, liveRevision);
-  const hasCapturedState = resolveHasCapturedState(isViewingVersion, viewingVersion);
+  // Only "viewing a version" once the list has loaded AND the requested
+  // number resolves to a real, non-live row — a stray/typo'd `?v=` or a
+  // number that doesn't (yet) exist reads as "viewing live", never a crash.
+  const isViewingVersion = !isLoadingVersions && requestedVersion != null && !requestedVersion.isLive;
+  const viewingVersion = isViewingVersion ? requestedVersion : null;
 
-  const snapshotId = isViewingVersion ? viewingVersion?.snapshotId : undefined;
-  const fetchCaptured = shouldFetchCapturedVersion(isViewingVersion, hasCapturedState);
-  const entriesRaw = useAuthedQuery(api.projectLocksRead.snapshotEntries, snapshotEntriesQueryArgs(orgId, snapshotId));
-  const isLoadingProjection = isLoadingGated(fetchCaptured, entriesRaw);
-  const projected = useMemo<ProjectedView | null>(() => {
-    if (!fetchCaptured || !entriesRaw) return null;
-    return projectSnapshotEntries(entriesRaw as SnapshotEntryLike[]);
-  }, [fetchCaptured, entriesRaw]);
-
-  // #1080/#1101 — a second, join-shaped read for the Equipment tab
-  // specifically (sub-hires/categorySlots/reference-data resolution the pure
-  // projectSnapshotEntries mapper can't do). Gated the same way as
-  // `entriesRaw` above.
-  const equipmentBundleRaw = useAuthedQuery(
-    api.projectVersionsEquipment.bundle,
-    equipmentBundleQueryArgs(orgId, projectId, fetchCaptured, snapshotId),
+  const fetchViewing = isViewingVersion;
+  const viewingRaw = useAuthedQuery(
+    api.versionsRead.getVersion,
+    versionQueryArgs(orgId, projectId, fetchViewing, viewingVersion?.id),
   );
-  const isLoadingEquipmentBundle = isLoadingGated(fetchCaptured, equipmentBundleRaw);
-  const equipmentBundle = resolveGatedValue(fetchCaptured, equipmentBundleRaw);
+  const isLoadingViewingVersion = fetchViewing && viewingRaw === undefined;
+  const viewingPlanFields = useMemo<Record<string, unknown> | null>(() => {
+    if (!fetchViewing || !viewingRaw) return null;
+    return (viewingRaw.planFields as Record<string, unknown>) ?? null;
+  }, [fetchViewing, viewingRaw]);
 
-  const setViewingRevision = useCallback(
-    (revision: number | null) => {
+  // #1233 (Phase 6) — same gating as the plan-fields fetch above: only while
+  // actually viewing a non-live version. `now` is omitted (the query
+  // defaults to its own `Date.now()`) rather than passed from the client, so
+  // this doesn't re-subscribe with a new arg on every render.
+  const driftRaw = useAuthedQuery(
+    api.versionsRead.quoteDriftForVersion,
+    versionQueryArgs(orgId, projectId, fetchViewing, viewingVersion?.id),
+  );
+  const viewingQuoteDrift = fetchViewing ? (driftRaw ?? null) : null;
+
+  const setViewingNumber = useCallback(
+    (number: number | null) => {
       const params = new URLSearchParams(searchParams.toString());
-      if (revision == null) params.delete("v");
-      else params.set("v", String(revision));
+      if (number == null) params.delete("v");
+      else params.set("v", String(number));
       const qs = params.toString();
       router.push(qs ? `${pathname}?${qs}` : pathname);
     },
     [router, pathname, searchParams],
   );
 
-  const value: ProjectVersionContextValue = {
+  const [compare, setCompare] = useState<CompareModeState | null>(null);
+  const openCompare = useCallback((a: CompareSide, b: CompareSide) => setCompare({ a, b }), []);
+  const closeCompare = useCallback(() => setCompare(null), []);
+
+  return {
     projectId,
+    orgId,
     versions,
     isLoadingVersions,
-    liveRevision,
-    viewingRevision: requestedRevision,
+    liveVersion,
+    viewingNumber: requestedNumber,
     isViewingVersion,
     viewingVersion,
-    projected,
-    isLoadingProjection,
-    hasCapturedState,
-    equipmentBundle,
-    isLoadingEquipmentBundle,
-    setViewingRevision,
+    viewingPlanFields,
+    isLoadingViewingVersion,
+    viewingQuoteDrift,
+    setViewingNumber,
+    compare,
+    openCompare,
+    closeCompare,
   };
+}
 
+/** Thin context wrapper — `value` is `useProjectVersionState`'s own return,
+ *  computed by the caller (page.tsx) so it can also build the composed
+ *  object before this provider's children render. */
+export function ProjectVersionProvider({
+  value,
+  children,
+}: {
+  value: ProjectVersionContextValue;
+  children: React.ReactNode;
+}) {
   return <ProjectVersionContext.Provider value={value}>{children}</ProjectVersionContext.Provider>;
 }
 
-/** Throws outside a `ProjectVersionProvider` — every project-detail tab is
- *  meant to be mounted under one (page.tsx), so a missing provider is a bug,
- *  not a state to handle gracefully. */
+/** Throws outside a `ProjectVersionProvider` — every project-detail surface
+ *  that needs version state is mounted under one (page.tsx), so a missing
+ *  provider is a bug, not a state to handle gracefully. */
 export function useProjectVersion(): ProjectVersionContextValue {
   const ctx = useContext(ProjectVersionContext);
   if (!ctx) throw new Error("useProjectVersion must be used within a ProjectVersionProvider");

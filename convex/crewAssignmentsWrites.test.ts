@@ -26,7 +26,10 @@ function makeT(): T {
 async function seed(t: T) {
   await t.run(async (ctx) => {
     await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "admin" });
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false,
+      liveVersionId: "v-p1",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", defaultDayRate: 500, isActive: true });
     await ctx.db.insert("crewRoles", { id: "r1", organizationId: ORG, name: "Rigger", defaultRate: 400, rateType: "DAILY" });
   });
@@ -145,7 +148,10 @@ describe("crewAssignmentsWrites", () => {
   test("create/update/delete on a service-linked assignment keeps the service's costTotal + project totals in sync (#796)", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false });
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false,
+        versionId: "v-p1",
+        lineageId: "s1",
+      });
     });
 
     // Create linked straight to the service (not via projectServicesWrites) — the
@@ -204,7 +210,10 @@ describe("crewAssignments reads", () => {
   test("membersForAssignment: active members + this-project assignments + conflicts/unavailability", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other", status: "CONFIRMED", isTemplate: false,
+        liveVersionId: "v-p2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", status: "CONFIRMED", phase: "EVENT" });
       // conflicting assignment on ANOTHER project in the window
       await ctx.db.insert("crewAssignments", { id: "a2", organizationId: ORG, projectId: "p2", crewMemberId: "c1", status: "CONFIRMED", startDate: NOW, endDate: NOW + DAY });
@@ -217,51 +226,40 @@ describe("crewAssignments reads", () => {
     expect(c1?.isUnavailable).toBe(true);
   });
 
-  // #988 (Phase C) — bulkDeleteNative/bulkStatusNative/generateShiftsNative were
-  // FEATUREDOCS/62's "deliberately deferred" gate sites; each is now gated the
-  // same structural way createNative/updateNative/deleteNative already are.
-  const JUSTIFICATION = "Client requested a change while on site today.";
-
-  test("bulkStatusNative + bulkDeleteNative reject on an ON_SITE project without justification, succeed with one", async () => {
+  // #1230: bulkDeleteNative/bulkStatusNative/generateShiftsNative are all
+  // structural — never gated by the pricing lock, so they succeed on an
+  // ON_SITE project with no justification argument at all.
+  test("bulkStatusNative + bulkDeleteNative succeed on an ON_SITE project — structural, never gated", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       if (p) await ctx.db.patch(p._id, { status: "ON_SITE" });
     });
-    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, justification: JUSTIFICATION });
-    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, id: "a2", auditId: "l2", justification: JUSTIFICATION });
+    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, base);
+    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, id: "a2", auditId: "l2" });
 
-    await expect(
-      t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.bulkStatusNative, { orgId: ORG, ids: ["a1", "a2"], status: "CONFIRMED", now: NOW, actor, auditId: "l3" }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     const s = await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.bulkStatusNative, {
-      orgId: ORG, ids: ["a1", "a2"], status: "CONFIRMED", now: NOW + 1, actor, auditId: "l3b", justification: JUSTIFICATION,
+      orgId: ORG, ids: ["a1", "a2"], status: "CONFIRMED", now: NOW, actor, auditId: "l3b",
     });
     expect(s.updated).toBe(2);
 
-    await expect(
-      t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.bulkDeleteNative, { orgId: ORG, ids: ["a1", "a2"], now: NOW + 2, actor, auditId: "l4" }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     const d = await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.bulkDeleteNative, {
-      orgId: ORG, ids: ["a1", "a2"], now: NOW + 3, actor, auditId: "l4b", justification: JUSTIFICATION,
+      orgId: ORG, ids: ["a1", "a2"], now: NOW + 1, actor, auditId: "l4b",
     });
     expect(d.deleted).toBe(2);
   });
 
-  test("generateShiftsNative rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  test("generateShiftsNative succeeds on an ON_SITE project — structural, never gated", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       if (p) await ctx.db.patch(p._id, { status: "ON_SITE" });
     });
     await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, {
-      ...base, startDate: NOW, endDate: NOW + DAY, justification: JUSTIFICATION,
+      ...base, startDate: NOW, endDate: NOW + DAY,
     });
-    await expect(
-      t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.generateShiftsNative, { assignmentId: "a1", orgId: ORG }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     const res = await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.generateShiftsNative, {
-      assignmentId: "a1", orgId: ORG, justification: JUSTIFICATION,
+      assignmentId: "a1", orgId: ORG,
     });
     expect(res.count).toBe(2);
   });

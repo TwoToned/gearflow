@@ -1,4 +1,6 @@
+import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
+import { versionRows, resolveVersionId, resolveEffectiveProjectForVersion } from "./versionScope";
 
 export interface FinanceSnapshotLine {
   /** Mirrors `enums.InvoiceLineSourceType` (convex/lib/validators.ts).
@@ -119,18 +121,33 @@ async function resolveRollupCategoryNames(
  * the PDF's own line-item structuring (`structure-line-items.ts`) — that
  * pipeline stays exactly as-is (kit boundaries, sub-hire sections, packer
  * sort, etc. are PDF presentation concerns, out of scope for this entity).
+ *
+ * #1233 (Phase 6) — `versionId` (optional, defaults to the project's live
+ * version, same "optional/default-live" shape every other version-aware read
+ * in this codebase takes — `versionScope.ts`'s `resolveVersionId`) lets
+ * `quotesWrites.sendNative` freeze a NON-live version's own lines/pricing,
+ * not just the live plan's. An invoice snapshot (`invoicesWrites.ts`) never
+ * passes one — invoices remain LIVE-ONLY, unaffected.
  */
 export async function buildFinanceLines(
   ctx: MutationCtx,
   projectId: string,
   orgId: string,
+  versionId?: string,
 ): Promise<FinanceSnapshotLine[]> {
-  const [groups, projectLines, services, project] = await Promise.all([
-    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    // `by_cuid` is GLOBAL — org-checked below like every other lookup here.
-    ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
+  // `by_cuid` is GLOBAL — org-checked below like every other lookup here.
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project || project.organizationId !== orgId) {
+    throw new ConvexError(`buildFinanceLines: project not found or cross-org: ${projectId}`);
+  }
+  const targetVersionId = resolveVersionId(project, versionId);
+  // #1233 — the target version's OWN discountPercent (below) wins over the
+  // live project's. No-op (same object) when targetVersionId IS live.
+  const effectiveProject = await resolveEffectiveProjectForVersion(ctx, project, targetVersionId);
+  const [groups, projectLines, services] = await Promise.all([
+    versionRows(ctx, "projectGroups", targetVersionId),
+    versionRows(ctx, "projectLineItems", targetVersionId),
+    versionRows(ctx, "projectServices", targetVersionId),
   ]);
 
   const { modelNameById, kitNameById } = await resolveModelAndKitNames(ctx, projectLines, orgId);
@@ -290,7 +307,7 @@ export async function buildFinanceLines(
   // Emitted last so it reads as a deduction from everything above it, and
   // never folded into a rollup category — it belongs to the whole project,
   // not to one section.
-  const discountPercent = project && project.organizationId === orgId ? Number(project.discountPercent) || 0 : 0;
+  const discountPercent = Number(effectiveProject.discountPercent) || 0;
   if (discountPercent > 0) {
     const gross = round2(lines.reduce((sum, l) => sum + l.lineTotal, 0));
     const discountAmount = round2(gross * (discountPercent / 100));

@@ -4,12 +4,12 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { Actor } from "./auth";
 import { writeActivityLog } from "./audit";
 import { bumpProjectCounters } from "./counters";
-import { lockTierForStatus, LOCK_TIER_RANK, crossesIntoSnapshotStatus } from "./projectLocks";
+import { crossesIntoSnapshotStatus, pricingLockRaiseFields } from "./projectLocks";
 import { captureProjectSnapshot } from "./projectSnapshots";
 import { hasAcceptedQuote } from "./quoteState";
 import { resolveAutoStatusEnabled, type AutoStatusSettingKey } from "./orgSettings";
-import { autoCommitOpenSession } from "../projectUnlockSessionsWrites";
 import { assertWritesEnabled } from "./writeGuard";
+import { requireLiveVersionId } from "./versionScope";
 
 /**
  * Project status automation (#1160) — the ONE place a job's status moves on its
@@ -29,9 +29,10 @@ import { assertWritesEnabled } from "./writeGuard";
  *    COMPLETED or INVOICED job is never reopened by a warehouse scan, a job
  *    already past the target never goes backwards, and re-firing a trigger is a
  *    no-op because the `from` set no longer matches.
- * 2. **Never crosses into the HARD_LOCKED tier, and reproduces every ceremony
- *    it does cross.** COMPLETED/INVOICED are never automated — closing a job out
- *    is a human's call and there is no event that means "the work is finished".
+ * 2. **Never reaches a terminal, human-closed-out status, and reproduces every
+ *    ceremony a crossing it DOES make requires.** COMPLETED/INVOICED are never
+ *    automated — closing a job out is a human's call and there is no event
+ *    that means "the work is finished".
  *
  *    CONFIRMED is the one exception, added by #1236: `PAYMENT_SETTLED`. In the
  *    business this models, payment IS the confirmation ("once it's paid, the job
@@ -53,15 +54,45 @@ import { assertWritesEnabled } from "./writeGuard";
  *    mutation already passed** — the same reasoning the returns station shipped
  *    with: routing through `updateStatusNative` would re-gate on `project:update`,
  *    which a dedicated `warehouse` role does NOT have, so the side effect would
- *    silently fail for exactly the role the station is built for. `bumpProjectCounters`,
- *    the `autoCommitOpenSession` invariant ("a session never silently spans a
- *    status change") and the lock-tier-annotated audit row are all reproduced here
- *    so an auto-advance and a manual one leave the same trail.
+ *    silently fail for exactly the role the station is built for. `bumpProjectCounters`
+ *    and a `pricingLocked`-annotated audit row are reproduced here so an
+ *    auto-advance and a manual one leave the same trail. (Phase 4 of "Project
+ *    versioning v2", #1230, deleted the old unlock-session mechanism this
+ *    module used to reproduce an invariant for — there is no longer a session
+ *    that could silently span a status change, so there is nothing left to
+ *    commit here.)
+ *
+ * **`pricingLocked` (#1230/#1236 merge note).** `updateStatusNative`'s manual
+ * CONFIRMED transition always raises `projects.pricingLocked` (D-table) — but
+ * TWO of this module's own paths can reach AWAITING_PAYMENT/CONFIRMED WITHOUT
+ * that manual transition, and without `sendNative`'s own D55 raise, ever
+ * having run: `INVOICE_ISSUED` fires for a job that skipped quoting entirely
+ * (no quote was ever sent, live or not), and `QUOTE_ACCEPTED` on a NON-live
+ * quote's version makes THAT version live (`performMakeLive`) without itself
+ * touching `pricingLocked` — it was never raised for a version that wasn't
+ * live at send time. Left alone, either path would land a job at
+ * AWAITING_PAYMENT/CONFIRMED with money fields still editable — a real gap,
+ * not a hypothetical one. `maybeAutoAdvanceProjectStatus` below closes it the
+ * same way `updateStatusNative` closes the CONFIRMED case: idempotently raise
+ * `pricingLocked` (`pricingLockRaiseFields`, R-3.1 — the same four fields
+ * every raise site writes) the moment the job FIRST reaches AWAITING_PAYMENT
+ * or CONFIRMED, never on the way back out (D57 — a revert never clears it;
+ * see `revertAutoAdvance` below, which deliberately leaves `pricingLocked`
+ * untouched).
  *
  * Every applied move writes a `STATUS_CHANGE` audit row carrying
  * `metadata.autoAdvanceTrigger`, so "who moved this job?" is answerable and the
  * automation is filterable in the activity log.
  */
+
+/** The statuses this module defensively raises `pricingLocked` on FIRST
+ *  reaching, regardless of which rule got it there — exported so its own
+ *  invariant tests (and any future rule addition) can check against the real
+ *  set instead of a copy of it (R-3.1). See the file header's `pricingLocked`
+ *  note for why these two and not, say, PREPPING (already covered — every
+ *  rule that can reach PREPPING has AWAITING_PAYMENT or CONFIRMED in its
+ *  `from` set, so pricing is already locked by the time it fires). */
+export const PRICING_LOCK_ON_REACH = new Set<string>(["AWAITING_PAYMENT", "CONFIRMED"]);
 
 export const AUTO_STATUS_TRIGGERS = [
   "QUOTE_SENT",
@@ -227,7 +258,10 @@ async function isSubHireWrapper(
 
 /**
  * The whole `ALL_CHECKED_OUT` question in ONE indexed scan of the project's
- * lines, org-filtered (`by_projectId` is a GLOBAL index — R-8.4.3).
+ * LIVE version's lines (VERSION-SCOPE: live-only — this checks real warehouse
+ * state, and a non-live version's line items are hypothetical, never
+ * physically picked; `by_versionId` is a GLOBAL index — org-check the row,
+ * R-8.4.3).
  *
  * Streamed rather than collected, and it returns the moment it finds a row still
  * in the building: at that point the trigger cannot fire whatever the remaining
@@ -242,12 +276,13 @@ async function isSubHireWrapper(
 async function allDeployableGearIsOut(
   ctx: MutationCtx,
   orgId: string,
-  projectId: string,
+  project: Doc<"projects">,
 ): Promise<boolean> {
+  const versionId = requireLiveVersionId(project);
   let anyOut = false;
   for await (const line of ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))) {
+    .withIndex("by_versionId", (q) => q.eq("versionId", versionId))) {
     if (line.organizationId !== orgId) continue;
     if (line.status === "CHECKED_OUT") anyOut = true;
     if (await isStillInBuilding(ctx, line, orgId)) return false;
@@ -255,11 +290,17 @@ async function allDeployableGearIsOut(
   return anyOut;
 }
 
-/** Existence check only (never a collect) — one CHECKED_OUT line is enough. */
-async function anyCheckedOut(ctx: MutationCtx, projectId: string): Promise<boolean> {
+/** Existence check only (never a collect) — one CHECKED_OUT line is enough.
+ *  VERSION-SCOPE: live-only, same reasoning as `allDeployableGearIsOut`
+ *  above — `by_versionId_status` is a GLOBAL index (R-8.4.3), but `versionId`
+ *  here is derived from the already org-checked `project`, not caller-
+ *  supplied, so any row it returns is trustworthy by construction (same trust
+ *  chain `convex/lib/versionScope.ts`'s `liveRows`/`versionRows` rely on). */
+async function anyCheckedOut(ctx: MutationCtx, project: Doc<"projects">): Promise<boolean> {
+  const versionId = requireLiveVersionId(project);
   const out = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "CHECKED_OUT"))
+    .withIndex("by_versionId_status", (q) => q.eq("versionId", versionId).eq("status", "CHECKED_OUT"))
     .first();
   return out != null;
 }
@@ -276,7 +317,7 @@ async function conditionMet(
   ctx: MutationCtx,
   trigger: AutoStatusTrigger,
   orgId: string,
-  projectId: string,
+  project: Doc<"projects">,
   now: number,
 ): Promise<boolean> {
   switch (trigger) {
@@ -290,13 +331,13 @@ async function conditionMet(
       // caller has already established that an invoice reached PAID; this is the
       // gate the MANUAL confirm would have hit, and the automation must not be a
       // way around it.
-      return await hasAcceptedQuote(ctx, orgId, projectId, now);
+      return await hasAcceptedQuote(ctx, orgId, project.id, now);
     case "ALL_CHECKED_OUT":
       // Nothing deployable left in the building AND something actually went out
       // (a job with no EQUIPMENT lines at all must not "finish" deploying).
-      return await allDeployableGearIsOut(ctx, orgId, projectId);
+      return await allDeployableGearIsOut(ctx, orgId, project);
     case "ALL_RETURNED":
-      return !(await anyCheckedOut(ctx, projectId));
+      return !(await anyCheckedOut(ctx, project));
   }
 }
 
@@ -366,23 +407,16 @@ export async function maybeAutoAdvanceProjectStatus(
   const from = project.status ?? "";
   if (!rule.from.includes(from)) return null;
   if (!(await resolveAutoStatusEnabled(ctx, a.orgId, rule.settingKey))) return null;
-  if (!(await conditionMet(ctx, a.trigger, a.orgId, a.projectId, a.now))) return null;
+  if (!(await conditionMet(ctx, a.trigger, a.orgId, project, a.now))) return null;
 
   await ctx.db.patch(project._id, { status: rule.to, updatedAt: a.now });
   await bumpProjectCounters(ctx, a.orgId, project, { ...project, status: rule.to });
 
   await captureIfCrossing(ctx, { orgId: a.orgId, projectRef: project._id, from, to: rule.to, actor: a.actor, now: a.now });
 
-  // Same invariant updateStatusNative enforces: an unlock session never silently
-  // spans a status change. (The pre-#1160 returns auto-advance skipped this — a
-  // finance session left open across CHECKED_OUT → RETURNED straddled two tiers.)
-  await autoCommitOpenSession(ctx, a.orgId, a.projectId, project.projectNumber, a.actor, a.now);
-
-  const fromTier = lockTierForStatus(from);
-  const toTier = lockTierForStatus(rule.to);
-  const tierDelta = LOCK_TIER_RANK[toTier] - LOCK_TIER_RANK[fromTier];
-  const lockTierSuffix =
-    tierDelta > 0 ? ` — project locked (${toTier})` : tierDelta < 0 ? ` — project unlocked (${toTier})` : "";
+  const { summarySuffix, metadataExtra } = await applyPricingLockOnReach(ctx, {
+    project, to: rule.to, actor: a.actor, now: a.now,
+  });
 
   await writeActivityLog(ctx, {
     id: createId(),
@@ -393,20 +427,37 @@ export async function maybeAutoAdvanceProjectStatus(
     entityName: project.projectNumber,
     userId: a.actor.userId,
     userName: a.actor.userName,
-    summary: `Auto-advanced to ${rule.to} — ${rule.because}${lockTierSuffix}`,
+    summary: `Auto-advanced to ${rule.to} — ${rule.because}${summarySuffix}`,
     details: { from, to: rule.to },
-    metadata: {
-      autoAdvanceTrigger: a.trigger,
-      statusFrom: from,
-      statusTo: rule.to,
-      lockTierFrom: fromTier,
-      lockTierTo: toTier,
-    },
+    metadata: { autoAdvanceTrigger: a.trigger, statusFrom: from, statusTo: rule.to, ...metadataExtra },
     projectId: project.id,
     createdAt: a.now,
   });
 
   return rule.to;
+}
+
+/**
+ * #1230 × #1236 merge — see this module's own header note. Idempotently
+ * raises `pricingLocked` the moment the job FIRST reaches AWAITING_PAYMENT or
+ * CONFIRMED by ANY trigger, closing the gap left by the two paths that can
+ * get here without `sendNative`'s D55 raise or `updateStatusNative`'s own
+ * CONFIRMED-transition raise ever having run (invoice-first jobs with no
+ * quote at all; accepting a non-live quote's version via make-live). Never
+ * on the way OUT of either status (D57 — a revert never clears it).
+ *
+ * Split out of `maybeAutoAdvanceProjectStatus` (R-3.6) purely to keep that
+ * function's own branch count readable — the returned shape is exactly what
+ * its audit-log write needs, so the caller stays a straight line.
+ */
+async function applyPricingLockOnReach(
+  ctx: MutationCtx,
+  a: { project: Doc<"projects">; to: string; actor: Actor; now: number },
+): Promise<{ summarySuffix: string; metadataExtra: Record<string, unknown> }> {
+  const justLocked = PRICING_LOCK_ON_REACH.has(a.to) && a.project.pricingLocked !== true;
+  if (!justLocked) return { summarySuffix: "", metadataExtra: {} };
+  await ctx.db.patch(a.project._id, pricingLockRaiseFields(a.actor, a.now));
+  return { summarySuffix: " — pricing locked", metadataExtra: { pricingLocked: true } };
 }
 
 /**
@@ -461,10 +512,13 @@ export async function revertAutoAdvance(
  * A revert is a status change like any other, and this module's whole claim is
  * that "who moved this job?" is answerable. Before this, the only trace was
  * `agentRevert`'s aggregate REVERT_AGENT_WINDOW row, which records counts — not
- * which project moved, or between which statuses. A backwards move that crosses
- * a lock tier (CONFIRMED → AWAITING_PAYMENT is FINANCE_LOCKED → OPEN) was
- * invisible in the project's own activity log, and left an unlock session
- * straddling two tiers.
+ * which project moved, or between which statuses.
+ *
+ * Deliberately does NOT touch `pricingLocked` — D57's own rule, unchanged by
+ * this module's forward-advance raise above: once a job's price has gone to
+ * the client (or been defensively locked on reaching AWAITING_PAYMENT/
+ * CONFIRMED), reverting the STATUS a step doesn't mean the price is no longer
+ * agreed. Only a person clears the lock, via `unlockPricingNative`.
  */
 async function auditRevert(
   ctx: MutationCtx,
@@ -478,14 +532,6 @@ async function auditRevert(
     now: number;
   },
 ): Promise<void> {
-  await autoCommitOpenSession(ctx, a.orgId, a.project.id, a.project.projectNumber, a.actor, a.now);
-
-  const fromTier = lockTierForStatus(a.from);
-  const toTier = lockTierForStatus(a.to);
-  const tierDelta = LOCK_TIER_RANK[toTier] - LOCK_TIER_RANK[fromTier];
-  const lockTierSuffix =
-    tierDelta > 0 ? ` — project locked (${toTier})` : tierDelta < 0 ? ` — project unlocked (${toTier})` : "";
-
   await writeActivityLog(ctx, {
     id: createId(),
     organizationId: a.orgId,
@@ -495,14 +541,12 @@ async function auditRevert(
     entityName: a.project.projectNumber,
     userId: a.actor.userId,
     userName: a.actor.userName,
-    summary: `Reverted the automatic move to ${a.from} — back to ${a.to}${lockTierSuffix}`,
+    summary: `Reverted the automatic move to ${a.from} — back to ${a.to}`,
     details: { from: a.from, to: a.to },
     metadata: {
       revertOfTrigger: a.trigger,
       statusFrom: a.from,
       statusTo: a.to,
-      lockTierFrom: fromTier,
-      lockTierTo: toTier,
     },
     projectId: a.project.id,
     createdAt: a.now,

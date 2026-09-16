@@ -33,7 +33,7 @@ vi.mock("@/hooks/use-project-managers-writes", () => ({
   useProjectManagerWrites: () => ({ set: vi.fn() }),
 }));
 vi.mock("@/hooks/use-project-lock", () => ({
-  useProjectLockStatus: () => ({ loading: true, tier: "OPEN", hasOpenSession: false, canOverrideHardLock: false }),
+  useProjectPricingLock: () => ({ loading: true, pricingLocked: false, canUnlockPricing: false, lock: vi.fn(), unlock: vi.fn() }),
 }));
 vi.mock("@/hooks/use-clients", () => ({
   useClientSearch: () => [],

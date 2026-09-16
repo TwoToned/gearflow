@@ -1,418 +1,204 @@
 import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { assertStrLen } from "./fieldGuards";
-import { currentRevisionQuoteStatus, projectLiveRevision, type EffectiveQuoteStatus } from "./quoteState";
+import { hasPermission } from "./permissionsCore";
 
 /**
- * Project lifecycle lock-tier module (#957) — the SINGLE source of truth for the
- * status → lock-tier boundary shared by #791 (finance soft-lock), #793 (ON_SITE
- * justification gate), and #792 (COMPLETED hard-lock). Every gate site across
- * convex/projectWrites.ts, lineItemWrites.ts, projectGroupsWrites.ts,
- * projectCategoriesWrites.ts, projectServicesWrites.ts, crewAssignmentsWrites.ts
- * calls `assertLifecycleGuard` from here — a second hand-maintained copy of the
- * tier boundary would be a defect even if in sync (POLICY.md R-3.1).
+ * Project pricing-lock module (#1230, Phase 4 of "Project versioning v2",
+ * parent #1221) — the SHRUNKEN successor to the old 4-tier lock system
+ * (`LockTier`/`resolveLockTier`/unlock sessions/per-edit justification),
+ * deleted wholesale by this phase. The whole rule now fits in one field and
+ * one guard:
  *
- * Tier table (see #957 tracking issue):
- *   ENQUIRY / QUOTING / QUOTED /
- *     AWAITING_PAYMENT                   → OPEN            (nothing gated)
- *   CONFIRMED / PREPPING / CHECKED_OUT   → FINANCE_LOCKED  (money fields gated)
- *   ON_SITE / RETURNED                   → JUSTIFY         (+ structural mutations
- *                                                            need confirm+justify)
- *   COMPLETED / INVOICED                 → HARD_LOCKED     (everything gated,
- *                                                            no per-edit path)
- *   CANCELLED                            → OPEN            (ungated — #957 open Q)
+ * ```ts
+ * projects.pricingLocked?: boolean     // absent = false
+ * projects.pricingLockedAt?: number
+ * projects.pricingLockedById?: string
+ * ```
  *
- * #1236's `AWAITING_PAYMENT` is deliberately **OPEN**, not FINANCE_LOCKED.
+ * Applies to the LIVE version only. A non-live `projectVersions` row (Phase
+ * 1-3, `convex/versions.ts`) is writable in every field family regardless of
+ * this flag — `assertPricingUnlocked` below takes the row's own `versionId`
+ * for exactly this reason. Structure, plan fields and non-live-version money
+ * are NEVER gated by anything in this file; only a MONEY write against the
+ * project's live version can be rejected here.
  *
- * The instinct is the opposite — a job whose client has agreed to a price
- * surely shouldn't be repriced — but the lock that expresses that is already
- * here: #988's `quoteState` input escalates any project holding a SENT or
- * ACCEPTED revision to FINANCE_LOCKED regardless of status. Giving
- * AWAITING_PAYMENT its own status-driven FINANCE_LOCKED tier on top of it
- * breaks #985 decision 2 — "cutting a new version is the unlock" — because
- * `newVersionNative`'s `bypassQuoteLock` resolves the tier from STATUS alone,
- * so a status-locked AWAITING_PAYMENT would make the sanctioned exit
- * unreachable: a client asking for a change after approving could no longer be
- * re-quoted without an unlock session. (This is not hypothetical — it is what
- * `quotesWrites.test.ts`'s "supersedes an ACCEPTED revision" case caught.)
+ * Every gate site across `projectWrites.ts`/`lineItemWrites.ts`/
+ * `projectGroupsWrites.ts`/`projectServicesWrites.ts`/
+ * `crewAssignmentsWrites.ts` calls `assertPricingUnlocked` — a second
+ * hand-maintained copy of this check would be a defect even in sync
+ * (POLICY.md R-3.1).
  *
- * The residual gap that leaves — an invoice issued on a job with NO quote
- * behind it locks nothing — is real, and is **pre-existing**: an ISSUED invoice
- * has never been an input to this resolver. Closing it belongs in
- * `resolveLockTier` as a third input with its own sanctioned exit (void and
- * reissue), not smuggled in as a status tier that deadlocks the quote verbs.
- * See FEATUREDOCS/77, "Deliberately out of scope".
+ * **merge note (#1221 × #1236, "money phase" merge).** Main independently
+ * extended the OLD 4-tier system this phase deletes with an `AWAITING_PAYMENT`
+ * → OPEN tier entry and a `resolveLockTier({status, quoteState})` fold-in.
+ * Neither survives the merge as a tier concept — but the underlying intent
+ * ("a job whose pricing has gone to the client shouldn't silently reprice")
+ * is preserved by `pricingLocked` itself: `sendNative` raises it the moment a
+ * LIVE-version quote is sent (D55), long before AWAITING_PAYMENT is reached,
+ * so the two systems agree on the common path. `convex/lib/projectAutoStatus.ts`
+ * additionally raises it defensively on the two paths that reach
+ * AWAITING_PAYMENT/CONFIRMED WITHOUT a live-version send ever having happened
+ * (an invoice-first job with no quote at all, and accepting a NON-live
+ * quote's version via make-live) — see that module's own note. `isConfirmedOrLater`/
+ * `crossesIntoSnapshotStatus` below are kept from the OLD system verbatim
+ * (pipeline-position helpers, never part of the tier/lock rewrite).
  *
- * #988 (Phase C, part of #985's finance version-control program) folds ONE
- * more input into this same resolver rather than adding a second lock: a
- * `resolveLockTier({ status, quoteState })` on top of `lockTierForStatus`,
- * where an OPEN-status project whose current quote revision has been sent
- * escalates to FINANCE_LOCKED too. See `resolveLockTier` below.
+ * See FEATUREDOCS/78's Phase 4 section and
+ * `convex/lib/projectLocks.test.ts` for the truth table + D54-D57 edge cases.
  */
 
-export type LockTier = "OPEN" | "FINANCE_LOCKED" | "JUSTIFY" | "HARD_LOCKED";
+// ─── Locked field lists (the authoritative export — UNCHANGED by Phase 4) ───
 
-const TIER_BY_STATUS: Record<string, LockTier> = {
-  ENQUIRY: "OPEN",
-  QUOTING: "OPEN",
-  QUOTED: "OPEN",
-  // OPEN, not FINANCE_LOCKED — see the long note above. The quote-sent input
-  // already locks the pricing of anything that came through a quote, and a
-  // status lock here would make "cut a new version" unreachable.
-  AWAITING_PAYMENT: "OPEN",
-  CONFIRMED: "FINANCE_LOCKED",
-  PREPPING: "FINANCE_LOCKED",
-  CHECKED_OUT: "FINANCE_LOCKED",
-  ON_SITE: "JUSTIFY",
-  RETURNED: "JUSTIFY",
-  COMPLETED: "HARD_LOCKED",
-  INVOICED: "HARD_LOCKED",
-  CANCELLED: "OPEN",
-};
-
-/** Resolve a project's lock tier from its `status`. Templates and statusless
- *  (in-progress create) rows read as OPEN. */
-export function lockTierForStatus(status: string | null | undefined): LockTier {
-  if (!status) return "OPEN";
-  return TIER_BY_STATUS[status] ?? "OPEN";
-}
-
-/** Restrictiveness order of the four tiers — the single place that answers
- *  "did this transition make the project MORE or LESS locked", so callers
- *  (e.g. `projectWrites.updateStatusNative`'s activity-log summary) don't grow
- *  a second hand-maintained ordering of `LockTier` (R-3.1). */
-export const LOCK_TIER_RANK: Record<LockTier, number> = {
-  OPEN: 0,
-  FINANCE_LOCKED: 1,
-  JUSTIFY: 2,
-  HARD_LOCKED: 3,
-};
-
-export function isConfirmedOrLater(status: string | null | undefined): boolean {
-  return lockTierForStatus(status) !== "OPEN";
-}
-
-// ─── #988 (Phase C) — the quote-send lock folds into the SAME tier resolver ──
-
-/** Why the effective tier is what it is — lets the UI explain itself and offer
- *  the right exit (Phase E). `STATUS` covers both "nothing is locked" and
- *  every status-driven tier (FINANCE_LOCKED/JUSTIFY/HARD_LOCKED via CONFIRMED+);
- *  `QUOTE_SENT` is the one new case — an OPEN-status project (ENQUIRY/QUOTING/
- *  QUOTED) whose LIVE revision (`projectLiveRevision`, #1080/#1085 — not
- *  necessarily the allocator's high-water mark once a promote has moved them
- *  apart) has already gone out. */
-export type LockTierReason = "STATUS" | "QUOTE_SENT";
-
-export interface ResolveLockTierResult {
-  tier: LockTier;
-  reason: LockTierReason;
-}
-
-/**
- * A quote state that keeps pricing OPEN when the status tier is itself OPEN:
- * nothing has ever been sent for this revision (`null`), or the current
- * revision is a fresh, unsent `DRAFT`. Every other state — `SENT`, `ACCEPTED`,
- * `DECLINED`, `SUPERSEDED`, `EXPIRED` — means this exact revision has already
- * gone out and is either still live or terminal; decision 2 ("cutting a new
- * version is the unlock") makes `newVersionNative` the ONLY way out of any of
- * them, so all five raise the tier identically. `DECLINED`/`SUPERSEDED` are
- * defensive completeness — a project's CURRENT revision is never SUPERSEDED in
- * normal flow (only an older, already-superseded one is), and a declined
- * revision still needs a new version rather than silent re-editing.
- */
-function quoteStateKeepsOpen(quoteState: EffectiveQuoteStatus | null | undefined): boolean {
-  return quoteState == null || quoteState === "DRAFT";
-}
-
-/**
- * `lockTierForStatus(status)` → `resolveLockTier({ status, quoteState })` — the
- * quote-send lock (decision 2, #985) is not a second lock mechanism, it is a
- * second INPUT to this one. `quoteState` is the CURRENT revision's quote status
- * (`quoteState.ts#currentRevisionQuoteStatus`, or an already-resolved
- * `effectiveQuoteStatus` for a caller that has one to hand, e.g. a read query
- * with real EXPIRED detection).
- *
- * Monotonic by construction: a quote state can only ever raise OPEN to
- * FINANCE_LOCKED, never touch (let alone lower) FINANCE_LOCKED/JUSTIFY/
- * HARD_LOCKED — those are already at or above FINANCE_LOCKED from status alone.
- * `LockTier` values are unchanged, so every existing `FINANCIALS_LOCKED` /
- * `PROJECT_LOCKED` code and toast mapping still applies untouched.
- */
-export function resolveLockTier(input: {
-  status: string | null | undefined;
-  quoteState?: EffectiveQuoteStatus | null;
-}): ResolveLockTierResult {
-  const statusTier = lockTierForStatus(input.status);
-  if (statusTier !== "OPEN") return { tier: statusTier, reason: "STATUS" };
-  if (quoteStateKeepsOpen(input.quoteState)) return { tier: "OPEN", reason: "STATUS" };
-  return { tier: "FINANCE_LOCKED", reason: "QUOTE_SENT" };
-}
-
-/** The linear pipeline order (CANCELLED is off-pipeline, reachable from any
- *  status — see FEATUREDOCS/10 Status Flow). Used only to detect a snapshot-
- *  worthy transition and the HARD_LOCKED-revert boundary, not for RBAC. */
-const STATUS_ORDER = [
-  "ENQUIRY", "QUOTING", "QUOTED", "AWAITING_PAYMENT", "CONFIRMED", "PREPPING",
-  "CHECKED_OUT", "ON_SITE", "RETURNED", "COMPLETED", "INVOICED",
-] as const;
-
-/** True for any transition that lands exactly on CONFIRMED or COMPLETED —
- *  forward advance OR a revert-then-re-advance ("re-crossing"). Each crossing
- *  takes a NEW snapshot (#792: "versioned list, never overwritten"). */
-export function crossesIntoSnapshotStatus(from: string | null | undefined, to: string): boolean {
-  return from !== to && (to === "CONFIRMED" || to === "COMPLETED");
-}
-
-/** Whether `to` is strictly forward of `from` in the pipeline order. CANCELLED
- *  (or any unrecognised status) never counts as forward — it's off-pipeline. */
-export function isForwardStatusMove(from: string | null | undefined, to: string): boolean {
-  const fi = STATUS_ORDER.indexOf((from ?? "") as (typeof STATUS_ORDER)[number]);
-  const ti = STATUS_ORDER.indexOf(to as (typeof STATUS_ORDER)[number]);
-  if (fi === -1 || ti === -1) return false;
-  return ti > fi;
-}
-
-/** True when `from → to` leaves the HARD_LOCKED tier (i.e. reverts out of
- *  COMPLETED/INVOICED to something earlier) — COMPLETED→INVOICED stays HARD_LOCKED
- *  on both ends and is NOT a revert (#792: "stays a normal forward move"). */
-export function isRevertOutOfHardLock(from: string | null | undefined, to: string): boolean {
-  return lockTierForStatus(from) === "HARD_LOCKED" && lockTierForStatus(to) !== "HARD_LOCKED";
-}
-
-// ─── Locked field lists (the authoritative export #791 asks for) ────────────
-
-/** Project-level fields soft-locked at FINANCE_LOCKED+ (recalc INPUTS — the recalc
- *  OUTPUTS in PROJECT_MONEY_ANCHORS (projectWrites.ts) are already unconditionally
- *  stripped and never reach here). WS1 (#940): `depositPercent` moved off the
- *  project entirely (now the CLIENT payment profile); `depositPaid`/
- *  `invoicedTotal` moved from "locked project input" to recalc-owned
- *  PROJECT_MONEY_ANCHORS (derived from invoices) — neither needs a lock-tier
- *  entry here anymore, same as equipmentRevenue/total/etc. never did. */
+/** Project-level fields gated when the LIVE version is pricing-locked (recalc
+ *  INPUTS — the recalc OUTPUTS in PROJECT_MONEY_ANCHORS (projectWrites.ts) are
+ *  already unconditionally stripped and never reach here). */
 export const LOCKED_PROJECT_FIELDS = [
   "taxRate",
   "discountPercent",
 ] as const;
 
 // `discountMode` (#1012) travels with `discount` in both lists: it is the entry
-// shape of that exact number, so a FINANCIAL-scope revert that restores the
-// dollar amount must restore how it was entered too — otherwise a reverted line
+// shape of that exact number, so a restore/revert that restores the dollar
+// amount must restore how it was entered too — otherwise a reverted line
 // keeps printing "%" for a `$` discount (or vice versa).
 export const LOCKED_GROUP_FIELDS = ["price", "discount", "discountMode", "rentalPeriod", "rentalQuantity"] as const;
 
 export const LOCKED_LINE_ITEM_FIELDS = ["unitPrice", "discount", "discountMode", "duration", "taxRate"] as const;
 
 /** `costTotal` is locked only for CREW-LESS services — a crew-attached service's
- *  costTotal keeps auto-deriving from the crew rate table even post-CONFIRMED
+ *  costTotal keeps auto-deriving from the crew rate table even while locked
  *  (assigning crew at known rates is a deliberate act; see recalcServiceCostFromCrew).
  *  Callers must check `hasCrew` themselves before applying this list. */
 export const LOCKED_SERVICE_FIELDS = ["costTotal", "billableToClient"] as const;
 
 export const LOCKED_CREW_FIELDS = ["rateOverride", "rateType", "estimatedHours"] as const;
 
-// ─── Open unlock session lookup ──────────────────────────────────────────────
+// ─── Live-version resolution ─────────────────────────────────────────────────
 
-/** The project's open unlock session (FINANCIAL or FULL scope), if any. At most
- *  one OPEN row per project is enforced by projectUnlockSessionsWrites.openNative. */
-export async function getOpenUnlockSession(
-  ctx: QueryCtx | MutationCtx,
-  orgId: string,
-  projectId: string,
-): Promise<Doc<"projectUnlockSessions"> | null> {
-  const session = await ctx.db
-    .query("projectUnlockSessions")
-    .withIndex("by_projectId_outcome", (q) => q.eq("projectId", projectId).eq("outcome", "OPEN"))
-    .first();
-  // by_projectId_outcome is not org-scoped in its key — re-check org (R-8.4.3).
-  if (!session || session.organizationId !== orgId) return null;
-  return session;
+/**
+ * Whether `versionId` (a row's own `versionId` field, for one of the four
+ * versioned plan tables) is the project's LIVE version — the only thing
+ * `pricingLocked` ever applies to. A row with no `versionId` (pre-Phase-1
+ * legacy, or a table Phase 2 never versioned — crew assignments, the
+ * `projects` row itself) reads as live: there is no non-live copy of it to be
+ * exempt on behalf of. Likewise a project with no `liveVersionId` yet
+ * (un-backfilled) reads every row as live — the safe, conservative default
+ * (never silently widen what counts as "exempt from the lock").
+ */
+export function isLiveVersionRow(
+  project: Pick<Doc<"projects">, "liveVersionId">,
+  versionId: string | null | undefined,
+): boolean {
+  if (!versionId) return true;
+  if (!project.liveVersionId) return true;
+  return versionId === project.liveVersionId;
 }
 
-/** Whether new adds should default their price/cost to $0 instead of the normal
- *  auto-price/rate autofill — true once locked and NO session is open (any open
- *  session — FINANCIAL or FULL — puts the PM deliberately in pricing mode). */
-export function shouldDefaultToZero(tier: LockTier, openSession: Doc<"projectUnlockSessions"> | null): boolean {
-  return tier !== "OPEN" && openSession == null;
+/**
+ * Whether a NEW row about to be inserted should default its price/cost
+ * fields to $0 instead of the normal auto-price/rate autofill.
+ *
+ * #1221 follow-up (closes Phase 5's Equipment write-side gap): a CREATE
+ * mutation can now target an explicit non-live `targetVersionId`
+ * (`resolveWriteVersionId`), not just the live version by construction —
+ * `pricingLocked` applies to the LIVE version's money fields ONLY (file
+ * header), so an insert aimed at a non-live version must NEVER default to
+ * $0 just because the project's live pricing happens to be locked. Omitting
+ * `targetVersionId` (every pre-existing call site) preserves the old
+ * behaviour exactly: `isLiveVersionRow(project, undefined)` reads as live,
+ * same as before this param existed.
+ */
+export function defaultsToZeroOnInsert(
+  project: Pick<Doc<"projects">, "pricingLocked" | "liveVersionId">,
+  targetVersionId?: string | null,
+): boolean {
+  return project.pricingLocked === true && isLiveVersionRow(project, targetVersionId);
 }
 
 /** The `pricedUnderLock` field value for a fresh group/line-item insert —
  *  `true` when `defaultToZero` forced this row's price to $0/unset, `undefined`
  *  (absent, Convex's "false") otherwise. ONE helper so every insert site
  *  derives the same value instead of re-deriving `defaultToZero || undefined`
- *  inline at each call site (R-3.1) — also keeps that branch out of each
- *  insert mutation's own cyclomatic-complexity count (R-3.6 ratchet). */
+ *  inline at each call site (R-3.1). */
 export function pricedUnderLockOnInsert(defaultToZero: boolean | undefined): true | undefined {
   return defaultToZero || undefined;
 }
 
-// ─── The shared guard (#793's `assertLifecycleGuard`) ────────────────────────
-
-export type LifecycleGuardKind = "financial" | "structural";
-
-export interface LifecycleGuardOptions {
-  /** Which locked-field family this write touches. "financial" routes through
-   *  #791/#792's unlock-session flow; "structural" is #793's per-edit justify
-   *  gate (JUSTIFY tier only — pre-ON_SITE structural edits are ungated, and
-   *  HARD_LOCKED escalates straight to a FULL-session requirement). */
-  kind: LifecycleGuardKind;
-  /** Caller-supplied justification text (#793), checked only when the tier
-   *  requires it and no session is already open. */
-  justification?: string | null;
-  /**
-   * Skip the #988 quote-derived escalation and resolve the tier from STATUS
-   * alone. Reserved for `quotesWrites.ts`'s `sendNative`/`newVersionNative` —
-   * the two mutations that raise/cut the quote-derived lock are also the
-   * SANCTIONED EXIT from it ("cutting a new version is the unlock", decision
-   * 2), so gating them against their own revision's not-yet-superseded state
-   * would be a chicken-and-egg deadlock: `newVersionNative` runs while the
-   * current revision is still the live `SENT` quote it's about to move past.
-   * No other gate site should ever set this — the entire point of #988 is
-   * that the other ~25 sites pick up the quote lock with ZERO changes.
-   */
-  bypassQuoteLock?: boolean;
-}
-
-export interface LifecycleGuardResult {
-  tier: LockTier;
-  /** Why `tier` is what it is (#988) — STATUS-driven or raised by a sent quote
-   *  on an otherwise-OPEN project. Lets the UI explain itself and offer the
-   *  right exit instead of a bare "locked". */
-  reason: LockTierReason;
-  openSession: Doc<"projectUnlockSessions"> | null;
-  /** True when a $0 default should be applied to a NEW add (see shouldDefaultToZero). */
-  defaultToZero: boolean;
-}
-
-/** #793's bounds for every "explain why you're overriding this" free-text field.
- *  EXPORTED so the hard-lock-revert gate and #986's acceptance-gate override read
- *  the same two numbers instead of hand-copying them (R-3.1) — they were already
- *  duplicated inline in `projectWrites.updateStatusNative` before #986. */
-export const JUSTIFICATION_BOUNDS = { min: 10, max: 1000 } as const;
-
-/**
- * Require a bounded justification, throwing `JUSTIFICATION_REQUIRED` with a
- * caller-supplied explanation of what is being justified. Returns the trimmed
- * text so the caller can persist exactly what was validated.
- */
-export function requireJustification(justification: string | null | undefined, message: string): string {
-  const trimmed = justification?.trim();
-  if (!trimmed || trimmed.length < JUSTIFICATION_BOUNDS.min) {
-    throw new ConvexError({ code: "JUSTIFICATION_REQUIRED", message });
-  }
-  assertStrLen(trimmed, "justification", JUSTIFICATION_BOUNDS);
-  return trimmed;
+/** Activity-log metadata for a write that touched money while the project's
+ *  live pricing was locked (only ever true for the $0-defaulted new-add case —
+ *  a direct edit to an already-locked money field is rejected outright by
+ *  `assertPricingUnlocked`, never allowed through). `logActivity` already
+ *  records who/what/when/before-after on every write, so there is no
+ *  freeform-text counterpart to the deleted per-edit justification — just this
+ *  one stable marker. */
+export function afterLockAuditMetadata(wasLocked: boolean): Record<string, unknown> | undefined {
+  return wasLocked ? { afterLock: true } : undefined;
 }
 
 /**
- * The one call every gate site makes (#793's "one shared guard helper... so
- * every gate site is one call"). Encodes the full #957 precedence table:
- *  - OPEN: always passes.
- *  - HARD_LOCKED: requires an open FULL session, full stop — no per-edit path.
- *  - FINANCE_LOCKED financial write: requires an open session (either scope).
- *  - FINANCE_LOCKED structural write: passes ungated (structural gate starts at
- *    ON_SITE, not CONFIRMED — #793 scope).
- *  - JUSTIFY financial write: requires an open session (span of #791 continues
- *    through ON_SITE+) — never ALSO prompted by the structural dialog.
- *  - JUSTIFY structural write: open session suppresses the prompt (no double-
- *    prompt); otherwise requires a bounded justification.
- *
- * #988 (Phase C) folds one more input into the SAME tier: an OPEN-status
- * project (ENQUIRY/QUOTING/QUOTED) whose LIVE revision has already been
- * sent resolves to FINANCE_LOCKED too (`resolveLockTier`) — every rule above
- * still applies unchanged, just against a tier that can now come from either
- * source. The quote lookup only runs when the status tier is itself OPEN
- * (any higher tier already dominates — monotonic), so this adds no DB read to
- * the CONFIRMED+/ON_SITE+/COMPLETED+ paths that make up most gated writes.
- * #1080/#1100 — looks up `projectLiveRevision(project)`, not the allocator: a
- * promote can leave `revision` (the high-water mark) ahead of `liveRevision`,
- * and it's the LIVE revision's quote that's actually with the client.
- *
- * Throws `ConvexError` with a stable `code` the client can branch on:
- * `PROJECT_LOCKED` | `FINANCIALS_LOCKED` | `JUSTIFICATION_REQUIRED`.
+ * The four-field patch that RAISES `pricingLocked` — one shape shared by
+ * every site that sets it (D55's `sendNative`, `updateStatusNative`'s
+ * CONFIRMED transition, `lockPricingNative`, and `projectAutoStatus.ts`'s
+ * defensive raise), so the fields can't drift apart between call sites
+ * (R-3.1). Callers `ctx.db.patch(project._id, { ...pricingLockRaiseFields(actor, now), ... })`,
+ * adding their own `updatedAt`/other fields to the same patch. Never clears
+ * the lock — that's each caller's own explicit, narrower-audience patch
+ * (D42/D56), not something this shared shape should make easy to get wrong.
  */
-export async function assertLifecycleGuard(
-  ctx: MutationCtx,
-  project: Pick<Doc<"projects">, "id" | "organizationId" | "status" | "revision" | "liveRevision">,
-  opts: LifecycleGuardOptions,
-): Promise<LifecycleGuardResult> {
-  const statusTier = lockTierForStatus(project.status);
-  // #1080/#1100 — the quote-sent escalation checks the LIVE revision's quote
-  // state, never the allocator's. Post-promote, `revision` (the allocator) can
-  // sit ahead of `liveRevision` (e.g. a saved-but-never-sent v4 while v2 is the
-  // live, SENT revision) — checking the allocator would read that v4 DRAFT and
-  // wrongly resolve OPEN even though the live v2 is out with the client.
-  const quoteState =
-    statusTier === "OPEN" && !opts.bypassQuoteLock
-      ? await currentRevisionQuoteStatus(ctx, project.organizationId, project.id, projectLiveRevision(project))
-      : null;
-  const { tier, reason } = resolveLockTier({ status: project.status, quoteState });
-  if (tier === "OPEN") return { tier, reason, openSession: null, defaultToZero: false };
-
-  const openSession = await getOpenUnlockSession(ctx, project.organizationId, project.id);
-  const defaultToZero = shouldDefaultToZero(tier, openSession);
-
-  if (tier === "HARD_LOCKED") {
-    if (openSession?.scope === "FULL") return { tier, reason, openSession, defaultToZero };
-    throw new ConvexError({
-      code: "PROJECT_LOCKED",
-      message: "This project is completed and hard-locked. Open a full unlock session to make changes.",
-    });
-  }
-
-  if (opts.kind === "financial") {
-    if (openSession) return { tier, reason, openSession, defaultToZero };
-    throw new ConvexError({
-      code: "FINANCIALS_LOCKED",
-      message:
-        reason === "QUOTE_SENT"
-          ? "This quote has already been sent, which locks pricing. Create a new quote version to change prices, or open an unlock session."
-          : "This project's financials are locked. Open an unlock session (Financials tab) to edit money fields.",
-    });
-  }
-
-  // structural
-  if (tier === "FINANCE_LOCKED") {
-    // #793's structural gate doesn't start until ON_SITE — CONFIRMED/PREPPING/
-    // CHECKED_OUT (or an OPEN-status project whose quote was sent) only gate
-    // financial fields (handled above).
-    return { tier, reason, openSession, defaultToZero };
-  }
-
-  // tier === "JUSTIFY"
-  if (openSession) return { tier, reason, openSession, defaultToZero }; // no double-prompt
-  const justification = opts.justification?.trim();
-  if (!justification || justification.length < JUSTIFICATION_BOUNDS.min) {
-    throw new ConvexError({
-      code: "JUSTIFICATION_REQUIRED",
-      message: `This project is ${project.status} — describe why this change is needed (at least ${JUSTIFICATION_BOUNDS.min} characters).`,
-    });
-  }
-  assertStrLen(justification, "justification", JUSTIFICATION_BOUNDS);
-  return { tier, reason, openSession, defaultToZero };
-}
-
-/** Persist the justification onto an activity-log write's `metadata` (#793:
- *  "in the same transaction as the domain change, never a UI-only confirm").
- *  Folds in the open session id when present (#791/#792: "every financial
- *  write's audit row carries metadata.unlockSessionId"). */
-export function lifecycleAuditMetadata(
-  result: Pick<LifecycleGuardResult, "tier" | "openSession">,
-  justification?: string | null,
-): Record<string, unknown> | undefined {
-  const trimmed = justification?.trim();
-  if (!trimmed && !result.openSession) return undefined;
+export function pricingLockRaiseFields(
+  actor: { userId: string; userName: string },
+  now: number,
+): { pricingLocked: true; pricingLockedAt: number; pricingLockedById: string; pricingLockedByName: string } {
   return {
-    ...(trimmed ? { justification: trimmed, lockTier: result.tier } : {}),
-    ...(result.openSession ? { unlockSessionId: result.openSession.id } : {}),
+    pricingLocked: true,
+    pricingLockedAt: now,
+    pricingLockedById: actor.userId,
+    pricingLockedByName: actor.userName,
   };
 }
 
-// ─── HARD_LOCKED audience (#792: org admins/owners + the project's assigned PMs) ─
+// ─── The money guard (#1230's `assertPricingUnlocked`) ──────────────────────
 
-/** Whether `userId` may open/act inside a FULL unlock session on this project:
- *  org role admin/owner, OR present in the project's `projectManagers` set.
- *  Server-checked — narrower than the general `project:update` permission. */
-export async function isHardLockOverrideAllowed(
+/**
+ * Reject a MONEY write against the project's LIVE version while
+ * `pricingLocked` is set. Synchronous and side-effect-free (no session lookup,
+ * no justification, no tier resolution) — the entire point of collapsing 4
+ * tiers to 1 boolean. Structural and plan-field writes never call this at all
+ * (no gate — see the file header).
+ *
+ * `versionId` is the row's own `versionId` (for one of the four versioned
+ * plan tables) — omit it for a table/row that has no version concept
+ * (`projects` itself, `crewAssignments`), which always reads as live.
+ */
+export function assertPricingUnlocked(
+  project: Pick<Doc<"projects">, "pricingLocked" | "liveVersionId">,
+  versionId?: string | null,
+): void {
+  if (project.pricingLocked !== true) return;
+  if (!isLiveVersionRow(project, versionId)) return; // non-live version — the lock never applies
+  throw new ConvexError({
+    code: "PRICING_LOCKED",
+    message: "This project's pricing is locked. Clear the lock (project header) to edit money fields.",
+  });
+}
+
+// ─── Who can clear the lock (D42) ────────────────────────────────────────────
+
+/**
+ * `canUnlockPricing = hasPermission(role, "invoice", "publish") ||
+ * isProjectManagerOf(projectId, userId)` (design §4.5 D42) — owner/admin/
+ * manager, OR this job's own PM. `member` holds `project:update` but NOT
+ * `invoice:publish` (`permissionsCore.ts`), so a member can price a project
+ * freely while it's open and cannot re-open one whose quote has gone out.
+ *
+ * This is the RENAMED successor to the old `isHardLockOverrideAllowed` (same
+ * two-part audience shape — a role test OR the project's own PM — single
+ * source of truth, POLICY.md R-3.1) with its role test swapped from a bare
+ * `role === "owner" || role === "admin"` check to the `invoice:publish`
+ * permission check D42 specifies, which also admits `manager`.
+ */
+export async function canUnlockPricing(
   ctx: QueryCtx | MutationCtx,
   orgId: string,
   projectId: string,
@@ -422,7 +208,7 @@ export async function isHardLockOverrideAllowed(
     .query("members")
     .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId))
     .first();
-  if (member && (member.role === "owner" || member.role === "admin")) return true;
+  if (member && hasPermission(member.role, "invoice", "publish")) return true;
 
   const pm = await ctx.db
     .query("projectManagers")
@@ -431,17 +217,41 @@ export async function isHardLockOverrideAllowed(
   return pm != null && pm.organizationId === orgId;
 }
 
-export async function requireHardLockOverrideAllowed(
+export async function requireCanUnlockPricing(
   ctx: MutationCtx,
   orgId: string,
   projectId: string,
   userId: string,
 ): Promise<void> {
-  const allowed = await isHardLockOverrideAllowed(ctx, orgId, projectId, userId);
+  const allowed = await canUnlockPricing(ctx, orgId, projectId, userId);
   if (!allowed) {
     throw new ConvexError({
-      code: "FORBIDDEN_HARD_LOCK_OVERRIDE",
-      message: "Only org admins/owners or this project's assigned PM(s) can open a full unlock session.",
+      code: "FORBIDDEN_UNLOCK_PRICING",
+      message: "Only org admins/owners/managers or this project's assigned PM(s) can clear the pricing lock.",
     });
   }
+}
+
+// ─── Unrelated-to-locking helpers that used to live in this file ────────────
+
+/** Pipeline-position helper — unrelated to pricing locking (used by
+ *  availability/overbooking logic to mean "is this booking firm"). Kept here
+ *  (rather than moved) only because it predates this file's Phase 4 rewrite
+ *  and has callers across `convex/lib/availabilityCore.ts`,
+ *  `convex/lib/overbookingBoard.ts`, `convex/lib/crewConflicts.ts` and
+ *  `src/lib/overbooking-core.ts` that never depended on `LockTier` — its
+ *  behaviour is UNCHANGED by this phase's deletion of the 4-tier system. */
+const CONFIRMED_OR_LATER_STATUSES = new Set([
+  "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED", "COMPLETED", "INVOICED",
+]);
+export function isConfirmedOrLater(status: string | null | undefined): boolean {
+  return !!status && CONFIRMED_OR_LATER_STATUSES.has(status);
+}
+
+/** True for any status transition that lands exactly on CONFIRMED or
+ *  COMPLETED — forward advance OR a revert-then-re-advance ("re-crossing").
+ *  Unrelated to pricing locking (a whole-project version SNAPSHOT — #792 —
+ *  is taken on every crossing; that mechanism is untouched by this phase). */
+export function crossesIntoSnapshotStatus(from: string | null | undefined, to: string): boolean {
+  return from !== to && (to === "CONFIRMED" || to === "COMPLETED");
 }

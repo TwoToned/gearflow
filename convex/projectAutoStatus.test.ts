@@ -12,10 +12,10 @@ import schema from "./schema";
 import {
   AUTO_STATUS_RULES,
   AUTO_STATUS_TRIGGERS,
+  PRICING_LOCK_ON_REACH,
   maybeAutoAdvanceProjectStatus,
   type AutoStatusTrigger,
 } from "./lib/projectAutoStatus";
-import { lockTierForStatus } from "./lib/projectLocks";
 import { AUTO_STATUS_KEYS } from "@/lib/project-status-automation";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -33,6 +33,12 @@ function makeT() {
 }
 type T = ReturnType<typeof makeT>;
 
+/** Every seeded project carries a live version ("v1") — Phase 2 (#1228) of
+ *  "Project versioning v2" scopes the ALL_CHECKED_OUT/ALL_RETURNED reads onto
+ *  it (`requireLiveVersionId`/`by_versionId*`, `convex/lib/projectAutoStatus.ts`),
+ *  same as every other live-only read migrated in that phase. */
+const LIVE_VERSION_ID = "v1";
+
 async function seedProject(t: T, status: string, opts: { orgId?: string; isTemplate?: boolean } = {}) {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
@@ -42,14 +48,25 @@ async function seedProject(t: T, status: string, opts: { orgId?: string; isTempl
       name: "Gig",
       status: status as never,
       total: 0,
+      liveVersionId: LIVE_VERSION_ID,
       ...(opts.isTemplate ? { isTemplate: true } : {}),
+    });
+    await ctx.db.insert("projectVersions", {
+      id: LIVE_VERSION_ID,
+      organizationId: opts.orgId ?? ORG,
+      projectId: PROJ,
+      number: 1,
+      contentState: "ready",
+      createdAt: NOW,
+      createdById: ACTOR.userId,
     });
   });
 }
 
 /** One line item, shaped by the fields the deploy/return rules actually read.
  *  `type` defaults to EQUIPMENT — the same default `warehouseList` applies to a
- *  row that predates the column. */
+ *  row that predates the column. Always stamped onto the seeded live version
+ *  (`by_versionId`, not `by_projectId` — Phase 2 deleted the latter). */
 async function seedLine(
   t: T,
   id: string,
@@ -70,6 +87,8 @@ async function seedLine(
       id,
       organizationId: ORG,
       projectId: PROJ,
+      versionId: LIVE_VERSION_ID,
+      lineageId: id,
       quantity: extra.quantity ?? 1,
       status: status as never,
       ...(extra.type ? { type: extra.type as never } : {}),
@@ -145,21 +164,26 @@ describe("AUTO_STATUS_RULES — table invariants", () => {
     }
   });
 
-  test("every move is forward, and never LOWERS the lock tier", () => {
+  test("every move is forward", () => {
     const RANK = [
       "ENQUIRY", "QUOTING", "QUOTED", "AWAITING_PAYMENT", "CONFIRMED",
       "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED",
     ];
-    const TIERS = ["OPEN", "FINANCE_LOCKED", "JUSTIFY", "HARD_LOCKED"];
     for (const trigger of AUTO_STATUS_TRIGGERS) {
       const rule = AUTO_STATUS_RULES[trigger];
       for (const from of rule.from) {
         expect(RANK.indexOf(rule.to)).toBeGreaterThan(RANK.indexOf(from));
-        expect(TIERS.indexOf(lockTierForStatus(rule.to))).toBeGreaterThanOrEqual(
-          TIERS.indexOf(lockTierForStatus(from)),
-        );
       }
     }
+  });
+
+  // #1230 × #1236 merge — every rule that can reach a PRICING_LOCK_ON_REACH
+  // status from a status NOT already implying pricingLocked must be one this
+  // module defensively locks for (see maybeAutoAdvanceProjectStatus's own
+  // note) — pins the set so a future rule addition can't silently reopen the
+  // gap this merge closed.
+  test("PRICING_LOCK_ON_REACH is exactly {AWAITING_PAYMENT, CONFIRMED}", () => {
+    expect([...PRICING_LOCK_ON_REACH].sort()).toEqual(["AWAITING_PAYMENT", "CONFIRMED"]);
   });
 });
 
@@ -507,27 +531,76 @@ describe("ALL_RETURNED", () => {
     expect(await projectStatus(t)).toBe("ON_SITE");
   });
 
-  test("auto-commits an unlock session rather than letting it span the change", async () => {
+});
+
+// ─── pricingLocked — the #1230 × #1236 merge fix ───────────────────────────
+//
+// `sendNative` (D55) and `updateStatusNative`'s manual CONFIRMED transition
+// both raise `projects.pricingLocked` — but TWO of this module's own paths
+// reach AWAITING_PAYMENT/CONFIRMED without either of those ever having run
+// (see `maybeAutoAdvanceProjectStatus`'s own doc comment). These tests pin
+// the defensive raise that closes that gap.
+
+describe("pricingLocked — defensive raise on first reaching AWAITING_PAYMENT/CONFIRMED", () => {
+  test("INVOICE_ISSUED locks pricing for a job that never had a quote sent", async () => {
     const t = makeT();
-    await seedProject(t, "CHECKED_OUT");
-    await seedLine(t, "li1", "RETURNED");
+    await seedProject(t, "ENQUIRY"); // no quote ever sent — pricingLocked absent
+    await advance(t, "INVOICE_ISSUED");
+    const project = await t.run(async (ctx) =>
+      ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", PROJ)).first(),
+    );
+    expect(project?.status).toBe("AWAITING_PAYMENT");
+    expect(project?.pricingLocked).toBe(true);
+    expect(project?.pricingLockedById).toBe(ACTOR.userId);
+  });
+
+  test("QUOTE_ACCEPTED locks pricing when it wasn't already", async () => {
+    const t = makeT();
+    await seedProject(t, "QUOTED");
+    await advance(t, "QUOTE_ACCEPTED");
+    const project = await t.run(async (ctx) =>
+      ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", PROJ)).first(),
+    );
+    expect(project?.pricingLocked).toBe(true);
+  });
+
+  test("is idempotent — does not re-stamp an already-locked project", async () => {
+    const t = makeT();
+    await seedProject(t, "QUOTED");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectUnlockSessions", {
-        id: "sess_1",
-        organizationId: ORG,
-        projectId: PROJ,
-        scope: "FINANCIAL",
-        justification: "fixing a rate",
-        snapshotId: "snap_1",
-        openedBy: ACTOR.userId,
-        openedAt: NOW - 1000,
-        outcome: "OPEN",
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", PROJ)).first();
+      await ctx.db.patch(p!._id, {
+        pricingLocked: true, pricingLockedAt: NOW - 5000, pricingLockedById: "user_other", pricingLockedByName: "Prior",
       });
     });
-    expect(await advance(t, "ALL_RETURNED")).toBe("RETURNED");
-    const session = await t.run(async (ctx) =>
-      await ctx.db.query("projectUnlockSessions").withIndex("by_cuid", (q) => q.eq("id", "sess_1")).first(),
+    await advance(t, "QUOTE_ACCEPTED");
+    const project = await t.run(async (ctx) =>
+      ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", PROJ)).first(),
     );
-    expect(session?.outcome).toBe("COMMITTED");
+    expect(project?.pricingLockedAt).toBe(NOW - 5000); // untouched
+    expect(project?.pricingLockedById).toBe("user_other");
+  });
+
+  test("PAYMENT_SETTLED locks pricing on the CONFIRMED transition too", async () => {
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    await seedAcceptedQuote(t);
+    await advance(t, "PAYMENT_SETTLED");
+    const project = await t.run(async (ctx) =>
+      ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", PROJ)).first(),
+    );
+    expect(project?.status).toBe("CONFIRMED");
+    expect(project?.pricingLocked).toBe(true);
+  });
+
+  test("the audit row records the lock only when it was actually just raised", async () => {
+    const t = makeT();
+    await seedProject(t, "ENQUIRY");
+    await advance(t, "INVOICE_ISSUED");
+    const log = await t.run(async (ctx) =>
+      (await ctx.db.query("activityLogs").collect()).find((r) => r.action === "STATUS_CHANGE"),
+    );
+    expect(log?.summary).toContain("pricing locked");
+    expect(log?.metadata).toMatchObject({ pricingLocked: true });
   });
 });

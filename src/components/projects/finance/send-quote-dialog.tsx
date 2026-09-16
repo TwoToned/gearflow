@@ -30,6 +30,16 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Mirrors `QuoteRailProjectVersion` (`project-quote-rail.tsx`) — kept as a
+ *  local structural type rather than importing it, so this dialog (also
+ *  reachable from the Overview tab's `QuoteCard`, which never sets this
+ *  prop) doesn't take on a dependency it doesn't need. */
+interface SendQuoteTargetVersion {
+  id: string;
+  number: number;
+  label?: string;
+}
+
 interface SendQuoteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,16 +47,30 @@ interface SendQuoteDialogProps {
   projectNumber: string;
   orgId: string | undefined;
   clientId?: string | null;
-  /** The revision this send will freeze — `projects.revision` before the send. */
+  /** The revision this send will freeze — `projects.revision` before the send.
+   *  Only meaningful when `targetVersion` is absent (a LIVE send) — a
+   *  non-live send's own quote-revision number isn't known until the send
+   *  actually happens (see `SendQuoteForm`'s title logic). */
   revision: number;
   /** #1080/#1097 — the outgoing draft's internal label, if one was set (via
-   *  "Rename version" on the row, or carried over from `saveVersionNative`).
-   *  Drives the "print this label on the document" checkbox below. */
+   *  "Rename version" on the row, or set at create time — `saveVersionNative`,
+   *  which used to offer that, was deleted in #1229 Phase 3). Drives the
+   *  "print this label on the document" checkbox below. */
   currentLabel?: string;
   subtotal: number | null;
   taxAmount: number | null;
   total: number | null;
   projectStatus?: string | null;
+  /**
+   * #1233 (Phase 6) UI follow-up — non-null only when the Finance tab is
+   * showing a NON-live `projectVersions` row and the send should target it
+   * instead of the live version. Threaded straight to
+   * `useQuoteWrites().send()`'s own `versionId` arg (already wired to
+   * `sendNative`, FEATUREDOCS/78's Phase 6 section). `null`/omitted (the
+   * Overview tab's `QuoteCard`) ⇒ live target, byte-identical to before this
+   * follow-up.
+   */
+  targetVersion?: SendQuoteTargetVersion | null;
 }
 
 interface SentState {
@@ -82,6 +106,7 @@ export function SendQuoteDialog({
   taxAmount,
   total,
   projectStatus,
+  targetVersion,
 }: SendQuoteDialogProps) {
   const quoteWrites = useQuoteWrites();
   const contacts = useClientContacts(clientId ?? undefined, orgId);
@@ -124,13 +149,17 @@ export function SendQuoteDialog({
     setSending(true);
     setError(null);
     try {
-      const result = await quoteWrites.send(projectId, {
-        quoteDate: new Date(quoteDateStr),
-        validityDays: resolvedValidityDays,
-        recipientContactId: recipientContactId || undefined,
-        notes: notes || undefined,
-        labelOnDocument,
-      });
+      const result = await quoteWrites.send(
+        projectId,
+        {
+          quoteDate: new Date(quoteDateStr),
+          validityDays: resolvedValidityDays,
+          recipientContactId: recipientContactId || undefined,
+          notes: notes || undefined,
+          labelOnDocument,
+        },
+        targetVersion?.id,
+      );
       setSent({
         version: result.version,
         validUntil: result.validUntil,
@@ -161,7 +190,9 @@ export function SendQuoteDialog({
 
   function copySummary() {
     const lines = [
-      `Quote — ${projectNumber} v${sent?.version ?? revision}`,
+      targetVersion
+        ? `Quote — ${projectNumber}, project v${targetVersion.number}`
+        : `Quote — ${projectNumber} v${sent?.version ?? revision}`,
       subtotal != null ? `Subtotal: ${formatCurrency(subtotal)}` : null,
       taxAmount != null ? `GST: ${formatCurrency(taxAmount)}` : null,
       total != null ? `Total: ${formatCurrency(total)}` : null,
@@ -183,6 +214,7 @@ export function SendQuoteDialog({
         {!sent ? (
           <SendQuoteForm
             revision={revision}
+            targetVersion={targetVersion ?? null}
             currentLabel={currentLabel}
             labelOnDocument={labelOnDocument}
             onLabelOnDocumentChange={setLabelOnDocument}
@@ -209,6 +241,7 @@ export function SendQuoteDialog({
         ) : (
           <SendQuoteHandover
             sent={sent}
+            targetVersion={targetVersion ?? null}
             projectStatus={projectStatus}
             statusMoved={statusMoved}
             onCopySummary={copySummary}
@@ -223,6 +256,8 @@ export function SendQuoteDialog({
 
 interface SendQuoteFormProps {
   revision: number;
+  /** #1233 (Phase 6) UI follow-up — see `SendQuoteDialogProps.targetVersion`. */
+  targetVersion: SendQuoteTargetVersion | null;
   currentLabel?: string;
   labelOnDocument: boolean;
   onLabelOnDocumentChange: (value: boolean) => void;
@@ -247,8 +282,102 @@ interface SendQuoteFormProps {
   onSend: () => void;
 }
 
+/** #1233 (Phase 6) UI follow-up — the two title/description variants, split
+ *  out purely to keep `SendQuoteForm`'s own complexity within budget
+ *  (R-3.6) — each branch here doesn't count against the caller's. */
+function SendQuoteFormHeader({ revision, targetVersion }: { revision: number; targetVersion: SendQuoteTargetVersion | null }) {
+  if (targetVersion) {
+    return (
+      <DialogHeader>
+        <DialogTitle>Send v{targetVersion.number}&rsquo;s quote</DialogTitle>
+        <DialogDescription>
+          This captures v{targetVersion.number}&rsquo;s current pricing into a document. Unlike sending the LIVE
+          version, this does not lock v{targetVersion.number} for editing — you can change its prices and send again
+          anytime.
+        </DialogDescription>
+      </DialogHeader>
+    );
+  }
+  return (
+    <DialogHeader>
+      <DialogTitle>Send quote v{revision}</DialogTitle>
+      <DialogDescription>
+        Sending freezes pricing at v{revision}. To change prices afterwards, create v{revision + 1}.
+      </DialogDescription>
+    </DialogHeader>
+  );
+}
+
+/** #1233 (Phase 6) UI follow-up — split out of `SendQuoteForm` for the same
+ *  complexity-budget reason as `SendQuoteFormHeader` above. See its own
+ *  comment (formerly inline here) for why a non-live target shows a note
+ *  instead of the live figures: those figures are the LIVE project's own
+ *  totals (the Finance tab's money breakdown was never made version-aware,
+ *  FEATUREDOCS/78's Phase 5/6 sections), so showing them under a "Summary"
+ *  heading while sending a DIFFERENT version's quote would be an outright
+ *  wrong number, not just a stale one. The document that actually gets
+ *  rendered/stored IS correct — it's computed server-side from the target
+ *  version's own line items (`buildQuoteSnapshot`, `sendNative`) — only this
+ *  pre-send preview is the gap. Deliberately no new render path here (R-9.3/
+ *  #987) to fill it. */
+function SendQuoteSummaryOrNote({
+  targetVersion,
+  subtotal,
+  taxAmount,
+  total,
+}: {
+  targetVersion: SendQuoteTargetVersion | null;
+  subtotal: number | null;
+  taxAmount: number | null;
+  total: number | null;
+}) {
+  if (targetVersion) {
+    return (
+      <p className="rounded-[var(--radius)] border border-line px-3 py-2.5 text-sm text-fg-4">
+        A pricing summary for v{targetVersion.number} specifically isn&rsquo;t shown here yet — the figures sent are
+        v{targetVersion.number}&rsquo;s own current line items, computed fresh at send. Check the Equipment tab while
+        viewing v{targetVersion.number} to review them first.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-1 rounded-[var(--radius)] border border-line px-3 py-2.5 text-sm">
+      <p className="t-overline text-fg-3">Summary</p>
+      {subtotal != null && <div className="flex justify-between"><span className="text-fg-4">Subtotal</span><span className="tabular-nums">{formatCurrency(subtotal)}</span></div>}
+      {taxAmount != null && <div className="flex justify-between"><span className="text-fg-4">GST</span><span className="tabular-nums">{formatCurrency(taxAmount)}</span></div>}
+      {total != null && <div className="flex justify-between font-medium"><span>Total</span><span className="tabular-nums">{formatCurrency(total)}</span></div>}
+    </div>
+  );
+}
+
+/** #1233 (Phase 6) UI follow-up — `/api/documents/[projectId]?preview=1` (the
+ *  sanctioned preview path, CLAUDE.md) always renders the LIVE project's
+ *  current content; it has no `versionId` arg (unlike the SENT-artifact
+ *  render, which does via `quoteId`). Offering it while targeting a non-live
+ *  version would silently preview the WRONG version's figures under a
+ *  "preview" label, so it renders nothing then rather than a preview that
+ *  would lie. Split out (rather than an inline `&&`) for the same
+ *  complexity-budget reason as the two components above. */
+function PreviewDraftButton({ projectId, isLiveTarget }: { projectId: string; isLiveTarget: boolean }) {
+  if (!isLiveTarget) return null;
+  return (
+    <Button type="button" asChild variant="line">
+      <a href={`/api/documents/${projectId}?type=quote&preview=1`} target="_blank" rel="noopener noreferrer">
+        <Eye className="h-3.5 w-3.5" /> Preview draft
+      </a>
+    </Button>
+  );
+}
+
+/** #1233 (Phase 6) UI follow-up — pure, so the ternary lives here instead of
+ *  in `SendQuoteForm`'s own JSX (same complexity-budget reason as above). */
+function sendButtonLabel(targetVersion: SendQuoteTargetVersion | null): string {
+  return targetVersion ? `Send v${targetVersion.number}'s quote` : "Send quote";
+}
+
 function SendQuoteForm({
   revision,
+  targetVersion,
   currentLabel,
   labelOnDocument,
   onLabelOnDocumentChange,
@@ -274,12 +403,7 @@ function SendQuoteForm({
 }: SendQuoteFormProps) {
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>Send quote v{revision}</DialogTitle>
-        <DialogDescription>
-          Sending freezes pricing at v{revision}. To change prices afterwards, create v{revision + 1}.
-        </DialogDescription>
-      </DialogHeader>
+      <SendQuoteFormHeader revision={revision} targetVersion={targetVersion} />
 
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -356,12 +480,7 @@ function SendQuoteForm({
           </label>
         )}
 
-        <div className="space-y-1 rounded-[var(--radius)] border border-line px-3 py-2.5 text-sm">
-          <p className="t-overline text-fg-3">Summary</p>
-          {subtotal != null && <div className="flex justify-between"><span className="text-fg-4">Subtotal</span><span className="tabular-nums">{formatCurrency(subtotal)}</span></div>}
-          {taxAmount != null && <div className="flex justify-between"><span className="text-fg-4">GST</span><span className="tabular-nums">{formatCurrency(taxAmount)}</span></div>}
-          {total != null && <div className="flex justify-between font-medium"><span>Total</span><span className="tabular-nums">{formatCurrency(total)}</span></div>}
-        </div>
+        <SendQuoteSummaryOrNote targetVersion={targetVersion} subtotal={subtotal} taxAmount={taxAmount} total={total} />
 
         {error && (
           <p role="alert" className="rounded-[var(--radius)] border-l-[3px] border-l-t-out bg-out-soft px-3 py-2 text-sm text-t-out">
@@ -378,13 +497,9 @@ function SendQuoteForm({
         <Button type="button" variant="line" onClick={onCancel} disabled={sending}>
           Cancel
         </Button>
-        <Button type="button" asChild variant="line">
-          <a href={`/api/documents/${projectId}?type=quote&preview=1`} target="_blank" rel="noopener noreferrer">
-            <Eye className="h-3.5 w-3.5" /> Preview draft
-          </a>
-        </Button>
+        <PreviewDraftButton projectId={projectId} isLiveTarget={!targetVersion} />
         <Button type="button" loading={sending} onClick={onSend}>
-          Send quote
+          {sendButtonLabel(targetVersion)}
         </Button>
       </DialogFooter>
     </>
@@ -393,6 +508,7 @@ function SendQuoteForm({
 
 function SendQuoteHandover({
   sent,
+  targetVersion,
   projectStatus,
   statusMoved,
   onCopySummary,
@@ -400,6 +516,8 @@ function SendQuoteHandover({
   onDone,
 }: {
   sent: SentState;
+  /** #1233 (Phase 6) UI follow-up — see `SendQuoteDialogProps.targetVersion`. */
+  targetVersion: SendQuoteTargetVersion | null;
   projectStatus?: string | null;
   statusMoved: boolean;
   onCopySummary: () => void;
@@ -409,10 +527,22 @@ function SendQuoteHandover({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Quote v{sent.version} sent</DialogTitle>
-        <DialogDescription>
-          Pricing is now locked at v{sent.version}. Valid until {formatDate(new Date(sent.validUntil))}.
-        </DialogDescription>
+        {targetVersion ? (
+          <>
+            <DialogTitle>v{targetVersion.number}&rsquo;s quote sent</DialogTitle>
+            <DialogDescription>
+              Valid until {formatDate(new Date(sent.validUntil))}. v{targetVersion.number} stays fully editable — send
+              again anytime to update the client&rsquo;s copy.
+            </DialogDescription>
+          </>
+        ) : (
+          <>
+            <DialogTitle>Quote v{sent.version} sent</DialogTitle>
+            <DialogDescription>
+              Pricing is now locked at v{sent.version}. Valid until {formatDate(new Date(sent.validUntil))}.
+            </DialogDescription>
+          </>
+        )}
       </DialogHeader>
 
       <div className="flex flex-wrap gap-2">

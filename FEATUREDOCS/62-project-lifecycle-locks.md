@@ -1,592 +1,135 @@
-# Project Lifecycle Locks, Unlock Sessions & Snapshots
+# Project Lifecycle Locks & Snapshots
 
-Tracking issue #957, three coordinated sub-issues: #791 (finance soft-lock), #793
-(ON_SITE justification gate), #792 (COMPLETED hard-lock + versioning). One
-coherent model — a shared status-tier definition, an unlock-session mechanism,
-a snapshot mechanism, and justification-in-audit plumbing — not three
-independent features.
+**Superseded (#1230, Phase 4 of "Project versioning v2", parent #1221, merged
+2026-09).** This doc originally described the #957 tracking-issue model: a
+4-tier `LockTier` (`OPEN`/`FINANCE_LOCKED`/`JUSTIFY`/`HARD_LOCKED`) derived
+from project status (+ #988's quote-sent escalation), an unlock-session
+mechanism (`projectUnlockSessions`, open/commit/discard), and per-edit
+freeform justification. **Phase 4 deleted the entire tier + unlock-session +
+justification mechanism outright.** See FEATUREDOCS/78's Phase 4 section for
+the full replacement story, decisions D42/D54-D57, and the deletion list.
+This file is kept — rewritten, not removed — because the snapshot mechanism
+(#792) it also documented is still live and still worth one place to read
+about. Don't trust anything below about `LockTier`, `assertLifecycleGuard`,
+`projectUnlockSessions`, or a `justification` argument — none of it exists
+anymore. If you're looking for the CURRENT lock model, read
+`convex/lib/projectLocks.ts`'s own header comment first; it's the single
+source of truth and is kept current by policy (R-3.1).
 
-**#988** (Phase C of #985's finance version-control program) extends the same
-model with a second tier input — a sent quote can lock pricing on an
-otherwise-OPEN project — and closes every previously-deferred gate site. See
-"The quote-send lock is a second INPUT, not a second lock" below.
+## The current model, in one paragraph
 
-**#1160** adds a second WRITER of `projects.status` alongside
-`projectWrites.updateStatusNative`: the status automation
-(`convex/lib/projectAutoStatus.ts`, FEATUREDOCS/76) advances a job as a side
-effect of sending a quote, prepping, deploying or returning. It patches the
-project directly — the same authority argument the returns station shipped with
-(a `warehouse` role has `check_in`/`check_out` but only `project:read`) — and
-reproduces everything around the patch that matters here: `bumpProjectCounters`,
-`autoCommitOpenSession` (so an unlock session still never silently spans a status
-change) and the lock-tier-annotated audit row. It can never automate a move INTO
-`CONFIRMED`/`COMPLETED`/`INVOICED`, so no automatic move ever crosses into a
-snapshotting or `HARD_LOCKED` tier.
+`projects.pricingLocked` (+ `pricingLockedAt`/`pricingLockedById`/
+`pricingLockedByName`) is a single boolean, applying to the project's LIVE
+version only. It gates ONE thing: a direct edit to a money field
+(`LOCKED_PROJECT_FIELDS`/`LOCKED_GROUP_FIELDS`/`LOCKED_LINE_ITEM_FIELDS`/
+`LOCKED_SERVICE_FIELDS`/`LOCKED_CREW_FIELDS`, unchanged field lists) on the
+live version, via the one guard, `assertPricingUnlocked`. Structure (add/
+remove/reorder a line, group, category, service, crew assignment) is NEVER
+gated by anything in this file — the old `JUSTIFY` tier and its ~32
+`kind: "structural"` gate sites are gone; every structural mutation is
+unconditionally ungated now. A non-live `projectVersions` row is writable in
+every field family regardless of the flag. It's raised by `sendNative` (D55,
+live-version quote sent), a manual `CONFIRMED` transition
+(`updateStatusNative`), and — new as of the #1236 "money phase" merge —
+defensively by `maybeAutoAdvanceProjectStatus`
+(`convex/lib/projectAutoStatus.ts`) the moment a job first reaches
+`AWAITING_PAYMENT`/`CONFIRMED` by any trigger, closing the gap where an
+invoice-first job (no quote ever sent) or an accepted non-live quote could
+otherwise reach the money phase with pricing still open. It's lowered only by
+a person, via `projectPricingLockWrites.unlockPricingNative` (D42 audience:
+`invoice:publish` or the project's own PM) or `recallNative` (D56, live
+version's quote only) — never automatically, never on a status revert (D57).
+See FEATUREDOCS/77 for the merge-time reasoning in full.
 
-## Lock-tier model (single source of truth)
-
-`convex/lib/projectLocks.ts` exports `lockTierForStatus()` — the ONE place the
-status → tier boundary is defined. Every gate site across
-`projectWrites.ts`/`lineItemWrites.ts`/`projectGroupsWrites.ts`/
-`projectCategoriesWrites.ts`/`projectServicesWrites.ts`/`crewAssignmentsWrites.ts`
-imports it (directly or via `assertLifecycleGuard`) rather than re-deriving the
-boundary — a second hand-maintained copy would be a defect even in sync
-(POLICY.md R-3.1). The same module exports `LOCK_TIER_RANK`, an ordering of the
-four tiers — the single place that answers "did this transition make the
-project MORE or LESS locked" — consumed by `updateStatusNative`'s activity-log
-write (below) so a second hand-maintained ordering doesn't grow elsewhere.
-
-**Activity log visibility.** Opening/closing an unlock session is its own
-explicit `activityLogs` action (`UNLOCK_OPENED`/`UNLOCK_COMMITTED`/
-`UNLOCK_DISCARDED`/`UNLOCK_AUTO_COMMITTED`, justification in
-`metadata.justification` — see below). Entering or leaving a lock tier via an
-ordinary status change has no action of its own — it's a `STATUS_CHANGE`
-(`convex/projectWrites.ts`'s `updateStatusNative`) — but that row is enriched
-whenever `lockTierForStatus(from) !== lockTierForStatus(to)`: the summary gets
-a `— project locked (TIER)` / `— project unlocked (TIER)` suffix, and
-`metadata.lockTierFrom`/`lockTierTo` are stamped for programmatic queries. See
-FEATUREDOCS/24's "Finance events" section.
-
-| Statuses | Tier | What's gated |
-|---|---|---|
-| `ENQUIRY` / `QUOTING` / `QUOTED` | **OPEN** | Nothing (unless a quote has been sent — see below) |
-| `CONFIRMED` / `PREPPING` / `CHECKED_OUT` | **FINANCE_LOCKED** | Financial fields locked behind a finance unlock session; new items/groups/services default to $0 |
-| `ON_SITE` / `RETURNED` | **FINANCE_LOCKED + JUSTIFY** | Above, plus structural mutations require per-edit confirm + written justification |
-| `COMPLETED` / `INVOICED` | **HARD_LOCKED** | All structural + financial mutations blocked; full unlock session restricted to org admins/owners + the project's assigned PM(s) |
-| `AWAITING_PAYMENT` | **OPEN** | Ungated by STATUS — but a sent/accepted quote escalates it to FINANCE_LOCKED through the `quoteState` input below, which is the whole point. See FEATUREDOCS/77 for why a status tier here would make `newVersionNative` unreachable. |
-| `CANCELLED` | OPEN | Ungated (open question — see below) |
-
-### The quote-send lock is a second INPUT, not a second lock (#988, Phase C)
-
-#985's finance version-control program adds one more input to the SAME
-resolver rather than a second lock mechanism (that would be an R-3.1 defect on
-the most safety-critical code in the app): `convex/lib/projectLocks.ts` exports
-`resolveLockTier({ status, quoteState })`, and `lockTierForStatus(status)` is
-now the STATUS-only half of it.
-
-| Status tier | Current revision's quote state | Effective tier | Reason |
-|---|---|---|---|
-| OPEN (`ENQUIRY`/`QUOTING`/`QUOTED`) | none, or `DRAFT` | **OPEN** | `STATUS` |
-| OPEN | `SENT` / `ACCEPTED` / `DECLINED` / `SUPERSEDED` / `EXPIRED` | **FINANCE_LOCKED** | `QUOTE_SENT` |
-| FINANCE_LOCKED / JUSTIFY / HARD_LOCKED (CONFIRMED+) | any | unchanged | `STATUS` |
-
-"Current revision's quote state" is the quote row at `projects.revision`
-(`quoteState.ts#currentRevisionQuoteStatus`) — NOT any historical row. That's
-what makes "cutting a new version is the unlock" (#985 decision 2) true:
-`newVersionNative` bumps `projects.revision` and inserts a fresh `DRAFT` at the
-new number, so the CURRENT revision reads `DRAFT` again even though the
-previous one is still sitting there `SENT` (soon to flip to `SUPERSEDED` when
-the new one actually sends). Every state other than none/`DRAFT` escalates
-identically — `DECLINED`/`SUPERSEDED`/`EXPIRED` included — because decision 2
-makes `newVersionNative` the ONLY sanctioned way off any of them; there's no
-"quietly keep editing the same revision" path once it's gone out.
-
-Properties that make this safe (see the full truth table in
-`convex/lib/projectLocks.test.ts`):
-- **Monotonic.** Quote state can only ever raise OPEN to FINANCE_LOCKED, never
-  touch (let alone lower) a tier that's already FINANCE_LOCKED/JUSTIFY/
-  HARD_LOCKED from status alone. A sent quote on a COMPLETED project softens
-  nothing.
-- **One function, zero new gate sites.** All ~25 existing call sites still
-  call `assertLifecycleGuard(ctx, project, opts)` completely unchanged —
-  `assertLifecycleGuard` looks up the current revision's quote state itself
-  (only when the status tier is itself OPEN — any higher tier already
-  dominates, so this adds no extra read to the CONFIRMED+/ON_SITE+/COMPLETED+
-  paths that make up most gated writes).
-- **`LockTier` values are unchanged** — `FINANCIALS_LOCKED`/`PROJECT_LOCKED`
-  codes and their `native-writes.ts` toast mappings still apply untouched.
-  `defaultToZero` is likewise unchanged: a quote-sent OPEN-status project
-  defaults new adds to $0 exactly like a CONFIRMED one.
-- **`reason: "STATUS" | "QUOTE_SENT"`** is new on `LifecycleGuardResult` and on
-  `projectLocksRead.status`'s return (alongside `revision` and `quoteState`),
-  so the UI can say _why_ pricing is locked and offer the right exit ("Create
-  quote v(N+1)" / "Recall quote" vs. the existing unlock-session flow) instead
-  of a bare "locked" — Phase E (#990) renders that from this one query.
-
-**The sanctioned-exit exception.** `quotesWrites.ts`'s `sendNative` and
-`newVersionNative` are the two mutations that raise/cut the quote-derived
-lock, so they'd otherwise deadlock against their own not-yet-superseded state
-(`newVersionNative` runs while the current revision is STILL the live `SENT`
-quote it's about to move past). Both pass `bypassQuoteLock: true` to
-`assertLifecycleGuard`, resolving the tier from STATUS alone — the one
-deliberate opt-out `LifecycleGuardOptions` exposes, and the only two call
-sites that should ever set it.
-
-**The quote-sent escalation checks the LIVE revision, not the allocator
-(#1080/#1100, Phase 5 fix).** `assertLifecycleGuard` and
-`projectLocksRead.status` resolve `currentRevisionQuoteStatus` against
-`projectLiveRevision(project)`, never `projectRevision(project)`. Before a
-promote (#1080/#1089) could leave the two apart, they were always the same
-number, so reading either worked; once `liveRevision` can sit BEHIND
-`revision` (a promoted v2 live while v3/v4 exist as saved-but-never-sent
-drafts ahead of it), checking the allocator would read v4's still-`DRAFT`
-quote and wrongly resolve `OPEN` even though the live v2 is out with the
-client — the exact scenario recall-to-edit (below) exists to gate correctly.
-`projectLocksRead.status` now returns both `revision` (the allocator, what
-"Create quote v(N+1)" allocates off) and `liveRevision` (the one a
-`QUOTE_SENT` reason is actually describing) — see
-`convex/projectLifecycleLocks.test.ts`'s `#1080/#1100` describe block for the
-regression coverage (a SENT row at the allocator's max must never leak the
-lock onto a still-DRAFT live revision, and vice versa).
-
-### Recall-to-edit — the lock's second exit from QUOTE_SENT (#1080/#1100, Phase 5)
-
-`newVersionNative` ("Create quote v(N+1)") was, until this phase, the ONLY
-exit from a `QUOTE_SENT` lock — which is exactly wrong for a promoted SENT
-revision (#1080/#1089's decision 1: a promoted version keeps its own number,
-so abandoning it to a fresh vN+1 defeats the whole point of promoting it).
-The lock strip (`project-lock-strip.tsx`) now offers a second, PRIMARY exit
-when `reason === "QUOTE_SENT"`: **"Recall vN to edit"**, alongside the
-existing "Create quote v(N+1)" (now secondary).
-
-Clicking it opens `<RecallToEditDialog>`
-(`src/components/projects/finance/recall-to-edit-dialog.tsx`) — a one-click
-confirm, not a bare toast, because un-sending a document a client already
-holds is not something to do as a side effect of a keystroke:
-
-- **Plain SENT/ACCEPTED-but-unprotected revision** — "v2 was sent to the
-  client on 19 Jul. Editing it recalls the quote — the PDF they're holding
-  will no longer match v2. The old document is kept in the audit trail,"
-  with `[ Recall v2 and edit ]` / `[ Create v(N+1) instead ]` / `[ Cancel ]`.
-  Confirming calls the EXISTING `recallNative` unchanged (no new mutation, no
-  second recall path) with a fixed reason string — the dialog itself IS the
-  explicit act every other un-send path already requires, so it doesn't also
-  make the user type one.
-- **Protected (auto-protected on ACCEPTED, #1030)** — the SAME dialog
-  reports the real situation instead of letting a raw `QUOTE_PROTECTED` error
-  surface: "v1 was accepted on 21 Jul and is protected. An owner must
-  unprotect it before it can be edited," offering only
-  `[ Create v(N+1) instead ]` / `[ Cancel ]` — never a recall button the
-  caller can't use. A race (someone else protects it between the strip
-  rendering and the confirm click) is caught and flips the dialog to the same
-  explanation rather than a bare toast.
-
-`LockTier` values, `FINANCIALS_LOCKED`/`PROJECT_LOCKED` codes and their toast
-mappings are unchanged — this is a new client-side exit, not a new server
-gate. Out of scope, deliberately: any change to `recallNative` itself
-(#1032's shipped recall/resend behaviour is depended on, not modified here).
-
-## The shared guard: `assertLifecycleGuard`
-
-One function every gate site calls, encoding the full precedence table:
-
-```ts
-const guard = await assertLifecycleGuard(ctx, project, {
-  kind: "financial" | "structural",
-  justification, // only checked when kind is "structural" and the tier requires it
-});
-```
-
-- **OPEN** — always passes.
-- **HARD_LOCKED** — requires an open `FULL` session, full stop. No per-edit path,
-  regardless of `kind`.
-- **FINANCE_LOCKED financial write** — requires an open session (either scope).
-- **FINANCE_LOCKED structural write** — passes ungated (the structural gate
-  starts at ON_SITE, not CONFIRMED).
-- **JUSTIFY financial write** — requires an open session (finance lock spans
-  through ON_SITE+) — never ALSO prompted by the structural dialog.
-- **JUSTIFY structural write** — an open session suppresses the prompt (no
-  double-prompt); otherwise requires a bounded justification (10–1000 chars,
-  `convex/lib/fieldGuards.ts`).
-
-Callers pick `kind` by asking "does THIS specific write touch a locked money
-field?" — e.g. `lineItemWrites.ts`'s `patchNative` computes
-`touchesMoney = LOCKED_LINE_ITEM_FIELDS.some(f => f in setObj || clear.includes(f))`
-and calls the guard with `kind: touchesMoney ? "financial" : "structural"`, so a
-single edit that touches both routes through the financial path only (no
-double-prompt).
-
-The guard also returns `defaultToZero` — true once the tier is locked and no
-session is open — which every add-mutation uses to zero the new entity's price
-fields server-side (never trusting the client to skip its own autofill).
-
-## Locked financial fields (authoritative list — `convex/lib/projectLocks.ts`)
-
-| Entity | Fields |
-|---|---|
-| Project | `taxRate`, `discountPercent` (#940 WS1: `depositPercent` moved to the client payment profile; `depositPaid`/`invoicedTotal` moved to recalc-owned/derived — none of the three are on this locked-input list anymore, see FEATUREDOCS/10 and FEATUREDOCS/66) |
-| Group | `price`, `discount`, `rentalPeriod`, `rentalQuantity` |
-| Line item | `unitPrice`, `discount`, `duration` |
-| Service | `costTotal` (manual, crew-less only — a crew-attached service's cost keeps auto-deriving from the crew rate table, issue #796), `billableToClient` |
-| Crew assignment | `rateOverride` / `rateType` / `estimatedHours` |
-
-`recalcProjectTotals` and `recalcServiceCostFromCrew` are never gated — they only
-ever READ these fields to compute derived totals, never set them.
-
-## Unlock sessions (`convex/projectUnlockSessionsWrites.ts`)
-
-`projectUnlockSessions`: `{ id, organizationId, projectId, scope: FINANCIAL | FULL,
-justification, openedBy, openedAt, snapshotId, outcome: OPEN | COMMITTED | DISCARDED }`.
-At most one **OPEN** row per project (enforced in `openNative`).
-
-- **`openNative`** — requires `project:update` (FINANCIAL) or
-  `isHardLockOverrideAllowed` (FULL — org admin/owner OR in the project's
-  `projectManagers` set, `convex/lib/projectLocks.ts`). Captures a snapshot
-  (reason `UNLOCK`, the discard target), inserts the session row, writes an
-  audit entry with the justification in `metadata`.
-- **`commitNative`** ("Save & relock") — `outcome: COMMITTED`. Whatever changed
-  during the session stays.
-- **`discardNative`** — restores from the open snapshot via
-  `restoreProjectSnapshot` (`convex/lib/projectSnapshots.ts`), scoped to the
-  session's `scope`:
-  - **FINANCIAL discard** — money fields only. Structural changes made during
-    the session (items added/removed) are NOT rolled back; an item added
-    during the session survives but its price fields revert to $0/unset.
-  - **FULL discard** — structure + financials: patches changed entities,
-    recreates removed ones, removes added ones — EXCEPT anything referencing
-    live warehouse state (`assetId`/`bulkAssetId`/`kitId`), which is left as a
-    conflict for manual review rather than forced (`isWarehouseBacked` in
-    `projectSnapshots.ts`). Asset/kit status fields are never rewritten by
-    either scope (warehouse state is real-world truth).
-
-### A third restore scope: `PROMOTE` (#1080/#1089, Phase 2)
-
-`restoreProjectSnapshot`'s `scope` union gained a third member,
-`RestoreScope = "FINANCIAL" | "FULL" | "PROMOTE"` (renamed from `UnlockScope` —
-it's no longer only an unlock-session concern). `PROMOTE` is `convex/
-projectVersionsWrites.ts`'s `promoteRevisionNative` — "make an older (or
-newer, non-live) captured version live" — a THIRD caller of the same restore
-mechanism the unlock sessions above use, not new machinery.
-
-Structurally `PROMOTE` behaves exactly like `FULL` (same `isWarehouseBacked`
-conflict handling for groups/line items/services/crew — see above). It
-diverges in exactly one place: the **project row** restores every captured
-field EXCEPT identity (`id`/`organizationId`/`projectNumber`/`isTemplate`/
-`createdAt`), the counters themselves (`revision`/`liveRevision` — restoring
-them would undo the promote), `status` (lifecycle position is where the job
-actually IS, not what a version said), and the recalc-owned derived totals
-(`subtotal`/`total`/`taxAmount`/`margin`/`equipmentRevenue`/`saleRevenue`/
-`*CostTotal`/`invoicedTotal`/`depositPaid`) — recalc is the single writer for
-those (R-3.1), and `invoicedTotal`/`depositPaid` reflect real issued invoices,
-never rolled back. Everything else — dates, client, notes, duration-derived
-pricing overrides (`billingWeeksOverride`/`billingDaysOverride`) — restores
-from the snapshot, not recomputed (`PROMOTE_EXCLUDED_PROJECT_FIELDS` in
-`projectSnapshots.ts` is the authoritative list).
-
-`promoteRevisionNative`'s five preconditions reuse this file's existing
-vocabulary rather than adding a new gate: check 3 is `isHardLockOverrideAllowed`
-(the same admin/owner/PM audience FULL sessions already use); check 4 is
-`assertLifecycleGuard(ctx, project, { kind: "structural" })` with **no**
-justification argument — on a HARD_LOCKED project this means promote is
-unreachable without an already-open FULL session (its own justification is
-what satisfies the guard, exactly like the hard-lock-revert case below); on a
-JUSTIFY-tier project (ON_SITE/RETURNED) with no open session, the same call
-throws `JUSTIFICATION_REQUIRED` — pointing the caller at opening a session
-rather than growing promote a second justification surface (decision 17). A
-FINANCE_LOCKED-or-below project's structural gate passes ungated, same as
-every other structural call site.
-
-Before overwriting the live state, promote auto-captures it
-(`PRE_PROMOTE` reason, below) unless it's already snapshotted AND
-byte-identical to that snapshot (`liveStateMatchesCapturedSnapshot`) — nothing
-is at risk, so no number is allocated for a no-op copy. After restoring, a
-moved `rentalStartDate`/`rentalEndDate` triggers the SAME re-derive this
-file's hard-lock section (below) doesn't otherwise need: any resulting
-overbooking on another job is folded into the mutation's returned `conflicts`
-list, using the existing `overbookingBoard.ts` aggregation.
-- **`autoCommitOpenSession`** — called from `updateStatusNative` on every
-  actual status change: a session never silently spans a status transition.
-
-While a session is open, `getOpenUnlockSession` short-circuits every gate site
-for that project — every financial write's audit row is tagged
-`metadata.unlockSessionId`.
-
-## Snapshots (`projectSnapshots` + `projectSnapshotEntries`)
+## Snapshots (`projectSnapshots` + `projectSnapshotEntries`) — unchanged by Phase 4
 
 Parent row + per-entity rows, NOT a single JSON blob (Convex's ~1MB doc limit
 on large projects, plus per-entity rows make diffing a queryable join instead
 of a client-side JSON walk). Captured by `captureProjectSnapshot`
-(`convex/lib/projectSnapshots.ts`):
+(`convex/lib/projectSnapshots.ts`). Live reasons, as of this merge:
 
-- **`reason: "CONFIRMED" | "COMPLETED"`** — inside `updateStatusNative`'s
-  transaction, on every crossing that LANDS on CONFIRMED or COMPLETED (forward
-  advance OR a revert-then-re-advance "re-crossing" — each takes a NEW
-  snapshot, versioned, never overwritten).
-- **`reason: "UNLOCK"`** — at every unlock-session open (the discard target).
+- **`reason: "CONFIRMED" | "COMPLETED"`** — on every crossing that LANDS on
+  CONFIRMED or COMPLETED (forward advance OR a revert-then-re-advance
+  "re-crossing" — each takes a NEW snapshot, versioned, never overwritten).
+  Taken identically by the manual path (`updateStatusNative`) and the
+  automatic one (`maybeAutoAdvanceProjectStatus`'s `PAYMENT_SETTLED` rule,
+  the one trigger allowed to reach CONFIRMED — FEATUREDOCS/76).
 - **`reason: "QUOTE_SENT"`** — at every quote send (`quotesWrites.sendNative`),
   carrying the `revision` it freezes. See FEATUREDOCS/66.
-- **`reason: "VERSION_SAVED"`** (#1085) — an explicit Save version
-  (`projectVersionsWrites.saveVersionNative`) or `newVersionNative` capturing
-  the revision it moves past. Also carries `revision`.
-- **`reason: "PRE_PROMOTE"`** (#1089, Phase 2) — the auto-capture of the live
-  state immediately before `promoteRevisionNative` overwrites it (see below).
-  Also carries `revision`.
+- **`reason: "VERSION_SAVED"`** (#1085) — `quotesWrites.newVersionNative`
+  capturing the outgoing live revision before moving past it. Also carries
+  `revision`.
+
+Two reasons in the schema union are **deprecated, read-only** — kept because
+pre-Phase-4/pre-Phase-3 rows already carry them, never written from now on:
+`"UNLOCK"` (the old unlock-session open-time capture, Phase 4 deleted its only
+writer) and `"PRE_PROMOTE"` (the old `promoteRevisionNative`'s auto-capture,
+Phase 3 of the SAME versioning program replaced that mutation with
+`versions.makeLiveNative`, which never restores/overwrites so has nothing to
+pre-capture).
 
 Entities captured: project (incl. computed totals), categories, groups, line
 items, services, crew assignments — the full project subtree, stripped of
 `_id`/`_creationTime`.
 
-`collectCurrentEntries` (same file) reads the SAME shape read-only (no write) —
-used by the Versions UI to diff a snapshot against "current" through the
+`collectCurrentEntries` (same file) reads the SAME shape read-only (no write)
+— used by the Versions UI to diff a snapshot against "current" through the
 identical code path as snapshot↔snapshot (`src/lib/project-snapshot-diff.ts`).
 
-Every read is org-checked (R-8.4.3) — `projectSnapshotEntries.by_snapshotId` is
-not itself org-scoped, so callers re-check the parent snapshot's
+Every read is org-checked (R-8.4.3) — `projectSnapshotEntries.by_snapshotId`
+is not itself org-scoped, so callers re-check the parent snapshot's
 `organizationId` first (see `convex/projectLocksRead.ts`).
 
-## Hard lock + revert restriction (#792)
+There is no restore/revert-from-snapshot verb anymore — the old
+`restoreProjectSnapshot`/`RestoreScope`/`RestoreArgs`/`RestoreResult`
+machinery (the unlock session's `DISCARD` outcome, and `promoteRevisionNative`'s
+`PROMOTE` scope) was dead code once both callers were gone, and was deleted
+along with them. A snapshot today is read-only history + the diff view —
+"going back" to a past version is `versions.makeLiveNative` (a pointer flip
+onto a real `projectVersions` row, FEATUREDOCS/78), not a snapshot restore.
 
-At HARD_LOCKED, `assertLifecycleGuard` rejects everything (`PROJECT_LOCKED`)
-without an open FULL session — this is the same guard call every gate site
-already makes, so hard-lock coverage falls out of the shared mechanism rather
-than being a separate check.
+## Reads: `convex/projectLocksRead.ts`
 
-**Reverting a project OUT of HARD_LOCKED** (COMPLETED/INVOICED → anything
-earlier) is a trivial bypass of the hard lock unless gated the same as opening
-a FULL session — `updateStatusNative` calls `requireHardLockOverrideAllowed` +
-requires a bounded `justification` arg whenever `isRevertOutOfHardLock(from, to)`.
-`COMPLETED → INVOICED` stays HARD_LOCKED on both ends and is NOT a revert (a
-normal forward move, ungated). Re-completing captures a fresh snapshot (any
-crossing back into CONFIRMED/COMPLETED always snapshots).
-
-**Unified with unlock sessions, not a second lock system.** An **OPEN `FULL`**
-unlock session on the project satisfies this check with NO fresh justification
-required — its own stored `justification` is reused, and the audit row records
-`metadata.justificationSource: "unlock_session"` instead of `"manual"` so the
-trail still shows which one applied. This is the one outlier that used to
-demand a brand-new justification even while a FULL session sat open (fixed
-2026-07); every other HARD_LOCKED write already got this for free via
-`assertLifecycleGuard`. A `FINANCIAL`-scope session does **not** satisfy it
-(matches `assertLifecycleGuard`'s own FULL-only rule for HARD_LOCKED), and
-neither does an already-`COMMITTED`/`DISCARDED` session — reusing a *closed*
-session's justification for a later, unrelated action would be stale
-authorization, so a caller who already relocked still types one fresh reason.
-The separate CONFIRMED-without-accepted-quote gate (#986, below) is
-deliberately **not** folded into this — "did the client accept a quote" has
-no relationship to "is there an open unlock session", so it always requires
-its own explicit justification.
-
-**Client wiring:** `src/hooks/use-native-project-writes.ts`'s
-`useNativeProjectStatus().updateStatus` takes an optional third
-`justification` param. The project detail page wraps it in the same
-`useJustifiedMutation` + `<JustificationDialog>` pattern the equipment/
-services/crew tabs already use for #793 — `lockStatus.tier` is never
-`"JUSTIFY"` for these two transitions, so it always takes the hook's reactive
-path (try once, catch the server's `JUSTIFICATION_REQUIRED`, prompt, retry)
-rather than the proactive one. That reactive catch (`isJustificationRequired`
-in `use-justified-mutation.ts`) now recognizes a `UserFacingError` in addition
-to a raw `ConvexError` — every native-write hook rethrows
-`mapNativeWriteError(e)`, so the raw `ConvexError` a mutation throws never
-actually reaches a caller further up the stack; this was a latent gap that
-only didn't matter for the existing #793 call sites because they always
-already know `tier === "JUSTIFY"` before calling and never fall through to the
-reactive path in practice.
-
-## Versions / diff UI
-
-- **`convex/projectLocksRead.ts`** — `status` (tier + open session, for the
-  banner/lock icons), `listSnapshots`, `snapshotEntries`, `currentEntries`.
-- **`src/components/projects/project-versions-panel.tsx`** — version list →
-  read-only "as of" summary (financial totals) → diff (added/removed/changed
-  rows with before/after price), mounted from the project detail page's ⋯ menu
-  ("Versions") and the Financials tab. Renders through simplified read-only
-  rows, not the live editable equipment tab.
-- **`src/lib/project-snapshot-diff.ts`** — pure diff logic (`diffSnapshotEntries`,
-  `projectTotalsFromEntry`), framework-free and unit-tested independent of the
-  panel.
-
-## Client wiring
-
-- **`src/hooks/use-project-lock.ts`** — `useProjectLockStatus` (reactive tier +
-  session), `useUnlockSession` (open/commit/discard).
-- **`src/components/projects/unlock-session-dialog.tsx`** /
-  **`unlock-session-banner.tsx`** — the open action + the persistent
-  "unlocked by X — 'reason'" banner with Save & relock / Discard.
-- **`src/hooks/use-justified-mutation.ts`** + **`justification-dialog.tsx`** —
-  the shared #793 wrapper: pre-checks the project's tier and prompts for a
-  justification BEFORE invoking a gated mutation, and also catches the
-  server's `JUSTIFICATION_REQUIRED` as a fallback (the project may have
-  advanced underneath a stale client). One shared hook + dialog so every
-  gated surface prompts identically — not a per-form one-off.
-- **`src/components/projects/unpriced-badge.tsx`** — the amber "Unpriced"
-  badge for a $0-defaulted add. Mounted on Equipment tab rows (#990). Reads
-  `group.pricedUnderLock` / `item.pricedUnderLock` — a stored field, not an
-  inference from "currently locked" (see below).
-- **`src/lib/lock-copy.ts`**, **`project-lock-chip.tsx`**,
-  **`project-lock-strip.tsx`**, **`project-lock-glyph.tsx`**,
-  **`src/components/ui/locked-field.tsx`**, **`gated-button.tsx`** — the six
-  lock-legibility surfaces (#990, Phase E) — see below.
-- **`src/lib/native-writes.ts`** — `FINANCIALS_LOCKED` / `JUSTIFICATION_REQUIRED`
-  / `PROJECT_LOCKED` / `SESSION_ALREADY_OPEN` / `NO_OPEN_SESSION` /
-  `FORBIDDEN_HARD_LOCK_OVERRIDE` mapped to `UserFacingError` toasts.
-
-## Making the lock legible (#990, Phase E)
-
-#791/#793 shipped one FINANCIALS_LOCKED/JUSTIFICATION_REQUIRED toast; #988
-(Phase C) closed every deferred gate site so the toast was never lying. #990
-is the client half: a lock has to be visible *before* you try, explain
-itself, and offer the exit — not a surprise after a failed save. Six
-surfaces, one shared source per surface (POLICY.md R-3.1):
-
-1. **`src/lib/lock-copy.ts`** — the ONE copy module (`resolveLockCopy`,
-   `formatLockElapsed`, `scrollToLockStrip`). Every surface below renders a
-   `LockCopy` from this, so the header chip, the strip, a `<LockedField>`
-   tooltip and a `<GatedButton>` tooltip can never say something different
-   about the same state. Formula: `[state] — [consequence]. [the exit].`
-2. **`src/components/projects/project-lock-chip.tsx`** — the always-mounted
-   header chip beside the project status (`page.tsx`'s identity row). Null
-   for OPEN with no session — absence already reads as "editing normally".
-3. **`src/components/projects/project-lock-strip.tsx`** — the shared strip,
-   mounted ONCE at `id="lock-strip"` above the tabs (not inside Finance),
-   replacing Phase D's Finance-tab-only `QuoteLockStrip`. Renders
-   `<UnlockSessionBanner>` while a session is open; otherwise the
-   `resolveLockCopy` line plus the exit that matches `reason` — for
-   `QUOTE_SENT`, "Recall vN to edit" (primary, opens
-   `<RecallToEditDialog>` — `src/components/projects/finance/recall-to-edit-dialog.tsx`,
-   #1080/#1100 Phase 5) + "Create quote v(N+1)" (secondary) — or the existing
-   unlock-session flow for `STATUS`.
-4. **`src/components/ui/locked-field.tsx`** — the field-level wrapper. Uses a
-   native `<fieldset disabled>` around the child rather than cloning
-   `disabled`/`readOnly` onto it: a fieldset cascades to every descendant
-   form control (works for a single `<Input>` or a composite block — a
-   checkbox + a select + an input), and every registry control's own
-   `disabled:` Tailwind classes apply automatically since they read real
-   `:disabled` state. Wired into `price-edit-dialog.tsx`,
-   `edit-line-item-dialog.tsx`, `edit-group-dialog.tsx`,
-   `add-service-dialog.tsx`, `services-panel.tsx`'s real add/edit-service
-   form (charge/discount/cost — the fields `updateServiceNative`'s
-   `moneyChanged` check actually gates), `bulk-edit-line-items-dialog.tsx`,
-   `crew-panel.tsx`'s rate/rateType/estimatedHours, and the project edit
-   form's discount field (`project-wizard.tsx`; `taxRate` is likewise
-   locked but has no UI field to wrap — org-default only). Sub-hire group
-   pricing (`price-edit-dialog.tsx`'s other mode) is deliberately NOT
-   wrapped — `subHiresWrites.ts#updateGroup` never calls
-   `assertLifecycleGuard`, so locking it in the UI would be a lie the
-   server doesn't back up (§7.3 "server parity, non-negotiable").
-5. **`src/components/ui/gated-button.tsx`** — the action-level wrapper:
-   `aria-disabled` (never `disabled`, which kills the tooltip) + its own
-   `TooltipProvider` + a no-op handler, keyboard-focusable. Applied to the
-   Equipment tab's and Services panel's primary "Add ▾" triggers at
-   HARD_LOCKED — every path out of either menu is server-rejected at that
-   tier with no per-edit escape, so the menu itself is gated instead of
-   opening onto three dead ends.
-6. **`src/components/projects/project-lock-glyph.tsx`** — the list/board/
-   dashboard glyph (`project-table.tsx`, `project-board.tsx`,
-   `dashboard/page.tsx`'s Upcoming list). Derived from `status` alone via
-   the SAME `lockTierForStatus` the server resolves from — no second row
-   query. Deliberately status-only: it does NOT detect the `QUOTE_SENT`
-   case (an OPEN-status project with a sent quote), because that needs each
-   row's current-revision quote state, which `projects.listPage`/
-   `listBoard` don't carry and a per-row lookup would reintroduce the
-   per-project-loop cost #942 flagged. A coverage gap, not a wrong answer —
-   the header chip and lock strip both resolve it correctly once opened.
-
-**Justify tier (surface 5 of the issue) — partially wired.** `remove`/
-`bulkDelete` now forward `justification` end-to-end and are routed through
-`useJustifiedMutation` for line items (single + bulk), groups (single),
-services (single + bulk), and crew assignments (single + bulk) — the
-highest-risk, most common ON_SITE+ structural edits. `add`/`update`/status
-call sites are NOT yet threaded (they either don't touch a JUSTIFY-gated
-field or the justification arg still needs plumbing through each write hook
-+ dialog). Tracked as follow-up, not silently dropped (mirrors the #790 PR's
-"deliberately deferred" convention). One known limitation: `useJustifiedMutation`'s
-"catch the server's `JUSTIFICATION_REQUIRED` as a fallback" path only fires
-if the raw `ConvexError` reaches it — the write hooks all pipe errors through
-`mapNativeWriteError` first, which converts it to a `UserFacingError` (a
-different class) before it gets there. The PRE-check (`tier === "JUSTIFY" &&
-!hasOpenSession`, evaluated before the mutation ever fires) is what carries
-the real UX; the fallback is a defensive backstop for a stale client racing
-a status change mid-session, and doesn't currently trigger through this
-integration.
-
-**`UnpricedBadge`** is now mounted on the Equipment tab's `GroupRow`/
-`LineItemRow` (`equipment-rows.tsx`) — kit children excluded, not
-independently priced. Not yet mounted on Services/Crew rows.
-
-**`pricedUnderLock` (bug fix, follow-up to #990).** The badge originally
-rendered on `moneyLocked && price === 0` — i.e. it INFERRED "this was
-`defaultToZero`'d" from "the project happens to be locked right now AND this
-row happens to be $0", with no memory of when or why the row became $0. That
-false-positives hard: a row that's been $0 since long before any lock ever
-existed (no catalog `dailyRate`/`weeklyRate` configured, a sub-hire kit
-pending supplier confirmation, or any other legitimately-unpriced reason)
-starts showing "Added after the quote was confirmed — price it deliberately"
-the moment the project LATER becomes locked, which is simply false for that
-row.
-
-Fixed by storing the actual cause instead of inferring it:
-`projectLineItems.pricedUnderLock` / `projectGroups.pricedUnderLock`
-(`convex/schema.ts`, both `v.optional(v.boolean())`) are set `true` at the
-exact moment `assertLifecycleGuard`'s `defaultToZero` forces a row's price to
-$0/unset — every insert path (`addNative`, `addCustomNative`,
-`addLineItemSmartNative`, `addKitNative` → `createKitLineItemCore`,
-`projectGroupsWrites.createNative`) via the shared
-`pricedUnderLockOnInsert(defaultToZero)` helper
-(`convex/lib/projectLocks.ts`), and the FINANCIAL-scope
-`restoreProjectSnapshot`'s "added during the session, not in the snapshot →
-reset to $0" branch (`convex/lib/projectSnapshots.ts`) — the same
-not-deliberately-priced state by construction. It's cleared back to `false`
-the moment a human deliberately sets a real price: `patchNative`'s `unitPrice`
-edit, `updateGroupPriceNative` (always — reaching it means the FINANCIAL
-guard already passed), a line-item merge that keeps a real client-supplied
-price, and a FINANCIAL-scope snapshot restore that lands a real historical
-price from the snapshot. `pricedUnderLock` is listed in
-`LINE_IMMUTABLE_ON_PATCH` — server-derived only, never client-settable.
-
-The badge condition is now simply `item.pricedUnderLock` / `group.pricedUnderLock`
-— no `moneyLocked` check needed (a `defaultToZero`'d row stays flagged for
-review even after the project is later unlocked, until someone actually prices
-it). This also let `moneyLocked` be dropped entirely from `GroupRow`'s and
-`LineItemRow`'s props — it had no other reader.
-
-**Unlock session diff (§7.2).** `projectLocksRead.status`'s `openSession` now
-carries `snapshotId`; `unlock-session-banner.tsx`'s Save & relock and Discard
-both open a confirm step first, rendering `<SnapshotDiffSummary>` (factored
-out of `project-versions-panel.tsx` — one diff renderer for both, POLICY.md
-R-3.1) against that session's UNLOCK snapshot before committing.
+`status` returns `{ pricingLocked, pricingLockedAt, pricingLockedByName,
+canUnlockPricing }` for the caller — the header lock chip/glyph and the
+Overview readiness checklist read this, never a stored tier. `listSnapshots`/
+`snapshotEntries`/`currentEntries` are unchanged by Phase 4 (see Snapshots
+above).
 
 ## Server enforcement (R-9.3 / R-8.4.2)
 
 Every gate site is a browser-callable native mutation — hiding a locked field
 in the UI is not enough, since a browser-direct caller bypasses the client
-Zod entirely (FEATUREDOCS/54's "write security bar"). All server-side
-rejections use `ConvexError({ code })` with a stable code the client branches
-on: `FINANCIALS_LOCKED`, `JUSTIFICATION_REQUIRED`, `PROJECT_LOCKED`,
-`SESSION_ALREADY_OPEN`, `NO_OPEN_SESSION`, `FORBIDDEN_HARD_LOCK_OVERRIDE`.
-`promoteRevisionNative` (below) adds its own precondition codes —
-`TEMPLATE_NO_VERSIONS`, `VERSION_NOT_RESTORABLE`, `FORBIDDEN`,
-`PROMOTE_BLOCKED_INVOICED` — ahead of the shared `PROJECT_LOCKED`/
-`JUSTIFICATION_REQUIRED` pair `assertLifecycleGuard` itself can still throw.
+Zod entirely (FEATUREDOCS/54's "write security bar"). `assertPricingUnlocked`
+throws `ConvexError({ code: "PRICING_LOCKED" })` — the ONE code left from the
+old set (`FINANCIALS_LOCKED`/`JUSTIFICATION_REQUIRED`/`PROJECT_LOCKED`/
+`SESSION_ALREADY_OPEN`/`NO_OPEN_SESSION`/`FORBIDDEN_HARD_LOCK_OVERRIDE` are
+all gone with the mechanisms that threw them). `unlockPricingNative`'s own
+audience check throws `FORBIDDEN_UNLOCK_PRICING`.
 
 ## Gate site coverage
 
-Gated: `projectWrites.ts` (`updateNative`, `updateStatusNative`, `deleteNative`'s
-snapshot/session cascade), `lineItemWrites.ts` (`addNative`, `addCustomNative`,
-`addKitNative`, `addLineItemSmartNative`, `patchNative`, `patchManyNative`,
-`removeNative`, `removeManyNative`, `reorderNative`), `projectGroupsWrites.ts`
-(`createGroupNative`, `updateGroupNative`, `updateGroupPriceNative`,
-`deleteGroupNative`, `moveLineItemNative`, `moveLineItemsNative`),
-`projectCategoriesWrites.ts` (`createCategoryNative`, `updateCategoryNative`,
-`deleteCategoryNative`), `projectServicesWrites.ts` (`createServiceNative`,
-`updateServiceNative`, `deleteServiceNative`, `bulkDeleteServicesNative`,
-`bulkUpdateServiceStatusNative`, `generateServicesNative`,
-`cloneServicesNative`, `convertLineItemToServiceNative`),
-`crewAssignmentsWrites.ts` (`createNative`, `updateNative`, `deleteNative`,
-`bulkDeleteNative`, `bulkStatusNative`, `generateShiftsNative`),
-`projectVersionsWrites.ts` (`promoteRevisionNative`, #1089, Phase 2 — `kind:
-"structural"`, no justification argument of its own; see "A third restore
-scope" above).
+Every write to a `LOCKED_*_FIELDS` field calls `assertPricingUnlocked` before
+persisting: `projectWrites.updateNative`, `lineItemWrites.ts` (`addNative`,
+`addCustomNative`, `addKitNative`, `addLineItemSmartNative`, `patchNative`,
+`patchManyNative`), `projectGroupsWrites.updateGroupPriceNative`,
+`projectServicesWrites.ts` (create/update paths that touch `costTotal`/
+`billableToClient`), `crewAssignmentsWrites.ts` (create/update paths that
+touch `rateOverride`/`rateType`/`estimatedHours`). New-row inserts on a
+locked live version default the money fields to `$0`
+(`defaultsToZeroOnInsert`/`pricedUnderLockOnInsert`) rather than being
+rejected outright — the row still gets created, just unpriced, and
+`afterLockAuditMetadata` stamps `{ afterLock: true }` on its audit row.
+Structural mutations (create/update/delete a category, group, line item
+shape, service, crew assignment; reorder; bulk/generate/clone variants) are
+NEVER gated — no call to `assertPricingUnlocked`, no equivalent check at all.
 
-That closes every site #791/#793's acceptance criteria asked for ("every gate
-site") — the bulk/generate/clone/reorder variants below were the deferred set;
-#988 (Phase C) gates each with `kind: "structural"` (the same family a single
-create/update/delete already uses), a per-distinct-project dedup for the ones
-that can span more than one project (mirroring `patchManyNative`/
-`removeManyNative`'s existing dedup pattern), and `defaultToZero` applied to
-every new/copied money field exactly like a manually-added entity:
-`bulkDeleteServicesNative`, `bulkUpdateServiceStatusNative`,
-`generateServicesNative`, `cloneServicesNative` (gated on the TARGET project —
-the source isn't written to), `convertLineItemToServiceNative`,
-`lineItemWrites.reorderNative`, `crewAssignmentsWrites.bulkDeleteNative`,
-`bulkStatusNative`, `generateShiftsNative`. Each has a "rejects on an ON_SITE
-project without justification, succeeds with one" test.
+## Open questions
 
-## Open questions (from #957, unresolved)
-
-- **CANCELLED**: cancelling a FINANCE_LOCKED/HARD_LOCKED project is currently
-  ungated (status transitions are excluded from the #793 structural gate).
-  Leaning yes-but-later on requiring justification for cancellation from
-  CONFIRMED+.
-- **Snapshot size at scale**: validate the per-entity-row approach against the
-  largest real projects before this is exercised in anger — no test here
-  proves it against a 1000+ line-item project.
+- **CANCELLED**: cancelling a pricing-locked project is currently ungated
+  (status transitions never call `assertPricingUnlocked`). Unresolved from
+  the original #957 discussion; the tier system's deletion didn't change the
+  answer either way.
+- **Snapshot size at scale**: validate the per-entity-row approach against
+  the largest real projects before this is exercised in anger — no test here
+  proves it against a 1000+ line-item project. Unchanged by Phase 4.

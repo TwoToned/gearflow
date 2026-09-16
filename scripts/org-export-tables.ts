@@ -96,7 +96,12 @@ export const DIRECT_TABLES = [
   "projectSnapshotEntries",
   "projectSnapshots",
   "projectTasks",
-  "projectUnlockSessions",
+  // #1230 Phase 4 ("Project versioning v2", parent #1221) deleted
+  // `projectUnlockSessions` along with the rest of the 4-tier lock system —
+  // no replacement table (the whole rule is now `projects.pricingLocked`).
+  // #1226 Phase 1 ("Project versioning v2", parent #1221) — has its own
+  // `by_organizationId` index, same as every other project child table above.
+  "projectVersions",
   "quotes",
   "savedTableViews",
   "serviceSchedules",
@@ -244,6 +249,7 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // dismissal — same export posture as notificationDismissals above).
 // #1105 (D1): +1 — orgActivationDismissals (DIRECT, per-user "Get started"
 // activation-checklist dismissal — same export posture as orgSetupDismissals).
+// #1230 (Phase 4): -1 — projectUnlockSessions deleted, no replacement table.
 export const EXPECTED_TABLE_COUNT = 119;
 
 /**

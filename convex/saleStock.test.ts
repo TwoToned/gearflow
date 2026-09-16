@@ -37,11 +37,15 @@ async function ownerMember(t: ReturnType<typeof makeT>) {
 // which would otherwise make every unitPrice assertion below fail for the
 // wrong reason).
 async function seedProject(t: ReturnType<typeof makeT>, over: Record<string, unknown> = {}) {
+  // #1228 — every project needs a live projectVersions row + liveVersionId.
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
-      status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+      status: "QUOTED", isTemplate: false, liveVersionId: "v1", createdAt: NOW, updatedAt: NOW,
       ...over,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: "v1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -221,7 +225,7 @@ describe("new-stock sale (Model.saleStockQuantity)", () => {
     expect(r1.merged).toBe(false);
     expect(r2.merged).toBe(false);
     const lines = await t.run(async (ctx) =>
-      ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect(),
+      ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "v1")).collect(),
     );
     expect(lines.filter((l) => l.type === "SALE")).toHaveLength(2);
   });
@@ -259,8 +263,9 @@ describe("sell-from-rental-stock (serialised)", () => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", assetType: "SERIALIZED" });
       await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "TAG-1", status: "AVAILABLE", isActive: true });
       // Another (future) project already has this exact asset booked, overlapping p1's window.
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other Gig", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + DAY });
-      await ctx.db.insert("projectLineItems", { id: "other1", organizationId: ORG, projectId: "p2", type: "EQUIPMENT", assetId: "a1", modelId: "m1", quantity: 1, status: "CONFIRMED", isKitChild: false });
+      await ctx.db.insert("projects", { liveVersionId: "v-p2", id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other Gig", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + DAY });
+    await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p2", lineageId: "other1", id: "other1", organizationId: ORG, projectId: "p2", type: "EQUIPMENT", assetId: "a1", modelId: "m1", quantity: 1, status: "CONFIRMED", isKitChild: false });
     });
 
     const res = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, {

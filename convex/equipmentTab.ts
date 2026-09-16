@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { getKitByCuid } from "./lib/kits";
+import { resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * BROWSER-facing composite for the project EQUIPMENT EDITING TAB (Phase 5 native
@@ -16,11 +17,27 @@ import { getKitByCuid } from "./lib/kits";
  * Overbooking is NOT here — it stays on overbooking.bundle (already browser-safe)
  * and computeOverbookedStatus (kept as-is; see equipment-tab-reconstruct).
  */
-async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string) {
+const EMPTY_EQUIPMENT_TAB = {
+  lineItems: [], units: [], categories: [], groups: [], categorySlots: [],
+  subHires: [], subHireGroups: [], subHireItems: [], assets: [], bulkAssets: [],
+  kits: [], models: [], suppliers: [], orgCategories: [],
+};
+
+async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string, versionId?: string) {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  // Missing/cross-org project: same graceful-empty behaviour the old
+  // by_projectId reads had (they returned [] rather than throwing) — there
+  // is no version id to resolve without a project row.
+  if (!project || project.organizationId !== orgId) return EMPTY_EQUIPMENT_TAB;
+  // #1228: the VIEWED version (an explicit versionId, or the project's live
+  // one) — a non-live version's Equipment tab renders through this SAME
+  // reconstruction, per docs/designs/project-versioning-v2.md's "identical
+  // copy/labels to the live tab" requirement.
+  const targetVersionId = resolveVersionId(project, versionId);
   const [rawLineItems, rawCategories, rawGroups, rawSubHires] = await Promise.all([
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    versionRows(ctx, "projectLineItems", targetVersionId),
+    versionRows(ctx, "projectCategories", targetVersionId),
+    versionRows(ctx, "projectGroups", targetVersionId),
     ctx.db.query("subHires").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
   ]);
 
@@ -40,6 +57,7 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
   // Category slots: one indexed read per category (typically ≤10).
   const slotArrays = await Promise.all(
     categories.map((c) =>
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       ctx.db.query("categorySlots").withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", c.id)).collect(),
     ),
   );
@@ -140,9 +158,11 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string)
 }
 
 export const bundle = query({
-  args: { projectId: v.string(), orgId: v.string() },
-  handler: async (ctx, { projectId, orgId }) => {
+  // #1228: optional versionId, defaulting to the project's live version —
+  // additive-only per the stable-contract ratchet.
+  args: { projectId: v.string(), orgId: v.string(), versionId: v.optional(v.string()) },
+  handler: async (ctx, { projectId, orgId, versionId }) => {
     await requireOrgPermission(ctx, orgId, "project", "read");
-    return readEquipmentTab(ctx, projectId, orgId);
+    return readEquipmentTab(ctx, projectId, orgId, versionId);
   },
 });

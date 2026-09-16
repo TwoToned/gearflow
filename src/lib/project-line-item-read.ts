@@ -687,12 +687,17 @@ export interface DocCategoryWithGroups {
  * Returns `{ lineItems, categories }` (categories = the cat+groups array for
  * `structureLineItems`).
  */
-export async function buildDocumentLineItemData(projectId: string, organizationId: string) {
+export async function buildDocumentLineItemData(projectId: string, organizationId: string, versionId?: string) {
   const convex = await getConvexClient();
+  // #1233 (Phase 6) — `versionId` (optional, defaults to the project's live
+  // version) threads straight through to the three already-version-aware
+  // Convex reads (Phase 2, #1228) — a quote rendered for a NON-live version
+  // reconstructs THAT version's own equipment/groups/categories, not the
+  // live plan's.
   const [liDocs, catDocs, grpDocs] = await Promise.all([
-    convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId }),
-    convex.query(api.projectCategories.listByProject, { projectId, orgId: organizationId }),
-    convex.query(api.projectGroups.listByProject, { projectId, orgId: organizationId }),
+    convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId, versionId }),
+    convex.query(api.projectCategories.listByProject, { projectId, orgId: organizationId, versionId }),
+    convex.query(api.projectGroups.listByProject, { projectId, orgId: organizationId, versionId }),
   ]);
 
   const lineItems = liDocs.map(mapLineItemDoc);

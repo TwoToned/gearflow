@@ -93,6 +93,9 @@ async function project(
   org = ORG,
   extra: Record<string, unknown> = {},
 ) {
+  // #1228 — every project needs a live projectVersions row + liveVersionId,
+  // or every by_versionId-family read/write on it throws.
+  const versionId = `v-${id}`;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id,
@@ -101,9 +104,14 @@ async function project(
       name: "Gig",
       status,
       isTemplate: false,
+      liveVersionId: versionId,
       createdAt: NOW,
       updatedAt: NOW,
       ...extra,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: org, projectId: id, number: 1,
+      contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -169,7 +177,7 @@ describe("assertion 1 — overbooking under concurrency", () => {
     await t.run(async (ctx) => {
       const lines = await ctx.db
         .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", "p1"))
+        .withIndex("by_versionId", (q) => q.eq("versionId", "v-p1"))
         .collect();
       expect(lines).toHaveLength(1);
     });
@@ -193,7 +201,7 @@ describe("assertion 2 — allowOverbook is separately scoped", () => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
       await ctx.db.insert("assets", { id: "a0", organizationId: ORG, modelId: "m1", assetTag: "A-0", status: "AVAILABLE", isActive: true });
       await ctx.db.insert("projectLineItems", {
-        id: "lx", organizationId: ORG, projectId: "p1", modelId: "m1",
+        id: "lx", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "lx", modelId: "m1",
         type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", isKitChild: false,
       });
     });
@@ -254,18 +262,20 @@ describe("assertion 2 — allowOverbook is separately scoped", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// 3. Money field on a CONFIRMED project ⇒ FINANCIALS_LOCKED
+// 3. Money field on a pricing-locked project ⇒ PRICING_LOCKED (#1230, renamed
+// from FINANCIALS_LOCKED — status alone no longer implies the lock, the
+// explicit `projects.pricingLocked` boolean does).
 // ────────────────────────────────────────────────────────────────────────────
 
-describe("assertion 3 — financial lock tier", () => {
-  test("patching unitPrice on a CONFIRMED project fails FINANCIALS_LOCKED", async () => {
+describe("assertion 3 — pricing lock", () => {
+  test("patching unitPrice on a pricing-locked project fails PRICING_LOCKED", async () => {
     const t = makeT();
     await member(t);
     await apiKey(t, ["*"]);
-    await project(t, "CONFIRMED");
+    await project(t, "CONFIRMED", "p1", ORG, { pricingLocked: true });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
-        id: "li1", organizationId: ORG, projectId: "p1", description: "Light",
+        id: "li1", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "li1", description: "Light",
         status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false,
       });
     });
@@ -276,17 +286,18 @@ describe("assertion 3 — financial lock tier", () => {
         actor: ACTOR, auditId: "log1", now: NOW,
         set: { unitPrice: 99, updatedAt: NOW }, clear: [],
       }),
-    ).rejects.toThrow(/financials are locked/i);
+    ).rejects.toThrow(/pricing is locked/i);
   });
 
-  test("an ADD on a CONFIRMED project is forced to $0 rather than rejected", async () => {
-    // The lock's documented behaviour for a NEW line (#791): adding is structural at
-    // this tier, and the money defaults to zero server-side. An agent gets exactly
-    // the same treatment — no special case, which is the point.
+  test("an ADD on a pricing-locked project is forced to $0 rather than rejected", async () => {
+    // The lock's documented behaviour for a NEW line (#791, carried into
+    // #1230): adding is structural, and the money defaults to zero
+    // server-side. An agent gets exactly the same treatment — no special
+    // case, which is the point.
     const t = makeT();
     await member(t);
     await apiKey(t, ["*"]);
-    await project(t, "CONFIRMED");
+    await project(t, "CONFIRMED", "p1", ORG, { pricingLocked: true });
 
     await t.withIdentity(asAgent).mutation(api.lineItemWrites.addNative, addArgs());
     await t.run(async (ctx) => {
@@ -297,11 +308,14 @@ describe("assertion 3 — financial lock tier", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// 4. Structural write on ON_SITE ⇒ JUSTIFICATION_REQUIRED
+// 4. Structural write on ON_SITE — #1230 deletes the whole JUSTIFY tier
+// (freeform per-edit justification + `resolveLockTier`'s JUSTIFY rung): a
+// structural add is now unconditionally ungated, for an agent exactly as for
+// a browser user — no special case, which is the point.
 // ────────────────────────────────────────────────────────────────────────────
 
-describe("assertion 4 — justify tier", () => {
-  test("an add on an ON_SITE project fails without a justification", async () => {
+describe("assertion 4 — structural writes are ungated (#1230 — JUSTIFY tier deleted)", () => {
+  test("an add on an ON_SITE project succeeds with no justification arg at all", async () => {
     const t = makeT();
     await member(t);
     await apiKey(t, ["*"]);
@@ -309,32 +323,7 @@ describe("assertion 4 — justify tier", () => {
 
     await expect(
       t.withIdentity(asAgent).mutation(api.lineItemWrites.addNative, addArgs()),
-    ).rejects.toThrow(/describe why this change is needed/i);
-  });
-
-  test("the same add succeeds WITH a justification (decision 1 — allowed, not denied)", async () => {
-    const t = makeT();
-    await member(t);
-    await apiKey(t, ["*"]);
-    await project(t, "ON_SITE");
-
-    await expect(
-      t.withIdentity(asAgent).mutation(
-        api.lineItemWrites.addNative,
-        addArgs({ justification: "Client added a second PAR can on site." }),
-      ),
     ).resolves.toBeTruthy();
-  });
-
-  test("a too-short justification is still rejected (the bound is not agent-relaxed)", async () => {
-    const t = makeT();
-    await member(t);
-    await apiKey(t, ["*"]);
-    await project(t, "ON_SITE");
-
-    await expect(
-      t.withIdentity(asAgent).mutation(api.lineItemWrites.addNative, addArgs({ justification: "why" })),
-    ).rejects.toThrow(/at least 10 characters/i);
   });
 });
 
@@ -363,21 +352,23 @@ describe("assertion 5 — audit attribution", () => {
     });
   });
 
-  test("the justification survives ALONGSIDE the agent stamp (metadata is merged, not replaced)", async () => {
+  // #1230: the freeform `justification` arg is deleted along with the JUSTIFY
+  // tier. `afterLock:true` (stamped when a money write lands under a pricing
+  // lock — here, a $0-defaulted new add) is the metadata survivor that
+  // proves the same "merged, not replaced" contract still holds for an
+  // agent write.
+  test("afterLock:true survives ALONGSIDE the agent stamp (metadata is merged, not replaced)", async () => {
     const t = makeT();
     await member(t);
     await apiKey(t, ["*"]);
-    await project(t, "ON_SITE");
+    await project(t, "CONFIRMED", "p1", ORG, { pricingLocked: true });
 
-    await t.withIdentity(asAgent).mutation(
-      api.lineItemWrites.addNative,
-      addArgs({ justification: "Client added a second PAR can on site." }),
-    );
+    await t.withIdentity(asAgent).mutation(api.lineItemWrites.addNative, addArgs());
 
     await t.run(async (ctx) => {
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       const metadata = log?.metadata as Record<string, unknown> | undefined;
-      expect(metadata?.justification).toBe("Client added a second PAR can on site.");
+      expect(metadata?.afterLock).toBe(true);
       expect(metadata?.apiKeyId).toBe(KEY);
     });
   });

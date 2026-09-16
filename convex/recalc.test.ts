@@ -22,18 +22,35 @@ describe("recalcProjectTotals — totals parity", () => {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Group: price 100 × qty 2 = 200 (no custom extras).
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 2, sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 2, sortOrder: 0,
+        versionId: "v-p1",
+        lineageId: "g1",
+      });
       // Standalone line: lineTotal 50 (counted).
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 50 });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 50,
+        versionId: "v-p1",
+        lineageId: "l1",
+      });
       // Optional line: excluded.
-      await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: true, lineTotal: 999 });
+      await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: true, lineTotal: 999,
+        versionId: "v-p1",
+        lineageId: "l2",
+      });
       // Grouped custom item: PART of the group's flat price, NOT an extra on top.
       // The group is priced (100), so this 25 is covered by the bundle, not added.
-      await ctx.db.insert("projectLineItems", { id: "l3", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, isCustomItem: true, groupId: "g1", lineTotal: 25 });
+      await ctx.db.insert("projectLineItems", { id: "l3", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, isCustomItem: true, groupId: "g1", lineTotal: 25,
+        versionId: "v-p1",
+        lineageId: "l3",
+      });
       // Service: billable revenue 30, cost 20.
-      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Design", status: "CONFIRMED", showOnDocuments: true, lineTotal: 30, costTotal: 20 });
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Design", status: "CONFIRMED", showOnDocuments: true, lineTotal: 30, costTotal: 20,
+        versionId: "v-p1",
+        lineageId: "s1",
+      });
       // Assignment: labour cost 40.
       await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", estimatedCost: 40 });
       // Sub-hire: cost 15.
@@ -65,16 +82,27 @@ describe("recalcProjectTotals — totals parity", () => {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-2",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-2", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Priced group: 100 × qty 1 = 100. Its flat price covers its OWN gear only.
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Audio", price: 100, quantity: 1, sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Audio", price: 100, quantity: 1, sortOrder: 0,
+        versionId: "v-p1-2",
+        lineageId: "g1",
+      });
       // Sub-hire line dropped INTO the priced group. Before the fix this vanished
       // (groupRevenue's customExtras is zeroed for a priced group, and standalone
       // requires groupId == null). It carries its own client charge (60).
-      await ctx.db.insert("projectLineItems", { id: "sl1", organizationId: ORG, projectId: "p1", status: "QUOTED", type: "EQUIPMENT", isKitChild: false, isOptional: false, groupId: "g1", subHireId: "sh1", subHireItemId: "si1", lineTotal: 60 });
+      await ctx.db.insert("projectLineItems", { id: "sl1", organizationId: ORG, projectId: "p1", status: "QUOTED", type: "EQUIPMENT", isKitChild: false, isOptional: false, groupId: "g1", subHireId: "sh1", subHireItemId: "si1", lineTotal: 60,
+        versionId: "v-p1-2",
+        lineageId: "sl1",
+      });
       // A kit-style child of a sub-hire group in the same group — excluded (would
       // double-count against its parent's group charge).
-      await ctx.db.insert("projectLineItems", { id: "sl2", organizationId: ORG, projectId: "p1", status: "QUOTED", type: "EQUIPMENT", isKitChild: true, isOptional: false, groupId: "g1", subHireId: "sh1", subHireItemId: "si2", lineTotal: 40 });
+      await ctx.db.insert("projectLineItems", { id: "sl2", organizationId: ORG, projectId: "p1", status: "QUOTED", type: "EQUIPMENT", isKitChild: true, isOptional: false, groupId: "g1", subHireId: "sh1", subHireItemId: "si2", lineTotal: 40,
+        versionId: "v-p1-2",
+        lineageId: "sl2",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
 
@@ -90,9 +118,14 @@ describe("recalcProjectTotals — totals parity", () => {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-3",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-3", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // price 100 × qty 2 = 200, minus a flat $50 group discount = 150.
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 2, discount: 50, sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 2, discount: 50, sortOrder: 0,
+        versionId: "v-p1-3",
+        lineageId: "g1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
 
@@ -108,9 +141,14 @@ describe("recalcProjectTotals — totals parity", () => {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-4",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-4", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // price 100 × qty 1 = 100, discount 9999 — must clamp at 0, not go negative.
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 1, discount: 9999, sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 1, discount: 9999, sortOrder: 0,
+        versionId: "v-p1-4",
+        lineageId: "g1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
 
@@ -125,10 +163,15 @@ describe("recalcProjectTotals — totals parity", () => {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-5",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-5", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Service's costTotal is already the rolled-up sum of its own crew (as
       // recalcServiceCostFromCrew would have set it) — 100.
-      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false, costTotal: 100 });
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false, costTotal: 100,
+        versionId: "v-p1-5",
+        lineageId: "s1",
+      });
       // This assignment IS that service's crew — must NOT also land in labourCostTotal.
       await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", serviceId: "s1", estimatedCost: 100 });
       // A standalone (no serviceId) assignment DOES still count in labourCostTotal.
@@ -146,8 +189,14 @@ describe("recalcProjectTotals — totals parity", () => {
   test("uses org default tax when the project has no override", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, discountPercent: 0, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, discountPercent: 0, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-6",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1-6", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-6",
+        lineageId: "l1",
+      });
       // project.taxRate is null → org default 20 passed in.
       await recalcProjectTotals(ctx, "p1", ORG, 20, NOW);
     });
@@ -164,8 +213,14 @@ describe("recalcProjectTotals — totals parity", () => {
   test("yields zero tax when neither the project nor the org has a rate set (#1088)", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, discountPercent: 0, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, discountPercent: 0, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-7",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1-7", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-7",
+        lineageId: "l1",
+      });
       // project.taxRate is null AND orgDefaultTaxRate is null.
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW);
     });
@@ -185,7 +240,9 @@ describe("recalcProjectTotals — totals parity", () => {
           id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
           status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
           createdAt: NOW, updatedAt: NOW,
+          liveVersionId: "v-p1-8",
         });
+        await ctx.db.insert("projectVersions", { id: "v-p1-8", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       });
     }
 
@@ -232,7 +289,10 @@ describe("recalcProjectTotals — totals parity", () => {
       const OTHER = "org_2";
       await seedProject(t);
       await t.run(async (ctx) => {
-        await ctx.db.insert("projects", { id: "p1", organizationId: OTHER, projectNumber: "P1", name: "Other org's gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("projects", { id: "p1", organizationId: OTHER, projectNumber: "P1", name: "Other org's gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+          liveVersionId: "v-p1-9",
+        });
+        await ctx.db.insert("projectVersions", { id: "v-p1-9", organizationId: OTHER, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
         await ctx.db.insert("invoices", { id: "i-other", organizationId: OTHER, projectId: "p1", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 900, taxAmount: 100, total: 1000, invoiceNumber: "INV-OTHER-1" });
       });
       await t.run(async (ctx) => recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1));
@@ -253,7 +313,9 @@ describe("recalcProjectTotals — WS11 (#950) sale revenue + COGS", () => {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-10",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-10", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
   }
 
@@ -261,8 +323,14 @@ describe("recalcProjectTotals — WS11 (#950) sale revenue + COGS", () => {
     const t = convexTest(schema, modules);
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
-      await ctx.db.insert("projectLineItems", { id: "sale1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", isKitChild: false, isOptional: false, lineTotal: 300 });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-10",
+        lineageId: "l1",
+      });
+      await ctx.db.insert("projectLineItems", { id: "sale1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", isKitChild: false, isOptional: false, lineTotal: 300,
+        versionId: "v-p1-10",
+        lineageId: "sale1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -279,10 +347,16 @@ describe("recalcProjectTotals — WS11 (#950) sale revenue + COGS", () => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", defaultPurchasePrice: 50, replacementCost: 200 });
       await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "TAG-1", purchasePrice: 80, status: "SOLD", isActive: false });
       // Line 1: assetId set -> uses asset.purchasePrice (80), not model.defaultPurchasePrice.
-      await ctx.db.insert("projectLineItems", { id: "sale1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "FROM_RENTAL_STOCK", assetId: "a1", modelId: "m1", quantity: 1, isKitChild: false, isOptional: false, lineTotal: 300 });
+      await ctx.db.insert("projectLineItems", { id: "sale1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "FROM_RENTAL_STOCK", assetId: "a1", modelId: "m1", quantity: 1, isKitChild: false, isOptional: false, lineTotal: 300,
+        versionId: "v-p1-10",
+        lineageId: "sale1",
+      });
       // Line 2: no assetId, modelId only -> falls to model.defaultPurchasePrice (50), qty 2.
       await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Cable", defaultPurchasePrice: 5 });
-      await ctx.db.insert("projectLineItems", { id: "sale2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m2", quantity: 2, isKitChild: false, isOptional: false, lineTotal: 40 });
+      await ctx.db.insert("projectLineItems", { id: "sale2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m2", quantity: 2, isKitChild: false, isOptional: false, lineTotal: 40,
+        versionId: "v-p1-10",
+        lineageId: "sale2",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -300,8 +374,14 @@ describe("recalcProjectTotals — WS11 (#950) sale revenue + COGS", () => {
     await seedProject(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", defaultPurchasePrice: 50 });
-      await ctx.db.insert("projectLineItems", { id: "cancelled1", organizationId: ORG, projectId: "p1", status: "CANCELLED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 1, isKitChild: false, isOptional: false, lineTotal: 999 });
-      await ctx.db.insert("projectLineItems", { id: "optional1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 1, isKitChild: false, isOptional: true, lineTotal: 999 });
+      await ctx.db.insert("projectLineItems", { id: "cancelled1", organizationId: ORG, projectId: "p1", status: "CANCELLED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 1, isKitChild: false, isOptional: false, lineTotal: 999,
+        versionId: "v-p1-10",
+        lineageId: "cancelled1",
+      });
+      await ctx.db.insert("projectLineItems", { id: "optional1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 1, isKitChild: false, isOptional: true, lineTotal: 999,
+        versionId: "v-p1-10",
+        lineageId: "optional1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -325,8 +405,13 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-11",
       });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projectVersions", { id: "v-p1-11", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-11",
+        lineageId: "l1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -342,13 +427,24 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-12",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-12", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Inherits the project's 10% rate.
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-12",
+        lineageId: "l1",
+      });
       // Overridden to a deliberate 0% (e.g. a zero-rated item).
-      await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 0, lineTotal: 50 });
+      await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 0, lineTotal: 50,
+        versionId: "v-p1-12",
+        lineageId: "l2",
+      });
       // Overridden to a reduced rate.
-      await ctx.db.insert("projectLineItems", { id: "l3", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 5, lineTotal: 40 });
+      await ctx.db.insert("projectLineItems", { id: "l3", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 5, lineTotal: 40,
+        versionId: "v-p1-12",
+        lineageId: "l3",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -371,8 +467,13 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-13",
       });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 20, lineTotal: 100 });
+      await ctx.db.insert("projectVersions", { id: "v-p1-13", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 20, lineTotal: 100,
+        versionId: "v-p1-13",
+        lineageId: "l1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -387,8 +488,13 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-14",
       });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projectVersions", { id: "v-p1-14", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-14",
+        lineageId: "l1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, 8, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -403,8 +509,13 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-15",
       });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projectVersions", { id: "v-p1-15", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-15",
+        lineageId: "l1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -419,8 +530,13 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-16",
       });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projectVersions", { id: "v-p1-16", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-16",
+        lineageId: "l1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -437,9 +553,14 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0, clientId: "c1",
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-17",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-17", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Even a line with its own explicit override doesn't survive exemption.
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 25, lineTotal: 100 });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 25, lineTotal: 100,
+        versionId: "v-p1-17",
+        lineageId: "l1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -457,8 +578,13 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0, clientId: "c1",
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-18",
       });
-      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projectVersions", { id: "v-p1-18", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100,
+        versionId: "v-p1-18",
+        lineageId: "l1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
@@ -473,8 +599,13 @@ describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () 
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-19",
       });
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 1, sortOrder: 0 });
+      await ctx.db.insert("projectVersions", { id: "v-p1-19", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 1, sortOrder: 0,
+        versionId: "v-p1-19",
+        lineageId: "g1",
+      });
       await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
     });
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());

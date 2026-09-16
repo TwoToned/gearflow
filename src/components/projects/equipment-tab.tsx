@@ -24,13 +24,8 @@ import {
 } from "@/hooks/use-native-line-item-writes";
 import { useEquipmentDnd, type DraggedRowClone } from "@/hooks/use-equipment-dnd";
 import { useCanDo } from "@/lib/use-permissions";
-import { Plus, FolderPlus, FolderTree, Pencil, Trash2, ChevronDown as ChevronDownIcon } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { FolderTree, Pencil, Trash2 } from "lucide-react";
+import { EquipmentAddMenuTrigger } from "./equipment-add-menu-trigger";
 import { toast } from "sonner";
 import { ConvexError } from "convex/values";
 
@@ -47,7 +42,6 @@ import { computeInlineLineItemPayload, type InlineLineItemPatch } from "@/lib/li
 import { computeInlineSubHireItemInput, type SubHireItemRowLike, type InlineSubHireItemPatch } from "@/lib/sub-hire-item-edit-payload";
 import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { Button } from "@/components/ui/button";
-import { GatedButton } from "@/components/ui/gated-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
@@ -105,10 +99,8 @@ import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useSelection } from "./use-selection";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CategoryCardHeading } from "./equipment-cards";
-import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
-import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
-import { JustificationDialog } from "./justification-dialog";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -124,6 +116,26 @@ interface EquipmentTabProps {
    *  chained hand-off deep link (`?modelId=` on this tab's URL), never by
    *  an ordinary tab visit. */
   autoOpenAddModelId?: string;
+  /** Project Versioning v2, Phase 5 (#1231) — the version being VIEWED
+   *  (`?v=`'s resolved id), or undefined for the project's live version.
+   *  Threaded straight to `equipmentTab.bundle`'s own `versionId` arg so
+   *  every existing/edited row on screen belongs to the viewed version. */
+  versionId?: string;
+  /** #1221 follow-up — Phase 5 (D15) greyed the "Add ▾" trigger while
+   *  viewing a non-live version, because every create mutation this tab
+   *  calls stamped its new row onto the project's LIVE version
+   *  unconditionally. Every one of those mutations now takes an optional
+   *  `versionId` (defaulting to live), and `EquipmentTab` threads its own
+   *  `versionId` prop through to all of them (own-stock/kit/custom-item/
+   *  group/category/apply-template), so nothing left to gate here — the
+   *  page no longer passes a reason, but the prop stays for a FUTURE
+   *  disable reason (e.g. a permission gate), not removed outright. One
+   *  narrower exception survives inside the "Add" dialog itself: the
+   *  "Sale" kind (`unified-add-dialog.tsx`) always applies to the live
+   *  version (it sells REAL stock immediately, not a plan entry), so it
+   *  stays disabled specifically while viewing non-live — see that file's
+   *  header comment. */
+  addDisabledReason?: string;
 }
 
 /** `useSortable()`'s `transform`/`transition` turned into an inline style —
@@ -416,7 +428,7 @@ function UncategorizedHeader({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId, versionId, addDisabledReason }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isMobile = useIsMobile();
@@ -458,26 +470,21 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // own their own separate instances of this same hook for their dialogs.
   const subHireWrites = useSubHireWrites();
 
-  // #990 — one `useProjectLockStatus` subscription backs every money-field
-  // lock in this tab (price/discount edit dialogs, bulk edit, gated add/
-  // delete buttons at HARD_LOCKED). `moneyLocked` mirrors the server's
-  // `defaultToZero`/gate condition: tier isn't OPEN and no session is open.
-  const [lockNow] = useState(() => Date.now());
-  const lockStatus = useProjectLockStatus(projectId, orgId, lockNow);
-  const moneyLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
-  const lockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
-  const hardLocked = !lockStatus.loading && lockStatus.tier === "HARD_LOCKED" && !lockStatus.hasOpenSession;
+  // #1230 — one `useProjectPricingLock` subscription backs every money-field
+  // lock in this tab (price/discount edit dialogs, bulk edit). `moneyLocked`
+  // mirrors the server's `assertPricingUnlocked` gate condition directly —
+  // structure (add/remove/reorder/move) is NEVER gated, only a MONEY write.
+  const pricingLock = useProjectPricingLock(projectId, orgId);
+  const moneyLocked = pricingLock.pricingLocked;
+  const lockReason = resolveLockCopy(pricingLock).oneLiner;
 
   // Drag-and-drop is client-gated on the SAME permission every reorder/move
   // mutation already enforces server-side (`project:manage_line_items`) —
   // unlike the old ▲/▼ buttons (which rendered unconditionally for any
   // viewer), a dragged handle should simply not exist for someone who can't
-  // write. Also disabled at HARD_LOCKED with no open FULL session: every
-  // drag mutation's `assertLifecycleGuard` throws `PROJECT_LOCKED` there with
-  // no retry-with-justification path (see use-equipment-dnd.ts's
-  // `reportDragMutationError`), so starting that drag can only ever fail —
-  // better to not offer the handle at all than let it fail every time.
-  const canDragEquipment = useCanDo("project", "manage_line_items") && !hardLocked;
+  // write. #1230: reordering/moving is structural and never rejected by the
+  // pricing lock, so there is no longer a locked state to also disable it for.
+  const canDragEquipment = useCanDo("project", "manage_line_items");
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -522,7 +529,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     groupWrites,
     categorySlotWrites,
     categoryWrites,
-    lockStatus,
     onSettled: invalidate,
   });
 
@@ -533,23 +539,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     dnd.orderOverlay,
     dnd.groupOrderOverlay,
     dnd.categoryOrderOverlay,
+    versionId,
   );
 
-  // #990 (surface 5, "justify tier") — line item/group remove prompt for a
-  // reason at ON_SITE+ with no open session (`useJustifiedMutation` pre-checks
-  // `lockStatus.tier` and shows `<JustificationDialog>` before firing).
-  const justifiedRemoveLineItem = useJustifiedMutation(
-    (args: { id: string; justification?: string }) => lineItemWrites.remove(args.id, args.justification),
-    lockStatus,
-  );
-  const justifiedRemoveLineItems = useJustifiedMutation(
-    (args: { ids: string[]; justification?: string }) => lineItemWrites.removeMany(args.ids, args.justification),
-    lockStatus,
-  );
-  const justifiedRemoveGroup = useJustifiedMutation(
-    (args: { groupId: string; justification?: string }) => groupWrites.remove(args.groupId, args.justification),
-    lockStatus,
-  );
+  // #1230: removing a line item/group is structural — never gated by the
+  // pricing lock, so no justification/dialog wrapper is needed anymore.
 
   // Passive section/group/line-item collaboration state: one review-marker
   // subscription and one comment-count subscription for the whole project,
@@ -913,7 +907,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   const createCategoryMut = useServerMutation({
-    mutationFn: (name: string) => categoryWrites.create(projectId, name),
+    // #1221 follow-up — lands on the version being viewed (absent = live).
+    mutationFn: (name: string) => categoryWrites.create(projectId, name, versionId),
     onSuccess: () => {
       invalidate();
       setShowAddCategory(false);
@@ -1204,12 +1199,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const removeMut = useServerMutation({
     mutationFn: async (id: string) => {
       // Browser-direct native path. removeNative applies the child-guard + cascade
-      // (children + units) + recalc + audit + collab atomically. Result unused (onSuccess
-      // just invalidates), so it resolves void. Routed through `useJustifiedMutation`
-      // (#990) — prompts for a reason first when the project is ON_SITE+ with no
-      // open unlock session, instead of firing straight into a server rejection.
+      // (children + units) + recalc + audit + collab atomically. Result unused
+      // (onSuccess just invalidates), so it resolves void. Structural — never
+      // gated by the pricing lock (#1230).
       if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
-      await justifiedRemoveLineItem.run({ id });
+      await lineItemWrites.remove(id);
     },
     onSuccess: () => {
       invalidate();
@@ -1244,7 +1238,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const bulkDeleteMut = useServerMutation({
     mutationFn: (ids: string[]) => {
       if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
-      return justifiedRemoveLineItems.run({ ids });
+      return lineItemWrites.removeMany(ids);
     },
     onSuccess: (r: { removed: number; skipped: number }) => {
       invalidate();
@@ -1311,6 +1305,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const createGroupMut = useServerMutation({
+    // #1221 follow-up — both branches land on the version being viewed
+    // (absent = live).
     mutationFn: async ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
         // Templates are category-scoped concepts — fall back to no-template
@@ -1318,7 +1314,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         // group structurally. The template can be applied via a follow-up
         // move + recalculate if they later want to materialise its items.
         if (!categoryId) {
-          await groupWrites.create(projectId, null, title);
+          await groupWrites.create(projectId, null, title, versionId);
           return;
         }
         const tpl = templates.find((t) => t.id === templateId);
@@ -1332,10 +1328,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             kitId: it.kitId,
             quantity: it.quantity,
           })),
+          versionId,
         });
         return;
       }
-      await groupWrites.create(projectId, categoryId, title);
+      await groupWrites.create(projectId, categoryId, title, versionId);
     },
     onSuccess: () => {
       invalidate();
@@ -1346,7 +1343,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
 
   const deleteGroupMut = useServerMutation({
-    mutationFn: (groupId: string) => justifiedRemoveGroup.run({ groupId }),
+    mutationFn: (groupId: string) => groupWrites.remove(groupId),
     onSuccess: () => {
       invalidate();
       setDeleteGroupId(null);
@@ -1492,59 +1489,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     else selection.toggle(sortableId, true);
   };
 
-  // Primary "Add ▾" menu (item / group / category). The three add actions reuse
-  // the exact handlers the old three buttons triggered (UnifiedAddDialog,
-  // AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. Rendered
-  // either inline in the in-panel toolbar (fallback) or portalled onto the tab
-  // row when the page supplies `addMenuSlot`.
-  // #990 (surface 4) — at HARD_LOCKED, every add path is rejected server-side
-  // (`assertLifecycleGuard` has no per-edit path at this tier, only a FULL
-  // unlock session), so the menu itself is gated rather than opening onto
-  // three dead end items. `GatedButton` replaces the `DropdownMenuTrigger`
-  // entirely here (a gated trigger can't compose with Radix's `asChild` Slot,
-  // which needs a single plain element, not `GatedButton`'s own Tooltip wrap).
-  const addMenu = hardLocked ? (
-    <GatedButton
-      size="sm"
-      className="gap-1.5"
-      gated
-      reason={lockReason}
-      exitLabel="Open full unlock session"
-      onExit={scrollToLockStrip}
-    >
-      <Plus className="h-3.5 w-3.5" />
-      Add
-      <ChevronDownIcon className="h-3 w-3" />
-    </GatedButton>
-  ) : (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm" className="gap-1.5" data-tour-anchor="tour-equipment-add">
-          <Plus className="h-3.5 w-3.5" />
-          Add
-          <ChevronDownIcon className="h-3 w-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onClick={() => {
-            setUnifiedAddTarget({});
-            setShowUnifiedAdd(true);
-          }}
-        >
-          <Plus className="mr-2 h-3.5 w-3.5" />
-          Add item
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>
-          <FolderPlus className="mr-2 h-3.5 w-3.5" />
-          Add group
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setShowAddCategory(true)}>
-          <FolderTree className="mr-2 h-3.5 w-3.5" />
-          Add category
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+  // Primary "Add ▾" menu (item / group / category) — extracted to
+  // `equipment-add-menu-trigger.tsx` (Phase 5, #1231) so its two render
+  // paths (normal menu vs. greyed+tooltipped while viewing a non-live
+  // version, `addDisabledReason`) are independently testable. The three add
+  // actions reuse the exact handlers the old three buttons triggered
+  // (UnifiedAddDialog, AddGroupToolbarDialog, AddCategoryDialog) — no
+  // behaviour change. Rendered either inline in the in-panel toolbar
+  // (fallback) or portalled onto the tab row when the page supplies
+  // `addMenuSlot`. #1230: adding is always structural (never gated by the
+  // pricing lock — a locked project just defaults a new add's price to $0 +
+  // Unpriced badge), so this is never gated by the PRICING lock.
+  const addMenu = (
+    <EquipmentAddMenuTrigger
+      disabledReason={addDisabledReason}
+      onAddItem={() => {
+        setUnifiedAddTarget({});
+        setShowUnifiedAdd(true);
+      }}
+      onAddGroup={() => setShowAddGroupFromToolbar(true)}
+      onAddCategory={() => setShowAddCategory(true)}
+    />
   );
 
   return (
@@ -2608,15 +2573,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         onConfirm={() => bulkDeleteMut.mutate(selectedLineItemIds)}
       />
 
-      {/* #990 — the shared justification prompts backing removeMut/bulkDeleteMut/
-          deleteGroupMut above. One dialog per justified mutation (each has its
-          own pending call state) rather than a single shared dialog racing
-          three concurrent callers. */}
-      <JustificationDialog {...justifiedRemoveLineItem.dialogProps} />
-      <JustificationDialog {...justifiedRemoveLineItems.dialogProps} />
-      <JustificationDialog {...justifiedRemoveGroup.dialogProps} />
-      {/* Drag-and-drop reorder/move justification prompts (useEquipmentDnd). */}
-      {dnd.dialogs}
 
       {/* Bulk move to group — reuses the single-item picker with a sentinel id;
           the echoed id is ignored in favour of the current selection. */}
@@ -2707,6 +2663,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         categories={categories as CategoryData[]}
         onInvalidate={invalidate}
         preselectedModelId={pendingAutoModelId}
+        versionId={versionId}
         onSubHireCreated={(newSubHireId) => {
           // Hand off from the inline create form to the manage view so
           // the user can add items to their new order without a context

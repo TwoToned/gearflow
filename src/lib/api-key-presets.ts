@@ -13,7 +13,7 @@
  * enforces nothing itself.
  *
  * None of these presets grant `delete`, `warehouse:check_out`/`check_in`,
- * `project:unlock_session`, or `project:allow_overbook` — those stay explicit,
+ * `project:unlock_pricing`, or `project:allow_overbook` — those stay explicit,
  * deliberate opt-ins per §995 decision 7/10 and the archived design's "an
  * agent overbooking is almost always a mistake" finding. They are not offered
  * anywhere in this file, including `full_agent`.

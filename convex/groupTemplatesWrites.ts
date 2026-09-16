@@ -16,6 +16,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { getKitByCuid } from "./lib/kits";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import { inclusiveCalendarDays, computeBlendedCharge, serializePriceBreakdown } from "./lib/billingDerivation";
+import { resolveLiveVersionIdForProject, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Native GROUP-TEMPLATE write mutations (Phase 3 browser-direct — replaces the
@@ -69,11 +70,16 @@ function getUserColor(userId: string): string {
   return COLLAB_COLORS[hash % COLLAB_COLORS.length];
 }
 
-/** Next sort order for a project's lines (replica of the private nextLineSort). */
-async function nextLineSort(ctx: MutationCtx, projectId: string, orgId: string): Promise<number> {
+/** Next sort order for a project's lines in ONE version (replica of the
+ *  private nextLineSort). #1221 follow-up: takes an explicit `versionId`
+ *  (defaulting to live) instead of always resolving live itself — an applied
+ *  template landing on a non-live version must be sorted among THAT
+ *  version's own siblings, not live's. */
+async function nextLineSort(ctx: MutationCtx, projectId: string, orgId: string, versionId?: string): Promise<number> {
+  const targetVersionId = versionId ?? (await resolveLiveVersionIdForProject(ctx, projectId, orgId));
   const top = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId_sortOrder", (q) => q.eq("projectId", projectId))
+    .withIndex("by_versionId_sortOrder", (q) => q.eq("versionId", targetVersionId))
     .order("desc")
     .first();
   return ((top && top.organizationId === orgId ? top.sortOrder : undefined) ?? -1) + 1;
@@ -177,12 +183,9 @@ export const saveGroupAsTemplateNative = mutation({
     const group = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", groupId)).first();
     if (!group || group.organizationId !== orgId) throw new ConvexError("Group not found");
 
-    const templatable = (
-      await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", group.projectId))
-        .collect()
-    )
+    // LIVE-ONLY (#1228).
+    const groupProjectVersionId = await resolveLiveVersionIdForProject(ctx, group.projectId, orgId);
+    const templatable = (await versionRows(ctx, "projectLineItems", groupProjectVersionId))
       .filter((li) => li.organizationId === orgId && li.groupId === groupId && !li.isKitChild)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
       // Only model- or kit-backed lines can be templated (free-text/service dropped).
@@ -376,6 +379,11 @@ export const applyNative = mutation({
     groupId: v.string(),
     modelLineIds: v.array(v.string()),
     kitLineIds: v.array(v.string()),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap, extended to
+    // "Add group" → apply-template) — the version the new group + its
+    // expanded items land on, defaulting to live when absent. Validated
+    // against `project` (same org + project) by resolveWriteVersionId.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -395,6 +403,7 @@ export const applyNative = mutation({
     // foreign project here would corrupt another org's totals).
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).first();
     if (!project || project.organizationId !== a.orgId) throw new ConvexError("Project not found");
+    const targetVersionId = await resolveWriteVersionId(ctx, project, a.versionId);
 
     // Org-validate the client-supplied categoryId FK (by_cuid is GLOBAL — cross-org refs leak).
     // A group's categoryId references the PROJECT-scoped projectCategories table (same as
@@ -410,13 +419,11 @@ export const applyNative = mutation({
     const orgDefaultTaxRate = settingsRow?.defaultTaxRate ?? null;
 
     // ── Create the group inline (replicate projectGroups.createAtEnd) ──────────
+    // #1221: scoped to the TARGET version (was LIVE-ONLY, #1228).
     const bucket = a.categoryId ?? null;
-    const siblings = (
-      await ctx.db
-        .query("projectGroups")
-        .withIndex("by_projectId", (q) => q.eq("projectId", a.projectId))
-        .collect()
-    ).filter((g) => g.organizationId === a.orgId && (g.categoryId ?? null) === bucket);
+    const siblings = (await versionRows(ctx, "projectGroups", targetVersionId)).filter(
+      (g) => g.organizationId === a.orgId && (g.categoryId ?? null) === bucket,
+    );
     const groupSortOrder = siblings.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1) + 1;
     // Dup-guard the client-minted group cuid (by_cuid is global + non-unique): a reused id
     // would insert a SECOND row, and the suggested-price patch below re-fetching by_cuid
@@ -428,6 +435,8 @@ export const applyNative = mutation({
       id: a.groupId,
       organizationId: a.orgId,
       projectId: a.projectId,
+      versionId: targetVersionId,
+      lineageId: a.groupId,
       categoryId: a.categoryId || undefined,
       title: a.title,
       description: template.description || undefined,
@@ -472,7 +481,7 @@ export const applyNative = mutation({
         dailyRate: model.dailyRate ?? null,
         weeklyRate: model.weeklyRate ?? null,
       });
-      const sortOrder = await nextLineSort(ctx, a.projectId, a.orgId);
+      const sortOrder = await nextLineSort(ctx, a.projectId, a.orgId, targetVersionId);
       const modelLineId = nextModelId();
       // Dup-guard the client-minted line cuid (by_cuid is global + non-unique).
       const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", modelLineId)).first();
@@ -481,6 +490,8 @@ export const applyNative = mutation({
         id: modelLineId,
         organizationId: a.orgId,
         projectId: a.projectId,
+        versionId: targetVersionId,
+        lineageId: modelLineId,
         categoryId: a.categoryId || undefined,
         groupId: a.groupId,
         modelId: item.modelId,
@@ -551,6 +562,7 @@ export const applyNative = mutation({
           pricingMode: "ITEMIZED",
           categoryId: a.categoryId || undefined,
           groupId: a.groupId,
+          versionId: targetVersionId,
           now: a.now,
         });
       }

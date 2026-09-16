@@ -23,7 +23,11 @@ async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG) {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: orgId, projectNumber: "P1", name: "Gig",
-      isTemplate: false, createdAt: 0, updatedAt: 0,
+      isTemplate: false, liveVersionId: `v-p1-${orgId}`, createdAt: 0, updatedAt: 0,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: `v-p1-${orgId}`, organizationId: orgId, projectId: "p1", number: 1,
+      contentState: "ready", createdAt: 0, createdById: "u1",
     });
   });
 }
@@ -35,6 +39,7 @@ describe("buildFinanceLines", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "USB Pro DI" });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", modelId: "m1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 50, lineTotal: 50,
@@ -52,6 +57,7 @@ describe("buildFinanceLines", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Stage Box Kit" });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", kitId: "k1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 200, lineTotal: 200,
@@ -68,6 +74,7 @@ describe("buildFinanceLines", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "USB Pro DI" });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", modelId: "m1", description: "Custom label",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 50, lineTotal: 50,
@@ -83,6 +90,7 @@ describe("buildFinanceLines", () => {
     await seedProject(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 50, lineTotal: 50,
@@ -102,6 +110,7 @@ describe("buildFinanceLines", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "m1", organizationId: OTHER, name: "Foreign Org's Model" });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", modelId: "m1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 50, lineTotal: 50,
@@ -121,6 +130,7 @@ describe("buildFinanceLines", () => {
       await seedProject(t);
       await t.run(async (ctx) => {
         await ctx.db.insert("projectServices", {
+          versionId: "v-p1-org_1", lineageId: "s1",
           id: "s1", organizationId: ORG, projectId: "p1", type: "DELIVERY",
           title: "Truck delivery", status: "CONFIRMED", quantity: 1,
           unitPrice: 150, lineTotal: 150,
@@ -137,6 +147,7 @@ describe("buildFinanceLines", () => {
       await seedProject(t);
       await t.run(async (ctx) => {
         await ctx.db.insert("projectServices", {
+          versionId: "v-p1-org_1", lineageId: "s1",
           id: "s1", organizationId: ORG, projectId: "p1", type: "BUMP_IN",
           title: "Bump in", status: "CONFIRMED", quantity: 1,
         });
@@ -151,6 +162,7 @@ describe("buildFinanceLines", () => {
       await seedProject(t);
       await t.run(async (ctx) => {
         await ctx.db.insert("projectServices", {
+          versionId: "v-p1-org_1", lineageId: "s1",
           id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR",
           title: "Show day", status: "CANCELLED", quantity: 1,
           unitPrice: 500, lineTotal: 500,
@@ -190,15 +202,17 @@ describe("buildFinanceLines — sums to recalc's taxable amount", () => {
     const t = makeT();
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Audio", price: 100, quantity: 1, sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Audio", price: 100, quantity: 1, sortOrder: 0, versionId: "v-p1-org_1", lineageId: "g1", });
       // Ordinary member — absorbed by the group's flat price.
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", groupId: "g1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         description: "Speaker", quantity: 1, unitPrice: 40, lineTotal: 40,
       });
       // Sub-hire member — carries its OWN client charge.
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l2",
         id: "l2", organizationId: ORG, projectId: "p1", groupId: "g1", subHireId: "sh1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         description: "Hired Console", quantity: 1, unitPrice: 60, lineTotal: 60,
@@ -218,10 +232,14 @@ describe("buildFinanceLines — sums to recalc's taxable amount", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
-        isTemplate: false, discountPercent: 10, createdAt: 0, updatedAt: 0,
+        isTemplate: false, discountPercent: 10, liveVersionId: "v-p1-org_1", createdAt: 0, updatedAt: 0,
+      });
+      await ctx.db.insert("projectVersions", {
+        id: "v-p1-org_1", organizationId: ORG, projectId: "p1", number: 1,
+        contentState: "ready", createdAt: 0, createdById: "u1",
       });
       await ctx.db.insert("projectLineItems", {
-        id: "l1", organizationId: ORG, projectId: "p1",
+        id: "l1", organizationId: ORG, projectId: "p1", versionId: "v-p1-org_1", lineageId: "l1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
       });
@@ -242,6 +260,7 @@ describe("buildFinanceLines — sums to recalc's taxable amount", () => {
     await seedProject(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
@@ -253,20 +272,26 @@ describe("buildFinanceLines — sums to recalc's taxable amount", () => {
     expect(lines.reduce((s, l) => s + l.lineTotal, 0)).toBe(1000);
   });
 
-  test("another org's project row never supplies the discount", async () => {
+  test("another org's project row never supplies the discount (and is rejected outright)", async () => {
     // `by_cuid` is global — a cross-org project must not decide this org's bill.
+    // #1228: buildFinanceLines now org-checks the project up front and throws,
+    // rather than (as before) silently falling through with a Promise.all that
+    // fetched this "p1" id's rows via an org-UNSCOPED by_projectId index — that
+    // old path would actually have leaked OTHER's line items into ORG's
+    // snapshot (an R-8.4.3 IDOR), it just happened not to affect THIS
+    // assertion (discount only). The throw is the fix, not a regression.
     const t = makeT();
     await seedProject(t, OTHER);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_2", lineageId: "l1",
         id: "l1", organizationId: OTHER, projectId: "p1",
         isKitChild: false, isOptional: false, status: "CONFIRMED",
         description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
       });
     });
 
-    const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
-    expect(lines.find((l) => l.description.startsWith("Discount"))).toBeUndefined();
+    await expect(t.run((ctx) => buildFinanceLines(ctx, "p1", ORG))).rejects.toThrow(/not found or cross-org/);
   });
 });
 
@@ -283,11 +308,13 @@ describe("buildFinanceLines — category price rollup", () => {
   async function seedTwoLightingLines(t: ReturnType<typeof makeT>) {
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         description: "LED Par", isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 24, unitPrice: 50, lineTotal: 1200,
       });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l2",
         id: "l2", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         description: "Moving Head", isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 8, unitPrice: 425, lineTotal: 3400,
@@ -348,6 +375,7 @@ describe("buildFinanceLines — category price rollup", () => {
     await seedTwoLightingLines(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l3",
         id: "l3", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         description: "Console", isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 450, lineTotal: 450, revealPriceInRollup: true,
@@ -365,10 +393,12 @@ describe("buildFinanceLines — category price rollup", () => {
     await seedRollupCategory(t, "ROLLUP");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectGroups", {
+        versionId: "v-p1-org_1", lineageId: "g1",
         id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         title: "Truss Package", quantity: 1, price: 2000,
       });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         description: "LED Par", isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 24, unitPrice: 50, lineTotal: 1200,
@@ -390,10 +420,12 @@ describe("buildFinanceLines — category price rollup", () => {
     await t.run(async (ctx) => {
       // Unpriced group: its custom-item extras bill on their own.
       await ctx.db.insert("projectGroups", {
+        versionId: "v-p1-org_1", lineageId: "g1",
         id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         title: "Rigging", quantity: 1,
       });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", groupId: "g1",
         description: "Rigger call-out", isCustomItem: true,
         isKitChild: false, isOptional: false, status: "CONFIRMED",
@@ -413,6 +445,7 @@ describe("buildFinanceLines — category price rollup", () => {
     await seedTwoLightingLines(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectServices", {
+        versionId: "v-p1-org_1", lineageId: "s1",
         id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR",
         title: "Crew", status: "CONFIRMED", quantity: 2, unitPrice: 400, lineTotal: 800,
       });
@@ -473,16 +506,19 @@ describe("buildFinanceLines — category price rollup", () => {
         id: "cat2", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 1,
       });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l1",
         id: "l1", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         description: "LED Par", isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 100, lineTotal: 100,
       });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l2",
         id: "l2", organizationId: ORG, projectId: "p1", categoryId: "cat2",
         description: "Wedge", isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 200, lineTotal: 200,
       });
       await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1-org_1", lineageId: "l3",
         id: "l3", organizationId: ORG, projectId: "p1", categoryId: "cat1",
         description: "Moving Head", isKitChild: false, isOptional: false, status: "CONFIRMED",
         quantity: 1, unitPrice: 300, lineTotal: 300,

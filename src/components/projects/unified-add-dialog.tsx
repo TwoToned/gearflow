@@ -14,15 +14,34 @@
  * Replaces the four standalone toolbar entry points (Add Equipment / Add
  * Kit / Custom Item / Sub-Hire Orders) and the two group-kebab actions
  * (onAddEquipment / onAddKit).
+ *
+ * #1221 follow-up — `versionId` (the version currently being viewed) is
+ * threaded to the own-stock/kit/custom forms, which now all support an
+ * explicit non-live target (convex/lib/versionScope.ts's
+ * resolveWriteVersionId). Two kinds are deliberately left out:
+ * - **Sub-hire** creates rows in `subHireGroups`/`subHireOrders`, tables
+ *   Project Versioning v2 never touched (no `versionId` column, no live/
+ *   non-live distinction) — same "not version-aware" bucket as Labour/Tasks/
+ *   Files, not a new gap this phase introduces.
+ * - **Sale** (`saleMode: "FROM_RENTAL_STOCK"`) immediately mutates REAL
+ *   stock on add (`sellSerializedAssetForSale`, convex/lineItemWrites.ts) —
+ *   a physical, right-now side effect, not a plan entry. Selling stock
+ *   "into" a non-live version would execute that real disposal against a
+ *   plan that isn't the one currently governing the job, so the Sale tab
+ *   stays disabled while `versionId` targets a non-live version (mirrors
+ *   the "reality only ever lives on the live version" invariant
+ *   `versions.ts`'s `makeLiveNative` step 3 documents).
  */
 
 
+import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { EquipmentAddForm } from "./equipment-add-form";
 import { KitAddForm } from "./kit-add-form";
 import { CustomItemAddForm } from "./custom-item-add-form";
@@ -64,6 +83,10 @@ interface UnifiedAddDialogProps {
   /** D3 (#1107) — pre-select this model on the "own-stock" body when the
    *  dialog was opened via the "Add <model> to it" chained hand-off. */
   preselectedModelId?: string;
+  /** #1221 follow-up — the version currently being viewed. Absent = live.
+   *  Threaded to own-stock/kit/custom; see the file header for why sub-hire
+   *  and sale are excluded. */
+  versionId?: string;
 }
 
 interface KindOption {
@@ -102,12 +125,23 @@ export function UnifiedAddDialog({
   onInvalidate,
   onSubHireCreated,
   preselectedModelId,
+  versionId,
 }: UnifiedAddDialogProps) {
+  // #1221 follow-up — `kind` is owned by the parent and persists across
+  // opens/closes; if the dialog was last left on "Sale" and the viewed
+  // version changes to non-live before it's reopened, land on "Own stock"
+  // instead of a disabled tab with a form mounted behind it.
+  const saleDisabled = versionId != null;
+  useEffect(() => {
+    if (open && saleDisabled && kind === "sale") onKindChange("own-stock");
+  }, [open, saleDisabled, kind, onKindChange]);
+
   function handleClose() {
     onOpenChange(false);
   }
 
   function handlePickKind(next: UnifiedAddKind) {
+    if (next === "sale" && saleDisabled) return;
     onKindChange(next);
   }
 
@@ -119,25 +153,39 @@ export function UnifiedAddDialog({
         </DialogHeader>
 
         {/* Segmented kind switcher */}
-        <div role="tablist" aria-label="Add type" className="flex rounded-md border">
-          {KIND_OPTIONS.map((opt) => {
-            const active = kind === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => handlePickKind(opt.value)}
-                className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${
-                  active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
-                }`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
+        <TooltipProvider>
+          <div role="tablist" aria-label="Add type" className="flex rounded-md border">
+            {KIND_OPTIONS.map((opt) => {
+              const active = kind === opt.value;
+              const disabled = opt.value === "sale" && saleDisabled;
+              const tab = (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-disabled={disabled || undefined}
+                  disabled={disabled}
+                  onClick={() => handlePickKind(opt.value)}
+                  className={`flex-1 px-3 py-1.5 text-sm font-medium transition-colors ${
+                    active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
+                  } ${disabled ? "opacity-45 cursor-not-allowed hover:bg-transparent" : ""}`}
+                >
+                  {opt.label}
+                </button>
+              );
+              if (!disabled) return tab;
+              return (
+                <Tooltip key={opt.value}>
+                  <TooltipTrigger asChild>{tab}</TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>Sale immediately sells real stock — it always applies to the live version, not the one you&apos;re viewing.</p>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </TooltipProvider>
 
         {/* Body swap by kind — dispatched to its own component (not inlined
             here) so a 5th/6th kind never grows THIS function's cyclomatic
@@ -157,6 +205,7 @@ export function UnifiedAddDialog({
             onSubHireCreated={onSubHireCreated}
             onClose={handleClose}
             preselectedModelId={preselectedModelId}
+            versionId={versionId}
           />
         )}
       </DialogContent>
@@ -178,6 +227,7 @@ type AddFormBodyProps = Pick<
   | "onInvalidate"
   | "onSubHireCreated"
   | "preselectedModelId"
+  | "versionId"
 > & { onClose: () => void };
 
 function AddFormBody({
@@ -194,6 +244,7 @@ function AddFormBody({
   onSubHireCreated,
   onClose,
   preselectedModelId,
+  versionId,
 }: AddFormBodyProps) {
   switch (kind) {
     case "own-stock":
@@ -214,6 +265,7 @@ function AddFormBody({
             onKindChange("sub-hire");
           }}
           preselectedModelId={preselectedModelId}
+          versionId={versionId}
         />
       );
     case "kit":
@@ -228,6 +280,7 @@ function AddFormBody({
           targetLabel={targetLabel}
           onInvalidate={onInvalidate}
           onClose={onClose}
+          versionId={versionId}
         />
       );
     case "sub-hire":
@@ -252,6 +305,7 @@ function AddFormBody({
           defaultGroupId={groupId}
           onInvalidate={onInvalidate}
           onClose={onClose}
+          versionId={versionId}
         />
       );
     case "sale":

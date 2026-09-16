@@ -72,6 +72,9 @@ export interface EquipmentAddFormProps {
    *  "Add <model> to it" chained hand-off from job creation. Only ever set
    *  for that one deep link; an ordinary "Add" click leaves this unset. */
   preselectedModelId?: string;
+  /** #1221 follow-up — the version this new line lands on (the version
+   *  currently being viewed on the Equipment tab). Absent = live. */
+  versionId?: string;
 }
 
 export function EquipmentAddForm({
@@ -85,6 +88,7 @@ export function EquipmentAddForm({
   onClose,
   onOpenSubHire,
   preselectedModelId,
+  versionId,
 }: EquipmentAddFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -242,6 +246,7 @@ export function EquipmentAddForm({
         // #794) — "exclude all" is just a plan excluding every default.
         includeAccessories: true,
         accessoryPlan,
+        versionId,
       });
       // Native returns { id, merged }; reshape to the _merged/_newQuantity onSuccess
       // expects. Merged qty mirrors the "combine" radio's preview.

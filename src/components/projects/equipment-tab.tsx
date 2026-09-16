@@ -121,17 +121,20 @@ interface EquipmentTabProps {
    *  Threaded straight to `equipmentTab.bundle`'s own `versionId` arg so
    *  every existing/edited row on screen belongs to the viewed version. */
   versionId?: string;
-  /** Set (to a short reason) while viewing a NON-LIVE version — greys the
-   *  "Add ▾" trigger with a tooltip instead of hiding it (D15). Existing
-   *  rows on that version stay fully editable (price/qty/reorder/delete all
-   *  operate on an already-versioned row id, which is unambiguous); only
-   *  NEW inserts are gated here, because every create mutation this tab
-   *  calls (`lineItemWrites.addNative` etc.) still stamps the row onto the
-   *  project's LIVE version unconditionally — Phases 1-4 added `versionId`
-   *  to every READ this tab needs, but never extended the CREATE mutations
-   *  with a target-version argument. Gating the one entry point that would
-   *  otherwise silently misfile a new line under the wrong version is safer
-   *  than leaving it enabled — see FEATUREDOCS/76's Phase 5 section. */
+  /** #1221 follow-up — Phase 5 (D15) greyed the "Add ▾" trigger while
+   *  viewing a non-live version, because every create mutation this tab
+   *  calls stamped its new row onto the project's LIVE version
+   *  unconditionally. Every one of those mutations now takes an optional
+   *  `versionId` (defaulting to live), and `EquipmentTab` threads its own
+   *  `versionId` prop through to all of them (own-stock/kit/custom-item/
+   *  group/category/apply-template), so nothing left to gate here — the
+   *  page no longer passes a reason, but the prop stays for a FUTURE
+   *  disable reason (e.g. a permission gate), not removed outright. One
+   *  narrower exception survives inside the "Add" dialog itself: the
+   *  "Sale" kind (`unified-add-dialog.tsx`) always applies to the live
+   *  version (it sells REAL stock immediately, not a plan entry), so it
+   *  stays disabled specifically while viewing non-live — see that file's
+   *  header comment. */
   addDisabledReason?: string;
 }
 
@@ -904,7 +907,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   const createCategoryMut = useServerMutation({
-    mutationFn: (name: string) => categoryWrites.create(projectId, name),
+    // #1221 follow-up — lands on the version being viewed (absent = live).
+    mutationFn: (name: string) => categoryWrites.create(projectId, name, versionId),
     onSuccess: () => {
       invalidate();
       setShowAddCategory(false);
@@ -1301,6 +1305,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const createGroupMut = useServerMutation({
+    // #1221 follow-up — both branches land on the version being viewed
+    // (absent = live).
     mutationFn: async ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
         // Templates are category-scoped concepts — fall back to no-template
@@ -1308,7 +1314,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         // group structurally. The template can be applied via a follow-up
         // move + recalculate if they later want to materialise its items.
         if (!categoryId) {
-          await groupWrites.create(projectId, null, title);
+          await groupWrites.create(projectId, null, title, versionId);
           return;
         }
         const tpl = templates.find((t) => t.id === templateId);
@@ -1322,10 +1328,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             kitId: it.kitId,
             quantity: it.quantity,
           })),
+          versionId,
         });
         return;
       }
-      await groupWrites.create(projectId, categoryId, title);
+      await groupWrites.create(projectId, categoryId, title, versionId);
     },
     onSuccess: () => {
       invalidate();
@@ -2656,6 +2663,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         categories={categories as CategoryData[]}
         onInvalidate={invalidate}
         preselectedModelId={pendingAutoModelId}
+        versionId={versionId}
         onSubHireCreated={(newSubHireId) => {
           // Hand off from the inline create form to the manage view so
           // the user can add items to their new order without a context

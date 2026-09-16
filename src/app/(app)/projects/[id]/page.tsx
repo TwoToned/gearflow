@@ -699,11 +699,6 @@ export default function ProjectDetailPage({
                       addMenuSlot={equipmentAddSlot}
                       autoOpenAddModelId={autoOpenAddModelId}
                       versionId={versionState.viewingVersion?.id}
-                      addDisabledReason={
-                        versionState.isViewingVersion && versionState.viewingVersion
-                          ? `v${versionState.viewingVersion.number} isn't live. Make it live to add new items — existing items on v${versionState.viewingVersion.number} are still editable below.`
-                          : undefined
-                      }
                     />
                   </div>
                 </TabsContent>
@@ -1147,10 +1142,12 @@ function ReadOnlyNoteBlock({ title, value }: { title: string; value: string | nu
  * component the COMPOSED value (design §5 D32) — a non-live version's own
  * captured text, no separate snapshot-projection read needed anymore. Notes
  * writes (`useOptimisticProjectNotes`) patch the LIVE `projects` row only
- * (same gap as new equipment/group/category/service inserts — see
- * `EquipmentTabProps.addDisabledReason`'s doc comment), so this stays
- * READ-ONLY while viewing a non-live version rather than silently writing
- * the wrong version's notes.
+ * (#1221 follow-up closed this same class of gap for new equipment/group/
+ * category/service INSERTS — see `EquipmentTabProps.addDisabledReason`'s
+ * doc comment — but notes are a PLAN FIELD on `projects` itself, not one of
+ * the five versioned plan tables, so this one is untouched by that fix), so
+ * this stays READ-ONLY while viewing a non-live version rather than
+ * silently writing the wrong version's notes.
  */
 function NotesTabSlot({ liveCrewNotes, liveInternalNotes, liveClientNotes, onChanged, onSave }: NotesTabSlotProps) {
   const { isViewingVersion, viewingVersion } = useProjectVersion();

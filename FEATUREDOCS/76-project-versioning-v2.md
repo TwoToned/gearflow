@@ -744,10 +744,8 @@ inserts are at risk of silently landing on the wrong (live) version. Rather
 than ship an "Add" menu that would silently misfile new lines, Phase 5
 GREYS the Add trigger while viewing a non-live version (`addDisabledReason`)
 — a narrower version of principle 3's "same add menu" ideal, chosen for
-correctness over completeness. Closing this for real needs `versionId`
-arguments added to those 13 create mutations (additive-only, same pattern
-Phase 2 used for reads) — flagged here as the single highest-priority
-follow-up, not silently left as a TODO.
+correctness over completeness. **Closed post-Phase 5 — see "#1221 follow-up —
+closing the Equipment write-side gap" below.**
 
 ### Labour and Finance tabs — scoped out of version-awareness this phase
 
@@ -847,17 +845,151 @@ Base UI popover is nested inside a Radix modal Dialog anywhere here (the
 Versions panel is a Radix `Sheet`; the Make-live/Rename/Delete dialogs it
 opens are plain Radix `Dialog`s, sibling-stacked, not nested popovers).
 
-### What's next (later phases of #1221 — not built yet)
+## #1221 follow-up — closing the Equipment write-side gap (post-Phase 5)
 
-Closing the Equipment-tab write-side gap (the 13 create-mutation call sites
-above); wiring `ServicesPanel`/Labour and Finance onto `versionId` the same
-way Equipment now is; Compare (#1232); Phase 6's quote-from-a-non-live-
-version workflow (#1233), which E2E spec 3 is blocked on; folding drift
-(state D) and the unlocked-by-a-person notice (state E) into `VersionStrip`;
-migrating the OLDER switcher's remaining surface (FEATUREDOCS/70) off
-`projectSnapshots` onto `projectVersions` entirely; narrowing
-`projects.liveVersionId` to required once the backfill is proven complete in
-prod; and closing the remaining 32 version-scope-ratchet sites (Phase 2's
-"What's deferred") with real join-filtering. See
-`docs/designs/project-versioning-v2.md` for the full plan (not yet merged to
-`main`).
+Extends every CREATE mutation on the five versioned plan tables with an
+optional `versionId` arg (additive-only, defaulting to the project's live
+version when absent — the exact pattern Phase 2 established for reads) and
+re-enables Equipment's "Add" UI on non-live versions accordingly. This was
+flagged as the single highest-priority follow-up in Phase 5's own writeup
+above; it is now closed.
+
+### `resolveWriteVersionId` — the write-side counterpart to `resolveVersionId`
+
+`convex/lib/versionScope.ts`'s `resolveWriteVersionId(ctx, project,
+versionId?)` mirrors `resolveVersionId`'s "optional, default live" shape,
+but with one deliberate difference: a supplied `versionId` is **always
+validated** against `project` (same org, same project, `contentState:
+"ready"`) before being trusted, never just defaulted through like a read
+does. A write landing on a foreign project's version is a persisted,
+IDOR-shaped bug (the row itself is now wrong, not just one response), so the
+asymmetry with the read-side helper is intentional, not an oversight.
+
+### The 13 call sites, plus one discovered along the way
+
+All 13 CREATE call sites named in Phase 5's gap note now take `versionId`:
+`categorySlotsWrites.createCategoryAndPlaceGroup`,
+`projectCategoriesWrites.createCategoryNative`,
+`projectGroupsWrites.createGroupNative`,
+`projectLineItems.createKitLineItemCore` (shared by `lineItemWrites.ts`'s
+`addKitNative` and `groupTemplatesWrites.applyNative`'s kit expansion),
+`lineItemWrites.addCustomNative`/`addNative`/`addKitNative`/
+`addLineItemSmartNative`, and `projectServicesWrites.createServiceNative`/
+`generateServicesNative`/`convertLineItemToServiceNative`.
+
+**`groupTemplatesWrites.applyNative`** (apply a group template — the
+Equipment tab's "Add group" → pick-a-template flow) was not named in the
+original 13 but is reachable from the exact same "Add" menu Phase 5 gated,
+so it gets the identical treatment: an optional `versionId`, validated the
+same way, threaded to both the group it creates and every model/kit line it
+expands. Left unwired without this, re-enabling "Add" would have silently
+misfiled a template-created group onto live while viewing a non-live
+version — the same bug class Phase 5 was built to prevent, just one layer
+deeper.
+
+**Accessory children were a second, adjacent bug**: `convex/lib/fulfillment.ts`'s
+`expandAccessoryChildLines`/`expandAccessoriesForAsset`/the reconcile path
+inserted accessory child lines with NO `versionId` at all (not even live) —
+an oversight in the original insert-side stamping Phase 2 added, invisible
+until Phase 2's own `by_versionId`-family reads made an unstamped row
+match nothing. Every accessory child now inherits its PARENT line's already-
+resolved `versionId` — never re-derives "live" independently, since a
+parent that lands on a non-live version must keep its children there too.
+
+### Pricing-lock interaction — unchanged principle, one added parameter
+
+`convex/lib/projectLocks.ts`'s `defaultsToZeroOnInsert` now takes an
+optional `targetVersionId`, checked via `isLiveVersionRow`. The Phase 4
+invariant is unchanged — `pricingLocked` gates the LIVE version's money
+writes only — this just makes that check explicit for a CREATE that can now
+target something other than live: an insert aimed at a non-live version
+keeps its real price regardless of the live version's lock state; an insert
+that omits `versionId` (still resolving to live) keeps the exact pre-#1221
+gated behaviour.
+
+### UI re-enablement
+
+`EquipmentTabProps.addDisabledReason` is no longer set by
+`src/app/(app)/projects/[id]/page.tsx` — the prop itself stays (for a
+FUTURE disable reason, e.g. a permission gate) but nothing passes a version-
+related one anymore. `EquipmentTab`'s own `versionId` prop is threaded
+through `UnifiedAddDialog` → `EquipmentAddForm`/`KitAddForm`/
+`CustomItemAddForm` (own-stock/kit/custom-item), and directly to
+`categoryWrites.create`/`groupWrites.create`/`templateWrites.applyTemplate`
+for category/group/template-group creation.
+
+Two kinds inside `UnifiedAddDialog` are deliberately left out, both
+documented in that file's own header comment:
+
+- **Sub-hire** creates rows in `subHireGroups`/`subHireOrders`/`subHireItems`
+  — tables this whole program never touched (no `versionId` column, no
+  live/non-live distinction). Enabling "Add → Sub-hire" while viewing a
+  non-live version isn't a new gap; it's the same "not version-aware"
+  bucket Labour/Tasks/Files already sit in, so the tab stays reachable with
+  no special-casing.
+- **Sale** (`saleMode: "FROM_RENTAL_STOCK"`) immediately mutates REAL stock
+  on add (`sellSerializedAssetForSale`, `convex/lineItemWrites.ts`) — a
+  physical, right-now side effect, not a plan entry, and `addLineItemSmartNative`
+  runs that stock effect unconditionally regardless of the line's own
+  target version (a pre-existing gap in the versioning program, not
+  introduced here — flagged rather than silently left). Selling stock
+  "into" a non-live version would execute that real disposal against a
+  plan that isn't the one currently governing the job, so the Sale tab
+  stays **disabled** while viewing a non-live version (mirrors the "reality
+  only ever lives on the live version" invariant `versions.ts`'s
+  `makeLiveNative` step 3 documents) rather than being wired through.
+  Closing this for real means gating `applySaleStockOnAdd` itself to the
+  live version — left as a follow-up, not attempted here.
+
+Labour was checked against the same "siblings problem" and found not to
+have one: `ServicesPanel` was never made version-aware on the READ side
+this program (still LIVE-only, `VersionNotTrackedNote`), so there is no
+"viewing a non-live version's services" state whose Add could be silently
+wrong — wiring Labour's writes is bundled with wiring its reads, both still
+open in "What's next" below.
+
+### Not touched, and why
+
+`categorySlotsWrites.createCategoryAndPlaceGroup` (the "Move existing group
+to new category" dialogs) got the same optional `versionId` arg for API
+completeness, but no UI thread this pass — same as when Phase 5's own
+diff first introduced the arg. This is safe, not silently risky: the
+mutation validates the moved group's own `versionId` against the resolved
+target before writing, so an un-wired caller (defaulting to live) against a
+group that actually lives on a non-live version fails LOUDLY with "Project
+group does not belong to the target version" rather than silently
+misfiling — a broken feature on non-live, not a data-integrity bug.
+Left for a follow-up alongside Labour/Finance.
+
+### Testing
+
+Per-mutation: defaults-to-live, targets-a-named-version (sortOrder/siblings
+scoped to that version, not live's), cross-tenant rejection, cross-project
+rejection, and — where a lock exists to interact with — the lock case
+(`convex/lineItemWrites.test.ts`, `convex/projectGroupsWrites.test.ts`,
+`convex/projectCategoriesWrites.test.ts`, `convex/projectServicesWrites.test.ts`,
+`convex/categorySlotsWrites.test.ts`, `convex/groupTemplatesWrites.test.ts`).
+UI: `src/hooks/__tests__/use-line-item-writes.test.ts` (hook-level proof
+`add`/`addCustom`/`addKit` thread `versionId` to their mutations unchanged)
+and `src/components/projects/__tests__/unified-add-dialog.smoke.test.tsx`
+(the segmented switcher's Sale-disabled-while-non-live state, the stale-kind
+fallback, and Sub-hire staying reachable) — mirroring
+`equipment-add-menu-trigger.smoke.test.tsx`'s established pattern of mocking
+out the heavy form bodies to isolate the one thing that changed, rather than
+mounting `UnifiedAddDialog`'s full dependency graph.
+
+## What's next (later phases of #1221 — not built yet)
+
+Wiring `ServicesPanel`/Labour and Finance onto `versionId` on both the read
+AND write side (bundled together, per above); gating `applySaleStockOnAdd`
+to the live version so Sale can eventually be re-enabled safely; wiring the
+"Move existing group to new category" dialogs' `versionId`; Compare
+(#1232); Phase 6's quote-from-a-non-live-version workflow (#1233), which
+E2E spec 3 is blocked on; folding drift (state D) and the unlocked-by-a-
+person notice (state E) into `VersionStrip`; migrating the OLDER switcher's
+remaining surface (FEATUREDOCS/70) off `projectSnapshots` onto
+`projectVersions` entirely; narrowing `projects.liveVersionId` to required
+once the backfill is proven complete in prod; and closing the remaining 32
+version-scope-ratchet sites (Phase 2's "What's deferred") with real
+join-filtering. See `docs/designs/project-versioning-v2.md` for the full
+plan (not yet merged to `main`).

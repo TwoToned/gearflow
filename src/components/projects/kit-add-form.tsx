@@ -53,6 +53,9 @@ export interface KitAddFormProps {
   onInvalidate: () => void;
   /** Close the surrounding dialog. */
   onClose: () => void;
+  /** #1221 follow-up — the version this new kit lands on (the version
+   *  currently being viewed on the Equipment tab). Absent = live. */
+  versionId?: string;
 }
 
 export function KitAddForm({
@@ -65,6 +68,7 @@ export function KitAddForm({
   targetLabel,
   onInvalidate,
   onClose,
+  versionId,
 }: KitAddFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -149,6 +153,7 @@ export function KitAddForm({
         categoryId: effectiveCategoryId,
         groupId: effectiveGroupId,
         kitLabel: resolvedKitLabel,
+        versionId,
       }),
     onSuccess: () => {
       onInvalidate();

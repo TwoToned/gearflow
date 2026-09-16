@@ -359,4 +359,90 @@ describe("groupTemplatesWrites.applyNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // ─── #1221 follow-up — applyNative now takes an optional `versionId` ────────
+  // (closes Phase 5's Equipment write-side gap, extended to "Add group" →
+  // apply-template — see FEATUREDOCS/76 and unified-add-dialog.tsx's header).
+  describe("#1221 versionId follow-up", () => {
+    async function seedSecondVersionWithCategory(t: ReturnType<typeof makeT>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectVersions", { id: "v-p1-b", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+        // A category on the NON-live version, since applyNative's categoryId
+        // arg is org-checked but not itself version-checked (pre-existing,
+        // same laxity as its sibling createGroupNative's own categoryId
+        // check) — the fixture still targets a category that plausibly
+        // belongs to the version being written to.
+        await ctx.db.insert("projectCategories", { id: "cat1-b", organizationId: ORG, projectId: "p1", versionId: "v-p1-b", lineageId: "cat1-b", name: "Cat v2", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      });
+    }
+
+    test("defaults to the live version when versionId is absent", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args);
+      await t.run(async (ctx) => {
+        const group = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first();
+        expect(group?.versionId).toBe("v-p1");
+        const mLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "mLine1")).first();
+        expect(mLine?.versionId).toBe("v-p1");
+        const kLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kLine1")).first();
+        expect(kLine?.versionId).toBe("v-p1");
+      });
+    });
+
+    test("targets the named non-live version — group, model line, AND expanded kit children all land there", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await seedSecondVersionWithCategory(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, { ...args, categoryId: "cat1-b", versionId: "v-p1-b" });
+      await t.run(async (ctx) => {
+        const group = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first();
+        expect(group?.versionId).toBe("v-p1-b");
+        const mLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "mLine1")).first();
+        expect(mLine?.versionId).toBe("v-p1-b");
+        const kLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kLine1")).first();
+        expect(kLine?.versionId).toBe("v-p1-b");
+        // Kit's expanded serialized-member child also lands on the target version.
+        const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "kLine1")).collect();
+        expect(kids).toHaveLength(1);
+        expect(kids[0].versionId).toBe("v-p1-b");
+        // LIVE version's totals are untouched by a non-live apply (recalc is
+        // always LIVE-ONLY persist) — the pre-seeded standalone line is all
+        // that's billed.
+        const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+        expect(project?.total).toBe(55);
+      });
+    });
+
+    test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "pOther", organizationId: "org_2", projectNumber: "PO", name: "Foreign", status: "QUOTED", liveVersionId: "v-other" });
+        await ctx.db.insert("projectVersions", { id: "v-other", organizationId: "org_2", projectId: "pOther", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, { ...args, versionId: "v-other" }),
+      ).rejects.toThrow();
+      // Nothing landed — the whole apply is atomic.
+      const group = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first());
+      expect(group).toBeNull();
+    });
+
+    test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+      const t = makeT();
+      await seedBase(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other Gig", status: "QUOTED", liveVersionId: "v-p2" });
+        await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, { ...args, versionId: "v-p2" }),
+      ).rejects.toThrow();
+    });
+  });
 });

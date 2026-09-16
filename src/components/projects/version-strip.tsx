@@ -37,16 +37,30 @@ import type { ProjectVersionSummary } from "@/components/projects/project-versio
  * LIVE version's money fields only (FEATUREDOCS/76's truth table) — while
  * viewing a non-live version that flag says nothing about what's on screen.
  *
- * Drift ("this job no longer matches the sent quote") and the "unlocked by a
- * person, re-lock" notice from the mockup's states D/E are a DEFERRED
- * follow-up (not built this phase) — see the Phase 5 FEATUREDOCS section for
- * why, and `overview/quote-card.tsx`'s inline drift note for where that
- * signal still surfaces today.
+ * Drift ("this job no longer matches the sent quote") state D was a DEFERRED
+ * follow-up in Phase 5 — #1233 (Phase 6) closes the DETECTION half: state 2's
+ * strip now appends a plain-text drift line (`quoteDrift` prop, sourced from
+ * `versionsRead.quoteDriftForVersion` via `useProjectVersion().viewingQuoteDrift`)
+ * when the viewed version's current total has moved since its own quote was
+ * sent. Deliberately NOT a click target — full Compare-mode wiring (line-by-
+ * line, side-by-side) is #1232, a separate, not-yet-built phase; this is the
+ * numeric signal only. `overview/quote-card.tsx`'s inline drift note (the
+ * LIVE version's own `projectSnapshots`-based line-item diff) is a DIFFERENT,
+ * older mechanism, unaffected by this. The "unlocked by a person, re-lock"
+ * notice (state E) remains deferred.
  */
 
 interface VersionStripLockStatus extends LockCopyStatus {
   loading: boolean;
   canUnlockPricing: boolean;
+}
+
+/** #1233 (Phase 6) — the drift DETECTION signal (`versionsRead.quoteDriftForVersion`),
+ *  a numeric compare only. No click target: Compare mode (#1232) doesn't exist
+ *  yet, and this strip must not link to a UI that isn't built. */
+export interface VersionStripQuoteDrift {
+  quoteLabel: string;
+  driftAmount: number;
 }
 
 interface VersionStripProps {
@@ -58,6 +72,17 @@ interface VersionStripProps {
   onBackToLive: () => void;
   lockStatus: VersionStripLockStatus;
   onUnlock: () => Promise<void>;
+  /** Optional — omitted or `null` renders no drift line at all (no signal,
+   *  or the viewed version has never had a quote sent). */
+  quoteDrift?: VersionStripQuoteDrift | null;
+}
+
+/** Plain currency text, no `Intl` locale plumbing threaded through this far —
+ *  matches the sign convention `describeDrift` (`src/lib/quote-drift.ts`)
+ *  already uses elsewhere on this page ("+$1,240" / "-$1,240"). */
+function formatDriftAmount(amount: number): string {
+  const abs = Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${amount >= 0 ? "+" : "-"}$${abs}`;
 }
 
 function NonLiveVersionStrip({
@@ -65,11 +90,13 @@ function NonLiveVersionStrip({
   liveVersion,
   onMakeLive,
   onBackToLive,
+  quoteDrift,
 }: {
   viewingVersion: ProjectVersionSummary;
   liveVersion: ProjectVersionSummary | null;
   onMakeLive: () => void;
   onBackToLive: () => void;
+  quoteDrift?: VersionStripQuoteDrift | null;
 }) {
   return (
     <div
@@ -90,6 +117,14 @@ function NonLiveVersionStrip({
           </span>{" "}
           — a draft version, fully editable. Not live: the warehouse, availability and invoices follow
           {liveVersion ? ` v${liveVersion.number}` : " the live version"}.
+          {/* #1233 — drift is a plain text tail, never a link: Compare mode
+              (#1232) that would make sense to open here doesn't exist yet. */}
+          {quoteDrift && quoteDrift.driftAmount !== 0 && (
+            <>
+              {" "}
+              Quote total has moved {formatDriftAmount(quoteDrift.driftAmount)} since {quoteDrift.quoteLabel} was sent.
+            </>
+          )}
         </span>
       </p>
       <div className="flex shrink-0 items-center gap-2">
@@ -154,6 +189,7 @@ export function VersionStrip({
   onBackToLive,
   lockStatus,
   onUnlock,
+  quoteDrift,
 }: VersionStripProps) {
   if (isTemplate || lockStatus.loading) return null;
 
@@ -166,6 +202,7 @@ export function VersionStrip({
         liveVersion={liveVersion}
         onMakeLive={onMakeLive}
         onBackToLive={onBackToLive}
+        quoteDrift={quoteDrift}
       />
     );
   }

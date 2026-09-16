@@ -109,4 +109,70 @@ describe("VersionStrip smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: /unlock pricing/i }));
     expect(onUnlock).toHaveBeenCalled();
   });
+
+  // #1233 (Phase 6) — the drift DETECTION signal, plain text, no click target.
+  describe("quoteDrift (#1233)", () => {
+    it("renders a drift line when the viewed version's total has moved since it was sent", () => {
+      render(
+        <VersionStrip
+          {...baseProps({
+            isViewingVersion: true,
+            viewingVersion: VIEWING_VERSION,
+            quoteDrift: { quoteLabel: "RVLT-2026-0087 v3", driftAmount: 1240 },
+          })}
+        />,
+      );
+      expect(screen.getByText(/Quote total has moved \+\$1,240\.00 since RVLT-2026-0087 v3 was sent/)).toBeTruthy();
+    });
+
+    it("shows a negative drift with a minus sign", () => {
+      render(
+        <VersionStrip
+          {...baseProps({
+            isViewingVersion: true,
+            viewingVersion: VIEWING_VERSION,
+            quoteDrift: { quoteLabel: "RVLT-2026-0087 v3", driftAmount: -50.5 },
+          })}
+        />,
+      );
+      expect(screen.getByText(/-\$50\.50/)).toBeTruthy();
+    });
+
+    it("renders no drift line when driftAmount is exactly zero (nothing has moved)", () => {
+      render(
+        <VersionStrip
+          {...baseProps({
+            isViewingVersion: true,
+            viewingVersion: VIEWING_VERSION,
+            quoteDrift: { quoteLabel: "RVLT-2026-0087 v3", driftAmount: 0 },
+          })}
+        />,
+      );
+      expect(screen.queryByText(/Quote total has moved/)).toBeNull();
+    });
+
+    it("renders no drift line when quoteDrift is null (no quote ever sent for this version)", () => {
+      render(
+        <VersionStrip
+          {...baseProps({ isViewingVersion: true, viewingVersion: VIEWING_VERSION, quoteDrift: null })}
+        />,
+      );
+      expect(screen.queryByText(/Quote total has moved/)).toBeNull();
+    });
+
+    it("the drift line is plain text — never a link or button (Compare mode, #1232, is not built)", () => {
+      render(
+        <VersionStrip
+          {...baseProps({
+            isViewingVersion: true,
+            viewingVersion: VIEWING_VERSION,
+            quoteDrift: { quoteLabel: "RVLT-2026-0087 v3", driftAmount: 1240 },
+          })}
+        />,
+      );
+      const driftText = screen.getByText(/Quote total has moved/);
+      expect(driftText.closest("a")).toBeNull();
+      expect(driftText.closest("button")).toBeNull();
+    });
+  });
 });

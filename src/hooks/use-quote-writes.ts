@@ -62,9 +62,20 @@ export function useQuoteWrites() {
      * "document failed — retry" state in the rail rather than a silent gap. That
      * is why `artifactReady` is reported rather than thrown.
      */
+    /**
+     * `versionId` (#1233, Phase 6) — the REAL `projectVersions` row to
+     * quote from; omitted ⇒ the project's live version, byte-identical to
+     * every pre-Phase-6 caller. `project-quote-rail.tsx` (the OLDER,
+     * live-revision-only Finance tab) doesn't pass one yet — wiring a UI
+     * surface to target a non-live version when sending is a deliberate,
+     * documented follow-up (FEATUREDOCS/76's Phase 6 section), not attempted
+     * this phase. This threading exists so that follow-up is a call, not a
+     * rewrite.
+     */
     send: async (
       projectId: string,
       data: QuoteSendValues = {},
+      versionId?: string,
     ): Promise<{
       id: string;
       version: number;
@@ -83,6 +94,7 @@ export function useQuoteWrites() {
         recipientContactId: parsed.recipientContactId || undefined,
         notes: parsed.notes || undefined,
         labelOnDocument: parsed.labelOnDocument || undefined,
+        versionId,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),

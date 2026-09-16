@@ -978,17 +978,246 @@ fallback, and Sub-hire staying reachable) — mirroring
 out the heavy form bodies to isolate the one thing that changed, rather than
 mounting `UnifiedAddDialog`'s full dependency graph.
 
+## Phase 6 (#1233) — quotes from any version: the payoff of the whole program
+
+Phase 6 is the actual product workflow #1221 exists for: quote a client two
+options, let them pick. Everything through Phase 5 lets you build alternate
+equipment/pricing options as real `projectVersions` rows; Phase 6 is what
+lets you send more than one of them to the client at once. **#1221 is now
+feature-complete for that core workflow** — Compare (#1232) and the
+cleanup/optional-line-items follow-ups (#1234/#1235) remain, but the
+"quote two options, client picks" loop itself works end to end on the
+backend + document pipeline.
+
+### The bridge: `quotes.versionId`
+
+Before this phase, `quotesWrites.ts`'s five verbs (`sendNative`/
+`recallNative`/`newVersionNative`/`markAcceptedNative`/`markDeclinedNative`)
+were entirely the OLDER `projects.revision`/`liveRevision` program
+(FEATUREDOCS/70) — a `quotes` row's `version` field was a plain number keyed
+to that counter, with **no relationship at all** to the REAL `projectVersions`
+table Phases 1-5 built. Phase 6 adds `quotes.versionId?: string` (a
+`projectVersions.id` FK, `by_projectId_versionId` index) — stamped on EVERY
+send going forward (new row or reused-on-resend), absent on every pre-#1233
+row. The two numbering schemes stay independent (`quotes.version`, the old
+per-project revision counter, is still what prints as "v2" in `quoteLabel`;
+`projectVersions.number` is a completely separate allocator) — `versionId` is
+the ONLY thing that ties a `quotes` row to a specific `projectVersions` row.
+
+### `sendNative({ versionId })` — any version, addressed two ways
+
+`prepareSend` (`convex/quotesWrites.ts`) branches on whether the resolved
+target (`resolveWriteVersionId`, Phase 2's write-side helper, validated
+against the project) IS the live version:
+
+- **Live target** — byte-identical to pre-Phase-6 behaviour: addressed by
+  `findQuoteAtRevision(projectLiveRevision(project))`, the OLD lineage. A
+  pre-#1233 row found this way gets `versionId` backfilled on this send.
+- **Non-live target** — addressed by `findQuoteForVersion(versionId)`
+  instead (no revision-number lineage exists for a version that was never
+  live). A first-ever send for it allocates a FRESH number off the SAME
+  `projects.revision` allocator `newVersionNative` uses ("the highest number
+  ever handed out") — and explicitly **pins `liveRevision`** at its current
+  resolved value before bumping `revision`, so the shared allocator advancing
+  for a non-live reason can never shift what the LIVE branch's own next
+  first-ever send resolves "the live revision" to (a real collision, caught
+  by `quotesWrites.test.ts`'s D55 test — see that test's own comment for the
+  failure mode this pin prevents).
+
+**D19 — no cross-version supersede.** `supersedeLiveQuotes` now takes
+`targetVersionId` and only supersedes an OTHER quote row that targets the
+SAME version (`other.versionId === targetVersionId`, with a documented
+revision-number fallback for pre-#1233 rows targeting live — see
+`quoteState.ts`'s `quoteTargetsLiveVersion`). Sending version B's quote never
+touches version A's — that's what makes "quote two options" possible. The
+one supersede-on-send case Phase 6 KEEPS is the OLDER, same-live-version
+revision lineage (`newVersionNative`, unchanged): v1 SENT, "new version"
+opens v2 DRAFT, sending v2 still supersedes v1 — same version, newer
+document, not a cross-version case.
+
+**D55/D56 — `pricingLocked` keys off the VERSION, not the revision number.**
+`sendNative` raises the lock only when `isLive` (the resolved target equals
+`project.liveVersionId`); `recallNative` clears it only when
+`quoteTargetsLiveVersion(quote, project)`. Both generalize the pre-#1233
+revision-number check rather than replacing it outright — a pre-#1233 row
+with no `versionId` stamped falls back to `quote.version ===
+projectLiveRevision(project)`, so an already-passing test exercising the
+OLDER, now-dead `promoteRevisionNative`'s decoupled-`liveRevision` scenario
+keeps its exact original meaning (see `quotesWrites.test.ts`'s two D56
+tests — one for a REAL Phase-6 make-live flip, one for the legacy fallback).
+
+**Re-send reuses the row** — unchanged (#1027's existing recall→resend
+shape): `recallNative` clears `pdfFileId` (pushed onto
+`recalledPdfFileIds`) and flips the row back to `DRAFT`; the next
+`sendNative` for the SAME `versionId` finds that row via `findQuoteForVersion`
+and patches it, never inserting a second one.
+
+### D20 — accept = make live
+
+`markAcceptedNative` (`convex/quotesWrites.ts`) now:
+
+1. Resolves the quote's target version (`quote.versionId ?? live`, same
+   backward-compat default as everywhere else).
+2. If that version ISN'T live: composes `performMakeLive`
+   (`convex/lib/makeLiveCore.ts`) — the pointer-flip steps 2-6
+   `versions.makeLiveNative` runs, extracted so there is exactly ONE
+   implementation (R-3.1), not a second copy inside `quotesWrites.ts`.
+   `versions.ts`'s own `makeLiveNative` mutation now just does its
+   permission check and calls this shared function too.
+3. Patches the quote to `ACCEPTED`.
+4. Supersedes every OTHER open (`SENT`/`EXPIRED`) quote on the project,
+   **across every version** — the one place Phase 6 DOES want a
+   cross-version supersede (D19's "no cross-version supersede" is about
+   SEND; accepting is the decision between the options that were quoted).
+   Enforces "at most one `ACCEPTED` per project, ever."
+
+**Confirmation-gate reasoning (flagged per this phase's own instructions):**
+`markAcceptedNative` was already `danger: "high"` before this phase, so the
+API dispatcher already requires `confirm: true` on every call reaching it.
+Composing `performMakeLive` (itself `danger: "high"` as the standalone
+`makeLiveNative` operation) inside an ALREADY-gated `danger: "high"` call
+does not get a second confirmation layer — the one human confirmation on
+accept covers both effects, which happen atomically in the same transaction.
+No new `agentOps` entry was added for the composition itself; the reasoning
+is documented inline at the call site in `quotesWrites.ts`.
+
+### Money correctness: a version-aware snapshot, not the live project's
+
+Two real correctness fixes, not just plumbing, both proven against
+`recalcSplit.differential.test.ts`'s proof that `loadTotalsBundle`/
+`computeTotals` are byte-identical to what `recalcProjectTotals` persists
+for the LIVE case (so neither of these changes anything for existing
+live-version sends):
+
+- **`convex/lib/versionScope.ts`'s new `resolveEffectiveProjectForVersion`**
+  overlays a NON-live target's own PLAN FIELDS (discountPercent/taxRate/
+  clientId/…) onto the `project` object `loadTotalsBundle` and
+  `buildFinanceLines` (`convex/lib/financeSnapshot.ts`, now `versionId`-aware)
+  read from — a no-op when the target IS live. Before this, a non-live
+  version's totals/discount line silently used the LIVE version's discount
+  and tax rate, which is wrong the moment the two versions' terms differ
+  (exactly the "quote a Budget PA option at a different discount" scenario
+  this whole feature exists for).
+- **`quotesWrites.ts`'s `buildQuoteSnapshot`** now computes the frozen
+  snapshot via `loadTotalsBundle`/`computeTotals` (targeted at the send's
+  resolved version) instead of reading `project.subtotal`/`total`/etc
+  directly — those fields describe the LIVE version ONLY
+  (`recalc.ts`'s file header). Value-neutral for a live send (proven
+  byte-identical), the correctness fix for non-live.
+
+### The PDF: a quote renders its OWN targeted version, not always live
+
+`generateQuoteArtifact` (`src/server/finance-documents.ts`) now passes
+`quoteId` to `generatePdf`, mirroring `invoiceId`'s existing pattern 1:1.
+`financeArtifacts.quoteArtifactContext` returns the quote's own `versionId`
+plus its frozen money snapshot (subtotal/discountPercent/discountAmount/
+taxAmount/total). `build-document-data.ts`, when `quoteId` is set:
+
+- Threads `versionId` through `buildDocumentLineItemData` into the THREE
+  already-version-aware `listByProject` Convex reads (Phase 2, #1228) — a
+  non-live version's quote renders THAT version's own equipment/groups/
+  categories.
+- Overlays the target version's own PLAN FIELDS (dates/client/location/
+  discount/tax) onto the Prisma-mapped project scalars via
+  `versionsRead.getVersion` + `composeProjectWithVersion` — converting the
+  Convex-shaped epoch-ms date fields to the `Date`-shaped ones this
+  Prisma-mapped pipeline expects (`toDocumentShapedPlanFields`; composing
+  the raw numbers directly would silently hand a `number` where every
+  downstream `formatDate`/`getProjectWindow` call expects a `Date`).
+- Uses the quote's own frozen `subtotal`/`discountPercent`/`discountAmount`/
+  `taxAmount`/`total` for the totals block instead of live project state —
+  the SAME "this specific document's money, not the live project's" pattern
+  `invoiceId` already established, now also true for the LIVE-version case
+  (a strict hardening: immune to any drift between send and render, not just
+  correct for non-live).
+
+**Known, documented gap:** the rendered quote's Services/Labour section
+still reads `getProjectServicesByOrg` (project-scoped only, not
+version-scoped) — consistent with Labour never having been threaded onto
+`versionId` anywhere in this program (Phase 5's own gap, still open). A
+quote for a non-live version therefore shows that version's own
+equipment/groups/categories correctly, but the LIVE project's services if
+it has any priced ones. Closing it is bundled with the "wire Labour"
+follow-up below, not attempted here.
+
+**#987 finance-document invariants — verified, not just asserted.** Every
+existing "render once, never regenerate" guarantee (never overwrite
+`pdfFileId`, dates from the row never `now`, no live-render path for
+`type=quote`) is UNCHANGED by this phase — `quoteId` only changes WHICH
+version's content a first render draws from, never whether/when a render
+happens. `src/server/finance-documents-norerender.test.ts` (new) is the
+explicit negative proof the phase's acceptance criteria called for: a
+grep-based sweep asserting `generatePdf`'s non-test call sites are EXACTLY
+the reviewed set (the one attach-once artifact path + the two preview-only
+routes), plus a read of the quote download route's own source proving it
+never imports a render function at all — only `streamStoredArtifact`.
+
+### Drift detection — surfaced on `VersionStrip`, Compare-mode deferred
+
+`convex/versionsRead.ts`'s new `quoteDriftForVersion` query compares a
+version's SENT (or EXPIRED/ACCEPTED) quote's frozen `snapshot.total` against
+that version's CURRENT live-computed total (`loadTotalsBundle`/
+`computeTotals`, the same version-aware path used above — R-3.1, no second
+totals computation). `VersionStrip`'s non-live state now appends a plain
+text line when it's non-zero: *"Quote total has moved +$1,240 since
+RVLT-2026-0087 v3 was sent."*
+
+This is the DETECTION half only, deliberately narrow — NOT the line-item
+Compare-mode diff (#1232, a separate, not-yet-built phase). It is also a
+DIFFERENT mechanism from `overview/quote-card.tsx`'s/`project-quote-rail.tsx`'s
+existing `InlineQuoteDrift` (`diffSnapshotEntries`/`summarizeDrift`,
+`src/lib/quote-drift.ts`), which is the LIVE version's own line-item diff
+against its `projectSnapshots` capture (LIVE-ONLY by construction — that
+mechanism was never extended to a non-live version, and isn't here either).
+The drift text has **no click target** — Compare mode doesn't exist, so
+nothing here links to it (the header pill's own disabled "Compare" stub,
+Phase 5, is untouched).
+
+### The version × quote state machine diagram
+
+Documented as an ASCII comment block at the top of `convex/versions.ts`
+(replacing/supplementing the older, still-valid revision-number-only diagram
+at the top of `quotesWrites.ts`) — the two compose via `quotes.versionId`.
+
+### What's deferred (honest gap, not silently swept under the rug)
+
+- **No UI to CHOOSE a version when sending.** `project-quote-rail.tsx` (the
+  Finance tab, still the OLDER live-revision-only program) has no "send this
+  non-live version's quote" trigger. `useQuoteWrites().send()` now accepts
+  an optional `versionId` (threaded straight to `sendNative`), so the
+  capability is a call away, but the UI itself — a trigger, a confirmation
+  surface, and a Finance tab that can display MULTIPLE simultaneously-SENT
+  quotes (one per version, per D19) rather than assuming exactly one — is
+  real, separate UI work not attempted this phase (per this phase's own
+  "prioritize correctness over completeness, don't rush the UI" instruction).
+  E2E spec 3 (`e2e/harness-project-versioning.spec.ts`) stays `.skip()`'d
+  for exactly this reason — its docstring was rewritten to say so precisely,
+  rather than either faking a passing click-through or leaving a stale
+  "blocked on Phase 6 entirely" reason now that the backend exists.
+- **Accepting a non-live quote's `conflicts`/`unplannedLineItemIds`** (from
+  the composed `performMakeLive`) are returned by `markAcceptedNative` but
+  have no UI surface of their own yet — `finance/make-live-dialog.tsx`
+  renders this same list for the EXPLICIT make-live flow; wiring the accept
+  flow's own toast/dialog to show it too is left for the UI follow-up above.
+- Services/Labour in the quote PDF (see above) — bundled with the existing
+  "wire Labour onto `versionId`" follow-up, not new to this phase.
+
 ## What's next (later phases of #1221 — not built yet)
 
 Wiring `ServicesPanel`/Labour and Finance onto `versionId` on both the read
-AND write side (bundled together, per above); gating `applySaleStockOnAdd`
-to the live version so Sale can eventually be re-enabled safely; wiring the
-"Move existing group to new category" dialogs' `versionId`; Compare
-(#1232); Phase 6's quote-from-a-non-live-version workflow (#1233), which
-E2E spec 3 is blocked on; folding drift (state D) and the unlocked-by-a-
+AND write side (bundled together, per above — now also closes the PDF
+Services gap); gating `applySaleStockOnAdd` to the live version so Sale can
+eventually be re-enabled safely; wiring the "Move existing group to new
+category" dialogs' `versionId`; Compare (#1232), which the drift signal and
+the header pill's disabled stub are both waiting on; the UI to choose a
+version when sending a quote (Phase 6's own top deferred item, above) and
+to surface a non-live accept's conflicts list; folding the unlocked-by-a-
 person notice (state E) into `VersionStrip`; migrating the OLDER switcher's
 remaining surface (FEATUREDOCS/70) off `projectSnapshots` onto
-`projectVersions` entirely; narrowing `projects.liveVersionId` to required
+`projectVersions` entirely (including reconciling `quotes.version`'s
+revision-number counter with `projectVersions.number`, the two-numbering-
+schemes wart Phase 6 deliberately left in place rather than trying to
+unify under time pressure); narrowing `projects.liveVersionId` to required
 once the backfill is proven complete in prod; and closing the remaining 32
 version-scope-ratchet sites (Phase 2's "What's deferred") with real
 join-filtering. See `docs/designs/project-versioning-v2.md` for the full

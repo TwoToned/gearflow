@@ -213,17 +213,40 @@ test.describe("harness: project versioning v2", () => {
   });
 
   /**
-   * Spec 3 — quote from a non-live version. BLOCKED on Phase 6 (#1233,
-   * "quoting a non-live version"), which doesn't exist yet — the quote/send
-   * workflow (`project-quote-rail.tsx`, the older FEATUREDOCS/70 program)
-   * is still keyed off `projects.revision`/live totals, with no way to
-   * target an arbitrary `projectVersions` row. Written as a stub per this
-   * phase's own instructions ("don't fake it") rather than skipped silently
-   * with no explanation.
+   * Spec 3 — quote from a non-live version.
+   *
+   * #1233 (Phase 6) landed the BACKEND half this spec was blocked on:
+   * `quotesWrites.sendNative({ versionId })` can target any real
+   * `projectVersions` row (D19 — two versions can hold SENT quotes at once),
+   * `buildQuoteSnapshot`/the react-pdf pipeline render THAT version's own
+   * content, and `markAcceptedNative` composes make-live (D20). This is
+   * proven at the Convex layer by `quotesWrites.test.ts`'s "#1233 Phase 6"
+   * describe block (multi-version SENT, drift, re-send-reuses-row, accept =
+   * make live) and `src/server/finance-documents.test.ts` (a non-live send
+   * is frozen exactly like a live one).
+   *
+   * **What's still missing, deliberately not built this phase (see
+   * FEATUREDOCS/76's Phase 6 section "What's deferred"):** a UI surface to
+   * actually CHOOSE which version to send from. `project-quote-rail.tsx`
+   * (the Finance tab) is the older, live-revision-only quote UI
+   * (FEATUREDOCS/70) and has no "send this non-live version's quote"
+   * affordance — `useQuoteWrites().send()` now accepts an optional
+   * `versionId` (threaded straight to `sendNative`) so that UI is a call
+   * away, but wiring a trigger + confirmation + a Finance tab that can
+   * display MULTIPLE simultaneously-SENT quotes (one per version, per D19)
+   * is real, separate UI work this phase's own "prioritize correctness over
+   * completeness" instruction says not to rush.
+   *
+   * Per this program's standing "don't fake it" rule, this spec stays
+   * `.skip()`'d rather than clicking a UI affordance that doesn't exist —
+   * un-skip it once that UI surface lands.
    */
-  test.skip("quote from a non-live version (blocked on Phase 6 / #1233)", async () => {
-    // Intentionally not implemented — depends on Phase 6 wiring the quote/
-    // send workflow onto the real `projectVersions` table. Remove this
-    // `.skip()` and write the real steps once #1233 lands.
+  test.skip("quote from a non-live version — blocked on the UI surface to target a non-live version when sending (backend done, #1233)", async () => {
+    // Intentionally not implemented — the BACKEND capability this spec
+    // exercises now exists (see the docstring above and
+    // `convex/quotesWrites.test.ts`'s Phase 6 describe block for the
+    // Convex-level proof), but there is no UI path yet to choose a
+    // non-live version when sending a quote. Remove this `.skip()` and
+    // write the real click-through steps once that UI surface lands.
   });
 });

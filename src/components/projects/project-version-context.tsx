@@ -56,6 +56,18 @@ export interface ProjectVersionContextValue {
    *  or whenever `isViewingVersion` is false. */
   viewingPlanFields: Record<string, unknown> | null;
   isLoadingViewingVersion: boolean;
+  /** #1233 (Phase 6) — the viewed version's DRIFT signal against its own
+   *  sent quote (`convex/versionsRead.ts`'s `quoteDriftForVersion`): null
+   *  while loading, while not viewing a non-live version, or when that
+   *  version has never had a quote sent. Feeds `VersionStrip`'s drift line. */
+  viewingQuoteDrift: {
+    quoteId: string;
+    quoteLabel: string;
+    quoteStatus: string;
+    sentTotal: number;
+    currentTotal: number;
+    driftAmount: number;
+  } | null;
   /** Updates `?v=` (preserving every other param); `null` switches back to live. */
   setViewingNumber: (number: number | null) => void;
 }
@@ -123,6 +135,16 @@ export function useProjectVersionState(projectId: string, orgId: string | undefi
     return (viewingRaw.planFields as Record<string, unknown>) ?? null;
   }, [fetchViewing, viewingRaw]);
 
+  // #1233 (Phase 6) — same gating as the plan-fields fetch above: only while
+  // actually viewing a non-live version. `now` is omitted (the query
+  // defaults to its own `Date.now()`) rather than passed from the client, so
+  // this doesn't re-subscribe with a new arg on every render.
+  const driftRaw = useAuthedQuery(
+    api.versionsRead.quoteDriftForVersion,
+    versionQueryArgs(orgId, projectId, fetchViewing, viewingVersion?.id),
+  );
+  const viewingQuoteDrift = fetchViewing ? (driftRaw ?? null) : null;
+
   const setViewingNumber = useCallback(
     (number: number | null) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -145,6 +167,7 @@ export function useProjectVersionState(projectId: string, orgId: string | undefi
     viewingVersion,
     viewingPlanFields,
     isLoadingViewingVersion,
+    viewingQuoteDrift,
     setViewingNumber,
   };
 }

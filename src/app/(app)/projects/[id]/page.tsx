@@ -585,6 +585,7 @@ export default function ProjectDetailPage({
               onBackToLive={() => versionState.setViewingNumber(null)}
               lockStatus={pricingLock}
               onUnlock={pricingLock.unlock}
+              quoteDrift={versionState.viewingQuoteDrift}
             />
           )}
 

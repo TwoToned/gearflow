@@ -56043,6 +56043,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "versionsRead.quoteDriftForVersion",
+    "module": "versionsRead",
+    "fn": "quoteDriftForVersion",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a60e189634e2093e",
+    "returnsSha": "d871719a1f0fcdb3",
+    "stability": "tracks-app",
+    "summary": "Compare a version's sent-quote total against its current live-computed total (drift signal, no Compare-mode diff).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "warehouseCloses.closeOutIfNotClosed",
     "module": "warehouseCloses",
     "fn": "closeOutIfNotClosed",
@@ -61438,10 +61485,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1191,
-  agentReachable: 570,
-  queries: 425,
+  total: 1192,
+  agentReachable: 571,
+  queries: 426,
   mutations: 766,
-  agentReachableQueries: 294,
+  agentReachableQueries: 295,
   agentReachableMutations: 276,
 } as const;

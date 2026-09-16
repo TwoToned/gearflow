@@ -23,6 +23,7 @@ function bundleLineItem(p: {
   status?: string;
   subHireId?: string | null;
   isOptional?: boolean;
+  type?: string;
 }) {
   return {
     id: p.id,
@@ -33,6 +34,7 @@ function bundleLineItem(p: {
     status: p.status ?? "QUOTED",
     subHireId: p.subHireId ?? null,
     isOptional: p.isOptional ?? false,
+    type: p.type ?? "EQUIPMENT",
   };
 }
 
@@ -106,6 +108,29 @@ describe("reconstructOverbookedStatus", () => {
     ];
     const map = reconstructOverbookedStatus(makeBundle({}), items, WINDOW_START, WINDOW_END, THIS_PROJECT);
     expect(map.size).toBe(0);
+  });
+
+  it("a SALE (NEW_STOCK) line never counts as rental demand (WS11 #950)", () => {
+    // 2 serialized assets, this project has 1 rental line (1 unit — no overage
+    // on its own) PLUS a SALE/NEW_STOCK line for the same model. The sale line
+    // draws from Model.saleStockQuantity, not the rental pool, so it must not
+    // inflate demand against the rental assets and produce a phantom overbook.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 1, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+      { id: "li2", modelId: "m1", quantity: 5, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED", type: "SALE" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime() })],
+      lineItems: [
+        bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 1 }),
+        bundleLineItem({ id: "li2", projectId: THIS_PROJECT, modelId: "m1", quantity: 5, type: "SALE" }),
+      ],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.size).toBe(0);
+    expect(map.get("li2")).toBeUndefined();
   });
 
   it("flags a model overbooked when this project books more than effective stock", () => {

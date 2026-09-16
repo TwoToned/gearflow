@@ -108,35 +108,66 @@ pnpm exec prisma generate
 
 After this, `pnpm dev`, `pnpm test`, and `pnpm build` will all work.
 
-### Convex Dev in Worktrees
+### Convex in Worktrees & agent sessions
 
 **Always use `pnpm exec convex` — never `npx convex`**, which runs a global CLI
 copy that can't resolve `convex/server` from local `node_modules`, causing an
 esbuild failure. `pnpm exec convex` uses the locally installed version.
 
-**When Claude Code edits `convex/*.ts` files**, push the changes immediately after:
+**Default: do NOT push. Editing `convex/*.ts` needs no deployment.** The test
+suite runs Convex functions in-memory (`convex-test`, 164 files) and
+`convex/_generated/` is committed, so lint, typecheck, `pnpm build` and
+`pnpm test` all pass with no Convex credentials at all — which is exactly what
+`ci.yml` does (`NEXT_PUBLIC_CONVEX_URL: https://dummy-e2e.convex.cloud`).
+Verify a Convex change with `pnpm test`, not by pushing it somewhere.
+
+This matters most when several agent sessions / worktrees run at once: a push is
+shared mutable state. `convex dev --once` targets the **shared dev deployment**
+that the PR previews run against, so two branches pushing divergent schemas
+race, last write wins, and one session's half-finished schema breaks the
+previews and every other session. Never wire a Convex push into an automatic
+post-edit step.
+
+**Adding a new `convex/*.ts` module** is the one case that touches `_generated/`,
+and `convex codegen` refuses to run without a configured deployment
+(`✖ No CONVEX_DEPLOYMENT set`). Hand-edit `convex/_generated/api.d.ts` instead —
+a new module is exactly two mechanical lines (`import type * as x from "../x.js";`
+and `x: typeof x;` in the `fullApi` map). Editing functions *inside* an existing
+module changes nothing generated.
+
+**When you genuinely need a live backend** (running the app, clicking through a
+flow), take your own preview deployment — never the shared dev one:
+
 ```bash
-pnpm exec convex dev --once
+pnpm exec convex deploy --preview-name "$(git rev-parse --abbrev-ref HEAD)"
 ```
-This is a one-shot push to the shared dev deployment — no watcher, no URL rewriting.
-Run it automatically after any Convex function change. `CONVEX_DEPLOY_KEY` must be
-in `.env`.
 
-**When a human dev wants a live watcher**, use a named preview deployment to avoid
-conflicting with other worktrees or the shared dev deployment:
+Branch names are unique per worktree, so each session gets its own isolated
+deployment; re-running reuses it rather than recreating it. To build against it
+in one shot:
 
 ```bash
-# Start Convex watcher for this branch (creates/reuses a preview deployment)
-pnpm exec convex dev --preview-run $(git rev-parse --abbrev-ref HEAD)
+pnpm exec convex deploy --preview-name "$(git rev-parse --abbrev-ref HEAD)" \
+  --cmd-url-env-var-name NEXT_PUBLIC_CONVEX_URL --cmd 'pnpm build'
 ```
 
-This writes the preview deployment URL to `.env.local` as `NEXT_PUBLIC_CONVEX_URL`,
-which the dev server picks up automatically. Run it in a separate terminal alongside
-`pnpm dev`. The preview deployment name must not contain `/` — for worktree branches
-like `feature/my-thing`, the branch name works fine as-is (Convex URL-encodes it).
+`CONVEX_DEPLOY_KEY` must be a **preview** deploy key (Convex dashboard → Project
+Settings → Deploy keys → Preview). A preview key is structurally incapable of
+writing to prod or the shared dev deployment — the CLI rejects it — which is the
+real guarantee when unattended sessions share one credential. Do **not** set
+`CONVEX_DEPLOYMENT`: it pins every session to a single deployment and re-creates
+the collision a preview key exists to prevent.
 
-`CONVEX_DEPLOY_KEY` must be set in `.env` or `.env.local` pointing to your Convex
-Cloud project deploy key.
+Three things that are easy to get wrong:
+- `convex dev` has **no** preview flags. `--preview-run` is a *seed function
+  name* on `convex deploy`, not a deployment name; the name flags are
+  `--preview-name` / `--preview-create`.
+- Preview deployments start with **no environment variables**. Set
+  `CONVEX_AUTH_ISSUER` / `CONVEX_AUTH_JWKS_URL` as project-level defaults in the
+  dashboard, or auth is dead on every preview (`convex/auth.config.ts` reads them
+  at push time).
+- Previews auto-delete 5 days after creation (14 on paid plans) and count toward
+  the team's deployment limit — relevant if you keep many worktrees alive.
 
 ### DB Setup (first time)
 ```bash

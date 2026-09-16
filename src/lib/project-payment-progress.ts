@@ -21,10 +21,13 @@
  * consumer share one definition.
  */
 
-/** A step is `done` (it happened), `current` (what we're waiting on) or `pending`. */
-export type PaymentStepState = "done" | "current" | "pending";
+/** A step is `done` (it happened), `current` (what we're waiting on) or `pending`.
+ *  Module-local on purpose: consumers reach them through `PaymentStep` (e.g.
+ *  `PaymentStep["state"]`, which is what `<PaymentProgressStrip>` uses), so
+ *  exporting them as well would be two names for one thing and a dead export. */
+type PaymentStepState = "done" | "current" | "pending";
 
-export type PaymentStepKey = "accepted" | "invoiced" | "paid";
+type PaymentStepKey = "accepted" | "invoiced" | "paid";
 
 export interface PaymentStep {
   key: PaymentStepKey;

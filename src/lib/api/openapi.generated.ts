@@ -5133,9 +5133,6 @@ export const OPENAPI_DOCUMENT = {
                       "groupId": {
                         "type": "string"
                       },
-                      "justification": {
-                        "type": "string"
-                      },
                       "slotId": {
                         "type": "string"
                       }
@@ -5214,9 +5211,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "categoryId": {},
                       "groupId": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       },
                       "slotId": {
@@ -5300,9 +5294,6 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "items": {
                         "type": "array"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -10472,9 +10463,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "ids": {
                         "type": "array"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -10552,9 +10540,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "ids": {
                         "type": "array"
-                      },
-                      "justification": {
-                        "type": "string"
                       },
                       "status": {}
                     },
@@ -10757,9 +10742,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "id": {
                         "type": "string"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -10836,9 +10818,6 @@ export const OPENAPI_DOCUMENT = {
                     "type": "object",
                     "properties": {
                       "assignmentId": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       }
                     },
@@ -10938,9 +10917,6 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "isProjectManager": {
                         "type": "boolean"
-                      },
-                      "justification": {
-                        "type": "string"
                       },
                       "notes": {
                         "type": "string"
@@ -19665,9 +19641,6 @@ export const OPENAPI_DOCUMENT = {
                       "fields": {
                         "type": "object"
                       },
-                      "justification": {
-                        "type": "string"
-                      },
                       "orgDefaultTaxRate": {},
                       "projectId": {
                         "type": "string"
@@ -19761,9 +19734,6 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "groupName": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       },
                       "kitId": {
@@ -19874,9 +19844,6 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "includeAccessories": {
                         "type": "boolean"
-                      },
-                      "justification": {
-                        "type": "string"
                       },
                       "orgDefaultTaxRate": {},
                       "projectId": {
@@ -20056,9 +20023,6 @@ export const OPENAPI_DOCUMENT = {
                       "ids": {
                         "type": "array"
                       },
-                      "justification": {
-                        "type": "string"
-                      },
                       "patch": {
                         "type": "object"
                       }
@@ -20150,9 +20114,6 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "id": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       },
                       "orgDefaultTaxRate": {},
@@ -20392,9 +20353,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "ids": {
                         "type": "array"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -20476,9 +20434,6 @@ export const OPENAPI_DOCUMENT = {
                       "id": {
                         "type": "string"
                       },
-                      "justification": {
-                        "type": "string"
-                      },
                       "orgDefaultTaxRate": {}
                     },
                     "required": [
@@ -20556,9 +20511,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "items": {
                         "type": "array"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -25977,9 +25929,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "name": {
                         "type": "string"
                       },
@@ -26063,9 +26012,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "id": {
                         "type": "string"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -26141,9 +26087,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "orderedIds": {
                         "type": "array"
                       }
@@ -26222,9 +26165,6 @@ export const OPENAPI_DOCUMENT = {
                     "type": "object",
                     "properties": {
                       "id": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       },
                       "name": {
@@ -26674,9 +26614,6 @@ export const OPENAPI_DOCUMENT = {
                         "type": "number"
                       },
                       "discountMode": {},
-                      "justification": {
-                        "type": "string"
-                      },
                       "price": {
                         "type": "number"
                       },
@@ -26766,9 +26703,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "id": {
                         "type": "string"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -26844,9 +26778,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "lineItemId": {
                         "type": "string"
                       },
@@ -26928,9 +26859,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "lineItemIds": {
                         "type": "array"
                       },
@@ -27012,9 +26940,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "orderedIds": {
                         "type": "array"
                       }
@@ -27096,9 +27021,6 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "id": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       },
                       "quantity": {
@@ -28969,6 +28891,160 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/projectPricingLockWrites.lockPricingNative": {
+      "post": {
+        "operationId": "projectPricingLockWrites.lockPricingNative",
+        "summary": "projectPricingLockWrites.lockPricingNative (mutation)",
+        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectPricingLockWrites.unlockPricingNative": {
+      "post": {
+        "operationId": "projectPricingLockWrites.unlockPricingNative",
+        "summary": "projectPricingLockWrites.unlockPricingNative (mutation)",
+        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/projectReadiness.forProject": {
       "post": {
         "operationId": "projectReadiness.forProject",
@@ -29266,9 +29342,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "ids": {
                         "type": "array"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -29347,9 +29420,6 @@ export const OPENAPI_DOCUMENT = {
                       "ids": {
                         "type": "array"
                       },
-                      "justification": {
-                        "type": "string"
-                      },
                       "status": {}
                     },
                     "required": [
@@ -29426,9 +29496,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "sourceProjectId": {
                         "type": "string"
                       },
@@ -29510,9 +29577,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "lineItemId": {
                         "type": "string"
                       },
@@ -29632,9 +29696,6 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "estimatedDuration": {
                         "type": "number"
-                      },
-                      "justification": {
-                        "type": "string"
                       },
                       "latitude": {
                         "type": "number"
@@ -29868,9 +29929,6 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "id": {
                         "type": "string"
-                      },
-                      "justification": {
-                        "type": "string"
                       }
                     },
                     "required": [
@@ -30023,9 +30081,6 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
                       "projectId": {
                         "type": "string"
                       }
@@ -30143,9 +30198,6 @@ export const OPENAPI_DOCUMENT = {
                         "type": "number"
                       },
                       "id": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       },
                       "latitude": {
@@ -31186,246 +31238,6 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
-    "/api/v1/ops/projectUnlockSessionsWrites.commitNative": {
-      "post": {
-        "operationId": "projectUnlockSessionsWrites.commitNative",
-        "summary": "projectUnlockSessionsWrites.commitNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
-        "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "args": {
-                    "type": "object",
-                    "properties": {
-                      "note": {
-                        "type": "string"
-                      },
-                      "projectId": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "projectId"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "idempotencyKey": {
-                    "type": "string",
-                    "minLength": 8,
-                    "maxLength": 200,
-                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
-                  }
-                },
-                "required": [
-                  "args",
-                  "idempotencyKey"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success (read, or a replayed write).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Success (a write took effect).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/ops/projectUnlockSessionsWrites.discardNative": {
-      "post": {
-        "operationId": "projectUnlockSessionsWrites.discardNative",
-        "summary": "projectUnlockSessionsWrites.discardNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
-        "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "args": {
-                    "type": "object",
-                    "properties": {
-                      "projectId": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "projectId"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "idempotencyKey": {
-                    "type": "string",
-                    "minLength": 8,
-                    "maxLength": 200,
-                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
-                  }
-                },
-                "required": [
-                  "args",
-                  "idempotencyKey"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success (read, or a replayed write).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Success (a write took effect).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/ops/projectUnlockSessionsWrites.openNative": {
-      "post": {
-        "operationId": "projectUnlockSessionsWrites.openNative",
-        "summary": "projectUnlockSessionsWrites.openNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
-        "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "args": {
-                    "type": "object",
-                    "properties": {
-                      "justification": {
-                        "type": "string"
-                      },
-                      "projectId": {
-                        "type": "string"
-                      },
-                      "scope": {}
-                    },
-                    "required": [
-                      "justification",
-                      "projectId",
-                      "scope"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "idempotencyKey": {
-                    "type": "string",
-                    "minLength": 8,
-                    "maxLength": 200,
-                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
-                  }
-                },
-                "required": [
-                  "args",
-                  "idempotencyKey"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success (read, or a replayed write).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Success (a write took effect).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/ops/projectVersionsEquipment.bundle": {
       "post": {
         "operationId": "projectVersionsEquipment.bundle",
@@ -32393,9 +32205,6 @@ export const OPENAPI_DOCUMENT = {
                         "type": "boolean"
                       },
                       "id": {
-                        "type": "string"
-                      },
-                      "justification": {
                         "type": "string"
                       },
                       "status": {}
@@ -33464,83 +33273,6 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "label": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "id"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "idempotencyKey": {
-                    "type": "string",
-                    "minLength": 8,
-                    "maxLength": 200,
-                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
-                  }
-                },
-                "required": [
-                  "args",
-                  "idempotencyKey"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success (read, or a replayed write).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Success (a write took effect).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/ops/quotesWrites.unacceptNative": {
-      "post": {
-        "operationId": "quotesWrites.unacceptNative",
-        "summary": "quotesWrites.unacceptNative (mutation)",
-        "description": "Requires scope: invoice:publish. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
-        "x-stability": "tracks-app",
-        "tags": [
-          "invoice"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "args": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
                         "type": "string"
                       }
                     },

@@ -10,7 +10,7 @@ import * as enums from "./lib/validators";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { maybeAutoAdvanceProjectStatus, revertAutoAdvanceByTrigger } from "./lib/projectAutoStatus";
+import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus, revertAutoAdvanceByTrigger } from "./lib/projectAutoStatus";
 
 /**
  * Payment write mutations (#1055) — browser-direct, standard 4-guard shape,
@@ -149,9 +149,11 @@ export const recordNative = mutation({
     // credit is a refund going OUT, never the client's payment coming in.
     const autoStatus =
       paymentStatus === "PAID" && invoice.kind !== "CREDIT"
-        ? await maybeAutoAdvanceProjectStatus(ctx, {
-            orgId, projectId: invoice.projectId, trigger: "PAYMENT_SETTLED", actor, now,
-          })
+        ? autoAdvanceStatus(
+            await maybeAutoAdvanceProjectStatus(ctx, {
+              orgId, projectId: invoice.projectId, trigger: "PAYMENT_SETTLED", actor, now,
+            }),
+          )
         : null;
 
     return { id, autoStatus };

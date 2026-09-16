@@ -94,7 +94,14 @@ async function optOut(t: T, key: string) {
   });
 }
 
+/** Returns just the new status (or null), for the bulk of tests below that only
+ *  care whether/where the job moved. `advanceRaw` (below) exposes the full
+ *  `{status, auditId}` shape for the #1222 audit-id tests. */
 function advance(t: T, trigger: AutoStatusTrigger, orgId = ORG) {
+  return advanceRaw(t, trigger, orgId).then((r) => r?.status ?? null);
+}
+
+function advanceRaw(t: T, trigger: AutoStatusTrigger, orgId = ORG) {
   return t.run((ctx) =>
     maybeAutoAdvanceProjectStatus(ctx, { orgId, projectId: PROJ, trigger, actor: ACTOR, now: NOW }),
   );
@@ -230,6 +237,20 @@ describe("QUOTE_SENT", () => {
     expect(log?.metadata).toMatchObject({ autoAdvanceTrigger: "QUOTE_SENT", statusFrom: "ENQUIRY", statusTo: "QUOTED" });
     expect(log?.userName).toBe("Ash");
     expect(log?.summary).toContain("Auto-advanced to QUOTED");
+  });
+
+  // #1222 — the Undo toast hands this id straight back to revertAutoAdvanceByAuditId,
+  // so it has to be the id of the SAME row the trigger wrote, not a fresh one.
+  test("returns the auditId of the STATUS_CHANGE row it wrote", async () => {
+    const t = makeT();
+    await seedProject(t, "ENQUIRY");
+    const result = await advanceRaw(t, "QUOTE_SENT");
+    expect(result?.status).toBe("QUOTED");
+    expect(typeof result?.auditId).toBe("string");
+    const log = await t.run(async (ctx) =>
+      (await ctx.db.query("activityLogs").collect()).find((r) => r.action === "STATUS_CHANGE"),
+    );
+    expect(log?.id).toBe(result?.auditId);
   });
 });
 

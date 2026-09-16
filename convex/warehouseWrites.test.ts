@@ -66,6 +66,8 @@ const kitById = (t: T, id: string) =>
   t.run(async (ctx) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique());
 const logById = (t: T, id: string) =>
   t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first());
+const projectById = (t: T, id = "p1") =>
+  t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 
 async function seedModelAsset(t: T, orgId = ORG, status: "CHECKED_OUT" | "AVAILABLE" | "IN_MAINTENANCE" | "RETIRED" | "LOST" | "RESERVED" | "SOLD" = "CHECKED_OUT") {
   await t.run(async (ctx) => {
@@ -866,6 +868,87 @@ describe("checkOutItems", () => {
   });
 });
 
+// ─── revertAutoAdvanceAuditId — #1222 warehouse Undo wiring ─────────────────
+describe("revertAutoAdvanceAuditId (#1222)", () => {
+  async function seedAndDeploy(t: T) {
+    await member(t, "member");
+    await seedProject(t); // status: CONFIRMED
+    await seedModelAsset(t, ORG, "AVAILABLE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("li1", { modelId: "m1", assetId: "a1", status: "CONFIRMED" }));
+    });
+    // The only EQUIPMENT line, fully deployed → trips ALL_CHECKED_OUT.
+    return t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+      orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+      includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+    });
+  }
+
+  test("restores the prior status when the audit id matches the move it recorded", async () => {
+    const t = makeT();
+    const forward = await seedAndDeploy(t);
+    expect(forward.autoStatus).toBe("CHECKED_OUT");
+    expect(typeof forward.autoStatusAuditId).toBe("string");
+    expect((await projectById(t))?.status).toBe("CHECKED_OUT");
+
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.undeployItems, {
+      orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+      auditIds: ["log2"], revertAutoAdvanceAuditId: forward.autoStatusAuditId!, now: NOW + 1, actor: SPOOF,
+    });
+    expect(res.updatedLineIds).toEqual(["li1"]);
+    expect((await projectById(t))?.status).toBe("CONFIRMED");
+  });
+
+  test("a foreign-org audit id is rejected — the write still applies, status is untouched", async () => {
+    const t = makeT();
+    const forward = await seedAndDeploy(t);
+    expect((await projectById(t))?.status).toBe("CHECKED_OUT");
+
+    // An activityLogs row that exists, but in a DIFFERENT org.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("activityLogs", {
+        id: "log-foreign", organizationId: OTHER, action: "STATUS_CHANGE", entityType: "project",
+        entityId: "p1", entityName: "P-p1", userName: "Ash", summary: "n/a", projectId: "p1",
+        metadata: { autoAdvanceTrigger: "ALL_CHECKED_OUT", statusFrom: "CONFIRMED", statusTo: "CHECKED_OUT" },
+        createdAt: NOW,
+      });
+    });
+
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.undeployItems, {
+      orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+      auditIds: ["log2"], revertAutoAdvanceAuditId: "log-foreign", now: NOW + 1, actor: SPOOF,
+    });
+    // The gear move (the actual undeploy) still applies …
+    expect(res.updatedLineIds).toEqual(["li1"]);
+    expect((await assetById(t, "a1"))?.status).toBe("AVAILABLE");
+    // … but the org-mismatched audit id never touched the project's status.
+    expect((await projectById(t))?.status).toBe("CHECKED_OUT");
+    void forward;
+  });
+
+  test("an audit id whose project has since moved on is a no-op — the write still applies", async () => {
+    const t = makeT();
+    const forward = await seedAndDeploy(t);
+    expect((await projectById(t))?.status).toBe("CHECKED_OUT");
+
+    // The project moved on since the deploy (e.g. a manual status change) — the
+    // revert must refuse rather than stamp an older value over a later decision.
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { status: "RETURNED" });
+    });
+
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.undeployItems, {
+      orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+      auditIds: ["log2"], revertAutoAdvanceAuditId: forward.autoStatusAuditId!, now: NOW + 1, actor: SPOOF,
+    });
+    expect(res.updatedLineIds).toEqual(["li1"]);
+    expect((await assetById(t, "a1"))?.status).toBe("AVAILABLE");
+    // Status is untouched — "moved on" wins, not the older recorded value.
+    expect((await projectById(t))?.status).toBe("RETURNED");
+  });
+});
+
 // ─── logAccessoryCheckoutOverride (issue #794 follow-up) ────────────────────────
 describe("logAccessoryCheckoutOverride", () => {
   async function seed(t: T) {
@@ -1041,7 +1124,7 @@ describe("checkOutKitsBatch", () => {
     const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKitsBatch, {
       orgId: ORG, projectId: "p1", kitIds: [], auditIds: [], now: NOW, actor: SPOOF,
     });
-    expect(res).toEqual({ succeeded: [], errors: [], autoStatus: null });
+    expect(res).toEqual({ succeeded: [], errors: [], autoStatus: null, autoStatusAuditId: null });
   });
 
   test("viewer denied", async () => {

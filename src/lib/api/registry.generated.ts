@@ -59345,10 +59345,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c7168ad1deb622dd",
+    "argsSha": "7afb31f2aff479c7",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59459,10 +59464,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d683cd6c97b0cbef",
+    "argsSha": "19a7acb1baa01cae",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59573,10 +59583,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c7168ad1deb622dd",
+    "argsSha": "7afb31f2aff479c7",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59687,10 +59702,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d683cd6c97b0cbef",
+    "argsSha": "19a7acb1baa01cae",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

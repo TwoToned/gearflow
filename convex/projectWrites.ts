@@ -18,20 +18,13 @@ import { getKitByCuid } from "./lib/kits";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 import {
-  assertLifecycleGuard,
+  assertPricingUnlocked,
   crossesIntoSnapshotStatus,
-  getOpenUnlockSession,
-  isRevertOutOfHardLock,
-  lifecycleAuditMetadata,
   LOCKED_PROJECT_FIELDS,
-  lockTierForStatus,
-  LOCK_TIER_RANK,
-  requireHardLockOverrideAllowed,
-  requireJustification,
+  requireCanUnlockPricing,
 } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { hasAcceptedQuote } from "./lib/quoteState";
-import { autoCommitOpenSession } from "./projectUnlockSessionsWrites";
 
 /** Forward status transitions that a project's open BLOCKING comments must gate
  *  (parity with src/server/projects.ts BLOCKED_FORWARD_PROJECT_STATUSES). */
@@ -132,13 +125,9 @@ export const updateStatusNative = mutation({
     // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
     // Expand-contract (mirrors convex/lineItemWrites.ts).
     emitSideEffects: v.optional(v.boolean()),
-    // #792: required only when this move REVERTS the project OUT of the
-    // HARD_LOCKED tier (COMPLETED/INVOICED → anything earlier) — audience +
-    // justification checked below. Ignored for every other transition.
-    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
@@ -159,51 +148,25 @@ export const updateStatusNative = mutation({
       await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
     }
 
-    // #792: reverting OUT of HARD_LOCKED (COMPLETED/INVOICED → earlier) is a
-    // trivial bypass of the hard lock unless restricted the same as opening a
-    // FULL unlock session — audience (admin/owner/PM) + a bounded justification,
-    // audited. COMPLETED → INVOICED stays HARD_LOCKED on both ends and is NOT a
-    // revert (normal forward move, ungated here).
-    //
-    // Unified with the unlock-session mechanism (not a second lock system): an
-    // OPEN FULL session already satisfies the SAME "deliberately correcting a
-    // hard-locked project" intent this check exists for — `assertLifecycleGuard`
-    // grants the identical escape for every other HARD_LOCKED write, so this is
-    // the one outlier that used to demand a brand-new justification even while a
-    // FULL session sat open. A FINANCIAL session does NOT count here, matching
-    // `assertLifecycleGuard`'s own FULL-only rule for HARD_LOCKED. No session
-    // (or a FINANCIAL one) still requires the caller's own justification, same
-    // as before.
-    let revertJustification: string | undefined;
-    if (from !== status && isRevertOutOfHardLock(from, status)) {
-      await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
-      const openSession = await getOpenUnlockSession(ctx, orgId, id);
-      if (openSession?.scope === "FULL") {
-        revertJustification = openSession.justification;
-      } else {
-        requireJustification(
-          justification,
-          "Reverting a completed project's status requires a justification (at least 10 characters).",
-        );
-        revertJustification = justification?.trim();
-      }
-    }
+    // #1230: the HARD_LOCKED tier (and its revert-out-of gate) is deleted along
+    // with the rest of the 4-tier lock system — #987 already made a client's
+    // stored document immutable regardless of project status, so a status
+    // revert out of COMPLETED/INVOICED needs no separate protection. A status
+    // change is always structural — never gated.
 
     // #986 (decision 3): a project may not advance to CONFIRMED until a quote
     // revision has been ACCEPTED — confirming a job the client never agreed to
-    // price is the failure the whole revision model exists to prevent. Overridable
-    // by the SAME narrow audience that can open a full unlock session (org
-    // admins/owners + this project's PMs) with the SAME bounded justification, so
-    // there is no new permission and no second copy of the bounds (R-3.1).
+    // price is the failure the whole revision model exists to prevent.
+    // Overridable by `canUnlockPricing`'s audience (D42 — owner/admin/manager,
+    // or this project's own PM). #1230 drops the freeform justification text
+    // this override used to require — `logActivity` already records who/what/
+    // when on every write, so a permission check is the whole gate now.
     // Deliberately only on an actual transition INTO CONFIRMED: re-saving a
     // project that is already CONFIRMED never re-prompts, and a later revision
     // superseding the accepted one doesn't retroactively invalidate the status.
-    if (from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now))) {
-      await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
-      requireJustification(
-        justification,
-        "This project has no accepted quote. Confirming anyway requires a justification (at least 10 characters).",
-      );
+    const confirmingWithoutQuote = from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now));
+    if (confirmingWithoutQuote) {
+      await requireCanUnlockPricing(ctx, orgId, id, actor.userId);
     }
 
     await ctx.db.patch(project._id, { status, updatedAt: now });
@@ -228,28 +191,21 @@ export const updateStatusNative = mutation({
       }
     }
 
-    // #957 precedence: "a forward status transition auto-commits any open
-    // session with an audit note — a session never silently spans a status
-    // change." Applied on every actual status change, not only forward ones,
-    // so a revert can't leave a stale session straddling two tiers either.
-    if (from !== status) {
-      await autoCommitOpenSession(ctx, orgId, id, project.projectNumber, actor, now);
+    // The whole rule (#1230, D-table): pricing locks when the project REACHES
+    // CONFIRMED. Idempotent (never re-stamps an already-locked project) and
+    // one-directional — a later revert (CONFIRMED -> QUOTING) deliberately
+    // does NOT clear it (D57): "this job has a quote out" stays true; only a
+    // person lowers the flag, via `unlockPricingNative`.
+    let pricingJustLocked = false;
+    if (from !== status && status === "CONFIRMED" && project.pricingLocked !== true) {
+      await ctx.db.patch(project._id, {
+        pricingLocked: true,
+        pricingLockedAt: now,
+        pricingLockedById: actor.userId,
+        pricingLockedByName: actor.userName,
+      });
+      pricingJustLocked = true;
     }
-
-    // Locking itself has no dedicated status-change verb (unlocking does — see
-    // the explicit UNLOCK_OPENED/COMMITTED/DISCARDED actions in
-    // projectUnlockSessionsWrites.ts) — a status move can cross a lock-tier
-    // boundary in either direction, so stamp that onto THIS row rather than
-    // inventing a second action a caller would have to also watch for.
-    const fromTier = lockTierForStatus(from);
-    const toTier = lockTierForStatus(status);
-    const tierDelta = LOCK_TIER_RANK[toTier] - LOCK_TIER_RANK[fromTier];
-    const lockTierSuffix =
-      tierDelta > 0
-        ? ` — project locked (${toTier})`
-        : tierDelta < 0
-          ? ` — project unlocked (${toTier})`
-          : "";
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -260,21 +216,9 @@ export const updateStatusNative = mutation({
       entityName: project.projectNumber,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${lockTierSuffix}`,
+      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${pricingJustLocked ? " — pricing locked" : ""}`,
       details: { changes: [{ field: "status", from, to: status }] },
-      metadata: {
-        ...(tierDelta !== 0 ? { lockTierFrom: fromTier, lockTierTo: toTier } : {}),
-        ...(revertJustification
-          ? {
-              justification: revertJustification,
-              // Distinguishes "typed a fresh reason" from "an already-open FULL
-              // unlock session covered it" in the audit trail (#792 unification).
-              justificationSource: justification?.trim() ? "manual" : "unlock_session",
-            }
-          : justification?.trim()
-            ? { justification: justification.trim() } // CONFIRMED-without-quote gate path, unchanged
-            : {}),
-      },
+      metadata: pricingJustLocked ? { pricingLocked: true } : undefined,
       projectId: id,
       createdAt: now,
     });
@@ -523,10 +467,11 @@ export const updateNative = mutation({
     // no client-renumbered revisions, no in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
 
-    // #791/#792 finance soft-lock: setting or clearing a locked project field
-    // on a FINANCE_LOCKED+ project requires an open unlock session.
+    // #1230: setting or clearing a locked project field (taxRate/discountPercent)
+    // is a MONEY write, gated by `pricingLocked` — the project row itself is
+    // always "live" (no versionId concept on `projects`).
     const touchesLockedField = LOCKED_PROJECT_FIELDS.some((f) => f in setObj || clear.includes(f));
-    const lockGuard = touchesLockedField ? await assertLifecycleGuard(ctx, project, { kind: "financial" }) : null;
+    if (touchesLockedField) assertPricingUnlocked(project);
 
     // Bound-check the recalc-INPUT money fields — `set` is v.any() (Convex only
     // enforces "is a number", not range/finiteness), and a browser-direct caller
@@ -619,7 +564,6 @@ export const updateNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Updated project ${project.projectNumber} - ${name}`,
-      metadata: lockGuard ? lifecycleAuditMetadata(lockGuard) : undefined,
       projectId: id,
       createdAt: now,
     });
@@ -993,9 +937,10 @@ export const deleteNative = mutation({
     ).filter((r) => r.organizationId === orgId);
     for (const r of rollups) await ctx.db.delete(r._id);
 
-    // Step 9 — #792: lifecycle snapshots + entries + unlock sessions (no FK to
-    // cascade automatically — extend this list, don't forget it, the way
-    // projectModelRevenues above was once missed).
+    // Step 9 — #792: lifecycle snapshots + entries (no FK to cascade
+    // automatically — extend this list, don't forget it, the way
+    // projectModelRevenues above was once missed). #1230 deleted the
+    // `projectUnlockSessions` table entirely — nothing left to cascade there.
     const snapshots = (
       await ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((s) => s.organizationId === orgId);
@@ -1006,10 +951,6 @@ export const deleteNative = mutation({
       for (const e of entries) await ctx.db.delete(e._id);
       await ctx.db.delete(snap._id);
     }
-    const unlockSessions = (
-      await ctx.db.query("projectUnlockSessions").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((s) => s.organizationId === orgId);
-    for (const s of unlockSessions) await ctx.db.delete(s._id);
 
     // Finally — project row + active-project counter + DELETE audit.
     await bumpProjectCounters(ctx, orgId, project, null);

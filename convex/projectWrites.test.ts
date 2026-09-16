@@ -144,10 +144,10 @@ describe("projectWrites.updateStatusNative", () => {
 });
 
 // #986 (decision 3) — a project may not advance to CONFIRMED until a quote
-// revision has been ACCEPTED. Overridable by the SAME narrow audience that can
-// open a full unlock session (org admins/owners + this project's PMs) with the
-// SAME bounded justification as #792/#793 — no new permission, no second copy of
-// the bounds (R-3.1).
+// revision has been ACCEPTED. Overridable by `canUnlockPricing`'s audience
+// (org admins/owners/managers + this project's PMs) — #1230 drops the
+// freeform justification text this override used to require; a permission
+// check plus the standard STATUS_CHANGE audit row is the whole gate now.
 describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#986)", () => {
   const toConfirmed = { id: "p1", orgId: ORG, status: "CONFIRMED" as const, actor: ACTOR, auditId: "log1", now: NOW };
 
@@ -162,10 +162,10 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
 
   test("blocks the move when no quote revision has been accepted", async () => {
     const t = makeT();
-    await seedProject(t, "owner", false, "QUOTED");
+    await seedProject(t, "member", false, "QUOTED");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
     expect(p?.status).toBe("QUOTED");
   });
@@ -181,16 +181,16 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
 
   test("a merely SENT (unaccepted) revision does not satisfy the gate", async () => {
     const t = makeT();
-    await seedProject(t, "owner", false, "QUOTED");
+    await seedProject(t, "member", false, "QUOTED");
     await seedAcceptedQuote(t, "SENT");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
   });
 
   test("another org's accepted quote never satisfies the gate (IDOR guard)", async () => {
     const t = makeT();
-    await seedProject(t, "owner", false, "QUOTED");
+    await seedProject(t, "member", false, "QUOTED");
     await t.run(async (ctx) => {
       // Same projectId, different org — `by_projectId` is a GLOBAL index.
       await ctx.db.insert("quotes", {
@@ -199,41 +199,29 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
   });
 
-  test("an admin/owner overrides with a bounded justification, which is audited", async () => {
+  test("an admin/owner overrides with no accepted quote — audited, and locks pricing", async () => {
     const t = makeT();
     await seedProject(t, "owner", false, "QUOTED");
 
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, justification: "too short" }),
-    ).rejects.toThrow(/no accepted quote/i);
-
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-      ...toConfirmed,
-      justification: "Client confirmed verbally on site; PO to follow.",
-    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       expect(p?.status).toBe("CONFIRMED");
+      expect(p?.pricingLocked).toBe(true);
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.metadata).toEqual({
-        lockTierFrom: "OPEN",
-        lockTierTo: "FINANCE_LOCKED",
-        justification: "Client confirmed verbally on site; PO to follow.",
-      });
+      expect(log?.summary).toMatch(/pricing locked/i);
+      expect(log?.metadata).toEqual({ pricingLocked: true });
     });
   });
 
-  test("a non-PM member cannot override even with a justification", async () => {
+  test("a non-PM member cannot override", async () => {
     const t = makeT();
     await seedProject(t, "member", false, "QUOTED");
     await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-        ...toConfirmed,
-        justification: "Client confirmed verbally on site; PO to follow.",
-      }),
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
     ).rejects.toThrow(/admins.*owners.*PM/i);
   });
 
@@ -243,10 +231,7 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
     await t.run(async (ctx) => {
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER });
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-      ...toConfirmed,
-      justification: "Client confirmed verbally on site; PO to follow.",
-    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
     const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
     expect(p?.status).toBe("CONFIRMED");
   });
@@ -268,119 +253,49 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
 
   test("RE-crossing into CONFIRMED is gated again (parity with the snapshot re-crossing rule)", async () => {
     const t = makeT();
-    await seedProject(t, "owner");
+    await seedProject(t, "member");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
       ...toConfirmed, status: "PREPPING" as const,
     });
     // Coming back needs the gate — pricing may have moved while it was reverted.
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, auditId: "log2" }),
-    ).rejects.toThrow(/no accepted quote/i);
+    ).rejects.toThrow(/admins\/owners\/managers.*PM/i);
   });
 });
 
-// #792 — reverting a project's status OUT of HARD_LOCKED (COMPLETED/INVOICED →
-// earlier) requires the same admin/owner/PM audience as opening a full unlock
-// session, plus a bounded justification — UNLESS an OPEN FULL unlock session
-// already covers it (unified with `assertLifecycleGuard`'s own escape for every
-// other HARD_LOCKED write, rather than demanding a second, brand-new reason).
-describe("projectWrites.updateStatusNative — hard-lock revert (#792)", () => {
+// #1230: the HARD_LOCKED tier (COMPLETED/INVOICED) and its revert-out-of gate
+// (#792) are deleted along with the rest of the 4-tier lock system — #987
+// already made a client's stored finance document immutable regardless of
+// project status, so a status revert out of COMPLETED/INVOICED needs no
+// separate protection. A status change is always structural — never gated —
+// and it does NOT touch projects.pricingLocked either way (D57: only a
+// person lowers the lock, via unlockPricingNative).
+describe("projectWrites.updateStatusNative — status reverts are ungated (#1230)", () => {
   const revert = { id: "p1", orgId: ORG, status: "QUOTING" as const, actor: ACTOR, auditId: "log1", now: NOW };
 
-  async function seedUnlockSession(
-    t: ReturnType<typeof makeT>,
-    scope: "FINANCIAL" | "FULL",
-    outcome: "OPEN" | "COMMITTED" = "OPEN",
-  ) {
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectUnlockSessions", {
-        id: "sess1", organizationId: ORG, projectId: "p1", scope,
-        justification: "Client requested a correction after the invoice was voided.",
-        openedBy: USER, openedByName: "Alice", openedAt: NOW - 1000,
-        snapshotId: "snap1", outcome,
-        ...(outcome === "COMMITTED" ? { closedAt: NOW - 500, closedBy: USER } : {}),
-      });
-    });
-  }
-
-  test("blocks the revert with no justification and no open session", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
-    ).rejects.toThrow(/justification/i);
-    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
-    expect(p?.status).toBe("INVOICED");
-  });
-
-  test("a non-admin/non-PM member is denied regardless of justification", async () => {
+  test("a member can revert INVOICED -> QUOTING with no justification and no session", async () => {
     const t = makeT();
     await seedProject(t, "member", false, "INVOICED");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-        ...revert,
-        justification: "Client asked us to redo the whole quote from scratch.",
-      }),
-    ).rejects.toThrow(/admins.*owners.*PM/i);
-  });
-
-  test("an admin/owner with a valid typed justification succeeds — audited as manual", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
-      ...revert,
-      justification: "Client asked us to redo the whole quote from scratch.",
-    });
-    await t.run(async (ctx) => {
-      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.status).toBe("QUOTING");
-      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.metadata).toEqual({
-        lockTierFrom: "HARD_LOCKED",
-        lockTierTo: "OPEN",
-        justification: "Client asked us to redo the whole quote from scratch.",
-        justificationSource: "manual",
-      });
-    });
-  });
-
-  test("an OPEN FULL unlock session satisfies the gate with no justification arg — audited as unlock_session", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await seedUnlockSession(t, "FULL");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert);
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("QUOTING");
+  });
+
+  test("reverting does not clear an existing pricingLocked flag (D57)", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "INVOICED");
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
-      expect(p?.status).toBe("QUOTING");
-      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.metadata).toEqual({
-        lockTierFrom: "HARD_LOCKED",
-        lockTierTo: "OPEN",
-        justification: "Client requested a correction after the invoice was voided.",
-        justificationSource: "unlock_session",
-      });
+      if (p) await ctx.db.patch(p._id, { pricingLocked: true, pricingLockedAt: NOW - 1000, pricingLockedById: USER, pricingLockedByName: "Alice" });
     });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert);
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("QUOTING");
+    expect(p?.pricingLocked).toBe(true); // only unlockPricingNative lowers it
   });
 
-  test("an OPEN FINANCIAL (not FULL) unlock session does NOT satisfy the gate", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await seedUnlockSession(t, "FINANCIAL");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
-    ).rejects.toThrow(/justification/i);
-  });
-
-  test("a COMMITTED (already-closed) FULL session does NOT satisfy the gate — a fresh justification is still required", async () => {
-    const t = makeT();
-    await seedProject(t, "owner", false, "INVOICED");
-    await seedUnlockSession(t, "FULL", "COMMITTED");
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
-    ).rejects.toThrow(/justification/i);
-  });
-
-  test("COMPLETED -> INVOICED is not a revert (stays HARD_LOCKED) — ungated regardless of session/justification", async () => {
+  test("COMPLETED -> INVOICED (not a revert either way) is ungated", async () => {
     const t = makeT();
     await seedProject(t, "member", false, "COMPLETED");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...revert, status: "INVOICED" as const });
@@ -519,9 +434,9 @@ describe("projectWrites.updateNative", () => {
   });
   test("rejects an out-of-bounds money field a browser caller bypassing Zod could forge", async () => {
     const t = makeT();
-    // OPEN tier (#957) — this test is specifically about the money-field BOUNDS
-    // check (assertProjectMoneyFields), not the finance lock; a locked project
-    // would reject the write with FINANCIALS_LOCKED before ever reaching it.
+    // Unlocked project (#957) — this test is specifically about the money-field
+    // BOUNDS check (assertProjectMoneyFields), not the pricing lock; a locked
+    // project would reject the write with PRICING_LOCKED before ever reaching it.
     await seedProject(t, "member", false, "QUOTED");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { taxRate: 150, updatedAt: NOW }, clear: [] }),

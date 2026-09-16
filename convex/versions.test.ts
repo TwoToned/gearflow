@@ -417,6 +417,33 @@ describe("versions.makeLiveNative", () => {
     });
     await expect(makeLive(t, "v-other-org")).rejects.toThrow(/not found or cross-org/i);
   });
+
+  // D54 (#1230): make-live is a pointer flip over the PLAN graph — it must
+  // never touch `projects.pricingLocked` in either direction, locked or
+  // unlocked, forward or backward.
+  test("D54: never touches projects.pricingLocked, whether starting locked or unlocked", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    const v2 = await create(t);
+
+    // Starting unlocked — stays unlocked after the flip.
+    await makeLive(t, v2.id, { auditId: "aLive1" });
+    expect((await getProject(t))?.pricingLocked).toBeFalsy();
+
+    // Starting locked — stays locked (both value and stamped who/when) after
+    // flipping back to v1.
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { pricingLocked: true, pricingLockedAt: NOW, pricingLockedById: USER, pricingLockedByName: "Alice" });
+    });
+    await makeLive(t, "v1", { auditId: "aLive2", now: NOW + 1 });
+    const project = await getProject(t);
+    expect(project?.liveVersionId).toBe("v1");
+    expect(project?.pricingLocked).toBe(true);
+    expect(project?.pricingLockedAt).toBe(NOW);
+    expect(project?.pricingLockedById).toBe(USER);
+  });
 });
 
 describe("versions.setLabelNative", () => {

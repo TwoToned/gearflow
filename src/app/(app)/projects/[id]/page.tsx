@@ -29,7 +29,6 @@ import { ServicesPanel } from "@/components/projects/services-panel";
 import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
-import { ProjectLockStrip } from "@/components/projects/project-lock-strip";
 import { ProjectLockChip } from "@/components/projects/project-lock-chip";
 import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
@@ -91,13 +90,12 @@ import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
 import { formatCurrency } from "@/lib/formatters";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
-import { ProjectVersionProvider, useProjectVersion } from "@/components/projects/project-version-context";
+import { ProjectVersionProvider, useProjectVersion, useProjectVersionState } from "@/components/projects/project-version-context";
 import { ProjectVersionSwitcher } from "@/components/projects/version-switcher";
-import { VersionReadOnlyBar } from "@/components/projects/version-readonly-bar";
+import { VersionStrip } from "@/components/projects/version-strip";
+import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
-import { VersionProjectedEquipment } from "@/components/projects/version-projected-equipment";
-import { VersionProjectedLabour } from "@/components/projects/version-projected-labour";
-import { VersionProjectedFinance } from "@/components/projects/version-projected-finance";
+import { composeProjectWithVersion } from "@/lib/project-version-compose";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -209,10 +207,12 @@ export default function ProjectDetailPage({
 
   // #1230 pricing lock — reactive `pricingLocked` status + lock/unlock actions.
   const pricingLock = useProjectPricingLock(id, orgId);
-  // Frozen at mount (like `project-quote-rail.tsx`'s own `now`) — drives only
-  // derived display (e.g. quote EXPIRED resolution inside the version
-  // provider), never query identity.
-  const [lockNow] = useState(() => Date.now());
+
+  // Project Versioning v2, Phase 5 (#1231) — computed here (not just inside
+  // `ProjectVersionProvider`) so the composed object below can be built
+  // BEFORE the provider's own JSX wraps the rest of the page (D32).
+  const versionState = useProjectVersionState(id, orgId);
+  const [makeLiveTarget, setMakeLiveTarget] = useState<typeof versionState.viewingVersion>(null);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
@@ -303,19 +303,29 @@ export default function ProjectDetailPage({
     );
   }
 
+  // Project Versioning v2, Phase 5 (#1231, design §5 D32) — the "composed
+  // object": the live project overlaid with the VIEWED version's own PLAN
+  // FIELDS (dates, discount/tax/deposit, client/location ids, notes, type,
+  // description). Every existing reader below (`getProjectWindowDates`, the
+  // Finance/Notes tab slots) keeps reading a `project`-shaped object
+  // unmodified — this IS the "zero edits to consumers" pattern the Phase 0
+  // spike proved out. Resolved relations (client name, location object) are
+  // a documented exception — see `composeProjectWithVersion`'s own comment.
+  const composedProject = composeProjectWithVersion(project, versionState.viewingPlanFields);
+
   // Billing (FinanceTabSlot below) reads the raw rental window directly — pricing
   // never runs on the gear-committed window (see project-dates.ts).
-  const rentalStart = project.rentalStartDate
-    ? new Date(project.rentalStartDate as unknown as string)
+  const rentalStart = composedProject.rentalStartDate
+    ? new Date(composedProject.rentalStartDate as unknown as string)
     : null;
-  const rentalEnd = project.rentalEndDate
-    ? new Date(project.rentalEndDate as unknown as string)
+  const rentalEnd = composedProject.rentalEndDate
+    ? new Date(composedProject.rentalEndDate as unknown as string)
     : null;
-  const projectWindowStart = project.projectStartDate
-    ? new Date(project.projectStartDate as unknown as string)
+  const projectWindowStart = composedProject.projectStartDate
+    ? new Date(composedProject.projectStartDate as unknown as string)
     : null;
-  const projectWindowEnd = project.projectEndDate
-    ? new Date(project.projectEndDate as unknown as string)
+  const projectWindowEnd = composedProject.projectEndDate
+    ? new Date(composedProject.projectEndDate as unknown as string)
     : null;
   // Availability/overbooking checks (equipment tab add/edit dialogs) read the
   // gear-committed window, not the raw rental dates — see project-window.ts.
@@ -330,7 +340,7 @@ export default function ProjectDetailPage({
     <RequirePermission resource="project" action="read">
       <PageMeta title={`${project.projectNumber} ${project.name}`} />
       <FadeIn>
-        <ProjectVersionProvider projectId={id} orgId={orgId} now={lockNow}>
+        <ProjectVersionProvider value={versionState}>
         <div className="space-y-6">
           {/* ── Hero card (breadcrumb + identity/actions + lifecycle) ─ */}
           <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
@@ -372,17 +382,7 @@ export default function ProjectDetailPage({
                       rather than inside any one tab. Extended (CLAUDE.md
                       "fine-tune versioning") into the header's full version
                       menu — add/delete/promote/send/download, not just switch. */}
-                  {!project.isTemplate && orgId && (
-                    <ProjectVersionSwitcher
-                      orgId={orgId}
-                      projectNumber={project.projectNumber}
-                      clientId={project.clientId as string | null | undefined}
-                      projectStatus={project.status as string | null | undefined}
-                      subtotal={project.subtotal as number | null}
-                      taxAmount={project.taxAmount as number | null}
-                      total={project.total as number | null}
-                    />
-                  )}
+                  {!project.isTemplate && orgId && <ProjectVersionSwitcher />}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
@@ -570,16 +570,23 @@ export default function ProjectDetailPage({
               and pricing checks. One place to look, and a clean project reads
               as verified rather than as a banner that failed to appear. */}
 
-          {/* #1230 — the shared lock strip, mounted ONCE at the top of the
-              project detail (not inside a tab). Renders nothing while pricing
-              is open. */}
+          {/* Project Versioning v2, Phase 5 (#1231, design §5.2) — the ONE
+              status strip, mounted once above the tabs, visible on every
+              tab: absent (live+unlocked), viewing a non-live version, or
+              live+pricing-locked. Replaces the old `ProjectLockStrip` +
+              `VersionReadOnlyBar` pair (two components, two queries). */}
           {!project.isTemplate && orgId && (
-            <ProjectLockStrip status={pricingLock} onUnlock={pricingLock.unlock} />
+            <VersionStrip
+              isTemplate={project.isTemplate}
+              isViewingVersion={versionState.isViewingVersion}
+              viewingVersion={versionState.viewingVersion}
+              liveVersion={versionState.liveVersion}
+              onMakeLive={() => setMakeLiveTarget(versionState.viewingVersion)}
+              onBackToLive={() => versionState.setViewingNumber(null)}
+              lockStatus={pricingLock}
+              onUnlock={pricingLock.unlock}
+            />
           )}
-
-          {/* Phase 3 (#1080/#1093) — mounted once above the tabs, visible on
-              every tab, whenever `?v=` points at a real non-live version. */}
-          {!project.isTemplate && orgId && <VersionReadOnlyBar orgId={orgId} />}
 
           {/* ── Tabs + context sidebar ─────────────────────────────────
               #1063: the sidebar (Schedule · Location · Team · Activity) rides
@@ -685,12 +692,18 @@ export default function ProjectDetailPage({
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <EquipmentTabSlot
+                    <EquipmentTab
                       projectId={id}
                       rentalStartDate={availabilityWindow.start}
                       rentalEndDate={availabilityWindow.end}
                       addMenuSlot={equipmentAddSlot}
                       autoOpenAddModelId={autoOpenAddModelId}
+                      versionId={versionState.viewingVersion?.id}
+                      addDisabledReason={
+                        versionState.isViewingVersion && versionState.viewingVersion
+                          ? `v${versionState.viewingVersion.number} isn't live. Make it live to add new items — existing items on v${versionState.viewingVersion.number} are still editable below.`
+                          : undefined
+                      }
                     />
                   </div>
                 </TabsContent>
@@ -700,7 +713,16 @@ export default function ProjectDetailPage({
                     crew list itself (see FEATUREDOCS/31, issue #796). */}
                 <TabsContent value="labour">
                   <div className="space-y-6 pt-4">
-                    <LabourTabSlot
+                    {/* Services (a VERSIONED_PLAN_TABLES member) and crew
+                        assignments (never versioned — they're reality) both
+                        stay LIVE regardless of `?v=` this phase — Phase 5
+                        scoped its version-read wiring to the Equipment tab
+                        (the mockups' one worked example); wiring
+                        `ServicesPanel` onto `projectServices.listByProject`'s
+                        own `versionId` arg is a documented follow-up, not
+                        silently dropped. */}
+                    <VersionNotTrackedNote what="Services & crew" />
+                    <ServicesPanel
                       projectId={id}
                       projectAddress={project.location?.address || ""}
                       projectLatitude={project.location?.latitude ?? null}
@@ -711,23 +733,23 @@ export default function ProjectDetailPage({
                       // fallback-of-a-fallback logic is unchanged, so both props
                       // carrying the same window value is harmless.
                       projectLoadInDate={
-                        (project.projectStartDate ?? project.loadInDate)
-                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                        (composedProject.projectStartDate ?? composedProject.loadInDate)
+                          ? new Date((composedProject.projectStartDate ?? composedProject.loadInDate) as unknown as string).toISOString().slice(0, 10)
                           : ""
                       }
                       projectLoadOutDate={
-                        (project.projectEndDate ?? project.loadOutDate)
-                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                        (composedProject.projectEndDate ?? composedProject.loadOutDate)
+                          ? new Date((composedProject.projectEndDate ?? composedProject.loadOutDate) as unknown as string).toISOString().slice(0, 10)
                           : ""
                       }
                       projectEventStartDate={
-                        (project.projectStartDate ?? project.loadInDate)
-                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                        (composedProject.projectStartDate ?? composedProject.loadInDate)
+                          ? new Date((composedProject.projectStartDate ?? composedProject.loadInDate) as unknown as string).toISOString().slice(0, 10)
                           : ""
                       }
                       projectEventEndDate={
-                        (project.projectEndDate ?? project.loadOutDate)
-                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                        (composedProject.projectEndDate ?? composedProject.loadOutDate)
+                          ? new Date((composedProject.projectEndDate ?? composedProject.loadOutDate) as unknown as string).toISOString().slice(0, 10)
                           : ""
                       }
                     />
@@ -739,7 +761,7 @@ export default function ProjectDetailPage({
                     operational P&L. Retired the standalone "Financials" tab —
                     this is that content, not a duplicate of it. The lock
                     strip/banner used to live here (Phase D's `QuoteLockStrip`)
-                    but is now the page-level `<ProjectLockStrip>` (#990) above
+                    but is now the page-level `<VersionStrip>` (#1231) above
                     the tabs — visible from every tab, not just this one.
 
                     Section order is deliberate (#1038 IA pass): the alert
@@ -795,9 +817,9 @@ export default function ProjectDetailPage({
                     shows its own captured text, read-only. */}
                 <TabsContent value="notes">
                   <NotesTabSlot
-                    liveCrewNotes={project.crewNotes || ""}
-                    liveInternalNotes={project.internalNotes || ""}
-                    liveClientNotes={project.clientNotes || ""}
+                    liveCrewNotes={(composedProject.crewNotes as string) || ""}
+                    liveInternalNotes={(composedProject.internalNotes as string) || ""}
+                    liveClientNotes={(composedProject.clientNotes as string) || ""}
                     onChanged={() => refreshProjectDetail(id)}
                     onSave={saveProjectNotes}
                   />
@@ -854,6 +876,24 @@ export default function ProjectDetailPage({
         </div>
         </ProjectVersionProvider>
       </FadeIn>
+
+      {/* The strip's "Make vN live" button opens the same dialog the header
+          pill/Versions panel use (one dialog, three entry points, R-3.1). */}
+      {makeLiveTarget && (
+        <MakeLiveDialog
+          open
+          onOpenChange={(open) => !open && setMakeLiveTarget(null)}
+          targetVersion={makeLiveTarget}
+          liveVersion={versionState.liveVersion}
+          projectId={id}
+          onMadeLive={(r) => {
+            if (r.conflicts.length === 0) {
+              setMakeLiveTarget(null);
+              versionState.setViewingNumber(null);
+            }
+          }}
+        />
+      )}
 
       {dupMode && (
         <DuplicateProjectDialog
@@ -983,27 +1023,6 @@ function ProjectSummaryStrip({
   );
 }
 
-/**
- * Phase 3 (#1080/#1093) tab slots — one per versioned tab. Each reads
- * `useProjectVersion()` (rendered inside `ProjectVersionProvider`, mounted
- * around the whole page body) and swaps the live component for the read-only
- * projection while a non-live version is being viewed. Kept as thin
- * switches, not full rewrites of the live tabs — see FEATUREDOCS/70 for why
- * the live components themselves aren't threaded with a version prop.
- */
-
-function EquipmentTabSlot(props: React.ComponentProps<typeof EquipmentTab>) {
-  const { isViewingVersion, hasCapturedState } = useProjectVersion();
-  if (isViewingVersion) return hasCapturedState ? <VersionProjectedEquipment /> : null;
-  return <EquipmentTab {...props} />;
-}
-
-function LabourTabSlot(props: React.ComponentProps<typeof ServicesPanel>) {
-  const { isViewingVersion, hasCapturedState } = useProjectVersion();
-  if (isViewingVersion) return hasCapturedState ? <VersionProjectedLabour /> : null;
-  return <ServicesPanel {...props} />;
-}
-
 interface FinanceTabSlotProps {
   projectId: string;
   orgId: string | undefined;
@@ -1059,47 +1078,48 @@ function FinanceTabSlot(props: FinanceTabSlotProps) {
         total={props.total}
       />
       <div className="h-px bg-line" />
-      {isViewingVersion ? (
-        <VersionProjectedFinance />
-      ) : (
-        <>
-          <BillingSummaryRow
-            projectId={props.projectId}
-            orgId={props.orgId}
-            rentalStartDate={props.rentalStartDate}
-            rentalEndDate={props.rentalEndDate}
-            billingWeeksOverride={props.billingWeeksOverride}
-            billingDaysOverride={props.billingDaysOverride}
-          />
-          <FinancialSummary
-            equipmentRevenue={props.equipmentRevenue}
-            saleRevenue={props.saleRevenue}
-            saleCostTotal={props.saleCostTotal}
-            serviceChargeTotal={
-              props.subtotal != null && props.equipmentRevenue != null
-                ? props.subtotal - props.equipmentRevenue - (props.saleRevenue ?? 0)
-                : null
-            }
-            serviceCostTotal={props.serviceCostTotal}
-            labourCostTotal={props.labourCostTotal}
-            subHireCostTotal={props.subHireCostTotal}
-            subtotal={props.subtotal}
-            discountPercent={props.discountPercent}
-            discountAmount={props.discountAmount}
-            taxRate={props.taxRate}
-            taxAmount={props.taxAmount}
-            total={props.total}
-            margin={props.margin}
-            depositPaid={props.depositPaid}
-            invoicedTotal={props.invoicedTotal}
-            pricedGroupCount={pricedGroupCount}
-            totalGroupCount={totalGroupCount}
-            groupBreakdown={groupBreakdown}
-          />
-          <div className="h-px bg-line" />
-          <ProjectCostsPanel projectId={props.projectId} />
-        </>
-      )}
+      {/* The money breakdown below is always the LIVE project's — Phase 5
+          didn't extend this tab's read hooks with a `versionId` arg (scoped
+          to Equipment, the mockups' one worked example). A viewed version's
+          OWN figures aren't computable without recalculating totals against
+          that version's own line items (`recalcVersionTotals`, a Convex-side
+          job), which is out of scope here — flagged, not silently dropped. */}
+      {isViewingVersion && <VersionNotTrackedNote what="This financial breakdown" />}
+      <BillingSummaryRow
+        projectId={props.projectId}
+        orgId={props.orgId}
+        rentalStartDate={props.rentalStartDate}
+        rentalEndDate={props.rentalEndDate}
+        billingWeeksOverride={props.billingWeeksOverride}
+        billingDaysOverride={props.billingDaysOverride}
+      />
+      <FinancialSummary
+        equipmentRevenue={props.equipmentRevenue}
+        saleRevenue={props.saleRevenue}
+        saleCostTotal={props.saleCostTotal}
+        serviceChargeTotal={
+          props.subtotal != null && props.equipmentRevenue != null
+            ? props.subtotal - props.equipmentRevenue - (props.saleRevenue ?? 0)
+            : null
+        }
+        serviceCostTotal={props.serviceCostTotal}
+        labourCostTotal={props.labourCostTotal}
+        subHireCostTotal={props.subHireCostTotal}
+        subtotal={props.subtotal}
+        discountPercent={props.discountPercent}
+        discountAmount={props.discountAmount}
+        taxRate={props.taxRate}
+        taxAmount={props.taxAmount}
+        total={props.total}
+        margin={props.margin}
+        depositPaid={props.depositPaid}
+        invoicedTotal={props.invoicedTotal}
+        pricedGroupCount={pricedGroupCount}
+        totalGroupCount={totalGroupCount}
+        groupBreakdown={groupBreakdown}
+      />
+      <div className="h-px bg-line" />
+      <ProjectCostsPanel projectId={props.projectId} />
     </>
   );
 }
@@ -1121,17 +1141,27 @@ function ReadOnlyNoteBlock({ title, value }: { title: string; value: string | nu
   );
 }
 
+/**
+ * `crewNotes`/`internalNotes`/`clientNotes` ARE PLAN FIELDS
+ * (`convex/lib/versionPlanFields.ts`), so the caller already hands this
+ * component the COMPOSED value (design §5 D32) — a non-live version's own
+ * captured text, no separate snapshot-projection read needed anymore. Notes
+ * writes (`useOptimisticProjectNotes`) patch the LIVE `projects` row only
+ * (same gap as new equipment/group/category/service inserts — see
+ * `EquipmentTabProps.addDisabledReason`'s doc comment), so this stays
+ * READ-ONLY while viewing a non-live version rather than silently writing
+ * the wrong version's notes.
+ */
 function NotesTabSlot({ liveCrewNotes, liveInternalNotes, liveClientNotes, onChanged, onSave }: NotesTabSlotProps) {
-  const { isViewingVersion, hasCapturedState, projected, viewingRevision } = useProjectVersion();
+  const { isViewingVersion, viewingVersion } = useProjectVersion();
 
-  if (isViewingVersion) {
-    if (!hasCapturedState || !projected) return null;
+  if (isViewingVersion && viewingVersion) {
     return (
       <div className="grid gap-4 pt-4">
-        <p className="text-caption text-muted">Notes as captured in v{viewingRevision} — read-only.</p>
-        <ReadOnlyNoteBlock title="Crew notes" value={projected.notes.crewNotes} />
-        <ReadOnlyNoteBlock title="Internal notes" value={projected.notes.internalNotes} />
-        <ReadOnlyNoteBlock title="Client notes" value={projected.notes.clientNotes} />
+        <p className="text-caption text-muted">Notes as captured in v{viewingVersion.number} — read-only.</p>
+        <ReadOnlyNoteBlock title="Crew notes" value={liveCrewNotes} />
+        <ReadOnlyNoteBlock title="Internal notes" value={liveInternalNotes} />
+        <ReadOnlyNoteBlock title="Client notes" value={liveClientNotes} />
       </div>
     );
   }

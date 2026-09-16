@@ -17,6 +17,7 @@ import schema from "./schema";
 import { api } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { projectSnapshotEntries } from "@/lib/project-version-projection";
+import { captureProjectSnapshot } from "./lib/projectSnapshots";
 
 const ORG = "org_1";
 const OTHER = "org_2";
@@ -62,10 +63,38 @@ async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG, over: Parti
   });
 }
 
-const saveVersion = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
-  t.withIdentity(asUser(ORG)).mutation(api.projectVersionsWrites.saveVersionNative, {
-    id: "qSave", organizationId: ORG, projectId: "p1", actor, auditId: "aSave", now: NOW, ...over,
-  } as never);
+// #1229 Phase 3 deleted `saveVersionNative` (superseded by `versions.
+// createNative`/`makeLiveNative` on the real `projectVersions` table) — these
+// `listVersions` tests exercise the OLDER `quotes`/`revision`/`liveRevision` +
+// `projectSnapshots` read model, which Phase 3 didn't touch, so this replicates
+// the essential parts of what the deleted mutation used to do (capture the
+// outgoing revision, bump the counters, open the next DRAFT) directly.
+async function saveVersion(
+  t: ReturnType<typeof makeT>,
+  over: { id?: string; organizationId?: string; now?: number } = {},
+) {
+  const orgId = over.organizationId ?? ORG;
+  const now = over.now ?? NOW;
+  const id = over.id ?? "qSave";
+  return t.run(async (ctx) => {
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+    if (!project || project.organizationId !== orgId) throw new Error("project not found");
+    const liveRevision = project.liveRevision ?? project.revision ?? 1;
+    const next = (project.revision ?? 1) + 1;
+    const snapshotId = await captureProjectSnapshot(ctx, { orgId, project, reason: "VERSION_SAVED", revision: liveRevision, actor, now });
+    const outgoing = await ctx.db
+      .query("quotes")
+      .withIndex("by_projectId_version", (q) => q.eq("projectId", "p1").eq("version", liveRevision))
+      .first();
+    if (outgoing && outgoing.organizationId === orgId) await ctx.db.patch(outgoing._id, { snapshotId, updatedAt: now });
+    await ctx.db.patch(project._id, { revision: next, liveRevision: next, updatedAt: now });
+    await ctx.db.insert("quotes", {
+      id, organizationId: orgId, projectId: "p1", version: next, status: "DRAFT",
+      snapshot: null, createdById: USER, createdAt: now, updatedAt: now,
+    });
+    return { id, version: next, savedRevision: liveRevision };
+  });
+}
 
 const send = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
   t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.sendNative, {
@@ -142,9 +171,7 @@ describe("projectVersionsRead.listVersions", () => {
     await seedMember(t);
     await seedMember(t, "owner", OTHER);
     await seedProject(t, OTHER);
-    await t.withIdentity(asUser(OTHER)).mutation(api.projectVersionsWrites.saveVersionNative, {
-      id: "qOther", organizationId: OTHER, projectId: "p1", actor, auditId: "aOther", now: NOW,
-    } as never);
+    await saveVersion(t, { id: "qOther", organizationId: OTHER });
 
     const versions = await t
       .withIdentity(asUser(ORG))
@@ -167,9 +194,7 @@ describe("projectLocksRead.snapshotEntries / currentEntries — IDOR (highest-ri
     await seedMember(t, "owner", ORG);
     await seedMember(t, "owner", OTHER, "user_2");
     await seedProject(t, OTHER);
-    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.projectVersionsWrites.saveVersionNative, {
-      id: "qOther", organizationId: OTHER, projectId: "p1", actor: { userId: "user_2", userName: "Bob" }, auditId: "aOther", now: NOW,
-    } as never);
+    await saveVersion(t, { id: "qOther", organizationId: OTHER });
     const otherSnapshot = await t.run(async (ctx) =>
       ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).first(),
     );

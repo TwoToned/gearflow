@@ -12,6 +12,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { captureProjectSnapshot } from "./lib/projectSnapshots";
 
 const ORG = "org_1";
 const OTHER = "org_2";
@@ -77,10 +78,16 @@ async function seedProjectWithSubHire(t: ReturnType<typeof makeT>, orgId = ORG) 
   });
 }
 
+// #1229 Phase 3 deleted `saveVersionNative` — these tests only need SOME
+// captured `projectSnapshots` row to read back via `bundle`'s `snapshotId`
+// param (which doesn't care about revision numbers), so capture directly
+// via the still-intact lib primitive instead of the deleted mutation.
 const saveVersion = (t: ReturnType<typeof makeT>, orgId = ORG) =>
-  t.withIdentity(asUser(orgId)).mutation(api.projectVersionsWrites.saveVersionNative, {
-    id: "qSave", organizationId: orgId, projectId: "p1", actor, auditId: "aSave", now: NOW,
-  } as never);
+  t.run(async (ctx) => {
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+    if (!project || project.organizationId !== orgId) throw new Error("project not found");
+    return captureProjectSnapshot(ctx, { orgId, project, reason: "VERSION_SAVED", revision: project.revision ?? 1, actor, now: NOW });
+  });
 
 async function findSnapshotId(t: ReturnType<typeof makeT>, orgId = ORG): Promise<string> {
   const snapshot = await t.run(async (ctx) =>
@@ -151,9 +158,7 @@ describe("projectVersionsEquipment.bundle", () => {
     await seedMember(t, "owner", ORG);
     await seedMember(t, "owner", OTHER, "user_2");
     await seedProjectWithSubHire(t, OTHER);
-    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.projectVersionsWrites.saveVersionNative, {
-      id: "qOther", organizationId: OTHER, projectId: "p1", actor: { userId: "user_2", userName: "Bob" }, auditId: "aOther", now: NOW,
-    } as never);
+    await saveVersion(t, OTHER);
     const otherSnapshot = await t.run(async (ctx) =>
       ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).first(),
     );

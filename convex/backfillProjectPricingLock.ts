@@ -32,9 +32,9 @@ import { isConfirmedOrLater } from "./lib/projectLocks";
  * Never LOWERS the flag — a project that doesn't match either condition is
  * simply left `pricingLocked` absent (false), which is already correct.
  *
- * Driver: none yet (SERVICE-only, invoked the same way
- * `backfillProjectVersions.ts` is — via the Convex dashboard or a one-off
- * script — until an operator driver is written).
+ * Driver: `scripts/convex-backfill-project-pricing-lock.ts` — same
+ * dry-run/--apply/--expect-projects shape as
+ * `scripts/convex-backfill-project-versions.ts`.
  */
 
 async function projectNeedsLock(ctx: MutationCtx | QueryCtx, project: Doc<"projects">): Promise<boolean> {

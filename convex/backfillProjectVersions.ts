@@ -90,25 +90,42 @@ function deriveVersionLabel(quotes: Doc<"quotes">[]): string {
   return sentWithLabel[0]?.label ?? DEFAULT_VERSION_LABEL;
 }
 
-async function planProjectWork(ctx: MutationCtx, project: Doc<"projects">): Promise<ProjectWork | null> {
-  if (project.liveVersionId != null) return null; // already migrated (idempotent no-op)
+/** One org's un-migrated plan rows, grouped by `projectId` for O(1) lookup —
+ *  see `loadOrgRowsByProject` for why this is fetched once per org per page
+ *  rather than once per project. */
+interface OrgRowsByProject {
+  categories: Map<string, Doc<"projectCategories">[]>;
+  groups: Map<string, Doc<"projectGroups">[]>;
+  lineItems: Map<string, Doc<"projectLineItems">[]>;
+  services: Map<string, Doc<"projectServices">[]>;
+}
 
-  const orgId = project.organizationId;
-  // #1228 Phase 2 deleted `by_projectId` on these four tables (the deliberate
-  // breaking change this backfill predates — see the deploy-order note in
-  // convex/lib/versionScope.ts: THIS backfill must already have run against
-  // production before that schema change ships). If this script is ever
-  // re-run against a post-Phase-2 schema (e.g. a fresh dev/sandbox reset), it
-  // still has to find a project's un-migrated rows, so it falls back to the
-  // org-wide `by_organizationId` index + a `projectId` filter — an
-  // O(org size) scan instead of O(project size), acceptable for a paginated,
-  // apply-gated, operator-run one-off migration (never a hot path), and only
-  // paid at all for a project not yet migrated (liveVersionId == null;
-  // planProjectWork already returns null and skips everything below once a
-  // project is done, so a fully-migrated org costs nothing here on a re-run).
-  // VERSION-SCOPE: all-versions — pre-migration rows have no versionId yet,
-  // by definition, so a by_versionId-family read cannot find them.
-  const [categoriesRaw, groupsRaw, lineItemsRaw, servicesRaw, quotes] = await Promise.all([
+function groupByProjectId<T extends { projectId: string }>(rows: T[]): Map<string, T[]> {
+  const byProject = new Map<string, T[]>();
+  for (const row of rows) {
+    const bucket = byProject.get(row.projectId);
+    if (bucket) bucket.push(row);
+    else byProject.set(row.projectId, [row]);
+  }
+  return byProject;
+}
+
+/**
+ * #1228 Phase 2 deleted `by_projectId` on these four tables, so finding one
+ * project's un-migrated rows means an org-wide `by_organizationId` scan + a
+ * `projectId` filter — O(org size) instead of O(project size). That's fine
+ * paid ONCE PER ORG per page. It is NOT fine paid once per PROJECT: a page
+ * can hold many un-migrated projects in the same org (every project in prod
+ * was un-migrated the first time this ran), and re-collecting the same
+ * four org-wide tables for each one multiplies the read cost by the page's
+ * project count — against real production data (not the small synthetic
+ * fixtures this was tested against) that blew the per-function 16MB read
+ * limit outright (`projectLineItems` at 54x on a single-org, 54-project
+ * deployment). Fetching once per org and grouping by `projectId` up front
+ * turns that multiplier back into 1.
+ */
+async function loadOrgRowsByProject(ctx: MutationCtx, orgId: string): Promise<OrgRowsByProject> {
+  const [categoriesRaw, groupsRaw, lineItemsRaw, servicesRaw] = await Promise.all([
     // r9.8-ok: see docs/exceptions.md R-9.8 backfillProjectVersions.ts
     ctx.db.query("projectCategories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
     // r9.8-ok: see docs/exceptions.md R-9.8 backfillProjectVersions.ts
@@ -117,15 +134,30 @@ async function planProjectWork(ctx: MutationCtx, project: Doc<"projects">): Prom
     ctx.db.query("projectLineItems").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
     // r9.8-ok: see docs/exceptions.md R-9.8 backfillProjectVersions.ts
     ctx.db.query("projectServices").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
-    listProjectQuotes(ctx, orgId, project.id),
   ]);
-  const categories = categoriesRaw.filter((c) => c.organizationId === orgId && c.projectId === project.id);
-  const groups = groupsRaw.filter((g) => g.organizationId === orgId && g.projectId === project.id);
-  const lineItems = lineItemsRaw.filter((li) => li.organizationId === orgId && li.projectId === project.id);
-  const services = servicesRaw.filter((s) => s.organizationId === orgId && s.projectId === project.id);
+  return {
+    categories: groupByProjectId(categoriesRaw),
+    groups: groupByProjectId(groupsRaw),
+    lineItems: groupByProjectId(lineItemsRaw),
+    services: groupByProjectId(servicesRaw),
+  };
+}
+
+async function planProjectWork(
+  ctx: MutationCtx,
+  project: Doc<"projects">,
+  orgRows: OrgRowsByProject,
+): Promise<ProjectWork | null> {
+  if (project.liveVersionId != null) return null; // already migrated (idempotent no-op)
+
+  const categories = orgRows.categories.get(project.id) ?? [];
+  const groups = orgRows.groups.get(project.id) ?? [];
+  const lineItems = orgRows.lineItems.get(project.id) ?? [];
+  const services = orgRows.services.get(project.id) ?? [];
+  const quotes = await listProjectQuotes(ctx, project.organizationId, project.id);
 
   // categorySlots carries no projectId of its own — resolved via the
-  // project's own (already org-checked) categories.
+  // project's own (already org-scoped) categories.
   const slotsByCategory = await Promise.all(
     categories.map((c) =>
       ctx.db.query("categorySlots").withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", c.id)).collect(),
@@ -183,9 +215,20 @@ export const backfillProjectVersionsPage = mutation({
     // included, to end up with a version + `liveVersionId`.
     const res = await ctx.db.query("projects").paginate({ cursor, numItems: numItems ?? 100 });
 
+    // Fetch each org represented in this page's un-migrated rows ONCE (see
+    // loadOrgRowsByProject) rather than once per project.
+    const orgRowsByOrg = new Map<string, OrgRowsByProject>();
+    for (const project of res.page) {
+      if (project.liveVersionId != null) continue; // already migrated, no org fetch needed
+      if (!orgRowsByOrg.has(project.organizationId)) {
+        orgRowsByOrg.set(project.organizationId, await loadOrgRowsByProject(ctx, project.organizationId));
+      }
+    }
+
     const tally = { scanned: 0, versionsCreated: 0, childRowsStamped: 0 };
     for (const project of res.page) {
-      const work = await planProjectWork(ctx, project);
+      const orgRows = orgRowsByOrg.get(project.organizationId);
+      const work = orgRows ? await planProjectWork(ctx, project, orgRows) : null;
       if (!work) continue;
 
       tally.scanned++;

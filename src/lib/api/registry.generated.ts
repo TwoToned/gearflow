@@ -55964,6 +55964,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "versionsRead.compareVersions",
+    "module": "versionsRead",
+    "fn": "compareVersions",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "a",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "b",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b29d1339e23d73d8",
+    "returnsSha": "cd9b737fdc74d0dd",
+    "stability": "tracks-app",
+    "summary": "Row-level diff + exact money bridge between two project versions (or a sent quote's snapshot and a version), for Compare mode.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "versionsRead.getVersion",
     "module": "versionsRead",
     "fn": "getVersion",
@@ -61485,10 +61532,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1192,
-  agentReachable: 571,
-  queries: 426,
+  total: 1193,
+  agentReachable: 572,
+  queries: 427,
   mutations: 766,
-  agentReachableQueries: 295,
+  agentReachableQueries: 296,
   agentReachableMutations: 276,
 } as const;

@@ -274,11 +274,32 @@ export function buildMoneyBridge(bundleA: TotalsBundle, bundleB: TotalsBundle, r
   const bLinesByKey = new Map(bundleB.projectLines.map((l) => [keyOf(l), l]));
   const bServicesByKey = new Map(bundleB.services.map((s) => [keyOf(s), s]));
 
-  function mapFor(kind: CompareRowKind) {
-    return kind === "group" ? groupsMap : kind === "service" ? servicesMap : linesMap;
-  }
-  function bMapFor(kind: CompareRowKind) {
-    return kind === "group" ? bGroupsByKey : kind === "service" ? bServicesByKey : bLinesByKey;
+  // Explicit per-kind branches rather than a generic map-selector — a
+  // selector returning `groupsMap | linesMap | servicesMap` loses the
+  // correlation between "which map" and "which bMap", so TS can't prove a
+  // row read from `bMap` is assignable into `map` even though `r.kind`
+  // guarantees they're the same table. Applying the change directly here
+  // keeps that correlation type-safe.
+  function applyRowChange(r: CompareRow): void {
+    if (r.kind === "group") {
+      if (r.state === "removed") groupsMap.delete(r.key);
+      else {
+        const row = bGroupsByKey.get(r.key);
+        if (row) groupsMap.set(r.key, row);
+      }
+    } else if (r.kind === "service") {
+      if (r.state === "removed") servicesMap.delete(r.key);
+      else {
+        const row = bServicesByKey.get(r.key);
+        if (row) servicesMap.set(r.key, row);
+      }
+    } else {
+      if (r.state === "removed") linesMap.delete(r.key);
+      else {
+        const row = bLinesByKey.get(r.key);
+        if (row) linesMap.set(r.key, row);
+      }
+    }
   }
 
   let runningProject: Doc<"projects"> = bundleA.project;
@@ -310,17 +331,10 @@ export function buildMoneyBridge(bundleA: TotalsBundle, bundleB: TotalsBundle, r
   for (const bucketKey of [...buckets.keys()].sort()) {
     const bucketRows = buckets.get(bucketKey)!;
     for (const r of bucketRows) {
-      const map = mapFor(r.kind);
-      const bMap = bMapFor(r.kind);
-      if (r.state === "removed") {
-        map.delete(r.key);
-      } else {
-        // added / changed / moved — swap in B's row wholesale. A moved row
-        // is replaced in exactly this ONE step, so it contributes to the
-        // bridge exactly once even when it also repriced (D50).
-        const bRow = bMap.get(r.key);
-        if (bRow) map.set(r.key, bRow);
-      }
+      // added / changed / moved / removed — see `applyRowChange`. A moved
+      // row is replaced in exactly this ONE step, so it contributes to the
+      // bridge exactly once even when it also repriced (D50).
+      applyRowChange(r);
     }
     const newTotal = computeTotals(currentBundle()).total;
     const delta = round2(newTotal - runningTotal);

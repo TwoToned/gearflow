@@ -57,8 +57,10 @@ interface VersionStripLockStatus extends LockCopyStatus {
 
 /** #1233 (Phase 6) — the drift DETECTION signal (`versionsRead.quoteDriftForVersion`),
  *  a numeric compare only. No click target: Compare mode (#1232) doesn't exist
- *  yet, and this strip must not link to a UI that isn't built. */
-export interface VersionStripQuoteDrift {
+ *  yet, and this strip must not link to a UI that isn't built. Not exported —
+ *  no consumer needs the type by name (`useProjectVersion().viewingQuoteDrift`
+ *  is typed inline on the context value instead). */
+interface VersionStripQuoteDrift {
   quoteLabel: string;
   driftAmount: number;
 }

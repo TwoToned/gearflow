@@ -90,29 +90,54 @@ async function requireProjectInOrg(
  * `quoteValidUntil` from `now` at render time, so simply re-opening an old quote
  * silently extended how long it was valid.
  */
+/** #1233 (Phase 6) — a pre-#1233 row has no `versionId` stamped; it targeted
+ *  the live version by definition of the OLDER system, so this falls back to
+ *  the project's CURRENT live version for rendering. A stale fallback (if
+ *  the live pointer has since moved) is the SAME "unknown, assume live"
+ *  posture `quoteTargetsLiveVersion` documents. Split out of the handler
+ *  purely to keep its own complexity manageable (R-3.6) — same reasoning
+ *  `resolveModelAndKitNames`/`resolveRollupCategoryNames` document in
+ *  `financeSnapshot.ts`. */
+function resolveQuoteArtifactVersionId(quote: Pick<Doc<"quotes">, "versionId">, project: Pick<Doc<"projects">, "liveVersionId">): string | null {
+  return quote.versionId ?? project.liveVersionId ?? null;
+}
+
+/**
+ * The quote's OWN frozen money snapshot (built once, at send, by
+ * `buildQuoteSnapshot`), NOT the live project's current totals: this is what
+ * makes it safe to render a NON-live version's document (whose discount/tax
+ * may differ from whatever's live right now) and what makes even a
+ * LIVE-version render immune to any drift between send and this render
+ * (#987's "stored bytes" guarantee, extended to the MONEY the bytes are
+ * computed from, not just the bytes themselves). Split out for the same
+ * R-3.6 reason as `resolveQuoteArtifactVersionId` above.
+ */
+function resolveQuoteArtifactMoney(quoteSnapshot: unknown): {
+  subtotal: number;
+  discountPercent: number;
+  discountAmount: number;
+  taxAmount: number;
+  total: number;
+} {
+  const s = (quoteSnapshot ?? {}) as Record<string, unknown>;
+  const num = (key: string): number => Number(s[key]) || 0;
+  return {
+    subtotal: num("subtotal"),
+    discountPercent: num("discountPercent"),
+    discountAmount: num("discountAmount"),
+    taxAmount: num("taxAmount"),
+    total: num("total"),
+  };
+}
+
 export const quoteArtifactContext = query({
   args: { quoteId: v.string(), orgId: v.string(), now: v.optional(v.number()) },
   handler: async (ctx, { quoteId, orgId, now }) => {
     await requireService(ctx);
     const quote = await requireQuoteInOrg(ctx, quoteId, orgId);
     const project = await requireProjectInOrg(ctx, quote.projectId, orgId);
-    // #1233 (Phase 6) — a pre-#1233 row has no `versionId` stamped; it
-    // targeted the live version by definition of the OLDER system, so this
-    // falls back to the project's CURRENT live version for rendering. A
-    // stale fallback (if the live pointer has since moved) is the SAME
-    // "unknown, assume live" posture `quoteTargetsLiveVersion` documents.
-    const versionId = quote.versionId ?? project.liveVersionId ?? null;
-    // #1233 — the quote's OWN frozen money snapshot (built once, at send, by
-    // `buildQuoteSnapshot`), NOT the live project's current totals: this is
-    // what makes it safe to render a NON-live version's document (whose
-    // discount/tax may differ from whatever's live right now) and what makes
-    // even a LIVE-version render immune to any drift between send and this
-    // render (#987's "stored bytes" guarantee, extended to the MONEY the
-    // bytes are computed from, not just the bytes themselves).
-    const snapshot = quote.snapshot as
-      | { subtotal?: number; discountPercent?: number; discountAmount?: number; taxAmount?: number; total?: number }
-      | null
-      | undefined;
+    const versionId = resolveQuoteArtifactVersionId(quote, project);
+    const money = resolveQuoteArtifactMoney(quote.snapshot);
     return {
       quoteId: quote.id,
       projectId: quote.projectId,
@@ -133,11 +158,7 @@ export const quoteArtifactContext = query({
       sentAt: quote.sentAt ?? quote.publishedAt ?? null,
       quoteDate: quote.quoteDate ?? null,
       validUntil: quote.validUntil ?? null,
-      subtotal: Number(snapshot?.subtotal) || 0,
-      discountPercent: Number(snapshot?.discountPercent) || 0,
-      discountAmount: Number(snapshot?.discountAmount) || 0,
-      taxAmount: Number(snapshot?.taxAmount) || 0,
-      total: Number(snapshot?.total) || 0,
+      ...money,
     };
   },
 });

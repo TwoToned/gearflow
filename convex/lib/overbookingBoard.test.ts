@@ -78,6 +78,16 @@ describe("computeGearShortageBoard", () => {
     expect(pencilled[0]).toMatchObject({ qty: 2 });
   });
 
+  test("a SALE line never counts as rental demand (WS11 #950)", () => {
+    // Stock 2. A NEW_STOCK sale line for 5 units must not, on its own, flag a
+    // shortage — it draws from Model.saleStockQuantity, not the rental pool.
+    const projects = [project({ id: "p1", status: "CONFIRMED" })];
+    const lineItems = [lineItem({ id: "li1", projectId: "p1", modelId: "m1", quantity: 5, type: "SALE" })];
+    const { hard, pencilled } = computeGearShortageBoard(RANGE, projects, lineItems, models, assets, []);
+    expect(hard).toHaveLength(0);
+    expect(pencilled).toHaveLength(0);
+  });
+
   test("sub-hire lines are excluded (covered demand)", () => {
     const projects = [project({ id: "p1", status: "CONFIRMED" })];
     const lineItems = [lineItem({ id: "li1", projectId: "p1", modelId: "m1", quantity: 5, subHireId: "sh1" })];

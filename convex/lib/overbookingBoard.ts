@@ -47,6 +47,7 @@ export interface BoardLineItem {
   status?: string | null;
   subHireId?: string | null;
   isOptional?: boolean | null;
+  type?: string | null;
 }
 
 export interface BoardModel {
@@ -130,6 +131,12 @@ function isRelevantDemandLine(li: BoardLineItem, projectById: Map<string, BoardP
   if (li.modelId == null) return false;
   if ((li.status ?? "") === "CANCELLED") return false;
   if (li.subHireId != null) return false;
+  // WS11 (#950) — a SALE line is never rental demand: NEW_STOCK draws from
+  // Model.saleStockQuantity (its own pool, covered by
+  // computeSaleStockToProcure below), and FROM_RENTAL_STOCK already removed
+  // the unit from the rental pool at sale time (see saleStock.ts) — counting
+  // it here too would pencil a phantom shortage against the rental model.
+  if (li.type === "SALE") return false;
   return projectById.has(li.projectId);
 }
 

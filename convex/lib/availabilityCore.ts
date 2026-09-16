@@ -200,6 +200,12 @@ export function computeModelAvailability(
     bulkAssets: activeBulkAssets.map((ba) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
   };
 
+  // WS11 (#950) — a SALE line never counts as rental demand. NEW_STOCK draws
+  // from `Model.saleStockQuantity`, a wholly separate pool. FROM_RENTAL_STOCK
+  // already removed the unit from the rental pool at sale time (asset ->
+  // SOLD / bulkAsset.totalQuantity decremented via saleStock.ts), which is
+  // reflected in `effectiveStock` above — counting it here too would
+  // double-subtract it and pencil a phantom overbooking on the rental model.
   let overlapping: Doc<"projectLineItems">[];
   if (hasDates) {
     // WS2 (#941) — each CANDIDATE project's overlap is tested against its PROJECT
@@ -219,6 +225,7 @@ export function computeModelAvailability(
       (li) =>
         li.status !== "CANCELLED" &&
         li.subHireId == null &&
+        li.type !== "SALE" &&
         conflictProjectIds.has(li.projectId),
     );
   } else {
@@ -226,6 +233,7 @@ export function computeModelAvailability(
       (li) =>
         li.status !== "CANCELLED" &&
         li.subHireId == null &&
+        li.type !== "SALE" &&
         li.projectId === excludeProjectId,
     );
   }

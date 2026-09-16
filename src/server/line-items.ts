@@ -82,6 +82,12 @@ export async function checkAvailability(
       if (li.modelId !== modelId) continue;
       if (li.status === "CANCELLED") continue;
       if (li.subHireId != null) continue;
+      // WS11 (#950) — SALE lines never count as rental demand: NEW_STOCK draws
+      // from Model.saleStockQuantity (a separate pool), and FROM_RENTAL_STOCK
+      // already removed the unit from the rental pool at sale time, which
+      // effectiveStock already reflects. Counting it here too double-subtracts
+      // it and pencils a phantom overbooking. See convex/lib/availabilityCore.ts.
+      if (li.type === "SALE") continue;
       const p = projectById.get(li.projectId);
       if (!p) continue;
       if (p.isTemplate) continue;
@@ -101,6 +107,7 @@ export async function checkAvailability(
       if (li.modelId !== modelId) continue;
       if (li.status === "CANCELLED") continue;
       if (li.subHireId != null) continue;
+      if (li.type === "SALE") continue;
       if (li.projectId !== excludeProjectId) continue;
       const p = projectById.get(li.projectId);
       overlappingLineItems.push({

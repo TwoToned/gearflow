@@ -191,18 +191,23 @@ operator-facing list table to cards on mobile — see
 should be scoped against what those docs didn't cover, not restarted.
 
 ### 4.3 — QOL sweep
-**Effort:** M · **Status:** #1160, #1220, #1222 shipped; three follow-ons specced
+**Effort:** M · **Status:** Shipped — #1160, #1220, #1222, #1223, #1225, #1227
 The "the app should do the obvious thing, and tell you it did" track. #1160 made
 a job's status a consequence of the work
 ([FEATUREDOCS/76](../FEATUREDOCS/76-project-status-automation.md)). #1220
 (haptics on scan) and #1222 (undo on warehouse actions, which reuses #1160's
-`revertAutoAdvance`) have since shipped — see FEATUREDOCS/12 and FEATUREDOCS/76.
-The remaining three — quote follow-up nudges, a date-move impact preview, and
-the scan history strip — are specced in
+`revertAutoAdvance`) shipped next — see FEATUREDOCS/12 and FEATUREDOCS/76. The
+final three have since shipped too: #1223 (scan history strip, widening
+`useScanFeedback().play()` and reusing #1222's `scanUndo` — FEATUREDOCS/12),
+#1225 (quote follow-up nudges — a `quote_expiring` bell/email type gated on
+`invoice:read`, plus a Chase action on the quote rail — FEATUREDOCS/17 and
+FEATUREDOCS/66), and #1227 (date-move impact preview, sharing
+`makeLiveCore.ts`'s post-promote conflict check with a new pre-save query —
+FEATUREDOCS/65). All five were specced in
 [`docs/designs/qol-sweep-2026-09.md`](./designs/qol-sweep-2026-09.md) (tracking:
 [#1219](https://github.com/TwoToned/gearflow/issues/1219)) with a decisions
-record and a build order. Each is independently shippable; none is a
-prerequisite for anything else in Phase 4.
+record and a build order. Each shipped independently; none was a prerequisite
+for anything else in Phase 4.
 
 ---
 

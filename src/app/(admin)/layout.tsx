@@ -7,7 +7,7 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   if (!(await isSiteAdmin())) {
-    redirect("/dashboard");
+    redirect("/today");
   }
 
   return <>{children}</>;

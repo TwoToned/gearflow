@@ -12,7 +12,7 @@ import { FadeIn } from "@/components/ui/motion";
 /** Same allow-list as the login page's callbackUrl — only ever a same-origin
  *  relative path, never an open redirect. */
 function safeCallbackUrl(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/today";
   return raw;
 }
 

@@ -66,7 +66,7 @@ function renderLaterStep(
   if (step === 3) return <StepBranding orgId={createdOrgId} onDone={() => setStep(4)} onStepOutcome={onStepOutcome} />;
   if (step === 4) return <StepNumbering orgId={createdOrgId} onDone={() => setStep(5)} onStepOutcome={onStepOutcome} />;
   if (step === 5) {
-    return <StepTeamGear orgId={createdOrgId} onDone={() => router.push("/dashboard")} onStepOutcome={onFinalStepOutcome} />;
+    return <StepTeamGear orgId={createdOrgId} onDone={() => router.push("/today")} onStepOutcome={onFinalStepOutcome} />;
   }
   return null;
 }
@@ -111,7 +111,7 @@ export default function SetupPage() {
   useEffect(() => {
     let cancelled = false;
     getMyOrganizations().then((orgs) => {
-      if (!cancelled && orgs.length > 0) router.replace("/dashboard");
+      if (!cancelled && orgs.length > 0) router.replace("/today");
     });
     return () => {
       cancelled = true;

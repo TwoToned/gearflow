@@ -108,10 +108,22 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     action: { type: "navigate", path: "/settings" },
   },
   {
+    // Today replaced Dashboard as the landing page (work-layer phase 0.5,
+    // #1242, D10A) — "home" moved here; Dashboard keeps "overview".
+    id: "global-today",
+    label: "Today",
+    command: "today",
+    aliases: ["home"],
+    description: "Your work and schedule for today",
+    icon: "Sun",
+    pages: ["*"],
+    action: { type: "navigate", path: "/today" },
+  },
+  {
     id: "global-dashboard",
     label: "Dashboard",
     command: "dashboard",
-    aliases: ["home", "overview"],
+    aliases: ["overview"],
     description: "Go to dashboard",
     icon: "LayoutDashboard",
     pages: ["*"],

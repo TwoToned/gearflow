@@ -4455,6 +4455,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "backfillChecklistSubtasks.backfillChecklistSubtasksPage",
+    "module": "backfillChecklistSubtasks",
+    "fn": "backfillChecklistSubtasksPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "backfillClientContacts.backfillClientContactsPage",
     "module": "backfillClientContacts",
     "fn": "backfillClientContactsPage",
@@ -61946,10 +61983,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1201,
+  total: 1202,
   agentReachable: 580,
   queries: 432,
-  mutations: 769,
+  mutations: 770,
   agentReachableQueries: 301,
   agentReachableMutations: 279,
 } as const;

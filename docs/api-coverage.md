@@ -23,8 +23,8 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 432 | 301 | 129 | 1 | 1 |
-| Mutations | 769 | 279 | 483 | 0 | 7 |
-| **Total** | **1201** | **580** | **612** | **1** | **8** |
+| Mutations | 770 | 279 | 484 | 0 | 7 |
+| **Total** | **1202** | **580** | **613** | **1** | **8** |
 
 <!-- reachability-floor: 580 -->
 
@@ -59,6 +59,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `apiKeys` | 10 |
 | `apiRequestLog` | 3 |
 | `availabilityCheck` | 1 |
+| `backfillChecklistSubtasks` | 1 |
 | `backfillClientContacts` | 1 |
 | `backfillInvoiceSourceRevision` | 2 |
 | `backfillKitUnits` | 1 |

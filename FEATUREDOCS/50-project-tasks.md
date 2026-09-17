@@ -77,6 +77,20 @@ together with no extra code — pinned by a subtask row in
 `convex/projectWrites.test.ts`'s full-cascade test. `duplicateNative` never copies tasks
 at all (parent or child), so there's no clone-time subtask concern either.
 
+**Checklist → subtask backfill.** `convex/backfillChecklistSubtasks.ts`
+(`backfillChecklistSubtasksPage`, SERVICE-only, paginated, `apply=false` dry-run) creates
+one child `projectTasks` row per non-empty `checklist` item on a parent that doesn't
+already have a subtask — status from the item's `done` flag, `sortOrder` preserving
+checklist order, `organizationId`/`projectId` inherited from the parent. Idempotent
+(skips a parent that already has any subtask); never touches/clears the parent's
+`checklist` field itself (that stays for exactly one release after this ships, then a
+separate follow-up drops it — expand-contract). Driver:
+`scripts/convex-backfill-checklist-subtasks.ts`. **Not executed against production from
+this repo/session** — a human runs the driver with real Convex credentials once the
+peek-panel subtask UI (a later Phase 1 slice) exists to render the migrated rows; running
+it today would already be safe (the flat readers above exclude `parentId` rows), there's
+just nothing yet that shows them.
+
 **RBAC — `work:read`/`work:update` OR `project:read`/`project:update`.** A new `work`
 permissions resource was added additively to `permissionsCore.ts` (owner/admin/manager:
 full CRUD; member/warehouse: create/read/update; viewer: read). Every task read

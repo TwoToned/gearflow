@@ -93,6 +93,60 @@ describe("dashboardLists.home", () => {
   });
 });
 
+describe("dashboardLists.needsYou", () => {
+  test("surfaces declined/stale crew and expiring quotes ONLY for projects the caller manages", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    const STALE = 49 * 60 * 60 * 1000; // > the 48h threshold
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "PM Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("projects", { id: "pOther", organizationId: ORG, projectNumber: "PO", name: "Other Job", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Sam", lastName: "Smith" });
+      await ctx.db.insert("crewMembers", { id: "cm2", organizationId: ORG, firstName: "Rita", lastName: "Rivera" });
+      // On MY project: one declined, one stale-offered, one recently-offered (excluded), one confirmed (excluded).
+      await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "DECLINED", respondedAt: NOW - DAY });
+      await ctx.db.insert("crewAssignments", { id: "a2", organizationId: ORG, projectId: "pm1", crewMemberId: "cm2", status: "OFFERED", offeredAt: NOW - STALE });
+      await ctx.db.insert("crewAssignments", { id: "a3", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "OFFERED", offeredAt: NOW - 60_000 });
+      await ctx.db.insert("crewAssignments", { id: "a4", organizationId: ORG, projectId: "pm1", crewMemberId: "cm2", status: "CONFIRMED" });
+      // On someone else's project: declined too, but must not surface.
+      await ctx.db.insert("crewAssignments", { id: "aOther", organizationId: ORG, projectId: "pOther", crewMemberId: "cm1", status: "DECLINED", respondedAt: NOW });
+      // Quotes: MY project's SENT quote expires in 3 days (surfaces); the other project's expiring quote must not.
+      await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+      await ctx.db.insert("quotes", { id: "qOther", organizationId: ORG, projectId: "pOther", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+
+    expect(res.declinedCrew).toEqual([
+      { assignmentId: "a1", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Sam Smith", at: NOW - DAY },
+    ]);
+    expect(res.staleOffers).toEqual([
+      { assignmentId: "a2", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Rita Rivera", at: NOW - STALE },
+    ]);
+    expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+  });
+
+  test("a project with nothing outstanding returns empty buckets, not an error", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Quiet Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res).toEqual({ declinedCrew: [], staleOffers: [], expiringQuotes: [] });
+  });
+
+  test("a quote expiring far in the future does not count as 'expiring soon'", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("quotes", { id: "qFar", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 60 * DAY });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res.expiringQuotes).toEqual([]);
+  });
+});
+
 describe("dashboardLists.blocking", () => {
   test("surfaces open blocking threads where the user is PM or mentioned", async () => {
     const t = convexTest(schema, modules);

@@ -18841,6 +18841,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "dashboardLists.needsYou",
+    "module": "dashboardLists",
+    "fn": "needsYou",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Declined/stale crew offers and expiring quotes on projects the caller manages.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "dashboardLists.pendingCrewOffers",
     "module": "dashboardLists",
     "fn": "pendingCrewOffers",
@@ -61750,10 +61787,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1198,
-  agentReachable: 577,
-  queries: 429,
+  total: 1199,
+  agentReachable: 578,
+  queries: 430,
   mutations: 769,
-  agentReachableQueries: 298,
+  agentReachableQueries: 299,
   agentReachableMutations: 279,
 } as const;

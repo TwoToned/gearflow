@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   CheckCircle2,
+  Copy,
   Download,
   Eye,
   FileText,
@@ -333,6 +334,10 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         onView={setViewerTarget}
         onDeleteRecalled={setDeleteRecalledTarget}
         onEditLabel={setLabelTarget}
+        onChase={(quote) => {
+          void navigator.clipboard.writeText(chaseSummary(projectNumber, quote, { subtotal, taxAmount, total }, now));
+          toast.success("Follow-up copied");
+        }}
       />
 
       <UnacceptedLiveQuoteNotice liveQuote={liveQuote} hasAcceptedQuote={hasAcceptedQuote} />
@@ -546,6 +551,7 @@ function QuoteRevisionList({
   onView,
   onDeleteRecalled,
   onEditLabel,
+  onChase,
 }: {
   quotes: QuoteRevisionDoc[];
   visibleQuotes: QuoteRevisionDoc[];
@@ -567,6 +573,7 @@ function QuoteRevisionList({
   onView: (quote: QuoteRevisionDoc) => void;
   onDeleteRecalled: (quote: QuoteRevisionDoc) => void;
   onEditLabel: (quote: QuoteRevisionDoc) => void;
+  onChase: (quote: QuoteRevisionDoc) => void;
 }) {
   if (quotes.length === 0) {
     return <p className="t-micro text-fg-4">No quote yet — sending creates v{revision}.</p>;
@@ -588,6 +595,7 @@ function QuoteRevisionList({
             onView={() => onView(quote)}
             onDeleteRecalled={() => onDeleteRecalled(quote)}
             onEditLabel={() => onEditLabel(quote)}
+            onChase={() => onChase(quote)}
             now={now}
           />
         ))}
@@ -726,15 +734,49 @@ export function standardQuoteRowActions(
     onDecline: () => void;
     onRecall: () => void;
     onEditLabel: () => void;
+    onChase: () => void;
   },
 ): RowAction[] {
   const { isSent, isHeldByClient } = flags;
   const actions: RowAction[] = [];
   actions.push({ key: "rename", label: "Rename version", icon: Pencil, onClick: handlers.onEditLabel });
   if (isSent) actions.push({ key: "accept", label: "Mark accepted", icon: CheckCircle2, onClick: handlers.onAccept });
+  // #1225 (Q2) — a follow-up nudge for the client. Flow doesn't email the
+  // client itself (decision 7 of #989); this just hands the operator text
+  // for their own mail client, same as the send dialog's own copy-summary.
+  if (isHeldByClient) actions.push({ key: "chase", label: "Chase", icon: Copy, onClick: handlers.onChase });
   if (isHeldByClient) actions.push({ key: "decline", label: "Declined", icon: XCircle, onClick: handlers.onDecline });
   if (isHeldByClient) actions.push({ key: "recall", label: "Recall", icon: Undo2, onClick: handlers.onRecall });
   return actions;
+}
+
+/**
+ * The Chase action's clipboard text (#1225, Q2) — same grammar as
+ * `SendQuoteDialog`'s `copySummary`, plus the sent date and days remaining
+ * so the operator has enough context to write their own follow-up. Pure so
+ * it's testable without mounting the rail.
+ */
+export function chaseSummary(
+  projectNumber: string,
+  quote: Pick<QuoteRevisionDoc, "version" | "sentAt" | "publishedAt" | "validUntil">,
+  pricing: { subtotal: number | null; taxAmount: number | null; total: number | null },
+  now: number,
+): string {
+  const sentAt = quote.sentAt ?? quote.publishedAt ?? null;
+  const daysLeft = quote.validUntil != null ? daysUntilValidUntil(quote.validUntil, now) : null;
+  const lines = [
+    `Quote — ${projectNumber} v${quote.version}`,
+    pricing.subtotal != null ? `Subtotal: ${formatCurrency(pricing.subtotal)}` : null,
+    pricing.taxAmount != null ? `GST: ${formatCurrency(pricing.taxAmount)}` : null,
+    pricing.total != null ? `Total: ${formatCurrency(pricing.total)}` : null,
+    sentAt != null ? `Sent: ${formatDate(new Date(sentAt))}` : null,
+    quote.validUntil != null
+      ? daysLeft != null && daysLeft < 0
+        ? `Expired: ${formatDate(new Date(quote.validUntil))} (${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? "" : "s"} ago)`
+        : `Valid until: ${formatDate(new Date(quote.validUntil))}${daysLeft != null ? ` (${daysLeft} day${daysLeft === 1 ? "" : "s"} left)` : ""}`
+      : null,
+  ].filter(Boolean);
+  return lines.join("\n");
 }
 
 /** The owner-only cluster's actions — recall-then-delete (#1029) survives;
@@ -759,6 +801,7 @@ function QuoteRowActions({
   onRecall,
   onDeleteRecalled,
   onEditLabel,
+  onChase,
 }: {
   quote: QuoteRevisionDoc;
   flags: ReturnType<typeof quoteRowFlags>;
@@ -767,12 +810,13 @@ function QuoteRowActions({
   onRecall: () => void;
   onDeleteRecalled: () => void;
   onEditLabel: () => void;
+  onChase: () => void;
 }) {
   const canPublish = useCanDo("invoice", "publish");
   const isOwner = useIsOwner();
 
   const actions: RowAction[] = [
-    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onDecline, onRecall, onEditLabel }) : []),
+    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onDecline, onRecall, onEditLabel, onChase }) : []),
     ...(isOwner ? ownerOnlyQuoteRowActions(flags, { onDeleteRecalled }) : []),
   ];
 
@@ -795,6 +839,7 @@ function QuoteRevisionRow({
   onView,
   onDeleteRecalled,
   onEditLabel,
+  onChase,
   now,
 }: {
   quote: QuoteRevisionDoc;
@@ -808,6 +853,7 @@ function QuoteRevisionRow({
   onView: () => void;
   onDeleteRecalled: () => void;
   onEditLabel: () => void;
+  onChase: () => void;
   now: number;
 }) {
   const flags = quoteRowFlags(quote);
@@ -828,6 +874,7 @@ function QuoteRevisionRow({
             onRecall={onRecall}
             onDeleteRecalled={onDeleteRecalled}
             onEditLabel={onEditLabel}
+            onChase={onChase}
           />
         </div>
       </div>

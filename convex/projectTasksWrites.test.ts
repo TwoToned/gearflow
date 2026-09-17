@@ -182,4 +182,24 @@ describe("projectTasks read composites", () => {
     const rows = await t.withIdentity(asUser).query(api.projectTasks.listByProjectWithRelations, { projectId: "P1", orgId: ORG });
     expect(rows[0].assigneeUser).toBeNull(); // membership-gated — no name/image leak
   });
+
+  test("listByProjectWithRelations excludes subtasks (parentId set) from the flat board columns", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "parent", organizationId: ORG, projectId: "P1", title: "Parent", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "child", organizationId: ORG, projectId: "P1", title: "Child", status: "TODO", sortOrder: 2, parentId: "parent", createdAt: NOW, updatedAt: NOW });
+    });
+    const rows = await t.withIdentity(asUser).query(api.projectTasks.listByProjectWithRelations, { projectId: "P1", orgId: ORG });
+    expect(rows.map((r) => r.id)).toEqual(["parent"]);
+  });
+
+  test("listByProject excludes subtasks (parentId set)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "parent", organizationId: ORG, projectId: "P1", title: "Parent", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "child", organizationId: ORG, projectId: "P1", title: "Child", status: "TODO", sortOrder: 2, parentId: "parent", createdAt: NOW, updatedAt: NOW });
+    });
+    const rows = await t.withIdentity(asUser).query(api.projectTasks.listByProject, { projectId: "P1", orgId: ORG });
+    expect(rows.map((r) => r.id)).toEqual(["parent"]);
+  });
 });

@@ -64,6 +64,19 @@ row. No operations file exists for it yet (`convex/projectTasksSchemaPhase1.test
 the shape directly via `ctx.db`) — wiring lands with Today's snooze/promote UI, a later
 Phase 1 slice.
 
+**Subtasks never appear as flat siblings.** `listByProject`, `listByProjectWithRelations`,
+and `myOpenTasks` all exclude rows with `parentId` set — a subtask renders only nested
+under its parent (in a later Phase 1 slice; today's UI doesn't show subtasks at all yet).
+This must ship BEFORE the checklist→subtask backfill migration runs, per the design doc's
+explicit ordering rule, so a freshly-backfilled subtask never briefly appears as a
+top-level row. `getById` is unfiltered (a single-doc fetch, needed to open a subtask
+directly once the nested UI exists). The project-delete cascade
+(`convex/projectWrites.ts` `deleteNative`/`deleteTemplateNative`) already deletes every
+`projectTasks` row for a project unconditionally, so parent and subtask rows are removed
+together with no extra code — pinned by a subtask row in
+`convex/projectWrites.test.ts`'s full-cascade test. `duplicateNative` never copies tasks
+at all (parent or child), so there's no clone-time subtask concern either.
+
 **RBAC — `work:read`/`work:update` OR `project:read`/`project:update`.** A new `work`
 permissions resource was added additively to `permissionsCore.ts` (owner/admin/manager:
 full CRUD; member/warehouse: create/read/update; viewer: read). Every task read

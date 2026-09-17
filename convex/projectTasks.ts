@@ -54,10 +54,12 @@ export const listByProject = query({
   handler: async (ctx, { projectId, orgId }) => {
     await requireWorkOrProjectRead(ctx, orgId);
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    // Subtasks (parentId set) are excluded — this is a flat top-level list; a subtask
+    // only ever renders nested under its parent (Phase 1, #1243).
     return (await ctx.db
       .query("projectTasks")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect()).filter((r) => r.organizationId === orgId);
+      .collect()).filter((r) => r.organizationId === orgId && !r.parentId);
   },
 });
 
@@ -103,7 +105,7 @@ export const listByProjectWithRelations = query({
     await requireWorkOrProjectRead(ctx, orgId);
     const rows = (
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-    ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
+    ).filter((t) => t.organizationId === orgId && !t.parentId); // by_projectId is global → org re-check; subtasks render nested, never as flat siblings
     rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
 
     const out = [];
@@ -169,6 +171,7 @@ type MyOpenTaskDoc = {
   dueDate?: number;
   assigneeUserId?: string;
   assigneeCrewId?: string;
+  parentId?: string;
 };
 
 async function resolveCrewIdsForUser(ctx: QueryCtx, userId: string, orgId: string): Promise<string[]> {
@@ -195,6 +198,7 @@ async function collectMyOpenTasks(
   const byId = new Map<string, MyOpenTaskDoc>();
   const keep = (r: MyOpenTaskDoc) => {
     if (r.organizationId !== orgId) return; // global index — org re-check
+    if (r.parentId) return; // subtasks render nested under their parent, never as a standalone Today row
     byId.set(r.id, r);
   };
   for (const status of OPEN_TASK_STATUSES) {

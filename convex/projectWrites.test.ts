@@ -826,6 +826,9 @@ describe("projectWrites.deleteNative", () => {
       // PM / task / service.
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER, addedAt: NOW });
       await ctx.db.insert("projectTasks", { id: "task1", organizationId: ORG, projectId: "p1", title: "Load in", createdAt: NOW, updatedAt: NOW });
+      // A subtask (#1243 Phase 1) — the cascade deletes every projectTasks row for
+      // the project regardless of parentId, so parent and child go together.
+      await ctx.db.insert("projectTasks", { id: "task1_child", organizationId: ORG, projectId: "p1", title: "Sub-step", parentId: "task1", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectServices", { versionId: "v-p1", lineageId: "svc1", id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Labour", createdAt: NOW, updatedAt: NOW });
 
       // Grouping: category + group + slots.
@@ -856,7 +859,7 @@ describe("projectWrites.deleteNative", () => {
         ["projectLineItems", "li_loose"], ["projectLineItems", "li_kit"], ["projectLineItems", "li_kit_child"],
         ["projectLineItemUnits", "unit_loose"], ["projectLineItemUnits", "unit_kit_child"],
         ["crewAssignments", "ca1"], ["crewShifts", "cs1"], ["crewTimeEntries", "cte1"],
-        ["projectManagers", "pm1"], ["projectTasks", "task1"], ["projectServices", "svc1"],
+        ["projectManagers", "pm1"], ["projectTasks", "task1"], ["projectTasks", "task1_child"], ["projectServices", "svc1"],
         ["projectCategories", "cat1"], ["projectGroups", "grp1"],
         ["categorySlots", "slot_cat"], ["categorySlots", "slot_grp"],
         ["projectModelRevenues", "pmr1"],

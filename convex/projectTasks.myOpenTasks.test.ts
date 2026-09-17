@@ -142,4 +142,15 @@ describe("projectTasks.myOpenTasks", () => {
     const after = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: NOW + 1 });
     expect(after[0].overdue).toBe(true); // dueDate (NOW) < now (NOW + 1)
   });
+
+  test("excludes subtasks (parentId set) — they render nested under their parent, never as a standalone Today row", async () => {
+    const t = convexTest(schema, modules);
+    await baseSeed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "parent", organizationId: ORG, projectId: "P1", title: "Parent", status: "TODO", assigneeUserId: USER });
+      await ctx.db.insert("projectTasks", { id: "child", organizationId: ORG, projectId: "P1", title: "Child", status: "TODO", assigneeUserId: USER, parentId: "parent" });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: NOW });
+    expect(res.map((r) => r.id)).toEqual(["parent"]);
+  });
 });

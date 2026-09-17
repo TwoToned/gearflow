@@ -36,6 +36,12 @@ export const RESOURCES = [
   "reports",
   "checkItem",
   "invoice",
+  // Work-layer phase 1 (#1243) — added ADDITIVELY: apiKeys.scopes is a frozen
+  // stored string (never re-validated after mint/OAuth-consent), so task
+  // operations accept `work:X` OR `project:X` during the transition rather
+  // than repointing wholesale, which would MISSING_SCOPE every issued key,
+  // OAuth grant and cached Mira key. 19 -> 20.
+  "work",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -84,6 +90,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     reports: ["view", "export", "create", "delete"],
     checkItem: ALL_CRUD,
     invoice: ALL_INVOICE,
+    work: ALL_CRUD,
   },
   admin: {
     asset: ALL_ASSET,
@@ -105,6 +112,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     reports: ["view", "export", "create", "delete"],
     checkItem: ALL_CRUD,
     invoice: ALL_INVOICE,
+    work: ALL_CRUD,
   },
   manager: {
     asset: ["create", "read", "update", "import", "export"],
@@ -131,6 +139,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     // not (correcting a recorded payment stays owner/admin-only, same as
     // void/delete).
     invoice: ["create", "read", "update", "publish", "issue", "xero_push", "record_payment"],
+    work: ALL_CRUD,
   },
   member: {
     asset: ["create", "read", "update"],
@@ -152,6 +161,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     reports: ["view"],
     checkItem: ["read"],
     invoice: ["create", "read"],
+    work: ["create", "read", "update"],
   },
   // `staff` role removed (Wave 2) — was a duplicate of `member` with identical
   // permissions. Existing `staff` members are migrated to `member` via the
@@ -185,6 +195,10 @@ export const rolePermissions: Record<string, PermissionMap> = {
     reports: ["view"],
     checkItem: ["read"],
     invoice: ["read"],
+    // The reason this resource exists (design §10.5): the warehouse role held
+    // project:["read"] only, so an ops lead could see their own work items
+    // but never complete one — work:update closes that gap.
+    work: ["create", "read", "update"],
   },
   viewer: {
     asset: ["read"],
@@ -206,6 +220,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     reports: ["view"],
     checkItem: ["read"],
     invoice: ["read"],
+    work: ["read"],
   },
 };
 

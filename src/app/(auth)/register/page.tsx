@@ -71,7 +71,7 @@ function RegisterContent() {
           const orgs = await getMyOrganizations();
           if (orgs.length === 1) {
             await organization.setActive({ organizationId: orgs[0].id });
-            router.push("/dashboard");
+            router.push("/today");
           } else {
             router.push("/welcome");
           }

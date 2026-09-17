@@ -58,6 +58,7 @@ import {
   ClipboardCheck,
   Bookmark,
   PackageOpen,
+  Sun,
 } from "lucide-react";
 import {
   Dialog,
@@ -115,7 +116,7 @@ const pageIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   CreditCard, Palette, Truck, FileText, ClipboardList, Pencil, Copy,
   Upload, Download, QrCode, ScrollText, ScanBarcode, PackagePlus,
   LogOut, CheckCircle, CircleCheck, CircleX, StickyNote, Share2, HardHat,
-  Briefcase, Clock, CalendarOff, ClipboardCheck, Bookmark, PackageOpen,
+  Briefcase, Clock, CalendarOff, ClipboardCheck, Bookmark, PackageOpen, Sun,
 };
 
 function normalize(s: string): string {

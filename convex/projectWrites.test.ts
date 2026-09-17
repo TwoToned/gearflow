@@ -264,6 +264,42 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
   });
 });
 
+describe("projectWrites.updateStatusNative — work-template seeding on CONFIRMED (#1243)", () => {
+  const toConfirmed = { id: "p1", orgId: ORG, status: "CONFIRMED" as const, actor: ACTOR, auditId: "log1", now: NOW };
+
+  test("crossing into CONFIRMED seeds the default templates, assigned to the PM", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: "pm_user", addedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
+    const seeded = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    expect(seeded).toHaveLength(5);
+    expect(seeded.every((s) => s.assigneeUserId === "pm_user")).toBe(true);
+    expect(seeded.every((s) => s.sourceKey?.endsWith(":CONFIRMED"))).toBe(true);
+    expect(new Set(seeded.map((s) => s.stage))).toEqual(new Set(["quote", "prep", "load_in", "close"]));
+  });
+
+  test("re-crossing into CONFIRMED does not reseed (idempotent)", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, status: "PREPPING" as const, auditId: "log2" });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, auditId: "log3" });
+    const seeded = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    expect(seeded).toHaveLength(5);
+  });
+
+  test("no PM anywhere on the project leaves the seeded items unassigned", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
+    const seeded = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    expect(seeded.every((s) => s.assigneeUserId === undefined)).toBe(true);
+  });
+});
+
 // #1230: the HARD_LOCKED tier (COMPLETED/INVOICED) and its revert-out-of gate
 // (#792) are deleted along with the rest of the 4-tier lock system — #987
 // already made a client's stored finance document immutable regardless of
@@ -826,6 +862,9 @@ describe("projectWrites.deleteNative", () => {
       // PM / task / service.
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER, addedAt: NOW });
       await ctx.db.insert("projectTasks", { id: "task1", organizationId: ORG, projectId: "p1", title: "Load in", createdAt: NOW, updatedAt: NOW });
+      // A subtask (#1243 Phase 1) — the cascade deletes every projectTasks row for
+      // the project regardless of parentId, so parent and child go together.
+      await ctx.db.insert("projectTasks", { id: "task1_child", organizationId: ORG, projectId: "p1", title: "Sub-step", parentId: "task1", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectServices", { versionId: "v-p1", lineageId: "svc1", id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Labour", createdAt: NOW, updatedAt: NOW });
 
       // Grouping: category + group + slots.
@@ -856,7 +895,7 @@ describe("projectWrites.deleteNative", () => {
         ["projectLineItems", "li_loose"], ["projectLineItems", "li_kit"], ["projectLineItems", "li_kit_child"],
         ["projectLineItemUnits", "unit_loose"], ["projectLineItemUnits", "unit_kit_child"],
         ["crewAssignments", "ca1"], ["crewShifts", "cs1"], ["crewTimeEntries", "cte1"],
-        ["projectManagers", "pm1"], ["projectTasks", "task1"], ["projectServices", "svc1"],
+        ["projectManagers", "pm1"], ["projectTasks", "task1"], ["projectTasks", "task1_child"], ["projectServices", "svc1"],
         ["projectCategories", "cat1"], ["projectGroups", "grp1"],
         ["categorySlots", "slot_cat"], ["categorySlots", "slot_grp"],
         ["projectModelRevenues", "pmr1"],

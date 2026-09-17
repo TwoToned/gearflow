@@ -6,6 +6,7 @@ import { requireOrgReadFor, requireOrgPermission, requireService, resolveActor }
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getUserColor } from "./lib/collaborationColors";
+import { notifyMentions } from "./lib/notify";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -155,7 +156,7 @@ export const createThread = mutation({
       updatedAt: now,
     });
     // threadId is Id<"commentThreads"> which IS a string at runtime
-    await ctx.db.insert("comments", {
+    const commentId = await ctx.db.insert("comments", {
       orgId: args.orgId,
       threadId: threadId as unknown as string,
       body: args.firstComment,
@@ -165,6 +166,21 @@ export const createThread = mutation({
       mentionUserIds: mentions,
       createdAt: now,
     });
+
+    // Mentions inbox (#1241, work-layer.md §10.2) — same transaction as the
+    // comment, so it commits or rolls back together, never separately.
+    if (mentions) {
+      await notifyMentions(ctx, {
+        organizationId: args.orgId,
+        mentionedUserIds: mentions,
+        actorUserId: actor.userId,
+        actorName: actor.userName,
+        entityType: args.entityType,
+        entityId: args.entityId,
+        commentId: commentId as unknown as string,
+        commentBody: args.firstComment,
+      });
+    }
 
     const where = targetLabel(args.targetType);
     await recordActivity(ctx, {
@@ -240,6 +256,22 @@ export const addComment = mutation({
       mentionUserIds: newMentions.length ? newMentions : undefined,
       createdAt: now,
     });
+
+    // Mentions inbox (#1241, work-layer.md §10.2) — only the NEW mentions on this
+    // reply, not the thread's merged history (each user is notified once per
+    // comment, via the dedupe key naming this comment + recipient).
+    if (newMentions.length) {
+      await notifyMentions(ctx, {
+        organizationId: args.orgId,
+        mentionedUserIds: newMentions,
+        actorUserId: actor.userId,
+        actorName: actor.userName,
+        entityType: thread.entityType,
+        entityId: thread.entityId,
+        commentId: commentId as unknown as string,
+        commentBody: args.body,
+      });
+    }
 
     await recordActivity(ctx, {
       orgId: args.orgId,

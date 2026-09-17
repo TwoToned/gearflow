@@ -3252,6 +3252,16 @@ export default defineSchema({
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
     incidentReport: v.optional(v.boolean()),
+    // Work-layer phase 0 (#1241, work-layer.md §10.2) — email opt-in for the new
+    // stored `notifications` types. Schema-only for now, same posture as
+    // lowStock/expiringCert above: not yet in prefFields/the settings form or the
+    // digest sender, which still only reads the eight fields above. Wiring these
+    // into the 15-minute digest cron is a later phase's job, not this one's.
+    mentioned: v.optional(v.boolean()),
+    assigned: v.optional(v.boolean()),
+    commentReply: v.optional(v.boolean()),
+    dueSoon: v.optional(v.boolean()),
+    overdue: v.optional(v.boolean()),
     quoteExpiring: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
@@ -3271,6 +3281,34 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
     .index("by_organizationId_sentAt", ["organizationId", "sentAt"]),
+
+  // Notification — work-layer phase 0 (#1241, docs/designs/work-layer.md §10.2).
+  // The ONE thing this phase stores that it did not before: Convex cannot index
+  // inside commentThreads.mentionUserIds, so nothing could answer "who was
+  // mentioned" until a mention is written as a durable per-user row. Written
+  // INSIDE the mutation that causes it (the mention hook in convex/collaboration.ts)
+  // so the comment and the notification commit together or not at all — unlike
+  // logActivity, which is best-effort. All three lookup indexes are org-prefixed:
+  // users are multi-org, so no index may start at userId alone (R-8.4.3).
+  notifications: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    type: v.string(), // mentioned | assigned | comment_reply | due_soon | overdue
+    entityType: v.string(),
+    entityId: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    href: v.string(),
+    dedupeKey: v.string(), // one notification per event — see by_organizationId_dedupeKey
+    readAt: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId_userId_readAt", ["organizationId", "userId", "readAt"])
+    .index("by_organizationId_userId_createdAt", ["organizationId", "userId", "createdAt"])
+    .index("by_organizationId_dedupeKey", ["organizationId", "dedupeKey"]),
 
   // Phase 6b — idempotency ledger for Convex-scheduled email side-effects.
   // One row per delivered (or in-flight) email, keyed by a caller-supplied
@@ -3318,17 +3356,27 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_scopeKey", ["organizationId", "scopeKey"]),
 
-  // ProjectTask
+  // ProjectTask — widened in place for the work-layer program (#1243, Phase 1,
+  // design §10.1). Convex cannot rename a table and @convex-dev/migrations is
+  // not installed, so widening (not a workItems copy) is what preserves every
+  // row id, audit row, deep link and saved view. `checklist` stays for one
+  // release (expand-contract) until the backfill migration retires it.
   projectTasks: defineTable({
     id: v.string(),
     organizationId: v.string(),
-    projectId: v.string(),
+    // Optional as of Phase 1 — personal and client-scoped work has no project.
+    // Every pre-Phase-1 row has this set; nothing back-fills it to optional,
+    // the column itself just now permits absence.
+    projectId: v.optional(v.string()),
     title: v.string(),
     description: v.optional(v.string()),
     status: v.optional(enums.ProjectTaskStatus),
     priority: v.optional(enums.ProjectTaskPriority),
     dueDate: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
+    // Retained for exactly one release after the checklist backfill migration
+    // ships (expand-contract — Convex functions deploy before the app image),
+    // then dropped. New rows should use subtasks (parentId), never this.
     checklist: v.optional(v.any()),
     assigneeUserId: v.optional(v.string()),
     assigneeCrewId: v.optional(v.string()),
@@ -3336,6 +3384,26 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
+    // — Phase 1 additions (design §10.1) —
+    kind: v.optional(enums.ProjectTaskKind), // absent = "task"
+    stage: v.optional(enums.ProjectTaskStage),
+    // One level of subtasks — replaces `checklist`. A child inherits
+    // projectId/organizationId from its parent and has no stage/sourceKey.
+    parentId: v.optional(v.string()),
+    startDate: v.optional(v.number()), // org-tz midnight; hides the row until then
+    dueTime: v.optional(v.string()), // "HH:mm" in the org timezone
+    scheduledStart: v.optional(v.number()), // the agenda block (phase 1 Today)
+    scheduledEnd: v.optional(v.number()),
+    snoozedUntil: v.optional(v.number()),
+    estimateMinutes: v.optional(v.number()),
+    tags: v.optional(v.array(v.string())), // free-form strings, FEATUREDOCS/26 shape — no tag table
+    // Set only when a human promotes a derived Triage signal into a real row
+    // (§9) — deterministic, names the underlying entity (e.g.
+    // "quote:expiring:<quoteId>"). Never set by anything else.
+    sourceKey: v.optional(v.string()),
+    isPrivate: v.optional(v.boolean()),
+    // Set when seeded from a workTemplates row on a lifecycle transition (§8.2).
+    templateId: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -3346,7 +3414,64 @@ export default defineSchema({
     .index("by_organizationId_projectId", ["organizationId", "projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_assigneeUserId_status", ["assigneeUserId", "status"])
-    .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"]),
+    .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"])
+    // Org-prefixed — users are multi-org, so no index may start at a bare
+    // assignee id (R-8.4.3: every global-index read must be org-checked; a
+    // composite index that starts with organizationId sidesteps the question
+    // entirely for this read shape).
+    .index("by_organizationId_assigneeUserId_status", ["organizationId", "assigneeUserId", "status"])
+    .index("by_organizationId_assigneeCrewId_status", ["organizationId", "assigneeCrewId", "status"])
+    .index("by_organizationId_status_dueDate", ["organizationId", "status", "dueDate"])
+    .index("by_parentId", ["parentId"])
+    .searchIndex("search_title", { searchField: "title", filterFields: ["organizationId"] }),
+
+  // WorkSignalState — a human's decision (snoozed/dismissed/promoted) about a
+  // DERIVED Triage signal (#1243, design §10.3/§9). Nothing else about a
+  // signal is ever stored — this table exists only so a human's snooze or
+  // dismissal survives across reads. Rows are per-user: one PM dismissing a
+  // signal never hides it from another. Pruned after 90 days of the
+  // underlying sourceKey producing no signal (same pattern as
+  // notificationDismissals).
+  workSignalStates: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    sourceKey: v.string(), // deterministic — names the underlying row (§9)
+    state: v.union(v.literal("snoozed"), v.literal("dismissed"), v.literal("promoted")),
+    snoozedUntil: v.optional(v.number()),
+    promotedWorkItemId: v.optional(v.string()), // set when promoted to a real projectTasks row
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId_userId_sourceKey", ["organizationId", "userId", "sourceKey"])
+    .index("by_organizationId_sourceKey", ["organizationId", "sourceKey"]),
+
+  // WorkTemplate — an org's own set of work items to seed when a project enters
+  // a lifecycle status (#1243 Phase 1, design doc §8.2). No admin UI exists yet
+  // to write these (a later phase) — an org with zero rows here falls back to
+  // DEFAULT_CONFIRMED_TEMPLATES (convex/lib/workTemplateSeeding.ts), which is
+  // itself literally the design doc's five worked examples. The table exists now
+  // so that future UI has somewhere to write without another schema change.
+  workTemplates: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    title: v.string(),
+    stage: enums.ProjectTaskStage,
+    triggerStatus: v.string(), // a projects.status value; only "CONFIRMED" is wired so far
+    // Offsets are relative to project start/end (§8.2) or the moment the
+    // template seeds ("trigger") — e.g. an admin task due shortly after
+    // confirmation vs. a venue check tied to the event date itself.
+    offsetFrom: v.union(v.literal("trigger"), v.literal("rentalStart"), v.literal("rentalEnd")),
+    offsetDays: v.number(),
+    isActive: v.optional(v.boolean()), // absent = active
+    sortOrder: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_organizationId_triggerStatus", ["organizationId", "triggerStatus"]),
 
   // SavedTableView
   savedTableViews: defineTable({

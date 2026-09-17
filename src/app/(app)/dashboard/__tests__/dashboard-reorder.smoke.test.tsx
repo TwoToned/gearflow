@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 //
-// Dashboard reorder (#952 / QW-3): the page now renders three fixed zones in
-// order — My work (On the floor now + MyWorkSection, which owns the tasks-due
-// block and per-project blocker badges), Org risk (needs-attention chips),
-// Demoted (stat tiles / upcoming / activity). The standalone "Blockers needing
-// you" panel that used to sit between the bento board and MyWorkSection is
-// gone — blockers now render in exactly two places (MyWorkSection + the
-// needs-attention chip), not three.
+// Dashboard reorder (#952 / QW-3), updated for work-layer phase 0.5 (#1242,
+// D10A): the personal "My work" zone (tasks-due block + per-project blocker
+// badges, formerly MyWorkSection) is GONE — Today (/today) now owns that
+// surface, and the dashboard would otherwise render the same rows twice.
+// "On the floor now" (an org-wide live-jobs view, not a personal work list)
+// stays and now renders directly ahead of the Org risk zone. Blockers still
+// surface exactly once, via the needs-attention chip.
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -48,18 +48,6 @@ const BLOCKER = {
   createdAt: 1,
 };
 
-const TASK = {
-  id: "task1",
-  title: "Confirm crew call times",
-  status: "TODO",
-  priority: "NORMAL",
-  dueDate: null,
-  overdue: false,
-  projectId: "p1",
-  projectName: "Live Gig",
-  projectNumber: "260701",
-};
-
 vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeDashboardStats: () => ({ data: STATS, isLoading: false }),
   useNativeSubHireStats: () => ({ activeSubHires: 0, monthlySubHireCost: 0, overdueReturns: 0 }),
@@ -68,7 +56,6 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeBlocking: () => [BLOCKER],
   useNativePendingCrewOffers: () => 0,
   useNativeActivity: () => ({ logs: [], testRecords: [], maintenanceRecords: [] }),
-  useNativeMyOpenTasks: () => [TASK],
   // WS3 #942 — nonzero so the overbooking-chip test below has something to render.
   useNativeOverbookingCounts: () => ({ hardCount: 2, pencilledCount: 1, saleStockCount: 3 }),
   // #992 (Phase F) — zeroed so it doesn't add unexpected chips to this test's assertions.
@@ -96,40 +83,32 @@ vi.mock("@/components/dashboard/activation-checklist", () => ({
 import DashboardPage from "../page";
 
 describe("DashboardPage reorder (smoke)", () => {
-  it("renders zone 1 (My work) before zone 2 (Org risk) before zone 3 (stat tiles)", () => {
+  it("renders 'On the floor now' before the org-risk zone before stat tiles", () => {
     const { container } = render(<DashboardPage />);
     const text = container.textContent ?? "";
     const floorIdx = text.indexOf("On the floor now");
-    const myWorkIdx = text.indexOf("My work");
     const riskIdx = text.indexOf("Needs attention");
     const statIdx = text.indexOf("Active jobs");
 
     expect(floorIdx).toBeGreaterThan(-1);
-    expect(myWorkIdx).toBeGreaterThan(-1);
     expect(riskIdx).toBeGreaterThan(-1);
     expect(statIdx).toBeGreaterThan(-1);
 
-    expect(floorIdx).toBeLessThan(myWorkIdx);
-    expect(myWorkIdx).toBeLessThan(riskIdx);
+    expect(floorIdx).toBeLessThan(riskIdx);
     expect(riskIdx).toBeLessThan(statIdx);
   });
 
-  it("does not render a standalone 'Blockers needing you' panel — MyWorkSection owns it now", () => {
+  it("no longer renders a personal 'My work' zone — Today owns tasks-due and per-project blocker badges now", () => {
     render(<DashboardPage />);
+    expect(screen.queryByText("My work")).toBeNull();
+    expect(screen.queryByText("Confirm crew call times")).toBeNull();
+    expect(screen.queryByText("1 blocker")).toBeNull();
     expect(screen.queryByText("Blockers needing you")).toBeNull();
   });
 
-  it("surfaces the blocker exactly once via MyWorkSection's per-project badge, plus the needs-attention chip", () => {
+  it("surfaces the blocker exactly once, via the needs-attention chip", () => {
     render(<DashboardPage />);
-    // The needs-attention chip.
     expect(screen.getByText(/blocker.*need you/)).toBeDefined();
-    // MyWorkSection's per-project blocker count badge.
-    expect(screen.getByText("1 blocker")).toBeDefined();
-  });
-
-  it("passes myOpenTasks through to MyWorkSection's tasks-due block", () => {
-    render(<DashboardPage />);
-    expect(screen.getByText("Confirm crew call times")).toBeDefined();
   });
 
   it("renders the org-risk zone with the needs-attention chips", () => {

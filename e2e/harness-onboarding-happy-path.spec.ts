@@ -86,10 +86,14 @@ test.describe("harness: onboarding happy path (all five wizard screens, four mil
       // added"), which contains the model name as a substring.
       await expect(page.getByText(modelName, { exact: true })).toBeVisible({ timeout: 20000 });
       await page.getByRole("button", { name: "Finish setup" }).click();
-      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
     });
 
     await test.step("Get started checklist shows 1/4 done (the model from step 5)", async () => {
+      // The activation checklist stayed on /dashboard (#1242, D10A) — it was
+      // never one of the widgets ported to /today, only the personal "My
+      // work" zone was. /today is just the new post-onboarding landing page.
+      await page.goto("/dashboard");
       await expect(page.getByText("Get started")).toBeVisible({ timeout: 20000 });
       await expect(page.getByText("1 / 4")).toBeVisible();
     });

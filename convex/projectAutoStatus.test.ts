@@ -334,6 +334,15 @@ describe("PAYMENT_SETTLED", () => {
     expect(await projectStatus(t)).toBe("CONFIRMED");
   });
 
+  test("#1243: auto-advancing to CONFIRMED also seeds the work-item templates", async () => {
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    await seedAcceptedQuote(t);
+    expect(await advance(t, "PAYMENT_SETTLED")).toBe("CONFIRMED");
+    const seeded = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", PROJ)).collect());
+    expect(seeded).toHaveLength(5);
+  });
+
   test("fails CLOSED with no accepted quote — the manual confirm's own gate", async () => {
     // updateStatusNative demands a justification from a narrow audience to
     // confirm without an accepted revision. This path has nobody to ask, so it

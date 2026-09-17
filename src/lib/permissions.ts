@@ -219,6 +219,15 @@ export const PERMISSION_REGISTRY: Record<
       { key: "void_payment", label: "Void Payment" },
     ],
   },
+  work: {
+    label: "Work",
+    actions: [
+      { key: "read", label: "View" },
+      { key: "create", label: "Create" },
+      { key: "update", label: "Edit" },
+      { key: "delete", label: "Delete" },
+    ],
+  },
 };
 
 /** Role display labels */

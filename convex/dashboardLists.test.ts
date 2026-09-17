@@ -93,6 +93,117 @@ describe("dashboardLists.home", () => {
   });
 });
 
+describe("dashboardLists.needsYou", () => {
+  test("surfaces declined/stale crew and expiring quotes ONLY for projects the caller manages", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    const STALE = 49 * 60 * 60 * 1000; // > the 48h threshold
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "PM Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("projects", { id: "pOther", organizationId: ORG, projectNumber: "PO", name: "Other Job", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Sam", lastName: "Smith" });
+      await ctx.db.insert("crewMembers", { id: "cm2", organizationId: ORG, firstName: "Rita", lastName: "Rivera" });
+      // On MY project: one declined, one stale-offered, one recently-offered (excluded), one confirmed (excluded).
+      await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "DECLINED", respondedAt: NOW - DAY });
+      await ctx.db.insert("crewAssignments", { id: "a2", organizationId: ORG, projectId: "pm1", crewMemberId: "cm2", status: "OFFERED", offeredAt: NOW - STALE });
+      await ctx.db.insert("crewAssignments", { id: "a3", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "OFFERED", offeredAt: NOW - 60_000 });
+      await ctx.db.insert("crewAssignments", { id: "a4", organizationId: ORG, projectId: "pm1", crewMemberId: "cm2", status: "CONFIRMED" });
+      // On someone else's project: declined too, but must not surface.
+      await ctx.db.insert("crewAssignments", { id: "aOther", organizationId: ORG, projectId: "pOther", crewMemberId: "cm1", status: "DECLINED", respondedAt: NOW });
+      // Quotes: MY project's SENT quote expires in 3 days (surfaces); the other project's expiring quote must not.
+      await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+      await ctx.db.insert("quotes", { id: "qOther", organizationId: ORG, projectId: "pOther", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+
+    expect(res.declinedCrew).toEqual([
+      { sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Sam Smith", at: NOW - DAY },
+    ]);
+    expect(res.staleOffers).toEqual([
+      { sourceKey: "crew:stale:a2", assignmentId: "a2", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Rita Rivera", at: NOW - STALE },
+    ]);
+    expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+  });
+
+  test("a project with nothing outstanding returns empty buckets, not an error", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Quiet Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res).toEqual({ declinedCrew: [], staleOffers: [], expiringQuotes: [] });
+  });
+
+  test("a quote expiring far in the future does not count as 'expiring soon'", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("quotes", { id: "qFar", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 60 * DAY });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res.expiringQuotes).toEqual([]);
+  });
+
+  // #1243 Phase 1 — a human's decision (workSignalStates) hides a signal.
+  describe("workSignalStates filtering (#1243 Phase 1)", () => {
+    async function seedExpiringQuote(t: ReturnType<typeof convexTest>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+        await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+      });
+    }
+
+    test("a dismissed signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes).toEqual([]);
+    });
+
+    test("a promoted signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "promoted", promotedWorkItemId: "t1", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes).toEqual([]);
+    });
+
+    test("a signal snoozed into the future is hidden; an expired snooze re-surfaces it", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "snoozed", snoozedUntil: NOW + DAY, createdAt: NOW, updatedAt: NOW }),
+      );
+      const stillSnoozed = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(stillSnoozed.expiringQuotes).toEqual([]);
+
+      const afterSnooze = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW + DAY + 1 });
+      expect(afterSnooze.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+
+    test("another user's decision does not hide the signal for this user", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: "user_other", sourceKey: "quote:expiring:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+  });
+});
+
 describe("dashboardLists.blocking", () => {
   test("surfaces open blocking threads where the user is PM or mentioned", async () => {
     const t = convexTest(schema, modules);

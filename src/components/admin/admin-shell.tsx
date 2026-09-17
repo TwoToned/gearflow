@@ -67,7 +67,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             variant="ghost"
             size="sm"
             className="w-full justify-start"
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push("/today")}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to App
@@ -116,7 +116,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 );
               })}
               <button
-                onClick={() => { setMobileOpen(false); router.push("/dashboard"); }}
+                onClick={() => { setMobileOpen(false); router.push("/today"); }}
                 className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-fg-3 hover:bg-accent/50 hover:text-accent-foreground transition-colors"
               >
                 <ArrowLeft className="h-4 w-4" />

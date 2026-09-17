@@ -154,3 +154,54 @@ describe("collaboration browser-direct writes", () => {
     expect(comment!.authorColor).toBe(getUserColor(MEMBER));
   });
 });
+
+describe("mentions → notifications (work-layer phase 0, #1241)", () => {
+  test("createThread with mentions writes exactly one notification for the mentioned user, never the author", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "hey @Vic check this out",
+      createdBy: MEMBER, createdByName: "M", mentionUserIds: [VIEWER, MEMBER],
+    });
+    const rows = await t.run(async (ctx) => ctx.db.query("notifications").collect());
+    expect(rows.length).toBe(1);
+    expect(rows[0].userId).toBe(VIEWER);
+    expect(rows[0].type).toBe("mentioned");
+    expect(rows[0].organizationId).toBe(ORG);
+  });
+
+  test("addComment only notifies users newly mentioned in THAT reply, not the thread's merged history", async () => {
+    const t = makeT();
+    await seed(t);
+    const threadId = await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "start", createdBy: MEMBER, createdByName: "M",
+      mentionUserIds: [VIEWER],
+    });
+    expect((await t.run(async (ctx) => ctx.db.query("notifications").collect())).length).toBe(1);
+    // Reply mentions VIEWER again — a second, distinct comment, so it earns its own
+    // notification; it must not re-scan the thread's cumulative mentionUserIds.
+    await t.withIdentity(asMember).mutation(api.collaboration.addComment, {
+      orgId: ORG, threadId: threadId as string, body: "reply @Vic", authorId: MEMBER, authorName: "M", mentionUserIds: [VIEWER],
+    });
+    const rows = await t.run(async (ctx) => ctx.db.query("notifications").collect());
+    expect(rows.length).toBe(2);
+    expect(rows.every((r) => r.userId === VIEWER)).toBe(true);
+    expect(new Set(rows.map((r) => r.dedupeKey)).size).toBe(2); // distinct comments → distinct dedupe keys
+  });
+
+  test("a rejected comment write leaves no notification behind — commit or nothing, atomically", async () => {
+    const t = makeT();
+    await seed(t);
+    const threadId = await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "start", createdBy: MEMBER, createdByName: "M",
+    });
+    await t.withIdentity(asMember).mutation(api.collaboration.resolveThread, { orgId: ORG, threadId: threadId as string, resolvedBy: MEMBER });
+    // A reply mentioning VIEWER on a RESOLVED thread is rejected before any write happens.
+    await expect(
+      t.withIdentity(asMember).mutation(api.collaboration.addComment, {
+        orgId: ORG, threadId: threadId as string, body: "late @Vic", authorId: MEMBER, authorName: "M", mentionUserIds: [VIEWER],
+      }),
+    ).rejects.toThrow();
+    expect(await t.run(async (ctx) => ctx.db.query("notifications").collect())).toEqual([]);
+  });
+});

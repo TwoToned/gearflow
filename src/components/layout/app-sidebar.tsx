@@ -5,8 +5,7 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard,
-  ListTodo,
+  Sun,
   Package,
   Boxes,
   FolderOpen,
@@ -94,14 +93,14 @@ interface RailItem {
 
 // Primary modules. Hues per DESIGN.md §3.7/§15.5.
 const RAIL: RailItem[] = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
-  // No `resource` gate — personal scope (this user's own assignments), not an
-  // org resource. A resource gate here would fail-open-flash on load like every
-  // other gated item; skipping it entirely (rather than gating on "project")
-  // means viewer/warehouse roles keep their own task list even without
-  // project:read. Sidebar-only per DESIGN.md §16 — NOT in the mobile bottom nav
-  // (that's the 5 daily-operator workflows; see mobile-nav.tsx).
-  { title: "My tasks", url: "/my-tasks", icon: ListTodo, hue: "blue" },
+  // Today replaces Dashboard as the landing page + primary rail item
+  // (work-layer phase 0.5, #1242) — Dashboard moved to the account menu
+  // (user-nav.tsx). No `resource` gate — personal scope (this user's own
+  // work), not an org resource; skipping it entirely (rather than gating on
+  // "project") means viewer/warehouse roles keep their own Today even
+  // without project:read. Also supersedes the old "My tasks" entry — /my-tasks
+  // now redirects here.
+  { title: "Today", url: "/today", icon: Sun, hue: "blue" },
   {
     title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
     subs: [
@@ -401,7 +400,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-line bg-paper-2">
       <SidebarHeader className={cn("border-b border-line", collapsed ? "items-center py-3" : "px-3 py-3.5")}>
-        <Link href="/dashboard" aria-label="RVLT Flow — dashboard" className="flex items-center">
+        <Link href="/today" aria-label="RVLT Flow — today" className="flex items-center">
           {collapsed ? (
             <span className="flex size-9 items-center justify-center rounded-[var(--r)] bg-red shadow-[var(--lit)]">
               <RvltMark className="h-4 w-auto [&_path]:fill-white" />

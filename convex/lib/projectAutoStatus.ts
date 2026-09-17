@@ -10,6 +10,7 @@ import { hasAcceptedQuote } from "./quoteState";
 import { resolveAutoStatusEnabled, type AutoStatusSettingKey } from "./orgSettings";
 import { assertWritesEnabled } from "./writeGuard";
 import { requireLiveVersionId } from "./versionScope";
+import { maybeSeedWorkTemplates } from "./workTemplateSeeding";
 
 /**
  * Project status automation (#1160) — the ONE place a job's status moves on its
@@ -438,6 +439,13 @@ export async function maybeAutoAdvanceProjectStatus(
     projectId: project.id,
     createdAt: a.now,
   });
+
+  // #1243 Phase 1: the auto-advance path is the OTHER way a project reaches
+  // CONFIRMED (PAYMENT_SETTLED) — seed the same templates it would get from a
+  // manual updateStatusNative transition.
+  if (rule.to === "CONFIRMED") {
+    await maybeSeedWorkTemplates(ctx, { orgId: a.orgId, projectId: project.id, triggerStatus: rule.to, actor: a.actor, now: a.now });
+  }
 
   return { status: rule.to, auditId };
 }

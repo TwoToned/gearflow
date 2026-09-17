@@ -4455,6 +4455,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "backfillChecklistSubtasks.backfillChecklistSubtasksPage",
+    "module": "backfillChecklistSubtasks",
+    "fn": "backfillChecklistSubtasksPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "backfillClientContacts.backfillClientContactsPage",
     "module": "backfillClientContacts",
     "fn": "backfillClientContactsPage",
@@ -18841,6 +18878,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "dashboardLists.needsYou",
+    "module": "dashboardLists",
+    "fn": "needsYou",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Declined/stale crew offers and expiring quotes on projects the caller manages.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "dashboardLists.pendingCrewOffers",
     "module": "dashboardLists",
     "fn": "pendingCrewOffers",
@@ -32014,6 +32088,154 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "notifications.listForMe",
+    "module": "notifications",
+    "fn": "listForMe",
+    "kind": "query",
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "limit",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f14bd0a6d604268b",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "List the caller's recent, non-archived notifications in their active org.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notifications.unreadCountForMe",
+    "module": "notifications",
+    "fn": "unreadCountForMe",
+    "kind": "query",
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [],
+    "privilegedArgs": [],
+    "argsSha": "5151b7eb8536aa97",
+    "returnsSha": "cddf8275afa15408",
+    "stability": "tracks-app",
+    "summary": "Count the caller's unread notifications in their active org.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.archiveNative",
+    "module": "notificationsWrites",
+    "fn": "archiveNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b114161049d5d20",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.markAllReadNative",
+    "module": "notificationsWrites",
+    "fn": "markAllReadNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [],
+    "privilegedArgs": [],
+    "argsSha": "5151b7eb8536aa97",
+    "returnsSha": "1ce2050af5634770",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.markReadNative",
+    "module": "notificationsWrites",
+    "fn": "markReadNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b114161049d5d20",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "oauthAuthorizationCodes.create",
     "module": "oauthAuthorizationCodes",
     "fn": "create",
@@ -41725,9 +41947,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "assignees",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -41844,7 +42070,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "117bc381a010e4d8",
+    "argsSha": "41978dae51ea1f78",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41946,7 +42172,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "117bc381a010e4d8",
+    "argsSha": "41978dae51ea1f78",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41961,9 +42187,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "getById",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -41993,9 +42223,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "listByProject",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -42030,9 +42264,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "listByProjectWithRelations",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -42062,14 +42300,59 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectTasks.listSubtasks",
+    "module": "projectTasks",
+    "fn": "listSubtasks",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "parentId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "2882f5628c2ee855",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "List a task's subtasks (one level).",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectTasks.myOpenTasks",
     "module": "projectTasks",
     "fn": "myOpenTasks",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -42217,7 +42500,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "8f5f12dfac2a9705",
+    "argsSha": "e61e3d3271d15c05",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -42274,9 +42557,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "bulkDeleteNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42326,9 +42613,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "bulkUpdateNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42388,7 +42679,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b58cfa35fb401bb7",
+    "argsSha": "c91a4761b711c1b8",
     "returnsSha": "04471d174c91281a",
     "stability": "tracks-app",
     "summary": null,
@@ -42403,9 +42694,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "createNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42454,6 +42749,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "kind",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -42464,14 +42764,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "parentId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "priority",
         "optional": true,
         "type": "union"
       },
       {
         "name": "projectId",
-        "optional": false,
+        "optional": true,
         "type": "string"
+      },
+      {
+        "name": "stage",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "status",
@@ -42485,7 +42795,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "eca1479a41c3c0d2",
+    "argsSha": "2b4ce3f948d3f961",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42500,9 +42810,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "deleteNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42552,9 +42866,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "updateNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42603,6 +42921,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "kind",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -42618,6 +42941,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       },
       {
+        "name": "stage",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "status",
         "optional": true,
         "type": "union"
@@ -42629,7 +42957,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "477317c8cff57ee2",
+    "argsSha": "7e519196d0119bed",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -55317,6 +55645,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "assigned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "commentReply",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "dueSoon",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "expiringCert",
         "optional": true,
         "type": "boolean"
@@ -55338,6 +55681,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       },
       {
         "name": "lowStock",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "mentioned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "overdue",
         "optional": true,
         "type": "boolean"
       },
@@ -55388,7 +55741,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "42b5fff2f0068f21",
+    "argsSha": "9fa25dfeb72b2bd9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55409,6 +55762,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "assigned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "commentReply",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "dueSoon",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "expiringCert",
         "optional": true,
         "type": "boolean"
@@ -55430,6 +55798,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       },
       {
         "name": "lowStock",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "mentioned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "overdue",
         "optional": true,
         "type": "boolean"
       },
@@ -55480,7 +55858,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "42b5fff2f0068f21",
+    "argsSha": "9fa25dfeb72b2bd9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55619,7 +55997,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "30c6455ab1dd2268",
+    "argsSha": "a3c5cb78df7c7149",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -61111,6 +61489,162 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "workSignalStatesWrites.dismissSignalNative",
+    "module": "workSignalStatesWrites",
+    "fn": "dismissSignalNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "sourceKey",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1190e29362f1a17f",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "workSignalStatesWrites.promoteSignalNative",
+    "module": "workSignalStatesWrites",
+    "fn": "promoteSignalNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "assigneeCrewId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "assigneeUserId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "dueDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "priority",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "projectId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sourceKey",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "title",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4c29d139e4b59d57",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "workSignalStatesWrites.snoozeSignalNative",
+    "module": "workSignalStatesWrites",
+    "fn": "snoozeSignalNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "snoozedUntil",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "sourceKey",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0faf8292b4a182c0",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "xeroIntegrations.createIfMissing",
     "module": "xeroIntegrations",
     "fn": "createIfMissing",
@@ -61671,10 +62205,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1195,
-  agentReachable: 574,
-  queries: 429,
-  mutations: 766,
-  agentReachableQueries: 298,
-  agentReachableMutations: 276,
+  total: 1206,
+  agentReachable: 584,
+  queries: 433,
+  mutations: 773,
+  agentReachableQueries: 302,
+  agentReachableMutations: 282,
 } as const;

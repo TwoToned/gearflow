@@ -24,7 +24,7 @@ test.describe("harness: a11y (authenticated)", () => {
     await page.getByRole("button", { name: /create|register|sign up/i }).first().click();
     // A fresh registration with no org lands on the create-vs-join fork
     // (/welcome, #1092) rather than an authenticated dashboard directly.
-    await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
+    await expect(page).toHaveURL(/\/(today|welcome)\b/, { timeout: 20000 });
     await page.waitForLoadState("networkidle");
 
     const results = await new AxeBuilder({ page })

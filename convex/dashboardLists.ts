@@ -4,6 +4,8 @@ import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, getAuthContext, isMemberAuth } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
+import { findLiveQuote, effectiveQuoteStatus } from "./lib/quoteState";
+import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "./lib/quoteDates";
 
 /**
  * BROWSER-facing native replacements for the bounded project/thread dashboard
@@ -105,6 +107,50 @@ export const upcoming = query({
 
 // ─── getMyHomeData ───────────────────────────────────────────────────────────
 
+const MANAGED_PROJECTS_LIMIT = 24;
+
+/**
+ * This user's current/future projects, not the whole org tables: directly-
+ * managed (projects.by_projectManagerId) ∪ PM-assigned (projectManagers.
+ * by_userId), de-duped, org-checked, sorted (soonest rentalStartDate first,
+ * undated last by recency), and bounded. Shared by `home` (below) and
+ * `needsYou` (work-layer phase 0.5, #1242) — ONE definition of "my projects"
+ * rather than two (R-3.1). `by_projectManagerId` / `by_userId` are GLOBAL
+ * indexes → org-re-checked below.
+ */
+async function resolveManagedProjectDocs(ctx: QueryCtx, orgId: string, userId: string): Promise<ProjectDoc[]> {
+  const [managedProjects, pmEntries] = await Promise.all([
+    ctx.db.query("projects").withIndex("by_projectManagerId", (q) => q.eq("projectManagerId", userId)).collect(),
+    ctx.db.query("projectManagers").withIndex("by_userId", (q) => q.eq("userId", userId)).collect(),
+  ]);
+
+  const managedById = new Map(managedProjects.map((p) => [p.id, p]));
+  const extraIds = [...new Set(pmEntries.filter((e) => e.organizationId === orgId).map((e) => e.projectId))]
+    .filter((pid) => !managedById.has(pid));
+  const extra = await Promise.all(
+    extraIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique()),
+  );
+  const userProjects = [
+    ...managedProjects,
+    ...extra.filter((p): p is NonNullable<typeof p> => p != null),
+  ] as unknown as ProjectDoc[];
+
+  return userProjects
+    .filter(
+      (p) =>
+        (p as { organizationId?: string }).organizationId === orgId &&
+        p.isTemplate !== true &&
+        !HOME_INACTIVE_STATUSES.has(p.status ?? ""),
+    )
+    .sort((a, b) => {
+      if (a.rentalStartDate != null && b.rentalStartDate != null) return a.rentalStartDate - b.rentalStartDate;
+      if (a.rentalStartDate != null) return -1;
+      if (b.rentalStartDate != null) return 1;
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    })
+    .slice(0, MANAGED_PROJECTS_LIMIT);
+}
+
 export const home = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
@@ -113,42 +159,10 @@ export const home = query({
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
-    // Only THIS user's projects, not the whole org tables: directly-managed
-    // (projects.by_projectManagerId) ∪ PM-assigned (projectManagers.by_userId).
-    // Previously .collect()'d the whole org projects + whole org projectManagers
-    // tables reactively (re-read on any project/PM write). by_projectManagerId /
-    // by_userId are global → org-re-checked below.
-    const [managedProjects, pmEntries, userDoc] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_projectManagerId", (q) => q.eq("projectManagerId", userId)).collect(),
-      ctx.db.query("projectManagers").withIndex("by_userId", (q) => q.eq("userId", userId)).collect(),
+    const [candidates, userDoc] = await Promise.all([
+      resolveManagedProjectDocs(ctx, orgId, userId),
       ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", userId)).unique(),
     ]);
-
-    const managedById = new Map(managedProjects.map((p) => [p.id, p]));
-    const extraIds = [...new Set(pmEntries.filter((e) => e.organizationId === orgId).map((e) => e.projectId))]
-      .filter((pid) => !managedById.has(pid));
-    const extra = await Promise.all(
-      extraIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique()),
-    );
-    const userProjects = [
-      ...managedProjects,
-      ...extra.filter((p): p is NonNullable<typeof p> => p != null),
-    ] as unknown as ProjectDoc[];
-
-    const candidates = userProjects
-      .filter(
-        (p) =>
-          (p as { organizationId?: string }).organizationId === orgId &&
-          p.isTemplate !== true &&
-          !HOME_INACTIVE_STATUSES.has(p.status ?? ""),
-      )
-      .sort((a, b) => {
-        if (a.rentalStartDate != null && b.rentalStartDate != null) return a.rentalStartDate - b.rentalStartDate;
-        if (a.rentalStartDate != null) return -1;
-        if (b.rentalStartDate != null) return 1;
-        return (b.createdAt ?? 0) - (a.createdAt ?? 0);
-      })
-      .slice(0, 24);
 
     const counts = await countEquipmentLineItems(ctx, orgId, candidates.map((p) => p.id));
     const clients = await resolveClients(ctx, candidates.map((p) => p.clientId).filter((x): x is string => !!x));
@@ -157,6 +171,148 @@ export const home = query({
       userId,
       myProjects: candidates.map((p) => projectTile(p, counts, clients)),
     };
+  },
+});
+
+// ─── needsYou — Today's "needs you" rail (work-layer phase 0.5, #1242) ──────
+// Crew declined / unanswered offers, and quotes expiring soon, on projects
+// THIS user manages — never an org-wide scan (R4/R13: the 4.66 GB query came
+// from exactly that shape). Bounded to `resolveManagedProjectDocs`'s ≤24
+// candidates, same cost profile as `home`/`blocking` above. One-shot from the
+// client (refresh on focus + a slow interval), never a live subscription.
+//
+// Phase 1 (#1243, design doc §9): this IS the "workTriage.forMe" read the
+// design doc's diagram describes for the crew/quote signal types — a signal is
+// never stored (§9's rule), so it's computed live here every call, then a
+// human's stored DECISION about it (`workSignalStates`, §10.3) is subtracted
+// via `loadHiddenSourceKeys`. Kept as `needsYou` rather than renamed/duplicated
+// into a new module: the computation IS the same, R-3.1 forbids a second
+// definition of the same signal, and this is already the one live caller
+// (`today-needs-you-rail.tsx`). Mentions are deliberately NOT folded in here —
+// they have their own dismissal mechanism (`notificationsWrites.archiveNative`)
+// and don't need a `workSignalStates` row. "Work overdue/due soon" is also not
+// duplicated here — it's real, non-derived task rows already surfaced by
+// `projectTasks.myOpenTasks` in Today's Overdue/Today buckets.
+const STALE_OFFER_MS = 48 * 60 * 60 * 1000; // §8.5's "> 48h" — hardcoded until an org setting exists
+
+type CrewSignalRow = {
+  sourceKey: string; // deterministic — design doc §9 ("crew:declined:<id>" / "crew:stale:<id>")
+  assignmentId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  crewMemberName: string;
+  at: number; // respondedAt for declined, offeredAt for stale
+};
+
+type ExpiringQuoteRow = {
+  sourceKey: string; // "quote:expiring:<quoteId>" (design doc §9)
+  quoteId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  version: number;
+  validUntil: number | null;
+  daysLeft: number | null;
+};
+
+/**
+ * A human's decision (snooze/dismiss/promote, `workSignalStates`) hides a
+ * derived signal from Triage — the "minus workSignalStates" step in design doc
+ * §9's diagram. Dismissed and promoted hide permanently; a snooze hides only
+ * until `snoozedUntil` (an expired snooze re-surfaces the signal, since nothing
+ * about the underlying row changed to resolve it).
+ */
+async function loadHiddenSourceKeys(ctx: QueryCtx, orgId: string, userId: string, now: number): Promise<Set<string>> {
+  const rows = await ctx.db
+    .query("workSignalStates")
+    .withIndex("by_organizationId_userId_sourceKey", (q) => q.eq("organizationId", orgId).eq("userId", userId))
+    .collect();
+  const hidden = new Set<string>();
+  for (const r of rows) {
+    if (r.state === "dismissed" || r.state === "promoted") hidden.add(r.sourceKey);
+    else if (r.state === "snoozed" && (r.snoozedUntil ?? 0) > now) hidden.add(r.sourceKey);
+  }
+  return hidden;
+}
+
+export const needsYou = query({
+  args: { orgId: v.string(), now: v.number() },
+  handler: async (
+    ctx,
+    { orgId, now },
+  ): Promise<{ declinedCrew: CrewSignalRow[]; staleOffers: CrewSignalRow[]; expiringQuotes: ExpiringQuoteRow[] }> => {
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
+    const auth = await getAuthContext(ctx);
+    if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
+    const userId = auth.userId;
+
+    const [projects, hiddenSourceKeys] = await Promise.all([
+      resolveManagedProjectDocs(ctx, orgId, userId),
+      loadHiddenSourceKeys(ctx, orgId, userId, now),
+    ]);
+
+    const declinedCrew: CrewSignalRow[] = [];
+    const staleOffers: CrewSignalRow[] = [];
+    const expiringQuotes: ExpiringQuoteRow[] = [];
+    const crewMemberIds = new Set<string>();
+    const pendingCrewRows: { row: CrewSignalRow; crewMemberId: string; bucket: CrewSignalRow[] }[] = [];
+
+    await Promise.all(
+      projects.map(async (p) => {
+        const [assignments, liveQuote] = await Promise.all([
+          ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).collect(),
+          findLiveQuote(ctx, orgId, p.id, now),
+        ]);
+        for (const a of assignments) {
+          if (a.organizationId !== orgId) continue; // by_projectId is global — re-check
+          crewMemberIds.add(a.crewMemberId);
+          if (a.status === "DECLINED") {
+            const sourceKey = `crew:declined:${a.id}`;
+            if (hiddenSourceKeys.has(sourceKey)) continue;
+            const row: CrewSignalRow = {
+              sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              crewMemberName: "", at: a.respondedAt ?? a.updatedAt ?? now,
+            };
+            pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: declinedCrew });
+          } else if (a.status === "OFFERED" && a.offeredAt != null && a.offeredAt < now - STALE_OFFER_MS) {
+            const sourceKey = `crew:stale:${a.id}`;
+            if (hiddenSourceKeys.has(sourceKey)) continue;
+            const row: CrewSignalRow = {
+              sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              crewMemberName: "", at: a.offeredAt,
+            };
+            pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: staleOffers });
+          }
+        }
+        if (liveQuote && effectiveQuoteStatus(liveQuote, now) === "SENT") {
+          const daysLeft = daysUntilValidUntil(liveQuote.validUntil, now);
+          const sourceKey = `quote:expiring:${liveQuote.id}`;
+          if (daysLeft != null && daysLeft <= QUOTE_EXPIRING_SOON_DAYS && !hiddenSourceKeys.has(sourceKey)) {
+            expiringQuotes.push({
+              sourceKey, quoteId: liveQuote.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              version: liveQuote.version, validUntil: liveQuote.validUntil ?? null, daysLeft,
+            });
+          }
+        }
+      }),
+    );
+
+    const crewNames = new Map<string, string>();
+    await Promise.all(
+      [...crewMemberIds].map(async (id) => {
+        const c = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+        if (c) crewNames.set(id, `${c.firstName} ${c.lastName}`.trim());
+      }),
+    );
+    for (const { row, crewMemberId, bucket } of pendingCrewRows) {
+      bucket.push({ ...row, crewMemberName: crewNames.get(crewMemberId) ?? "Unknown" });
+    }
+    declinedCrew.sort((a, b) => b.at - a.at);
+    staleOffers.sort((a, b) => a.at - b.at);
+    expiringQuotes.sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0));
+
+    return { declinedCrew, staleOffers, expiringQuotes };
   },
 });
 
@@ -269,4 +425,5 @@ export const agentOps: AgentOpsAnnotations = {
   home: { summary: "The caller's personal dashboard project list (managed or PM-assigned).", danger: "low", mcpTier: 2 },
   blocking: { summary: "Blocking comment threads relevant to the caller (as PM or mentioned).", danger: "low", mcpTier: 2 },
   pendingCrewOffers: { summary: "Count of pending crew offers on current/future (not past or closed) gigs.", danger: "low", mcpTier: 2 },
+  needsYou: { summary: "Declined/stale crew offers and expiring quotes on projects the caller manages.", danger: "low", mcpTier: 2 },
 };

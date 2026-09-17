@@ -14858,6 +14858,69 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/dashboardLists.needsYou": {
+      "post": {
+        "operationId": "dashboardLists.needsYou",
+        "summary": "dashboardLists.needsYou (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/dashboardLists.pendingCrewOffers": {
       "post": {
         "operationId": "dashboardLists.pendingCrewOffers",
@@ -24963,6 +25026,360 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/notifications.listForMe": {
+      "post": {
+        "operationId": "notifications.listForMe",
+        "summary": "notifications.listForMe (query)",
+        "description": "Requires scope: self:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "limit": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/notifications.unreadCountForMe": {
+      "post": {
+        "operationId": "notifications.unreadCountForMe",
+        "summary": "notifications.unreadCountForMe (query)",
+        "description": "Requires scope: self:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/notificationsWrites.archiveNative": {
+      "post": {
+        "operationId": "notificationsWrites.archiveNative",
+        "summary": "notificationsWrites.archiveNative (mutation)",
+        "description": "Requires scope: self:write. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/notificationsWrites.markAllReadNative": {
+      "post": {
+        "operationId": "notificationsWrites.markAllReadNative",
+        "summary": "notificationsWrites.markAllReadNative (mutation)",
+        "description": "Requires scope: self:write. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/notificationsWrites.markReadNative": {
+      "post": {
+        "operationId": "notificationsWrites.markReadNative",
+        "summary": "notificationsWrites.markReadNative (mutation)",
+        "description": "Requires scope: self:write. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/orgActivationDismissalsWrites.dismissNative": {
       "post": {
         "operationId": "orgActivationDismissalsWrites.dismissNative",
@@ -30669,11 +31086,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.assignees",
         "summary": "projectTasks.assignees (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -30732,11 +31146,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.getById",
         "summary": "projectTasks.getById (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -30802,11 +31213,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.listByProject",
         "summary": "projectTasks.listByProject (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -30872,11 +31280,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.listByProjectWithRelations",
         "summary": "projectTasks.listByProjectWithRelations (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -30938,15 +31343,79 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/projectTasks.listSubtasks": {
+      "post": {
+        "operationId": "projectTasks.listSubtasks",
+        "summary": "projectTasks.listSubtasks (query)",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "parentId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "parentId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/projectTasks.myOpenTasks": {
       "post": {
         "operationId": "projectTasks.myOpenTasks",
         "summary": "projectTasks.myOpenTasks (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31005,11 +31474,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.bulkDeleteNative",
         "summary": "projectTasksWrites.bulkDeleteNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31082,11 +31548,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.bulkUpdateNative",
         "summary": "projectTasksWrites.bulkUpdateNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31164,11 +31627,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.createNative",
         "summary": "projectTasksWrites.createNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31184,17 +31644,21 @@ export const OPENAPI_DOCUMENT = {
                       "checklist": {},
                       "description": {},
                       "dueDate": {},
+                      "kind": {},
+                      "parentId": {
+                        "type": "string"
+                      },
                       "priority": {},
                       "projectId": {
                         "type": "string"
                       },
+                      "stage": {},
                       "status": {},
                       "title": {
                         "type": "string"
                       }
                     },
                     "required": [
-                      "projectId",
                       "title"
                     ],
                     "additionalProperties": false
@@ -31252,11 +31716,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.deleteNative",
         "summary": "projectTasksWrites.deleteNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31329,11 +31790,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.updateNative",
         "summary": "projectTasksWrites.updateNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31352,7 +31810,9 @@ export const OPENAPI_DOCUMENT = {
                       "id": {
                         "type": "string"
                       },
+                      "kind": {},
                       "priority": {},
+                      "stage": {},
                       "status": {},
                       "title": {
                         "type": "string"
@@ -45092,6 +45552,258 @@ export const OPENAPI_DOCUMENT = {
                     "required": [
                       "kitIds",
                       "projectId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/workSignalStatesWrites.dismissSignalNative": {
+      "post": {
+        "operationId": "workSignalStatesWrites.dismissSignalNative",
+        "summary": "workSignalStatesWrites.dismissSignalNative (mutation)",
+        "description": "Requires scope: self:write. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "sourceKey": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "sourceKey"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/workSignalStatesWrites.promoteSignalNative": {
+      "post": {
+        "operationId": "workSignalStatesWrites.promoteSignalNative",
+        "summary": "workSignalStatesWrites.promoteSignalNative (mutation)",
+        "description": "Requires scope: self:write. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "assigneeCrewId": {
+                        "type": "string"
+                      },
+                      "assigneeUserId": {
+                        "type": "string"
+                      },
+                      "dueDate": {
+                        "type": "number"
+                      },
+                      "priority": {},
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "sourceKey": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "sourceKey",
+                      "title"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/workSignalStatesWrites.snoozeSignalNative": {
+      "post": {
+        "operationId": "workSignalStatesWrites.snoozeSignalNative",
+        "summary": "workSignalStatesWrites.snoozeSignalNative (mutation)",
+        "description": "Requires scope: self:write. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "self"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "snoozedUntil": {
+                        "type": "number"
+                      },
+                      "sourceKey": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "snoozedUntil",
+                      "sourceKey"
                     ],
                     "additionalProperties": false
                   },

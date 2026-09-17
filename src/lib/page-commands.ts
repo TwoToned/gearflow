@@ -32,19 +32,22 @@ export interface PageCommand {
 
 export const PAGE_COMMANDS: PageCommand[] = [
   {
-    label: "Dashboard",
-    href: "/dashboard",
-    aliases: ["dashboard", "home", "main", "overview", "dash"],
-    icon: "LayoutDashboard",
-    description: "Overview and recent activity",
+    // Today replaced Dashboard as the landing page (work-layer phase 0.5,
+    // #1242, D10A) — "home"/"main" moved here from Dashboard below, and this
+    // entry absorbs the old "My tasks" command's aliases too, since /my-tasks
+    // now just redirects here.
+    label: "Today",
+    href: "/today",
+    aliases: ["today", "home", "main", "mytasks", "tasks", "todo", "mytodo"],
+    icon: "Sun",
+    description: "Your work and schedule for today, across every project",
   },
   {
-    label: "My tasks",
-    href: "/my-tasks",
-    aliases: ["mytasks", "tasks", "todo", "mytodo"],
-    icon: "ListTodo",
-    description: "Open tasks assigned to you, across every project",
-    searchable: false,
+    label: "Dashboard",
+    href: "/dashboard",
+    aliases: ["dashboard", "overview", "dash"],
+    icon: "LayoutDashboard",
+    description: "Overview and recent activity",
   },
   {
     label: "Assets",

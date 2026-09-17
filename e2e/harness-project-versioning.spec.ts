@@ -40,7 +40,7 @@ test.describe("harness: project versioning v2", () => {
       await page.getByLabel(/email/i).first().fill(email);
       await page.getByLabel(/password/i).first().fill("harness-password-123");
       await page.getByRole("button", { name: /create|register|sign up/i }).first().click();
-      await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/(today|welcome)\b/, { timeout: 20000 });
     });
 
     await test.step("complete onboarding (create the org) if needed", async () => {
@@ -55,7 +55,7 @@ test.describe("harness: project versioning v2", () => {
         await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
-        await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+        await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
       }
     });
 

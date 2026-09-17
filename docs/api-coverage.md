@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 429 | 298 | 129 | 1 | 1 |
-| Mutations | 766 | 276 | 483 | 0 | 7 |
-| **Total** | **1195** | **574** | **612** | **1** | **8** |
+| Queries | 433 | 302 | 129 | 1 | 1 |
+| Mutations | 773 | 282 | 484 | 0 | 7 |
+| **Total** | **1206** | **584** | **613** | **1** | **8** |
 
-<!-- reachability-floor: 574 -->
+<!-- reachability-floor: 584 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -43,8 +43,8 @@ idempotency key, already required of every mutation) at the dispatcher — see
 | Tier | Agent-reachable mutations |
 |---|---|
 | `high` | 90 |
-| `medium` | 140 |
-| `low` | 46 |
+| `medium` | 141 |
+| `low` | 51 |
 
 ## Modules with no agent-reachable operation
 
@@ -59,6 +59,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `apiKeys` | 10 |
 | `apiRequestLog` | 3 |
 | `availabilityCheck` | 1 |
+| `backfillChecklistSubtasks` | 1 |
 | `backfillClientContacts` | 1 |
 | `backfillInvoiceSourceRevision` | 2 |
 | `backfillKitUnits` | 1 |

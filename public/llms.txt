@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (574 agent-reachable)
+## Operations (584 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -23,6 +23,17 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `lineItemWrites.addLineItemSmartNative` (mutation, scope: project:manage_line_items,asset:update)
 - `lineItemWrites.addNative` (mutation, scope: project:manage_line_items,asset:update)
 - `lineItemWrites.unsellLineItemNative` (mutation, scope: project:manage_line_items,asset:update)
+- `projectTasks.assignees` (query, scope: work:read,project:read)
+- `projectTasks.getById` (query, scope: work:read,project:read)
+- `projectTasks.listByProject` (query, scope: work:read,project:read)
+- `projectTasks.listByProjectWithRelations` (query, scope: work:read,project:read)
+- `projectTasks.listSubtasks` (query, scope: work:read,project:read)
+- `projectTasks.myOpenTasks` (query, scope: work:read,project:read)
+- `projectTasksWrites.bulkDeleteNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.bulkUpdateNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.createNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.deleteNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.updateNative` (mutation, scope: work:update,project:update)
 
 ### asset
 - `assetAccessories.availableSerialized` (query, scope: asset:read)
@@ -358,6 +369,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `dashboardCounters.reconcileIfStale` (mutation, scope: project:read)
 - `dashboardLists.blocking` (query, scope: project:read)
 - `dashboardLists.home` (query, scope: project:read)
+- `dashboardLists.needsYou` (query, scope: project:read)
 - `dashboardLists.pendingCrewOffers` (query, scope: project:read)
 - `dashboardLists.upcoming` (query, scope: project:read)
 - `dashboardStats.bundle` (query, scope: project:read)
@@ -449,16 +461,6 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectServicesWrites.generateServicesNative` (mutation, scope: project:update)
 - `projectServicesWrites.updateServiceNative` (mutation, scope: project:update)
 - `projectServicesWrites.updateServiceStatusNative` (mutation, scope: project:update)
-- `projectTasks.assignees` (query, scope: project:read)
-- `projectTasks.getById` (query, scope: project:read)
-- `projectTasks.listByProject` (query, scope: project:read)
-- `projectTasks.listByProjectWithRelations` (query, scope: project:read)
-- `projectTasks.myOpenTasks` (query, scope: project:read)
-- `projectTasksWrites.bulkDeleteNative` (mutation, scope: project:update)
-- `projectTasksWrites.bulkUpdateNative` (mutation, scope: project:update)
-- `projectTasksWrites.createNative` (mutation, scope: project:update)
-- `projectTasksWrites.deleteNative` (mutation, scope: project:update)
-- `projectTasksWrites.updateNative` (mutation, scope: project:update)
 - `projectWrites.archiveNative` (mutation, scope: project:update)
 - `projectWrites.createNative` (mutation, scope: project:create)
 - `projectWrites.deleteNative` (mutation, scope: project:delete)
@@ -491,6 +493,11 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `notificationDismissalsWrites.dismissManyNative` (mutation, scope: self:write)
 - `notificationDismissalsWrites.mine` (query, scope: self:read)
 - `notificationDismissalsWrites.pruneStaleNative` (mutation, scope: self:write)
+- `notifications.listForMe` (query, scope: self:read)
+- `notifications.unreadCountForMe` (query, scope: self:read)
+- `notificationsWrites.archiveNative` (mutation, scope: self:write)
+- `notificationsWrites.markAllReadNative` (mutation, scope: self:write)
+- `notificationsWrites.markReadNative` (mutation, scope: self:write)
 - `orgActivationDismissalsWrites.dismissNative` (mutation, scope: self:write)
 - `orgActivationDismissalsWrites.mine` (query, scope: self:read)
 - `orgSetupDismissalsWrites.dismissNative` (mutation, scope: self:write)
@@ -503,6 +510,9 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `savedTableViewsWrites.updateNative` (mutation, scope: self:write)
 - `userNotificationPreferences.mine` (query, scope: self:read)
 - `userNotificationPreferences.upsertMine` (mutation, scope: self:write)
+- `workSignalStatesWrites.dismissSignalNative` (mutation, scope: self:write)
+- `workSignalStatesWrites.promoteSignalNative` (mutation, scope: self:write)
+- `workSignalStatesWrites.snoozeSignalNative` (mutation, scope: self:write)
 
 ### subHire
 - `dashboardSubHire.bundle` (query, scope: subHire:read)

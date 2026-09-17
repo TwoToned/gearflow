@@ -36,7 +36,7 @@ export default function WelcomePage() {
       if (cancelled) return;
       if (orgs.length === 1) {
         await organization.setActive({ organizationId: orgs[0].id });
-        router.replace("/dashboard");
+        router.replace("/today");
       } else if (orgs.length > 1) {
         router.replace("/select-organization");
       }

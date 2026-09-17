@@ -12,6 +12,14 @@ One `MaintenanceRecord` links to multiple assets via `MaintenanceRecordAsset` jo
 
 `AWAITING_PARTS` and `QA` were added for the workshop kanban board, which has since been removed (`chore: remove Workshop kanban tab`) — the two statuses were kept dormant on the enum (no migration to drop them) and are still offered in the maintenance form. All three "in-the-shop" statuses (`AWAITING_PARTS`, `IN_PROGRESS`, `QA`) hold the asset in `IN_MAINTENANCE`.
 
+**Adding an asset to an already-holding record holds it too.** `maintenanceWrites.ts`'s
+`updateNative` re-runs `holdAssets` whenever the record's (possibly unchanged) status is
+holding — not only on the SCHEDULED→holding transition — so an asset newly linked to an
+already `IN_PROGRESS`/`AWAITING_PARTS`/`QA` record is held (`AVAILABLE` → `IN_MAINTENANCE`)
+the moment it's added, not only when the record itself first enters a holding status.
+`holdAssets` only touches currently-`AVAILABLE` assets, so already-held assets on the
+record are an idempotent no-op.
+
 ## Maintenance Form (`MaintenanceForm`)
 `src/components/maintenance/maintenance-form.tsx` — the create/edit form
 (`/maintenance/new` + `/maintenance/[id]/edit`, edit pre-fills, both reuse the

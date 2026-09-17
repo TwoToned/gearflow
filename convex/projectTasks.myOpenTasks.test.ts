@@ -143,6 +143,19 @@ describe("projectTasks.myOpenTasks", () => {
     expect(after[0].overdue).toBe(true); // dueDate (NOW) < now (NOW + 1)
   });
 
+  test("includes a personal task (no project) — projectId/projectName/projectNumber come back null/empty", async () => {
+    const t = convexTest(schema, modules);
+    await baseSeed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "personal1", organizationId: ORG, title: "Call the venue", status: "TODO", assigneeUserId: USER });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: NOW });
+    expect(res.map((r) => r.id)).toEqual(["personal1"]);
+    expect(res[0].projectId).toBeNull();
+    expect(res[0].projectName).toBe("");
+    expect(res[0].projectNumber).toBe("");
+  });
+
   test("excludes subtasks (parentId set) — they render nested under their parent, never as a standalone Today row", async () => {
     const t = convexTest(schema, modules);
     await baseSeed(t);

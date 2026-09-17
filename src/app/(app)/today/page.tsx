@@ -30,7 +30,7 @@ import type { Doc } from "../../../../convex/_generated/dataModel";
 const MINUTE = 60_000;
 
 function taskContextLine(task: NativeMyOpenTask): string {
-  const parts = [task.projectNumber, task.projectName].filter(Boolean);
+  const parts = task.projectId ? [task.projectNumber, task.projectName].filter(Boolean) : ["Personal"];
   if (task.dueDate != null) {
     parts.push(new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }));
   }
@@ -103,7 +103,7 @@ export default function TodayPage() {
         bucket,
         title: t.title,
         contextLine: taskContextLine(t),
-        href: `/projects/${t.projectId}`,
+        href: t.projectId ? `/projects/${t.projectId}` : undefined,
         overdue: !done && bucket === "overdue",
         done,
         raw: t,

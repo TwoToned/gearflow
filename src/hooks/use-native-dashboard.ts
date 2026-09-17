@@ -133,7 +133,9 @@ export interface NativeMyOpenTask {
   priority: "LOW" | "NORMAL" | "HIGH";
   dueDate: number | null;
   overdue: boolean;
-  projectId: string;
+  // null for a personal task (Phase 1, #1243 quick-add with no project); projectName/
+  // projectNumber are "" in that case.
+  projectId: string | null;
   projectName: string;
   projectNumber: string;
   assigneeUserId: string | null;
@@ -141,11 +143,11 @@ export interface NativeMyOpenTask {
 }
 
 /**
- * projectTasks.myOpenTasks: this user's open tasks across every project
- * (direct + crew assignment), sorted overdue → due asc → undated last →
- * priority, bounded to 100. Backs both the `/my-tasks` page and the
- * dashboard's My work tasks-due block. Minute-bucketed `now`, same
- * convention as the rest of this file (queries can't read the clock).
+ * projectTasks.myOpenTasks: this user's open tasks across every project (direct +
+ * crew assignment) plus personal tasks with no project, sorted overdue → due asc →
+ * undated last → priority, bounded to 100. Backs `/today` (`/my-tasks` redirects
+ * there — work-layer phase 0.5, #1242). Minute-bucketed `now`, same convention as
+ * the rest of this file (queries can't read the clock).
  */
 export function useNativeMyOpenTasks(orgId: string | undefined) {
   const enabled = !!orgId;

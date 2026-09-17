@@ -11,7 +11,8 @@ export interface TodayItem {
   title: string;
   /** "Project · due" style secondary line. */
   contextLine: string;
-  href: string;
+  /** Absent for a personal task (Phase 1, #1243 quick-add with no project) — nothing to "open". */
+  href?: string;
   overdue: boolean;
   /** Tasks only — undefined for a mention (nothing to "do" on a mention row itself). */
   done?: boolean;

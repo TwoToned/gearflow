@@ -81,11 +81,13 @@ export function TodayPeek({ item, canEdit, onClose, onToggleDone }: TodayPeekPro
             <Check className="h-4 w-4" /> {item.done ? "Mark not done" : "Mark done"}
           </Button>
         )}
-        <Button asChild variant="line" size="sm">
-          <Link href={item.href}>
-            <ExternalLink className="h-4 w-4" /> Open
-          </Link>
-        </Button>
+        {item.href && (
+          <Button asChild variant="line" size="sm">
+            <Link href={item.href}>
+              <ExternalLink className="h-4 w-4" /> Open
+            </Link>
+          </Button>
+        )}
       </div>
     </div>
   );

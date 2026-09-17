@@ -164,7 +164,8 @@ const MY_OPEN_TASKS_LIMIT = 100;
 type MyOpenTaskDoc = {
   id: string;
   organizationId: string;
-  projectId: string;
+  // Absent for a personal task (Phase 1, #1243 quick-add with no project).
+  projectId?: string;
   title: string;
   status?: string;
   priority?: string;
@@ -241,7 +242,7 @@ async function resolveProjectsFor(
   ctx: QueryCtx,
   tasks: MyOpenTaskDoc[],
 ): Promise<Map<string, { name: string; projectNumber: string }>> {
-  const projectIds = [...new Set(tasks.map((t) => t.projectId))];
+  const projectIds = [...new Set(tasks.map((t) => t.projectId).filter((id): id is string => id != null))];
   const projects = new Map<string, { name: string; projectNumber: string }>();
   await Promise.all(
     projectIds.map(async (pid) => {
@@ -257,7 +258,7 @@ function serializeMyOpenTask(
   projects: Map<string, { name: string; projectNumber: string }>,
   now: number,
 ) {
-  const project = projects.get(t.projectId) ?? { name: "", projectNumber: "" };
+  const project = (t.projectId ? projects.get(t.projectId) : undefined) ?? { name: "", projectNumber: "" };
   return {
     id: t.id,
     title: t.title,
@@ -265,7 +266,7 @@ function serializeMyOpenTask(
     priority: t.priority ?? "NORMAL",
     dueDate: t.dueDate ?? null,
     overdue: t.dueDate != null && t.dueDate < now,
-    projectId: t.projectId,
+    projectId: t.projectId ?? null,
     projectName: project.name,
     projectNumber: project.projectNumber,
     assigneeUserId: t.assigneeUserId ?? null,

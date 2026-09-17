@@ -73,6 +73,26 @@ describe("computeGearShortageBoard", () => {
     expect(pencilled[0]).toMatchObject({ modelId: "m1", qty: 1 });
   });
 
+  test("a pencilled collision row lists the CONFIRMED job holding the gear, not just the QUOTED one", () => {
+    // Model has 10 usable stock. Job A (CONFIRMED, hard) books 8 — alone that's
+    // within stock, so it never makes the `hard` row. Job B (QUOTED, pencilled)
+    // books 5 — combined (13) exceeds stock by 3. That collision is only real
+    // because Job A is holding 8 of the 10 units; dropping Job A from the row
+    // (as `pencilledProjectIds` alone would) hides who the QUOTED job would
+    // actually collide with.
+    const wideAssets: BoardAsset[] = Array.from({ length: 10 }, () => ({ modelId: "m1", status: "AVAILABLE", isActive: true }));
+    const projects = [project({ id: "jobA", status: "CONFIRMED" }), project({ id: "jobB", status: "QUOTED" })];
+    const lineItems = [
+      lineItem({ id: "liA", projectId: "jobA", modelId: "m1", quantity: 8 }),
+      lineItem({ id: "liB", projectId: "jobB", modelId: "m1", quantity: 5 }),
+    ];
+    const { hard, pencilled } = computeGearShortageBoard(RANGE, projects, lineItems, models, wideAssets, []);
+    expect(hard).toHaveLength(0);
+    expect(pencilled).toHaveLength(1);
+    expect(pencilled[0]).toMatchObject({ modelId: "m1", qty: 3 });
+    expect(pencilled[0].projects.map((p) => p.id).sort()).toEqual(["jobA", "jobB"]);
+  });
+
   test("an isOptional line on a CONFIRMED project stays pencilled", () => {
     const projects = [project({ id: "p1", status: "CONFIRMED" })];
     const lineItems = [lineItem({ id: "li1", projectId: "p1", modelId: "m1", quantity: 3, isOptional: true })];

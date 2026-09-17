@@ -277,12 +277,18 @@ async function resolveProjectsFor(
   return projects;
 }
 
+/** Split out of serializeMyOpenTask (R-3.6) purely to keep that function's complexity down. */
+function projectFieldsFor(t: MyOpenTaskDoc, projects: Map<string, { name: string; projectNumber: string }>) {
+  const found = t.projectId ? projects.get(t.projectId) : undefined;
+  return found ?? { name: "", projectNumber: "" };
+}
+
 function serializeMyOpenTask(
   t: MyOpenTaskDoc,
   projects: Map<string, { name: string; projectNumber: string }>,
   now: number,
 ) {
-  const project = (t.projectId ? projects.get(t.projectId) : undefined) ?? { name: "", projectNumber: "" };
+  const project = projectFieldsFor(t, projects);
   return {
     id: t.id,
     title: t.title,

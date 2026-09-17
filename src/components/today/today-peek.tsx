@@ -18,6 +18,37 @@ interface TodayPeekProps {
   onMakeTask: (item: TodayItem) => void;
 }
 
+/** Split out of TodayPeek (R-3.6) — the footer's per-kind action buttons. */
+function PeekActions({
+  item,
+  canEdit,
+  onToggleDone,
+  onMakeTask,
+}: Pick<TodayPeekProps, "item" | "canEdit" | "onToggleDone" | "onMakeTask">) {
+  if (!item) return null;
+  return (
+    <div className="flex items-center gap-2 border-t border-line px-4 py-3">
+      {item.kind === "task" && canEdit && (
+        <Button variant="line" size="sm" onClick={() => onToggleDone(item)}>
+          <Check className="h-4 w-4" /> {item.done ? "Mark not done" : "Mark done"}
+        </Button>
+      )}
+      {item.kind === "mention" && canEdit && (
+        <Button variant="line" size="sm" onClick={() => onMakeTask(item)}>
+          <ListPlus className="h-4 w-4" /> Make a task
+        </Button>
+      )}
+      {item.href && (
+        <Button asChild variant="line" size="sm">
+          <Link href={item.href}>
+            <ExternalLink className="h-4 w-4" /> Open
+          </Link>
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /**
  * Today's peek (work-layer.md §8.1, decision D8A) — a NON-MODAL, page-level
  * side panel. Deliberately not `Dialog`/`Sheet`: a Radix modal Dialog sets
@@ -84,25 +115,7 @@ export function TodayPeek({ item, canEdit, orgId, onClose, onToggleDone, onMakeT
         )}
       </div>
 
-      <div className="flex items-center gap-2 border-t border-line px-4 py-3">
-        {item.kind === "task" && canEdit && (
-          <Button variant="line" size="sm" onClick={() => onToggleDone(item)}>
-            <Check className="h-4 w-4" /> {item.done ? "Mark not done" : "Mark done"}
-          </Button>
-        )}
-        {item.kind === "mention" && canEdit && (
-          <Button variant="line" size="sm" onClick={() => onMakeTask(item)}>
-            <ListPlus className="h-4 w-4" /> Make a task
-          </Button>
-        )}
-        {item.href && (
-          <Button asChild variant="line" size="sm">
-            <Link href={item.href}>
-              <ExternalLink className="h-4 w-4" /> Open
-            </Link>
-          </Button>
-        )}
-      </div>
+      <PeekActions item={item} canEdit={canEdit} onToggleDone={onToggleDone} onMakeTask={onMakeTask} />
     </div>
   );
 }

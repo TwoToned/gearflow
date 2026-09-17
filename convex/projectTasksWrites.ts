@@ -7,7 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import * as enums from "./lib/validators";
-import { defaultStageForProjectStatus, type WorkStage } from "./lib/workVocabulary";
+import { defaultStageForProjectStatus, type WorkStage, type WorkItemStatus, type WorkItemPriority, type WorkItemKind } from "./lib/workVocabulary";
 
 /**
  * Native PROJECT-TASK write mutations (Phase 3 browser-direct — replaces the
@@ -102,6 +102,82 @@ const taskWriteFields = {
   kind: v.optional(enums.ProjectTaskKind),
 };
 
+/**
+ * Resolves where a new top-level/subtask/personal task lands: its projectId,
+ * stage, and next sortOrder. Split out of createNative (R-3.6) purely to keep
+ * that handler's complexity down — the parentId/projectId/personal branching
+ * is the same three-way split described on createNative's own args above.
+ */
+async function resolveNewTaskPlacement(
+  ctx: MutationCtx,
+  a: { orgId: string; projectId?: string; parentId?: string; stage?: WorkStage },
+): Promise<{ projectId: string | undefined; stage: WorkStage | undefined; sortOrder: number }> {
+  if (a.parentId) {
+    const parent = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.parentId as string)).first();
+    if (!parent || parent.organizationId !== a.orgId) throw new ConvexError("Parent task not found");
+    const siblings = await ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", a.parentId as string)).collect();
+    const sortOrder = siblings.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0) + 1;
+    // inherited, never the caller's own projectId; a subtask never carries its own stage
+    return { projectId: parent.projectId, stage: undefined, sortOrder };
+  }
+  if (a.projectId) {
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId as string)).first();
+    if (!project || project.organizationId !== a.orgId) throw new ConvexError("Project not found");
+    const stage = a.stage ?? (project.status ? defaultStageForProjectStatus(project.status) : undefined);
+    const existing = await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId as string)).collect();
+    const sortOrder = existing.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0) + 1;
+    return { projectId: a.projectId, stage, sortOrder };
+  }
+  // A personal task — no project, no parent.
+  return { projectId: undefined, stage: a.stage, sortOrder: 0 };
+}
+
+interface NewTaskFields {
+  id: string; orgId: string; parentId?: string;
+  description?: string | null; status?: WorkItemStatus; priority?: WorkItemPriority;
+  dueDate?: number | null; assigneeUserId?: string | null; assigneeCrewId?: string | null;
+  checklist?: RawChecklistItem[] | null; kind?: WorkItemKind; now: number; actor: { userId: string };
+}
+
+// Convex's optional-field convention: `undefined` omits the field, a stored
+// `null` doesn't. These normalise a client-supplied null/empty value to
+// `undefined` in ONE branch each, so calling them repeatedly below adds no
+// complexity to the caller (R-3.6) — only the two helpers themselves branch.
+const orUndef = <T,>(v: T | null | undefined): T | undefined => v ?? undefined;
+const falsyOrUndef = (v: string | null | undefined): string | undefined => v || undefined;
+const trimmedOrUndef = (v: string | null | undefined): string | undefined => v?.trim() || undefined;
+
+/** Split out of createNative (R-3.6) — the field-normalisation that used to
+ *  sit inline in the ctx.db.insert() call. */
+function buildNewTaskDoc(
+  a: NewTaskFields,
+  placement: { projectId: string | undefined; stage: WorkStage | undefined; sortOrder: number },
+  title: string,
+) {
+  const status = a.status ?? "TODO";
+  return {
+    id: a.id,
+    organizationId: a.orgId,
+    projectId: placement.projectId,
+    parentId: orUndef(a.parentId),
+    title,
+    description: trimmedOrUndef(a.description),
+    status,
+    priority: a.priority ?? "NORMAL",
+    dueDate: orUndef(a.dueDate),
+    assigneeUserId: falsyOrUndef(a.assigneeUserId),
+    assigneeCrewId: falsyOrUndef(a.assigneeCrewId),
+    checklist: orUndef(normaliseChecklist(a.checklist)),
+    kind: a.kind,
+    stage: placement.stage,
+    createdById: a.actor.userId,
+    completedAt: status === "DONE" ? a.now : undefined,
+    sortOrder: placement.sortOrder,
+    createdAt: a.now,
+    updatedAt: a.now,
+  };
+}
+
 export const createNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
@@ -131,55 +207,10 @@ export const createNative = mutation({
 
     await assertAssigneeInOrg(ctx, a.orgId, a.assigneeUserId, a.assigneeCrewId);
 
-    let projectId: string | undefined;
-    let stage: WorkStage | undefined;
-    let sortOrder: number;
+    const placement = await resolveNewTaskPlacement(ctx, a);
+    await ctx.db.insert("projectTasks", buildNewTaskDoc({ ...a, actor }, placement, title));
 
-    if (a.parentId) {
-      const parent = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.parentId as string)).first();
-      if (!parent || parent.organizationId !== a.orgId) throw new ConvexError("Parent task not found");
-      projectId = parent.projectId; // inherited, never the caller's own projectId
-      stage = undefined; // a subtask never carries its own stage
-      const siblings = await ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", a.parentId as string)).collect();
-      sortOrder = siblings.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0) + 1;
-    } else if (a.projectId) {
-      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId as string)).first();
-      if (!project || project.organizationId !== a.orgId) throw new ConvexError("Project not found");
-      projectId = a.projectId;
-      stage = a.stage ?? (project.status ? defaultStageForProjectStatus(project.status) : undefined);
-      const existing = await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId as string)).collect();
-      sortOrder = existing.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0) + 1;
-    } else {
-      // A personal task — no project, no parent.
-      projectId = undefined;
-      stage = a.stage;
-      sortOrder = 0;
-    }
-
-    const status = a.status ?? "TODO";
-    await ctx.db.insert("projectTasks", {
-      id: a.id,
-      organizationId: a.orgId,
-      projectId,
-      parentId: a.parentId ?? undefined,
-      title,
-      description: a.description?.trim() || undefined,
-      status,
-      priority: a.priority ?? "NORMAL",
-      dueDate: a.dueDate ?? undefined,
-      assigneeUserId: a.assigneeUserId || undefined,
-      assigneeCrewId: a.assigneeCrewId || undefined,
-      checklist: normaliseChecklist(a.checklist) ?? undefined,
-      kind: a.kind,
-      stage,
-      createdById: actor.userId,
-      completedAt: status === "DONE" ? a.now : undefined,
-      sortOrder,
-      createdAt: a.now,
-      updatedAt: a.now,
-    });
-
-    await logTask(ctx, { orgId: a.orgId, projectId, actor, auditId: a.auditId, now: a.now, action: "created", entityId: a.id, entityName: title, summary: `Added task "${title}"` });
+    await logTask(ctx, { orgId: a.orgId, projectId: placement.projectId, actor, auditId: a.auditId, now: a.now, action: "created", entityId: a.id, entityName: title, summary: `Added task "${title}"` });
     return { id: a.id };
   },
 });

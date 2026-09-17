@@ -56,6 +56,12 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
 ```
 convex/lib/overbookingBoard.ts        — pure aggregation (no ctx.db), unit-tested
 convex/lib/overbookingConfirmImpact.ts — confirm-time-gate math, reuses the above
+convex/lib/overbookingFetch.ts        — shared ctx.db reads (fetchCandidateProjects/
+                                         fetchGearData), used by the query layer below
+                                         AND by lib files that need the same bounded
+                                         reads (overbookingConfirmImpact.ts,
+                                         projectReadiness.ts) without an
+                                         overbookingBoard.ts <-> lib circular import
 convex/lib/crewConflicts.ts           — shared hard/soft severity model
                                          (extracted from crewAvailability.ts)
 convex/overbookingBoard.ts            — the query layer: bounded reads + calls

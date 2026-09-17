@@ -19,7 +19,7 @@ import {
   type BoardBulkAsset,
   type BoardAssignment,
 } from "./overbookingBoard";
-import { fetchCandidateProjects, fetchGearData } from "../overbookingBoard";
+import { fetchCandidateProjects, fetchGearData } from "./overbookingFetch";
 import { ownGearModelIds } from "./projectReadiness";
 
 export interface ConfirmImpactModels {

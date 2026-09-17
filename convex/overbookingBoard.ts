@@ -11,8 +11,14 @@ import {
   computeUnconfirmedCrew,
   computeCrewDoubleBookings,
 } from "./lib/overbookingBoard";
-import { computeConfirmImpactModels, countUnconfirmedCrewForProject } from "./lib/overbookingConfirmImpact";
+import {
+  computeConfirmImpactModels,
+  countUnconfirmedCrewForProject,
+  computeDateMoveOverbookingRows,
+} from "./lib/overbookingConfirmImpact";
+import { requireOrgReadFor } from "./lib/auth";
 import { liveRows } from "./lib/versionScope";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /** Mirrors convex/overbooking.ts's own MIN_TS — see that file's comment for why
  *  an unbounded-below range scan needs this floor (undefined sorts before all
@@ -318,3 +324,65 @@ export const confirmImpact = query({
     };
   },
 });
+
+/** Defensive ceiling on the impact rows returned — the dialog itself only ever
+ *  shows the first 5 plus a "+N more" line (design doc), this just bounds the
+ *  payload for a pathological fixture. */
+const DATE_MOVE_IMPACT_ROW_CAP = 50;
+
+/**
+ * Date-move impact preview (#1227, Q3 of the QOL sweep, non-blocking): "if I
+ * move THIS project's dates to `start`..`end` right now, does that strand any
+ * other job's gear?" Same computation `deriveDateMoveConflicts` runs
+ * POST-promote (`computeDateMoveOverbookingRows`, R-3.1 — the two can't
+ * disagree), exposed here as a PRE-save preview so the project edit form can
+ * warn before the write instead of only reporting after it.
+ *
+ * The caller resolves `start`/`end` through `getProjectWindow` semantics
+ * (`projectStartDate ?? rentalStartDate`) client-side and passes the already-
+ * resolved numbers — this query does not re-derive from raw form fields, it
+ * just checks the window it's given. Unlike `confirmImpact`, the project's
+ * REAL current status is used (no CONFIRMED simulation) — this is asking
+ * about a job that already is what it is, not "if I confirmed it".
+ */
+export const dateMoveImpact = query({
+  args: { orgId: v.string(), projectId: v.string(), start: v.number(), end: v.number() },
+  handler: async (ctx, { orgId, projectId, start, end }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    }
+
+    const before = getProjectWindow(project);
+    const windowMoved = before.start !== start || before.end !== end;
+
+    // The target project's own doc, with its date fields spliced to the
+    // PROPOSED window (nulling projectStartDate/projectEndDate so
+    // getProjectWindow resolves to exactly {start, end} regardless of which
+    // side the operator actually edited) — everything else, status included,
+    // stays the project's real current row.
+    const projectWithProposedWindow = {
+      ...project,
+      projectStartDate: undefined,
+      projectEndDate: undefined,
+      rentalStartDate: start,
+      rentalEndDate: end,
+    };
+
+    const rows = await computeDateMoveOverbookingRows(
+      ctx, orgId, projectId, { start, end }, projectWithProposedWindow,
+    );
+
+    return { rows: rows.slice(0, DATE_MOVE_IMPACT_ROW_CAP), windowMoved };
+  },
+});
+
+export const agentOps: AgentOpsAnnotations = {
+  dateMoveImpact: {
+    summary: "Preview whether moving a project's dates would strand another job's gear, before the write (#1227).",
+    danger: "low",
+    mcpTier: 3,
+  },
+};

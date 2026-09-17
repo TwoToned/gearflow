@@ -5,8 +5,11 @@
  * builds the org-wide board) purely to keep that file under the line-count
  * lint budget — this reuses its exported aggregation core directly.
  */
+import type { QueryCtx, MutationCtx } from "../_generated/server";
+import type { Doc } from "../_generated/dataModel";
 import { EXCLUDED_ASSIGNMENT_STATUSES } from "./crewConflicts";
 import {
+  candidateBoardProjects,
   computeGearShortageBoard,
   type DateRange,
   type BoardProject,
@@ -16,6 +19,7 @@ import {
   type BoardBulkAsset,
   type BoardAssignment,
 } from "./overbookingBoard";
+import { fetchCandidateProjects, fetchGearData } from "../overbookingBoard";
 import { ownGearModelIds } from "./projectReadiness";
 
 export interface ConfirmImpactModels {
@@ -92,4 +96,31 @@ export function computePromoteOverbookingConflicts(
   return hard
     .filter((r) => ownModelIds.has(r.modelId))
     .map((r) => ({ modelId: r.modelId, modelName: r.modelName, qty: r.qty, projectNumbers: r.projects.map((p) => p.projectNumber) }));
+}
+
+/**
+ * The fetch-and-compute core behind BOTH `makeLiveCore.ts`'s post-promote
+ * `deriveDateMoveConflicts` and `overbookingBoard.dateMoveImpact` (#1227,
+ * Q3's pre-save preview) — factored out so the two can never disagree about
+ * what a date move did to other jobs' gear (R-3.1). `projectWithWindow` must
+ * be the target project's own doc with its date fields already reflecting
+ * the window being checked (the post-promote caller passes the just-patched
+ * row; the pre-save preview passes a copy with the PROPOSED dates spliced
+ * in) — everything else about it (status included) stays real, so a
+ * dateless-to-dated move on an already-CONFIRMED job is checked exactly as
+ * it will actually land.
+ */
+export async function computeDateMoveOverbookingRows(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+  projectId: string,
+  window: DateRange,
+  projectWithWindow: Doc<"projects">,
+): Promise<PromoteOverbookingRow[]> {
+  const projectDocsById = await fetchCandidateProjects(ctx, organizationId, window.end);
+  projectDocsById.set(projectWithWindow.id, projectWithWindow);
+  const candidateProjects = candidateBoardProjects([...projectDocsById.values()], window);
+  const candidateProjectIds = candidateProjects.map((p) => p.id);
+  const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, organizationId, candidateProjectIds, projectDocsById);
+  return computePromoteOverbookingConflicts(projectId, window, candidateProjects, lineItems, models, assets, bulkAssetsForModels);
 }

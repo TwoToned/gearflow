@@ -33240,6 +33240,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "overbookingBoard.dateMoveImpact",
+    "module": "overbookingBoard",
+    "fn": "dateMoveImpact",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "end",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "start",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aee0c8393c070410",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Preview whether moving a project's dates would strand another job's gear, before the write (#1227).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "parity.countPage",
     "module": "parity",
     "fn": "countPage",
@@ -61619,10 +61666,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1194,
-  agentReachable: 573,
-  queries: 428,
+  total: 1195,
+  agentReachable: 574,
+  queries: 429,
   mutations: 766,
-  agentReachableQueries: 297,
+  agentReachableQueries: 298,
   agentReachableMutations: 276,
 } as const;

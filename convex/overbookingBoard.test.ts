@@ -199,6 +199,102 @@ describe("overbookingBoard.bundle", () => {
   });
 });
 
+describe("overbookingBoard.dateMoveImpact (#1227, Q3)", () => {
+  async function seedDateMove(t: T) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "owner" });
+      await ctx.db.insert("models", { id: "mdl", organizationId: ORG, name: "IMX6A", assetType: "SERIALIZED" });
+      await ctx.db.insert("assets", { id: "A0", organizationId: ORG, modelId: "mdl", assetTag: "A-0", status: "AVAILABLE" });
+      await ctx.db.insert("assets", { id: "A1", organizationId: ORG, modelId: "mdl", assetTag: "A-1", status: "AVAILABLE" });
+
+      // P_target: CONFIRMED, currently day0-day5, books 2 of the 2-stock model —
+      // fits fine where it is.
+      await ctx.db.insert("projects", {
+        id: "P_target", organizationId: ORG, projectNumber: "P-TARGET", name: "Job to move", status: "CONFIRMED",
+        isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + 5 * DAY, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-target",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-target", organizationId: ORG, projectId: "P_target", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", {
+        id: "L_target", organizationId: ORG, projectId: "P_target", modelId: "mdl", status: "CONFIRMED", quantity: 2, type: "EQUIPMENT",
+        versionId: "v-target", lineageId: "L_target",
+      });
+
+      // P_other: CONFIRMED, day10-day15, ALSO books 2 of the same model — no
+      // overlap with P_target's CURRENT window, so no conflict today.
+      await ctx.db.insert("projects", {
+        id: "P_other", organizationId: ORG, projectNumber: "P-OTHER", name: "Other job", status: "CONFIRMED",
+        isTemplate: false, rentalStartDate: NOW + 10 * DAY, rentalEndDate: NOW + 15 * DAY, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-other",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-other", organizationId: ORG, projectId: "P_other", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", {
+        id: "L_other", organizationId: ORG, projectId: "P_other", modelId: "mdl", status: "CONFIRMED", quantity: 2, type: "EQUIPMENT",
+        versionId: "v-other", lineageId: "L_other",
+      });
+    });
+  }
+
+  test("requires project:read permission", async () => {
+    const t = makeT();
+    await seedDateMove(t);
+    await expect(
+      t.query(api.overbookingBoard.dateMoveImpact, { orgId: ORG, projectId: "P_target", start: NOW, end: NOW + 5 * DAY }),
+    ).rejects.toThrow();
+  });
+
+  test("no rows and windowMoved:false when the window hasn't actually moved", async () => {
+    const t = makeT();
+    await seedDateMove(t);
+    const result = await t.withIdentity(asUser).query(api.overbookingBoard.dateMoveImpact, {
+      orgId: ORG, projectId: "P_target", start: NOW, end: NOW + 5 * DAY,
+    });
+    expect(result).toEqual({ rows: [], windowMoved: false });
+  });
+
+  test("moving into P_other's window creates a hard shortage naming P_other", async () => {
+    const t = makeT();
+    await seedDateMove(t);
+    const result = await t.withIdentity(asUser).query(api.overbookingBoard.dateMoveImpact, {
+      orgId: ORG, projectId: "P_target", start: NOW + 10 * DAY, end: NOW + 15 * DAY,
+    });
+    expect(result.windowMoved).toBe(true);
+    expect(result.rows).toHaveLength(1);
+    // Both P_target (moving, already CONFIRMED so its own demand counts as
+    // hard too) and P_other contribute — 2 + 2 = 4 booked against 2 stock.
+    expect(result.rows[0]).toMatchObject({ modelId: "mdl", qty: 2 });
+    expect(result.rows[0].projectNumbers.sort()).toEqual(["P-OTHER", "P-TARGET"]);
+  });
+
+  test("uses the project's REAL status, not a CONFIRMED simulation (unlike confirmImpact)", async () => {
+    const t = makeT();
+    await seedDateMove(t);
+    // Demote P_target to QUOTED (pencilled, not hard) — moving it into
+    // P_other's window should NOT report a hard shortage, since P_target's
+    // own demand no longer counts as hard once it isn't confirmed-or-later.
+    await t.run(async (ctx) => {
+      const doc = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "P_target")).unique();
+      await ctx.db.patch(doc!._id, { status: "QUOTED" });
+    });
+    const result = await t.withIdentity(asUser).query(api.overbookingBoard.dateMoveImpact, {
+      orgId: ORG, projectId: "P_target", start: NOW + 10 * DAY, end: NOW + 15 * DAY,
+    });
+    // P_other alone (2 units, CONFIRMED) still fits within the 2-unit stock,
+    // so there is no hard shortage once P_target's own demand is pencilled.
+    expect(result.rows).toEqual([]);
+  });
+
+  test("rejects a caller whose token org doesn't match the requested orgId (IDOR)", async () => {
+    const t = makeT();
+    await seedDateMove(t);
+    await expect(
+      t.withIdentity({ subject: "user_2", orgId: "org_2" }).query(api.overbookingBoard.dateMoveImpact, {
+        orgId: ORG, projectId: "P_target", start: NOW + 10 * DAY, end: NOW + 15 * DAY,
+      }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("overbookingBoard.counts (dashboard chips)", () => {
   test("matches the full bundle's section lengths exactly (chip/board parity)", async () => {
     const t = makeT();

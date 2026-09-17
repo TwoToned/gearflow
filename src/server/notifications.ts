@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { getOrgContext } from "@/lib/org-context";
+import { hasPermission } from "@/lib/permissions";
 import { serialize } from "@/lib/serialize";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
@@ -19,7 +20,7 @@ import {
 
 export interface AppNotification {
   id: string;
-  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset" | "incident_report" | "pending_join_requests";
+  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset" | "incident_report" | "pending_join_requests" | "quote_expiring";
   title: string;
   description: string;
   href: string;
@@ -188,6 +189,36 @@ export async function getNotifications(): Promise<AppNotification[]> {
         href: `/invite/${inv.id}`,
         severity: "info",
         timestamp: inv.createdAt.toISOString(),
+      });
+    }
+  }
+
+  // 5. Expiring quotes (#1225, D4 — invoice:read holders only; a quote nudge
+  // names a client and a dollar total, unlike every other type here).
+  const viewerRole = await prisma.member.findFirst({
+    where: { organizationId, userId },
+    select: { role: true },
+  });
+  if (viewerRole && hasPermission(viewerRole.role, "invoice", "read")) {
+    const expiringQuotes = await (await getConvexClient()).query(api.financeOrg.expiringForNotifications, {
+      orgId: organizationId,
+      now: now.getTime(),
+    });
+    for (const row of expiringQuotes) {
+      // buildExpiring only ever includes rows with a non-null validUntil, so
+      // daysLeft is never actually null here — the `?? 0` is just satisfying
+      // the general return type of daysUntilValidUntil.
+      const daysLeft = row.daysLeft ?? 0;
+      const expired = daysLeft <= 0;
+      const totalStr = row.total != null ? `$${row.total.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null;
+      notifications.push({
+        id: `quote-expiring-${row.quoteId}`,
+        type: "quote_expiring",
+        title: expired ? `Expired: ${row.projectNumber} v${row.version}` : `Expiring soon: ${row.projectNumber} v${row.version}`,
+        description: [row.clientName, totalStr].filter(Boolean).join(" — ") || "Sent quote, no response yet",
+        href: `/projects/${row.projectId}?tab=finance`,
+        severity: expired ? "error" : "warning",
+        timestamp: row.validUntil != null ? new Date(row.validUntil).toISOString() : now.toISOString(),
       });
     }
   }

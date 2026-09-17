@@ -41,8 +41,10 @@ import {
   overdueReturnEmail,
   pendingOffersEmail,
   pendingTimesheetsEmail,
+  quoteExpiringEmail,
   upcomingProjectEmail,
 } from "@/lib/notification-emails";
+import { hasPermission } from "@/lib/permissions";
 import {
   NOTIFICATION_PREFERENCE_DEFAULTS,
   NOTIFICATION_TYPE_TO_PREFERENCE,
@@ -55,6 +57,7 @@ interface OrgRecipient {
   userId: string;
   email: string;
   name: string;
+  role: string;
   preferences: NotificationPreferenceValues;
 }
 
@@ -70,6 +73,11 @@ interface BuildContext {
 interface NotificationToSend {
   key: string;
   type: keyof typeof NOTIFICATION_TYPE_TO_PREFERENCE;
+  /** Restricts which recipients are even candidates for THIS notification.
+   *  Omitted = every active member, unchanged from before (#1225, D4). A
+   *  quote nudge names a client and a dollar total in the subject line, so
+   *  it's the one type gated on invoice:read; every other type stays open. */
+  audience?: (recipient: OrgRecipient) => boolean;
   build: (recipient: OrgRecipient, ctx: BuildContext) => { subject: string; html: string };
 }
 
@@ -112,6 +120,7 @@ async function loadOrgRecipients(organizationId: string): Promise<OrgRecipient[]
     userId: m.user.id,
     email: m.user.email,
     name: m.user.name || m.user.email,
+    role: m.role,
     preferences: prefMap.get(m.user.id) ?? { ...NOTIFICATION_PREFERENCE_DEFAULTS },
   }));
 }
@@ -364,6 +373,40 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     }
   }
 
+  // 10. Expiring quotes (#1225, D4 — invoice:read holders only). Dedupe key is
+  // deliberately bucketed to "soon" | "expired", NOT per-day: a quote should
+  // nudge at most twice in its life — once when the window opens, once when
+  // it lapses — a daily key would email seven times for one quote.
+  const expiringQuotes = await (await getConvexClient()).query(api.financeOrg.expiringForNotifications, {
+    orgId: organizationId,
+    now: now.getTime(),
+  });
+  for (const row of expiringQuotes) {
+    const daysLeft = row.daysLeft ?? 0;
+    const expired = daysLeft <= 0;
+    const bucket = expired ? "expired" : "soon";
+    const key = `quote-expiring:${row.quoteId}:${bucket}`;
+    out.push({
+      key,
+      type: "quote_expiring",
+      audience: (r) => hasPermission(r.role, "invoice", "read"),
+      build: (recipient, c) =>
+        quoteExpiringEmail({
+          recipientName: recipient.name,
+          orgName: c.organizationName,
+          appBaseUrl: c.appBaseUrl,
+          href: `/projects/${row.projectId}?tab=finance`,
+          notificationKey: key,
+          projectNumber: row.projectNumber,
+          clientName: row.clientName,
+          version: row.version,
+          total: row.total,
+          daysLeft,
+          expired,
+        }),
+    });
+  }
+
   return out;
 }
 
@@ -424,6 +467,7 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
       const prefField = NOTIFICATION_TYPE_TO_PREFERENCE[notif.type];
 
       for (const recipient of recipients) {
+        if (notif.audience && !notif.audience(recipient)) continue;
         result.candidates += 1;
 
         if (!recipient.preferences[prefField]) {

@@ -212,6 +212,40 @@ export function flaggedAssetEmail(data: FlaggedAssetEmailData) {
   };
 }
 
+export interface QuoteExpiringEmailData extends BaseEmailData {
+  projectNumber: string;
+  clientName: string | null;
+  version: number;
+  total: number | null;
+  daysLeft: number;
+  /** Already past `validUntil` — words the copy differently from "expiring soon". */
+  expired: boolean;
+}
+
+export function quoteExpiringEmail(data: QuoteExpiringEmailData) {
+  const link = absolute(data.appBaseUrl, data.href);
+  const totalStr = data.total != null ? `$${data.total.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null;
+  const clientStr = data.clientName ? ` for ${escapeHtml(data.clientName)}` : "";
+  return {
+    subject: data.expired
+      ? `Expired: quote ${data.projectNumber}${data.clientName ? ` — ${data.clientName}` : ""}`
+      : `Expiring soon: quote ${data.projectNumber}${data.clientName ? ` — ${data.clientName}` : ""}`,
+    html: emailWrapper(
+      `
+        <h2>${data.expired ? "A sent quote has expired" : "A sent quote is expiring soon"}</h2>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p><strong>${escapeHtml(data.projectNumber)} v${data.version}</strong>${clientStr} ${
+          data.expired
+            ? `expired ${Math.abs(data.daysLeft)} day${Math.abs(data.daysLeft) === 1 ? "" : "s"} ago`
+            : `is valid for ${data.daysLeft} more day${data.daysLeft === 1 ? "" : "s"}`
+        }${totalStr ? `, worth <strong>${totalStr}</strong>` : ""}, with no response yet.</p>
+        ${ctaButton(link, "Open project finance")}
+      `,
+      data,
+    ),
+  };
+}
+
 export interface IncidentReportEmailData extends BaseEmailData {
   assetLabel: string;
   description: string;

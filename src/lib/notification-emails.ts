@@ -222,23 +222,35 @@ export interface QuoteExpiringEmailData extends BaseEmailData {
   expired: boolean;
 }
 
+function quoteExpiringPluralDays(n: number): string {
+  return n === 1 ? "" : "s";
+}
+
+function quoteExpiringSubject(data: QuoteExpiringEmailData): string {
+  const clientSuffix = data.clientName ? ` — ${data.clientName}` : "";
+  return data.expired ? `Expired: quote ${data.projectNumber}${clientSuffix}` : `Expiring soon: quote ${data.projectNumber}${clientSuffix}`;
+}
+
+function quoteExpiringStatusLine(data: QuoteExpiringEmailData): string {
+  if (data.expired) {
+    const overdue = Math.abs(data.daysLeft);
+    return `expired ${overdue} day${quoteExpiringPluralDays(overdue)} ago`;
+  }
+  return `is valid for ${data.daysLeft} more day${quoteExpiringPluralDays(data.daysLeft)}`;
+}
+
 export function quoteExpiringEmail(data: QuoteExpiringEmailData) {
   const link = absolute(data.appBaseUrl, data.href);
   const totalStr = data.total != null ? `$${data.total.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null;
   const clientStr = data.clientName ? ` for ${escapeHtml(data.clientName)}` : "";
+  const totalSuffix = totalStr ? `, worth <strong>${totalStr}</strong>` : "";
   return {
-    subject: data.expired
-      ? `Expired: quote ${data.projectNumber}${data.clientName ? ` — ${data.clientName}` : ""}`
-      : `Expiring soon: quote ${data.projectNumber}${data.clientName ? ` — ${data.clientName}` : ""}`,
+    subject: quoteExpiringSubject(data),
     html: emailWrapper(
       `
         <h2>${data.expired ? "A sent quote has expired" : "A sent quote is expiring soon"}</h2>
         <p>Hi ${escapeHtml(data.recipientName)},</p>
-        <p><strong>${escapeHtml(data.projectNumber)} v${data.version}</strong>${clientStr} ${
-          data.expired
-            ? `expired ${Math.abs(data.daysLeft)} day${Math.abs(data.daysLeft) === 1 ? "" : "s"} ago`
-            : `is valid for ${data.daysLeft} more day${data.daysLeft === 1 ? "" : "s"}`
-        }${totalStr ? `, worth <strong>${totalStr}</strong>` : ""}, with no response yet.</p>
+        <p><strong>${escapeHtml(data.projectNumber)} v${data.version}</strong>${clientStr} ${quoteExpiringStatusLine(data)}${totalSuffix}, with no response yet.</p>
         ${ctaButton(link, "Open project finance")}
       `,
       data,

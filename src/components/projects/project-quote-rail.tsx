@@ -756,6 +756,19 @@ export function standardQuoteRowActions(
  * so the operator has enough context to write their own follow-up. Pure so
  * it's testable without mounting the rail.
  */
+function pluralDays(n: number): string {
+  return n === 1 ? "" : "s";
+}
+
+function chaseValidUntilLine(validUntil: number, daysLeft: number | null): string {
+  if (daysLeft != null && daysLeft < 0) {
+    const overdue = Math.abs(daysLeft);
+    return `Expired: ${formatDate(new Date(validUntil))} (${overdue} day${pluralDays(overdue)} ago)`;
+  }
+  const suffix = daysLeft != null ? ` (${daysLeft} day${pluralDays(daysLeft)} left)` : "";
+  return `Valid until: ${formatDate(new Date(validUntil))}${suffix}`;
+}
+
 export function chaseSummary(
   projectNumber: string,
   quote: Pick<QuoteRevisionDoc, "version" | "sentAt" | "publishedAt" | "validUntil">,
@@ -770,11 +783,7 @@ export function chaseSummary(
     pricing.taxAmount != null ? `GST: ${formatCurrency(pricing.taxAmount)}` : null,
     pricing.total != null ? `Total: ${formatCurrency(pricing.total)}` : null,
     sentAt != null ? `Sent: ${formatDate(new Date(sentAt))}` : null,
-    quote.validUntil != null
-      ? daysLeft != null && daysLeft < 0
-        ? `Expired: ${formatDate(new Date(quote.validUntil))} (${Math.abs(daysLeft)} day${Math.abs(daysLeft) === 1 ? "" : "s"} ago)`
-        : `Valid until: ${formatDate(new Date(quote.validUntil))}${daysLeft != null ? ` (${daysLeft} day${daysLeft === 1 ? "" : "s"} left)` : ""}`
-      : null,
+    quote.validUntil != null ? chaseValidUntilLine(quote.validUntil, daysLeft) : null,
   ].filter(Boolean);
   return lines.join("\n");
 }

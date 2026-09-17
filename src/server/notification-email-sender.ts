@@ -411,6 +411,55 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
 }
 
 /**
+ * One (notification, recipient) pair — the audience/preference/dedupe gates,
+ * then the send + log-write, or a bookkeeping bump if gated. Split out of
+ * `sendNotificationEmails` purely to keep that loop under the complexity
+ * budget (R-3.6); `alreadySent`/`result` are mutated in place.
+ */
+async function sendOneNotificationEmail(
+  notif: NotificationToSend,
+  recipient: OrgRecipient,
+  ctx: BuildContext,
+  orgId: string,
+  alreadySent: Set<string>,
+  result: SendNotificationEmailsResult,
+): Promise<void> {
+  if (notif.audience && !notif.audience(recipient)) return;
+  result.candidates += 1;
+
+  const prefField = NOTIFICATION_TYPE_TO_PREFERENCE[notif.type];
+  if (!recipient.preferences[prefField]) {
+    result.skippedOptOut += 1;
+    return;
+  }
+  const dedupeKey = `${recipient.userId}::${notif.key}`;
+  if (alreadySent.has(dedupeKey)) {
+    result.skippedAlreadySent += 1;
+    return;
+  }
+
+  try {
+    const { subject, html } = notif.build(recipient, ctx);
+    await sendEmail({ to: recipient.email, subject, html });
+    await (await getConvexClient()).mutation(api.notificationEmailLogs.create, {
+      id: createId(),
+      organizationId: orgId,
+      userId: recipient.userId,
+      notificationKey: notif.key,
+      sentAt: Date.now(),
+    });
+    alreadySent.add(dedupeKey);
+    result.sent += 1;
+  } catch (e) {
+    result.errors.push({
+      recipient: recipient.email,
+      key: notif.key,
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/**
  * Run the email-send pass across every organization. Idempotent — uses
  * NotificationEmailLog to ensure a user is emailed about a given
  * notificationKey at most once.
@@ -464,41 +513,8 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
     const alreadySent = new Set(existing.map((e) => `${e.userId}::${e.notificationKey}`));
 
     for (const notif of notifications) {
-      const prefField = NOTIFICATION_TYPE_TO_PREFERENCE[notif.type];
-
       for (const recipient of recipients) {
-        if (notif.audience && !notif.audience(recipient)) continue;
-        result.candidates += 1;
-
-        if (!recipient.preferences[prefField]) {
-          result.skippedOptOut += 1;
-          continue;
-        }
-        const dedupeKey = `${recipient.userId}::${notif.key}`;
-        if (alreadySent.has(dedupeKey)) {
-          result.skippedAlreadySent += 1;
-          continue;
-        }
-
-        try {
-          const { subject, html } = notif.build(recipient, ctx);
-          await sendEmail({ to: recipient.email, subject, html });
-          await (await getConvexClient()).mutation(api.notificationEmailLogs.create, {
-            id: createId(),
-            organizationId: org.id,
-            userId: recipient.userId,
-            notificationKey: notif.key,
-            sentAt: Date.now(),
-          });
-          alreadySent.add(dedupeKey);
-          result.sent += 1;
-        } catch (e) {
-          result.errors.push({
-            recipient: recipient.email,
-            key: notif.key,
-            message: e instanceof Error ? e.message : String(e),
-          });
-        }
+        await sendOneNotificationEmail(notif, recipient, ctx, org.id, alreadySent, result);
       }
     }
   }

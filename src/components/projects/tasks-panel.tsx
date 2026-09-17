@@ -213,7 +213,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
   });
 
   const grouped = useMemo(() => {
-    const g: Record<ProjectTaskStatus, Task[]> = { TODO: [], IN_PROGRESS: [], DONE: [] };
+    const g: Record<ProjectTaskStatus, Task[]> = { TODO: [], IN_PROGRESS: [], DONE: [], CANCELLED: [] };
     for (const t of tasks) g[t.status]?.push(t);
     return g;
   }, [tasks]);

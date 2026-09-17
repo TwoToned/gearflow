@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-09-17
+
+### Fixed
+
+- **The Overbookings & Gaps board's "Pencilled collisions" section no longer drops the CONFIRMED job holding the gear.** When a confirmed job holds most of a model's stock (not enough on its own to trip an alarm) and a quoted job's demand is what pushes the total over capacity, both jobs now show as affected — not just the quoted one.
+
 ## [0.29.1] - 2026-09-17
 
 ### Fixed

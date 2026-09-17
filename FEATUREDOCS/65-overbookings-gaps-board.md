@@ -35,7 +35,14 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
 2. **Pencilled collisions** — the ADDITIONAL shortage that would exist if
    every currently-pencilled booking for that model (an optional line, or any
    line on a not-yet-confirmed project) also went hard. A heads-up, not a
-   violation of today's rule — "would collide if confirmed." Amber.
+   violation of today's rule — "would collide if confirmed." Amber. A row's
+   `projects` list is the union of every HARD-holding project and every
+   PENCILLED project contributing demand (2026-09 fix) — not just the pencilled
+   one(s). A CONFIRMED job can hold gear well within its own demand (never
+   making the `hard` row above) while still being the reason a QUOTED job's
+   demand would collide; listing only the pencilled project silently dropped
+   the CONFIRMED job that's actually holding the stock, which read as "only
+   one job flagged" even though two were involved.
 3. **Sale stock to procure** (WS11 #950) — models whose `Model.saleStockQuantity`
    (a single per-model sale-stock pool, independent of rental assets/bulk) has
    gone negative — sold below what was ever added as stock. Each row lists the

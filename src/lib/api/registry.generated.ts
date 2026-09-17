@@ -31972,6 +31972,154 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "notifications.listForMe",
+    "module": "notifications",
+    "fn": "listForMe",
+    "kind": "query",
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "limit",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f14bd0a6d604268b",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "List the caller's recent, non-archived notifications in their active org.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notifications.unreadCountForMe",
+    "module": "notifications",
+    "fn": "unreadCountForMe",
+    "kind": "query",
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [],
+    "privilegedArgs": [],
+    "argsSha": "5151b7eb8536aa97",
+    "returnsSha": "cddf8275afa15408",
+    "stability": "tracks-app",
+    "summary": "Count the caller's unread notifications in their active org.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.archiveNative",
+    "module": "notificationsWrites",
+    "fn": "archiveNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b114161049d5d20",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.markAllReadNative",
+    "module": "notificationsWrites",
+    "fn": "markAllReadNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [],
+    "privilegedArgs": [],
+    "argsSha": "5151b7eb8536aa97",
+    "returnsSha": "1ce2050af5634770",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.markReadNative",
+    "module": "notificationsWrites",
+    "fn": "markReadNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b114161049d5d20",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "oauthAuthorizationCodes.create",
     "module": "oauthAuthorizationCodes",
     "fn": "create",
@@ -55228,6 +55376,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "assigned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "commentReply",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "dueSoon",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "expiringCert",
         "optional": true,
         "type": "boolean"
@@ -55249,6 +55412,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       },
       {
         "name": "lowStock",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "mentioned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "overdue",
         "optional": true,
         "type": "boolean"
       },
@@ -55294,7 +55467,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7ed08b6b579c2fbb",
+    "argsSha": "63849b2859712a25",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55315,6 +55488,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "assigned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "commentReply",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "dueSoon",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "expiringCert",
         "optional": true,
         "type": "boolean"
@@ -55336,6 +55524,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       },
       {
         "name": "lowStock",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "mentioned",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "overdue",
         "optional": true,
         "type": "boolean"
       },
@@ -55381,7 +55579,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7ed08b6b579c2fbb",
+    "argsSha": "63849b2859712a25",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55520,7 +55718,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "32ae1b825148ecb3",
+    "argsSha": "518eba72d9994286",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -61552,10 +61750,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1193,
-  agentReachable: 572,
-  queries: 427,
-  mutations: 766,
-  agentReachableQueries: 296,
-  agentReachableMutations: 276,
+  total: 1198,
+  agentReachable: 577,
+  queries: 429,
+  mutations: 769,
+  agentReachableQueries: 298,
+  agentReachableMutations: 279,
 } as const;

@@ -37,8 +37,10 @@ async function requireWorkOrProjectUpdate(ctx: MutationCtx, orgId: string): Prom
   }
 }
 
-/** Validate an assignee (user member OR crew) belongs to the org; reject if both set. */
-async function assertAssigneeInOrg(
+/** Validate an assignee (user member OR crew) belongs to the org; reject if both set.
+ *  Exported — workSignalStatesWrites.ts's promoteSignalNative shares this rather
+ *  than re-declaring the same check (R-3.1). */
+export async function assertAssigneeInOrg(
   ctx: MutationCtx,
   orgId: string,
   assigneeUserId?: string | null,

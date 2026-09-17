@@ -96,6 +96,27 @@ peek-panel subtask UI (a later Phase 1 slice) exists to render the migrated rows
 it today would already be safe (the flat readers above exclude `parentId` rows), there's
 just nothing yet that shows them.
 
+**A signal's human decision — `workSignalStatesWrites.ts`.** Browser-direct,
+USER-scoped writes (`requireSelfScope`, mirrors `notificationsWrites.ts`'s posture): a row is
+owned by the `(organizationId, userId)` baked into the verified token, so a caller only ever
+touches their own decisions in their active org.
+- `snoozeSignalNative(sourceKey, snoozedUntil)` / `dismissSignalNative(sourceKey)` —
+  upsert on `(orgId, userId, sourceKey)`: one row per person per signal, re-snoozing just
+  updates it. Danger `low`.
+- `promoteSignalNative(sourceKey, title, projectId?, assigneeUserId?, assigneeCrewId?,
+  dueDate?, priority?)` — materialises a derived Triage signal (design doc §9) into a real
+  `projectTasks` row AND records the `promoted` decision in ONE transaction, so a signal can
+  never end up "promoted" with no row to show for it. Assignee defaults to the promoting
+  user unless an explicit `assigneeUserId`/`assigneeCrewId` is given (the crew case clears
+  the self-default so the existing user↔crew XOR, shared from `projectTasksWrites.ts`'s
+  `assertAssigneeInOrg`, is never violated by the default itself). Audited exactly like
+  `createNative` (`entityType: "ProjectTask"`). Danger `medium` — same tier as
+  `createNative`, since it creates a real, org-visible work item.
+
+Reading which signals exist and computing them live (never stored — design doc §9) is
+`workTriage.forMe`, documented in [FEATUREDOCS/79](./79-today.md) alongside the Today UI that
+consumes it.
+
 **RBAC — `work:read`/`work:update` OR `project:read`/`project:update`.** A new `work`
 permissions resource was added additively to `permissionsCore.ts` (owner/admin/manager:
 full CRUD; member/warehouse: create/read/update; viewer: read). Every task read

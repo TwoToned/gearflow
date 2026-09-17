@@ -303,6 +303,7 @@ import type * as wooCommerceActions from "../wooCommerceActions.js";
 import type * as wooCommerceIntegrations from "../wooCommerceIntegrations.js";
 import type * as wooCommerceInternal from "../wooCommerceInternal.js";
 import type * as wooCommerceOrderLogs from "../wooCommerceOrderLogs.js";
+import type * as workSignalStatesWrites from "../workSignalStatesWrites.js";
 import type * as xeroIntegrations from "../xeroIntegrations.js";
 import type * as xeroPush from "../xeroPush.js";
 import type * as xeroSyncLogs from "../xeroSyncLogs.js";
@@ -609,6 +610,7 @@ declare const fullApi: ApiFromModules<{
   wooCommerceIntegrations: typeof wooCommerceIntegrations;
   wooCommerceInternal: typeof wooCommerceInternal;
   wooCommerceOrderLogs: typeof wooCommerceOrderLogs;
+  workSignalStatesWrites: typeof workSignalStatesWrites;
   xeroIntegrations: typeof xeroIntegrations;
   xeroPush: typeof xeroPush;
   xeroSyncLogs: typeof xeroSyncLogs;

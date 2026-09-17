@@ -61448,6 +61448,162 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "workSignalStatesWrites.dismissSignalNative",
+    "module": "workSignalStatesWrites",
+    "fn": "dismissSignalNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "sourceKey",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1190e29362f1a17f",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "workSignalStatesWrites.promoteSignalNative",
+    "module": "workSignalStatesWrites",
+    "fn": "promoteSignalNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "assigneeCrewId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "assigneeUserId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "dueDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "priority",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "projectId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sourceKey",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "title",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4c29d139e4b59d57",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "workSignalStatesWrites.snoozeSignalNative",
+    "module": "workSignalStatesWrites",
+    "fn": "snoozeSignalNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "snoozedUntil",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "sourceKey",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0faf8292b4a182c0",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "xeroIntegrations.createIfMissing",
     "module": "xeroIntegrations",
     "fn": "createIfMissing",
@@ -62008,10 +62164,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1202,
-  agentReachable: 580,
+  total: 1205,
+  agentReachable: 583,
   queries: 432,
-  mutations: 770,
+  mutations: 773,
   agentReachableQueries: 301,
-  agentReachableMutations: 279,
+  agentReachableMutations: 282,
 } as const;

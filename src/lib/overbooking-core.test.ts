@@ -252,6 +252,33 @@ describe("reconstructOverbookedStatus", () => {
     expect(map.get("kp")).toMatchObject({ overBy: 1, inherited: true, hasOverbookedChildren: true });
   });
 
+  it("a kit parent whose only overbooked child is reducedOnly still counts as hasOverbookedChildren (not softened)", () => {
+    // kit child's overage is caused SOLELY by a maintenance asset (reducedOnly:
+    // true at the child level), but the parent rollup must not treat that as
+    // "not really overbooked" — the badge layer keys off hasOverbookedChildren,
+    // and demand exceeding today's usable stock is real regardless of why the
+    // stock is short.
+    const items: OverbookLineItem[] = [
+      { id: "kp", modelId: null, quantity: 1, isKitChild: false, parentLineItemId: null, kitId: "kit1", status: "QUOTED" },
+      { id: "kc", modelId: "m1", quantity: 2, isKitChild: true, parentLineItemId: "kp", kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1", status: "IN_MAINTENANCE" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime() })],
+      lineItems: [bundleLineItem({ id: "kc", projectId: THIS_PROJECT, modelId: "m1", quantity: 2 })],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.get("kc")).toMatchObject({ overBy: 1, reducedOnly: true });
+    expect(map.get("kp")).toMatchObject({
+      overBy: 1,
+      inherited: true,
+      hasOverbookedChildren: true,
+      hasReducedChildren: true,
+      reducedOnly: false,
+    });
+  });
+
   it("counts bulk stock for a BULK model whose assetType mirror field is absent", () => {
     // Regression: older/backfilled Convex model docs read back assetType === undefined.
     // Defaulting to SERIALIZED made totalStock = assets.length = 0 → every bulk line

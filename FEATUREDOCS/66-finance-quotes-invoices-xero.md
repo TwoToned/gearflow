@@ -594,6 +594,19 @@ Delete draft/Void move into the menu via `invoiceRowMenuActions()`. Unit tests
 for the action-list logic: `quote-row-actions.test.ts`, `invoice-row-actions.test.ts`;
 smoke test for the shared menu: `row-actions-menu.smoke.test.tsx`.
 
+**Chase (#1225, Q2 of the QOL sweep)** — one more `standardQuoteRowActions()`
+entry, shown whenever `isHeldByClient` (a `SENT` or `EXPIRED` revision — the
+same condition that already gates Decline/Recall). Copies a follow-up summary
+to the clipboard: project number + version, subtotal/GST/total, the sent date,
+and days remaining (or days overdue if expired) — same grammar as
+`SendQuoteDialog`'s own `copySummary`, extracted here as the pure, testable
+`chaseSummary()` so the two can't drift in wording. **Flow still never emails
+the client itself** (decision 7 of #989, unchanged) — this hands the operator
+text for their own mail client, exactly like `copySummary` already does. See
+FEATUREDOCS/17 for the companion server-side nudge (`quote_expiring` bell +
+email) this pairs with — the bell tells the operator a quote needs chasing,
+this is what they paste once they open it.
+
 **Phase 4 additions (#1097, full story in `FEATUREDOCS/70`):** a "Make live"
 button next to any non-live revision with captured state (opens
 `PromoteVersionDialog`); a "Rename version" action in the `invoice:publish`

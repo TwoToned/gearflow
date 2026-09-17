@@ -297,6 +297,45 @@ distinct from a resolved-but-rejected scan result) always plays `error`.
 silently no-ops there (accepted outcome, not a bug; see `src/lib/scan-feedback.ts`). Android
 handhelds buzz distinctly per verdict; the toggle silences both audio and haptics together.
 
+#### Scan History Strip (#1223)
+
+`useScanFeedback().play(kind, entry?)` takes an optional second argument —
+
+```ts
+interface ScanHistoryEntry {
+  label: string;   // what was scanned, as the operator would say it — "SM58 · A-1042"
+  outcome: string;  // the verdict in words — "Prepped", "Already deployed"
+  undo?: { label: string; run: () => void | Promise<void> };
+}
+```
+
+— and the hook keeps the last **five** `{ ...entry, kind, at }` records in memory, newest
+first (`entries`), rendered by `<ScanHistoryStrip>`
+(`src/components/warehouse/scan-history-strip.tsx`) above the scan input on every scan
+surface: the Pick/Prep, Deploy and Return tabs here, `/warehouse/returns`,
+`/test-and-tag/quick-test`, and `/check/[assetTag]`. An un-migrated `play(kind)` call (no
+second argument) still beeps and buzzes exactly as before — the widening is additive, call
+sites adopt it one at a time.
+
+State is **in-memory and per-mount, deliberately not persisted** (D6 of
+`docs/designs/qol-sweep-2026-09.md`) — a strip that survived a refresh would read as a log,
+and it isn't one (the activity log is the log). It collapses to nothing when empty, and
+caps its mobile footprint at two visible rows plus a "Show all" expander (five rows would
+push the scan input itself off a phone's fold).
+
+**Undo, when present, is always someone else's guarded trigger — never a second one.** A
+`ScanHistoryEntry.undo` on the six-write family is literally `AnnouncedWrite.scanUndo`
+(`src/lib/warehouse-undo-toast.ts`) — the exact double-tap-guarded closure the write's own
+toast Undo button calls — so the strip and the toast can never fire two independent
+reverses for the same write, or disagree about whether one already fired. Of the ~44 scan
+verdict call sites, only the small handful that resolve through `checkOutItems` /
+`checkOutKit` / `checkInItems` / `checkInKit` carry an `undo`; every validation/lookup/error
+verdict (the large majority) omits it — there is nothing to reverse. Only the single
+**newest** entry that carries an `undo` ever renders the button, and only inside a 10-second
+window matching the toast's own duration (`exposeNewestUndoOnly` in
+`src/hooks/use-scan-feedback.ts`) — a strip full of Undo buttons invites undoing the wrong
+one.
+
 ### Kit/Prep-Kit Flows
 - Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren
 - Kit checkin: `checkInKit()` — same pattern, handles grandchildren and prep-kit assets

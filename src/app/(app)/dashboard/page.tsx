@@ -10,7 +10,6 @@ import {
   useNativeBlocking,
   useNativePendingCrewOffers,
   useNativeActivity,
-  useNativeMyOpenTasks,
   useNativeOverbookingCounts,
   useNativeOrgFinanceCounts,
 } from "@/hooks/use-native-dashboard";
@@ -40,7 +39,6 @@ import { PageHeader } from "@/components/layout/page-header";
 import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
 import { formatDateLong, formatDateDayMonth } from "@/lib/formatters";
-import { MyWorkSection } from "@/components/dashboard/my-work-section";
 import { FinishSetupChecklist } from "@/components/dashboard/finish-setup-checklist";
 import { ActivationChecklist } from "@/components/dashboard/activation-checklist";
 import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
@@ -86,7 +84,6 @@ export default function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myBlockers = useNativeBlocking(orgId) as any;
   const pendingCrewOffers = useNativePendingCrewOffers(orgId);
-  const myTasks = useNativeMyOpenTasks(orgId);
 
   // Delay ladder derived from section index instead of hand-numbered literals
   // (§ "Dashboard reorder" — the old 0.04/0.05/0.08/0.1/0.12/0.14/0.16 chain
@@ -153,46 +150,38 @@ export default function DashboardPage() {
         <ActivationChecklist orgId={orgId} />
       </FadeIn>
 
-      {/* ══ Zone 1: My work ══
-          "On the floor now" + MyWorkSection (which now owns the tasks-due
-          block and the per-project blocker badges/snippets — the standalone
-          blockers panel that used to sit between the bento board and
-          MyWorkSection is gone; blockers now render in exactly two places:
-          here, and the "needs attention" chip in zone 2 below). */}
-      <div className="space-y-3">
-        <FadeIn delay={nextSectionDelay()}>
-          <div className={`${TILE} flex flex-col p-5`}>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {liveJobs.length > 0 && <LivePulse />}
-                <h2 className="t-overline text-muted">On the floor now</h2>
-              </div>
-              {liveJobs.length > 0 && <span className="text-[11px] text-muted">{liveJobs.length} live</span>}
+      {/* ══ Zone 1: On the floor now ══
+          The personal "My work" zone (tasks-due block + per-project blocker
+          badges, formerly MyWorkSection) was REMOVED here (work-layer phase
+          0.5, #1242, D10A) — Today (/today, now the landing page) owns that
+          surface, and rendering it on both pages would show the same rows
+          twice. Blockers still surface via the "needs attention" chip in
+          zone 2 below. This live-jobs tile stays: it's an org-wide warehouse
+          view (what's out right now), not a personal work list. */}
+      <FadeIn delay={nextSectionDelay()}>
+        <div className={`${TILE} flex flex-col p-5`}>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {liveJobs.length > 0 && <LivePulse />}
+              <h2 className="t-overline text-muted">On the floor now</h2>
             </div>
-            {!myHome ? (
-              <div className="space-y-2"><Skeleton className="h-16 w-full rounded-[var(--r)]" /><Skeleton className="h-16 w-full rounded-[var(--r)]" /></div>
-            ) : liveJobs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
-                <FlowMascot className="h-10 w-10" eyeColor="var(--ok)" />
-                <p className="text-[14px] font-medium text-ink">Nothing out right now</p>
-                <p className="t-micro text-muted">The warehouse is full and calm. Enjoy it.</p>
-              </div>
-            ) : (
-              <StaggerList className="flex flex-col gap-2 sm:grid sm:grid-cols-2">
-                {liveJobs.slice(0, 4).map((p) => (<StaggerItem key={p.id as string}><LiveJobRow project={p} now={now} /></StaggerItem>))}
-              </StaggerList>
-            )}
+            {liveJobs.length > 0 && <span className="text-[11px] text-muted">{liveJobs.length} live</span>}
           </div>
-        </FadeIn>
-
-        <FadeIn delay={nextSectionDelay()}>
-          <MyWorkSection
-            projects={myProjects}
-            blockers={(myBlockers ?? []) as Record<string, unknown>[]}
-            tasks={(myTasks ?? []) as unknown as Record<string, unknown>[]}
-          />
-        </FadeIn>
-      </div>
+          {!myHome ? (
+            <div className="space-y-2"><Skeleton className="h-16 w-full rounded-[var(--r)]" /><Skeleton className="h-16 w-full rounded-[var(--r)]" /></div>
+          ) : liveJobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
+              <FlowMascot className="h-10 w-10" eyeColor="var(--ok)" />
+              <p className="text-[14px] font-medium text-ink">Nothing out right now</p>
+              <p className="t-micro text-muted">The warehouse is full and calm. Enjoy it.</p>
+            </div>
+          ) : (
+            <StaggerList className="flex flex-col gap-2 sm:grid sm:grid-cols-2">
+              {liveJobs.slice(0, 4).map((p) => (<StaggerItem key={p.id as string}><LiveJobRow project={p} now={now} /></StaggerItem>))}
+            </StaggerList>
+          )}
+        </div>
+      </FadeIn>
 
       {/* ══ Zone 2: Org risk ══ */}
       <FadeIn delay={nextSectionDelay()}>

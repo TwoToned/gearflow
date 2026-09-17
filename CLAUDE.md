@@ -714,6 +714,29 @@ the human-readable label even when the selected `SelectItem` isn't currently mou
 <SelectValue placeholder="Select...">{selected ? labelMap[selected] : "Select..."}</SelectValue>
 ```
 
+### Non-blocking preview gates — one shape, reused (`useConfirmStatusGate` / `useDateMoveGate`)
+"Would this write strand someone else's stuff?" is answered by a **one-shot
+query before the write, never a blocking check inside it.** `useConfirmStatusGate`
+(confirming a job) and `useDateMoveGate` (#1227, moving a confirmed job's dates)
+share one shape: `request*(payload)` runs the preview; if it finds nothing, it
+calls `onProceed(payload)` immediately with zero UI change; if it finds
+something, it stashes `payload` on `pending` and shows a warn+confirm dialog
+whose confirm button calls the ONE `onProceed(payload)` — never a second
+mutation path. **Fails OPEN on any query error** — an advisory preview must
+never block a real write. Copy this shape for the next one rather than
+inventing a new one; the two dialogs (`ConfirmStatusImpactDialog`,
+`DateMoveImpactDialog`) deliberately share the same warn-icon/copy grammar too
+("this is a heads-up, not a block") so a user learns the pattern once.
+
+### A second UI surface reuses the exact reverse trigger — never derives a new one
+When a write's toast already offers Undo (`announceWarehouseWrite` →
+`AnnouncedWrite.scanUndo`, `src/lib/warehouse-undo-toast.ts`), a second surface
+that also wants to offer undo (the scan history strip, #1223) must be handed
+that SAME closure, not re-implement "call the reverse mutation" itself. Two
+independent reverse implementations for one write is how a double-undo or a
+"did that already fire?" bug gets in — one guarded closure, shared, is the
+only way the two surfaces can't disagree about whether the write was undone.
+
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 

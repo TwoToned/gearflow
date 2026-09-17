@@ -48,6 +48,22 @@ describe("computeGearShortageBoard", () => {
     expect(pencilled).toHaveLength(0);
   });
 
+  test("a shortage row lists EVERY contributing project, not just the one that tips it over", () => {
+    // Job A (10) + Job B (10) both CONFIRMED, model has 16 usable stock — the
+    // shortage is caused by both jobs together, so both must show up as
+    // affected, not only whichever line the aggregation happened to see last.
+    const wideAssets: BoardAsset[] = Array.from({ length: 16 }, () => ({ modelId: "m1", status: "AVAILABLE", isActive: true }));
+    const projects = [project({ id: "jobA", status: "CONFIRMED" }), project({ id: "jobB", status: "CONFIRMED" })];
+    const lineItems = [
+      lineItem({ id: "liA", projectId: "jobA", modelId: "m1", quantity: 10 }),
+      lineItem({ id: "liB", projectId: "jobB", modelId: "m1", quantity: 10 }),
+    ];
+    const { hard } = computeGearShortageBoard(RANGE, projects, lineItems, models, wideAssets, []);
+    expect(hard).toHaveLength(1);
+    expect(hard[0]).toMatchObject({ modelId: "m1", qty: 4 });
+    expect(hard[0].projects.map((p) => p.id).sort()).toEqual(["jobA", "jobB"]);
+  });
+
   test("a QUOTED project's demand alone is a pencilled collision, not a hard shortage", () => {
     const projects = [project({ id: "p1", status: "QUOTED" })];
     const lineItems = [lineItem({ id: "li1", projectId: "p1", modelId: "m1", quantity: 3 })];

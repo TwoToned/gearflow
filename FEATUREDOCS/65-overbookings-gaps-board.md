@@ -25,7 +25,13 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
 
 1. **Overbooked gear (hard)** — a model whose HARD demand (see the two-layer
    split, FEATUREDOCS/11) across every project overlapping the range exceeds
-   its effective stock. A real, already-committed problem. Red.
+   its effective stock. A real, already-committed problem. Red. Each row's
+   `projects` list is EVERY project with hard demand for that model in range,
+   not just whichever project's line the aggregation happened to tip the
+   total over capacity (`aggregateDemandByModel` in `overbookingBoard.ts`
+   unconditionally adds every hard-demand project to the same `Set` before any
+   shortage is computed) — e.g. two 10-unit CONFIRMED bookings against 16
+   usable stock surfaces both projects, not just one.
 2. **Pencilled collisions** — the ADDITIONAL shortage that would exist if
    every currently-pencilled booking for that model (an optional line, or any
    line on a not-yet-confirmed project) also went hard. A heads-up, not a

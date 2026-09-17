@@ -219,72 +219,37 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
 
   const effective = info.effectiveStock ?? info.totalStock;
   const unavail = info.unavailableAssets || 0;
+  const reducedNote = unavail > 0 ? `, ${unavail} in maintenance or lost` : "";
 
-  // Kit parents with BOTH overbooked and reduced children show two badges
-  if (info.inherited && info.hasOverbookedChildren && info.hasReducedChildren) {
-    return (
-      <>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge status="overbooked" className="ml-1.5 cursor-help">
-                Overbooked
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>Contains items that are over capacity</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* Reduced stock = info (blue). Badge has no info status, so this is
-                  a blue-soft override on a neutral pill (warehouse precedent). */}
-              <Badge status="neutral" className="ml-1.5 cursor-help bg-blue-soft text-blue">
-                Reduced stock
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              Contains items with {unavail} asset{unavail !== 1 ? "s" : ""} in maintenance or lost
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </>
-    );
-  }
-
-  const isReduced = info.reducedOnly;
   // Pencil-only: the overage is caused ENTIRELY by still-quoted/optional demand
   // elsewhere in the org — nothing has hard-held this project's stock yet. Shown
   // as a softer "warn" pill (same visual language as the Overbookings & Gaps
   // board's amber "pencilled collisions" section) instead of the hard-error
   // "overbooked" pill, so a genuine hard conflict still reads as more urgent.
-  const isPencilledOnly = !isReduced && !info.inherited && (info.hardOverBy ?? info.overBy) === 0;
-  // Reduced = info (blue override on neutral); inherited-overbook/pencil-only =
-  // warn; direct hard overbook = error (t-out). Status §3 / §1.
-  const badgeStatus = isReduced ? "neutral" : info.inherited || isPencilledOnly ? "warn" : "overbooked";
-  const colorClass = isReduced ? "bg-blue-soft text-blue" : "";
-  const label = isReduced ? "Reduced stock" : isPencilledOnly ? "Pencilled overbook" : "Overbooked";
+  //
+  // Maintenance/lost-reduced stock is NOT a reason to soften this any further:
+  // demand exceeding today's USABLE stock is a real overbooking whether the
+  // missing units are on another job or sitting in a service bay.
+  // `unavailableAssets` only adds context to the tooltip below.
+  const isPencilledOnly = !info.inherited && (info.hardOverBy ?? info.overBy) === 0;
+  const badgeStatus = info.inherited || isPencilledOnly ? "warn" : "overbooked";
+  const label = isPencilledOnly ? "Pencilled overbook" : "Overbooked";
 
   function getTooltip() {
     if (info!.inherited) {
-      return isReduced
-        ? `Contains items with ${unavail} asset${unavail !== 1 ? "s" : ""} in maintenance or lost`
-        : `Contains items that are ${info!.overBy} over capacity`;
-    }
-    if (isReduced) {
-      return `${info!.overBy} over usable stock — ${unavail} of ${info!.totalStock} in maintenance or lost (${effective} usable, ${info!.totalBooked} booked)`;
+      return `Contains items that are ${info!.overBy} over capacity${reducedNote}`;
     }
     if (isPencilledOnly) {
-      return `${info!.overBy} over capacity if every pencilled (not-yet-confirmed) booking for this gear goes ahead — nothing is hard-booked over capacity yet (${info!.totalBooked} booked / ${effective} usable)`;
+      return `${info!.overBy} over capacity if every pencilled (not-yet-confirmed) booking for this gear goes ahead — nothing is hard-booked over capacity yet (${info!.totalBooked} booked / ${effective} usable${reducedNote})`;
     }
-    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${unavail > 0 ? `, ${unavail} unavailable` : ""})`;
+    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${reducedNote})`;
   }
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge status={badgeStatus} className={cn("ml-1.5 cursor-help", colorClass)}>
+          <Badge status={badgeStatus} className="ml-1.5 cursor-help">
             {label}
           </Badge>
         </TooltipTrigger>

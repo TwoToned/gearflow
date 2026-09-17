@@ -383,13 +383,15 @@ export async function getProjectIssueFlags(projectIds: string[]) {
 
     if (overbookedMap.size === 0) continue;
 
-    let hasOverbooked = false;
+    // Every entry in the map genuinely can't be fulfilled today — an overage
+    // caused solely by maintenance/lost stock (`reducedOnly`) is not any less
+    // real, so it still counts as `hasOverbooked`. `hasReducedStock` stays as
+    // additional context for the tooltip, not a lower-severity substitute.
     let hasReducedStock = false;
     for (const info of overbookedMap.values()) {
       if (info.reducedOnly) hasReducedStock = true;
-      else hasOverbooked = true;
     }
-    result[project.id] = { hasOverbooked, hasReducedStock };
+    result[project.id] = { hasOverbooked: true, hasReducedStock };
   }
 
   return result;

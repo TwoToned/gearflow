@@ -53,6 +53,16 @@ to look rows up against a single project-wide subscription.
   `createThread`, `addComment`, `setThreadBlocking`, `resolveThread`,
   `reopenThread`. Reads: `listThreads`, `listThreadCommentCounts` (keyed by
   `targetId`), `getProjectBlockingSummary`.
+  - **Mentions inbox (work-layer phase 0, #1241):** `createThread` and
+    `addComment` both call `notifyMentions()` (`convex/lib/notify.ts`) after
+    inserting the comment, in the SAME mutation — never a separate write. It
+    writes one `notifications` row per newly-mentioned user (never the
+    comment's own author), so `mentionUserIds` finally reaches somewhere a
+    user can see it beyond the dashboard's blocking-thread chip. `addComment`
+    only notifies from ITS OWN new mentions (`newMentions`), not the thread's
+    cumulative `mentionUserIds` — replying with the same mention again earns
+    its own notification rather than re-scanning history. See
+    FEATUREDOCS/17-notifications.md.
 - **`reviewMarkers`** — per-target review state (`needs_review` / `follow_up` /
   `resolved`). Mutation `setReviewMarker`; read `getReviewMarker`.
 - **`activityEvents`** — the realtime feed (see below).

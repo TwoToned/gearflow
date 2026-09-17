@@ -19,9 +19,55 @@
 
 ## Implementation
 
+### Mentions inbox — the stored `notifications` table (work-layer phase 0, #1241)
+
+Everything in the "Types" table above is **derived** — computed fresh on every
+read from `getNotifications()`, never stored. A `@mention` in a comment thread
+cannot work that way: Convex cannot index inside `commentThreads.mentionUserIds`,
+so nothing could ever answer "who was mentioned" without a durable row. The
+`notifications` Convex table (`convex/schema.ts`) is that row — the first (and so
+far only) thing this notification system stores rather than computes:
+
+- **Write path:** `convex/lib/notify.ts`'s `notifyMentions()`, called in-band from
+  `convex/collaboration.ts`'s `createThread` and `addComment` mutations —
+  **inside the same transaction as the comment**, so the comment and the
+  notification commit together or neither does (unlike `logActivity`, which is
+  best-effort). One row per newly-mentioned user, never the comment's own
+  author. Dedupe key `mention:<commentId>:<userId>` on
+  `by_organizationId_dedupeKey` makes a retried write a no-op.
+- **Read path:** `convex/notifications.ts` — `listForMe` (recent, non-archived,
+  reactive) and `unreadCountForMe` (plain indexed query on
+  `by_organizationId_userId_readAt`, deliberately not a sharded counter — a
+  per-user unread count is neither hot nor shared). Both derive `organizationId`
+  + `userId` from the verified token, never a client arg, so a multi-org user
+  only ever sees the active org's rows.
+- **Write path (state changes):** `convex/notificationsWrites.ts` —
+  `markReadNative`, `markAllReadNative`, `archiveNative`. Every row load
+  re-checks `organizationId` AND `userId` against the token before touching it.
+- **Client:** `src/hooks/use-notifications.ts` wraps the four operations above;
+  the bell (`src/components/layout/notifications.tsx`) reads it directly —
+  **the bell no longer reads `getNotifications()`** (see below).
+- `userNotificationPreferences` carries five new optional columns (`mentioned`,
+  `assigned`, `commentReply`, `dueSoon`, `overdue`) for the notification `type`
+  values this table can hold. They are schema-only for now, the same posture as
+  the existing unused `lowStock`/`expiringCert` columns — not yet wired into the
+  digest sender below, which still only reads the eight original flags.
+
+Only `type: "mentioned"` is emitted as of phase 0. The other four values in the
+schema (`assigned`, `comment_reply`, `due_soon`, `overdue`) are reserved for the
+work-layer program's later phases (`docs/designs/work-layer.md` §10.2) — no
+writer emits them yet.
+
 ### In-app bell
+- **Bell dropdown** (`src/components/layout/notifications.tsx`): reads the
+  stored `notifications` table above via `useNotifications()` — mentions only,
+  today. It no longer polls `getNotifications()`.
+- **`/notifications` page and the dashboard "Needs attention" chip tray**:
+  unchanged — both still read the nine derived types via `getNotifications()` /
+  `useNotificationsFeed`. This is a deliberate split (work-layer.md §10.2), not
+  a migration in progress: the derived feed remains the org-wide "things that
+  need attention" surface, while the bell becomes the personal mentions inbox.
 - Server: `getNotifications()` in `src/server/notifications.ts` queries all types.
-- Client: `src/components/layout/notifications.tsx` — bell icon with dropdown.
 - Dismissal persists in the `NotificationDismissal` table, keyed by `(userId, notificationKey)`. localStorage is a transient optimistic-UI fallback; the DB is the source of truth. Server actions: `getDismissedKeys()`, `dismissNotification(key)`, `pruneStaleDismissals(activeKeys)`.
 
 ### Email delivery

@@ -57,7 +57,10 @@ Reads in [`convex/projectTasks.ts`](../convex/projectTasks.ts); browser-direct w
   Tests: `convex/projectTasks.myOpenTasks.test.ts`.
 
 Every mutation writes its own audit row via `writeActivityLog` (Convex's `logActivity` counterpart)
-with `entityType: "ProjectTask"` and the `projectId`.
+with `entityType: "ProjectTask"` and the `projectId`. `/activity`'s `entityTypeLabels` map
+(`src/app/(app)/activity/page.tsx`) gained a `ProjectTask: "Task"` entry (work-layer phase 0,
+#1241) — until then these rows rendered the raw `"ProjectTask"` string in the Type column and
+were unfilterable, since `filterOptions` is built from that map.
 
 ## UI (`src/components/projects/tasks-panel.tsx`)
 Rendered in the project detail page's **Tasks** tab. Quick-add input (Enter to add a TODO),

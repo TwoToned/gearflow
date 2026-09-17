@@ -109,6 +109,11 @@ architecture — this section covers only what's specific to the quick-test wiza
   (`src/lib/scan-feedback.ts`) alongside the tone, behind the same toggle — no separate
   control. `navigator.vibrate` is unimplemented on iOS Safari, so this wizard (and every
   other scan surface) is audio-only there; that's the accepted outcome, not a bug.
+- **Scan history strip (#1223)**: the save mutation's `onSuccess`/`onError` pass a
+  `{ label, outcome }` entry alongside the kind — `saveMutation` has no undo (`recordTest`
+  isn't one of the six warehouse writes), so `entry.undo` is always omitted here.
+  `<ScanHistoryStrip>` renders above `<ScanStep>`'s scan input while on the "scan" step —
+  see FEATUREDOCS/12 §"Scan History Strip" for the shared mechanism.
 
 ### Failure Workflow
 When overall result is FAIL, a dialog prompts with options:

@@ -19810,6 +19810,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "financeOrg.expiringForNotifications",
+    "module": "financeOrg",
+    "fn": "expiringForNotifications",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Quotes expiring within the notification window, for the quote_expiring bell/email pipeline (#1225).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "globalSearch.search",
     "module": "globalSearch",
     "fn": "search",
@@ -61572,10 +61609,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1193,
-  agentReachable: 572,
-  queries: 427,
+  total: 1194,
+  agentReachable: 573,
+  queries: 428,
   mutations: 766,
-  agentReachableQueries: 296,
+  agentReachableQueries: 297,
   agentReachableMutations: 276,
 } as const;

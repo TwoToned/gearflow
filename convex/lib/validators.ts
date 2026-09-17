@@ -71,6 +71,19 @@ export const MaintenanceResult = v.union(
   v.literal("CONDITIONAL"),
 );
 /**
+ * Per-asset outcome chosen when closing out a COMPLETED maintenance record
+ * (maintenanceWrites.ts's `applyAssetDispositions`) — what happens to THIS asset,
+ * independent of the record-level `result`. RETURN_TO_SERVICE releases the hold
+ * (same guarded release as the legacy blanket path); KEEP_OUT_OF_SERVICE is a
+ * no-op (asset stays IN_MAINTENANCE); RETIRE is terminal and shares
+ * `retireAssetCore` with `assetWrites.archiveNative`.
+ */
+export const MaintenanceAssetDisposition = v.union(
+  v.literal("RETURN_TO_SERVICE"),
+  v.literal("KEEP_OUT_OF_SERVICE"),
+  v.literal("RETIRE"),
+);
+/**
  * Incident-report classification captured by the "Report Issue" flow
  * (FEATUREDOCS/64-incident-reporting.md). Set on a `maintenanceRecords` row to mark
  * it as originating from an incident report (vs. an ordinary manually-created

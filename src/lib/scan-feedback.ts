@@ -1,8 +1,8 @@
 /**
- * Pure, client-only audio feedback for scan verdicts — barcode/tag scanning
- * across Warehouse prep/deploy/return, the T&T quick-test wizard, and the
- * `/check/[assetTag]` ad-hoc station. See FEATUREDOCS/12 (Scan Feedback) and
- * FEATUREDOCS/14 (Audio note).
+ * Pure, client-only audio + haptic feedback for scan verdicts —
+ * barcode/tag scanning across Warehouse prep/deploy/return, the T&T
+ * quick-test wizard, and the `/check/[assetTag]` ad-hoc station. See
+ * FEATUREDOCS/12 (Scan Feedback) and FEATUREDOCS/14 (Audio note).
  *
  * Replaces the old per-call-site `playBeep` (T&T quick-test) which created a
  * brand-new `AudioContext` on every beep and never closed it — Chrome caps
@@ -118,5 +118,32 @@ export function playScanFeedback(kind: ScanFeedbackKind): void {
     }
   } catch {
     // Audio is a non-critical enhancement — never let it break a scan flow.
+  }
+}
+
+/**
+ * Vibration pattern per verdict, in the `navigator.vibrate` shape. Mirrors
+ * `SCAN_FEEDBACK_TONES` one-for-one — a kind with a tone and no pattern would
+ * be a silent half-verdict on a muted phone.
+ */
+export const SCAN_FEEDBACK_HAPTICS: Record<ScanFeedbackKind, number | number[]> = {
+  success: 30, // one short tick
+  error: [60, 40, 60], // two firm buzzes — distinguishable through a glove
+  exception: [30, 60, 30], // double tick, mirrors the double-blip tone
+  info: 15, // barely-there
+};
+
+/**
+ * Play a scan feedback vibration. Same posture as `playScanFeedback`: feature-
+ * detected and fully swallowed — haptics are a non-critical enhancement and
+ * must never break a scan flow. `navigator.vibrate` is unimplemented on iOS
+ * Safari; there this is a silent no-op, not a bug to route around.
+ */
+export function playScanHaptic(kind: ScanFeedbackKind): void {
+  try {
+    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+    navigator.vibrate(SCAN_FEEDBACK_HAPTICS[kind]);
+  } catch {
+    // Haptics are a non-critical enhancement — never let it break a scan flow.
   }
 }

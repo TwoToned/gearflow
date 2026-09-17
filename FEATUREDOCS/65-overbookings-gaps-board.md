@@ -25,11 +25,24 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
 
 1. **Overbooked gear (hard)** — a model whose HARD demand (see the two-layer
    split, FEATUREDOCS/11) across every project overlapping the range exceeds
-   its effective stock. A real, already-committed problem. Red.
+   its effective stock. A real, already-committed problem. Red. Each row's
+   `projects` list is EVERY project with hard demand for that model in range,
+   not just whichever project's line the aggregation happened to tip the
+   total over capacity (`aggregateDemandByModel` in `overbookingBoard.ts`
+   unconditionally adds every hard-demand project to the same `Set` before any
+   shortage is computed) — e.g. two 10-unit CONFIRMED bookings against 16
+   usable stock surfaces both projects, not just one.
 2. **Pencilled collisions** — the ADDITIONAL shortage that would exist if
    every currently-pencilled booking for that model (an optional line, or any
    line on a not-yet-confirmed project) also went hard. A heads-up, not a
-   violation of today's rule — "would collide if confirmed." Amber.
+   violation of today's rule — "would collide if confirmed." Amber. A row's
+   `projects` list is the union of every HARD-holding project and every
+   PENCILLED project contributing demand (2026-09 fix) — not just the pencilled
+   one(s). A CONFIRMED job can hold gear well within its own demand (never
+   making the `hard` row above) while still being the reason a QUOTED job's
+   demand would collide; listing only the pencilled project silently dropped
+   the CONFIRMED job that's actually holding the stock, which read as "only
+   one job flagged" even though two were involved.
 3. **Sale stock to procure** (WS11 #950) — models whose `Model.saleStockQuantity`
    (a single per-model sale-stock pool, independent of rental assets/bulk) has
    gone negative — sold below what was ever added as stock. Each row lists the
@@ -56,6 +69,12 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
 ```
 convex/lib/overbookingBoard.ts        — pure aggregation (no ctx.db), unit-tested
 convex/lib/overbookingConfirmImpact.ts — confirm-time-gate math, reuses the above
+convex/lib/overbookingFetch.ts        — shared ctx.db reads (fetchCandidateProjects/
+                                         fetchGearData), used by the query layer below
+                                         AND by lib files that need the same bounded
+                                         reads (overbookingConfirmImpact.ts,
+                                         projectReadiness.ts) without an
+                                         overbookingBoard.ts <-> lib circular import
 convex/lib/crewConflicts.ts           — shared hard/soft severity model
                                          (extracted from crewAvailability.ts)
 convex/overbookingBoard.ts            — the query layer: bounded reads + calls
@@ -118,6 +137,59 @@ prompt — "Confirm anyway" runs the IDENTICAL mutation the user already
 requested. There is no code path where this dialog blocks a confirm, and the
 preview fails OPEN (proceeds) if the query itself errors — it's advisory
 only, never a gate on the real write.
+
+## Date-move impact preview (#1227, Q3 of the QOL sweep)
+
+`ConfirmStatusImpactDialog` exists because confirming a job turns soft demand
+into hard demand and can strand another job's gear — but moving a **confirmed**
+job's dates does exactly the same thing, and used to show nothing at all
+before the save. `overbookingBoard.dateMoveImpact` is the same shape of
+preview: a one-shot query the project edit form runs before the write, non-
+blocking.
+
+It reuses `computeDateMoveOverbookingRows`
+(`convex/lib/overbookingConfirmImpact.ts`) — the SAME fetch-and-compute core
+`makeLiveCore.ts`'s post-promote `deriveDateMoveConflicts` already ran after a
+promote rolled the rental window back (design §5.2's "moving the window can
+create or clear overbookings on other jobs" rule). Factoring it out means the
+post-promote conflict list and this pre-save preview can never disagree about
+what a date move did (R-3.1) — there is exactly one place that answers "does
+this window move strand someone else's gear."
+
+Two differences from `confirmImpact` are deliberate, not oversights:
+
+- **No CONFIRMED simulation.** `confirmImpact` asks "if I confirmed this job
+  right now" and forces that status in its candidate array. `dateMoveImpact`
+  asks about a job that already IS what it is — its real current status
+  (`CONFIRMED`, `PREPPING`, whatever) flows through unmodified, so a job's own
+  demand only counts as hard if it genuinely already is.
+- **The caller resolves the window, the query doesn't re-derive it.** The
+  client resolves `getProjectWindow` semantics (`projectStartDate ??
+  rentalStartDate`) from the FORM's in-progress values and passes plain
+  `start`/`end` numbers; the query splices them onto a copy of the project's
+  own doc (nulling `projectStartDate`/`projectEndDate` so the splice can't be
+  second-guessed by the stale stored value) before handing it to the shared
+  core. The query also compares its own stored window against the passed one
+  to return `windowMoved` — a second, server-side confirmation of what the
+  client already gated on, not the only place that decision is made.
+
+**Client (`src/hooks/use-date-move-gate.ts`, `useDateMoveGate`)** mirrors
+`useConfirmStatusGate`'s exact shape (`requestSave`/`checking`/`pending`/
+`confirmPending`/`cancelPending`) and failure posture: no-op unless the window
+actually moved **and** `isConfirmedOrLater` (`convex/lib/projectLocks.ts`) —
+a pre-confirm job's demand isn't hard, so there's nothing to warn about — one-
+shot query, fails OPEN on any error. Wired into `project-wizard.tsx`'s submit
+handler in **edit mode only** (create has no "before" window to compare
+against). `DateMoveImpactDialog` deliberately reads as the same dialog as
+`ConfirmStatusImpactDialog` — same warn icon/copy grammar, same "heads-up, not
+a block" line, first 5 rows then a "+N more" line, `Dialog` not `AlertDialog`
+(CLAUDE.md gotchas) — "Save anyway" always runs the identical save the user
+already requested.
+
+Covers gear only, not crew (D7 of `docs/designs/qol-sweep-2026-09.md`) — "does
+this window still have gear?" and "are the crew still free?" are different
+questions with different data sources; bundling them would make one dialog say
+two unrelated things. Crew stays a follow-on.
 
 ## Known limitations / deferred
 

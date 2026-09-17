@@ -35,7 +35,7 @@ import {
 } from "@/server/warehouse";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -837,7 +837,8 @@ function WarehouseProjectPage({
   const kitBatchOutMutation = useServerMutation<KitBatchResult, string[]>({
     mutationFn: (kitIds: string[]) => warehouseWrites.checkOutKitsBatch(projectId, kitIds),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Deployed ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },
@@ -846,7 +847,8 @@ function WarehouseProjectPage({
   const kitBatchInMutation = useServerMutation<KitBatchResult, Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>>({
     mutationFn: (kits) => warehouseWrites.checkInKitsBatch(projectId, kits),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },
@@ -954,7 +956,7 @@ function WarehouseProjectPage({
   // --- Scan mutations ---
   const scanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
-    onSuccess: async (result) => {
+    onSuccess: async (result, scannedTag) => {
       // Handle kit scans — prep the kit (not deploy)
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; kitAssetTag: string; assetName: string; lineItemId: string | null; reason: string | null };
@@ -983,12 +985,15 @@ function WarehouseProjectPage({
               // No checks — mark kit children as prepped
               prepKitChildren(projectId, kitLi.id)
                 .then(() => {
-                  scanFeedback.play("success");
+                  scanFeedback.play("success", { label: kitResult.assetName, outcome: "Kit prepped" });
                   toast.success(`Kit prepped: ${kitResult.assetName}`);
                   invalidate();
                 })
                 .catch((e) => {
-                  scanFeedback.play("error");
+                  scanFeedback.play("error", {
+                    label: kitResult.assetName,
+                    outcome: e instanceof Error ? e.message : "Failed to prep kit",
+                  });
                   showError(e, { fallbackTitle: "Failed to prep kit" });
                 });
               setScanValue("");
@@ -1000,8 +1005,9 @@ function WarehouseProjectPage({
             not_on_project: "Kit not assigned to this project",
             already_checked_out: "Kit already deployed",
           };
-          scanFeedback.play("error");
-          toast.error(messages[kitResult.reason as string] || "Cannot prep this kit");
+          const outcome = messages[kitResult.reason as string] || "Cannot prep this kit";
+          scanFeedback.play("error", { label: kitResult.assetName, outcome });
+          toast.error(outcome);
           setScanValue("");
           scanInputRef.current?.focus();
         }
@@ -1029,10 +1035,10 @@ function WarehouseProjectPage({
             next.add(kitGroupKey);
             return next;
           });
-          scanFeedback.play("success");
+          scanFeedback.play("success", { label: memberResult.assetName, outcome: "Verified" });
           toast.success(`Verified: ${memberResult.assetName}`);
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this project" });
           toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
         setScanValue("");
@@ -1044,7 +1050,7 @@ function WarehouseProjectPage({
         const r = result as { assetName: string; parentAssetTag: string | null };
         // Disambiguation needed — scanned an accessory, not its parent. Resolved
         // but needs attention, not a hard failure.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent instead" });
         toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent; accessories move with it.`);
         setScanValue("");
         scanInputRef.current?.focus();
@@ -1078,14 +1084,17 @@ function WarehouseProjectPage({
           // No check items — prep directly (set prepStatus=PACKED, no deploy)
           prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null)
             .then(() => {
-              scanFeedback.play("success");
+              scanFeedback.play("success", { label: result.assetName || "Asset", outcome: "Prepped" });
               toast.success(`Prepped: ${result.assetName || "Asset"}`);
               setScanValue("");
               scanInputRef.current?.focus();
               invalidate();
             })
             .catch((e) => {
-              scanFeedback.play("error");
+              scanFeedback.play("error", {
+                label: result.assetName || "Asset",
+                outcome: e instanceof Error ? e.message : "Failed to prep",
+              });
               showError(e);
             });
         }
@@ -1093,7 +1102,7 @@ function WarehouseProjectPage({
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
           // Asset found but not on this project — resolved but needs a decision
           // (add it?), not a hard failure.
-          scanFeedback.play("exception");
+          scanFeedback.play("exception", { label: result.assetName || "Unknown asset", outcome: "Not on this project" });
           // Prompt user to add asset to the project
           setAddPromptData({
             assetName: result.assetName || "Unknown asset",
@@ -1125,21 +1134,22 @@ function WarehouseProjectPage({
         // "already_returned" is resolved but needs attention (all units are back
         // already) rather than a hard failure — every other reason here blocks
         // the scan outright.
-        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error");
-        toast.error(messages[result.reason as string] || "Cannot deploy this asset");
+        const outcome = messages[result.reason as string] || "Cannot deploy this asset";
+        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error", { label: scannedTag, outcome });
+        toast.error(outcome);
         setScanValue("");
         scanInputRef.current?.focus();
       } else {
         // Unknown tag — resolved (we know it's not in the system) but needs the
         // operator's attention, not a hard error.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
         toast.error("Asset not found");
         setScanValue("");
         scanInputRef.current?.focus();
       }
     },
-    onError: (e) => {
-      scanFeedback.play("error");
+    onError: (e, scannedTag) => {
+      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
       showError(e);
       setScanValue("");
       scanInputRef.current?.focus();
@@ -1148,7 +1158,7 @@ function WarehouseProjectPage({
 
   const deployScanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
-    onSuccess: (result) => {
+    onSuccess: (result, scannedTag) => {
       // Deploy scan: find matching prepped item and deploy it
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
@@ -1156,16 +1166,25 @@ function WarehouseProjectPage({
         if (kitLi && kitLi.prepStatus === "PACKED") {
           kitCheckOutMutation
             .mutateAsync(kitResult.kitId)
-            .then(() => {
-              scanFeedback.play("success");
+            .then((res) => {
+              scanFeedback.play("success", {
+                label: kitResult.assetName,
+                outcome: "Deployed kit",
+                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+              });
               toast.success(`Deployed kit: ${kitResult.assetName}`);
             })
-            .catch(() => scanFeedback.play("error"));
+            .catch((e) =>
+              scanFeedback.play("error", {
+                label: kitResult.assetName,
+                outcome: e instanceof Error ? e.message : "Failed to deploy kit",
+              }),
+            );
         } else if (kitResult.reason === "already_checked_out") {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: kitResult.assetName, outcome: "Kit already deployed" });
           toast.error("Kit already deployed");
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: kitResult.assetName, outcome: "Kit is not prepped yet" });
           toast.error("Kit is not prepped yet — prep it first in Pick/Prep");
         }
         setDeployScanValue("");
@@ -1175,7 +1194,7 @@ function WarehouseProjectPage({
 
       if (result.found && result.type === "kit_member") {
         const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetName: string };
-        scanFeedback.play("error");
+        scanFeedback.play("error", { label: memberResult.assetName, outcome: "Scan the kit barcode to deploy" });
         toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} — scan the kit barcode to deploy`);
         setDeployScanValue("");
         deployScanInputRef.current?.focus();
@@ -1185,7 +1204,7 @@ function WarehouseProjectPage({
       if (result.found && result.type === "asset_child") {
         const r = result as { assetName: string; parentAssetTag: string | null };
         // Disambiguation needed — scanned an accessory, not its parent.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent to deploy" });
         toast.error(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to deploy; it moves with the parent.`);
         setDeployScanValue("");
         deployScanInputRef.current?.focus();
@@ -1197,31 +1216,41 @@ function WarehouseProjectPage({
         if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
           checkOutMutation
             .mutateAsync({ items: [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }] })
-            .then(() => {
-              scanFeedback.play("success");
+            .then((res) => {
+              scanFeedback.play("success", {
+                label: result.assetName || "Item",
+                outcome: "Deployed",
+                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+              });
               toast.success(`Deployed: ${result.assetName || "Item"}`);
             })
-            .catch(() => scanFeedback.play("error"));
+            .catch((e) =>
+              scanFeedback.play("error", {
+                label: result.assetName || "Item",
+                outcome: e instanceof Error ? e.message : "Failed to deploy",
+              }),
+            );
         } else if (matchedLi?.status === "CHECKED_OUT") {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: result.assetName || "Item", outcome: "Item already deployed" });
           toast.error("Item already deployed");
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: result.assetName || "Item", outcome: "Item is not prepped yet" });
           toast.error("Item is not prepped yet — prep it first in Pick/Prep");
         }
       } else if (result.found && !result.lineItemId) {
-        scanFeedback.play("error");
-        toast.error(result.reason === "not_on_project" ? "Asset not on this project" : "Cannot deploy this item");
+        const outcome = result.reason === "not_on_project" ? "Asset not on this project" : "Cannot deploy this item";
+        scanFeedback.play("error", { label: scannedTag, outcome });
+        toast.error(outcome);
       } else {
         // Unknown tag.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
         toast.error("Asset not found");
       }
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
     },
-    onError: (e) => {
-      scanFeedback.play("error");
+    onError: (e, scannedTag) => {
+      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
       showError(e);
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
@@ -1230,7 +1259,7 @@ function WarehouseProjectPage({
 
   const returnScanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkin"),
-    onSuccess: (result) => {
+    onSuccess: (result, scannedTag) => {
       // Handle kit return scans
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
@@ -1258,14 +1287,23 @@ function WarehouseProjectPage({
             if (!started) {
               kitCheckInMutation
                 .mutateAsync({ kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" })
-                .then(() => {
-                  scanFeedback.play("success");
+                .then((res) => {
+                  scanFeedback.play("success", {
+                    label: kitResult.assetName,
+                    outcome: "Kit returned",
+                    undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+                  });
                   toast.success(`Kit returned: ${kitResult.assetName}`);
                   setReturnScanValue("");
                   setReturnNotes("");
                   returnScanInputRef.current?.focus();
                 })
-                .catch(() => scanFeedback.play("error"));
+                .catch((e) =>
+                  scanFeedback.play("error", {
+                    label: kitResult.assetName,
+                    outcome: e instanceof Error ? e.message : "Failed to return kit",
+                  }),
+                );
             }
           }
         } else {
@@ -1273,8 +1311,9 @@ function WarehouseProjectPage({
             not_on_project: "Kit not assigned to this project",
             not_checked_out: "Kit is not deployed",
           };
-          scanFeedback.play("error");
-          toast.error(messages[kitResult.reason as string] || "Cannot return this kit");
+          const outcome = messages[kitResult.reason as string] || "Cannot return this kit";
+          scanFeedback.play("error", { label: kitResult.assetName, outcome });
+          toast.error(outcome);
           setReturnScanValue("");
           returnScanInputRef.current?.focus();
         }
@@ -1302,10 +1341,10 @@ function WarehouseProjectPage({
             next.add(kitGroupKey);
             return next;
           });
-          scanFeedback.play("success");
+          scanFeedback.play("success", { label: memberResult.assetName, outcome: "Verified" });
           toast.success(`Verified: ${memberResult.assetName}`);
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this project" });
           toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
         setReturnScanValue("");
@@ -1316,7 +1355,7 @@ function WarehouseProjectPage({
       if (result.found && result.type === "asset_child") {
         const r = result as { assetName: string; parentAssetTag: string | null };
         // Disambiguation needed — scanned an accessory, not its parent.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent to return" });
         toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to return; it comes back with the parent.`);
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
@@ -1359,14 +1398,23 @@ function WarehouseProjectPage({
                 notes: returnNotes || undefined,
               }],
             })
-            .then(() => {
-              scanFeedback.play("success");
+            .then((res) => {
+              scanFeedback.play("success", {
+                label: result.assetName || "Asset",
+                outcome: "Returned",
+                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+              });
               toast.success(`Returned: ${result.assetName || "Asset"}`);
               setReturnScanValue("");
               setReturnNotes("");
               returnScanInputRef.current?.focus();
             })
-            .catch(() => scanFeedback.play("error"));
+            .catch((e) =>
+              scanFeedback.play("error", {
+                label: result.assetName || "Asset",
+                outcome: e instanceof Error ? e.message : "Failed to return",
+              }),
+            );
         }
       } else if (result.found && !result.lineItemId) {
         const messages: Record<string, string> = {
@@ -1377,20 +1425,21 @@ function WarehouseProjectPage({
         };
         // "already_returned" is resolved but needs attention (nothing left to
         // return), not a hard failure — every other reason here blocks the scan.
-        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error");
-        toast.error(messages[result.reason as string] || "Cannot return this asset");
+        const outcome = messages[result.reason as string] || "Cannot return this asset";
+        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error", { label: scannedTag, outcome });
+        toast.error(outcome);
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
       } else {
         // Unknown tag.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
         toast.error("Asset not found");
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
       }
     },
-    onError: (e) => {
-      scanFeedback.play("error");
+    onError: (e, scannedTag) => {
+      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
       showError(e);
       setReturnScanValue("");
       returnScanInputRef.current?.focus();
@@ -2616,7 +2665,7 @@ function WarehouseProjectPage({
         </div>
         <div className="flex gap-2">
           {/* Scan audio toggle — shared across prep/deploy/return scan verdicts */}
-          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+          <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           {/* Mobile: Pick List button shown prominently */}
           <Button variant="line" className="sm:hidden" onClick={() => setPickListOpen(true)}>
             <ClipboardList className="mr-2 h-4 w-4" />
@@ -2731,6 +2780,7 @@ function WarehouseProjectPage({
           handleScanKeyDown={handleScanKeyDown}
           scanMutationMutate={(v) => scanMutation.mutate(v)}
           scanMutationIsPending={scanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           selectedContainer={selectedContainer}
           setSelectedContainer={setSelectedContainer}
           containerOptions={containerOptions}
@@ -2762,6 +2812,7 @@ function WarehouseProjectPage({
           handleDeployScanKeyDown={handleDeployScanKeyDown}
           deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
           deployScanMutationIsPending={deployScanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           selectedOut={selectedOut}
           setSelectedOut={setSelectedOut}
           selectedOutCount={selectedOutCount}
@@ -2793,6 +2844,7 @@ function WarehouseProjectPage({
           handleDeployScanKeyDown={handleDeployScanKeyDown}
           deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
           deployScanMutationIsPending={deployScanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           selectedOut={selectedDeprep}
           setSelectedOut={setSelectedDeprep}
           selectedOutCount={selectedDeprepCount}
@@ -2825,6 +2877,7 @@ function WarehouseProjectPage({
           handleReturnScanKeyDown={handleReturnScanKeyDown}
           returnScanMutationMutate={(v) => returnScanMutation.mutate(v)}
           returnScanMutationIsPending={returnScanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           returnCondition={returnCondition}
           setReturnCondition={setReturnCondition}
           returnNotes={returnNotes}

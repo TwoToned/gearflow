@@ -102,7 +102,8 @@ describe("Returns station page smoke test", () => {
     const input = await screen.findByPlaceholderText(/scan any asset/i);
     await user.type(input, "UNKNOWN-TAG{Enter}");
     await waitFor(() => expect(screen.getByText(/Exceptions \(1\)/)).toBeTruthy());
-    expect(screen.getByText("UNKNOWN-TAG")).toBeTruthy();
+    // Appears twice: the exceptions rail, and the scan history strip (#1223).
+    expect(screen.getAllByText("UNKNOWN-TAG").length).toBeGreaterThanOrEqual(1);
     // The scan input is still usable — an exception never blocks the dock.
     expect((input as HTMLInputElement).disabled).toBe(false);
   });

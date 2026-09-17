@@ -517,7 +517,6 @@ export function reconstructOverbookedStatus(
         let effectiveStock = 0;
         let totalBooked = 0;
         let anyReduced = false;
-        let allReduced = true;
         let totalUnavailable = 0;
         let totalHardOver = 0;
         let totalPencilledOver = 0;
@@ -534,11 +533,14 @@ export function reconstructOverbookedStatus(
             totalHardOver += info.hardOverBy ?? info.overBy;
             totalPencilledOver += info.pencilledOverBy ?? 0;
             if (info.reducedOnly) anyReduced = true;
-            else allReduced = false;
           }
         }
-        if (seen.size > 0 && !anyReduced) allReduced = false;
-        const anyOverbooked = !allReduced; // at least one child is truly overbooked
+        // Every child in `overbookedChildren` genuinely can't be fulfilled today
+        // (combinedOverBy > 0 put it in the map) — a child's overage being caused
+        // solely by maintenance/lost stock (`reducedOnly`) doesn't make it less
+        // real, so it counts toward `hasOverbookedChildren` just like every
+        // other child. `hasReducedChildren`/`reducedOnly` stay as informational
+        // context (surfaced in the tooltip), not a lower-severity classification.
         overbookedMap.set(li.id, {
           overBy: totalOver,
           totalStock,
@@ -546,8 +548,8 @@ export function reconstructOverbookedStatus(
           totalBooked,
           inherited: true,
           unavailableAssets: totalUnavailable > 0 ? totalUnavailable : undefined,
-          reducedOnly: allReduced && anyReduced,
-          hasOverbookedChildren: anyOverbooked,
+          reducedOnly: false,
+          hasOverbookedChildren: true,
           hasReducedChildren: anyReduced,
           hardOverBy: totalHardOver,
           pencilledOverBy: totalPencilledOver,

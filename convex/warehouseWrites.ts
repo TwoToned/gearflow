@@ -8,7 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
-import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
+import { maybeAutoAdvanceProjectStatus, revertAutoAdvanceByAuditId, autoAdvanceFields } from "./lib/projectAutoStatus";
 import { assertProjectInOrg } from "./projectLineItems";
 import {
   checkinItemsCore,
@@ -184,11 +184,13 @@ export const checkInItems = mutation({
     // #1160 — the project-scoped check-in auto-advances too. Before this it was the
     // org-wide returns station ONLY, so the same physical act closed the job out or
     // didn't depending purely on which screen the operator happened to use.
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+    const autoAdvance = await maybeAutoAdvanceProjectStatus(ctx, {
       orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now,
     });
 
-    return { ...res, autoStatus }; // { updatedLineIds, autoStatus }
+    // { updatedLineIds, autoStatus, autoStatusAuditId } — the audit id lets the
+    // caller undo this exact status move later via revertAutoAdvanceAuditId (#1222).
+    return { ...res, ...autoAdvanceFields(autoAdvance) };
   },
 });
 
@@ -201,6 +203,13 @@ export const undeployItems = mutation({
     projectId: v.string(),
     items: v.array(v.object({ lineItemId: v.string(), assetId: v.optional(v.string()), quantity: v.optional(v.number()) })),
     auditIds: v.array(v.string()),
+    // #1222 — set only by the Undo toast, never by the forward flow: the audit
+    // row id `checkOutItems`/`checkOutKit(sBatch)` minted for the status move it
+    // made, so this reverse can undo THAT SPECIFIC move (not "whatever the
+    // project's status last did"). Softens no gate: this mutation's own RBAC
+    // check above already ran, and `revertAutoAdvanceByAuditId` refuses anything
+    // it didn't itself write or whose project has since moved on.
+    revertAutoAdvanceAuditId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
   },
@@ -240,6 +249,12 @@ export const undeployItems = mutation({
       });
     }
 
+    if (a.revertAutoAdvanceAuditId) {
+      await revertAutoAdvanceByAuditId(ctx, {
+        orgId: a.orgId, projectId: a.projectId, auditId: a.revertAutoAdvanceAuditId, actor, now: a.now,
+      });
+    }
+
     return res; // { updatedLineIds }
   },
 });
@@ -253,6 +268,8 @@ export const unreturnItems = mutation({
     projectId: v.string(),
     items: v.array(v.object({ lineItemId: v.string(), assetId: v.optional(v.string()), quantity: v.optional(v.number()) })),
     auditIds: v.array(v.string()),
+    // #1222 — see undeployItems' comment on the matching arg.
+    revertAutoAdvanceAuditId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
   },
@@ -289,6 +306,12 @@ export const unreturnItems = mutation({
         projectId: a.projectId,
         ...(item.assetId ? { assetId: item.assetId } : {}),
         createdAt: a.now,
+      });
+    }
+
+    if (a.revertAutoAdvanceAuditId) {
+      await revertAutoAdvanceByAuditId(ctx, {
+        orgId: a.orgId, projectId: a.projectId, auditId: a.revertAutoAdvanceAuditId, actor, now: a.now,
       });
     }
 
@@ -409,7 +432,16 @@ export const unreturnKit = mutation({
 // server actions (empty-guard throw). One summary audit row when any kit succeeds.
 // ─────────────────────────────────────────────────────────────────────────────
 export const undeployKitsBatch = mutation({
-  args: { orgId: v.string(), projectId: v.string(), kitIds: v.array(v.string()), auditId: v.string(), now: v.number(), actor: actorValidator },
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    kitIds: v.array(v.string()),
+    auditId: v.string(),
+    // #1222 — see warehouseWrites.undeployItems' comment on the matching arg.
+    revertAutoAdvanceAuditId: v.optional(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
@@ -444,12 +476,27 @@ export const undeployKitsBatch = mutation({
       });
     }
 
+    if (a.revertAutoAdvanceAuditId) {
+      await revertAutoAdvanceByAuditId(ctx, {
+        orgId: a.orgId, projectId: a.projectId, auditId: a.revertAutoAdvanceAuditId, actor, now: a.now,
+      });
+    }
+
     return res; // { succeeded, errors, affectedKitIds }
   },
 });
 
 export const unreturnKitsBatch = mutation({
-  args: { orgId: v.string(), projectId: v.string(), kitIds: v.array(v.string()), auditId: v.string(), now: v.number(), actor: actorValidator },
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    kitIds: v.array(v.string()),
+    auditId: v.string(),
+    // #1222 — see warehouseWrites.undeployItems' comment on the matching arg.
+    revertAutoAdvanceAuditId: v.optional(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
@@ -479,6 +526,12 @@ export const unreturnKitsBatch = mutation({
         summary: `Moved ${res.succeeded.length} kit(s) back to Deployed (un-return)`,
         projectId: a.projectId,
         createdAt: a.now,
+      });
+    }
+
+    if (a.revertAutoAdvanceAuditId) {
+      await revertAutoAdvanceByAuditId(ctx, {
+        orgId: a.orgId, projectId: a.projectId, auditId: a.revertAutoAdvanceAuditId, actor, now: a.now,
       });
     }
 
@@ -519,11 +572,12 @@ export const checkInKit = mutation({
       createdAt: a.now,
     });
 
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+    const autoAdvance = await maybeAutoAdvanceProjectStatus(ctx, {
       orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now,
     });
 
-    return { ...res, autoStatus }; // { kitId, affectedKitIds, autoStatus }
+    // { kitId, affectedKitIds, autoStatus, autoStatusAuditId }
+    return { ...res, ...autoAdvanceFields(autoAdvance) };
   },
 });
 
@@ -549,7 +603,14 @@ export const checkInKitsBatch = mutation({
     // contents each call, so returning the same kit twice would overstate availability.
     const seen = new Set<string>();
     const uniqueItems = a.items.filter((it) => (seen.has(it.kitId) ? false : (seen.add(it.kitId), true)));
-    if (uniqueItems.length === 0) return { succeeded: [] as string[], errors: [] as { kitId: string; message: string }[], autoStatus: null as string | null };
+    if (uniqueItems.length === 0) {
+      return {
+        succeeded: [] as string[],
+        errors: [] as { kitId: string; message: string }[],
+        autoStatus: null as string | null,
+        autoStatusAuditId: null as string | null,
+      };
+    }
 
     await requireProjectInOrg(ctx, a.projectId, a.orgId);
     for (const it of uniqueItems) await requireKitInOrg(ctx, it.kitId, a.orgId);
@@ -581,13 +642,17 @@ export const checkInKitsBatch = mutation({
       });
     }
 
-    const autoStatus = res.succeeded.length
+    const autoAdvance = res.succeeded.length
       ? await maybeAutoAdvanceProjectStatus(ctx, {
           orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now,
         })
       : null;
 
-    return { succeeded: res.succeeded, errors: res.errors, autoStatus };
+    return {
+      succeeded: res.succeeded,
+      errors: res.errors,
+      ...autoAdvanceFields(autoAdvance),
+    };
   },
 });
 
@@ -1023,11 +1088,12 @@ export const checkOutItems = mutation({
 
     // #1160 — nothing left packed on the dock ⇒ the job is out. Runs AFTER the core
     // so it sees this deploy's own writes.
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+    const autoAdvance = await maybeAutoAdvanceProjectStatus(ctx, {
       orgId: a.orgId, projectId: a.projectId, trigger: "ALL_CHECKED_OUT", actor, now: a.now,
     });
 
-    return { ...res, autoStatus }; // { updatedLineIds, autoStatus }
+    // { updatedLineIds, autoStatus, autoStatusAuditId }
+    return { ...res, ...autoAdvanceFields(autoAdvance) };
   },
 });
 
@@ -1123,11 +1189,12 @@ export const checkOutKit = mutation({
       createdAt: a.now,
     });
 
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+    const autoAdvance = await maybeAutoAdvanceProjectStatus(ctx, {
       orgId: a.orgId, projectId: a.projectId, trigger: "ALL_CHECKED_OUT", actor, now: a.now,
     });
 
-    return { ...res, autoStatus }; // { kitId, affectedKitIds, autoStatus }
+    // { kitId, affectedKitIds, autoStatus, autoStatusAuditId }
+    return { ...res, ...autoAdvanceFields(autoAdvance) };
   },
 });
 
@@ -1143,7 +1210,14 @@ export const checkOutKitsBatch = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const unique = [...new Set(a.kitIds)];
-    if (unique.length === 0) return { succeeded: [] as string[], errors: [] as { kitId: string; message: string }[], autoStatus: null as string | null };
+    if (unique.length === 0) {
+      return {
+        succeeded: [] as string[],
+        errors: [] as { kitId: string; message: string }[],
+        autoStatus: null as string | null,
+        autoStatusAuditId: null as string | null,
+      };
+    }
 
     // Project-wide blocker gate (kit checkout has no line scope) — checked once.
     await assertNoBlockingCommentsInMutation(ctx, a.orgId, a.projectId, { actionLabel: "check out this kit" });
@@ -1177,13 +1251,17 @@ export const checkOutKitsBatch = mutation({
       });
     }
 
-    const autoStatus = res.succeeded.length
+    const autoAdvance = res.succeeded.length
       ? await maybeAutoAdvanceProjectStatus(ctx, {
           orgId: a.orgId, projectId: a.projectId, trigger: "ALL_CHECKED_OUT", actor, now: a.now,
         })
       : null;
 
-    return { succeeded: res.succeeded, errors: res.errors, autoStatus };
+    return {
+      succeeded: res.succeeded,
+      errors: res.errors,
+      ...autoAdvanceFields(autoAdvance),
+    };
   },
 });
 

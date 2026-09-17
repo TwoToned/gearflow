@@ -246,7 +246,16 @@ export function computeGearShortageBoard(
     const pencilledCollision = Math.max(0, combinedShortage - hardShortage);
 
     if (hardShortage > 0) hard.push(shortageRow(modelId, m, agg, hardShortage, agg.hardProjectIds, projectById));
-    if (pencilledCollision > 0) pencilled.push(shortageRow(modelId, m, agg, pencilledCollision, agg.pencilledProjectIds, projectById));
+    if (pencilledCollision > 0) {
+      // A pencilled collision is "combined demand (existing hard holds +
+      // pencilled) would exceed stock" — the hard-holding project(s) are part
+      // of that collision even when their own demand alone doesn't exceed
+      // stock (hardShortage === 0, so they never make the `hard` row). Listing
+      // only `pencilledProjectIds` silently dropped whichever CONFIRMED job is
+      // already holding the gear that a QUOTED job would collide with.
+      const collisionProjectIds = new Set([...agg.hardProjectIds, ...agg.pencilledProjectIds]);
+      pencilled.push(shortageRow(modelId, m, agg, pencilledCollision, collisionProjectIds, projectById));
+    }
   }
 
   hard.sort((a, b) => b.qty - a.qty);

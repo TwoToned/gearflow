@@ -15582,6 +15582,69 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/financeOrg.expiringForNotifications": {
+      "post": {
+        "operationId": "financeOrg.expiringForNotifications",
+        "summary": "financeOrg.expiringForNotifications (query)",
+        "description": "Requires scope: invoice:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "invoice"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/groupTemplateItems.list": {
       "post": {
         "operationId": "groupTemplateItems.list",
@@ -22646,6 +22709,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "assetDispositions": {
+                        "type": "array"
+                      },
                       "assetLinks": {
                         "type": "array"
                       },
@@ -25846,6 +25912,84 @@ export const OPENAPI_DOCUMENT = {
                     "required": [
                       "rangeEnd",
                       "rangeStart"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/overbookingBoard.dateMoveImpact": {
+      "post": {
+        "operationId": "overbookingBoard.dateMoveImpact",
+        "summary": "overbookingBoard.dateMoveImpact (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "end": {
+                        "type": "number"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "start": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "end",
+                      "projectId",
+                      "start"
                     ],
                     "additionalProperties": false
                   }
@@ -44827,6 +44971,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "projectId": {
                         "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -44989,6 +45136,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "array"
                       },
                       "projectId": {
+                        "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
                         "type": "string"
                       }
                     },
@@ -45155,6 +45305,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "projectId": {
                         "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -45317,6 +45470,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "array"
                       },
                       "projectId": {
+                        "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
                         "type": "string"
                       }
                     },

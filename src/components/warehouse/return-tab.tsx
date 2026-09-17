@@ -35,6 +35,8 @@ import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
 import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
+import { ScanHistoryStrip } from "./scan-history-strip";
+import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
 export interface ReturnTabProps {
   // Scan state
@@ -44,6 +46,7 @@ export interface ReturnTabProps {
   handleReturnScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   returnScanMutationMutate: (value: string) => void;
   returnScanMutationIsPending: boolean;
+  scanHistoryEntries: ScanHistoryRecord[];
 
   // Condition & notes
   returnCondition: string;
@@ -98,6 +101,7 @@ export function ReturnTab({
   handleReturnScanKeyDown,
   returnScanMutationMutate,
   returnScanMutationIsPending,
+  scanHistoryEntries,
   returnCondition,
   setReturnCondition,
   returnNotes,
@@ -126,6 +130,7 @@ export function ReturnTab({
     <TabsContent value="check-in">
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
+            <ScanHistoryStrip entries={scanHistoryEntries} />
             <div className="flex items-center gap-3">
               <ScanBarcode className="h-5 w-5 text-muted shrink-0 hidden sm:block" />
               <div className="flex-1">

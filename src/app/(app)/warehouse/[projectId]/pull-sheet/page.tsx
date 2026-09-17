@@ -99,55 +99,22 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
   // fidelity on the physical pull sheet. Leave as-is.
   const effective = info.effectiveStock ?? info.totalStock;
   const unavail = info.unavailableAssets || 0;
+  const reducedNote = unavail > 0 ? `, ${unavail} in maintenance or lost` : "";
 
-  // Kit parents with BOTH overbooked and reduced children show two badges
-  if (info.inherited && info.hasOverbookedChildren && info.hasReducedChildren) {
-    return (
-      <>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge status="overbooked" className="ml-1.5 cursor-help print:border print:border-red-500 print:text-red-600">
-                Overbooked
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>Contains items that are over capacity</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge status="neutral" className="ml-1.5 cursor-help bg-blue-soft text-blue print:border print:border-blue-500 print:text-blue-600">
-                Reduced stock
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>Contains items with {unavail} asset{unavail !== 1 ? "s" : ""} in maintenance or lost</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </>
-    );
-  }
-
-  const isReduced = info.reducedOnly;
-  // Screen colour: reduced stock = info (blue), inherited-overbooked = warning
-  // (amber), direct overbooked = problem (t-out). Print keeps a red outline.
-  const screenClass = isReduced
-    ? "bg-blue-soft text-blue"
-    : info.inherited
-      ? "bg-warn-soft text-warn"
-      : "bg-out-soft text-t-out";
-  const label = isReduced ? "Reduced stock" : "Overbooked";
+  // Screen colour: inherited (kit-parent rollup) = warning (amber), direct
+  // overbooked = problem (t-out). Print keeps a red outline. Maintenance/lost-
+  // reduced stock is NOT a reason to soften this: demand exceeding today's
+  // USABLE stock is a real overbooking whether the missing units are on
+  // another job or in a service bay — `unavailableAssets` only adds context
+  // to the tooltip below.
+  const screenClass = info.inherited ? "bg-warn-soft text-warn" : "bg-out-soft text-t-out";
+  const label = "Overbooked";
 
   function getTooltip() {
     if (info!.inherited) {
-      return isReduced
-        ? `Contains items with ${unavail} asset${unavail !== 1 ? "s" : ""} in maintenance or lost`
-        : `Contains items that are ${info!.overBy} over capacity`;
+      return `Contains items that are ${info!.overBy} over capacity${reducedNote}`;
     }
-    if (isReduced) {
-      return `${info!.overBy} over usable stock — ${unavail} of ${info!.totalStock} in maintenance or lost`;
-    }
-    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${unavail > 0 ? `, ${unavail} unavailable` : ""})`;
+    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${reducedNote})`;
   }
 
   return (
@@ -155,7 +122,7 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge
-            status={isReduced ? "neutral" : info.inherited ? "warn" : "overbooked"}
+            status={info.inherited ? "warn" : "overbooked"}
             className={`ml-1.5 cursor-help print:border print:border-red-500 print:text-red-600 ${screenClass}`}
           >
             {label}

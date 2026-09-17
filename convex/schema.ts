@@ -3262,6 +3262,7 @@ export default defineSchema({
     commentReply: v.optional(v.boolean()),
     dueSoon: v.optional(v.boolean()),
     overdue: v.optional(v.boolean()),
+    quoteExpiring: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])

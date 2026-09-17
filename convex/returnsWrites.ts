@@ -172,8 +172,8 @@ async function returnCore(
  * the side effect silently fail for exactly the role this station is built for.
  */
 async function maybeAutoAdvanceProject(ctx: MutationCtx, orgId: string, projectId: string, actor: Actor, now: number): Promise<boolean> {
-  const to = await maybeAutoAdvanceProjectStatus(ctx, { orgId, projectId, trigger: "ALL_RETURNED", actor, now });
-  return to != null;
+  const result = await maybeAutoAdvanceProjectStatus(ctx, { orgId, projectId, trigger: "ALL_RETURNED", actor, now });
+  return result != null;
 }
 
 // ─── returnScanNative — single scan-and-return ──────────────────────────────

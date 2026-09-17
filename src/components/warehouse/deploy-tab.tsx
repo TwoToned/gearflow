@@ -33,6 +33,8 @@ import { KitChildRows } from "./kit-child-rows";
 import { MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
+import { ScanHistoryStrip } from "./scan-history-strip";
+import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
 export interface DeployTabProps {
   /**
@@ -50,6 +52,7 @@ export interface DeployTabProps {
   handleDeployScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   deployScanMutationMutate: (value: string) => void;
   deployScanMutationIsPending: boolean;
+  scanHistoryEntries: ScanHistoryRecord[];
 
   // Selection
   selectedOut: Set<string>;
@@ -101,6 +104,7 @@ export function DeployTab({
   handleDeployScanKeyDown,
   deployScanMutationMutate,
   deployScanMutationIsPending,
+  scanHistoryEntries,
   selectedOut,
   setSelectedOut,
   selectedOutCount,
@@ -129,6 +133,9 @@ export function DeployTab({
     <TabsContent value={isDeprep ? "deprep" : "check-out"}>
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
+            {!isDeprep && (
+              <ScanHistoryStrip entries={scanHistoryEntries} />
+            )}
             {!isDeprep && (
               <AssetTagInput
                 ref={deployScanInputRef}

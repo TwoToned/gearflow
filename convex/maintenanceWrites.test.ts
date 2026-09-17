@@ -7,6 +7,7 @@
 // (cross-tenant + viewer RBAC).
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
@@ -23,6 +24,7 @@ const asUser = { subject: USER, orgId: ORG, role: "admin" };
 function makeT(): T {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 async function seed(t: T, role = "admin") {
@@ -304,6 +306,35 @@ describe("maintenanceWrites.updateNative — transitions", () => {
     expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
   });
 
+  test("adding an asset to an ALREADY-holding record HOLDS the new asset too", async () => {
+    const t = makeT(); await createRec(t, "IN_PROGRESS"); // as1 already IN_MAINTENANCE
+    await seedAsset(t, "as2", "AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "IN_PROGRESS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }], now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE"); // unchanged
+    expect((await asset(t, "as2"))?.status).toBe("IN_MAINTENANCE"); // newly held
+  });
+
+  test("switching between two holding statuses (IN_PROGRESS -> AWAITING_PARTS) still holds an asset that was never held", async () => {
+    // Simulates a record whose linked asset never got held (e.g. leftover bad
+    // state, or added via a since-fixed path) — asset stays AVAILABLE even
+    // though the record is already IN_PROGRESS.
+    const t = makeT(); await seed(t);
+    await seedAsset(t, "as1", "AVAILABLE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("maintenanceRecords", { id: "rec1", organizationId: ORG, type: "REPAIR", status: "IN_PROGRESS", title: "Fix drill", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("maintenanceRecordAssets", { id: "lnk1", maintenanceRecordId: "rec1", assetId: "as1", kind: "LINK" });
+    });
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "AWAITING_PARTS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }], now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
+  });
+
   test("COMPLETED-PASS from a holding status RELEASES the remaining assets", async () => {
     const t = makeT(); await createRec(t, "IN_PROGRESS");
     await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
@@ -332,6 +363,103 @@ describe("maintenanceWrites.updateNative — transitions", () => {
         orgId: ORG, id: "recF", type: "REPAIR", status: "COMPLETED", title: "x", assetLinks: [], now: NOW, actor, auditId: "a2",
       }),
     ).rejects.toThrow(/not found/i);
+  });
+});
+
+describe("maintenanceWrites.updateNative — per-asset disposition on COMPLETED", () => {
+  async function createRec(t: T, status: string, opts: { assetStatus?: string } = {}) {
+    await seed(t); await seedAsset(t, "as1", opts.assetStatus ?? "AVAILABLE"); await seedAsset(t, "as2", opts.assetStatus ?? "AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, {
+      ...baseCreate, recordId: "rec1", status: status as "SCHEDULED",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }],
+    });
+  }
+
+  test("RETURN_TO_SERVICE releases, KEEP_OUT_OF_SERVICE leaves IN_MAINTENANCE — per asset", async () => {
+    const t = makeT(); await createRec(t, "IN_PROGRESS");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "COMPLETED", result: "PASS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }],
+      assetDispositions: [
+        { assetId: "as1", disposition: "RETURN_TO_SERVICE" },
+        { assetId: "as2", disposition: "KEEP_OUT_OF_SERVICE" },
+      ],
+      now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+    expect((await asset(t, "as2"))?.status).toBe("IN_MAINTENANCE");
+  });
+
+  test("RETIRE retires the asset (isActive:false, status RETIRED) and writes a per-asset audit row", async () => {
+    const t = makeT(); await createRec(t, "IN_PROGRESS");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, assetId: "as1", testTagId: "TAG-1", description: "TAG-1", status: "NOT_YET_TESTED", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "COMPLETED", result: "FAIL", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }],
+      assetDispositions: [
+        { assetId: "as1", disposition: "RETIRE" },
+        { assetId: "as2", disposition: "RETURN_TO_SERVICE" },
+      ],
+      now: NOW, actor, auditId: "a2",
+    });
+    const a1 = await asset(t, "as1");
+    expect(a1?.status).toBe("RETIRED");
+    expect(a1?.isActive).toBe(false);
+    expect((await asset(t, "as2"))?.status).toBe("AVAILABLE");
+    const tt = await t.run(async (ctx) => ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", "tt1")).first());
+    expect(tt?.status).toBe("RETIRED");
+    const log = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "a2-retire-as1")).first());
+    expect(log?.summary).toMatch(/Retired asset/);
+    expect(log?.assetId).toBe("as1");
+  });
+
+  test("a disposition for an asset NOT on this record is ignored (no cross-record reach)", async () => {
+    const t = makeT(); await createRec(t, "IN_PROGRESS");
+    await seedAsset(t, "as9", "AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "COMPLETED", result: "PASS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }],
+      assetDispositions: [
+        { assetId: "as1", disposition: "RETURN_TO_SERVICE" },
+        { assetId: "as2", disposition: "RETURN_TO_SERVICE" },
+        { assetId: "as9", disposition: "RETIRE" },
+      ],
+      now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as9"))?.status).toBe("AVAILABLE");
+    expect((await asset(t, "as9"))?.isActive).toBe(true);
+  });
+
+  test("still-held guard applies to RETURN_TO_SERVICE dispositions too", async () => {
+    const t = makeT(); await createRec(t, "IN_PROGRESS");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("maintenanceRecords", { id: "recHold", organizationId: ORG, type: "REPAIR", status: "IN_PROGRESS", title: "Held", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("maintenanceRecordAssets", { id: "lnkHold", maintenanceRecordId: "recHold", assetId: "as1" });
+    });
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "COMPLETED", result: "PASS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }],
+      assetDispositions: [
+        { assetId: "as1", disposition: "RETURN_TO_SERVICE" },
+        { assetId: "as2", disposition: "RETURN_TO_SERVICE" },
+      ],
+      now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE"); // recHold still holds it
+    expect((await asset(t, "as2"))?.status).toBe("AVAILABLE");
+  });
+
+  test("omitted assetDispositions falls back to the legacy blanket release-unless-FAIL behavior", async () => {
+    const t = makeT(); await createRec(t, "IN_PROGRESS");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "COMPLETED", result: "PASS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }],
+      now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+    expect((await asset(t, "as2"))?.status).toBe("AVAILABLE");
   });
 });
 

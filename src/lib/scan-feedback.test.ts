@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   playScanFeedback,
+  playScanHaptic,
   setScanFeedbackContextFactory,
   SCAN_FEEDBACK_TONES,
+  SCAN_FEEDBACK_HAPTICS,
   type AudioContextFactory,
+  type ScanFeedbackKind,
 } from "@/lib/scan-feedback";
 
 /**
@@ -195,5 +198,56 @@ describe("playScanFeedback", () => {
     playScanFeedback("success");
 
     expect(created).toBe(2);
+  });
+});
+
+describe("playScanHaptic", () => {
+  let vibrateMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vibrateMock = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "vibrate", {
+      value: vibrateMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "vibrate");
+  });
+
+  it("calls navigator.vibrate with the mapped pattern for every kind", () => {
+    (Object.keys(SCAN_FEEDBACK_HAPTICS) as ScanFeedbackKind[]).forEach((kind) => {
+      vibrateMock.mockClear();
+      playScanHaptic(kind);
+      expect(vibrateMock).toHaveBeenCalledTimes(1);
+      expect(vibrateMock).toHaveBeenCalledWith(SCAN_FEEDBACK_HAPTICS[kind]);
+    });
+  });
+
+  it("swallows a throwing navigator.vibrate instead of throwing", () => {
+    Object.defineProperty(navigator, "vibrate", {
+      value: () => {
+        throw new Error("boom");
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    expect(() => playScanHaptic("success")).not.toThrow();
+  });
+
+  it("is a no-op when navigator.vibrate is missing (e.g. iOS Safari)", () => {
+    Reflect.deleteProperty(navigator, "vibrate");
+    expect(() => playScanHaptic("success")).not.toThrow();
+  });
+});
+
+describe("scan feedback tone/haptic parity", () => {
+  it("every ScanFeedbackKind has both a tone and a haptic pattern", () => {
+    const toneKinds = Object.keys(SCAN_FEEDBACK_TONES).sort();
+    const hapticKinds = Object.keys(SCAN_FEEDBACK_HAPTICS).sort();
+    expect(hapticKinds).toEqual(toneKinds);
   });
 });

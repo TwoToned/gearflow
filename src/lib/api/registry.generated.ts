@@ -19847,6 +19847,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "financeOrg.expiringForNotifications",
+    "module": "financeOrg",
+    "fn": "expiringForNotifications",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Quotes expiring within the notification window, for the quote_expiring bell/email pipeline (#1225).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "globalSearch.search",
     "module": "globalSearch",
     "fn": "search",
@@ -27885,6 +27922,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "object"
       },
       {
+        "name": "assetDispositions",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "assetLinks",
         "optional": false,
         "type": "array"
@@ -27981,7 +28023,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a3812bee85187f47",
+    "argsSha": "ad268b05f92297df",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -33384,6 +33426,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "overbookingBoard.dateMoveImpact",
+    "module": "overbookingBoard",
+    "fn": "dateMoveImpact",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "end",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "start",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aee0c8393c070410",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Preview whether moving a project's dates would strand another job's gear, before the write (#1227).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -55528,6 +55617,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "quoteExpiring",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "upcomingProject",
         "optional": true,
         "type": "boolean"
@@ -55544,7 +55638,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "63849b2859712a25",
+    "argsSha": "9fa25dfeb72b2bd9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55640,6 +55734,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "quoteExpiring",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "upcomingProject",
         "optional": true,
         "type": "boolean"
@@ -55656,7 +55755,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "63849b2859712a25",
+    "argsSha": "9fa25dfeb72b2bd9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55737,7 +55836,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "9feacda1d527ddf6",
+    "returnsSha": "bba2f5516a38df4d",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -55795,7 +55894,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "518eba72d9994286",
+    "argsSha": "a3c5cb78df7c7149",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55847,7 +55946,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "e794596905837d93",
+    "argsSha": "5f0edc7a83f2e292",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -59514,10 +59613,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c7168ad1deb622dd",
+    "argsSha": "7afb31f2aff479c7",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59628,10 +59732,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d683cd6c97b0cbef",
+    "argsSha": "19a7acb1baa01cae",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59742,10 +59851,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c7168ad1deb622dd",
+    "argsSha": "7afb31f2aff479c7",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59856,10 +59970,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d683cd6c97b0cbef",
+    "argsSha": "19a7acb1baa01cae",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -61827,10 +61946,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1199,
-  agentReachable: 578,
-  queries: 430,
+  total: 1201,
+  agentReachable: 580,
+  queries: 432,
   mutations: 769,
-  agentReachableQueries: 299,
+  agentReachableQueries: 301,
   agentReachableMutations: 279,
 } as const;

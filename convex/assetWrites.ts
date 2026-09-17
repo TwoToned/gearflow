@@ -9,6 +9,7 @@ import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
+import { retireAssetCore } from "./lib/assetRetire";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -144,17 +145,7 @@ export const archiveNative = mutation({
     if (!asset) throw new ConvexError("Asset not found: " + id);
     if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    // Retire linked T&T entries (Convex-only write — same as archiveAsset).
-    const linkedTT = await ctx.db
-      .query("testTagAssets")
-      .withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", id))
-      .collect();
-    for (const tt of linkedTT) {
-      await ctx.db.patch(tt._id, { status: "RETIRED", isActive: false, updatedAt: now });
-    }
-
-    await ctx.db.patch(asset._id, { isActive: false, status: "RETIRED", updatedAt: now });
-    await bumpAssetCounters(ctx, orgId, asset, { isActive: false, status: "RETIRED" });
+    await retireAssetCore(ctx, orgId, asset, now);
 
     await writeActivityLog(ctx, {
       id: auditId,

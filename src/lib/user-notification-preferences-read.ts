@@ -50,6 +50,7 @@ export function resolvePreferenceValues(
     pendingTimesheets: coerce(raw.pendingTimesheets, NOTIFICATION_PREFERENCE_DEFAULTS.pendingTimesheets),
     flaggedAsset: coerce(raw.flaggedAsset, NOTIFICATION_PREFERENCE_DEFAULTS.flaggedAsset),
     incidentReport: coerce(raw.incidentReport, NOTIFICATION_PREFERENCE_DEFAULTS.incidentReport),
+    quoteExpiring: coerce(raw.quoteExpiring, NOTIFICATION_PREFERENCE_DEFAULTS.quoteExpiring),
   };
 }
 

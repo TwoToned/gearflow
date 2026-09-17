@@ -374,9 +374,13 @@ async function captureIfCrossing(
 }
 
 /**
- * Advance `projectId` if `trigger`'s rule says so. Returns the new status when it
- * moved the job, `null` otherwise (wrong status, org opted out, condition not met,
+ * Advance `projectId` if `trigger`'s rule says so. Returns the new status AND
+ * the id of the `activityLogs` audit row that recorded the move when it moved
+ * the job, `null` otherwise (wrong status, org opted out, condition not met,
  * template, or the project is gone).
+ *
+ * The audit id lets a caller hand it back to `revertAutoAdvance` later — e.g.
+ * the warehouse Undo toast (#1222) — without a second lookup.
  *
  * Call it at the END of the mutation that did the real work, once — never inside a
  * per-item loop, and never before the writes it inspects have landed.
@@ -384,7 +388,7 @@ async function captureIfCrossing(
 export async function maybeAutoAdvanceProjectStatus(
   ctx: MutationCtx,
   a: { orgId: string; projectId: string; trigger: AutoStatusTrigger; actor: Actor; now: number },
-): Promise<string | null> {
+): Promise<{ status: string; auditId: string } | null> {
   const rule = AUTO_STATUS_RULES[a.trigger];
 
   // The status patch belongs to the `project` write domain, not to whichever
@@ -418,8 +422,9 @@ export async function maybeAutoAdvanceProjectStatus(
     project, to: rule.to, actor: a.actor, now: a.now,
   });
 
+  const auditId = createId();
   await writeActivityLog(ctx, {
-    id: createId(),
+    id: auditId,
     organizationId: a.orgId,
     action: "STATUS_CHANGE",
     entityType: "project",
@@ -434,7 +439,31 @@ export async function maybeAutoAdvanceProjectStatus(
     createdAt: a.now,
   });
 
-  return rule.to;
+  return { status: rule.to, auditId };
+}
+
+/**
+ * Unwraps a `maybeAutoAdvanceProjectStatus` result to just the status string,
+ * for the several callers that plumb `autoStatus` out to a client toast but
+ * don't need the audit id. Kept as its own tiny function rather than inlining
+ * `result?.status ?? null` at each call site — optional-chaining and
+ * nullish-coalescing each count as a branch for R-3.6's complexity ratchet, so
+ * inlining it repeats that cost at every already-complex mutation handler that
+ * calls it; a single trivial helper absorbs it once instead.
+ */
+export function autoAdvanceStatus(result: { status: string; auditId: string } | null): string | null {
+  return result ? result.status : null;
+}
+
+/**
+ * Same idea as `autoAdvanceStatus`, for the warehouse browser-direct writes
+ * (#1222) that plumb BOTH the status and the audit id (the id lets the
+ * warehouse Undo toast later hand it back to `revertAutoAdvanceByAuditId`).
+ */
+export function autoAdvanceFields(
+  result: { status: string; auditId: string } | null,
+): { autoStatus: string | null; autoStatusAuditId: string | null } {
+  return result ? { autoStatus: result.status, autoStatusAuditId: result.auditId } : { autoStatus: null, autoStatusAuditId: null };
 }
 
 /**
@@ -506,6 +535,39 @@ export async function revertAutoAdvance(
   });
 
   return { from: statusTo, to: statusFrom };
+}
+
+/**
+ * Undo the auto-advance recorded by a SPECIFIC audit row — the counterpart to
+ * `maybeAutoAdvanceProjectStatus`'s returned `auditId`. Used by the warehouse
+ * Undo toast (#1222): the forward mutation captured the audit id it minted, and
+ * the reverse mutation hands it straight back here rather than guessing which
+ * status change to reverse (the way `revertAutoAdvanceByTrigger`'s "most
+ * recent" heuristic does).
+ *
+ * `activityLogs.by_cuid` is a GLOBAL index — org-check the row before trusting
+ * anything in it (R-8.4.3). `revertAutoAdvance`'s own guards (automatic-only,
+ * refuses if the project has since moved on) do the rest.
+ */
+export async function revertAutoAdvanceByAuditId(
+  ctx: MutationCtx,
+  a: { orgId: string; projectId: string; auditId: string; actor: Actor; now: number },
+): Promise<{ from: string; to: string } | { skipReason: string }> {
+  const row = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_cuid", (q) => q.eq("id", a.auditId))
+    .first();
+  if (!row || row.organizationId !== a.orgId || row.projectId !== a.projectId) {
+    return { skipReason: "That status change couldn't be found." };
+  }
+
+  return await revertAutoAdvance(ctx, {
+    orgId: a.orgId,
+    projectId: a.projectId,
+    metadata: (row as { metadata?: unknown }).metadata,
+    actor: a.actor,
+    now: a.now,
+  });
 }
 
 /**

@@ -244,6 +244,49 @@ describe("financeOrg.bundle", () => {
   });
 });
 
+describe("financeOrg.expiringForNotifications", () => {
+  test("returns the same quote the bundle's expiring section does — the board and notifier can't disagree", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    const [bundle, notif] = await Promise.all([
+      t.withIdentity(asUser).query(api.financeOrg.bundle, { orgId: ORG, now: NOW }),
+      t.withIdentity(asUser).query(api.financeOrg.expiringForNotifications, { orgId: ORG, now: NOW }),
+    ]);
+    expect(notif.map((r) => r.quoteId)).toEqual(bundle.expiring.map((r) => r.quoteId));
+    expect(notif.map((r) => r.quoteId)).toEqual(["Q_sent"]);
+  });
+
+  test("flat row shape carries projectId/projectNumber/clientName rather than a nested project object", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    const notif = await t.withIdentity(asUser).query(api.financeOrg.expiringForNotifications, { orgId: ORG, now: NOW });
+    expect(notif).toEqual([
+      expect.objectContaining({
+        quoteId: "Q_sent",
+        projectId: "P_sent",
+        projectNumber: "P-SENT",
+        clientName: "Full Upfront Client",
+        version: 1,
+      }),
+    ]);
+  });
+
+  test("cross-org: never returns OTHER_ORG's expiring quote", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    const notif = await t.withIdentity(asUser).query(api.financeOrg.expiringForNotifications, { orgId: ORG, now: NOW });
+    expect(notif.map((r) => r.quoteId)).not.toContain("Q_other");
+  });
+
+  test("rejects a caller whose token org doesn't match the requested orgId (IDOR)", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    await expect(
+      t.withIdentity({ subject: "user_2", orgId: OTHER_ORG }).query(api.financeOrg.expiringForNotifications, { orgId: ORG, now: NOW }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("financeOrg.bundle — bounded read, not an org-wide/per-project scan", () => {
   test("a fixture with more SENT quotes than SECTION_CAP is truncated, not fully collected", async () => {
     const t = makeT();

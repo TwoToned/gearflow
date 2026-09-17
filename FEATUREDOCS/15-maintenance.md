@@ -12,6 +12,53 @@ One `MaintenanceRecord` links to multiple assets via `MaintenanceRecordAsset` jo
 
 `AWAITING_PARTS` and `QA` were added for the workshop kanban board, which has since been removed (`chore: remove Workshop kanban tab`) — the two statuses were kept dormant on the enum (no migration to drop them) and are still offered in the maintenance form. All three "in-the-shop" statuses (`AWAITING_PARTS`, `IN_PROGRESS`, `QA`) hold the asset in `IN_MAINTENANCE`.
 
+**Adding an asset to an already-holding record holds it too.** `maintenanceWrites.ts`'s
+`updateNative` re-runs `holdAssets` whenever the record's (possibly unchanged) status is
+holding — not only on the SCHEDULED→holding transition — so an asset newly linked to an
+already `IN_PROGRESS`/`AWAITING_PARTS`/`QA` record is held (`AVAILABLE` → `IN_MAINTENANCE`)
+the moment it's added, not only when the record itself first enters a holding status.
+`holdAssets` only touches currently-`AVAILABLE` assets, so already-held assets on the
+record are an idempotent no-op.
+
+## Closing out a record — per-asset disposition
+
+Completing a multi-asset record doesn't have to mean the same thing for every asset
+on it. When the **Outcome** section's status is set to `COMPLETED`, the form shows
+an **Asset disposition** picker — one `RETURN_TO_SERVICE` / `KEEP_OUT_OF_SERVICE` /
+`RETIRE` choice per linked asset, plus an "Apply to all" bulk control for records
+with more than one asset. Each row defaults to whatever the overall `result` implies
+(`FAIL` → `KEEP_OUT_OF_SERVICE`, otherwise → `RETURN_TO_SERVICE`) until the operator
+overrides it — `result` is untouched by this and remains the record-level "did the
+work succeed" field; disposition is what happens to the **physical asset**, decided
+independently per asset.
+
+`convex/maintenanceWrites.ts`'s `updateNative` takes an optional `assetDispositions:
+{assetId, disposition}[]` arg, applied by `applyAssetDispositions` ONLY when the new
+status is `COMPLETED` and the array is non-empty (filtered to assets actually linked
+to this record — a disposition for a foreign assetId is silently ignored, not an
+error). When supplied it fully replaces the legacy record-wide "release everyone
+unless `result === FAIL`" path for this save; omit it (any non-form caller — API/MCP,
+the "Raise repair" shortcut) and that legacy path runs unchanged, so nothing needed
+updating outside the form.
+
+- `RETURN_TO_SERVICE` — the same guarded, still-held-elsewhere-aware release as the
+  old blanket path (`releaseAssets` + `computeStillHeldIds`, excluding this record).
+- `KEEP_OUT_OF_SERVICE` — a no-op; the asset simply stays `IN_MAINTENANCE`, same end
+  state as the old COMPLETED-FAIL guard, just chosen per asset instead of forced by
+  the record-level result.
+- `RETIRE` — terminal. Shares `retireAssetCore` (`convex/lib/assetRetire.ts`) with
+  `assetWrites.archiveNative` rather than re-implementing "what retiring an asset
+  means" here (R-3.1: isActive:false + status:RETIRED + retire linked T&T rows +
+  bump the active/checked-out counters). Skipped if the asset is already `RETIRED`.
+  Each retirement writes its own `entityType: "asset"` audit row
+  (id `${auditId}-retire-${assetId}`, the `${parent}-${child}` per-entity-audit
+  idiom also used in `checkItemsWrites.ts`) so it surfaces on the asset's own
+  activity log, not just the record's.
+
+Dispositions are never persisted on the record or the link row — they're an
+instruction applied once at the moment of completion, not retained state. Reopening
+a completed record for edit re-derives each row's default from `result` again.
+
 ## Maintenance Form (`MaintenanceForm`)
 `src/components/maintenance/maintenance-form.tsx` — the create/edit form
 (`/maintenance/new` + `/maintenance/[id]/edit`, edit pre-fills, both reuse the
@@ -25,8 +72,9 @@ clean page, "More details" accordion.
   ALL types incl. `TEST_AND_TAG` and ALL statuses incl. `AWAITING_PARTS` / `QA`;
   reported-by `Select` over org members; description) → Schedule (scheduled /
   completed dates) → Outcome (cost, parts used; the **result `Select` + next-due
-  date stay gated to `status === COMPLETED`**, original logic preserved) → "More
-  details" accordion (relocated `PhotoGridInput`, tags).
+  date stay gated to `status === COMPLETED`**, original logic preserved; the
+  **per-asset disposition picker** — see "Closing out a record" above — is gated
+  the same way) → "More details" accordion (relocated `PhotoGridInput`, tags).
 - **Live preview** — work-order card (`Wrench` icon + title + a target line
   ("first asset + N more") + status pill via `StatusIndicator
   category="maintenance"` + a type chip).

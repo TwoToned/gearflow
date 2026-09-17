@@ -166,8 +166,25 @@ When a project has **no rental dates**, availability is still calculated:
 ## UI Indicators
 - **Red badge**: "OVERBOOKED" — shown on project list (AlertTriangle), project detail, and the 5 PDFs (PDFs only ever show this for a genuine HARD overage — see "Superseded" above)
 - **Amber badge**: "Pencilled overbook" — equipment-tab/project-detail only, when the overage is purely from still-quoted/optional demand elsewhere (`hardOverBy === 0`); never shown on PDFs
-- **Purple badge**: "REDUCED STOCK" — shown when overbooking is caused only by unavailable assets
 - Overbooking allowed with explicit checkbox confirmation in add/edit dialogs
+
+**`reducedOnly` never softens the badge (2026-09 fix).** A separate purple/blue
+"REDUCED STOCK" (info-level) badge used to replace the Red/Amber one whenever
+`unavailable > 0` and the overage would vanish with full stock — even when
+today's real, CONFIRMED demand genuinely exceeds today's usable stock (e.g. 19
+booked, 23 total, 17 usable after 5 in maintenance + 1 retired: a real hard
+overbooking, badged as a soft "info" pill instead of an alarm). `reducedOnly`
+is still computed and still explains *why* stock is short (folded into the
+badge tooltip — "…, N in maintenance or lost"), but it no longer decides
+severity: severity is `hardOverBy`/`pencilledOverBy` only, exactly like any
+other cause of overage. Same fix applied to the pull-sheet badge
+(`src/app/(app)/warehouse/[projectId]/pull-sheet/page.tsx`) and the project
+list/board issue flags (`getProjectIssueFlags` in `src/server/projects.ts`,
+which used to set `hasReducedStock` INSTEAD OF `hasOverbooked` — now sets both
+when applicable, so the red "Overbooked items" alert fires either way). The
+kit-parent rollup (`hasOverbookedChildren` in `reconstructOverbookedStatus`)
+was fixed the same way: a kit parent whose only overbooked child is
+`reducedOnly` now still counts as genuinely overbooked, not silently dropped.
 
 ## Invariants (don't break these)
 

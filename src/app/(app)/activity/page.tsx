@@ -37,6 +37,9 @@ const entityTypeLabels: Record<string, string> = {
   settings: "Settings",
   quote: "Quote",
   invoice: "Invoice",
+  // ProjectTask audit rows (convex/projectTasksWrites.ts) use the PascalCase
+  // entityType, unlike every other writer above — work-layer phase 0 (#1241).
+  ProjectTask: "Task",
 };
 
 const actionLabels: Record<string, string> = {

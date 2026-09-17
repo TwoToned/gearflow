@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-09-17
+
+### Fixed
+
+- **Overbooking alarms no longer soften into an "info" pill when the shortage is caused by assets in maintenance.** A booking that genuinely exceeds today's usable stock (e.g. 19 booked against 17 usable after some units are in maintenance or retired) now shows the same red "Overbooked" / amber "Pencilled overbook" alarm as any other overbooking, on the equipment tab, the warehouse pull sheet, and the project list/board — instead of a soft blue "Reduced stock" badge that easy to miss. The reason ("N in maintenance or lost") still shows in the tooltip.
+
 ## [0.29.0] - 2026-09-16
 
 ### Added

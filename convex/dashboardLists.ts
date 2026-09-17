@@ -180,9 +180,23 @@ export const home = query({
 // from exactly that shape). Bounded to `resolveManagedProjectDocs`'s ≤24
 // candidates, same cost profile as `home`/`blocking` above. One-shot from the
 // client (refresh on focus + a slow interval), never a live subscription.
+//
+// Phase 1 (#1243, design doc §9): this IS the "workTriage.forMe" read the
+// design doc's diagram describes for the crew/quote signal types — a signal is
+// never stored (§9's rule), so it's computed live here every call, then a
+// human's stored DECISION about it (`workSignalStates`, §10.3) is subtracted
+// via `loadHiddenSourceKeys`. Kept as `needsYou` rather than renamed/duplicated
+// into a new module: the computation IS the same, R-3.1 forbids a second
+// definition of the same signal, and this is already the one live caller
+// (`today-needs-you-rail.tsx`). Mentions are deliberately NOT folded in here —
+// they have their own dismissal mechanism (`notificationsWrites.archiveNative`)
+// and don't need a `workSignalStates` row. "Work overdue/due soon" is also not
+// duplicated here — it's real, non-derived task rows already surfaced by
+// `projectTasks.myOpenTasks` in Today's Overdue/Today buckets.
 const STALE_OFFER_MS = 48 * 60 * 60 * 1000; // §8.5's "> 48h" — hardcoded until an org setting exists
 
 type CrewSignalRow = {
+  sourceKey: string; // deterministic — design doc §9 ("crew:declined:<id>" / "crew:stale:<id>")
   assignmentId: string;
   projectId: string;
   projectName: string;
@@ -192,6 +206,7 @@ type CrewSignalRow = {
 };
 
 type ExpiringQuoteRow = {
+  sourceKey: string; // "quote:expiring:<quoteId>" (design doc §9)
   quoteId: string;
   projectId: string;
   projectName: string;
@@ -200,6 +215,26 @@ type ExpiringQuoteRow = {
   validUntil: number | null;
   daysLeft: number | null;
 };
+
+/**
+ * A human's decision (snooze/dismiss/promote, `workSignalStates`) hides a
+ * derived signal from Triage — the "minus workSignalStates" step in design doc
+ * §9's diagram. Dismissed and promoted hide permanently; a snooze hides only
+ * until `snoozedUntil` (an expired snooze re-surfaces the signal, since nothing
+ * about the underlying row changed to resolve it).
+ */
+async function loadHiddenSourceKeys(ctx: QueryCtx, orgId: string, userId: string, now: number): Promise<Set<string>> {
+  const rows = await ctx.db
+    .query("workSignalStates")
+    .withIndex("by_organizationId_userId_sourceKey", (q) => q.eq("organizationId", orgId).eq("userId", userId))
+    .collect();
+  const hidden = new Set<string>();
+  for (const r of rows) {
+    if (r.state === "dismissed" || r.state === "promoted") hidden.add(r.sourceKey);
+    else if (r.state === "snoozed" && (r.snoozedUntil ?? 0) > now) hidden.add(r.sourceKey);
+  }
+  return hidden;
+}
 
 export const needsYou = query({
   args: { orgId: v.string(), now: v.number() },
@@ -212,7 +247,10 @@ export const needsYou = query({
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
-    const projects = await resolveManagedProjectDocs(ctx, orgId, userId);
+    const [projects, hiddenSourceKeys] = await Promise.all([
+      resolveManagedProjectDocs(ctx, orgId, userId),
+      loadHiddenSourceKeys(ctx, orgId, userId, now),
+    ]);
 
     const declinedCrew: CrewSignalRow[] = [];
     const staleOffers: CrewSignalRow[] = [];
@@ -230,14 +268,18 @@ export const needsYou = query({
           if (a.organizationId !== orgId) continue; // by_projectId is global — re-check
           crewMemberIds.add(a.crewMemberId);
           if (a.status === "DECLINED") {
+            const sourceKey = `crew:declined:${a.id}`;
+            if (hiddenSourceKeys.has(sourceKey)) continue;
             const row: CrewSignalRow = {
-              assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
               crewMemberName: "", at: a.respondedAt ?? a.updatedAt ?? now,
             };
             pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: declinedCrew });
           } else if (a.status === "OFFERED" && a.offeredAt != null && a.offeredAt < now - STALE_OFFER_MS) {
+            const sourceKey = `crew:stale:${a.id}`;
+            if (hiddenSourceKeys.has(sourceKey)) continue;
             const row: CrewSignalRow = {
-              assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
               crewMemberName: "", at: a.offeredAt,
             };
             pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: staleOffers });
@@ -245,9 +287,10 @@ export const needsYou = query({
         }
         if (liveQuote && effectiveQuoteStatus(liveQuote, now) === "SENT") {
           const daysLeft = daysUntilValidUntil(liveQuote.validUntil, now);
-          if (daysLeft != null && daysLeft <= QUOTE_EXPIRING_SOON_DAYS) {
+          const sourceKey = `quote:expiring:${liveQuote.id}`;
+          if (daysLeft != null && daysLeft <= QUOTE_EXPIRING_SOON_DAYS && !hiddenSourceKeys.has(sourceKey)) {
             expiringQuotes.push({
-              quoteId: liveQuote.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              sourceKey, quoteId: liveQuote.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
               version: liveQuote.version, validUntil: liveQuote.validUntil ?? null, daysLeft,
             });
           }

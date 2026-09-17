@@ -26,7 +26,7 @@ chips) is untouched; `/my-tasks` is superseded and now redirects here.
 | Your day (rail) | `crewDashboard.upcomingShifts` + `projectServices.list`, both existing, filtered client-side to projects I manage | One-shot, polled |
 | Needs you (rail) | `dashboardLists.needsYou` (**new** — see below) | One-shot, polled |
 
-`dashboardLists.needsYou` is the one new Convex query this phase adds. It is
+`dashboardLists.needsYou` is the one new Convex query phase 0.5 adds. It is
 NOT a schema change, a new resource, or a migration — it composes existing
 tables (`crewAssignments`, `quotes`) the same way `dashboardLists.home` and
 `.blocking` already do, bounded to `resolveManagedProjectDocs`'s ≤24
@@ -38,6 +38,20 @@ stale (`> 48h`) `OFFERED`, and the live quote (`findLiveQuote` +
 org-wide-scan cost mistake documented in work-layer.md §9/R4/R13 (a single
 query was 4.66 GB/month in production) — it never scans further than
 projects the caller actually manages.
+
+**Phase 1 (#1243): signal-state-aware.** `needsYou` is the concrete implementation of the
+design doc §9 diagram's `workTriage.forMe` — a derived signal is never stored, so it's
+computed live here every call, then a human's stored DECISION about it (`workSignalStates`,
+FEATUREDOCS/50) is subtracted. Each row now carries a deterministic `sourceKey`
+(`crew:declined:<assignmentId>`, `crew:stale:<assignmentId>`, `quote:expiring:<quoteId>`) via
+`loadHiddenSourceKeys`, which loads the caller's own `workSignalStates` rows for the org and
+hides a signal whose state is `dismissed`/`promoted` (permanently) or `snoozed` with
+`snoozedUntil` still in the future (an expired snooze re-surfaces the signal — nothing about
+the underlying row resolved it). `TodayNeedsYouRail` rows carry snooze/dismiss/promote actions
+(`workSignalStatesWrites.ts`) keyed by this `sourceKey`. Deliberately NOT folded into
+`needsYou`: mentions (their own dismissal is `notificationsWrites.archiveNative` — no
+`workSignalStates` row needed) and "work overdue/due soon" (already real, non-derived
+`projectTasks` rows in the Overdue/Today buckets via `myOpenTasks`, not a derived signal).
 
 ### One-shot polling (`useFocusPolledQuery`)
 
@@ -115,22 +129,27 @@ warehouse view, not personal work) and its "Needs attention" chip tray
 (the nine derived org-wide types from `src/server/notifications.ts`) are
 both unchanged.
 
-## What's deliberately NOT here yet (phase 1, #1243)
+## Phase 1 (#1243) additions
 
-Snooze, time-blocking, personal (non-project) items, subtasks, quick-add,
-stage grouping, and "Plan my day" all need a schema column that doesn't
-exist until `projectTasks` widens in place — none of them are in this
-phase's scope. The field research in work-layer.md §17 (a week logging
-where work arrives from outside Flow, a morning shadowing an ops lead) gates
-that schema commit; it has not happened yet.
+Snooze, personal (non-project) items, subtasks, quick-add, stage grouping and
+signal promotion landed on top of this page once `projectTasks` widened in
+place (FEATUREDOCS/50) — see "Phase 1: signal-state-aware" above for the
+`needsYou`/`workSignalStates` piece. Time-blocking and "Plan my day" remain
+out of scope for this pass (§8.1: "'Plan my day' does not exist in phase 0.5
+because there is nothing to plan with; it arrives in phase 1 with snooze and
+time-blocking" — snooze shipped, the scheduling/agenda half did not).
 
 ## Tests
 
 - `src/lib/today-buckets.test.ts` — org-tz bucket boundaries (the UTC+10 case).
 - `convex/dashboardLists.test.ts` — `needsYou`'s per-manager scoping, the
-  48h stale-offer threshold, the 7-day expiring-quote window, and that the
+  48h stale-offer threshold, the 7-day expiring-quote window, that the
   `home` refactor (factoring out `resolveManagedProjectDocs`) is
-  behavior-preserving.
+  behavior-preserving, and (Phase 1) that a dismissed/promoted/still-snoozed
+  signal is hidden while an expired snooze re-surfaces it, scoped per-user.
+- `convex/workSignalStatesWrites.test.ts` — snooze/dismiss upsert on
+  `(orgId, userId, sourceKey)`; promote creates the task and the `promoted`
+  decision atomically, defaulting the assignee to the promoting user.
 - `src/app/(app)/today/__tests__/page.smoke.test.tsx` — bucketing, mention →
   Triage, mark-read on open, done/un-done, empty-bucket-vs-empty-page.
 - `src/components/today/__tests__/today-rails.smoke.test.tsx` — the rails'

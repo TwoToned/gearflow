@@ -114,8 +114,8 @@ touches their own decisions in their active org.
   `createNative`, since it creates a real, org-visible work item.
 
 Reading which signals exist and computing them live (never stored — design doc §9) is
-`workTriage.forMe`, documented in [FEATUREDOCS/79](./79-today.md) alongside the Today UI that
-consumes it.
+`dashboardLists.needsYou`, extended in Phase 1 to subtract these decisions — see
+[FEATUREDOCS/79](./79-today.md) alongside the Today UI that consumes it.
 
 **RBAC — `work:read`/`work:update` OR `project:read`/`project:update`.** A new `work`
 permissions resource was added additively to `permissionsCore.ts` (owner/admin/manager:

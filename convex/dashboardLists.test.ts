@@ -117,10 +117,10 @@ describe("dashboardLists.needsYou", () => {
     const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
 
     expect(res.declinedCrew).toEqual([
-      { assignmentId: "a1", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Sam Smith", at: NOW - DAY },
+      { sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Sam Smith", at: NOW - DAY },
     ]);
     expect(res.staleOffers).toEqual([
-      { assignmentId: "a2", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Rita Rivera", at: NOW - STALE },
+      { sourceKey: "crew:stale:a2", assignmentId: "a2", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Rita Rivera", at: NOW - STALE },
     ]);
     expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
   });
@@ -144,6 +144,63 @@ describe("dashboardLists.needsYou", () => {
     });
     const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
     expect(res.expiringQuotes).toEqual([]);
+  });
+
+  // #1243 Phase 1 — a human's decision (workSignalStates) hides a signal.
+  describe("workSignalStates filtering (#1243 Phase 1)", () => {
+    async function seedExpiringQuote(t: ReturnType<typeof convexTest>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+        await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+      });
+    }
+
+    test("a dismissed signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes).toEqual([]);
+    });
+
+    test("a promoted signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "promoted", promotedWorkItemId: "t1", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes).toEqual([]);
+    });
+
+    test("a signal snoozed into the future is hidden; an expired snooze re-surfaces it", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "snoozed", snoozedUntil: NOW + DAY, createdAt: NOW, updatedAt: NOW }),
+      );
+      const stillSnoozed = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(stillSnoozed.expiringQuotes).toEqual([]);
+
+      const afterSnooze = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW + DAY + 1 });
+      expect(afterSnooze.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+
+    test("another user's decision does not hide the signal for this user", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: "user_other", sourceKey: "quote:expiring:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
   });
 });
 

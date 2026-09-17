@@ -140,6 +140,7 @@ export interface NativeMyOpenTask {
   projectNumber: string;
   assigneeUserId: string | null;
   assigneeCrewId: string | null;
+  stage: string | null;
 }
 
 /**

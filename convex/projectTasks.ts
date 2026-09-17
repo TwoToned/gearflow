@@ -63,6 +63,29 @@ export const listByProject = query({
   },
 });
 
+/**
+ * A task's subtasks (Phase 1, #1243) — the one level `parentId` enables. Sorted
+ * sortOrder→createdAt, same convention as `listByProjectWithRelations`. Org-checked
+ * against the PARENT (by_parentId is global — a subtask always inherits its
+ * parent's organizationId, so checking the parent's org is equivalent to checking
+ * each child's, and avoids re-fetching the parent doc for every caller).
+ */
+export const listSubtasks = query({
+  args: { parentId: v.string(), orgId: v.string() },
+  handler: async (ctx, { parentId, orgId }) => {
+    await requireWorkOrProjectRead(ctx, orgId);
+    const rows = (await ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", parentId)).collect())
+      .filter((t) => t.organizationId === orgId); // by_parentId is global → org re-check
+    rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
+    return rows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status ?? "TODO",
+      completedAt: t.completedAt ?? null,
+    }));
+  },
+});
+
 // ─── Browser-direct composite reads (Phase 3 — replace the getProjectTasks /
 // getTaskAssignees server actions). Assignee names come from the Convex users +
 // crewMembers mirrors (the deleted action's Prisma user/member seam is gone). ────
@@ -173,6 +196,7 @@ type MyOpenTaskDoc = {
   assigneeUserId?: string;
   assigneeCrewId?: string;
   parentId?: string;
+  stage?: string;
 };
 
 async function resolveCrewIdsForUser(ctx: QueryCtx, userId: string, orgId: string): Promise<string[]> {
@@ -271,6 +295,7 @@ function serializeMyOpenTask(
     projectNumber: project.projectNumber,
     assigneeUserId: t.assigneeUserId ?? null,
     assigneeCrewId: t.assigneeCrewId ?? null,
+    stage: t.stage ?? null,
   };
 }
 
@@ -461,4 +486,5 @@ export const agentOps: AgentOpsAnnotations = {
   assignees: { summary: "List people (org members + crew) a task can be assigned to.", danger: "low", mcpTier: 2 },
   listByProjectWithRelations: { summary: "List a project's tasks with assignee joins, sorted for the task board.", danger: "low", mcpTier: 1 },
   myOpenTasks: { summary: "List the caller's own open (TODO/IN_PROGRESS) tasks across all projects in an org.", danger: "low", mcpTier: 2 },
+  listSubtasks: { summary: "List a task's subtasks (one level).", danger: "low", mcpTier: 2 },
 };

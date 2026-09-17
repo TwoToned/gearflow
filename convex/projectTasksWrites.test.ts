@@ -282,4 +282,20 @@ describe("projectTasks read composites", () => {
     const rows = await t.withIdentity(asUser).query(api.projectTasks.listByProject, { projectId: "P1", orgId: ORG });
     expect(rows.map((r) => r.id)).toEqual(["parent"]);
   });
+
+  test("listSubtasks returns a task's children sorted, org-checked against the parent", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "parent", organizationId: ORG, projectId: "P1", title: "Parent", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "child2", organizationId: ORG, projectId: "P1", title: "Second", status: "TODO", parentId: "parent", sortOrder: 2, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "child1", organizationId: ORG, projectId: "P1", title: "First", status: "DONE", parentId: "parent", sortOrder: 1, completedAt: NOW, createdAt: NOW, updatedAt: NOW });
+      // A same-id-parent row in another org must never leak in.
+      await ctx.db.insert("projectTasks", { id: "foreign_child", organizationId: OTHER, projectId: "P1", title: "Foreign", status: "TODO", parentId: "parent", sortOrder: 3, createdAt: NOW, updatedAt: NOW });
+    });
+    const rows = await t.withIdentity(asUser).query(api.projectTasks.listSubtasks, { parentId: "parent", orgId: ORG });
+    expect(rows).toEqual([
+      { id: "child1", title: "First", status: "DONE", completedAt: NOW },
+      { id: "child2", title: "Second", status: "TODO", completedAt: null },
+    ]);
+  });
 });

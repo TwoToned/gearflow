@@ -42300,6 +42300,47 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectTasks.listSubtasks",
+    "module": "projectTasks",
+    "fn": "listSubtasks",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "parentId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "2882f5628c2ee855",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "List a task's subtasks (one level).",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectTasks.myOpenTasks",
     "module": "projectTasks",
     "fn": "myOpenTasks",
@@ -62164,10 +62205,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1205,
-  agentReachable: 583,
-  queries: 432,
+  total: 1206,
+  agentReachable: 584,
+  queries: 433,
   mutations: 773,
-  agentReachableQueries: 301,
+  agentReachableQueries: 302,
   agentReachableMutations: 282,
 } as const;

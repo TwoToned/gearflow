@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive route — live subscription, keyboard nav, optimistic writes (R-8.1.1)
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useNativeMyOpenTasks, type NativeMyOpenTask } from "@/hooks/use-native-dashboard";
@@ -9,11 +9,13 @@ import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useFocusPolledQuery } from "@/hooks/use-focus-polled-query";
 import { useTodayDayRail } from "@/hooks/use-today-day-rail";
 import { useProjectTaskWrites } from "@/hooks/use-project-tasks-writes";
+import { useWorkSignalWrites } from "@/hooks/use-work-signal-writes";
 import { useNotifications } from "@/hooks/use-notifications";
 import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
 import { useCanDo } from "@/lib/use-permissions";
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
 import { bucketForDueDate } from "@/lib/today-buckets";
+import { TASK_STAGE_LABELS, type ProjectTaskStage } from "@/lib/project-tasks";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionHeader } from "@/components/ui/section-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -29,8 +31,10 @@ import type { Doc } from "../../../../convex/_generated/dataModel";
 
 const MINUTE = 60_000;
 
+// Row anatomy per work-layer.md §8.1: "context line (project · stage · due)".
 function taskContextLine(task: NativeMyOpenTask): string {
   const parts = task.projectId ? [task.projectNumber, task.projectName].filter(Boolean) : ["Personal"];
+  if (task.stage) parts.push(TASK_STAGE_LABELS[task.stage as ProjectTaskStage] ?? task.stage);
   if (task.dueDate != null) {
     parts.push(new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }));
   }
@@ -46,6 +50,7 @@ export default function TodayPage() {
   const orgId = activeOrg?.id;
   const canEditTasks = useCanDo("project", "update");
   const writes = useProjectTaskWrites();
+  const signalWrites = useWorkSignalWrites();
   const { timezone } = useDocumentDatesConfig();
 
   const now = new Date().getTime();
@@ -90,6 +95,45 @@ export default function TodayPage() {
     },
     [writes],
   );
+
+  // Snooze a "needs you" signal (design doc §9) — one-shot polled, so refresh
+  // after the write rather than relying on reactivity to reflect the change.
+  const snoozeSignal = useCallback(
+    (sourceKey: string) => {
+      signalWrites.snooze(sourceKey).then(needsYou.refresh).catch((e: unknown) => {
+        toast.error(e instanceof Error ? e.message : "Could not snooze");
+      });
+    },
+    [signalWrites, needsYou.refresh],
+  );
+
+  // Turn a mention into a real task ("make a task", design doc §9's Triage
+  // table) — the notification's own dedupeKey is already the deterministic
+  // identity a sourceKey needs, so it's reused directly rather than minted twice.
+  const promoteMention = useCallback(
+    (n: Doc<"notifications">) => {
+      signalWrites
+        .promote({ sourceKey: n.dedupeKey, title: n.title })
+        .then(() => toast.success("Added to your tasks"))
+        .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not create the task"));
+    },
+    [signalWrites],
+  );
+
+  // Quick-add (design doc §8.1's `Q` shortcut) — a personal task, no project.
+  const [quickAddValue, setQuickAddValue] = useState("");
+  const [quickAddBusy, setQuickAddBusy] = useState(false);
+  const quickAddInputRef = useRef<HTMLInputElement>(null);
+  const submitQuickAdd = useCallback(() => {
+    const title = quickAddValue.trim();
+    if (!title || quickAddBusy) return;
+    setQuickAddBusy(true);
+    writes
+      .create({ title })
+      .then(() => setQuickAddValue(""))
+      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not add the task"))
+      .finally(() => setQuickAddBusy(false));
+  }, [quickAddValue, quickAddBusy, writes]);
 
   const taskItems = useMemo<TodayItem[]>(() => {
     const openTasks = (tasks ?? []).filter((t) => !justCompleted.has(t.id));
@@ -178,6 +222,7 @@ export default function TodayPage() {
     const item = peekItem ?? (selectedIndex >= 0 ? visibleOrder[selectedIndex] : null);
     if (item?.kind === "task") toggleTaskDone(item.raw as NativeMyOpenTask, !item.done);
   });
+  useKeyboardShortcut("q", () => quickAddInputRef.current?.focus());
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -201,6 +246,27 @@ export default function TodayPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5" data-shortcut-scope="today-list">
+          {canEditTasks && (
+            <FadeIn>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitQuickAdd();
+                }}
+              >
+                <input
+                  ref={quickAddInputRef}
+                  type="text"
+                  value={quickAddValue}
+                  onChange={(e) => setQuickAddValue(e.target.value)}
+                  placeholder="Quick-add a task (press Q)"
+                  disabled={quickAddBusy}
+                  className="w-full rounded-[var(--r)] border border-line bg-card px-3 py-2 text-[14px] text-ink placeholder:text-faint focus:border-primary focus:outline-none"
+                />
+              </form>
+            </FadeIn>
+          )}
+
           {isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-12 w-full rounded-[var(--r)]" />
@@ -303,16 +369,20 @@ export default function TodayPage() {
 
         <div className="space-y-4">
           <TodayDayRail entries={dayRail.entries} asOf={dayRail.asOf} error={dayRail.error} onRefresh={dayRail.refresh} />
-          <TodayNeedsYouRail data={needsYou.data} asOf={needsYou.asOf} error={needsYou.error} onRefresh={needsYou.refresh} />
+          <TodayNeedsYouRail data={needsYou.data} asOf={needsYou.asOf} error={needsYou.error} onRefresh={needsYou.refresh} onSnooze={snoozeSignal} />
         </div>
       </div>
 
       <TodayPeek
         item={peekItem}
         canEdit={canEditTasks}
+        orgId={orgId}
         onClose={closePeek}
         onToggleDone={(item) => {
           if (item.kind === "task") toggleTaskDone(item.raw as NativeMyOpenTask, !item.done);
+        }}
+        onMakeTask={(item) => {
+          if (item.kind === "mention") promoteMention(item.raw as Doc<"notifications">);
         }}
       />
     </div>

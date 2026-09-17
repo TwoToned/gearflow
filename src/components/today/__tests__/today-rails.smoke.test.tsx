@@ -44,14 +44,33 @@ describe("TodayNeedsYouRail", () => {
 
   it("shows a retry notice on a first-load failure", () => {
     const refresh = vi.fn();
-    render(<TodayNeedsYouRail data={undefined} asOf={undefined} error={new Error("boom")} onRefresh={refresh} />);
+    render(<TodayNeedsYouRail data={undefined} asOf={undefined} error={new Error("boom")} onRefresh={refresh} onSnooze={vi.fn()} />);
     expect(screen.getByText(/Couldn't load/)).toBeDefined();
     fireEvent.click(screen.getByText("Retry"));
     expect(refresh).toHaveBeenCalled();
   });
 
   it("shows a plain empty caption when nothing needs the caller", () => {
-    render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} />);
+    render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} onSnooze={vi.fn()} />);
     expect(screen.getByText("Nothing needs you.")).toBeDefined();
+  });
+
+  it("Phase 1 (#1243): clicking snooze on a declined-crew row calls onSnooze with its sourceKey", () => {
+    const onSnooze = vi.fn();
+    render(
+      <TodayNeedsYouRail
+        data={{
+          declinedCrew: [{ sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", at: Date.now() }],
+          staleOffers: [],
+          expiringQuotes: [],
+        }}
+        asOf={Date.now()}
+        error={null}
+        onRefresh={vi.fn()}
+        onSnooze={onSnooze}
+      />,
+    );
+    fireEvent.click(screen.getByTitle("Snooze until tomorrow"));
+    expect(onSnooze).toHaveBeenCalledWith("crew:declined:a1");
   });
 });

@@ -2,16 +2,20 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { X, Check, ExternalLink } from "lucide-react";
+import { X, Check, ExternalLink, ListPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, focusRing } from "@/lib/utils";
+import { TodaySubtasks } from "./today-subtasks";
 import type { TodayItem } from "./today-types";
 
 interface TodayPeekProps {
   item: TodayItem | null;
   canEdit: boolean;
+  orgId: string | undefined;
   onClose: () => void;
   onToggleDone: (item: TodayItem) => void;
+  /** Mentions only — "make a task" (design doc §9's Triage table). */
+  onMakeTask: (item: TodayItem) => void;
 }
 
 /**
@@ -24,7 +28,7 @@ interface TodayPeekProps {
  * open, returns to the triggering row on Esc, and the row list stays
  * arrow-navigable while this is open (it isn't a focus trap).
  */
-export function TodayPeek({ item, canEdit, onClose, onToggleDone }: TodayPeekProps) {
+export function TodayPeek({ item, canEdit, orgId, onClose, onToggleDone, onMakeTask }: TodayPeekProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -70,15 +74,25 @@ export function TodayPeek({ item, canEdit, onClose, onToggleDone }: TodayPeekPro
         </button>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        <p className={cn("text-[15px] font-medium", item.done ? "text-muted line-through" : "text-ink")}>{item.title}</p>
-        <p className="text-caption text-muted">{item.contextLine}</p>
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <div className="space-y-3">
+          <p className={cn("text-[15px] font-medium", item.done ? "text-muted line-through" : "text-ink")}>{item.title}</p>
+          <p className="text-caption text-muted">{item.contextLine}</p>
+        </div>
+        {item.kind === "task" && (
+          <TodaySubtasks parentId={(item.raw as { id: string }).id} orgId={orgId} canEdit={canEdit} />
+        )}
       </div>
 
       <div className="flex items-center gap-2 border-t border-line px-4 py-3">
         {item.kind === "task" && canEdit && (
           <Button variant="line" size="sm" onClick={() => onToggleDone(item)}>
             <Check className="h-4 w-4" /> {item.done ? "Mark not done" : "Mark done"}
+          </Button>
+        )}
+        {item.kind === "mention" && canEdit && (
+          <Button variant="line" size="sm" onClick={() => onMakeTask(item)}>
+            <ListPlus className="h-4 w-4" /> Make a task
           </Button>
         )}
         {item.href && (

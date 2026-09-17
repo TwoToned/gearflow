@@ -166,4 +166,16 @@ describe("projectTasks.myOpenTasks", () => {
     const res = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: NOW });
     expect(res.map((r) => r.id)).toEqual(["parent"]);
   });
+
+  test("carries stage (Phase 1, #1243) for the row's context line; null when absent", async () => {
+    const t = convexTest(schema, modules);
+    await baseSeed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "staged", organizationId: ORG, projectId: "P1", title: "Staged", status: "TODO", assigneeUserId: USER, stage: "prep" });
+      await ctx.db.insert("projectTasks", { id: "unstaged", organizationId: ORG, title: "Unstaged", status: "TODO", assigneeUserId: USER });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: NOW });
+    expect(res.find((r) => r.id === "staged")?.stage).toBe("prep");
+    expect(res.find((r) => r.id === "unstaged")?.stage).toBeNull();
+  });
 });

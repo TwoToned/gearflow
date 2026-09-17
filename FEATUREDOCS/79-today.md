@@ -105,8 +105,9 @@ stays arrow-navigable while the peek is open (it is not a focus trap).
 ## Keyboard
 
 `j`/`k`/arrows move the selection, `Space` opens/closes the peek, `D`
-toggles done on the selected or peeked item. All via the existing
-`useKeyboardShortcut` hook (disabled inside inputs/dialogs automatically).
+toggles done on the selected or peeked item, `Q` focuses the quick-add input
+(Phase 1). All via the existing `useKeyboardShortcut` hook (disabled inside
+inputs/dialogs automatically).
 
 ## Navigation (DESIGN.md §16, D10A)
 
@@ -139,6 +140,42 @@ out of scope for this pass (§8.1: "'Plan my day' does not exist in phase 0.5
 because there is nothing to plan with; it arrives in phase 1 with snooze and
 time-blocking" — snooze shipped, the scheduling/agenda half did not).
 
+- **Quick-add (`Q`).** An always-visible input above the work list (only
+  when the caller can create tasks), wired to `writes.create({ title })` —
+  no `projectId`, so it lands as a personal task (`src/hooks/use-work-signal-writes.ts`'s
+  sibling, `use-project-tasks-writes.ts`'s `create`). Live subscription
+  (`myOpenTasks`) means the new row appears on its own; no optimistic insert
+  needed.
+- **Snooze on Needs-you rows.** Each declined-crew / stale-offer /
+  expiring-quote row gets a small clock button (`TodayNeedsYouRail`'s
+  `SnoozeButton`) that calls `useWorkSignalWrites().snooze(sourceKey)` (24h
+  default, no picker) then `needsYou.refresh()` — the row disappears until
+  the snooze lapses. This is the ONLY signal type wired to snooze in the
+  rail; design doc §9's Triage table lists "snooze" for crew/quote/overdue-
+  work but not "dismiss" or "promote" for those — those two stay scoped to
+  mentions (below), matching the table exactly rather than genericising
+  every action onto every signal type.
+- **"Make a task" on a mention.** The peek panel's action row gets a
+  `ListPlus` button for a `kind: "mention"` item, calling
+  `useWorkSignalWrites().promote({ sourceKey: n.dedupeKey, title: n.title })`
+  — the notification's own `dedupeKey` IS the mention's deterministic
+  identity (design doc §9: `mention:<commentId>:<userId>`), so it's reused
+  directly rather than reconstructed. Mention "dismiss" stays
+  `notificationsWrites.archiveNative` (unchanged) — it never needed a
+  `workSignalStates` row.
+- **Subtasks in peek.** `TodaySubtasks` (`src/components/today/today-subtasks.tsx`)
+  renders under a task's title/context line in the peek, live-subscribed to
+  `projectTasks.listSubtasks(parentId, orgId)` — a toggle-done list plus an
+  add-subtask input (`writes.create({ title, parentId })`). Not shown for a
+  mention (subtasks are a task concept). Since a peeked Today row is always
+  a top-level task (subtasks are already excluded from `myOpenTasks`,
+  FEATUREDOCS/50), there's no risk of nesting more than one level.
+- **Stage in the context line.** Row anatomy per §8.1 is "context line
+  (project · stage · due)" — `taskContextLine` now inserts the task's
+  `TASK_STAGE_LABELS[stage]` between project and due date when `stage` is
+  set (`myOpenTasks` now returns it). A personal task's project segment
+  reads "Personal" instead of blank project fields.
+
 ## Tests
 
 - `src/lib/today-buckets.test.ts` — org-tz bucket boundaries (the UTC+10 case).
@@ -151,6 +188,15 @@ time-blocking" — snooze shipped, the scheduling/agenda half did not).
   `(orgId, userId, sourceKey)`; promote creates the task and the `promoted`
   decision atomically, defaulting the assignee to the promoting user.
 - `src/app/(app)/today/__tests__/page.smoke.test.tsx` — bucketing, mention →
-  Triage, mark-read on open, done/un-done, empty-bucket-vs-empty-page.
+  Triage, mark-read on open, done/un-done, empty-bucket-vs-empty-page, and
+  (Phase 1) quick-add submit/clear + blank no-op, "Make a task" on a mention.
 - `src/components/today/__tests__/today-rails.smoke.test.tsx` — the rails'
-  loading/empty/error/stale states.
+  loading/empty/error/stale states, and (Phase 1) clicking a needs-you row's
+  snooze button calls back with its `sourceKey`.
+- `src/components/today/__tests__/today-subtasks.smoke.test.tsx` — empty
+  state, TODO/DONE rendering, toggling done, add-subtask create+clear,
+  read-only (`canEdit: false`) disables both.
+- `convex/projectTasksWrites.test.ts` — (Phase 1) `listSubtasks` sorts by
+  `sortOrder`/`createdAt` and is org-checked against the parent.
+- `convex/projectTasks.myOpenTasks.test.ts` — (Phase 1) `stage` comes back
+  on the row when set, `null` when absent.

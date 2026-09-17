@@ -16,7 +16,11 @@ import { requireService } from "./lib/auth";
  * A child inherits `organizationId`/`projectId` from its parent and gets no
  * `stage`/`sourceKey` (matches the schema comment). `status` maps from the
  * checklist item's `done` boolean; `sortOrder` preserves the checklist's original
- * ordering among the new subtasks.
+ * ordering among the new subtasks. The checklist item's own `id` is PRESERVED as
+ * the new row's `id` (design doc §10.4's explicit acceptance criterion) — ids are
+ * client-generated via `crypto.randomUUID()` (`tasks-panel.tsx`), so they're
+ * already globally unique; a fresh id is generated only in the defensive case
+ * where one is missing or already taken by an unrelated row.
  *
  * Idempotent — skips any parent that ALREADY has at least one subtask
  * (`by_parentId`), whether from a prior run of this backfill or a subtask created
@@ -62,14 +66,21 @@ export const backfillChecklistSubtasksPage = mutation({
       if (!apply) continue;
 
       const now = Date.now();
+      // completedAt for an already-done item is the parent's own updatedAt (when the
+      // checklist itself was last saved), not migration time — matches design doc §10.4.
+      const doneCompletedAt = parent.updatedAt ?? parent.createdAt ?? now;
       let sortOrder = 0;
       for (const item of checklist) {
         const title = item.text?.trim();
         if (!title) continue; // a checklist item with no text has nothing to migrate
 
         const done = !!item.done;
+        let id = item.id?.trim();
+        if (!id || (await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id as string)).first())) {
+          id = createId(); // missing or already taken — fall back to a fresh id
+        }
         await ctx.db.insert("projectTasks", {
-          id: createId(),
+          id,
           organizationId: parent.organizationId,
           projectId: parent.projectId,
           parentId: parent.id,
@@ -77,7 +88,7 @@ export const backfillChecklistSubtasksPage = mutation({
           status: done ? "DONE" : "TODO",
           kind: "task",
           sortOrder: sortOrder++,
-          completedAt: done ? now : undefined,
+          completedAt: done ? doneCompletedAt : undefined,
           createdAt: now,
           updatedAt: now,
         });

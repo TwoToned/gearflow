@@ -37,11 +37,12 @@ const subtasksFor = (t: T, parentId: string) =>
   t.run(async (ctx) => ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", parentId)).collect());
 
 describe("backfillChecklistSubtasks", () => {
-  test("non-empty checklist → one subtask per item, status from done, sortOrder preserves order", async () => {
+  test("non-empty checklist → one subtask per item, status from done, sortOrder preserves order, id preserved", async () => {
     const t = makeT();
+    const parentUpdatedAt = 1_700_000_000_000;
     await t.run(async (ctx) => {
       await ctx.db.insert("projectTasks", {
-        id: "p1", organizationId: ORG, projectId: "proj1", title: "Load in",
+        id: "p1", organizationId: ORG, projectId: "proj1", title: "Load in", updatedAt: parentUpdatedAt,
         checklist: [{ id: "c1", text: "Load truck", done: true }, { id: "c2", text: "Unload dock", done: false }],
       });
     });
@@ -49,13 +50,33 @@ describe("backfillChecklistSubtasks", () => {
     expect(scanned).toBe(1);
     expect(created).toBe(2);
     const subtasks = (await subtasksFor(t, "p1")).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-    expect(subtasks.map((s) => [s.title, s.status, s.sortOrder])).toEqual([
-      ["Load truck", "DONE", 0],
-      ["Unload dock", "TODO", 1],
+    expect(subtasks.map((s) => [s.id, s.title, s.status, s.sortOrder])).toEqual([
+      ["c1", "Load truck", "DONE", 0],
+      ["c2", "Unload dock", "TODO", 1],
     ]);
     expect(subtasks.every((s) => s.organizationId === ORG && s.projectId === "proj1" && s.parentId === "p1")).toBe(true);
-    expect(subtasks.find((s) => s.status === "DONE")?.completedAt).toBeDefined();
+    // completedAt for an already-done item is the parent's own updatedAt, not migration time.
+    expect(subtasks.find((s) => s.status === "DONE")?.completedAt).toBe(parentUpdatedAt);
     expect(subtasks.find((s) => s.status === "TODO")?.completedAt).toBeUndefined();
+  });
+
+  test("falls back to a fresh id when the checklist item's id is missing or already taken", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      // "taken" already exists as an unrelated row's id — the migrated item can't reuse it.
+      await ctx.db.insert("projectTasks", { id: "taken", organizationId: ORG, projectId: "proj1", title: "Unrelated" });
+      await ctx.db.insert("projectTasks", {
+        id: "p1", organizationId: ORG, projectId: "proj1", title: "Load in",
+        checklist: [{ text: "No id at all", done: false }, { id: "taken", text: "Id collision", done: false }],
+      });
+    });
+    await runBackfill(t);
+    const subtasks = await subtasksFor(t, "p1");
+    expect(subtasks).toHaveLength(2);
+    for (const s of subtasks) {
+      expect(s.id).not.toBe("taken");
+      expect(s.id.length).toBeGreaterThan(0);
+    }
   });
 
   test("a checklist item with no text is skipped", async () => {

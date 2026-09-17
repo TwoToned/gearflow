@@ -117,6 +117,33 @@ Reading which signals exist and computing them live (never stored — design doc
 `dashboardLists.needsYou`, extended in Phase 1 to subtract these decisions — see
 [FEATUREDOCS/79](./79-today.md) alongside the Today UI that consumes it.
 
+**Work templates — seeded on CONFIRMED.** `convex/lib/workTemplateSeeding.ts`'s
+`maybeSeedWorkTemplates` creates real `projectTasks` rows when a project ENTERS a
+lifecycle status (design doc §8.2) — called ONCE at the end of both paths that can
+reach `CONFIRMED`: `projectWrites.ts`'s `updateStatusNative` (manual) and
+`projectAutoStatus.ts`'s `maybeAutoAdvanceProjectStatus` (the `PAYMENT_SETTLED` auto
+rule) — same call-site discipline as the rest of `projectAutoStatus.ts` (once, at the
+end, never in a loop, never before the status write lands). Only `CONFIRMED` is wired
+(the design doc's only worked example).
+
+- An org's own `workTemplates` rows (schema table, org-scoped, `isActive`-filterable)
+  win when any exist for `(orgId, triggerStatus)`; otherwise `DEFAULT_CONFIRMED_TEMPLATES`
+  — the design doc's five worked examples verbatim ("Send deposit invoice", "Book
+  crew", "Confirm venue access", "Truck pack", "Chase balance") — are used. **No admin
+  UI writes `workTemplates` yet** (a later phase) — the table exists now so a future
+  settings screen has somewhere to write without another schema change.
+- Each template's `offsetFrom` is `"trigger"` (relative to the moment it seeds — an
+  immediate admin follow-up like the deposit invoice), `"rentalStart"`, or
+  `"rentalEnd"` (relative to the event itself — design doc §8.2's "event −5d"
+  phrasing). A `rentalStart`/`rentalEnd` template whose base date isn't set yet is
+  still seeded, just with no `dueDate` — never silently dropped.
+- **Idempotent per `(project, template key, triggerStatus)`** via `sourceKey`
+  (`template:<key>:<triggerStatus>`) — a project re-crossing into CONFIRMED (a revert
+  then re-confirm) is never reseeded. `templateId` is also stamped on the row.
+- **Assignee is the PM** (design doc's rule): `projects.projectManagerId`, else the
+  earliest `projectManagers` row, else unassigned — an unassigned seeded item shows in
+  the project's future Work card (Phase 2), not in anyone's Today.
+
 **RBAC — `work:read`/`work:update` OR `project:read`/`project:update`.** A new `work`
 permissions resource was added additively to `permissionsCore.ts` (owner/admin/manager:
 full CRUD; member/warehouse: create/read/update; viewer: read). Every task read

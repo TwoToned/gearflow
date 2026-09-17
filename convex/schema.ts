@@ -3447,6 +3447,32 @@ export default defineSchema({
     .index("by_organizationId_userId_sourceKey", ["organizationId", "userId", "sourceKey"])
     .index("by_organizationId_sourceKey", ["organizationId", "sourceKey"]),
 
+  // WorkTemplate — an org's own set of work items to seed when a project enters
+  // a lifecycle status (#1243 Phase 1, design doc §8.2). No admin UI exists yet
+  // to write these (a later phase) — an org with zero rows here falls back to
+  // DEFAULT_CONFIRMED_TEMPLATES (convex/lib/workTemplateSeeding.ts), which is
+  // itself literally the design doc's five worked examples. The table exists now
+  // so that future UI has somewhere to write without another schema change.
+  workTemplates: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    title: v.string(),
+    stage: enums.ProjectTaskStage,
+    triggerStatus: v.string(), // a projects.status value; only "CONFIRMED" is wired so far
+    // Offsets are relative to project start/end (§8.2) or the moment the
+    // template seeds ("trigger") — e.g. an admin task due shortly after
+    // confirmation vs. a venue check tied to the event date itself.
+    offsetFrom: v.union(v.literal("trigger"), v.literal("rentalStart"), v.literal("rentalEnd")),
+    offsetDays: v.number(),
+    isActive: v.optional(v.boolean()), // absent = active
+    sortOrder: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_organizationId_triggerStatus", ["organizationId", "triggerStatus"]),
+
   // SavedTableView
   savedTableViews: defineTable({
     id: v.string(),

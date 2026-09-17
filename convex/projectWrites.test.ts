@@ -264,6 +264,42 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
   });
 });
 
+describe("projectWrites.updateStatusNative — work-template seeding on CONFIRMED (#1243)", () => {
+  const toConfirmed = { id: "p1", orgId: ORG, status: "CONFIRMED" as const, actor: ACTOR, auditId: "log1", now: NOW };
+
+  test("crossing into CONFIRMED seeds the default templates, assigned to the PM", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: "pm_user", addedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
+    const seeded = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    expect(seeded).toHaveLength(5);
+    expect(seeded.every((s) => s.assigneeUserId === "pm_user")).toBe(true);
+    expect(seeded.every((s) => s.sourceKey?.endsWith(":CONFIRMED"))).toBe(true);
+    expect(new Set(seeded.map((s) => s.stage))).toEqual(new Set(["quote", "prep", "load_in", "close"]));
+  });
+
+  test("re-crossing into CONFIRMED does not reseed (idempotent)", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, status: "PREPPING" as const, auditId: "log2" });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, auditId: "log3" });
+    const seeded = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    expect(seeded).toHaveLength(5);
+  });
+
+  test("no PM anywhere on the project leaves the seeded items unassigned", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
+    const seeded = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    expect(seeded.every((s) => s.assigneeUserId === undefined)).toBe(true);
+  });
+});
+
 // #1230: the HARD_LOCKED tier (COMPLETED/INVOICED) and its revert-out-of gate
 // (#792) are deleted along with the rest of the 4-tier lock system — #987
 // already made a client's stored finance document immutable regardless of

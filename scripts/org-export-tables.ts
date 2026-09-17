@@ -122,6 +122,8 @@ export const DIRECT_TABLES = [
   "webhooks",
   "wooCommerceIntegrations",
   "wooCommerceOrderLogs",
+  // Work-layer phase 1 (#1243) — has its own by_organizationId index.
+  "workTemplates",
   // WS1 (#940) — Xero integration config + audit log.
   "xeroIntegrations",
   "xeroSyncLogs",
@@ -256,7 +258,10 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1105 (D1): +1 — orgActivationDismissals (DIRECT, per-user "Get started"
 // activation-checklist dismissal — same export posture as orgSetupDismissals).
 // #1230 (Phase 4): -1 — projectUnlockSessions deleted, no replacement table.
-export const EXPECTED_TABLE_COUNT = 121;
+// #1243 (Phase 1, work-layer): +2 — workSignalStates (FILTER, composite-indexed
+// only, per-user signal decisions) and workTemplates (DIRECT, org-scoped work
+// item templates seeded on a project lifecycle transition).
+export const EXPECTED_TABLE_COUNT = 122;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

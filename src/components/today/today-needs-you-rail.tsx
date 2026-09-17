@@ -35,10 +35,12 @@ function AsOfStamp({ asOf, onRefresh }: { asOf: number | undefined; onRefresh: (
 export function TodayNeedsYouRail({
   data,
   asOf,
+  error,
   onRefresh,
 }: {
   data: NeedsYouData | undefined;
   asOf: number | undefined;
+  error?: Error | null;
   onRefresh: () => void;
 }) {
   const rowCount = data ? data.declinedCrew.length + data.staleOffers.length + data.expiringQuotes.length : 0;
@@ -49,7 +51,14 @@ export function TodayNeedsYouRail({
         <h2 className="t-overline text-muted">Needs you</h2>
         <AsOfStamp asOf={asOf} onRefresh={onRefresh} />
       </div>
-      {data === undefined ? (
+      {data === undefined && error ? (
+        <div className="flex items-center gap-2 border-l-2 border-l-t-out pl-2 py-1">
+          <p className="flex-1 text-caption text-t-out">Couldn&apos;t load.</p>
+          <button type="button" onClick={onRefresh} className="text-caption font-medium text-primary underline">
+            Retry
+          </button>
+        </div>
+      ) : data === undefined ? (
         <div className="space-y-2">
           <Skeleton className="h-8 w-full rounded-[var(--r)]" />
           <Skeleton className="h-8 w-full rounded-[var(--r)]" />
@@ -85,6 +94,9 @@ export function TodayNeedsYouRail({
             </li>
           ))}
         </ul>
+      )}
+      {error && data !== undefined && (
+        <p className="mt-2 text-[10px] text-t-out">Couldn&apos;t refresh — showing the last loaded data.</p>
       )}
     </div>
   );

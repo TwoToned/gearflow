@@ -71,7 +71,7 @@ export function useTodayDayRail(
   orgId: string | undefined,
   now: number,
   myProjects: MyProjectForRail[] | undefined,
-): { entries: DayRailEntry[] | undefined; asOf: number | undefined; refresh: () => void } {
+): { entries: DayRailEntry[] | undefined; asOf: number | undefined; error: Error | null; refresh: () => void } {
   const startOfToday = useMemo(() => new Date(now).setHours(0, 0, 0, 0), [now]);
 
   const shifts = useFocusPolledQuery(api.crewDashboard.upcomingShifts, orgId ? { orgId, nowMs: now } : "skip");
@@ -124,6 +124,7 @@ export function useTodayDayRail(
   return {
     entries,
     asOf: shifts.asOf && services.asOf ? Math.min(shifts.asOf, services.asOf) : undefined,
+    error: shifts.error ?? services.error ?? null,
     refresh: () => {
       shifts.refresh();
       services.refresh();

@@ -70,21 +70,19 @@ checklist progress (`n/m`), and assignee avatar. A row dropdown edits, advances 
 The edit dialog covers title, description, status, priority, due date, assignee (ComboboxPicker
 of users + crew), and an inline checklist editor.
 
-## My tasks (`src/app/(app)/my-tasks/page.tsx`)
-A cross-project, personal-scope view: every open task assigned to the current user (directly
-or via their crew record), backed by `myOpenTasks` above. Bespoke card list (mobile-first, one
-column — not a `DataTable`), grouped by due bucket in this order: **Overdue / Today / This week
-/ Later** (undated tasks fall into Later). Each row shows a status-cycle icon (TODO → IN_PROGRESS
-→ DONE, same cycle as `tasks-panel.tsx`), priority dot, due badge (red when overdue), and a link
-through to the task's project. The status-cycle button is only interactive when
-`useCanDo("project", "update")` is true — viewer/warehouse roles get a static (non-clickable)
-icon instead, consistent with the read-only treatment elsewhere. Zero open tasks renders a
-`FlowMascot` all-clear empty state (personality allowed there — it's a true zero-state — but
-never inside the Overdue group itself, per DESIGN.md §9's ban on personality in overdue/alert
-copy). Registered in the sidebar RAIL (directly under Dashboard, no resource gate — personal
-scope, not an org resource) and in `PAGE_COMMANDS` (`searchable: false`). **Sidebar-only** — not
-in the mobile bottom nav, which stays the 5 daily-operator workflows (DESIGN.md §16).
-Test: `src/app/(app)/my-tasks/__tests__/page.smoke.test.tsx`.
+## My tasks — superseded by Today (`src/app/(app)/my-tasks/page.tsx`)
+
+**As of work-layer phase 0.5 (#1242), `/my-tasks` is a pure redirect to
+`/today`.** Everything this section used to describe (the cross-project
+personal-scope task list, backed by `myOpenTasks` above, grouped Overdue /
+Today / Later) now lives on Today — see
+[FEATUREDOCS/79](./79-today.md). The redirect is kept (not a hard delete) so
+old bookmarks/links and ⌘K muscle memory still land somewhere real. Today
+also fixes a real bug the old page had: its Overdue/Today/Later split
+bucketed by the BROWSER's local midnight (`new Date(now).setHours(0,0,0,0)`),
+not the org's timezone — Today buckets in the org's timezone instead
+(`src/lib/today-buckets.ts`).
+Test: `src/app/(app)/my-tasks/__tests__/page.smoke.test.tsx` now just asserts the redirect.
 
 ## Follow-ups (deferred)
 - **Notifications on assignment / due date.** The notification system exists

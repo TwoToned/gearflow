@@ -302,8 +302,8 @@ export default function TodayPage() {
         </div>
 
         <div className="space-y-4">
-          <TodayDayRail entries={dayRail.entries} asOf={dayRail.asOf} onRefresh={dayRail.refresh} />
-          <TodayNeedsYouRail data={needsYou.data} asOf={needsYou.asOf} onRefresh={needsYou.refresh} />
+          <TodayDayRail entries={dayRail.entries} asOf={dayRail.asOf} error={dayRail.error} onRefresh={dayRail.refresh} />
+          <TodayNeedsYouRail data={needsYou.data} asOf={needsYou.asOf} error={needsYou.error} onRefresh={needsYou.refresh} />
         </div>
       </div>
 

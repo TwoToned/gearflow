@@ -58,6 +58,10 @@ schema (`assigned`, `comment_reply`, `due_soon`, `overdue`) are reserved for the
 work-layer program's later phases (`docs/designs/work-layer.md` §10.2) — no
 writer emits them yet.
 
+**Phase 0.5 (#1242, FEATUREDOCS/79):** Today's Triage bucket is a second
+consumer of `listForMe` (polled one-shot, not the bell's live subscription) —
+a mention now surfaces in two places: the bell, and Today's work list.
+
 ### In-app bell
 - **Bell dropdown** (`src/components/layout/notifications.tsx`): reads the
   stored `notifications` table above via `useNotifications()` — mentions only,

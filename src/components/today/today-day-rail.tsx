@@ -32,10 +32,12 @@ function AsOfStamp({ asOf, onRefresh }: { asOf: number | undefined; onRefresh: (
 export function TodayDayRail({
   entries,
   asOf,
+  error,
   onRefresh,
 }: {
   entries: DayRailEntry[] | undefined;
   asOf: number | undefined;
+  error?: Error | null;
   onRefresh: () => void;
 }) {
   return (
@@ -44,7 +46,14 @@ export function TodayDayRail({
         <h2 className="t-overline text-muted">Your day</h2>
         <AsOfStamp asOf={asOf} onRefresh={onRefresh} />
       </div>
-      {entries === undefined ? (
+      {entries === undefined && error ? (
+        <div className="flex items-center gap-2 border-l-2 border-l-t-out pl-2 py-1">
+          <p className="flex-1 text-caption text-t-out">Couldn&apos;t load today&apos;s schedule.</p>
+          <button type="button" onClick={onRefresh} className="text-caption font-medium text-primary underline">
+            Retry
+          </button>
+        </div>
+      ) : entries === undefined ? (
         <div className="space-y-2">
           <Skeleton className="h-10 w-full rounded-[var(--r)]" />
           <Skeleton className="h-10 w-full rounded-[var(--r)]" />
@@ -66,6 +75,9 @@ export function TodayDayRail({
             </li>
           ))}
         </ul>
+      )}
+      {error && entries !== undefined && (
+        <p className="mt-2 text-[10px] text-t-out">Couldn&apos;t refresh — showing the last loaded data.</p>
       )}
     </div>
   );

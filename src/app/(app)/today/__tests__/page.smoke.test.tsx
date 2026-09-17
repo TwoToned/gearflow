@@ -131,4 +131,50 @@ describe("TodayPage (smoke)", () => {
     fireEvent.click(screen.getByTitle("Mark done"));
     expect(updateMock).toHaveBeenCalledWith("t3", { status: "DONE" });
   });
+
+  it("un-done: clicking the checked circle again reverts the task to TODO", () => {
+    tasks = [
+      {
+        id: "t4", title: "Pack the LX truck", status: "TODO", priority: "NORMAL",
+        dueDate: NOW, overdue: false, projectId: "p1", projectName: "Gala Dinner", projectNumber: "260701",
+        assigneeUserId: "u1", assigneeCrewId: null,
+      },
+    ];
+    notifications = [];
+    render(<TodayPage />);
+    fireEvent.click(screen.getByTitle("Mark done"));
+    expect(updateMock).toHaveBeenLastCalledWith("t4", { status: "DONE" });
+    // The row stays visible (struck through) so a mis-click can be corrected —
+    // /my-tasks' own status cycle has no way back once marked DONE.
+    fireEvent.click(screen.getByTitle("Mark not done"));
+    expect(updateMock).toHaveBeenLastCalledWith("t4", { status: "TODO" });
+  });
+
+  it("an empty Today bucket doesn't render its section while Overdue still does", () => {
+    tasks = [
+      {
+        id: "t5", title: "Chase deposit", status: "TODO", priority: "HIGH",
+        dueDate: NOW - 3 * 24 * 60 * 60 * 1000, overdue: true, projectId: "p1", projectName: "Gala Dinner", projectNumber: "260701",
+        assigneeUserId: "u1", assigneeCrewId: null,
+      },
+    ];
+    notifications = [];
+    render(<TodayPage />);
+    expect(screen.getByText(/^Overdue/)).toBeDefined();
+    expect(screen.queryByText(/^Today/)).toBeNull();
+  });
+
+  it("an empty Triage doesn't render its section while Today still does", () => {
+    tasks = [
+      {
+        id: "t6", title: "Confirm venue access", status: "TODO", priority: "NORMAL",
+        dueDate: NOW, overdue: false, projectId: "p1", projectName: "Gala Dinner", projectNumber: "260701",
+        assigneeUserId: "u1", assigneeCrewId: null,
+      },
+    ];
+    notifications = [];
+    render(<TodayPage />);
+    expect(screen.getByText("Confirm venue access")).toBeDefined();
+    expect(screen.queryByText(/^Triage/)).toBeNull();
+  });
 });

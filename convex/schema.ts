@@ -3252,6 +3252,7 @@ export default defineSchema({
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
     incidentReport: v.optional(v.boolean()),
+    quoteExpiring: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])

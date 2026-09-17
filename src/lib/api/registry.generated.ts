@@ -55315,6 +55315,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "quoteExpiring",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "upcomingProject",
         "optional": true,
         "type": "boolean"
@@ -55331,7 +55336,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7ed08b6b579c2fbb",
+    "argsSha": "42b5fff2f0068f21",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55402,6 +55407,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "quoteExpiring",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "upcomingProject",
         "optional": true,
         "type": "boolean"
@@ -55418,7 +55428,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7ed08b6b579c2fbb",
+    "argsSha": "42b5fff2f0068f21",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55499,7 +55509,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "9feacda1d527ddf6",
+    "returnsSha": "bba2f5516a38df4d",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -55557,7 +55567,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "32ae1b825148ecb3",
+    "argsSha": "30c6455ab1dd2268",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -55609,7 +55619,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "e794596905837d93",
+    "argsSha": "5f0edc7a83f2e292",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,

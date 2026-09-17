@@ -225,7 +225,7 @@ describe("self:read / self:write", () => {
     prefs: {
       overdueMaintenance: true, overdueReturn: true, upcomingProject: true,
       pendingInvitation: true, pendingOffers: true, pendingTimesheets: true,
-      flaggedAsset: true, incidentReport: true,
+      flaggedAsset: true, incidentReport: true, quoteExpiring: true,
     },
     actor: ACTOR,
     auditId: "log1",

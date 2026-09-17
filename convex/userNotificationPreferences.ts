@@ -53,6 +53,7 @@ export const create = mutation({
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
     incidentReport: v.optional(v.boolean()),
+    quoteExpiring: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -75,6 +76,7 @@ export const createIfMissing = mutation({
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
     incidentReport: v.optional(v.boolean()),
+    quoteExpiring: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -101,6 +103,7 @@ export const update = mutation({
       pendingTimesheets: v.optional(v.boolean()),
       flaggedAsset: v.optional(v.boolean()),
       incidentReport: v.optional(v.boolean()),
+      quoteExpiring: v.optional(v.boolean()),
       updatedAt: v.optional(v.number()),
     }),
   },
@@ -140,6 +143,7 @@ export const prefFields = {
   pendingTimesheets: v.boolean(),
   flaggedAsset: v.boolean(),
   incidentReport: v.boolean(),
+  quoteExpiring: v.boolean(),
 };
 
 const prefValuesValidator = v.object(prefFields);
@@ -166,7 +170,7 @@ export const mine = query({
  * Upsert the verified caller's preferences by the natural key (their user id). Patches
  * an existing row (leaving non-form columns like lowStock/expiringCert untouched) or
  * inserts a new one at the client-minted `id`. Writes an audit row in the same
- * transaction. The seven booleans are validated by the form's zodResolver + the v.*
+ * transaction. The nine booleans are validated by the form's zodResolver + the v.*
  * arg validators; the row is always keyed on the verified subject, so `id` is only
  * consumed on the create branch.
  */

@@ -86,7 +86,7 @@ test.describe("harness: onboarding happy path (all five wizard screens, four mil
       // added"), which contains the model name as a substring.
       await expect(page.getByText(modelName, { exact: true })).toBeVisible({ timeout: 20000 });
       await page.getByRole("button", { name: "Finish setup" }).click();
-      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
     });
 
     await test.step("Get started checklist shows 1/4 done (the model from step 5)", async () => {

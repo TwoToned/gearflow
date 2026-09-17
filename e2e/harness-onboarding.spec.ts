@@ -43,7 +43,7 @@ test.describe("harness: register / onboarding", () => {
       .click();
     // A fresh registration with no org lands on the create-vs-join fork
     // (/welcome, #1092) rather than an authenticated dashboard directly.
-    await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
+    await expect(page).toHaveURL(/\/(today|welcome)\b/, { timeout: 20000 });
 
     // The first user on a fresh harness has no org yet, so the (app) layout
     // redirects every protected route to /welcome (src/app/(app)/layout.tsx)
@@ -64,14 +64,14 @@ test.describe("harness: register / onboarding", () => {
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
-      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
     }
 
     // Onboarding actually completed (not just a client-side navigation): the
     // (app) layout's org check now passes, and revisiting /setup itself
     // redirects away rather than re-showing the create-org form.
     await page.goto("/setup");
-    await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+    await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
   });
 
   /**
@@ -112,7 +112,7 @@ test.describe("harness: register / onboarding", () => {
         .getByRole("button", { name: /create|register|sign up/i })
         .first()
         .click();
-      await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/(today|welcome)\b/, { timeout: 20000 });
 
       if (new URL(page.url()).pathname === "/welcome") {
         await page.getByRole("button", { name: "Set up a new company" }).click();
@@ -124,7 +124,7 @@ test.describe("harness: register / onboarding", () => {
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
-      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
     });
 
     await test.step("Finish setup checklist reflects exactly what's unset -> 2 of 4 done", async () => {

@@ -90,7 +90,7 @@ test.describe("harness: org switcher (cross-tenant isolation)", () => {
       // accepted!") is a case-insensitive substring match of the heading
       // text too, and getByText's default matching is case-insensitive.
       await expect(page.getByRole("heading", { name: "Invitation Accepted" })).toBeVisible({ timeout: 20000 });
-      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
     });
 
     await test.step("switched into org 2 (post-accept active org) -> models list shows ONLY org 2's model", async () => {
@@ -108,7 +108,7 @@ test.describe("harness: org switcher (cross-tenant isolation)", () => {
     await test.step("switch back to org 1 via the Account menu -> models list shows ONLY org 1's model", async () => {
       await page.getByRole("button", { name: "Account menu" }).click();
       await page.getByRole("menuitem", { name: org1Name }).click();
-      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
 
       await page.goto("/assets/models");
       await expect(page.getByText(model1, { exact: true }).and(page.locator(":visible"))).toBeVisible({

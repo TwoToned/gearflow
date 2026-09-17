@@ -80,7 +80,7 @@ test.describe("harness: invite / join path", () => {
         await expect(inviteePage.getByRole("heading", { name: "Invitation Accepted" })).toBeVisible({
           timeout: 20000,
         });
-        await expect(inviteePage).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+        await expect(inviteePage).toHaveURL(/\/today\b/, { timeout: 20000 });
         // The org this member landed in is the one they were invited to, not
         // a bare authenticated shell with no org context.
         await expect(inviteePage.getByText(orgName)).toBeVisible({ timeout: 20000 });

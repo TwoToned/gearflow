@@ -47,7 +47,7 @@ test.describe("harness: create inventory", () => {
         .click();
       // A fresh registration with no org lands on the create-vs-join fork
       // (/welcome, #1092) rather than an authenticated dashboard directly.
-      await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/(today|welcome)\b/, { timeout: 20000 });
     });
 
     await test.step("complete onboarding (create the org) if needed", async () => {
@@ -66,7 +66,7 @@ test.describe("harness: create inventory", () => {
         await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
-        await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+        await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
       }
     });
 

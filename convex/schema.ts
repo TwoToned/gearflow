@@ -3355,17 +3355,27 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_scopeKey", ["organizationId", "scopeKey"]),
 
-  // ProjectTask
+  // ProjectTask — widened in place for the work-layer program (#1243, Phase 1,
+  // design §10.1). Convex cannot rename a table and @convex-dev/migrations is
+  // not installed, so widening (not a workItems copy) is what preserves every
+  // row id, audit row, deep link and saved view. `checklist` stays for one
+  // release (expand-contract) until the backfill migration retires it.
   projectTasks: defineTable({
     id: v.string(),
     organizationId: v.string(),
-    projectId: v.string(),
+    // Optional as of Phase 1 — personal and client-scoped work has no project.
+    // Every pre-Phase-1 row has this set; nothing back-fills it to optional,
+    // the column itself just now permits absence.
+    projectId: v.optional(v.string()),
     title: v.string(),
     description: v.optional(v.string()),
     status: v.optional(enums.ProjectTaskStatus),
     priority: v.optional(enums.ProjectTaskPriority),
     dueDate: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
+    // Retained for exactly one release after the checklist backfill migration
+    // ships (expand-contract — Convex functions deploy before the app image),
+    // then dropped. New rows should use subtasks (parentId), never this.
     checklist: v.optional(v.any()),
     assigneeUserId: v.optional(v.string()),
     assigneeCrewId: v.optional(v.string()),
@@ -3373,6 +3383,26 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
+    // — Phase 1 additions (design §10.1) —
+    kind: v.optional(enums.ProjectTaskKind), // absent = "task"
+    stage: v.optional(enums.ProjectTaskStage),
+    // One level of subtasks — replaces `checklist`. A child inherits
+    // projectId/organizationId from its parent and has no stage/sourceKey.
+    parentId: v.optional(v.string()),
+    startDate: v.optional(v.number()), // org-tz midnight; hides the row until then
+    dueTime: v.optional(v.string()), // "HH:mm" in the org timezone
+    scheduledStart: v.optional(v.number()), // the agenda block (phase 1 Today)
+    scheduledEnd: v.optional(v.number()),
+    snoozedUntil: v.optional(v.number()),
+    estimateMinutes: v.optional(v.number()),
+    tags: v.optional(v.array(v.string())), // free-form strings, FEATUREDOCS/26 shape — no tag table
+    // Set only when a human promotes a derived Triage signal into a real row
+    // (§9) — deterministic, names the underlying entity (e.g.
+    // "quote:expiring:<quoteId>"). Never set by anything else.
+    sourceKey: v.optional(v.string()),
+    isPrivate: v.optional(v.boolean()),
+    // Set when seeded from a workTemplates row on a lifecycle transition (§8.2).
+    templateId: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -3383,7 +3413,38 @@ export default defineSchema({
     .index("by_organizationId_projectId", ["organizationId", "projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_assigneeUserId_status", ["assigneeUserId", "status"])
-    .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"]),
+    .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"])
+    // Org-prefixed — users are multi-org, so no index may start at a bare
+    // assignee id (R-8.4.3: every global-index read must be org-checked; a
+    // composite index that starts with organizationId sidesteps the question
+    // entirely for this read shape).
+    .index("by_organizationId_assigneeUserId_status", ["organizationId", "assigneeUserId", "status"])
+    .index("by_organizationId_assigneeCrewId_status", ["organizationId", "assigneeCrewId", "status"])
+    .index("by_organizationId_status_dueDate", ["organizationId", "status", "dueDate"])
+    .index("by_parentId", ["parentId"])
+    .searchIndex("search_title", { searchField: "title", filterFields: ["organizationId"] }),
+
+  // WorkSignalState — a human's decision (snoozed/dismissed/promoted) about a
+  // DERIVED Triage signal (#1243, design §10.3/§9). Nothing else about a
+  // signal is ever stored — this table exists only so a human's snooze or
+  // dismissal survives across reads. Rows are per-user: one PM dismissing a
+  // signal never hides it from another. Pruned after 90 days of the
+  // underlying sourceKey producing no signal (same pattern as
+  // notificationDismissals).
+  workSignalStates: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    sourceKey: v.string(), // deterministic — names the underlying row (§9)
+    state: v.union(v.literal("snoozed"), v.literal("dismissed"), v.literal("promoted")),
+    snoozedUntil: v.optional(v.number()),
+    promotedWorkItemId: v.optional(v.string()), // set when promoted to a real projectTasks row
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId_userId_sourceKey", ["organizationId", "userId", "sourceKey"])
+    .index("by_organizationId_sourceKey", ["organizationId", "sourceKey"]),
 
   // SavedTableView
   savedTableViews: defineTable({

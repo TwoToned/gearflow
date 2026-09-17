@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES } from "./workVocabulary";
+import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES } from "./workVocabulary";
 
 /**
  * Convex validators for the 65 Prisma enums.
@@ -461,6 +461,8 @@ export const CustomFieldType = v.union(
 // definition of these unions — do not hand-add a literal here again.
 export const ProjectTaskStatus = v.union(...WORK_ITEM_STATUSES.map((s) => v.literal(s)));
 export const ProjectTaskPriority = v.union(...WORK_ITEM_PRIORITIES.map((p) => v.literal(p)));
+export const ProjectTaskKind = v.union(...WORK_ITEM_KINDS.map((k) => v.literal(k)));
+export const ProjectTaskStage = v.union(...WORK_STAGES.map((s) => v.literal(s)));
 
 // ─── WS1 Finance (#940) — Quote/Invoice entities, client payment profiles, Xero ───
 

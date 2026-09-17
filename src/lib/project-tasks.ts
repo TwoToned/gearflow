@@ -11,10 +11,15 @@
 export type {
   WorkItemStatus as ProjectTaskStatus,
   WorkItemPriority as ProjectTaskPriority,
+  WorkItemKind as ProjectTaskKind,
+  WorkStage as ProjectTaskStage,
 } from "../../convex/lib/workVocabulary";
 export {
   WORK_ITEM_STATUS_LABELS as TASK_STATUS_LABELS,
   WORK_ITEM_PRIORITY_LABELS as TASK_PRIORITY_LABELS,
+  WORK_ITEM_KIND_LABELS as TASK_KIND_LABELS,
+  WORK_STAGE_LABELS as TASK_STAGE_LABELS,
+  WORK_STAGES as TASK_STAGES,
 } from "../../convex/lib/workVocabulary";
 
 /** A single sub-step stored inline in ProjectTask.checklist (JSON). */

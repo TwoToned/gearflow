@@ -150,6 +150,86 @@ describe("projectTasksWrites", () => {
       }),
     ).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  test("stage defaults from the project's lifecycle status when not given explicitly", async () => {
+    const t = makeT(); await seed(t); // seeded project status is CONFIRMED → stage "prep"
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "t1", projectId: "P1", orgId: ORG, title: "X", now: NOW, actor, auditId: "a1",
+    });
+    expect((await tasks(t))[0].stage).toBe("prep");
+  });
+
+  test("an explicit stage wins over the project-status default", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "t1", projectId: "P1", orgId: ORG, title: "X", stage: "close", now: NOW, actor, auditId: "a1",
+    });
+    expect((await tasks(t))[0].stage).toBe("close");
+  });
+
+  test("quick-add: no projectId creates a personal task with no project, no stage default, sortOrder 0", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "t1", orgId: ORG, title: "Call the venue", now: NOW, actor, auditId: "a1",
+    });
+    const doc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "t1")).unique());
+    expect(doc?.projectId).toBeUndefined();
+    expect(doc?.stage).toBeUndefined();
+    expect(doc?.sortOrder).toBe(0);
+    expect(doc?.organizationId).toBe(ORG);
+  });
+
+  test("a subtask (parentId) inherits the parent's project/org, carries no stage, and sorts among siblings", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "parent", projectId: "P1", orgId: ORG, title: "Load in", stage: "load_in", now: NOW, actor, auditId: "a1",
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "child1", parentId: "parent", orgId: ORG, title: "Step 1", now: NOW, actor, auditId: "a2",
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "child2", parentId: "parent", orgId: ORG, title: "Step 2", now: NOW, actor, auditId: "a3",
+    });
+    const children = (await t.run((ctx) =>
+      ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", "parent")).collect(),
+    )).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    expect(children.map((c) => [c.id, c.projectId, c.organizationId, c.stage, c.sortOrder])).toEqual([
+      ["child1", "P1", ORG, undefined, 1],
+      ["child2", "P1", ORG, undefined, 2],
+    ]);
+  });
+
+  test("creating a subtask under a task from another org is rejected", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "foreign_parent", organizationId: OTHER, title: "Foreign", createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+        id: "child1", parentId: "foreign_parent", orgId: ORG, title: "Step 1", now: NOW, actor, auditId: "a1",
+      }),
+    ).rejects.toThrow(/Parent task not found/i);
+  });
+
+  test("updateNative can set kind, and ignores a stage patch on a subtask", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "parent", organizationId: ORG, projectId: "P1", title: "Parent", stage: "prep", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "child", organizationId: ORG, projectId: "P1", title: "Child", parentId: "parent", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "parent", orgId: ORG, kind: "follow_up", stage: "show", now: NOW, actor, auditId: "a1",
+    });
+    const parentDoc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "parent")).unique());
+    expect(parentDoc?.kind).toBe("follow_up");
+    expect(parentDoc?.stage).toBe("show");
+
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "child", orgId: ORG, stage: "show", now: NOW, actor, auditId: "a2",
+    });
+    const childDoc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "child")).unique());
+    expect(childDoc?.stage).toBeUndefined(); // stage patch silently ignored on a subtask
+  });
 });
 
 describe("projectTasks read composites", () => {

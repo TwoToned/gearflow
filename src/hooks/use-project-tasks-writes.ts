@@ -4,7 +4,7 @@ import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
-import type { ProjectTaskStatus, ProjectTaskPriority, ChecklistItem } from "@/lib/project-tasks";
+import type { ProjectTaskStatus, ProjectTaskPriority, ProjectTaskKind, ProjectTaskStage, ChecklistItem } from "@/lib/project-tasks";
 
 /**
  * Browser-direct PROJECT-TASK writes (Phase 3 — replaces the create/update/delete/
@@ -23,6 +23,7 @@ export type ProjectTaskInput = {
   assigneeUserId?: string | null;
   assigneeCrewId?: string | null;
   checklist?: ChecklistItem[] | null;
+  kind?: ProjectTaskKind;
 };
 type TaskData = ProjectTaskInput;
 
@@ -55,11 +56,19 @@ export function useProjectTaskWrites() {
   };
 
   return {
-    create: async (data: { projectId: string; title: string } & TaskData): Promise<void> => {
-      const { projectId, dueDate, title, ...rest } = data;
+    // projectId absent = a personal task (Phase 1 quick-add, no project). parentId
+    // set = a subtask — the mutation inherits its project/org from the parent and
+    // ignores any projectId/stage passed alongside it.
+    create: async (
+      data: { projectId?: string; parentId?: string; stage?: ProjectTaskStage; title: string } & TaskData,
+    ): Promise<string> => {
+      const { projectId, parentId, stage, dueDate, title, ...rest } = data;
+      const id = createId();
       await createM({
-        id: createId(),
+        id,
         projectId,
+        parentId,
+        stage,
         orgId: requireOrg(),
         title,
         ...rest,
@@ -68,8 +77,9 @@ export function useProjectTaskWrites() {
         actor: actor(),
         auditId: createId(),
       });
+      return id;
     },
-    update: async (id: string, data: TaskData): Promise<void> => {
+    update: async (id: string, data: TaskData & { stage?: ProjectTaskStage | null }): Promise<void> => {
       const { dueDate, ...rest } = data;
       await updateM({
         id,

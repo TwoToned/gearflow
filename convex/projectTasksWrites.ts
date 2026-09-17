@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import * as enums from "./lib/validators";
+import { defaultStageForProjectStatus, type WorkStage } from "./lib/workVocabulary";
 
 /**
  * Native PROJECT-TASK write mutations (Phase 3 browser-direct — replaces the
@@ -96,15 +97,22 @@ const taskWriteFields = {
   assigneeUserId: v.optional(v.union(v.string(), v.null())),
   assigneeCrewId: v.optional(v.union(v.string(), v.null())),
   checklist: v.optional(v.union(v.array(v.any()), v.null())),
+  kind: v.optional(enums.ProjectTaskKind),
 };
 
 export const createNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
     id: v.string(),
-    projectId: v.string(),
+    // Absent = a personal task (Phase 1, #1243 — quick-add without a project).
+    // Ignored when `parentId` is set: a subtask always inherits its parent's project.
+    projectId: v.optional(v.string()),
+    // A subtask — inherits organizationId/projectId from the parent and never
+    // carries its own `stage` (design doc §10.1: "a child ... has no stage").
+    parentId: v.optional(v.string()),
     orgId: v.string(),
     title: v.string(),
+    stage: v.optional(enums.ProjectTaskStage),
     ...taskWriteFields,
     now: v.number(),
     actor: actorValidator,
@@ -119,19 +127,39 @@ export const createNative = mutation({
     const title = a.title.trim();
     if (!title) throw new ConvexError("Task title is required");
 
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).first();
-    if (!project || project.organizationId !== a.orgId) throw new ConvexError("Project not found");
-
     await assertAssigneeInOrg(ctx, a.orgId, a.assigneeUserId, a.assigneeCrewId);
 
-    const existing = await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect();
-    const sortOrder = existing.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0) + 1;
+    let projectId: string | undefined;
+    let stage: WorkStage | undefined;
+    let sortOrder: number;
+
+    if (a.parentId) {
+      const parent = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.parentId as string)).first();
+      if (!parent || parent.organizationId !== a.orgId) throw new ConvexError("Parent task not found");
+      projectId = parent.projectId; // inherited, never the caller's own projectId
+      stage = undefined; // a subtask never carries its own stage
+      const siblings = await ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", a.parentId as string)).collect();
+      sortOrder = siblings.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0) + 1;
+    } else if (a.projectId) {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId as string)).first();
+      if (!project || project.organizationId !== a.orgId) throw new ConvexError("Project not found");
+      projectId = a.projectId;
+      stage = a.stage ?? (project.status ? defaultStageForProjectStatus(project.status) : undefined);
+      const existing = await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId as string)).collect();
+      sortOrder = existing.reduce((max, t) => Math.max(max, t.sortOrder ?? 0), 0) + 1;
+    } else {
+      // A personal task — no project, no parent.
+      projectId = undefined;
+      stage = a.stage;
+      sortOrder = 0;
+    }
 
     const status = a.status ?? "TODO";
     await ctx.db.insert("projectTasks", {
       id: a.id,
       organizationId: a.orgId,
-      projectId: a.projectId,
+      projectId,
+      parentId: a.parentId ?? undefined,
       title,
       description: a.description?.trim() || undefined,
       status,
@@ -140,6 +168,8 @@ export const createNative = mutation({
       assigneeUserId: a.assigneeUserId || undefined,
       assigneeCrewId: a.assigneeCrewId || undefined,
       checklist: normaliseChecklist(a.checklist) ?? undefined,
+      kind: a.kind,
+      stage,
       createdById: actor.userId,
       completedAt: status === "DONE" ? a.now : undefined,
       sortOrder,
@@ -147,7 +177,7 @@ export const createNative = mutation({
       updatedAt: a.now,
     });
 
-    await logTask(ctx, { orgId: a.orgId, projectId: a.projectId, actor, auditId: a.auditId, now: a.now, action: "created", entityId: a.id, entityName: title, summary: `Added task "${title}"` });
+    await logTask(ctx, { orgId: a.orgId, projectId, actor, auditId: a.auditId, now: a.now, action: "created", entityId: a.id, entityName: title, summary: `Added task "${title}"` });
     return { id: a.id };
   },
 });
@@ -158,6 +188,7 @@ export const updateNative = mutation({
     id: v.string(),
     orgId: v.string(),
     title: v.optional(v.string()),
+    stage: v.optional(v.union(enums.ProjectTaskStage, v.null())),
     ...taskWriteFields,
     now: v.number(),
     actor: actorValidator,
@@ -186,6 +217,10 @@ export const updateNative = mutation({
     if (a.assigneeUserId !== undefined) patch.assigneeUserId = a.assigneeUserId || undefined;
     if (a.assigneeCrewId !== undefined) patch.assigneeCrewId = a.assigneeCrewId || undefined;
     if (a.checklist !== undefined) patch.checklist = normaliseChecklist(a.checklist);
+    if (a.kind !== undefined) patch.kind = a.kind;
+    // A subtask never carries its own stage (design doc §10.1) — silently ignore a
+    // stage patch on a child row rather than erroring on what's a client no-op.
+    if (a.stage !== undefined && !doc.parentId) patch.stage = a.stage ?? undefined;
     if (a.status !== undefined && a.status !== doc.status) {
       patch.completedAt = a.status === "DONE" ? a.now : undefined;
     }

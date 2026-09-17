@@ -31577,17 +31577,21 @@ export const OPENAPI_DOCUMENT = {
                       "checklist": {},
                       "description": {},
                       "dueDate": {},
+                      "kind": {},
+                      "parentId": {
+                        "type": "string"
+                      },
                       "priority": {},
                       "projectId": {
                         "type": "string"
                       },
+                      "stage": {},
                       "status": {},
                       "title": {
                         "type": "string"
                       }
                     },
                     "required": [
-                      "projectId",
                       "title"
                     ],
                     "additionalProperties": false
@@ -31739,7 +31743,9 @@ export const OPENAPI_DOCUMENT = {
                       "id": {
                         "type": "string"
                       },
+                      "kind": {},
                       "priority": {},
+                      "stage": {},
                       "status": {},
                       "title": {
                         "type": "string"

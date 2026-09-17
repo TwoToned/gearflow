@@ -42708,6 +42708,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "kind",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -42718,14 +42723,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "parentId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "priority",
         "optional": true,
         "type": "union"
       },
       {
         "name": "projectId",
-        "optional": false,
+        "optional": true,
         "type": "string"
+      },
+      {
+        "name": "stage",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "status",
@@ -42739,7 +42754,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "e9da352b720c009e",
+    "argsSha": "2b4ce3f948d3f961",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42865,6 +42880,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "kind",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -42880,6 +42900,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       },
       {
+        "name": "stage",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "status",
         "optional": true,
         "type": "union"
@@ -42891,7 +42916,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c3a54983a7b2d46b",
+    "argsSha": "7e519196d0119bed",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

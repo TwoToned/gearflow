@@ -17,6 +17,10 @@ export interface WarehouseUndoAnnouncement {
   performUndo: () => Promise<void>;
 }
 
+/** A warehouse write result widened with the exact guarded reverse trigger the
+ *  toast's own Undo button calls — present only when the toast offered Undo. */
+export type AnnouncedWrite<T> = T & { scanUndo?: () => Promise<void> };
+
 /**
  * #1160 → #1222 — surface a status the server just advanced on its own, AND an
  * Undo action for the six browser-direct warehouse writes (`use-warehouse-writes.ts`,
@@ -27,11 +31,17 @@ export interface WarehouseUndoAnnouncement {
  * #1160 status toast must never both fire (design doc's UI spec) — this is the
  * ONE place that decides, folding the status move into the same toast's title
  * (`Deployed 12 items · job moved to Deployed`) rather than showing two.
+ *
+ * #1223 — the returned `scanUndo`, when present, IS the toast action's own
+ * `onClick` (same closure, same double-tap guard) — the scan history strip
+ * (Q6) plugs a `ScanHistoryEntry.undo` straight into it rather than
+ * re-deriving a second reverse trigger, so the toast and the strip can never
+ * disagree about whether an undo already fired.
  */
 export function announceWarehouseWrite<T extends { autoStatus?: string | null }>(
   res: T,
   undo: WarehouseUndoAnnouncement,
-): T {
+): AnnouncedWrite<T> {
   const statusCopy = autoStatusToast(res.autoStatus);
   const title = statusCopy
     ? `${undo.doneTitle} · ${statusCopy.title.charAt(0).toLowerCase()}${statusCopy.title.slice(1)}`
@@ -57,5 +67,5 @@ export function announceWarehouseWrite<T extends { autoStatus?: string | null }>
     action: undo.canUndo ? { label: "Undo", onClick: onUndoClick } : undefined,
   });
 
-  return res;
+  return { ...res, scanUndo: undo.canUndo ? onUndoClick : undefined };
 }

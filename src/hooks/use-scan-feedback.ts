@@ -4,6 +4,47 @@ import { useCallback, useEffect, useState } from "react";
 import { playScanFeedback, playScanHaptic, type ScanFeedbackKind } from "@/lib/scan-feedback";
 
 /**
+ * One scan verdict for the scan history strip (#1223, D6 — in-memory, per
+ * session, not persisted). `label` is what was scanned as the operator would
+ * say it ("SM58 · A-1042"); `outcome` is the verdict in words ("Prepped",
+ * "Already deployed"). `undo`, when present, must be the EXACT reverse
+ * trigger the write's own toast Undo button calls (e.g.
+ * `AnnouncedWrite.scanUndo` from `warehouse-undo-toast.ts`) — never a second,
+ * independently-derived reverse, so the strip and the toast can never
+ * disagree about whether an undo already fired.
+ */
+export interface ScanHistoryEntry {
+  label: string;
+  outcome: string;
+  undo?: { label: string; run: () => void | Promise<void> };
+}
+
+/** A recorded entry, stamped with its verdict kind and wall-clock time. */
+export interface ScanHistoryRecord extends ScanHistoryEntry {
+  kind: ScanFeedbackKind;
+  at: number;
+}
+
+/** The strip shows at most the last five scans (spec: "the last five"). */
+const MAX_HISTORY_ENTRIES = 5;
+
+/**
+ * Among a newest-first list, strip `undo` from every entry except the single
+ * newest one that carries it — "a strip full of Undo buttons invites undoing
+ * the wrong thing" (design doc). Pure so it can run on every render cheaply
+ * (at most 5 entries).
+ */
+function exposeNewestUndoOnly(entries: ScanHistoryRecord[]): ScanHistoryRecord[] {
+  let seenUndo = false;
+  return entries.map((entry) => {
+    if (!entry.undo) return entry;
+    if (seenUndo) return { ...entry, undo: undefined };
+    seenUndo = true;
+    return entry;
+  });
+}
+
+/**
  * localStorage key for the scan-feedback toggle. Deliberately **not** scoped to
  * the signed-in user (unlike `usePersistentPref`) — warehouse terminals are
  * shared devices, and the "feedback on/off" preference belongs to the
@@ -42,12 +83,16 @@ function readEnabled(): boolean {
 export function useScanFeedback(): {
   enabled: boolean;
   toggle: () => void;
-  play: (kind: ScanFeedbackKind) => void;
+  play: (kind: ScanFeedbackKind, entry?: ScanHistoryEntry) => void;
+  /** Last five scan verdicts, newest first (#1223). Recording is independent
+   *  of `enabled` — it's a visual memory aid, not audio/haptic feedback. */
+  entries: ScanHistoryRecord[];
 } {
   // Initialise to the default so server and first client render agree — reading
   // localStorage in the initializer would diverge from SSR and throw a hydration
   // mismatch. The effect below syncs the persisted value in right after mount.
   const [enabled, setEnabled] = useState(DEFAULT_ENABLED);
+  const [entries, setEntries] = useState<ScanHistoryRecord[]>([]);
 
   useEffect(() => {
     setEnabled(readEnabled());
@@ -68,13 +113,17 @@ export function useScanFeedback(): {
   }, []);
 
   const play = useCallback(
-    (kind: ScanFeedbackKind) => {
-      if (!enabled) return;
-      playScanFeedback(kind);
-      playScanHaptic(kind);
+    (kind: ScanFeedbackKind, entry?: ScanHistoryEntry) => {
+      if (enabled) {
+        playScanFeedback(kind);
+        playScanHaptic(kind);
+      }
+      if (entry) {
+        setEntries((prev) => [{ ...entry, kind, at: Date.now() }, ...prev].slice(0, MAX_HISTORY_ENTRIES));
+      }
     },
     [enabled],
   );
 
-  return { enabled, toggle, play };
+  return { enabled, toggle, play, entries: exposeNewestUndoOnly(entries) };
 }

@@ -62,4 +62,57 @@ describe("useScanFeedback", () => {
     const { result } = renderHook(() => useScanFeedback());
     expect(result.current.enabled).toBe(true);
   });
+
+  // #1223 — scan history strip
+  describe("entries", () => {
+    it("an entry-less play() adds nothing", () => {
+      const { result } = renderHook(() => useScanFeedback());
+      act(() => result.current.play("success"));
+      expect(result.current.entries).toEqual([]);
+    });
+
+    it("records an entry, newest first", () => {
+      const { result } = renderHook(() => useScanFeedback());
+      act(() => result.current.play("success", { label: "A", outcome: "Prepped" }));
+      act(() => result.current.play("error", { label: "B", outcome: "Failed" }));
+      expect(result.current.entries.map((e) => e.label)).toEqual(["B", "A"]);
+      expect(result.current.entries[0].kind).toBe("error");
+    });
+
+    it("records regardless of the audio/haptic enabled flag", () => {
+      const { result } = renderHook(() => useScanFeedback());
+      act(() => result.current.toggle()); // -> disabled
+      act(() => result.current.play("success", { label: "A", outcome: "Prepped" }));
+      expect(result.current.entries).toHaveLength(1);
+      expect(playScanFeedbackMock).not.toHaveBeenCalled();
+    });
+
+    it("caps at 5, dropping the oldest", () => {
+      const { result } = renderHook(() => useScanFeedback());
+      for (let i = 0; i < 7; i++) {
+        act(() => result.current.play("success", { label: `#${i}`, outcome: "Prepped" }));
+      }
+      expect(result.current.entries).toHaveLength(5);
+      expect(result.current.entries.map((e) => e.label)).toEqual(["#6", "#5", "#4", "#3", "#2"]);
+    });
+
+    it("exposes undo only on the newest carrier", () => {
+      const { result } = renderHook(() => useScanFeedback());
+      const olderUndo = { label: "Undo", run: vi.fn() };
+      const newerUndo = { label: "Undo", run: vi.fn() };
+      act(() => result.current.play("success", { label: "A", outcome: "Deployed", undo: olderUndo }));
+      act(() => result.current.play("success", { label: "B", outcome: "Deployed", undo: newerUndo }));
+      act(() => result.current.play("success", { label: "C", outcome: "Prepped" }));
+
+      // Newest overall (C) has no undo of its own; the newest ENTRY that
+      // carries one (B) keeps it, and the older one (A) has it stripped.
+      const [c, b, a] = result.current.entries;
+      expect(c.label).toBe("C");
+      expect(c.undo).toBeUndefined();
+      expect(b.label).toBe("B");
+      expect(b.undo).toBe(newerUndo);
+      expect(a.label).toBe("A");
+      expect(a.undo).toBeUndefined();
+    });
+  });
 });

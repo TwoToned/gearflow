@@ -5,7 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import { useCanDo } from "@/lib/use-permissions";
-import { announceWarehouseWrite, countLabel } from "@/lib/warehouse-undo-toast";
+import { announceWarehouseWrite, countLabel, type AnnouncedWrite } from "@/lib/warehouse-undo-toast";
 
 type ReturnCondition = "GOOD" | "DAMAGED" | "MISSING";
 
@@ -94,7 +94,7 @@ export function useWarehouseWrites() {
       // hatch (issue #794 follow-up), mirroring the kit prep dialog's UX.
       items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }>,
       includeAccessories = true,
-    ): Promise<{ updatedLineIds: string[]; autoStatus: string | null }> => {
+    ): Promise<AnnouncedWrite<{ updatedLineIds: string[]; autoStatus: string | null }>> => {
       const org = requireOrg();
       const res = await checkOutItemsM({
         orgId: org,
@@ -152,7 +152,7 @@ export function useWarehouseWrites() {
     checkOutKit: async (
       projectId: string,
       kitId: string,
-    ): Promise<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }> => {
+    ): Promise<AnnouncedWrite<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }>> => {
       const org = requireOrg();
       const res = await checkOutKitM({ orgId: org, projectId, kitId, auditId: createId(), now: Date.now(), actor: actor() });
       const kitName = await fetchKitName(kitId);
@@ -177,7 +177,7 @@ export function useWarehouseWrites() {
     checkOutKitsBatch: async (
       projectId: string,
       kitIds: string[],
-    ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }> => {
+    ): Promise<AnnouncedWrite<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }>> => {
       const org = requireOrg();
       const res = await checkOutKitsBatchM({
         orgId: org,
@@ -250,7 +250,7 @@ export function useWarehouseWrites() {
     checkInItems: async (
       projectId: string,
       items: Array<{ lineItemId: string; assetId?: string; returnCondition: ReturnCondition; quantity?: number; notes?: string }>,
-    ): Promise<{ updatedLineIds: string[]; autoStatus: string | null }> => {
+    ): Promise<AnnouncedWrite<{ updatedLineIds: string[]; autoStatus: string | null }>> => {
       const org = requireOrg();
       const res = await checkInItemsM({
         orgId: org,
@@ -332,7 +332,7 @@ export function useWarehouseWrites() {
       projectId: string,
       kitId: string,
       returnCondition: ReturnCondition = "GOOD",
-    ): Promise<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }> => {
+    ): Promise<AnnouncedWrite<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }>> => {
       const org = requireOrg();
       const res = await checkInKitM({ orgId: org, projectId, kitId, returnCondition, auditId: createId(), now: Date.now(), actor: actor() });
       const kitName = await fetchKitName(kitId);
@@ -357,7 +357,7 @@ export function useWarehouseWrites() {
     checkInKitsBatch: async (
       projectId: string,
       kits: Array<{ kitId: string; returnCondition: ReturnCondition }>,
-    ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }> => {
+    ): Promise<AnnouncedWrite<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }>> => {
       const org = requireOrg();
       const res = await checkInKitsBatchM({
         orgId: org,

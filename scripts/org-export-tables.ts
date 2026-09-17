@@ -133,6 +133,9 @@ export const FILTER_TABLES = [
   { table: "commentThreads", orgField: "orgId" },
   { table: "comments", orgField: "orgId" },
   { table: "reviewMarkers", orgField: "orgId" },
+  // Work-layer phase 0 (#1241) — org-prefixed composite indexes only, no plain
+  // by_organizationId index (work-layer.md §10.2), so this is a filtered scan.
+  { table: "notifications", orgField: "organizationId" },
 ] as const;
 
 /**
@@ -250,7 +253,7 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1105 (D1): +1 — orgActivationDismissals (DIRECT, per-user "Get started"
 // activation-checklist dismissal — same export posture as orgSetupDismissals).
 // #1230 (Phase 4): -1 — projectUnlockSessions deleted, no replacement table.
-export const EXPECTED_TABLE_COUNT = 119;
+export const EXPECTED_TABLE_COUNT = 120;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

@@ -3252,6 +3252,16 @@ export default defineSchema({
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
     incidentReport: v.optional(v.boolean()),
+    // Work-layer phase 0 (#1241, work-layer.md §10.2) — email opt-in for the new
+    // stored `notifications` types. Schema-only for now, same posture as
+    // lowStock/expiringCert above: not yet in prefFields/the settings form or the
+    // digest sender, which still only reads the eight fields above. Wiring these
+    // into the 15-minute digest cron is a later phase's job, not this one's.
+    mentioned: v.optional(v.boolean()),
+    assigned: v.optional(v.boolean()),
+    commentReply: v.optional(v.boolean()),
+    dueSoon: v.optional(v.boolean()),
+    overdue: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
@@ -3270,6 +3280,34 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
     .index("by_organizationId_sentAt", ["organizationId", "sentAt"]),
+
+  // Notification — work-layer phase 0 (#1241, docs/designs/work-layer.md §10.2).
+  // The ONE thing this phase stores that it did not before: Convex cannot index
+  // inside commentThreads.mentionUserIds, so nothing could answer "who was
+  // mentioned" until a mention is written as a durable per-user row. Written
+  // INSIDE the mutation that causes it (the mention hook in convex/collaboration.ts)
+  // so the comment and the notification commit together or not at all — unlike
+  // logActivity, which is best-effort. All three lookup indexes are org-prefixed:
+  // users are multi-org, so no index may start at userId alone (R-8.4.3).
+  notifications: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    type: v.string(), // mentioned | assigned | comment_reply | due_soon | overdue
+    entityType: v.string(),
+    entityId: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    href: v.string(),
+    dedupeKey: v.string(), // one notification per event — see by_organizationId_dedupeKey
+    readAt: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId_userId_readAt", ["organizationId", "userId", "readAt"])
+    .index("by_organizationId_userId_createdAt", ["organizationId", "userId", "createdAt"])
+    .index("by_organizationId_dedupeKey", ["organizationId", "dedupeKey"]),
 
   // Phase 6b — idempotency ledger for Convex-scheduled email side-effects.
   // One row per delivered (or in-flight) email, keyed by a caller-supplied

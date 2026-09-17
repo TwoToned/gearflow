@@ -32,6 +32,9 @@ import { Label } from "@/components/ui/label";
 import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
+import { useDateMoveGate } from "@/hooks/use-date-move-gate";
+import { DateMoveImpactDialog } from "@/components/projects/date-move-impact-dialog";
+import { getProjectWindowDates } from "@/lib/project-window";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { TagInput } from "@/components/ui/tag-input";
@@ -374,6 +377,20 @@ export function ProjectWizard({
     },
   });
 
+  // #1227 (Q3 of the QOL sweep) — non-blocking preview: does moving THIS
+  // project's dates strand another job's gear? Only meaningful in edit mode
+  // (create has no "before" window to compare against — currentWindow is
+  // {null,null}, which the hook's own no-op guard treats as "always moved",
+  // so the call site below skips it for create entirely rather than relying
+  // on that).
+  const dateMoveGate = useDateMoveGate<ProjectFormValues>(
+    orgId,
+    project?.id ?? "",
+    project?.status ?? undefined,
+    project ? resolveWindowMs(project) : { start: null, end: null },
+    (data) => mutation.mutate(data),
+  );
+
   const next = async () => {
     const ok = await form.trigger(STEPS[step].fields);
     // Project code is required (schema allows blank for auto-gen, so enforce here).
@@ -422,7 +439,16 @@ export function ProjectWizard({
         })}
       </ol>
 
-      <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="mt-6 grid gap-6 lg:grid-cols-[1fr_280px]">
+      <form
+        onSubmit={form.handleSubmit((d) => {
+          if (isEditing) {
+            void dateMoveGate.requestSave(resolveWindowMs(d), d);
+          } else {
+            mutation.mutate(d);
+          }
+        })}
+        className="mt-6 grid gap-6 lg:grid-cols-[1fr_280px]"
+      >
         {/* Step content */}
         <div className="rounded-[var(--r-lg)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
           <h2
@@ -583,13 +609,21 @@ export function ProjectWizard({
             {step < STEPS.length - 1 ? (
               <Button type="button" variant="primary" onClick={next}>Continue <ArrowRight className="h-4 w-4" /></Button>
             ) : (
-              <Button type="submit" variant="halo" disabled={mutation.isPending}>
-                {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              <Button type="submit" variant="halo" disabled={mutation.isPending || dateMoveGate.checking}>
+                {mutation.isPending || dateMoveGate.checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {isEditing ? "Save changes" : isTemplate ? "Create template" : "Create job"}
               </Button>
             )}
           </div>
         </div>
+
+        <DateMoveImpactDialog
+          open={!!dateMoveGate.pending}
+          rows={dateMoveGate.pending?.rows ?? []}
+          pending={mutation.isPending}
+          onConfirm={dateMoveGate.confirmPending}
+          onCancel={dateMoveGate.cancelPending}
+        />
 
         {/* Helper rail */}
         <aside className="hidden lg:block">
@@ -640,6 +674,25 @@ function fromDateStr(s?: unknown): Date | undefined {
 function normalizeDate(value?: unknown): string | undefined {
   const d = fromDateStr(value);
   return d ? toDateStr(d) : undefined;
+}
+
+/** Resolve a project-shaped record's window (`projectStartDate ?? rentalStartDate`,
+ *  same as `getProjectWindow`) into epoch-ms — #1227's date-move gate needs the
+ *  BEFORE window (raw stored values) and the AFTER window (form strings) in the
+ *  same {start,end} shape to compare them. */
+function resolveWindowMs(values: {
+  projectStartDate?: unknown;
+  projectEndDate?: unknown;
+  rentalStartDate?: unknown;
+  rentalEndDate?: unknown;
+}): { start: number | null; end: number | null } {
+  const { start, end } = getProjectWindowDates({
+    projectStartDate: fromDateStr(values.projectStartDate) ?? null,
+    projectEndDate: fromDateStr(values.projectEndDate) ?? null,
+    rentalStartDate: fromDateStr(values.rentalStartDate) ?? null,
+    rentalEndDate: fromDateStr(values.rentalEndDate) ?? null,
+  });
+  return { start: start ? start.getTime() : null, end: end ? end.getTime() : null };
 }
 
 /**

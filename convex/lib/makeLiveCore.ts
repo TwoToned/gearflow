@@ -7,9 +7,7 @@ import { carryRealityByLineage } from "./versionReality";
 import { pickPlanFields } from "./versionPlanFields";
 import { recalcProjectTotals } from "./recalc";
 import { resolveOrgDefaultTaxRate } from "./orgSettings";
-import { candidateBoardProjects } from "./overbookingBoard";
-import { computePromoteOverbookingConflicts } from "./overbookingConfirmImpact";
-import { fetchCandidateProjects, fetchGearData } from "../overbookingBoard";
+import { computeDateMoveOverbookingRows } from "./overbookingConfirmImpact";
 import { getProjectWindow } from "./projectWindow";
 import { requireProjectInOrg } from "./quoteState";
 
@@ -61,14 +59,7 @@ async function deriveDateMoveConflicts(
   if (!windowMoved || afterWindow.start == null || afterWindow.end == null) return [];
 
   const window = { start: afterWindow.start, end: afterWindow.end };
-  const projectDocsById = await fetchCandidateProjects(ctx, organizationId, window.end);
-  projectDocsById.set(after.id, after);
-  const candidateProjects = candidateBoardProjects([...projectDocsById.values()], window);
-  const candidateProjectIds = candidateProjects.map((p) => p.id);
-  const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, organizationId, candidateProjectIds, projectDocsById);
-  const overbookingRows = computePromoteOverbookingConflicts(
-    projectId, window, candidateProjects, lineItems, models, assets, bulkAssetsForModels,
-  );
+  const overbookingRows = await computeDateMoveOverbookingRows(ctx, organizationId, projectId, window, after);
   return overbookingRows.map(
     (row) => `Moving the rental window created a shortage of ${row.qty} × ${row.modelName} (also booked on ${row.projectNumbers.join(", ")}).`,
   );

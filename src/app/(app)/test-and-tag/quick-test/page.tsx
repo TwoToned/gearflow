@@ -12,7 +12,8 @@ import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
+import { ScanHistoryStrip } from "@/components/warehouse/scan-history-strip";
 import { useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -192,7 +193,8 @@ function QuickTestContent() {
       });
     },
     onSuccess: () => {
-      scanFeedback.play(state.overallResult === "PASS" ? "success" : "error");
+      const label = `${state.asset?.description} · ${state.asset?.testTagId}`;
+      scanFeedback.play(state.overallResult === "PASS" ? "success" : "error", { label, outcome: state.overallResult });
       toast.success(`${state.overallResult} — ${state.asset?.testTagId}`);
       dispatch({
         type: "RECORD_SAVED",
@@ -205,7 +207,8 @@ function QuickTestContent() {
       });
     },
     onError: (e) => {
-      scanFeedback.play("error");
+      const label = `${state.asset?.description} · ${state.asset?.testTagId}`;
+      scanFeedback.play("error", { label, outcome: e.message });
       toast.error(e.message);
       dispatch({ type: "SET_SAVING", isSaving: false });
     },
@@ -273,7 +276,7 @@ function QuickTestContent() {
             </Select>
 
             {/* Audio toggle */}
-            <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+            <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           </div>
         </div>
 
@@ -302,7 +305,12 @@ function QuickTestContent() {
 
         {/* Step content */}
         <div>
-          {state.step === "scan" && <ScanStep state={state} dispatch={dispatch} />}
+          {state.step === "scan" && (
+            <>
+              <ScanHistoryStrip entries={scanFeedback.entries} />
+              <ScanStep state={state} dispatch={dispatch} />
+            </>
+          )}
           {state.step === "visual" && <VisualStep state={state} dispatch={dispatch} />}
           {state.step === "electrical" && <ElectricalStep state={state} dispatch={dispatch} />}
           {state.step === "subtests" && <SubTestStep state={state} dispatch={dispatch} />}

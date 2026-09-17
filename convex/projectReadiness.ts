@@ -4,7 +4,7 @@ import { requireOrgReadFor } from "./lib/auth";
 import { getProjectWindow } from "./lib/projectWindow";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { candidateBoardProjects } from "./lib/overbookingBoard";
-import { fetchCandidateProjects, fetchGearData } from "./overbookingBoard";
+import { fetchCandidateProjects, fetchGearData } from "./lib/overbookingFetch";
 import {
   computeProjectGearReadiness,
   computeProjectCrewReadiness,

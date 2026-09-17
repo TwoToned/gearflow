@@ -4,6 +4,7 @@ import {
   quoteRowFlags,
   standardQuoteRowActions,
   ownerOnlyQuoteRowActions,
+  chaseSummary,
 } from "@/components/projects/project-quote-rail";
 
 /**
@@ -30,6 +31,7 @@ function noopHandlers() {
     onDecline: vi.fn(),
     onRecall: vi.fn(),
     onEditLabel: vi.fn(),
+    onChase: vi.fn(),
   };
 }
 
@@ -55,10 +57,16 @@ describe("quoteRowFlags", () => {
 });
 
 describe("standardQuoteRowActions", () => {
-  it("offers Mark accepted, Declined and Recall on a SENT revision", () => {
+  it("offers Mark accepted, Chase, Declined and Recall on a SENT revision", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "SENT", sentAt: 1 });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["rename", "accept", "decline", "recall"]);
+    expect(keys(actions)).toEqual(["rename", "accept", "chase", "decline", "recall"]);
+  });
+
+  it("offers Chase, Declined and Recall (no Mark accepted) on an EXPIRED revision", () => {
+    const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "EXPIRED", sentAt: 1 });
+    const actions = standardQuoteRowActions(flags, noopHandlers());
+    expect(keys(actions)).toEqual(["rename", "chase", "decline", "recall"]);
   });
 
   it("offers only Rename version on an ACCEPTED revision — no Unapprove (#1230 — unacceptNative deleted)", () => {
@@ -76,6 +84,34 @@ describe("standardQuoteRowActions", () => {
   it("offers only Rename version on a SUPERSEDED revision (#1097 — rename is unconditional)", () => {
     const flags = quoteRowFlags({ id: "q1", version: 1, effectiveStatus: "SUPERSEDED", sentAt: 1 });
     expect(keys(standardQuoteRowActions(flags, noopHandlers()))).toEqual(["rename"]);
+  });
+});
+
+describe("chaseSummary", () => {
+  const NOW = new Date("2026-09-17T00:00:00Z").getTime();
+  const pricing = { subtotal: 1000, taxAmount: 100, total: 1100 };
+
+  it("includes the sent date and days remaining for a still-valid quote", () => {
+    const sentAt = new Date("2026-09-10T00:00:00Z").getTime();
+    const validUntil = new Date("2026-09-24T00:00:00Z").getTime();
+    const text = chaseSummary("P-1042", { version: 3, sentAt, publishedAt: undefined, validUntil }, pricing, NOW);
+    expect(text).toContain("Quote — P-1042 v3");
+    expect(text).toContain("Subtotal:");
+    expect(text).toContain("Total:");
+    expect(text).toContain("Sent:");
+    expect(text).toMatch(/Valid until:.*\(7 days left\)/);
+  });
+
+  it("reports an expired quote as expired, not as days-left", () => {
+    const validUntil = new Date("2026-09-10T00:00:00Z").getTime();
+    const text = chaseSummary("P-1042", { version: 3, sentAt: undefined, publishedAt: undefined, validUntil }, pricing, NOW);
+    expect(text).toMatch(/Expired:.*\(7 days ago\)/);
+    expect(text).not.toContain("Valid until:");
+  });
+
+  it("omits a line whose value is null rather than printing a blank", () => {
+    const text = chaseSummary("P-1042", { version: 1, sentAt: undefined, publishedAt: undefined, validUntil: undefined }, { subtotal: null, taxAmount: null, total: null }, NOW);
+    expect(text).toBe("Quote — P-1042 v1");
   });
 });
 

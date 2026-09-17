@@ -17,7 +17,8 @@ import { useRouter } from "next/navigation";
 import { lookupAssetForAdHocCheck } from "@/server/check-records";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
+import { ScanHistoryStrip } from "@/components/warehouse/scan-history-strip";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { focusRing } from "@/lib/utils";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -64,7 +65,7 @@ export default function AdHocCheckPage({
   // operator's attention, not a hard error. Fires once per tag lookup.
   useEffect(() => {
     if (!isLoading && lookup && !lookup.found) {
-      scanFeedback.play("exception");
+      scanFeedback.play("exception", { label: decodedTag, outcome: "Not found" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, lookup?.found, decodedTag]);
@@ -82,12 +83,14 @@ export default function AdHocCheckPage({
         checks,
       }),
     onSuccess: () => {
-      scanFeedback.play("success");
+      const label = `${lookup?.asset?.modelName} · ${lookup?.asset?.assetTag}`;
+      scanFeedback.play("success", { label, outcome: "Ad-hoc check saved" });
       setCompleted(true);
       toast.success("Ad-hoc check saved");
     },
     onError: (e) => {
-      scanFeedback.play("error");
+      const label = `${lookup?.asset?.modelName} · ${lookup?.asset?.assetTag}`;
+      scanFeedback.play("error", { label, outcome: e.message });
       toast.error(e.message);
     },
   });
@@ -103,8 +106,10 @@ export default function AdHocCheckPage({
               Perform a quality check on an asset outside of a project.
             </p>
           </div>
-          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+          <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
         </div>
+
+        <ScanHistoryStrip entries={scanFeedback.entries} />
 
         {/* Scanner for navigating to different tags */}
         <ScanNavInput currentTag={decodedTag} />

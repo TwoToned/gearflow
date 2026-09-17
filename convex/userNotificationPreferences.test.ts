@@ -34,6 +34,7 @@ const ALL_ON = {
   pendingTimesheets: true,
   flaggedAsset: true,
   incidentReport: true,
+  quoteExpiring: true,
 };
 
 function makeT() {

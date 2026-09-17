@@ -11,70 +11,16 @@ import {
   computeUnconfirmedCrew,
   computeCrewDoubleBookings,
 } from "./lib/overbookingBoard";
-import { computeConfirmImpactModels, countUnconfirmedCrewForProject } from "./lib/overbookingConfirmImpact";
-import { liveRows } from "./lib/versionScope";
-
-/** Mirrors convex/overbooking.ts's own MIN_TS — see that file's comment for why
- *  an unbounded-below range scan needs this floor (undefined sorts before all
- *  numbers in a Convex index). */
-const MIN_TS = -8_640_000_000_000_000;
+import {
+  computeConfirmImpactModels,
+  countUnconfirmedCrewForProject,
+  computeDateMoveOverbookingRows,
+} from "./lib/overbookingConfirmImpact";
+import { fetchCandidateProjects, fetchGearData } from "./lib/overbookingFetch";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 const MAX_RANGE_DAYS = 366;
-
-/**
- * Candidate projects — TWO range-scans unioned, same shape as overbooking.ts's
- * `bundle` (WS2 #941): rental-index scan (unbounded below — also sweeps in
- * every projectStartDate-unset row, since undefined sorts first) UNION
- * projectStartDate-index scan (MIN_TS-bounded, backfilled rows only). Both
- * candidate sets are then refined by the PURE getProjectWindow overlap check
- * in `candidateBoardProjects`.
- */
-export async function fetchCandidateProjects(ctx: QueryCtx, orgId: string, rangeEnd: number) {
-  const projectDocsById = new Map<string, Doc<"projects">>();
-  for await (const p of ctx.db
-    .query("projects")
-    .withIndex("by_organizationId_rentalStartDate", (q) => q.eq("organizationId", orgId).lte("rentalStartDate", rangeEnd))) {
-    projectDocsById.set(p.id, p);
-  }
-  for await (const p of ctx.db
-    .query("projects")
-    .withIndex("by_organizationId_projectStartDate", (q) => q.eq("organizationId", orgId).gt("projectStartDate", MIN_TS).lte("projectStartDate", rangeEnd))) {
-    projectDocsById.set(p.id, p);
-  }
-  return projectDocsById;
-}
-
-/** Line items for candidate projects only (referenced-only) + the models/assets/
- *  bulkAssets those line items reference (also referenced-only). LIVE-ONLY
- *  (#1228) — the overbooking board reads the live plan. */
-export async function fetchGearData(
-  ctx: QueryCtx,
-  orgId: string,
-  candidateProjectIds: string[],
-  projectDocsById: Map<string, Doc<"projects">>,
-) {
-  const lineItemGroups = await Promise.all(
-    candidateProjectIds.map(async (pid) => {
-      const p = projectDocsById.get(pid);
-      return p ? liveRows(ctx, p, "projectLineItems") : [];
-    }),
-  );
-  const lineItems = lineItemGroups.flat().filter((li) => li.organizationId === orgId);
-
-  const referencedModelIds = [...new Set(lineItems.map((li) => li.modelId).filter((id): id is string => !!id))];
-  const [modelDocs, assetGroups, bulkGroups] = await Promise.all([
-    Promise.all(referencedModelIds.map((mid) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", mid)).unique())),
-    Promise.all(referencedModelIds.map((mid) => ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect())),
-    Promise.all(referencedModelIds.map((mid) => ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect())),
-  ]);
-  return {
-    lineItems,
-    referencedModelIds,
-    models: modelDocs.filter((m): m is NonNullable<typeof m> => !!m && m.organizationId === orgId),
-    assets: assetGroups.flat().filter((a) => a.organizationId === orgId),
-    bulkAssetsForModels: bulkGroups.flat().filter((b) => b.organizationId === orgId),
-  };
-}
 
 /**
  * WS11 (#950) — models with a negative `saleStockQuantity` (a single
@@ -318,3 +264,65 @@ export const confirmImpact = query({
     };
   },
 });
+
+/** Defensive ceiling on the impact rows returned — the dialog itself only ever
+ *  shows the first 5 plus a "+N more" line (design doc), this just bounds the
+ *  payload for a pathological fixture. */
+const DATE_MOVE_IMPACT_ROW_CAP = 50;
+
+/**
+ * Date-move impact preview (#1227, Q3 of the QOL sweep, non-blocking): "if I
+ * move THIS project's dates to `start`..`end` right now, does that strand any
+ * other job's gear?" Same computation `deriveDateMoveConflicts` runs
+ * POST-promote (`computeDateMoveOverbookingRows`, R-3.1 — the two can't
+ * disagree), exposed here as a PRE-save preview so the project edit form can
+ * warn before the write instead of only reporting after it.
+ *
+ * The caller resolves `start`/`end` through `getProjectWindow` semantics
+ * (`projectStartDate ?? rentalStartDate`) client-side and passes the already-
+ * resolved numbers — this query does not re-derive from raw form fields, it
+ * just checks the window it's given. Unlike `confirmImpact`, the project's
+ * REAL current status is used (no CONFIRMED simulation) — this is asking
+ * about a job that already is what it is, not "if I confirmed it".
+ */
+export const dateMoveImpact = query({
+  args: { orgId: v.string(), projectId: v.string(), start: v.number(), end: v.number() },
+  handler: async (ctx, { orgId, projectId, start, end }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    }
+
+    const before = getProjectWindow(project);
+    const windowMoved = before.start !== start || before.end !== end;
+
+    // The target project's own doc, with its date fields spliced to the
+    // PROPOSED window (nulling projectStartDate/projectEndDate so
+    // getProjectWindow resolves to exactly {start, end} regardless of which
+    // side the operator actually edited) — everything else, status included,
+    // stays the project's real current row.
+    const projectWithProposedWindow = {
+      ...project,
+      projectStartDate: undefined,
+      projectEndDate: undefined,
+      rentalStartDate: start,
+      rentalEndDate: end,
+    };
+
+    const rows = await computeDateMoveOverbookingRows(
+      ctx, orgId, projectId, { start, end }, projectWithProposedWindow,
+    );
+
+    return { rows: rows.slice(0, DATE_MOVE_IMPACT_ROW_CAP), windowMoved };
+  },
+});
+
+export const agentOps: AgentOpsAnnotations = {
+  dateMoveImpact: {
+    summary: "Preview whether moving a project's dates would strand another job's gear, before the write (#1227).",
+    danger: "low",
+    mcpTier: 3,
+  },
+};

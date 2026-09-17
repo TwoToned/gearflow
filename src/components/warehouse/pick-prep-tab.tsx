@@ -31,7 +31,9 @@ import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
+import { ScanHistoryStrip } from "./scan-history-strip";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
+import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
 type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
 
@@ -43,6 +45,7 @@ export interface PickPrepTabProps {
   handleScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   scanMutationMutate: (value: string) => void;
   scanMutationIsPending: boolean;
+  scanHistoryEntries: ScanHistoryRecord[];
 
   // Container state
   selectedContainer: string;
@@ -95,6 +98,7 @@ export function PickPrepTab({
   handleScanKeyDown,
   scanMutationMutate,
   scanMutationIsPending,
+  scanHistoryEntries,
   selectedContainer,
   setSelectedContainer,
   containerOptions,
@@ -121,6 +125,7 @@ export function PickPrepTab({
     <TabsContent value="pick-prep">
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
+            <ScanHistoryStrip entries={scanHistoryEntries} />
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <AssetTagInput

@@ -107,7 +107,7 @@ describe("UserNav", () => {
     expect(menu.getByText("MEMBER")).toBeTruthy();
   });
 
-  it("switching org calls setActive then navigates to /dashboard — never stays put", async () => {
+  it("switching org calls setActive then navigates to /today — never stays put", async () => {
     myOrgsResult = [
       { id: "org_1", name: "Org One", slug: "org-one", role: "OWNER" },
       { id: "org_2", name: "Org Two", slug: "org-two", role: "MEMBER" },
@@ -118,7 +118,7 @@ describe("UserNav", () => {
     fireEvent.click(target);
 
     await waitFor(() => expect(setActive).toHaveBeenCalledWith({ organizationId: "org_2" }));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/today"));
   });
 
   it("clicking the already-active org is a no-op — no redundant setActive/navigate", async () => {

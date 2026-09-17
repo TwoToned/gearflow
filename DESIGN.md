@@ -491,28 +491,40 @@ Archivo is loaded via `next/font/google` with weights 400–900. Always referenc
 5-item fixed bottom navigation bar for mobile (< 768px). Desktop uses the sidebar.
 
 ```
-[ Dashboard ] [ Jobs ] [ Warehouse ] [ Crew ] [ Assets ]
+[ Today ] [ Jobs ] [ Warehouse ] [ Crew ] [ Assets ]
 ```
+
+**Decision D10A (work-layer phase 0.5, #1242): Today replaces Dashboard.**
+Today (`/today`) is now the landing page after login and the app's personal
+home — the day's agenda plus the person's work, with Triage for inbound
+mentions (`docs/designs/work-layer.md` §8.1). Phones have no sidebar and all
+five bottom-nav slots were already taken, so Today had to take Dashboard's
+slot rather than add a sixth. **Dashboard moved to the account/avatar menu**
+(`user-nav.tsx`) — it's still the org-wide "what needs attention" view, just
+no longer the first thing either platform shows. Its "My work" zone (the
+tasks-due block + per-project blocker badges) was removed from the dashboard
+page entirely, since Today now owns that surface and would otherwise render
+the same rows twice.
 
 - Active tab: RVLT red icon + red label
 - Inactive tab: `fg-4` icon + `fg-4` label
 - Tab height: 56px (+ safe-area-inset-bottom)
 - Icon size: 22px
 - Label: `t-micro` (11px/500)
-- No badges on nav items (alerts surface in Dashboard instead)
+- No badges on nav items (alerts surface on Today's Triage bucket and the dashboard's needs-attention chips instead)
 
 ### MobileNav Component
 `src/components/layout/mobile-nav.tsx` — **separate** from `app-sidebar.tsx`. Any IA change (add/remove tabs, reorder, rename) MUST be applied to BOTH files in the same PR.
 
 ### What Goes in the Bottom Nav vs Sidebar
 - Bottom nav (5 items): Daily-use operator workflows only
-  - Dashboard (overview, alerts)
+  - Today (personal agenda, work list, Triage)
   - Jobs (active projects, pull sheets)
   - Warehouse (check-out/in, scanning)
   - Crew (schedule, roster)
   - Assets (gear, kits)
-- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports, My tasks (personal-scope cross-project task list — the task *count* already surfaces on the Dashboard, so it doesn't need a bottom-nav slot too)
-- Settings accessible via avatar menu on mobile
+- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports. Dashboard is reachable from the avatar/account menu on both desktop and mobile (not a sidebar rail item — see D10A above). The old standalone "My tasks" sidebar entry is gone: `/my-tasks` now redirects to `/today`, which supersedes it.
+- Settings and Dashboard are both accessible via the avatar menu on mobile
 
 ### Deep Navigation on Mobile
 - Use Sheet (bottom-sheet) for detail panels, not full-page navigation where possible
@@ -579,3 +591,4 @@ Login / register / onboarding follow marketing aesthetics, not app UI rules:
 | 2026-06-18 | Keep BrandingProvider, default to RVLT red | Org theming stays; default accent switches from teal to red |
 | 2026-06-18 | NavLink wrapper required in all nav PRs | Next.js/Base UI DOM crash risk if replaced with standard Link |
 | 2026-06-18 | Sidebar nav uses module-hue active/hover (not red-only) | Per-module colour makes the sidebar a wayfinding map; user-directed. Red stays non-module; mobile bottom nav keeps red-active (§16) |
+| 2026-09-16 | Bottom nav: Today replaces Dashboard (D10A, work-layer #1242) | Today becomes the personal landing page; phones have no sidebar and all 5 bottom-nav slots were taken, so it had to take Dashboard's slot. Dashboard moves to the avatar menu; its dashboard "My work" zone is deleted so Today's rows don't render twice |

@@ -128,6 +128,9 @@ test.describe("harness: register / onboarding", () => {
     });
 
     await test.step("Finish setup checklist reflects exactly what's unset -> 2 of 4 done", async () => {
+      // FinishSetupChecklist stayed on /dashboard (#1242, D10A) — /today is
+      // only the post-onboarding landing page, not where this widget lives.
+      await page.goto("/dashboard");
       await expect(page.getByText("Finish setup")).toBeVisible({ timeout: 20000 });
       await expect(page.getByText("2 of 4 done")).toBeVisible();
 

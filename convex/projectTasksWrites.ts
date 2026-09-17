@@ -29,7 +29,7 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 // old keys keep working while new grants can be issued against `work` going
 // forward. Same-file, literal-argument helper so scripts/generate-api-registry.mts's
 // local-helper inlining picks up both scopePairs.
-async function requireWorkOrProjectUpdate(ctx: MutationCtx, orgId: string): Promise<void> {
+async function requireWorkOrProjectOrgUpdate(ctx: MutationCtx, orgId: string): Promise<void> {
   try {
     await requireOrgPermission(ctx, orgId, "work", "update");
   } catch {
@@ -199,7 +199,7 @@ export const createNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireWorkOrProjectUpdate(ctx, a.orgId);
+    await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
     const title = a.title.trim();
@@ -230,7 +230,7 @@ export const updateNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireWorkOrProjectUpdate(ctx, a.orgId);
+    await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
@@ -275,7 +275,7 @@ export const deleteNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireWorkOrProjectUpdate(ctx, a.orgId);
+    await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
@@ -304,7 +304,7 @@ export const bulkUpdateNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireWorkOrProjectUpdate(ctx, a.orgId);
+    await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
     if (a.ids.length === 0) return { updated: 0, skipped: 0 };
 
@@ -349,7 +349,7 @@ export const bulkDeleteNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireWorkOrProjectUpdate(ctx, a.orgId);
+    await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
     if (a.ids.length === 0) return { deleted: 0, skipped: 0 };
 

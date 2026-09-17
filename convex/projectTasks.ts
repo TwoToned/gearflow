@@ -11,7 +11,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 // grants can be issued against `work` going forward. Same-file, literal-argument
 // helpers so scripts/generate-api-registry.mts's local-helper inlining picks up both
 // scopePairs (it collects every requireOrgReadFor match, not just the first).
-async function requireWorkOrProjectRead(ctx: QueryCtx, orgId: string): Promise<void> {
+async function requireWorkOrProjectOrgRead(ctx: QueryCtx, orgId: string): Promise<void> {
   try {
     await requireOrgReadFor(ctx, orgId, "work");
   } catch {
@@ -19,7 +19,7 @@ async function requireWorkOrProjectRead(ctx: QueryCtx, orgId: string): Promise<v
   }
 }
 
-async function requireWorkOrProjectReadDoc(
+async function requireWorkOrProjectOrgReadDoc(
   ctx: QueryCtx,
   doc: { organizationId?: string | null } | null,
 ): Promise<void> {
@@ -44,7 +44,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireWorkOrProjectReadDoc(ctx, doc);
+    await requireWorkOrProjectOrgReadDoc(ctx, doc);
     return doc;
   },
 });
@@ -52,7 +52,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireWorkOrProjectRead(ctx, orgId);
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     // Subtasks (parentId set) are excluded — this is a flat top-level list; a subtask
     // only ever renders nested under its parent (Phase 1, #1243).
@@ -73,7 +73,7 @@ export const listByProject = query({
 export const listSubtasks = query({
   args: { parentId: v.string(), orgId: v.string() },
   handler: async (ctx, { parentId, orgId }) => {
-    await requireWorkOrProjectRead(ctx, orgId);
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     const rows = (await ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", parentId)).collect())
       .filter((t) => t.organizationId === orgId); // by_parentId is global → org re-check
     rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
@@ -94,7 +94,7 @@ export const listSubtasks = query({
 export const assignees = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireWorkOrProjectRead(ctx, orgId);
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     const members = await ctx.db
       .query("members")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
@@ -125,7 +125,7 @@ export const assignees = query({
 export const listByProjectWithRelations = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireWorkOrProjectRead(ctx, orgId);
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     const rows = (
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
     ).filter((t) => t.organizationId === orgId && !t.parentId); // by_projectId is global → org re-check; subtasks render nested, never as flat siblings
@@ -308,7 +308,7 @@ function serializeMyOpenTask(
 export const myOpenTasks = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
-    await requireWorkOrProjectRead(ctx, orgId);
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;

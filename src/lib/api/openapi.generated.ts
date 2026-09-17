@@ -22646,6 +22646,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "assetDispositions": {
+                        "type": "array"
+                      },
                       "assetLinks": {
                         "type": "array"
                       },

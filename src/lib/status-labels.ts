@@ -84,6 +84,12 @@ export const maintenanceResultLabels: Record<string, string> = {
   CONDITIONAL: "Conditional",
 };
 
+export const assetDispositionLabels: Record<string, string> = {
+  RETURN_TO_SERVICE: "Return to service",
+  KEEP_OUT_OF_SERVICE: "Keep out of service",
+  RETIRE: "Retire asset",
+};
+
 // --- Supplier Order Status ---
 export const supplierOrderStatusLabels: Record<string, string> = {
   DRAFT: "Draft",

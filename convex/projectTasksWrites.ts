@@ -11,7 +11,9 @@ import * as enums from "./lib/validators";
 /**
  * Native PROJECT-TASK write mutations (Phase 3 browser-direct — replaces the
  * create/update/delete/bulkUpdate/bulkDeleteProjectTask server actions in
- * src/server/project-tasks.ts). Gates on `project:update`. The old actions' Prisma seam
+ * src/server/project-tasks.ts). Gates on `work:update` OR `project:update` (additive
+ * RBAC transition, #1243 — old API keys/OAuth grants only ever carry `project:update`).
+ * The old actions' Prisma seam
  * (assignee membership validation on the Better Auth member table) is eliminated — the
  * `members` mirror (by_org_user) + `crewMembers` domain table validate the assignee
  * inside the mutation. Standard shape: 4 guards + per-row org re-check + atomic audit.
@@ -19,6 +21,20 @@ import * as enums from "./lib/validators";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+// Work-or-project RBAC transition (#1243): these mutations were gated on
+// `project:update` before the `work` resource existed. Any already-issued API
+// key/OAuth scope still carries only `project:update` — accept EITHER scope so
+// old keys keep working while new grants can be issued against `work` going
+// forward. Same-file, literal-argument helper so scripts/generate-api-registry.mts's
+// local-helper inlining picks up both scopePairs.
+async function requireWorkOrProjectUpdate(ctx: MutationCtx, orgId: string): Promise<void> {
+  try {
+    await requireOrgPermission(ctx, orgId, "work", "update");
+  } catch {
+    await requireOrgPermission(ctx, orgId, "project", "update");
+  }
+}
 
 /** Validate an assignee (user member OR crew) belongs to the org; reject if both set. */
 async function assertAssigneeInOrg(
@@ -52,7 +68,7 @@ function normaliseChecklist(checklist: RawChecklistItem[] | null | undefined): u
 
 async function logTask(
   ctx: MutationCtx,
-  a: { orgId: string; projectId: string; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string },
+  a: { orgId: string; projectId: string | undefined; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string },
 ) {
   await writeActivityLog(ctx, {
     id: a.auditId,
@@ -97,7 +113,7 @@ export const createNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "project", "update");
+    await requireWorkOrProjectUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
     const title = a.title.trim();
@@ -150,7 +166,7 @@ export const updateNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "project", "update");
+    await requireWorkOrProjectUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
@@ -191,7 +207,7 @@ export const deleteNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "project", "update");
+    await requireWorkOrProjectUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
@@ -220,7 +236,7 @@ export const bulkUpdateNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "project", "update");
+    await requireWorkOrProjectUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
     if (a.ids.length === 0) return { updated: 0, skipped: 0 };
 
@@ -248,7 +264,7 @@ export const bulkUpdateNative = mutation({
         applied.completedAt = set.status === "DONE" ? a.now : undefined;
       }
       await ctx.db.patch(doc._id, applied);
-      projectIds.add(doc.projectId);
+      if (doc.projectId) projectIds.add(doc.projectId);
       updated++;
     }
 
@@ -265,7 +281,7 @@ export const bulkDeleteNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectTask");
     await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "project", "update");
+    await requireWorkOrProjectUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
     if (a.ids.length === 0) return { deleted: 0, skipped: 0 };
 
@@ -276,7 +292,7 @@ export const bulkDeleteNative = mutation({
       const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== a.orgId) { skipped++; continue; }
       await ctx.db.delete(doc._id);
-      projectIds.add(doc.projectId);
+      if (doc.projectId) projectIds.add(doc.projectId);
       deleted++;
     }
 

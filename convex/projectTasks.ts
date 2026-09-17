@@ -5,6 +5,31 @@ import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
+// Work-or-project RBAC transition (#1243): task reads were gated on `project:read`
+// before the `work` resource existed. Any already-issued API key/OAuth scope still
+// carries only `project:*` — accept EITHER scope so old keys keep working while new
+// grants can be issued against `work` going forward. Same-file, literal-argument
+// helpers so scripts/generate-api-registry.mts's local-helper inlining picks up both
+// scopePairs (it collects every requireOrgReadFor match, not just the first).
+async function requireWorkOrProjectRead(ctx: QueryCtx, orgId: string): Promise<void> {
+  try {
+    await requireOrgReadFor(ctx, orgId, "work");
+  } catch {
+    await requireOrgReadFor(ctx, orgId, "project");
+  }
+}
+
+async function requireWorkOrProjectReadDoc(
+  ctx: QueryCtx,
+  doc: { organizationId?: string | null } | null,
+): Promise<void> {
+  try {
+    await requireOrgReadDocFor(ctx, doc, "work");
+  } catch {
+    await requireOrgReadDocFor(ctx, doc, "project");
+  }
+}
+
 /**
  * Thin CRUD for ProjectTask (Convex table "projectTasks"). GENERATED — Phase 2/5.
  *
@@ -19,7 +44,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDocFor(ctx, doc, "project");
+    await requireWorkOrProjectReadDoc(ctx, doc);
     return doc;
   },
 });
@@ -27,7 +52,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectRead(ctx, orgId);
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("projectTasks")
@@ -44,7 +69,7 @@ export const listByProject = query({
 export const assignees = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectRead(ctx, orgId);
     const members = await ctx.db
       .query("members")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
@@ -75,7 +100,7 @@ export const assignees = query({
 export const listByProjectWithRelations = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectRead(ctx, orgId);
     const rows = (
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
     ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
@@ -247,7 +272,7 @@ function serializeMyOpenTask(
 export const myOpenTasks = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectRead(ctx, orgId);
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
@@ -381,7 +406,7 @@ export const updateMany = mutation({
         applied.completedAt = p.status === "DONE" ? now : null;
       }
       await ctx.db.patch(doc._id, applied);
-      projectIds.add(doc.projectId);
+      if (doc.projectId) projectIds.add(doc.projectId);
       updated++;
     }
     return { updated, skipped, projectIds: [...projectIds] };
@@ -400,7 +425,7 @@ export const removeMany = mutation({
       const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
       if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
       await ctx.db.delete(doc._id);
-      projectIds.add(doc.projectId);
+      if (doc.projectId) projectIds.add(doc.projectId);
       deleted++;
     }
     return { deleted, skipped, projectIds: [...projectIds] };

@@ -116,7 +116,10 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   see FEATUREDOCS/12 §"Scan Feedback (Audio + Haptics)" and FEATUREDOCS/14 §"Audio / Scan
   Feedback") with a `<ScanFeedbackToggle>` in the page header, controlling both audio and
   vibration. `exception` plays once when the tag lookup resolves and the asset isn't found
-  (unknown tag); `submitMutation` plays `success` on save and `error` on failure.
+  (unknown tag); `submitMutation` plays `success` on save and `error` on failure. Each call
+  now also passes a `{ label, outcome }` entry (`<ScanHistoryStrip>` renders above the scan
+  input) — `saveAdHocCheck` isn't one of the six warehouse writes, so `entry.undo` is
+  always omitted here. See FEATUREDOCS/12 §"Scan History Strip".
 
 ## Check Queue
 

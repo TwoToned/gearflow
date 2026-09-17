@@ -44440,6 +44440,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "projectId": {
                         "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -44602,6 +44605,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "array"
                       },
                       "projectId": {
+                        "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
                         "type": "string"
                       }
                     },
@@ -44768,6 +44774,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "projectId": {
                         "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -44930,6 +44939,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "array"
                       },
                       "projectId": {
+                        "type": "string"
+                      },
+                      "revertAutoAdvanceAuditId": {
                         "type": "string"
                       }
                     },

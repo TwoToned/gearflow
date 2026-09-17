@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { playScanFeedback, type ScanFeedbackKind } from "@/lib/scan-feedback";
+import { playScanFeedback, playScanHaptic, type ScanFeedbackKind } from "@/lib/scan-feedback";
 
 /**
- * localStorage key for the scan-audio toggle. Deliberately **not** scoped to the
- * signed-in user (unlike `usePersistentPref`) — warehouse terminals are shared
- * devices, and the "audio on/off" preference belongs to the terminal, not the
- * operator currently signed in on it.
+ * localStorage key for the scan-feedback toggle. Deliberately **not** scoped to
+ * the signed-in user (unlike `usePersistentPref`) — warehouse terminals are
+ * shared devices, and the "feedback on/off" preference belongs to the
+ * terminal, not the operator currently signed in on it.
+ *
+ * Named `rvlt.scanAudio` from when this toggle covered audio only — kept as-is
+ * (rather than renamed to `rvlt.scanFeedback`) so no terminal's persisted
+ * preference silently resets when haptics (#1220) were added under the same
+ * one toggle (D5).
  */
 const STORAGE_KEY = "rvlt.scanAudio";
 const DEFAULT_ENABLED = true;
@@ -24,11 +29,13 @@ function readEnabled(): boolean {
 }
 
 /**
- * Shared scan-feedback hook: a per-device, localStorage-persisted audio toggle
- * plus a `play(kind)` helper wired to `playScanFeedback`. Used by every scan
- * verdict call site (Warehouse prep/deploy/return, T&T quick-test, the
- * `/check/[assetTag]` ad-hoc station, and future consumers like the WS5 returns
- * station) so the toggle and tone vocabulary stay in one place.
+ * Shared scan-feedback hook: a per-device, localStorage-persisted toggle
+ * plus a `play(kind)` helper wired to both `playScanFeedback` (audio) and
+ * `playScanHaptic` (vibration) — one toggle covers both (D5, #1220). Used by
+ * every scan verdict call site (Warehouse prep/deploy/return, T&T quick-test,
+ * the `/check/[assetTag]` ad-hoc station, and future consumers like the WS5
+ * returns station) so the toggle and tone/pattern vocabulary stay in one
+ * place.
  *
  * See FEATUREDOCS/12 (Scan Feedback) and FEATUREDOCS/14 (Audio note).
  */
@@ -64,6 +71,7 @@ export function useScanFeedback(): {
     (kind: ScanFeedbackKind) => {
       if (!enabled) return;
       playScanFeedback(kind);
+      playScanHaptic(kind);
     },
     [enabled],
   );

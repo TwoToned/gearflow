@@ -13,7 +13,7 @@ import { requireCanUnlockPricing, pricingLockRaiseFields } from "./lib/projectLo
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { resolveOrgQuoteConfig, resolveOrgDefaultTaxRate } from "./lib/orgSettings";
-import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
+import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
 import { computeValidUntil, startOfDayInTimezone, QUOTE_VALIDITY_BOUNDS } from "./lib/quoteDates";
 import { loadTotalsBundle, computeTotals } from "./lib/recalc";
 import { resolveWriteVersionId, requireLiveVersionId } from "./lib/versionScope";
@@ -640,9 +640,11 @@ export const sendNative = mutation({
     // now only ever non-null when the automation did NOT act (the org opted out),
     // so the send dialog's "Move it to QUOTED?" prompt is the fallback rather than
     // the normal path. Status is still never decided by the browser either way.
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
-      orgId: organizationId, projectId, trigger: "QUOTE_SENT", actor, now,
-    });
+    const autoStatus = autoAdvanceStatus(
+      await maybeAutoAdvanceProjectStatus(ctx, {
+        orgId: organizationId, projectId, trigger: "QUOTE_SENT", actor, now,
+      }),
+    );
 
     return {
       id: quoteId,
@@ -1238,9 +1240,11 @@ export const markAcceptedNative = mutation({
     // #1236 — accepting now moves the job to AWAITING_PAYMENT (the client has
     // said yes; the money hasn't landed), NOT straight to CONFIRMED. The old
     // "offer CONFIRMED" is the opt-out fallback, exactly as it is for send.
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
-      orgId: organizationId, projectId: project.id, trigger: "QUOTE_ACCEPTED", actor, now,
-    });
+    const autoStatus = autoAdvanceStatus(
+      await maybeAutoAdvanceProjectStatus(ctx, {
+        orgId: organizationId, projectId: project.id, trigger: "QUOTE_ACCEPTED", actor, now,
+      }),
+    );
 
     return {
       id: quote.id,

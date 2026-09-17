@@ -10,7 +10,7 @@ import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { runPredictiveMaintenance, type PmPlanEntry } from "./lib/checkPredictiveMaintenanceCore";
 import { runFailIncidentReport, type IncidentPlanEntry } from "./lib/checkIncidentReportCore";
 import { completeCheckAndDeprepLineCore, prepItemCore } from "./checkRecordOps";
-import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
+import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
 import { checkinItemsCore } from "./warehouseOps";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
@@ -328,9 +328,11 @@ export const completeCheckAndPack = mutation({
 
     // #1160 — first pack on a CONFIRMED job moves it to PREPPING. Returned so the
     // warehouse screen can say so instead of the status silently changing under it.
-    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
-      orgId: a.orgId, projectId: a.projectId, trigger: "PREP_STARTED", actor, now: a.now,
-    });
+    const autoStatus = autoAdvanceStatus(
+      await maybeAutoAdvanceProjectStatus(ctx, {
+        orgId: a.orgId, projectId: a.projectId, trigger: "PREP_STARTED", actor, now: a.now,
+      }),
+    );
 
     return { success: true as const, autoStatus };
   },

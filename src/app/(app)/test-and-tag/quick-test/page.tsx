@@ -12,7 +12,7 @@ import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -273,7 +273,7 @@ function QuickTestContent() {
             </Select>
 
             {/* Audio toggle */}
-            <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+            <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           </div>
         </div>
 

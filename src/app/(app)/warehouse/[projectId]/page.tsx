@@ -35,7 +35,7 @@ import {
 } from "@/server/warehouse";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -837,7 +837,8 @@ function WarehouseProjectPage({
   const kitBatchOutMutation = useServerMutation<KitBatchResult, string[]>({
     mutationFn: (kitIds: string[]) => warehouseWrites.checkOutKitsBatch(projectId, kitIds),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Deployed ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },
@@ -846,7 +847,8 @@ function WarehouseProjectPage({
   const kitBatchInMutation = useServerMutation<KitBatchResult, Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>>({
     mutationFn: (kits) => warehouseWrites.checkInKitsBatch(projectId, kits),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },
@@ -2616,7 +2618,7 @@ function WarehouseProjectPage({
         </div>
         <div className="flex gap-2">
           {/* Scan audio toggle — shared across prep/deploy/return scan verdicts */}
-          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+          <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           {/* Mobile: Pick List button shown prominently */}
           <Button variant="line" className="sm:hidden" onClick={() => setPickListOpen(true)}>
             <ClipboardList className="mr-2 h-4 w-4" />

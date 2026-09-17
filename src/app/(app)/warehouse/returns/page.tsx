@@ -35,7 +35,7 @@ import { useReturnsBoard, useReturnsWrites, useResolveScan, useLineUnits } from 
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useCanDo } from "@/lib/use-permissions";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -341,7 +341,7 @@ export default function ReturnsStationPage() {
               Everything out, org-wide — scan a tag to return it. No project to pick first.
             </p>
           </div>
-          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+          <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
         </div>
 
         {/* ── Scan bar ─────────────────────────────────────────────────── */}

@@ -19,7 +19,7 @@ import { startOfDayInTimezone } from "./lib/quoteDates";
 import { projectLiveRevision, findQuoteAtRevision, effectiveQuoteStatus } from "./lib/quoteState";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
+import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
 
 /**
  * Invoice write mutations (WS1 #940) — browser-direct, standard 4-guard shape.
@@ -428,9 +428,11 @@ export const issueNative = mutation({
     const autoStatus =
       doc.kind === "CREDIT"
         ? null
-        : await maybeAutoAdvanceProjectStatus(ctx, {
-            orgId, projectId: doc.projectId, trigger: "INVOICE_ISSUED", actor, now,
-          });
+        : autoAdvanceStatus(
+            await maybeAutoAdvanceProjectStatus(ctx, {
+              orgId, projectId: doc.projectId, trigger: "INVOICE_ISSUED", actor, now,
+            }),
+          );
 
     return { id, invoiceNumber, autoStatus };
   },

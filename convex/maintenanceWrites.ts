@@ -463,7 +463,11 @@ export const updateNative = mutation({
       await releaseAssets(ctx, a.orgId, toRemove, removeStillHeld, a.now);
     }
     if (newAssetIds.length > 0) {
-      if (isHolding && !wasHolding) {
+      if (isHolding) {
+        // Not just on the SCHEDULED→holding transition: an asset newly linked
+        // to an ALREADY-holding record (e.g. adding a unit to an IN_PROGRESS
+        // repair) must also be held. holdAssets only touches AVAILABLE assets,
+        // so already-held ones are a no-op here.
         await holdAssets(ctx, a.orgId, newAssetIds, a.now);
       }
       if (willReleaseRemaining) {

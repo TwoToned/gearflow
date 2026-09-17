@@ -304,6 +304,35 @@ describe("maintenanceWrites.updateNative — transitions", () => {
     expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
   });
 
+  test("adding an asset to an ALREADY-holding record HOLDS the new asset too", async () => {
+    const t = makeT(); await createRec(t, "IN_PROGRESS"); // as1 already IN_MAINTENANCE
+    await seedAsset(t, "as2", "AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "IN_PROGRESS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }, { id: "lnk2", assetId: "as2" }], now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE"); // unchanged
+    expect((await asset(t, "as2"))?.status).toBe("IN_MAINTENANCE"); // newly held
+  });
+
+  test("switching between two holding statuses (IN_PROGRESS -> AWAITING_PARTS) still holds an asset that was never held", async () => {
+    // Simulates a record whose linked asset never got held (e.g. leftover bad
+    // state, or added via a since-fixed path) — asset stays AVAILABLE even
+    // though the record is already IN_PROGRESS.
+    const t = makeT(); await seed(t);
+    await seedAsset(t, "as1", "AVAILABLE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("maintenanceRecords", { id: "rec1", organizationId: ORG, type: "REPAIR", status: "IN_PROGRESS", title: "Fix drill", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("maintenanceRecordAssets", { id: "lnk1", maintenanceRecordId: "rec1", assetId: "as1", kind: "LINK" });
+    });
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+      orgId: ORG, id: "rec1", type: "REPAIR", status: "AWAITING_PARTS", title: "Fix drill",
+      assetLinks: [{ id: "lnk1", assetId: "as1" }], now: NOW, actor, auditId: "a2",
+    });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
+  });
+
   test("COMPLETED-PASS from a holding status RELEASES the remaining assets", async () => {
     const t = makeT(); await createRec(t, "IN_PROGRESS");
     await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {

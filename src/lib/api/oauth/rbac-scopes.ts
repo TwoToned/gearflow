@@ -109,6 +109,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   reports: "reports",
   checkItem: "check items",
   invoice: "invoices/quotes",
+  work: "work items",
   self: "your own saved views & preferences",
 };
 

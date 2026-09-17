@@ -53,6 +53,7 @@ const READ_RESOURCES: readonly Resource[] = [
   "crew",
   "checkItem",
   "invoice",
+  "work",
 ];
 
 /** "Every `:read` + `self:read`" (design §14) — the literal read_only_agent rule,
@@ -128,6 +129,8 @@ const FULL_AGENT_WRITE_SCOPES: readonly string[] = [
   "invoice:publish",
   "invoice:issue",
   "invoice:xero_push",
+  "work:create",
+  "work:update",
   "self:write",
 ];
 

@@ -27885,6 +27885,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "object"
       },
       {
+        "name": "assetDispositions",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "assetLinks",
         "optional": false,
         "type": "array"
@@ -27981,7 +27986,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a3812bee85187f47",
+    "argsSha": "ad268b05f92297df",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

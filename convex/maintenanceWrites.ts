@@ -13,6 +13,7 @@ import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 import { assertStrLen, assertNumRange, assertArrayMax } from "./lib/fieldGuards";
 import { assertProjectInOrg } from "./projectLineItems";
 import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
+import { retireAssetCore } from "./lib/assetRetire";
 import * as enums from "./lib/validators";
 
 /**
@@ -164,6 +165,60 @@ async function releaseAssets(
     if ((a.status ?? "AVAILABLE") === "IN_MAINTENANCE") {
       await ctx.db.patch(a._id, { status: "AVAILABLE", updatedAt: now });
     }
+  }
+}
+
+type AssetDisposition = "RETURN_TO_SERVICE" | "KEEP_OUT_OF_SERVICE" | "RETIRE";
+
+/**
+ * Applies the per-asset disposition chosen when closing out a COMPLETED record
+ * (each asset gets its own call instead of the record-wide "release everyone
+ * unless FAIL" path): RETURN_TO_SERVICE releases the hold (same guarded,
+ * still-held-elsewhere-aware release as the legacy blanket path);
+ * KEEP_OUT_OF_SERVICE is a no-op — the asset just stays IN_MAINTENANCE, same
+ * outcome as the old COMPLETED-FAIL guard; RETIRE is terminal and shares
+ * `retireAssetCore` with `assetWrites.archiveNative` (R-3.1) rather than
+ * re-implementing "what retiring an asset means" here. One audit row per retired
+ * asset, scoped to that asset (so it shows up on the asset's own activity log,
+ * matching archiveNative) — the record-level "Updated maintenance record" audit
+ * covers everything else.
+ */
+async function applyAssetDispositions(
+  ctx: MutationCtx,
+  orgId: string,
+  dispositions: { assetId: string; disposition: AssetDisposition }[],
+  excludeRecordId: string,
+  now: number,
+  actor: { userId: string; userName: string },
+  auditId: string,
+): Promise<void> {
+  const returnIds = dispositions
+    .filter((d) => d.disposition === "RETURN_TO_SERVICE")
+    .map((d) => d.assetId);
+  if (returnIds.length > 0) {
+    const stillHeld = await computeStillHeldIds(ctx, orgId, returnIds, excludeRecordId);
+    await releaseAssets(ctx, orgId, returnIds, stillHeld, now);
+  }
+
+  for (const { assetId, disposition } of dispositions) {
+    if (disposition !== "RETIRE") continue;
+    const asset = await fetchOrgAsset(ctx, orgId, assetId);
+    if (!asset || asset.status === "RETIRED") continue; // missing from this org, or already terminal
+    await retireAssetCore(ctx, orgId, asset, now);
+    await writeActivityLog(ctx, {
+      id: `${auditId}-retire-${assetId}`,
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "asset",
+      entityId: assetId,
+      entityName: asset.assetTag,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Retired asset ${asset.assetTag} on maintenance completion`,
+      details: { archived: true },
+      assetId,
+      createdAt: now,
+    });
   }
 }
 
@@ -403,6 +458,14 @@ export const updateNative = mutation({
     nextDueDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     assetLinks: v.array(assetLinkArg), // desired full set; id used only for NEW links
+    // Per-asset outcome when closing a record out to COMPLETED — see
+    // applyAssetDispositions. Optional + COMPLETED-only: omitted (or on any other
+    // status), the legacy record-wide "release everyone unless FAIL" path runs
+    // unchanged, so existing callers (API/MCP, the "Raise repair" shortcut) are
+    // unaffected.
+    assetDispositions: v.optional(
+      v.array(v.object({ assetId: v.string(), disposition: enums.MaintenanceAssetDisposition })),
+    ),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -442,9 +505,15 @@ export const updateNative = mutation({
     const wasHolding = isHoldingStatus(statusOf(record)); // BEFORE the patch
     const newStatus = a.status ?? "SCHEDULED";
     const isHolding = isHoldingStatus(newStatus);
+    // Per-asset dispositions, filtered to assets actually on this record (a client
+    // can't use this to touch an asset it isn't linked to), take over the
+    // COMPLETED release decision entirely when supplied.
+    const dispositions = (a.assetDispositions ?? []).filter((d) => newAssetIds.includes(d.assetId));
+    const usingDispositions = newStatus === "COMPLETED" && dispositions.length > 0;
     const willReleaseRemaining =
       newAssetIds.length > 0 &&
       wasHolding &&
+      !usingDispositions &&
       ((newStatus === "COMPLETED" && a.result !== "FAIL") || newStatus === "CANCELLED");
 
     // Cross-record still-held sets — computed while the current link/record state is
@@ -472,6 +541,9 @@ export const updateNative = mutation({
       }
       if (willReleaseRemaining) {
         await releaseAssets(ctx, a.orgId, newAssetIds, remainingStillHeld, a.now);
+      }
+      if (usingDispositions) {
+        await applyAssetDispositions(ctx, a.orgId, dispositions, a.id, a.now, actor, a.auditId);
       }
     }
 

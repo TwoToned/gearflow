@@ -36,6 +36,20 @@ function toOperation(identifier: string): string {
   return `${modulePath.replace(/\.js$/, "")}.${fnName}`;
 }
 
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 3000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * `convex function-spec` opens a WebSocket to the deployment this same job just
+ * pushed to a few seconds ago — a transient `ECONNRESET` while it's still
+ * settling is a known flake (seen in prod: run 35183420600), not a registry
+ * problem. Retry a few times with a short backoff before failing the deploy
+ * over it; a REAL drift fails identically on every attempt.
+ */
 function loadSpec(): SpecFunction[] {
   const raw = execFileSync("pnpm", ["exec", "convex", "function-spec"], {
     encoding: "utf8",
@@ -49,9 +63,28 @@ function loadSpec(): SpecFunction[] {
   return functions;
 }
 
-function main(): void {
+async function loadSpecWithRetry(): Promise<SpecFunction[]> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return loadSpec();
+    } catch (e) {
+      lastError = e;
+      if (attempt < MAX_ATTEMPTS) {
+        console.error(
+          `convex function-spec attempt ${attempt}/${MAX_ATTEMPTS} failed, retrying in ${RETRY_DELAY_MS}ms: ` +
+            (e instanceof Error ? e.message : String(e)),
+        );
+        await sleep(RETRY_DELAY_MS);
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function main(): Promise<void> {
   const deployed = new Set(
-    loadSpec()
+    (await loadSpecWithRetry())
       .filter(
         (fn) =>
           (fn.functionType === "Query" || fn.functionType === "Mutation") &&
@@ -93,4 +126,7 @@ function main(): void {
   process.exit(1);
 }
 
-main();
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : String(e));
+  process.exit(1);
+});

@@ -537,8 +537,8 @@ export function reconstructOverbookedStatus(
         }
         // Every child in `overbookedChildren` genuinely can't be fulfilled today
         // (combinedOverBy > 0 put it in the map) — a child's overage being caused
-        // solely by maintenance/lost stock (`reducedOnly`) doesn't make it any
-        // less real, so it counts toward `hasOverbookedChildren` the same as any
+        // solely by maintenance/lost stock (`reducedOnly`) doesn't make it less
+        // real, so it counts toward `hasOverbookedChildren` just like every
         // other child. `hasReducedChildren`/`reducedOnly` stay as informational
         // context (surfaced in the tooltip), not a lower-severity classification.
         overbookedMap.set(li.id, {

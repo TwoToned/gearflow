@@ -30942,11 +30942,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.assignees",
         "summary": "projectTasks.assignees (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31005,11 +31002,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.getById",
         "summary": "projectTasks.getById (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31075,11 +31069,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.listByProject",
         "summary": "projectTasks.listByProject (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31145,11 +31136,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.listByProjectWithRelations",
         "summary": "projectTasks.listByProjectWithRelations (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31215,11 +31203,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasks.myOpenTasks",
         "summary": "projectTasks.myOpenTasks (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:read or project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31278,11 +31263,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.bulkDeleteNative",
         "summary": "projectTasksWrites.bulkDeleteNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31355,11 +31337,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.bulkUpdateNative",
         "summary": "projectTasksWrites.bulkUpdateNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31437,11 +31416,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.createNative",
         "summary": "projectTasksWrites.createNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31525,11 +31501,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.deleteNative",
         "summary": "projectTasksWrites.deleteNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -31602,11 +31575,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "projectTasksWrites.updateNative",
         "summary": "projectTasksWrites.updateNative (mutation)",
-        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
-        "tags": [
-          "project"
-        ],
         "requestBody": {
           "required": true,
           "content": {

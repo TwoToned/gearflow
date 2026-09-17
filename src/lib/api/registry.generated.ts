@@ -41821,9 +41821,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "assignees",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -41940,7 +41944,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "117bc381a010e4d8",
+    "argsSha": "41978dae51ea1f78",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -42042,7 +42046,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "117bc381a010e4d8",
+    "argsSha": "41978dae51ea1f78",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -42057,9 +42061,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "getById",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -42089,9 +42097,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "listByProject",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -42126,9 +42138,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "listByProjectWithRelations",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -42163,9 +42179,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "myOpenTasks",
     "kind": "query",
     "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
       {
         "resource": "project",
         "action": "read"
@@ -42313,7 +42333,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "8f5f12dfac2a9705",
+    "argsSha": "e61e3d3271d15c05",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -42370,9 +42390,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "bulkDeleteNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42422,9 +42446,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "bulkUpdateNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42484,7 +42512,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b58cfa35fb401bb7",
+    "argsSha": "c91a4761b711c1b8",
     "returnsSha": "04471d174c91281a",
     "stability": "tracks-app",
     "summary": null,
@@ -42499,9 +42527,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "createNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42581,7 +42613,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "eca1479a41c3c0d2",
+    "argsSha": "e9da352b720c009e",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42596,9 +42628,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "deleteNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42648,9 +42684,13 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "updateNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
+    "resource": null,
+    "action": null,
     "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
       {
         "resource": "project",
         "action": "update"
@@ -42725,7 +42765,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "477317c8cff57ee2",
+    "argsSha": "c3a54983a7b2d46b",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

@@ -124,6 +124,9 @@ export const DIRECT_TABLES = [
   "wooCommerceOrderLogs",
   // Work-layer phase 1 (#1243) — has its own by_organizationId index.
   "workTemplates",
+  // Work-layer phase 3 (#1245) — has its own by_organizationId index
+  // (denormalised at link time, not a pure FK-only join).
+  "workItemLinks",
   // WS1 (#940) — Xero integration config + audit log.
   "xeroIntegrations",
   "xeroSyncLogs",
@@ -261,7 +264,9 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1243 (Phase 1, work-layer): +2 — workSignalStates (FILTER, composite-indexed
 // only, per-user signal decisions) and workTemplates (DIRECT, org-scoped work
 // item templates seeded on a project lifecycle transition).
-export const EXPECTED_TABLE_COUNT = 122;
+// #1245 (Phase 3, work-layer): +1 — workItemLinks (DIRECT — join table between
+// a work item and any other entity, has its own by_organizationId index).
+export const EXPECTED_TABLE_COUNT = 123;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

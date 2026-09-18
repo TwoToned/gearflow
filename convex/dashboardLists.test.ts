@@ -117,12 +117,27 @@ describe("dashboardLists.needsYou", () => {
     const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
 
     expect(res.declinedCrew).toEqual([
-      { sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Sam Smith", at: NOW - DAY },
+      { sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Sam Smith", crewRoleId: null, startDate: null, at: NOW - DAY },
     ]);
     expect(res.staleOffers).toEqual([
-      { sourceKey: "crew:stale:a2", assignmentId: "a2", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Rita Rivera", at: NOW - STALE },
+      { sourceKey: "crew:stale:a2", assignmentId: "a2", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Rita Rivera", crewRoleId: null, startDate: null, at: NOW - STALE },
     ]);
     expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+  });
+
+  // Work-layer Phase 4 (#1246) — the "> 48h" threshold is an org setting.
+  test("the unanswered-offer threshold is the org's own setting, not the hardcoded 48h default", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Sam", lastName: "Smith" });
+      // 6h old — NOT stale under the default 48h, but IS stale under this org's 5h setting.
+      await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "OFFERED", offeredAt: NOW - 6 * 60 * 60 * 1000 });
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ crewTime: { unansweredOfferHours: 5 } }) });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res.staleOffers.map((s) => s.assignmentId)).toEqual(["a1"]);
   });
 
   test("a project with nothing outstanding returns empty buckets, not an error", async () => {

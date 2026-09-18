@@ -6,6 +6,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 import { findLiveQuote, effectiveQuoteStatus } from "./lib/quoteState";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "./lib/quoteDates";
+import { resolveCrewOfferStaleHours } from "./lib/orgSettings";
 
 /**
  * BROWSER-facing native replacements for the bounded project/thread dashboard
@@ -193,7 +194,10 @@ export const home = query({
 // and don't need a `workSignalStates` row. "Work overdue/due soon" is also not
 // duplicated here — it's real, non-derived task rows already surfaced by
 // `projectTasks.myOpenTasks` in Today's Overdue/Today buckets.
-const STALE_OFFER_MS = 48 * 60 * 60 * 1000; // §8.5's "> 48h" — hardcoded until an org setting exists
+//
+// Phase 4 (#1246): the "> 48h" threshold is now the org's
+// `resolveCrewOfferStaleHours` setting (computed server-side, never the
+// browser's clock) instead of a hardcoded constant — see design doc §8.5.
 
 type CrewSignalRow = {
   sourceKey: string; // deterministic — design doc §9 ("crew:declined:<id>" / "crew:stale:<id>")
@@ -202,6 +206,8 @@ type CrewSignalRow = {
   projectName: string;
   projectNumber: string;
   crewMemberName: string;
+  crewRoleId: string | null; // Phase 4 (#1246) — feeds the Triage "Find cover" planner deep-link
+  startDate: number | null; // Phase 4 (#1246) — the planner week to land the "Find cover" link on
   at: number; // respondedAt for declined, offeredAt for stale
 };
 
@@ -247,10 +253,12 @@ export const needsYou = query({
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
-    const [projects, hiddenSourceKeys] = await Promise.all([
+    const [projects, hiddenSourceKeys, staleOfferHours] = await Promise.all([
       resolveManagedProjectDocs(ctx, orgId, userId),
       loadHiddenSourceKeys(ctx, orgId, userId, now),
+      resolveCrewOfferStaleHours(ctx, orgId), // Phase 4 (#1246) — org setting, default 48h
     ]);
+    const staleOfferMs = staleOfferHours * 60 * 60 * 1000;
 
     const declinedCrew: CrewSignalRow[] = [];
     const staleOffers: CrewSignalRow[] = [];
@@ -272,15 +280,17 @@ export const needsYou = query({
             if (hiddenSourceKeys.has(sourceKey)) continue;
             const row: CrewSignalRow = {
               sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
-              crewMemberName: "", at: a.respondedAt ?? a.updatedAt ?? now,
+              crewMemberName: "", crewRoleId: a.crewRoleId ?? null, startDate: a.startDate ?? null,
+              at: a.respondedAt ?? a.updatedAt ?? now,
             };
             pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: declinedCrew });
-          } else if (a.status === "OFFERED" && a.offeredAt != null && a.offeredAt < now - STALE_OFFER_MS) {
+          } else if (a.status === "OFFERED" && a.offeredAt != null && a.offeredAt < now - staleOfferMs) {
             const sourceKey = `crew:stale:${a.id}`;
             if (hiddenSourceKeys.has(sourceKey)) continue;
             const row: CrewSignalRow = {
               sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
-              crewMemberName: "", at: a.offeredAt,
+              crewMemberName: "", crewRoleId: a.crewRoleId ?? null, startDate: a.startDate ?? null,
+              at: a.offeredAt,
             };
             pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: staleOffers });
           }

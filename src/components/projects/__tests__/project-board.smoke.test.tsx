@@ -17,6 +17,9 @@ beforeAll(() => {
 
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
+  // #1244 — the revived board's drag-to-advance calls useNativeProjectStatus,
+  // which needs a session for the write's actor stamp.
+  useSession: () => ({ data: { user: { id: "u1", name: "Alice" } } }),
 }));
 vi.mock("@/components/auth/permission-gate", () => ({
   CanDo: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -26,6 +29,13 @@ vi.mock("@/server/projects", () => ({
 }));
 vi.mock("@/hooks/use-server-query", () => ({
   useServerQuery: () => ({ data: {} }),
+}));
+// #1244 — useConfirmStatusGate (useConvex) and useNativeProjectStatus
+// (useMutation) both come straight from convex/react, unmocked before the
+// board had any writes of its own.
+vi.mock("convex/react", () => ({
+  useConvex: () => ({ query: vi.fn() }),
+  useMutation: () => vi.fn(),
 }));
 
 const BOARD_ROWS = [

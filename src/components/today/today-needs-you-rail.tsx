@@ -65,7 +65,9 @@ export function TodayNeedsYouRail({
   onRefresh: () => void;
   onSnooze: (sourceKey: string) => void;
 }) {
-  const rowCount = data ? data.declinedCrew.length + data.staleOffers.length + data.expiringQuotes.length : 0;
+  const rowCount = data
+    ? data.declinedCrew.length + data.staleOffers.length + data.expiringQuotes.length + data.quotesNeedingNextStep.length
+    : 0;
 
   return (
     <div className="rounded-[var(--r-lg)] border border-line bg-card p-4">
@@ -113,6 +115,17 @@ export function TodayNeedsYouRail({
                 <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", intentStyles.warning.dot)} aria-hidden />
                 <p className="truncate text-[13px] text-ink-2 hover:underline">
                   Quote v{q.version} for {q.projectName} expires {q.daysLeft === 0 ? "today" : `in ${q.daysLeft}d`}
+                </p>
+              </Link>
+              <SnoozeButton sourceKey={q.sourceKey} onSnooze={onSnooze} />
+            </li>
+          ))}
+          {data.quotesNeedingNextStep.map((q) => (
+            <li key={`nonext-${q.quoteId}`} className="flex items-start gap-1">
+              <Link href={`/clients/${q.clientId}`} className={cn("flex flex-1 min-w-0 items-start gap-2 rounded-[var(--r)] -mx-1 px-1 py-0.5", focusRing)}>
+                <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", intentStyles.warning.dot)} aria-hidden />
+                <p className="truncate text-[13px] text-ink-2 hover:underline">
+                  Quote v{q.version} out for {q.projectName}, no next step
                 </p>
               </Link>
               <SnoozeButton sourceKey={q.sourceKey} onSnooze={onSnooze} />

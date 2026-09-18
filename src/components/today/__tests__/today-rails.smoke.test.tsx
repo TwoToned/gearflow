@@ -40,7 +40,7 @@ describe("TodayDayRail", () => {
 });
 
 describe("TodayNeedsYouRail", () => {
-  const EMPTY = { declinedCrew: [], staleOffers: [], expiringQuotes: [] };
+  const EMPTY = { declinedCrew: [], staleOffers: [], expiringQuotes: [], quotesNeedingNextStep: [] };
 
   it("shows a retry notice on a first-load failure", () => {
     const refresh = vi.fn();
@@ -63,6 +63,7 @@ describe("TodayNeedsYouRail", () => {
           declinedCrew: [{ sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", at: Date.now() }],
           staleOffers: [],
           expiringQuotes: [],
+          quotesNeedingNextStep: [],
         }}
         asOf={Date.now()}
         error={null}

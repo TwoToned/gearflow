@@ -84,6 +84,7 @@ describe("TodayNeedsYouRail", () => {
           declinedCrew: [{ sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", crewRoleId: null, startDate: null, at: Date.now() }],
           staleOffers: [],
           expiringQuotes: [],
+          quotesNeedingNextStep: [],
         }}
         asOf={Date.now()}
         error={null}
@@ -103,6 +104,7 @@ describe("TodayNeedsYouRail", () => {
           declinedCrew: [],
           staleOffers: [{ sourceKey: "crew:stale:a2", assignmentId: "a2", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", crewRoleId: "role1", startDate: 1700000000000, at: Date.now() }],
           expiringQuotes: [],
+          quotesNeedingNextStep: [],
         }}
         asOf={Date.now()}
         error={null}

@@ -43099,6 +43099,52 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectTasks.workCountsForProjects",
+    "module": "projectTasks",
+    "fn": "workCountsForProjects",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      },
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d814ea23463b290c",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Batched done/total/overdue task counts for a set of projects (project board cards).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectTasksWrites.bulkDeleteNative",
     "module": "projectTasksWrites",
     "fn": "bulkDeleteNative",
@@ -43326,6 +43372,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "recurrence",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "stage",
         "optional": true,
         "type": "union"
@@ -43339,10 +43390,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "title",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "watcherUserIds",
+        "optional": true,
+        "type": "union"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "2b4ce3f948d3f961",
+    "argsSha": "f8d2a78e0675a2e5",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -43404,6 +43460,108 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": "high",
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTasksWrites.reorderNative",
+    "module": "projectTasksWrites",
+    "fn": "reorderNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orderedIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1aaef5e812b9cdb9",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": "Reassign sortOrder for a set of tasks after a drag-reorder.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTasksWrites.setWatchingNative",
+    "module": "projectTasksWrites",
+    "fn": "setWatchingNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "watching",
+        "optional": false,
+        "type": "boolean"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d0b1322e3d823",
+    "returnsSha": "5d8911daaa5fe341",
+    "stability": "tracks-app",
+    "summary": "Watch or unwatch a task.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -43488,6 +43646,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       },
       {
+        "name": "recurrence",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "stage",
         "optional": true,
         "type": "union"
@@ -43501,10 +43664,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "title",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "watcherUserIds",
+        "optional": true,
+        "type": "union"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7e519196d0119bed",
+    "argsSha": "a87e18033aafd90d",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -44335,6 +44503,122 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": "high",
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "pushSubscriptions.isSubscribed",
+    "module": "pushSubscriptions",
+    "fn": "isSubscribed",
+    "kind": "query",
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Whether the calling user has an active Web Push subscription.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "pushSubscriptionsWrites.subscribeNative",
+    "module": "pushSubscriptionsWrites",
+    "fn": "subscribeNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "auth",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "endpoint",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "p256dh",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userAgent",
+        "optional": true,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "26680084fbd905d0",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Register this browser's Web Push subscription for the calling user.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "pushSubscriptionsWrites.unsubscribeNative",
+    "module": "pushSubscriptionsWrites",
+    "fn": "unsubscribeNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "endpoint",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e4de164b04a2cca0",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": "Remove this browser's Web Push subscription.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -62883,10 +63167,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1220,
-  agentReachable: 597,
-  queries: 439,
-  mutations: 781,
-  agentReachableQueries: 308,
-  agentReachableMutations: 289,
+  total: 1226,
+  agentReachable: 603,
+  queries: 441,
+  mutations: 785,
+  agentReachableQueries: 310,
+  agentReachableMutations: 293,
 } as const;

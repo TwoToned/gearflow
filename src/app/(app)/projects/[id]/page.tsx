@@ -26,14 +26,16 @@ import {
 import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
-import { TasksPanel } from "@/components/projects/tasks-panel";
+import { WorkTab } from "@/components/projects/work-tab";
+import { useProjectWorkData } from "@/hooks/use-project-work-data";
+import { WorkTimelineRow } from "@/components/projects/overview/work-timeline-row";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
 import { ProjectLockChip } from "@/components/projects/project-lock-chip";
 import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
-import { ProjectReadinessPanel, type ProjectTab } from "@/components/projects/project-readiness-panel";
+import { ProjectOverviewWorkCard, type WorkCardTab as ProjectTab } from "@/components/projects/overview/work-card";
 import {
   ProjectContextRail,
   type ProjectContextRailProject,
@@ -165,8 +167,13 @@ export default function ProjectDetailPage({
   // #1061 made `Tabs` CONTROLLED: the Overview tab's readiness checklist sends
   // you to the tab that fixes a failing check ("Open crew" → labour), which
   // needs a setter the uncontrolled form doesn't give.
-  const VALID_TABS = ["overview", "equipment", "labour", "finance", "tasks", "notes", "files"] as const;
-  const requestedTab = searchParams.get("tab");
+  // #1244 (work-layer phase 2) — the Tasks tab is renamed Work. `tasks`
+  // stays a working `?tab=` value (never in VALID_TABS itself, so it never
+  // renders a TabsTrigger for it) via `normalizeTabParam` below, so an old
+  // bookmark/notification link doesn't silently fall back to Overview.
+  const VALID_TABS = ["overview", "equipment", "labour", "finance", "work", "notes", "files"] as const;
+  const normalizeTabParam = (tab: string | null): string | null => (tab === "tasks" ? "work" : tab);
+  const requestedTab = normalizeTabParam(searchParams.get("tab"));
   // D3 (#1107) — the "Add <model> to it" chained hand-off deep-links here as
   // `?tab=equipment&modelId=<id>`; EquipmentTab auto-opens its add dialog
   // with that model pre-selected the one time this is set. Captured ONCE via
@@ -225,6 +232,14 @@ export default function ProjectDetailPage({
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
 
+  // #1244 — the Work tab's "9 of 14" label count. Cheap (already fetched
+  // independently by the Overview Work card / Work tab whenever THEY mount;
+  // this is the one call that's always live so the closed tab's label stays
+  // accurate).
+  const workCountsData = useProjectWorkData(id);
+  const workDoneCount = workCountsData.tasks.filter((t) => t.status === "DONE").length;
+  const workTotalCount = workCountsData.tasks.filter((t) => t.status !== "CANCELLED").length;
+
   // Phase 3 browser-direct: optimistic project-notes save (always native — the notes
   // are safe to optimistic; a wrong save just re-renders, nothing irreversible happens).
   const optimisticNotes = useOptimisticProjectNotes(id, orgId);
@@ -260,7 +275,7 @@ export default function ProjectDetailPage({
   // transition INTO CONFIRMED, and only then. Every other status change
   // proceeds exactly as before (requestStatusChange calls onProceed
   // synchronously-equivalent when there's nothing to warn about).
-  const confirmGate = useConfirmStatusGate(orgId, id, project?.status, (next) => statusMutation.mutate(next));
+  const confirmGate = useConfirmStatusGate(orgId, (_projectId, next) => statusMutation.mutate(next));
 
   const archiveMutation = useServerMutation({
     mutationFn: () => projectWrites.archive(id),
@@ -550,12 +565,12 @@ export default function ProjectDetailPage({
                 status={project.status}
                 advancing={statusMutation.isPending || confirmGate.checking}
                 canAdvance={canUpdate}
-                onAdvance={(next) => confirmGate.requestStatusChange(next)}
+                onAdvance={(next) => confirmGate.requestStatusChange(id, project.status, next)}
                 statuses={allStatuses.map((s) => ({
                   value: s,
                   label: projectStatusLabels[s] || formatLabel(s),
                 }))}
-                onStatusChange={(s) => confirmGate.requestStatusChange(s)}
+                onStatusChange={(s) => confirmGate.requestStatusChange(id, project.status, s)}
               />
             )}
 
@@ -666,7 +681,9 @@ export default function ProjectDetailPage({
                     {!project.isTemplate && (
                       <TabsTrigger value="finance">Finance</TabsTrigger>
                     )}
-                    <TabsTrigger value="tasks">Tasks</TabsTrigger>
+                    <TabsTrigger value="work">
+                      Work{workTotalCount > 0 ? ` · ${workDoneCount} of ${workTotalCount}` : ""}
+                    </TabsTrigger>
                     <TabsTrigger value="notes">Notes</TabsTrigger>
                     <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
                   </TabsList>
@@ -684,11 +701,18 @@ export default function ProjectDetailPage({
                   <div className="pt-4">
                     <div className="flex min-w-0 flex-col gap-4">
                       {!project.isTemplate && orgId && (
-                        <ProjectReadinessPanel
+                        <ProjectOverviewWorkCard
                           projectId={id}
                           orgId={orgId}
                           onNavigateTab={(tab: ProjectTab) => setActiveTab(tab)}
                         />
+                      )}
+                      {/* Timeline row (#1244, design §8.3) — one week strip:
+                          gear window, services, crew, work. Read-only in
+                          this phase (drag-to-reschedule is a later agenda-
+                          engine phase). */}
+                      {!project.isTemplate && orgId && (
+                        <WorkTimelineRow projectId={id} orgId={orgId} />
                       )}
                       {/* The live quote and the invoicing position, as peers.
                           Each carries only the ONE action you'd most likely
@@ -852,11 +876,12 @@ export default function ProjectDetailPage({
                   </TabsContent>
                 )}
 
-                {/* Tasks Tab — projectTasks isn't in the snapshot; stays live. */}
-                <TabsContent value="tasks">
+                {/* Work Tab (#1244, formerly Tasks) — projectTasks isn't in
+                    the snapshot; stays live. */}
+                <TabsContent value="work">
                   <div className="pt-4">
-                    <VersionNotTrackedNote what="Tasks" />
-                    <TasksPanel projectId={id} />
+                    <VersionNotTrackedNote what="Work" />
+                    <WorkTab projectId={id} />
                   </div>
                 </TabsContent>
 

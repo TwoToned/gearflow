@@ -1,6 +1,7 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { resolveQuoteValidityDays } from "./quoteDates";
 import { resolvePaymentTermsDays } from "./invoiceDates";
+import { resolveRottingDays, DEFAULT_ROTTING_AMBER_DAYS, DEFAULT_ROTTING_ERROR_DAYS } from "./rottingDates";
 
 /** Org default tax rate from the Convex orgSettings mirror (source of truth; the
  *  Postgres column is deprecated). null when unset. Resolved IN-mutation so browser
@@ -108,4 +109,34 @@ export async function resolveOrgInvoiceConfig(
     paymentTermsDays: resolvePaymentTermsDays(typeof config.paymentTermsDays === "number" ? config.paymentTermsDays : null),
     timezone: config.timezone,
   };
+}
+
+/** The org's timezone + client-pipeline rotting thresholds (#1245, design
+ *  §8.4) — resolved server-side so shading is computed in the ORG's
+ *  timezone, never the browser's (R-9.3). `src/lib/org-settings-types.ts`'s
+ *  `OrgWorkSettings` is the stored shape; absent keys fall back to the
+ *  design doc's 7/14-day defaults. */
+export async function resolveOrgWorkConfig(
+  ctx: MutationCtx | QueryCtx,
+  orgId: string,
+): Promise<{ timezone: string | undefined; rottingAmberDays: number; rottingErrorDays: number }> {
+  const blob = (await loadOrgSettingsBlob(ctx, orgId)) as {
+    timezone?: unknown;
+    work?: { rottingAmberDays?: unknown; rottingErrorDays?: unknown };
+  };
+  const timezone = typeof blob.timezone === "string" && blob.timezone ? blob.timezone : undefined;
+  const amber = resolveRottingDays(
+    typeof blob.work?.rottingAmberDays === "number" ? blob.work.rottingAmberDays : null,
+    DEFAULT_ROTTING_AMBER_DAYS,
+  );
+  const error = resolveRottingDays(
+    typeof blob.work?.rottingErrorDays === "number" ? blob.work.rottingErrorDays : null,
+    DEFAULT_ROTTING_ERROR_DAYS,
+  );
+  // An amber threshold at or past the error threshold would shade every
+  // rotting card straight to "error" with no amber step ever showing —
+  // silently swallow the amber tier instead of erroring on a bad settings
+  // blob. Widening the error threshold by 1 day is the smallest fix that
+  // keeps both tiers meaningful.
+  return { timezone, rottingAmberDays: amber, rottingErrorDays: Math.max(error, amber + 1) };
 }

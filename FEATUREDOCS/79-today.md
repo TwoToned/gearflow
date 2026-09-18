@@ -65,6 +65,18 @@ snooze/dismiss subtraction as every other signal, sourceKey
 `quote:nonext:<quoteId>`. See FEATUREDOCS/80 for the client-side "Next step"
 half of this rule.
 
+**Phase 4 (#1246, work-layer, FEATUREDOCS/31 has the full crew-side writeup):**
+the "> 48h" staleness threshold behind `staleOffers` is now an org setting
+(`resolveCrewOfferStaleHours`, `OrgSettings.crewTime.unansweredOfferHours`,
+default 48) instead of a hardcoded constant, and each `CrewSignalRow` carries
+`crewRoleId`/`startDate` so `TodayNeedsYouRail` can build a "Find cover" deep
+link into `/crew/planner`. Both crew buckets (`declinedCrew`/`staleOffers`)
+now render two more one-key actions alongside Snooze: **Re-offer** (calls the
+existing `sendCrewOffer` server action) and **Find cover** (the planner deep
+link above). Neither is a new signal source — the derived read itself
+(`needsYou`) was already Phase 1's; Phase 4 only closed the "what can a human
+DO about it" gap the design doc's Triage table always specified.
+
 ### One-shot polling (`useFocusPolledQuery`)
 
 `src/hooks/use-focus-polled-query.ts` — a direct `convex.query()` call,

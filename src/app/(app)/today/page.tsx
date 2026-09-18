@@ -10,6 +10,7 @@ import { useFocusPolledQuery } from "@/hooks/use-focus-polled-query";
 import { useTodayDayRail } from "@/hooks/use-today-day-rail";
 import { useProjectTaskWrites } from "@/hooks/use-project-tasks-writes";
 import { useWorkSignalWrites } from "@/hooks/use-work-signal-writes";
+import { sendCrewOffer } from "@/server/crew-communication";
 import { useNotifications } from "@/hooks/use-notifications";
 import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
 import { useCanDo } from "@/lib/use-permissions";
@@ -105,6 +106,25 @@ export default function TodayPage() {
       });
     },
     [signalWrites, needsYou.refresh],
+  );
+
+  // Re-offer a declined/stale crew assignment (work-layer Phase 4, #1246,
+  // design §8.5) — the ONE-KEY Triage action, calling the EXISTING offer flow
+  // (`sendCrewOffer`, mints a fresh token + sends the offer email) rather than
+  // a second, hand-rolled offer path.
+  const [reofferingAssignmentId, setReofferingAssignmentId] = useState<string | null>(null);
+  const reofferCrew = useCallback(
+    (assignmentId: string) => {
+      setReofferingAssignmentId(assignmentId);
+      sendCrewOffer(assignmentId)
+        .then(() => {
+          toast.success("Offer sent");
+          return needsYou.refresh();
+        })
+        .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not send the offer"))
+        .finally(() => setReofferingAssignmentId(null));
+    },
+    [needsYou.refresh],
   );
 
   // Turn a mention into a real task ("make a task", design doc §9's Triage
@@ -369,7 +389,7 @@ export default function TodayPage() {
 
         <div className="space-y-4">
           <TodayDayRail entries={dayRail.entries} asOf={dayRail.asOf} error={dayRail.error} onRefresh={dayRail.refresh} />
-          <TodayNeedsYouRail data={needsYou.data} asOf={needsYou.asOf} error={needsYou.error} onRefresh={needsYou.refresh} onSnooze={snoozeSignal} />
+          <TodayNeedsYouRail data={needsYou.data} asOf={needsYou.asOf} error={needsYou.error} onRefresh={needsYou.refresh} onSnooze={snoozeSignal} onReoffer={reofferCrew} reofferingAssignmentId={reofferingAssignmentId} />
         </div>
       </div>
 

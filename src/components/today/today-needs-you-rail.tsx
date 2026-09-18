@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { RefreshCw, Clock } from "lucide-react";
+import { RefreshCw, Clock, Send, UserSearch } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { intentStyles } from "@/lib/status-colors";
@@ -10,6 +10,18 @@ import type { api } from "../../../convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 
 type NeedsYouData = FunctionReturnType<typeof api.dashboardLists.needsYou>;
+type CrewSignalRow = NeedsYouData["declinedCrew"][number];
+
+/** `/crew/planner` deep link for "Find cover" (design §8.5) — pre-filters the
+ *  planner to this assignment's role and free crew, on its own week. */
+function findCoverHref(row: CrewSignalRow): string {
+  const params = new URLSearchParams();
+  if (row.crewRoleId) params.set("role", row.crewRoleId);
+  params.set("avail", "AVAILABLE");
+  if (row.startDate != null) params.set("week", String(row.startDate));
+  const qs = params.toString();
+  return `/crew/planner${qs ? `?${qs}` : ""}`;
+}
 
 function AsOfStamp({ asOf, onRefresh }: { asOf: number | undefined; onRefresh: () => void }) {
   return (
@@ -47,6 +59,54 @@ function SnoozeButton({ sourceKey, onSnooze }: { sourceKey: string; onSnooze: (s
   );
 }
 
+/** One-key Re-offer (design §8.5) — calls the EXISTING offer flow
+ *  (`sendCrewOffer`, `src/server/crew-communication.ts`) on this assignment;
+ *  never a second, hand-rolled offer path. */
+function ReofferButton({
+  assignmentId,
+  pending,
+  onReoffer,
+}: {
+  assignmentId: string;
+  pending: boolean;
+  onReoffer: (assignmentId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      title="Re-offer this position"
+      aria-label="Re-offer this position"
+      disabled={pending}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onReoffer(assignmentId);
+      }}
+      className={cn(
+        "touch-target -m-2 flex shrink-0 items-center justify-center rounded-full text-faint hover:text-ink disabled:opacity-50",
+        focusRing,
+      )}
+    >
+      <Send className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+/** Opens the planner filtered to eligible + available crew (design §8.5). */
+function FindCoverLink({ row }: { row: CrewSignalRow }) {
+  return (
+    <Link
+      href={findCoverHref(row)}
+      title="Find cover"
+      aria-label="Find cover"
+      onClick={(e) => e.stopPropagation()}
+      className={cn("touch-target -m-2 flex shrink-0 items-center justify-center rounded-full text-faint hover:text-ink", focusRing)}
+    >
+      <UserSearch className="h-3.5 w-3.5" />
+    </Link>
+  );
+}
+
 /** Today's "needs you" rail (work-layer.md §8.1) — crew declined/stale offers
  *  and quotes expiring soon, on projects the caller manages. One-shot; see
  *  dashboardLists.needsYou + useFocusPolledQuery. Snoozing a row (design doc
@@ -58,12 +118,16 @@ export function TodayNeedsYouRail({
   error,
   onRefresh,
   onSnooze,
+  onReoffer,
+  reofferingAssignmentId,
 }: {
   data: NeedsYouData | undefined;
   asOf: number | undefined;
   error?: Error | null;
   onRefresh: () => void;
   onSnooze: (sourceKey: string) => void;
+  onReoffer: (assignmentId: string) => void;
+  reofferingAssignmentId?: string | null;
 }) {
   const rowCount = data
     ? data.declinedCrew.length + data.staleOffers.length + data.expiringQuotes.length + data.quotesNeedingNextStep.length
@@ -97,6 +161,8 @@ export function TodayNeedsYouRail({
                 <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", intentStyles.error.dot)} aria-hidden />
                 <p className="truncate text-[13px] text-ink-2 hover:underline">{c.crewMemberName} declined {c.projectName}</p>
               </Link>
+              <ReofferButton assignmentId={c.assignmentId} pending={reofferingAssignmentId === c.assignmentId} onReoffer={onReoffer} />
+              <FindCoverLink row={c} />
               <SnoozeButton sourceKey={c.sourceKey} onSnooze={onSnooze} />
             </li>
           ))}
@@ -106,6 +172,8 @@ export function TodayNeedsYouRail({
                 <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", intentStyles.warning.dot)} aria-hidden />
                 <p className="truncate text-[13px] text-ink-2 hover:underline">{c.crewMemberName} hasn&apos;t responded — {c.projectName}</p>
               </Link>
+              <ReofferButton assignmentId={c.assignmentId} pending={reofferingAssignmentId === c.assignmentId} onReoffer={onReoffer} />
+              <FindCoverLink row={c} />
               <SnoozeButton sourceKey={c.sourceKey} onSnooze={onSnooze} />
             </li>
           ))}

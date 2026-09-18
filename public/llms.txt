@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (595 agent-reachable)
+## Operations (597 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -169,6 +169,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `crewSkills.getById` (query, scope: crew:read)
 - `crewSkills.list` (query, scope: crew:read)
 - `crewTimeEntries.allEntries` (query, scope: crew:read)
+- `crewTimeEntries.approvedHoursByMember` (query, scope: crew:read)
 - `crewTimeEntries.forMember` (query, scope: crew:read)
 - `crewTimeEntries.getById` (query, scope: crew:read)
 - `crewTimeEntries.list` (query, scope: crew:read)
@@ -651,6 +652,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `clientTimelineWrites.logCallNative` (mutation, scope: work:create)
 - `clientTimelineWrites.logEmailNative` (mutation, scope: work:create)
 - `clientTimelineWrites.setNextStepNative` (mutation, scope: work:create)
+- `crewTimeEntries.loggedMinutesForWorkItems` (query, scope: work:read)
 - `workItemLinks.forEntity` (query, scope: work:read)
 - `workItemLinksWrites.linkNative` (mutation, scope: work:update)
 - `workItemLinksWrites.unlinkNative` (mutation, scope: work:update)

@@ -47,6 +47,17 @@ export interface OrgDocumentSettings {
   paymentTermsDays?: number;
 }
 
+/** Work-layer Phase 4 (#1246) — the crew planner's confirmation layer. See
+ *  `src/lib/crew-time-settings.ts` for bounds/defaults. */
+export interface CrewTimeSettings {
+  /** Hours an OFFERED assignment sits unanswered before it's a Triage signal
+   *  for the PM (design doc §8.5/§9). Absent = the documented default (48). */
+  unansweredOfferHours?: number;
+  /** Email the day before a confirmed shift with call time, location and PM
+   *  phone. Off by default — absent or `false` = disabled. */
+  callReminderEnabled?: boolean;
+}
+
 /** Work-layer Phase 3 (#1245, design §8.4) — per-org "rotting" thresholds for
  *  the client pipeline. Absent (or an individual key absent) falls back to
  *  the design doc's defaults (7 / 14 days) via
@@ -129,4 +140,6 @@ export interface OrgSettings {
   projectStatusAutomation?: ProjectStatusAutomationSettings;
   /** #1245 — client-pipeline rotting thresholds. See `OrgWorkSettings`. */
   work?: OrgWorkSettings;
+  /** Work-layer Phase 4 (#1246) — crew planner confirmation-layer settings. */
+  crewTime?: CrewTimeSettings;
 }

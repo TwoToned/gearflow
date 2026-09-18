@@ -84,6 +84,16 @@ export const conflicts = query({
   },
 });
 
+// Phase 4 (#1246) — the planner's own DISPLAY exclusion, deliberately NOT the
+// shared `EXCLUDED` set above (CANCELLED + DECLINED): that set answers "does
+// this assignment hold the crew member's time" for conflict detection, where
+// a declined offer correctly doesn't. The planner grid asks a different
+// question — "does this shift need a confirmation badge shown" — and a
+// DECLINED offer is exactly the row the design doc's badge language (§8.5)
+// and the header summary need to count and render. Only CANCELLED (a
+// withdrawn/deleted booking, nothing to confirm) drops off the grid.
+const PLANNER_HIDDEN_STATUSES: ReadonlySet<string> = new Set(["CANCELLED"]);
+
 /** The crew planner grid: active members + their assignments (project/role joins) + availability over [startMs,endMs]. */
 export const plannerData = query({
   args: { orgId: v.string(), startMs: v.number(), endMs: v.number() },
@@ -122,11 +132,17 @@ export const plannerData = query({
     return members.map((m) => {
       const role = m.crewRoleId ? roleById.get(m.crewRoleId) ?? null : null;
       const assignments = (assignByMember.get(m.id) ?? [])
-        .filter((a) => !EXCLUDED.has(a.status ?? "") && (a.startDate == null || overlaps(a.startDate, a.endDate ?? a.startDate, startMs, endMs)))
+        .filter((a) => !PLANNER_HIDDEN_STATUSES.has(a.status ?? "") && (a.startDate == null || overlaps(a.startDate, a.endDate ?? a.startDate, startMs, endMs)))
         .map((a) => {
           const p = projById.get(a.projectId) ?? null;
           const aRole = a.crewRoleId ? roleById.get(a.crewRoleId) ?? null : null;
-          return { ...a, startDate: iso(a.startDate), endDate: iso(a.endDate), offeredAt: iso(a.offeredAt), respondedAt: iso(a.respondedAt), confirmedAt: iso(a.confirmedAt), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null } : null, crewRole: aRole ? { name: aRole.name, color: aRole.color ?? null } : null };
+          // Strip Convex system fields + the single-use offer-respond bearer
+          // token before it reaches any crew:read caller (parity with
+          // `projectCrew`'s same redaction, above) — never spread it into a
+          // browser-readable payload.
+          const { _id, _creationTime, responseToken, ...arest } = a;
+          void _id; void _creationTime; void responseToken;
+          return { ...arest, startDate: iso(a.startDate), endDate: iso(a.endDate), offeredAt: iso(a.offeredAt), respondedAt: iso(a.respondedAt), confirmedAt: iso(a.confirmedAt), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null } : null, crewRole: aRole ? { name: aRole.name, color: aRole.color ?? null } : null };
         });
       const availability = (availByMember.get(m.id) ?? [])
         .filter((r) => overlaps(r.startDate, r.endDate, startMs, endMs))

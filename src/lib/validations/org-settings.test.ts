@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { orgDocumentSettingsSchema, orgOperatingDetailsSchema } from "./org-settings";
+import { orgDocumentSettingsSchema, orgOperatingDetailsSchema, crewTimeSettingsSchema } from "./org-settings";
 
 describe("orgDocumentSettingsSchema", () => {
   it("accepts an empty object (all fields optional)", () => {
@@ -110,5 +110,30 @@ describe("orgOperatingDetailsSchema — the wizard's 'where you operate' screen 
     expect(
       orgOperatingDetailsSchema.safeParse({ country: "AU", taxLabel: "Consumption Tax" }).success,
     ).toBe(true);
+  });
+});
+
+describe("crewTimeSettingsSchema (work-layer Phase 4, #1246)", () => {
+  it("accepts an empty object (both fields optional)", () => {
+    expect(crewTimeSettingsSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("accepts valid values", () => {
+    expect(crewTimeSettingsSchema.safeParse({ unansweredOfferHours: 24, callReminderEnabled: true }).success).toBe(true);
+  });
+
+  it("rejects unansweredOfferHours outside 1-336 (2 weeks), accepts right at the bounds", () => {
+    expect(crewTimeSettingsSchema.safeParse({ unansweredOfferHours: 0 }).success).toBe(false);
+    expect(crewTimeSettingsSchema.safeParse({ unansweredOfferHours: 337 }).success).toBe(false);
+    expect(crewTimeSettingsSchema.safeParse({ unansweredOfferHours: 1 }).success).toBe(true);
+    expect(crewTimeSettingsSchema.safeParse({ unansweredOfferHours: 336 }).success).toBe(true);
+  });
+
+  it("rejects a non-boolean callReminderEnabled", () => {
+    expect(crewTimeSettingsSchema.safeParse({ callReminderEnabled: "yes" }).success).toBe(false);
+  });
+
+  it("rejects an unknown key (.strict())", () => {
+    expect(crewTimeSettingsSchema.safeParse({ somethingElse: true }).success).toBe(false);
   });
 });

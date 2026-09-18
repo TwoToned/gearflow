@@ -1,6 +1,7 @@
 "use server";
 
 import { randomBytes } from "crypto";
+import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
@@ -13,6 +14,7 @@ import {
   crewConfirmationEmail,
   crewCancellationEmail,
   crewBulkMessageEmail,
+  crewPositionFilledEmail,
 } from "@/lib/crew-emails";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
@@ -30,7 +32,11 @@ function generateToken(): string {
 
 // ─── Build email data from assignment ────────────────────────────────────────
 
-async function buildAssignmentEmailData(assignmentId: string) {
+// Exported for `src/server/crew-time-nudges.ts` (the 24h offer nudge + the
+// day-before call-time reminder, both cron-invoked — no session to check
+// permissions against). This function does no authz itself; every USER-
+// FACING caller in this file still gates on `requirePermission` before it.
+export async function buildAssignmentEmailData(assignmentId: string) {
   // crewAssignment / crewMember / crewRole and project are all dual-written /
   // Convex-only — re-source the assignment + its crew member, role and project
   // from Convex (the old Prisma `crewAssignment.findUnique` reads empty). The
@@ -327,4 +333,158 @@ export async function sendBulkMessage(
   }
 
   return serialize({ sent, errors, total: assignments.length });
+}
+
+// ─── Request Availability (work-layer Phase 4, #1246, design §8.5) ──────────
+
+type RequestAvailabilityInput = {
+  projectId: string;
+  serviceId: string;
+  crewRoleId?: string;
+  startDate: number;
+  endDate: number;
+  startTime?: string;
+  endTime?: string;
+};
+
+type EligibleMemberCandidate = {
+  id: string;
+  email: string | null;
+  crewRole: { id: string } | null;
+  availability: string;
+  assignments: { serviceId: string | null; status: string | null }[];
+};
+
+/** The service targeted by "Request availability…", org- and project-checked.
+ *  Extracted so the multi-condition guard lives in one small function (R-3.6)
+ *  rather than adding branches to `requestCrewAvailability` itself. */
+async function requireRequestedService(
+  convex: Awaited<ReturnType<typeof getConvexClient>>,
+  serviceId: string,
+  organizationId: string,
+  projectId: string,
+) {
+  const service = await convex.query(api.projectServices.getById, { id: serviceId });
+  const belongs = service && service.organizationId === organizationId && service.projectId === projectId;
+  if (!belongs) throw new Error("Service not found");
+  return service;
+}
+
+/** Eligible = reuses `crewAssignments.membersForAssignment` (the SAME
+ *  conflict/availability computation the assignment picker already uses,
+ *  R-3.1 — no second eligibility definition): has an email, matches the role
+ *  (when one is given), not `unavailable`/`busy` over the window, and not
+ *  already offered/accepted/confirmed on THIS service. */
+function filterEligibleMembers(candidates: EligibleMemberCandidate[], input: RequestAvailabilityInput): EligibleMemberCandidate[] {
+  const isAlreadyOnService = (m: EligibleMemberCandidate) =>
+    m.assignments.some((a) => a.serviceId === input.serviceId && a.status !== "DECLINED" && a.status !== "CANCELLED");
+  const matchesRole = (m: EligibleMemberCandidate) => !input.crewRoleId || m.crewRole?.id === input.crewRoleId;
+  const isFree = (m: EligibleMemberCandidate) => m.availability !== "unavailable" && m.availability !== "busy";
+  return candidates.filter((m) => !!m.email && matchesRole(m) && isFree(m) && !isAlreadyOnService(m));
+}
+
+/** One eligible member → one new `crewAssignments` row (PENDING), then the
+ *  EXISTING offer flow (`sendCrewOffer`) flips it to OFFERED and sends the
+ *  email. Extracted so the per-member ternary-heavy payload build doesn't add
+ *  to the caller's loop complexity. */
+async function offerAvailabilityToMember(
+  convex: Awaited<ReturnType<typeof getConvexClient>>,
+  member: EligibleMemberCandidate,
+  input: RequestAvailabilityInput,
+  organizationId: string,
+  actor: { userId: string; userName: string },
+): Promise<void> {
+  const id = createId();
+  await convex.mutation(api.crewAssignmentsWrites.createNative, {
+    id,
+    orgId: organizationId,
+    projectId: input.projectId,
+    crewMemberId: member.id,
+    ...(input.crewRoleId ? { crewRoleId: input.crewRoleId } : {}),
+    serviceId: input.serviceId,
+    status: "PENDING",
+    startDate: input.startDate,
+    endDate: input.endDate,
+    ...(input.startTime ? { startTime: input.startTime } : {}),
+    ...(input.endTime ? { endTime: input.endTime } : {}),
+    now: Date.now(),
+    actor,
+    auditId: createId(),
+  });
+  await sendCrewOffer(id);
+}
+
+/**
+ * Bulk "Request availability…" — pick a date range and a role, send the
+ * EXISTING offer email to every eligible crew member (see
+ * `filterEligibleMembers` above for what "eligible" means).
+ *
+ * First-come fill: each eligible member gets their OWN `crewAssignments` row
+ * (PENDING → OFFERED via `sendCrewOffer`) linked to the same `serviceId`.
+ * When enough of them ACCEPT to reach the service's `crewCountRequired`, the
+ * public respond route (`/api/crew/respond/[token]`) auto-cancels the
+ * remaining open offers for that service via `crewAssignments.autoFillServiceNative`
+ * and notifies them the position was filled — see that route +
+ * `notifyPositionFilled` below. No new tables: the grouping key is the
+ * existing `crewAssignments.serviceId` column.
+ */
+export async function requestCrewAvailability(input: RequestAvailabilityInput) {
+  const { organizationId, userId, userName } = await requirePermission("crew", "create");
+  const convex = await getConvexClient();
+
+  await requireRequestedService(convex, input.serviceId, organizationId, input.projectId);
+  const project = await getProjectByIdMapped(input.projectId, organizationId);
+  if (!project) throw new Error("Project not found");
+
+  const candidates = (await convex.query(api.crewAssignments.membersForAssignment, {
+    projectId: input.projectId,
+    orgId: organizationId,
+    rangeStartMs: input.startDate,
+    rangeEndMs: input.endDate,
+  })) as EligibleMemberCandidate[];
+  const eligible = filterEligibleMembers(candidates, input);
+
+  let offered = 0;
+  const errors: string[] = [];
+  for (const member of eligible) {
+    try {
+      await offerAvailabilityToMember(convex, member, input, organizationId, { userId, userName });
+      offered++;
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "crew_assignment",
+    entityId: input.serviceId,
+    entityName: project.name,
+    summary: `Requested availability from ${offered} crew member${offered === 1 ? "" : "s"} for ${project.name}`,
+  });
+
+  return serialize({ offered, eligible: eligible.length, errors });
+}
+
+/**
+ * "First-come fill" notice — sent to a crew member whose still-open offer was
+ * auto-cancelled once the service's required headcount was reached by others
+ * who accepted first (`crewAssignments.autoFillServiceNative`, called from the
+ * public respond route). Best-effort: never blocks the accept response that
+ * triggers it.
+ */
+export async function notifyPositionFilled(assignmentId: string): Promise<void> {
+  const { assignment, emailData } = await buildAssignmentEmailData(assignmentId);
+  const crewEmail = assignment.crewMember.email;
+  if (!crewEmail) return;
+  const email = crewPositionFilledEmail(emailData);
+  await deliverSideEffectEmail({
+    idempotencyKey: `crew-position-filled:${assignmentId}`,
+    to: crewEmail,
+    subject: email.subject,
+    html: email.html,
+  });
 }

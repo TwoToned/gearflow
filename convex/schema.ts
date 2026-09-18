@@ -3404,6 +3404,17 @@ export default defineSchema({
     isPrivate: v.optional(v.boolean()),
     // Set when seeded from a workTemplates row on a lifecycle transition (§8.2).
     templateId: v.optional(v.string()),
+    // — Phase 2 additions (#1244, design §8.2) —
+    // Never set on a subtask (recurrence is a top-level-task concept, same as
+    // stage) — the next occurrence is a NEW top-level row, created only when
+    // the current one is marked DONE (Todoist model), never pre-generated.
+    recurrence: v.optional(enums.ProjectTaskRecurrence),
+    // Org member ids who watch this item — added/removed via
+    // watchNative/unwatchNative. Bounded (fieldGuards) the same way `tags` is.
+    // Notification-on-activity for watchers is a documented follow-up
+    // (FEATUREDOCS/50) — this phase ships the field + the add/remove UI, not
+    // a new notification type.
+    watcherUserIds: v.optional(v.array(v.string())),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -3472,6 +3483,36 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_triggerStatus", ["organizationId", "triggerStatus"]),
+
+  // PushSubscription — a browser's Web Push subscription (#1244, design §13
+  // "web push"). One row per (device, browser profile): `endpoint` is the
+  // push service URL the browser's PushManager returned and is the natural
+  // dedupe key (re-subscribing the same device upserts, never duplicates).
+  // Scoped to (organizationId, userId) — a person subscribed in two orgs
+  // holds two rows, so an org switch doesn't silently redirect their pushes.
+  // NOTE (scope, #1244): this table + the subscribe/unsubscribe flow are the
+  // full deliverable this phase ships. The actual push-SEND wiring (a
+  // server-side job calling the Web Push protocol against these rows on a
+  // notification event) is a documented follow-up — see FEATUREDOCS/50's
+  // "Web push (subscription only)" section — so that a real send integration
+  // isn't rushed in behind an already-large phase.
+  pushSubscriptions: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    userAgent: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_organizationId_userId", ["organizationId", "userId"])
+    // Global — the natural upsert/delete key on re-subscribe from the same
+    // device; every reader that walks it re-checks organizationId (R-8.4.3).
+    .index("by_endpoint", ["endpoint"]),
 
   // SavedTableView
   savedTableViews: defineTable({

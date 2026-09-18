@@ -23,6 +23,7 @@ import {
   notificationPreferenceSchema,
   type NotificationPreferenceValues,
 } from "@/lib/validations/notification-preferences";
+import { usePushSubscription } from "@/hooks/use-push-subscription";
 
 const PREF_KEYS = Object.keys(
   NOTIFICATION_PREFERENCE_LABELS,
@@ -86,12 +87,45 @@ export default function NotificationPreferencesPage() {
     setValues((prev) => ({ ...prev, [key]: next }));
   };
 
+  const push = usePushSubscription();
+
   return (
     <FadeIn className="space-y-8 max-w-2xl">
       <PageHeader
         title="Notification Preferences"
         description="Choose which in-app notifications also email you. The bell icon always shows everything."
       />
+
+      {/* #1244 — Web Push subscribe/unsubscribe. Scoped follow-up: nothing
+          in this deployment SENDS a push yet (see FEATUREDOCS/50); this
+          toggle registers/removes THIS browser's subscription so the send
+          side has somewhere to deliver to once it ships. */}
+      {push.support !== "unsupported" && (
+        <section>
+          <SectionHeader label="Push Notifications" />
+          <div className="mt-4 flex items-start justify-between gap-4 rounded-md border p-3">
+            <div className="flex-1 min-w-0">
+              <Label htmlFor="push-toggle" className="text-sm font-medium">
+                Push notifications on this device
+              </Label>
+              <p className="text-xs text-fg-3 mt-0.5">
+                Get notified on this browser. Sending is not wired up yet — this only registers the device.
+              </p>
+            </div>
+            <Switch
+              id="push-toggle"
+              checked={push.subscribed}
+              disabled={push.pending || push.support === "checking"}
+              onCheckedChange={(next) => {
+                const action = next ? push.subscribe() : push.unsubscribe();
+                action
+                  .then(() => toast.success(next ? "Push notifications enabled" : "Push notifications disabled"))
+                  .catch((e: Error) => toast.error(e.message));
+              }}
+            />
+          </div>
+        </section>
+      )}
 
       <section>
         <SectionHeader label="Email Notifications" />

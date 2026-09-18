@@ -241,6 +241,18 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 - `XERO_REDIRECT_URI` — OAuth2 callback URL registered with the Xero app. Defaults
   to `${NEXT_PUBLIC_APP_URL}/api/integrations/xero/callback` when unset.
 
+**Web push (work-layer Phase 2, #1244, subscription-only — see FEATUREDOCS/50 for the
+documented push-SEND follow-up this does NOT wire up):**
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — public half of the VAPID key pair, inlined into the
+  browser bundle (not a secret — it's how a push service identifies the sending
+  application). Unset = the account notifications page's push toggle stays hidden
+  (`usePushSubscription`'s `support` never becomes actionable without it).
+- `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — server-only; not read by anything yet (no
+  sender exists), reserved for when the push-send follow-up lands.
+- Generate a pair with `pnpm run vapid:generate` (`scripts/generate-vapid-keys.mts` —
+  plain Node `crypto`, no new dependency). Rotating invalidates every existing
+  browser subscription; do it rarely.
+
 **DB connection hardening (optional, safe defaults):** layered onto the runtime
 `DATABASE_URL` in `src/lib/db-url.ts` (NOT onto `prisma migrate`, so backfills
 aren't killed). Anything you put in the URL itself wins.

@@ -55,13 +55,46 @@ type ActivityEventInput = {
   action: string;
   summary: string;
   metadata?: unknown;
+  // Work-layer Phase 3 (#1245) — a hint for `resolveActivityClientContext`,
+  // NOT stored directly (the row stores the resolved clientId/contactId,
+  // not this). Pass the thread's/entity's own `projectId` when known (a
+  // comment thread on a project, line item, group or category all carry
+  // one) so the client timeline read model can find this row without a
+  // scan. Omit when there genuinely is none (e.g. an asset/supplier thread).
+  projectId?: string;
 };
+
+/**
+ * Resolve the client (and, where cheaply known, contact) an activity event
+ * belongs to, for the DENORMALISED `clientId`/`contactId` columns Phase 3
+ * added to `activityEvents` (design §10, issue #1245) — so
+ * `convex/clientTimeline.ts` can read a client's comments/mentions by an
+ * index instead of scanning every event in the org. Best-effort: an entity
+ * with no resolvable client (an asset/supplier thread, or a project lookup
+ * that misses) simply stores neither field, which only means that one row
+ * won't surface on a client timeline — never a write failure.
+ */
+async function resolveActivityClientContext(
+  ctx: MutationCtx,
+  orgId: string,
+  entityType: string,
+  entityId: string,
+  projectIdHint?: string,
+): Promise<{ clientId?: string; contactId?: string }> {
+  if (entityType === "client") return { clientId: entityId };
+  const projectId = entityType === "project" ? entityId : projectIdHint;
+  if (!projectId) return {};
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project || project.organizationId !== orgId || !project.clientId) return {};
+  return { clientId: project.clientId, contactId: project.clientContactId };
+}
 
 async function recordActivity(
   ctx: MutationCtx,
-  args: ActivityEventInput,
+  { projectId, ...args }: ActivityEventInput,
 ) {
-  await ctx.db.insert("activityEvents", { ...args, createdAt: Date.now() });
+  const clientContext = await resolveActivityClientContext(ctx, args.orgId, args.entityType, args.entityId, projectId);
+  await ctx.db.insert("activityEvents", { ...args, ...clientContext, createdAt: Date.now() });
 }
 
 // ─── Comment Threads ─────────────────────────────────────────────────────────
@@ -197,6 +230,7 @@ export const createThread = mutation({
         ? `added a blocking comment${where}`
         : `started a discussion${where}`,
       metadata: { threadId: threadId as string },
+      projectId,
     });
     return threadId as string;
   },
@@ -285,6 +319,7 @@ export const addComment = mutation({
       action: "comment_added",
       summary: `replied to a discussion${targetLabel(thread.targetType)}`,
       metadata: { threadId: args.threadId },
+      projectId: thread.projectId,
     });
 
     return commentId;
@@ -323,6 +358,7 @@ export const setThreadBlocking = mutation({
         ? `marked a comment as blocking${targetLabel(thread.targetType)}`
         : `cleared the blocking flag${targetLabel(thread.targetType)}`,
       metadata: { threadId },
+      projectId: thread.projectId,
     });
   },
 });
@@ -361,6 +397,7 @@ export const resolveThread = mutation({
       action: "thread_resolved",
       summary: `resolved a discussion${targetLabel(thread.targetType)}`,
       metadata: { threadId },
+      projectId: thread.projectId,
     });
   },
 });
@@ -398,6 +435,7 @@ export const reopenThread = mutation({
       action: "thread_reopened",
       summary: `reopened a discussion${targetLabel(thread.targetType)}`,
       metadata: { threadId },
+      projectId: thread.projectId,
     });
   },
 });
@@ -548,11 +586,16 @@ export const logActivityEvent = mutation({
     action: v.string(),
     summary: v.string(),
     metadata: v.optional(v.any()),
+    // Work-layer Phase 3 (#1245) — same resolution hint as recordActivity's
+    // `projectId`; optional so pre-Phase-3 callers keep working unchanged.
+    projectId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { projectId, ...args }) => {
     await requireService(ctx);
+    const clientContext = await resolveActivityClientContext(ctx, args.orgId, args.entityType, args.entityId, projectId);
     await ctx.db.insert("activityEvents", {
       ...args,
+      ...clientContext,
       createdAt: Date.now(),
     });
   },

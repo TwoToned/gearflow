@@ -128,6 +128,27 @@ stale tier on an already-expanded child.
   entry point wired into `equipment-rows.tsx` yet — the mutation exists and
   is tested, but reopening the picker from the project equipment tab is a
   follow-up (TODOS.md).
+- **Project-wide resync (opt-in, PM-initiated)** — `lineItemWrites.resyncProjectAccessoriesNative`
+  (`convex/lineItemWrites.ts`), surfaced as a **"Sync accessories"** button in the project
+  Equipment tab toolbar (`src/components/projects/equipment-tab.tsx`, gated on `manage_line_items`
+  the same way as the other structural equipment actions). Loops every top-level equipment line
+  on the project's LIVE version and calls the SAME `reconcileLineAccessoryChildren` the per-line
+  "Edit accessories" picker uses, but against the line's OWN already-stored `accessoryPlan`
+  (unchanged) — so a model/asset accessory config edited in the catalog **after** the line was
+  added (a new DEFAULT, a removed one, a quantity change) reaches jobs that haven't shipped yet,
+  without the PM re-opening the picker on every affected line one at a time. Also closes the
+  "quantity-merge path never rescales" limitation above for any line it touches, since
+  `wantedSetForModel` recomputes bulk demand from the line's CURRENT quantity every time it runs.
+  Skips (never touches) any line with a deployed unit — same `checkedOutQuantity`/`CHECKED_OUT`
+  gate as `assertLineOwnsAccessoryPlan` ("office decides, warehouse verifies" holds here too).
+  **Deliberately never automatic** — a catalog edit does NOT push itself onto every open project
+  the instant it's saved. Removing a model accessory from the catalog still does NOT retroactively
+  delete an untouched line's existing child (the "Known limitation" note two bullets above still
+  holds for a line nobody has resynced) — a project only picks up a catalog change when a human
+  asks it to, one project at a time. Accessory children carry no price of their own, so this never
+  touches a `PROJECT_MONEY_ANCHOR` and needs no pricing-lock check, unlike a money-field edit.
+  Returns `{ linesChecked, linesUpdated, childrenAdded, childrenRemoved }`, surfaced as a toast.
+  Tests: `convex/lineItemWrites.test.ts` (`resyncProjectAccessoriesNative`).
 - **Simplification vs. the full design** (`docs/designs/accessories-v2.md`):
   the add-form picker surfaces the model's DEFAULT/OPTIONAL bulk accessories
   only — it does not additionally list the specific asset's own

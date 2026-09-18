@@ -111,3 +111,17 @@ other line-item discount.
   - Kit availability is a non-throwing pre-check per kit: an unavailable/double-booked kit is skipped (with a warning collected in `kitWarnings[]`) rather than aborting the whole apply, so warehouse staff still get the model items
 - Project totals are recalculated inline (org tax rate) as part of the same mutation when any kit items were expanded
 - Activity log summary includes skipped kit warnings
+
+## Catalog changes after a kit is already on a project — NOT auto-synced
+
+A kit's member list is snapshotted onto the project as concrete child
+`ProjectLineItem` rows at `createKitLineItemCore` time (see "Data Model" above) —
+there is no live join back to `KitSerializedItem`/`KitBulkItem`. Editing a kit's
+membership after it's already on an open (not-yet-checked-out) project does
+**not** retroactively add/remove the project's child rows, and there is currently
+no "resync this kit's line items to its current membership" mutation, unlike
+accessories (`resyncProjectAccessoriesNative`, FEATUREDOCS/48) — a kit member is
+individually priced (`ITEMIZED` mode) or contributes to a hand-set bundle price
+(`KIT_PRICE` mode), so mechanically reconciling members would also mean deciding
+a price for a newly-added child, which needs its own design pass rather than
+reusing the accessory mechanism as-is. Tracked as a follow-up, not implemented here.

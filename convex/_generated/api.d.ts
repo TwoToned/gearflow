@@ -248,6 +248,8 @@ import type * as projectTasksWrites from "../projectTasksWrites.js";
 import type * as projectVersionsWrites from "../projectVersionsWrites.js";
 import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
+import type * as pushSubscriptions from "../pushSubscriptions.js";
+import type * as pushSubscriptionsWrites from "../pushSubscriptionsWrites.js";
 import type * as quotes from "../quotes.js";
 import type * as quotesWrites from "../quotesWrites.js";
 import type * as reservationConflicts from "../reservationConflicts.js";
@@ -555,6 +557,8 @@ declare const fullApi: ApiFromModules<{
   projectVersionsWrites: typeof projectVersionsWrites;
   projectWrites: typeof projectWrites;
   projects: typeof projects;
+  pushSubscriptions: typeof pushSubscriptions;
+  pushSubscriptionsWrites: typeof pushSubscriptionsWrites;
   quotes: typeof quotes;
   quotesWrites: typeof quotesWrites;
   reservationConflicts: typeof reservationConflicts;

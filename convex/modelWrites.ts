@@ -221,6 +221,30 @@ export const updateNative = mutation({
     if (a.categoryId) await assertRefInOrg(ctx, "categories", a.categoryId, a.orgId);
     if (a.defaultTestProfileId) await assertRefInOrg(ctx, "testProfiles", a.defaultTestProfileId, a.orgId);
 
+    // A model's assetType gates which of its own inventory the model detail
+    // tab, the bulk-asset model picker, and the equipment-add pickers show
+    // (they branch/filter on this field, never both at once) — flipping it
+    // while the OTHER kind's records still exist doesn't delete those rows,
+    // it just makes them unreachable through any of those surfaces. Block the
+    // flip instead of silently orphaning existing stock (R-9.3).
+    const newAssetType = (a.assetType as "SERIALIZED" | "BULK" | undefined) ?? "SERIALIZED";
+    const oldAssetType = (doc.assetType as "SERIALIZED" | "BULK" | undefined) ?? "SERIALIZED";
+    if (newAssetType !== oldAssetType) {
+      if (newAssetType === "BULK") {
+        const activeAssets = (await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
+          .filter((x) => x.organizationId === a.orgId && x.isActive !== false);
+        if (activeAssets.length > 0) {
+          throw new ConvexError(`Cannot change to Bulk — ${activeAssets.length} serialized asset(s) still exist under this model. Archive or move them first.`);
+        }
+      } else {
+        const activeBulk = (await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
+          .filter((x) => x.organizationId === a.orgId && x.isActive !== false);
+        if (activeBulk.length > 0) {
+          throw new ConvexError(`Cannot change to Serialized — ${activeBulk.length} bulk asset record(s) still exist under this model. Archive or move them first.`);
+        }
+      }
+    }
+
     await ctx.db.patch(doc._id, { ...toDoc(a), updatedAt: a.now });
 
     if (a.requiresTestAndTag) {

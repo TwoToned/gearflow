@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (586 agent-reachable)
+## Operations (595 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -114,6 +114,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `clients.list` (query, scope: client:read)
 - `clients.listPage` (query, scope: client:read)
 - `clients.projectCounts` (query, scope: client:read)
+- `clientTimeline.forClient` (query, scope: client:read)
+- `clientTimeline.nextStep` (query, scope: client:read)
 - `clientWrites.archiveManyNative` (mutation, scope: client:update)
 - `clientWrites.archiveNative` (mutation, scope: client:update)
 - `clientWrites.createNative` (mutation, scope: client:create)
@@ -167,7 +169,6 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `crewSkills.getById` (query, scope: crew:read)
 - `crewSkills.list` (query, scope: crew:read)
 - `crewTimeEntries.allEntries` (query, scope: crew:read)
-- `crewTimeEntries.approvedHoursByMember` (query, scope: crew:read)
 - `crewTimeEntries.forMember` (query, scope: crew:read)
 - `crewTimeEntries.getById` (query, scope: crew:read)
 - `crewTimeEntries.list` (query, scope: crew:read)
@@ -398,6 +399,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `overbookingBoard.confirmImpact` (query, scope: project:read)
 - `overbookingBoard.counts` (query, scope: project:read)
 - `overbookingBoard.dateMoveImpact` (query, scope: project:read)
+- `pipeline.forOrg` (query, scope: project:read)
 - `projectCategories.getById` (query, scope: project:read)
 - `projectCategories.list` (query, scope: project:read)
 - `projectCategories.listByProject` (query, scope: project:read)
@@ -644,4 +646,11 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `warehouseWrites.unreturnKitsBatch` (mutation, scope: warehouse:check_out)
 
 ### work
-- `crewTimeEntries.loggedMinutesForWorkItems` (query, scope: work:read)
+- `clientTimelineWrites.addNoteNative` (mutation, scope: work:create)
+- `clientTimelineWrites.completeNextStepNative` (mutation, scope: work:create)
+- `clientTimelineWrites.logCallNative` (mutation, scope: work:create)
+- `clientTimelineWrites.logEmailNative` (mutation, scope: work:create)
+- `clientTimelineWrites.setNextStepNative` (mutation, scope: work:create)
+- `workItemLinks.forEntity` (query, scope: work:read)
+- `workItemLinksWrites.linkNative` (mutation, scope: work:update)
+- `workItemLinksWrites.unlinkNative` (mutation, scope: work:update)

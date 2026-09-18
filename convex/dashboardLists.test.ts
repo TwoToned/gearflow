@@ -147,7 +147,7 @@ describe("dashboardLists.needsYou", () => {
       await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Quiet Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
     });
     const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
-    expect(res).toEqual({ declinedCrew: [], staleOffers: [], expiringQuotes: [] });
+    expect(res).toEqual({ declinedCrew: [], staleOffers: [], expiringQuotes: [], quotesNeedingNextStep: [] });
   });
 
   test("a quote expiring far in the future does not count as 'expiring soon'", async () => {
@@ -215,6 +215,71 @@ describe("dashboardLists.needsYou", () => {
       );
       const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
       expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+  });
+
+  // #1245 Phase 3 — "24 hours after a quote send with no next step logged,
+  // the quote:nonext source puts it in the PM's Triage" (design §8.4/§9).
+  describe("quote:nonext (#1245 Phase 3)", () => {
+    async function seedSentQuote(t: ReturnType<typeof convexTest>, sentAt: number) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme" });
+        await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER, clientId: "c1" });
+        await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, sentAt, validUntil: sentAt + 60 * DAY });
+      });
+    }
+
+    test("does not surface before the 24h grace period elapses", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 12 * 60 * 60 * 1000);
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([]);
+    });
+
+    test("surfaces once 24h have elapsed with no open follow_up for the client", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([
+        { sourceKey: "quote:nonext:q1", quoteId: "q1", clientId: "c1", projectId: "pm1", projectName: "Job", projectNumber: "PM1", version: 1, sentAt: NOW - 25 * 60 * 60 * 1000 },
+      ]);
+    });
+
+    test("an open follow_up linked to the client clears the signal", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, title: "Follow up", kind: "follow_up", status: "TODO", createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("workItemLinks", { id: "l1", organizationId: ORG, workItemId: "t1", entityType: "client", entityId: "c1", createdAt: NOW });
+      });
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([]);
+    });
+
+    test("a DONE follow_up does not count as open, so the signal still surfaces", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, title: "Follow up", kind: "follow_up", status: "DONE", completedAt: NOW, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("workItemLinks", { id: "l1", organizationId: ORG, workItemId: "t1", entityType: "client", entityId: "c1", createdAt: NOW });
+      });
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+
+    test("a dismissed nonext signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:nonext:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([]);
     });
   });
 });

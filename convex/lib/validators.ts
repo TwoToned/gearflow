@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES } from "./workVocabulary";
+import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_ITEM_LINK_ENTITY_TYPES } from "./workVocabulary";
 
 /**
  * Convex validators for the 65 Prisma enums.
@@ -476,6 +476,8 @@ export const ProjectTaskStatus = v.union(...WORK_ITEM_STATUSES.map((s) => v.lite
 export const ProjectTaskPriority = v.union(...WORK_ITEM_PRIORITIES.map((p) => v.literal(p)));
 export const ProjectTaskKind = v.union(...WORK_ITEM_KINDS.map((k) => v.literal(k)));
 export const ProjectTaskStage = v.union(...WORK_STAGES.map((s) => v.literal(s)));
+// Work-layer phase 3 (#1245): sourced from workVocabulary.ts.
+export const WorkItemLinkEntityType = v.union(...WORK_ITEM_LINK_ENTITY_TYPES.map((t) => v.literal(t)));
 
 // ─── WS1 Finance (#940) — Quote/Invoice entities, client payment profiles, Xero ───
 

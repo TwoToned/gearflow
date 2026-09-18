@@ -53,6 +53,18 @@ the underlying row resolved it). `TodayNeedsYouRail` rows carry snooze/dismiss/p
 `workSignalStates` row needed) and "work overdue/due soon" (already real, non-derived
 `projectTasks` rows in the Overdue/Today buckets via `myOpenTasks`, not a derived signal).
 
+**Phase 3 (#1245): `quote:nonext`.** A fourth `needsYou` bucket,
+`quotesNeedingNextStep` — "Quote v1 out, no next step" (design §8.4/§9). Same
+per-project loop as the other two quote/crew signals: when the live quote is
+`SENT` (`effectiveQuoteStatus`) and `sentAt` is 24h+ old
+(`QUOTE_NO_NEXT_STEP_GRACE_MS`), it checks whether the project's client has
+an OPEN `follow_up` work item linked via `workItemLinks`
+(`makeHasOpenFollowUpChecker`, memoised per client so a PM managing several
+projects for the same client pays for the check once). Same `workSignalStates`
+snooze/dismiss subtraction as every other signal, sourceKey
+`quote:nonext:<quoteId>`. See FEATUREDOCS/80 for the client-side "Next step"
+half of this rule.
+
 **Phase 4 (#1246, work-layer, FEATUREDOCS/31 has the full crew-side writeup):**
 the "> 48h" staleness threshold behind `staleOffers` is now an org setting
 (`resolveCrewOfferStaleHours`, `OrgSettings.crewTime.unansweredOfferHours`,

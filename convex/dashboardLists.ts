@@ -222,6 +222,51 @@ type ExpiringQuoteRow = {
   daysLeft: number | null;
 };
 
+// Work-layer Phase 3 (#1245, design §8.4/§9) — "24 hours after a quote send
+// with no next step logged, the quote:nonext source puts 'Quote v1 out, no
+// next step' in the PM's Triage." A SENT quote (via effectiveQuoteStatus,
+// never the raw column) whose client has no OPEN follow_up work item.
+const QUOTE_NO_NEXT_STEP_GRACE_MS = 24 * 60 * 60 * 1000;
+
+type QuoteNoNextStepRow = {
+  sourceKey: string; // "quote:nonext:<quoteId>" (design doc §9)
+  quoteId: string;
+  clientId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  version: number;
+  sentAt: number;
+};
+
+/** Whether `clientId` has at least one OPEN (not done/cancelled) `follow_up`
+ *  work item linked to it — the "a next step is required" test. Cached per
+ *  call so a PM managing several projects for the same client only pays for
+ *  this once. */
+function makeHasOpenFollowUpChecker(ctx: QueryCtx, orgId: string) {
+  const cache = new Map<string, Promise<boolean>>();
+  return (clientId: string): Promise<boolean> => {
+    let promise = cache.get(clientId);
+    if (!promise) {
+      promise = (async () => {
+        const links = await ctx.db
+          .query("workItemLinks")
+          .withIndex("by_organizationId_entityType_entityId", (q) =>
+            q.eq("organizationId", orgId).eq("entityType", "client").eq("entityId", clientId),
+          )
+          .collect();
+        if (links.length === 0) return false;
+        const items = await Promise.all(
+          links.map((l) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", l.workItemId)).first()),
+        );
+        return items.some((t) => t != null && t.kind === "follow_up" && t.status !== "DONE" && t.status !== "CANCELLED");
+      })();
+      cache.set(clientId, promise);
+    }
+    return promise;
+  };
+}
+
 /**
  * A human's decision (snooze/dismiss/promote, `workSignalStates`) hides a
  * derived signal from Triage — the "minus workSignalStates" step in design doc
@@ -247,7 +292,12 @@ export const needsYou = query({
   handler: async (
     ctx,
     { orgId, now },
-  ): Promise<{ declinedCrew: CrewSignalRow[]; staleOffers: CrewSignalRow[]; expiringQuotes: ExpiringQuoteRow[] }> => {
+  ): Promise<{
+    declinedCrew: CrewSignalRow[];
+    staleOffers: CrewSignalRow[];
+    expiringQuotes: ExpiringQuoteRow[];
+    quotesNeedingNextStep: QuoteNoNextStepRow[];
+  }> => {
     await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
@@ -263,8 +313,10 @@ export const needsYou = query({
     const declinedCrew: CrewSignalRow[] = [];
     const staleOffers: CrewSignalRow[] = [];
     const expiringQuotes: ExpiringQuoteRow[] = [];
+    const quotesNeedingNextStep: QuoteNoNextStepRow[] = [];
     const crewMemberIds = new Set<string>();
     const pendingCrewRows: { row: CrewSignalRow; crewMemberId: string; bucket: CrewSignalRow[] }[] = [];
+    const hasOpenFollowUp = makeHasOpenFollowUpChecker(ctx, orgId);
 
     await Promise.all(
       projects.map(async (p) => {
@@ -304,6 +356,22 @@ export const needsYou = query({
               version: liveQuote.version, validUntil: liveQuote.validUntil ?? null, daysLeft,
             });
           }
+          // quote:nonext (#1245, design §8.4/§9) — sent 24h+ ago, this client
+          // still has no open follow_up. p.clientId is a plain field on the
+          // already org-scoped project doc, no extra org-check needed.
+          const nonextKey = `quote:nonext:${liveQuote.id}`;
+          if (
+            p.clientId &&
+            liveQuote.sentAt != null &&
+            liveQuote.sentAt <= now - QUOTE_NO_NEXT_STEP_GRACE_MS &&
+            !hiddenSourceKeys.has(nonextKey) &&
+            !(await hasOpenFollowUp(p.clientId))
+          ) {
+            quotesNeedingNextStep.push({
+              sourceKey: nonextKey, quoteId: liveQuote.id, clientId: p.clientId, projectId: p.id,
+              projectName: p.name, projectNumber: p.projectNumber, version: liveQuote.version, sentAt: liveQuote.sentAt,
+            });
+          }
         }
       }),
     );
@@ -321,8 +389,9 @@ export const needsYou = query({
     declinedCrew.sort((a, b) => b.at - a.at);
     staleOffers.sort((a, b) => a.at - b.at);
     expiringQuotes.sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0));
+    quotesNeedingNextStep.sort((a, b) => a.sentAt - b.sentAt);
 
-    return { declinedCrew, staleOffers, expiringQuotes };
+    return { declinedCrew, staleOffers, expiringQuotes, quotesNeedingNextStep };
   },
 });
 

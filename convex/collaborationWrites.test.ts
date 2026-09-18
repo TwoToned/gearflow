@@ -205,3 +205,51 @@ describe("mentions → notifications (work-layer phase 0, #1241)", () => {
     expect(await t.run(async (ctx) => ctx.db.query("notifications").collect())).toEqual([]);
   });
 });
+
+// #1245 (Phase 3) — activityEvents' denormalised clientId/contactId, the
+// index key the client timeline read model relies on.
+describe("recordActivity stamps clientId/contactId (#1245)", () => {
+  test("a comment on a client entity stamps clientId = the entity itself", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run((ctx) => ctx.db.insert("clients", { id: "cl1", organizationId: ORG, name: "Acme" }));
+    await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "client", entityId: "cl1", firstComment: "hello", createdBy: MEMBER, createdByName: "M",
+    });
+    const events = await t.run((ctx) =>
+      ctx.db.query("activityEvents").withIndex("by_orgId_clientId_createdAt", (q) => q.eq("orgId", ORG).eq("clientId", "cl1")).collect(),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].entityType).toBe("client");
+  });
+
+  test("a comment on a project resolves clientId from the project's own clientId field", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "cl1", organizationId: ORG, name: "Acme" });
+      await ctx.db.insert("projects", { id: PROJECT, organizationId: ORG, projectNumber: "P1", name: "Gala", clientId: "cl1", isTemplate: false });
+    });
+    await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "hello", createdBy: MEMBER, createdByName: "M",
+    });
+    const events = await t.run((ctx) =>
+      ctx.db.query("activityEvents").withIndex("by_orgId_clientId_createdAt", (q) => q.eq("orgId", ORG).eq("clientId", "cl1")).collect(),
+    );
+    expect(events).toHaveLength(1);
+  });
+
+  test("a project with no client leaves clientId unset (not a write failure)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run((ctx) => ctx.db.insert("projects", { id: PROJECT, organizationId: ORG, projectNumber: "P1", name: "Gala", isTemplate: false }));
+    const threadId = await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "hello", createdBy: MEMBER, createdByName: "M",
+    });
+    expect(threadId).toBeTruthy();
+    const events = await t.run((ctx) =>
+      ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", PROJECT)).collect(),
+    );
+    expect(events[0].clientId).toBeUndefined();
+  });
+});

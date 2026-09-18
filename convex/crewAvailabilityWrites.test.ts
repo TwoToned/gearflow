@@ -115,4 +115,16 @@ describe("crewAvailability reads", () => {
     expect(res[0].assignments[0].project?.projectNumber).toBe("P1");
     expect(res[0].availability).toHaveLength(1);
   });
+
+  test("plannerData Phase 4 (#1246): a DECLINED assignment still renders (only CANCELLED is hidden), and responseToken never leaks", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, createdAt: T0, updatedAt: T0 });
+      await ctx.db.insert("crewAssignments", { id: "asDeclined", organizationId: ORG, crewMemberId: "cm1", projectId: "p1", status: "DECLINED", startDate: T0, endDate: T0 + DAY, responseToken: "secret-token" });
+    });
+    const res = await t.withIdentity(asUser).query(api.crewAvailability.plannerData, { orgId: ORG, startMs: T0, endMs: T0 + 5 * DAY });
+    const declined = res.find((m) => m.id === "cm1")?.assignments.find((a) => a.id === "asDeclined");
+    expect(declined?.status).toBe("DECLINED"); // badge-visible now, not filtered out
+    expect(declined).not.toHaveProperty("responseToken"); // single-use bearer token never reaches a browser-readable payload
+  });
 });

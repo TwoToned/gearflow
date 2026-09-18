@@ -1,0 +1,93 @@
+/*
+ * react-grid-layout override (CLAUDE.md dependency-justification note): the
+ * library ships its own default drag-placeholder/resize-handle look (a solid
+ * red block, a plain grey corner triangle) — this file REPLACES that
+ * wholesale with the app's own tokens (`--r-lg` radii, the hard-offset-shadow
+ * language, `--primary`/`--line`) rather than layering on top of it. We
+ * deliberately never import `react-grid-layout/css/styles.css`.
+ *
+ * `:global()` is required because these are the library's own hard-coded
+ * class names (`react-grid-item`, `react-resizable-handle`, …), not classes
+ * this module defines — CSS Modules can still scope-import a file that
+ * targets global selectors (Next.js allows importing a `.module.css` from
+ * any component; a bare global `.css` import is restricted to the root
+ * layout, which is why this isn't one).
+ */
+
+:global(.react-grid-layout) {
+  position: relative;
+}
+
+:global(.react-grid-item) {
+  transition: transform 200ms ease, width 200ms ease, height 200ms ease;
+}
+
+:global(.react-grid-item.cssTransforms) {
+  transition-property: transform, width, height;
+}
+
+:global(.react-grid-item.resizing) {
+  transition: none;
+  z-index: 3;
+  will-change: width, height;
+}
+
+:global(.react-grid-item.react-draggable-dragging) {
+  transition: none;
+  z-index: 3;
+  cursor: grabbing;
+  will-change: transform;
+  box-shadow: var(--sh-hover);
+}
+
+:global(.react-grid-item.dropping) {
+  visibility: hidden;
+}
+
+/* The drop-target preview — a soft tinted outline in the app's own radius,
+   never the library's default solid red fill. */
+:global(.react-grid-item.react-grid-placeholder) {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border: 1.5px dashed var(--primary);
+  border-radius: var(--r-lg);
+  opacity: 1;
+  transition-duration: 120ms;
+  z-index: 2;
+  user-select: none;
+}
+
+:global(.react-grid-item.react-grid-placeholder.placeholder-resizing) {
+  transition: none;
+}
+
+/* Resize handle — bottom-right corner glyph restyled to the app's ink/muted
+   tokens instead of the library's default grey triangle; visible only on
+   hover/focus of the card so it never competes with widget content. */
+:global(.react-resizable-handle) {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  right: 0;
+  bottom: 0;
+  cursor: se-resize;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  touch-action: none;
+}
+
+:global(.dashboard-widget-card:hover) :global(.react-resizable-handle),
+:global(.dashboard-widget-card:focus-within) :global(.react-resizable-handle) {
+  opacity: 1;
+}
+
+:global(.react-resizable-handle::after) {
+  content: "";
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  border-radius: 1px;
+}

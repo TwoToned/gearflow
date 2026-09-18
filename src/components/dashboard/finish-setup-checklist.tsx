@@ -112,7 +112,7 @@ function buildItems(org: OrgRecord | undefined, locationCount: number, teamCount
  * dismissed OR complete; each row links to the ONE place that setting is
  * actually edited, never back into a wizard step.
  */
-export function FinishSetupChecklist({ orgId }: { orgId: string | undefined }) {
+export function FinishSetupChecklist({ orgId, bare = false }: { orgId: string | undefined; bare?: boolean }) {
   const { data: org, isLoading: orgLoading } = useOrganization(orgId) as {
     data: OrgRecord | undefined;
     isLoading: boolean;
@@ -142,31 +142,26 @@ export function FinishSetupChecklist({ orgId }: { orgId: string | undefined }) {
 
   if (loading || dismissedAt != null || complete) return null;
 
-  return (
-    <div className={cn(CARD, "flex flex-col gap-3 p-5")}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="t-overline text-muted">Finish setup</h2>
-          <p className="text-xs text-fg-3">
-            {doneCount} of {items.length} done
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={dismissing}
-          onClick={async () => {
-            setDismissing(true);
-            try {
-              await dismiss();
-            } finally {
-              setDismissing(false);
-            }
-          }}
-          className={cn("text-xs text-muted hover:text-ink disabled:opacity-50", focusRing)}
-        >
-          Dismiss
-        </button>
-      </div>
+  const dismissButton = (
+    <button
+      type="button"
+      disabled={dismissing}
+      onClick={async () => {
+        setDismissing(true);
+        try {
+          await dismiss();
+        } finally {
+          setDismissing(false);
+        }
+      }}
+      className={cn("text-xs text-muted hover:text-ink disabled:opacity-50", focusRing)}
+    >
+      Dismiss
+    </button>
+  );
+
+  const body = (
+    <>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-line-2">
         <div
           className="h-full rounded-full bg-red transition-all"
@@ -178,6 +173,40 @@ export function FinishSetupChecklist({ orgId }: { orgId: string | undefined }) {
           <ChecklistRow key={item.key} item={item} />
         ))}
       </ul>
+    </>
+  );
+
+  // `bare` (dashboard-widget-board mode, #1267) — see the identical note on
+  // ActivationChecklist: skip this component's own card/header (the shared
+  // `<DashboardCard>` shell supplies both), keep Dismiss (a distinct,
+  // org-wide "done showing me this" bit, not the same as removing the widget
+  // from just this board).
+  if (bare) {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-fg-3">
+            {doneCount} of {items.length} done
+          </p>
+          {dismissButton}
+        </div>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(CARD, "flex flex-col gap-3 p-5")}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="t-overline text-muted">Finish setup</h2>
+          <p className="text-xs text-fg-3">
+            {doneCount} of {items.length} done
+          </p>
+        </div>
+        {dismissButton}
+      </div>
+      {body}
     </div>
   );
 }

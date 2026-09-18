@@ -77,7 +77,7 @@ function buildItems(state: ActivationMilestonesState): MilestoneItem[] {
  * never merged with it — setup is "configure the company", activation is
  * "do the work". Disappears for good once dismissed OR all four are done.
  */
-export function ActivationChecklist({ orgId }: { orgId: string | undefined }) {
+export function ActivationChecklist({ orgId, bare = false }: { orgId: string | undefined; bare?: boolean }) {
   const state = useActivationMilestones(orgId);
   const { dismissedAt, dismiss } = useActivationDismissal();
   const [dismissing, setDismissing] = useState(false);
@@ -94,35 +94,27 @@ export function ActivationChecklist({ orgId }: { orgId: string | undefined }) {
   if (complete) return null;
   const activeKey: MilestoneKey | undefined = items.find((i) => !i.done)?.key;
 
-  return (
-    <div className={cn(CARD, "flex flex-col gap-3 p-5")}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="t-overline text-muted">Get started</h2>
-          <p className="text-xs text-fg-3">About 5 minutes. Pick up wherever you left off.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-fg-3">
-            {doneCount} / {items.length}
-          </span>
-          <button
-            type="button"
-            disabled={dismissing}
-            onClick={async () => {
-              setDismissing(true);
-              try {
-                capture(AnalyticsEvent.ActivationChecklistDismissed, { milestones_done: doneCount });
-                await dismiss();
-              } finally {
-                setDismissing(false);
-              }
-            }}
-            className={cn("text-xs text-muted hover:text-ink disabled:opacity-50", focusRing)}
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
+  const dismissButton = (
+    <button
+      type="button"
+      disabled={dismissing}
+      onClick={async () => {
+        setDismissing(true);
+        try {
+          capture(AnalyticsEvent.ActivationChecklistDismissed, { milestones_done: doneCount });
+          await dismiss();
+        } finally {
+          setDismissing(false);
+        }
+      }}
+      className={cn("text-xs text-muted hover:text-ink disabled:opacity-50", focusRing)}
+    >
+      Dismiss
+    </button>
+  );
+
+  const body = (
+    <>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-line-2">
         <div
           className="h-full rounded-full bg-red transition-all"
@@ -134,6 +126,46 @@ export function ActivationChecklist({ orgId }: { orgId: string | undefined }) {
           <MilestoneRow key={item.key} item={item} active={item.key === activeKey} />
         ))}
       </ul>
+    </>
+  );
+
+  // `bare` (dashboard-widget-board mode, #1267): skip this component's own
+  // outer card/header — the shared `<DashboardCard>` shell already supplies
+  // both — but keep the count + Dismiss row, a distinct action from removing
+  // the widget from the board (that only hides it from THIS layout; Dismiss
+  // is the org-wide "done showing me this" bit — `orgActivationDismissals`).
+  if (bare) {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-fg-3">About 5 minutes. Pick up wherever you left off.</p>
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="text-xs font-mono text-fg-3">
+              {doneCount} / {items.length}
+            </span>
+            {dismissButton}
+          </div>
+        </div>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(CARD, "flex flex-col gap-3 p-5")}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="t-overline text-muted">Get started</h2>
+          <p className="text-xs text-fg-3">About 5 minutes. Pick up wherever you left off.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono text-fg-3">
+            {doneCount} / {items.length}
+          </span>
+          {dismissButton}
+        </div>
+      </div>
+      {body}
     </div>
   );
 }

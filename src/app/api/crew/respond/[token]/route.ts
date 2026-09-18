@@ -4,6 +4,7 @@ import { api } from "../../../../../../convex/_generated/api";
 import { getProjectById } from "@/lib/projects-read";
 import { getCrewMemberById, getCrewRoleById } from "@/lib/crew-read";
 import { escapeHtml } from "@/lib/email-layout";
+import { notifyPositionFilled } from "@/server/crew-communication";
 
 /**
  * GET /api/crew/respond/[token]?action=accept|decline
@@ -90,6 +91,28 @@ export async function GET(
   );
   const projectName = `${escapeHtml(project?.projectNumber ?? "")} — ${escapeHtml(projectDisplayName)}`;
   const roleName = escapeHtml(crewRole?.name || "Crew");
+
+  // Work-layer Phase 4 (#1246, design §8.5) — "Request availability…"'s
+  // first-come fill: an ACCEPT on a service-linked assignment may complete
+  // that service's required headcount, in which case the other still-open
+  // offers on the same service auto-cancel. Best-effort on both the Convex
+  // write and the notice emails — this must never block the crew member's
+  // own accept confirmation above.
+  if (action === "accept" && assignment.serviceId) {
+    try {
+      const result = await convex.mutation(api.crewAssignments.autoFillServiceNative, {
+        serviceId: assignment.serviceId,
+        organizationId: assignment.organizationId,
+        acceptedAssignmentId: assignment.id,
+        now: Date.now(),
+      });
+      await Promise.all(
+        result.cancelled.map((c) => notifyPositionFilled(c.assignmentId).catch(() => undefined)),
+      );
+    } catch {
+      // Never let the fill-check/notify step fail the crew member's own accept.
+    }
+  }
 
   if (action === "accept") {
     return htmlResponse(

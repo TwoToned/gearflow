@@ -198,12 +198,119 @@ with `entityType: "ProjectTask"` and the `projectId`. `/activity`'s `entityTypeL
 were unfilterable, since `filterOptions` is built from that map.
 
 ## UI (`src/components/projects/tasks-panel.tsx`)
-Rendered in the project detail page's **Tasks** tab. Quick-add input (Enter to add a TODO),
-tasks grouped by status (To do / In progress / Done), each row with a status toggle (circle →
-in-progress dot → done check), priority dot, due-date badge (red when overdue and not done),
-checklist progress (`n/m`), and assignee avatar. A row dropdown edits, advances status, or deletes.
-The edit dialog covers title, description, status, priority, due date, assignee (ComboboxPicker
-of users + crew), and an inline checklist editor.
+Quick-add input (Enter to add a TODO), tasks grouped by a "Group by" selector (status / stage /
+assignee / due — `buildTaskSections` in this file, pure and unit-tested), each row with a status
+toggle (circle → in-progress dot → done check), priority dot, due-date badge (red when overdue
+and not done), checklist progress (`n/m`), and assignee avatar. A row dropdown edits, advances
+status, or deletes. The edit dialog covers title, description, status, priority, due date,
+assignee (ComboboxPicker of users + crew), an inline checklist editor, and (Phase 2, #1244)
+**Repeats** (recurrence frequency) and **Add a watcher** (chips, remove via ×).
+
+### Work-layer Phase 2 (#1244) — the Work tab, Overview card, and the revived board
+
+**Tab rename.** The project detail page's Tasks tab is now **Work**
+(`src/app/(app)/projects/[id]/page.tsx`'s `VALID_TABS`), showing "Work · 9 of 14" (done of
+total, cancelled excluded) in the trigger. `?tab=tasks` still works — `normalizeTabParam`
+rewrites it to `work` before it's matched against `VALID_TABS`, so an old bookmark, ⌘K entry,
+or notification link never silently falls back to Overview.
+
+**Work tab (`src/components/projects/work-tab.tsx`)** — list / board / calendar toggle over
+**one** data source (`src/hooks/use-project-work-data.ts`, extracted out of `tasks-panel.tsx`
+so list/board/calendar can each call it without tripling the fetch/live-resync logic; only one
+view ever mounts at a time, so this is never three concurrent subscriptions). `list` is
+`TasksPanel` verbatim. `board` (`work-board-view.tsx`) is a stage-columns kanban — dnd-kit
+(`@dnd-kit/core` + `/sortable`, same sensor config as the Equipment tab's own drag-reorder:
+one delay-based `PointerSensor` + a `KeyboardSensor`) — drag within a column calls the new
+`reorderNative`, drag across columns also patches `stage` via `updateNative`. `calendar`
+(`work-calendar-view.tsx`) is a read-only day-strip grouped by due date (no calendar/date-grid
+library exists in the tree, and a day-strip already answers "what's due when" for one
+project's task list).
+
+**`reorderNative` (`convex/projectTasksWrites.ts`)** — the browser-direct sibling of
+`convex/projectTasks.ts`'s `reorderMany` (which stays `requireService`-gated and untouched,
+per the design doc's explicit "leave it as is, add a new one"). Same shape as
+`lineItemWrites.reorderNative`: assigns `sortOrder = index` for exactly the ids in
+`orderedIds`, `assertBulkSizeOk`-capped, RBAC via `requireWorkOrProjectOrgUpdate`, foreign-org
+ids silently skipped. `danger: "low"` (structural only — never money or status).
+
+**Overview → Work card (`src/components/projects/overview/work-card.tsx`) REPLACES the
+standalone Readiness panel** (`project-readiness-panel.tsx`, deleted — two surfaces showing
+the same checks was exactly the duplication this program exists to remove). The merge logic is
+`src/lib/project-work-card.ts` (`buildWorkCardStages`, pure, unit-tested):
+`project-readiness-checks.ts`'s pure check logic is **unchanged** — a *failing* check (severity
+≠ `pass`) becomes a system row (`auto` badge) under a stage (`pricing` → `quote`;
+`gear`/`conflicts`/`crew`/`services` → `prep`); a *real* `projectTasks` row (excluding
+cancelled and stageless) sits under its own `stage`. Each stage renders with a done/total
+progress bar. The conflicts check's expandable per-asset swap list (`ConflictRow`) is preserved
+inside the card (not dropped) so "no lost check" holds for its full interactive detail, not
+just the summary line.
+
+**Timeline row (`src/components/projects/overview/work-timeline-row.tsx`)** — a read-only
+7-day strip (current calendar week, Monday-start) with four tracks: gear window
+(`project.rentalStartDate`/`rentalEndDate`), services (`projectServices.listByProject`'s
+`date`), crew (`useProjectCrew`'s per-assignment `shifts[].date`), work (this project's task
+`dueDate`s). No calendar-grid library — a day-strip is enough to answer "what's on which day
+this week" and drag-to-reschedule is a later agenda-engine phase (design §10.7).
+
+**Revived board (`src/components/projects/project-board.tsx`, mounted at `/projects?view=board`
+via `projects-view.tsx`'s table/board toggle)** — was dead code (no consumer rendered it) before
+this phase. A drop calls `useNativeProjectStatus().updateStatus` through the **same**
+`useConfirmStatusGate` the lifecycle stepper uses — never a bypass. That hook's signature moved
+from per-hook-instance `(orgId, projectId, currentStatus, onProceed)` to per-call
+`requestStatusChange(projectId, currentStatus, nextStatus)` (#1244) so ONE hook instance can
+preview a confirm-impact check for *whichever* card is being dragged, not a single project
+fixed for the component's lifetime — the project detail page updated its two call sites to
+match (`src/hooks/__tests__/use-confirm-status-gate.test.tsx` covers both the single- and
+multi-project shapes). Cards show "9/14 work · 1 overdue" via the new batched
+`projectTasks.workCountsForProjects` query (bounded **per project** via
+`by_organizationId_projectId`, not an org-wide `projectTasks` collect — see that query's own
+comment on why this doesn't trip the R-9.8 collect ratchet the way a naive org-wide count
+would). Cards in `QUOTING`/`QUOTED` get a simple days-since-`updatedAt` tint (amber ≥ 3 days,
+`--t-out`-soft ≥ 7 days) — full per-client rotting thresholds are Phase 3 (design §8.4), this
+is deliberately the "simple tint" the issue asked for, not that.
+
+**Recurrence** (`projectTasks.recurrence`, schema `{freq: "daily"|"weekly"|"monthly",
+daysOfWeek?, dayOfMonth?}` — `convex/lib/workVocabulary.ts`'s `WORK_RECURRENCE_FREQUENCIES`,
+never a second hand-declared union) — never stored on a subtask. The **next occurrence is
+created only when the current one is marked DONE** (Todoist model, never pre-generated):
+`updateNative`'s DONE-transition branch calls `spawnNextOccurrence`
+(`convex/projectTasksWrites.ts`), which computes the new due date via
+`convex/lib/workRecurrence.ts`'s `computeNextOccurrenceDueDate` (org-timezone, reusing
+`resolveOrgQuoteConfig` rather than adding a fourth timezone getter — R-3.1) and inserts a
+fresh top-level row carrying the same title/project/stage/priority/assignee/tags/watchers and
+the *same* recurrence rule. Re-saving an already-DONE task never spawns a second one.
+
+**Watchers** (`projectTasks.watcherUserIds`, bounded to 50, always users — never crew, no
+"crew watches a task" concept in design §8.2) — validated against org membership on every
+create/update (`assertWatchersInOrg`, mirrors `assertAssigneeInOrg`'s shape). A dedicated
+`setWatchingNative` toggles the CALLING user's own membership without risking clobbering a
+concurrent watch/unwatch on the same row (the general `updateNative` watcher patch stays for
+bulk/admin edits of the whole list). Notification-on-activity for watchers is a **documented
+follow-up**, not wired this phase — the field and the add/remove UI exist so a future
+notification type has something to read.
+
+### Web push (subscription only, #1244, design §13)
+
+`pushSubscriptions` (Convex table, one row per `(organizationId, userId, endpoint)` — endpoint
+is the natural dedupe key since a browser re-subscribing on the same device returns either the
+same endpoint or a fresh one). Reads: `convex/pushSubscriptions.ts`'s `isSubscribed`
+(self-scoped). Writes: `convex/pushSubscriptionsWrites.ts`'s `subscribeNative`/
+`unsubscribeNative` (`requireSelfScope`, same posture as `workSignalStatesWrites.ts` — a caller
+only ever touches their own device's row). UI: `src/hooks/use-push-subscription.ts` +
+a toggle on `/account/notifications` (`Notification.requestPermission()` →
+`PushManager.subscribe()` → store the row). Service worker: `worker/index.ts` — a custom
+source `@ducanh2912/next-pwa` auto-discovers (`customWorkerSrc` default "worker", no config
+change needed) and `importScripts`-es into the generated `public/sw.js`, handling `push` and
+`notificationclick`. VAPID key pair: `scripts/generate-vapid-keys.mts` (`pnpm run
+vapid:generate`) — plain Node `crypto` EC P-256 key pair, base64url-encoded; **no new
+dependency**, since only the SEND side needs a sender library.
+
+**Deliberately NOT wired this phase**: nothing in this deployment sends a push. The
+table + subscribe/unsubscribe flow + service-worker receive handler are the complete
+deliverable; a server-side sender (a job that signs a Web Push request per subscription row
+and calls the push service, on a `notifications`-table event) is a follow-up big enough to
+deserve its own pass rather than being rushed into an already-large phase. `worker/index.ts`'s
+`push` handler has no effect until that sender exists.
 
 ## My tasks — superseded by Today (`src/app/(app)/my-tasks/page.tsx`)
 
@@ -220,9 +327,12 @@ not the org's timezone — Today buckets in the org's timezone instead
 Test: `src/app/(app)/my-tasks/__tests__/page.smoke.test.tsx` now just asserts the redirect.
 
 ## Follow-ups (deferred)
-- **Notifications on assignment / due date.** The notification system exists
-  ([FEATUREDOCS/17](./17-notifications.md)); wiring task assignment + due-soon reminders is the
-  obvious next step. Left out of v1 to keep scope minimal.
-- **Drag-and-drop reordering.** `reorderProjectTasks` is implemented server-side; the panel
-  currently reorders via "move to next status" only. A DnD handle is a UI-only follow-up.
+- **Notifications on assignment / due date, and on a watcher's watched task.** The notification
+  system exists ([FEATUREDOCS/17](./17-notifications.md)); wiring task assignment/due-soon/
+  watcher-activity reminders is the obvious next step. Left out to keep this phase's scope
+  bounded — see the "Watchers" section above.
+- **Web push send.** The subscription table + browser flow + service-worker receive handler
+  are complete (see "Web push" above); a server-side sender is the deferred half.
+- **Drag-and-drop reordering** — done this phase (#1244): `reorderNative`, see above.
+  (Previously listed here as deferred; superseded.)
 - **Comments / @mentions on tasks.** Ties into the broader Wave 3 comments feature.

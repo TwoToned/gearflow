@@ -1,13 +1,22 @@
 import { v, ConvexError } from "convex/values";
+import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertArrayMax } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import { defaultStageForProjectStatus, type WorkStage, type WorkItemStatus, type WorkItemPriority, type WorkItemKind } from "./lib/workVocabulary";
+import { computeNextOccurrenceDueDate, type WorkRecurrenceSpec } from "./lib/workRecurrence";
+import { resolveOrgQuoteConfig } from "./lib/orgSettings";
+
+/** Bound on watcherUserIds — mirrors the cap other free-form id arrays on this
+ *  table use (tags, checklist); a browser-direct caller bypassing client Zod
+ *  must not be able to write an unbounded array (R-8.6.2). */
+const MAX_WATCHERS = 50;
 
 /**
  * Native PROJECT-TASK write mutations (Phase 3 browser-direct — replaces the
@@ -100,7 +109,27 @@ const taskWriteFields = {
   assigneeCrewId: v.optional(v.union(v.string(), v.null())),
   checklist: v.optional(v.union(v.array(v.any()), v.null())),
   kind: v.optional(enums.ProjectTaskKind),
+  // #1244 — recurrence never lives on a subtask (same as stage); a client
+  // clearing recurrence passes `null`, matching every other clearable field
+  // on this table's Convex convention (`undefined` omits, `null` clears).
+  recurrence: v.optional(v.union(enums.ProjectTaskRecurrence, v.null())),
+  watcherUserIds: v.optional(v.union(v.array(v.string()), v.null())),
 };
+
+/** Validate every watcher id is an org member. Mirrors assertAssigneeInOrg's
+ *  shape but for an array — a watcher is always a user, never crew (design
+ *  §8.2 has no "crew watches a task" concept). */
+async function assertWatchersInOrg(ctx: MutationCtx, orgId: string, watcherUserIds: string[] | undefined) {
+  if (!watcherUserIds || watcherUserIds.length === 0) return;
+  assertArrayMax(watcherUserIds, "watcherUserIds", MAX_WATCHERS);
+  for (const userId of new Set(watcherUserIds)) {
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId))
+      .first();
+    if (!member) throw new ConvexError("A watcher must be a member of this organization");
+  }
+}
 
 /**
  * Resolves where a new top-level/subtask/personal task lands: its projectId,
@@ -137,6 +166,7 @@ interface NewTaskFields {
   description?: string | null; status?: WorkItemStatus; priority?: WorkItemPriority;
   dueDate?: number | null; assigneeUserId?: string | null; assigneeCrewId?: string | null;
   checklist?: RawChecklistItem[] | null; kind?: WorkItemKind; now: number; actor: { userId: string };
+  recurrence?: WorkRecurrenceSpec | null; watcherUserIds?: string[] | null;
 }
 
 // Convex's optional-field convention: `undefined` omits the field, a stored
@@ -169,6 +199,9 @@ function buildNewTaskDoc(
     assigneeCrewId: falsyOrUndef(a.assigneeCrewId),
     checklist: orUndef(normaliseChecklist(a.checklist)),
     kind: a.kind,
+    // A subtask never carries its own recurrence, same rule as stage.
+    recurrence: a.parentId ? undefined : orUndef(a.recurrence),
+    watcherUserIds: orUndef(a.watcherUserIds),
     stage: placement.stage,
     createdById: a.actor.userId,
     completedAt: status === "DONE" ? a.now : undefined,
@@ -206,6 +239,7 @@ export const createNative = mutation({
     if (!title) throw new ConvexError("Task title is required");
 
     await assertAssigneeInOrg(ctx, a.orgId, a.assigneeUserId, a.assigneeCrewId);
+    await assertWatchersInOrg(ctx, a.orgId, a.watcherUserIds ?? undefined);
 
     const placement = await resolveNewTaskPlacement(ctx, a);
     await ctx.db.insert("projectTasks", buildNewTaskDoc({ ...a, actor }, placement, title));
@@ -238,6 +272,7 @@ export const updateNative = mutation({
 
     if (a.title !== undefined && !a.title.trim()) throw new ConvexError("Task title is required");
     await assertAssigneeInOrg(ctx, a.orgId, a.assigneeUserId, a.assigneeCrewId);
+    await assertWatchersInOrg(ctx, a.orgId, a.watcherUserIds ?? undefined);
 
     // Clears use `undefined` (Convex removes the optional field) — the schema
     // columns are v.optional(...) and reject an explicit null.
@@ -251,9 +286,12 @@ export const updateNative = mutation({
     if (a.assigneeCrewId !== undefined) patch.assigneeCrewId = a.assigneeCrewId || undefined;
     if (a.checklist !== undefined) patch.checklist = normaliseChecklist(a.checklist);
     if (a.kind !== undefined) patch.kind = a.kind;
-    // A subtask never carries its own stage (design doc §10.1) — silently ignore a
-    // stage patch on a child row rather than erroring on what's a client no-op.
+    // A subtask never carries its own stage/recurrence (design doc §10.1) —
+    // silently ignore either patch on a child row rather than erroring on
+    // what's a client no-op.
     if (a.stage !== undefined && !doc.parentId) patch.stage = a.stage ?? undefined;
+    if (a.recurrence !== undefined && !doc.parentId) patch.recurrence = a.recurrence ?? undefined;
+    if (a.watcherUserIds !== undefined) patch.watcherUserIds = a.watcherUserIds ?? undefined;
     if (a.status !== undefined && a.status !== doc.status) {
       patch.completedAt = a.status === "DONE" ? a.now : undefined;
     }
@@ -265,9 +303,70 @@ export const updateNative = mutation({
     await ctx.db.patch(doc._id, patch);
     const title = (patch.title as string | undefined) ?? doc.title;
     await logTask(ctx, { orgId: a.orgId, projectId: doc.projectId, actor, auditId: a.auditId, now: a.now, action: "updated", entityId: a.id, entityName: title, summary: `Updated task "${title}"` });
+
+    // #1244 — "the next occurrence is created when the current one is done
+    // ... never pre-generated" (design §8.2, the Todoist model). Only on an
+    // ACTUAL transition into DONE (never a re-save that's already DONE).
+    // Re-fetches the just-patched doc rather than hand-merging `doc`+`patch`
+    // field by field (R-3.6: keeps this handler's own complexity down, and
+    // is trivially correct — it's exactly what got written, not a
+    // reconstruction of it).
+    const becameDone = a.status === "DONE" && doc.status !== "DONE";
+    if (becameDone) {
+      const patched = await ctx.db.get(doc._id);
+      if (patched?.recurrence) await spawnNextOccurrence(ctx, patched, patched.recurrence, actor, a.now);
+    }
+
     return { id: a.id };
   },
 });
+
+/** Create the next occurrence of a recurring task once the current one is
+ *  marked DONE — audited like any other creation, but triggered as a system
+ *  side effect of the DONE write rather than its own RBAC/rate-limit pass
+ *  (those already ran for the mutation that triggered it). */
+async function spawnNextOccurrence(
+  ctx: MutationCtx,
+  current: { organizationId: string; projectId?: string; title: string; description?: string; priority?: string; stage?: string; assigneeUserId?: string; assigneeCrewId?: string; dueDate?: number; tags?: string[]; watcherUserIds?: string[] },
+  recurrence: WorkRecurrenceSpec,
+  actor: Actor,
+  now: number,
+) {
+  const config = await resolveOrgQuoteConfig(ctx, current.organizationId);
+  const nextDueDate = computeNextOccurrenceDueDate(current.dueDate ?? now, recurrence, config.timezone);
+  const id = createId();
+  await ctx.db.insert("projectTasks", {
+    id,
+    organizationId: current.organizationId,
+    projectId: current.projectId,
+    title: current.title,
+    description: current.description,
+    status: "TODO",
+    priority: (current.priority as WorkItemPriority | undefined) ?? "NORMAL",
+    dueDate: nextDueDate,
+    stage: current.stage as WorkStage | undefined,
+    assigneeUserId: current.assigneeUserId,
+    assigneeCrewId: current.assigneeCrewId,
+    tags: current.tags,
+    watcherUserIds: current.watcherUserIds,
+    recurrence,
+    createdById: actor.userId,
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await logTask(ctx, {
+    orgId: current.organizationId,
+    projectId: current.projectId,
+    actor,
+    auditId: createId(),
+    now,
+    action: "created",
+    entityId: id,
+    entityName: current.title,
+    summary: `Recurring task "${current.title}" — next occurrence created`,
+  });
+}
 
 export const deleteNative = mutation({
   returns: v.object({ ok: v.boolean() }),
@@ -371,10 +470,76 @@ export const bulkDeleteNative = mutation({
   },
 });
 
+/**
+ * Browser-direct drag-reorder (#1244, design §8.3) — assigns sortOrder=index
+ * for each id in `orderedIds`, in ONE mutation round trip, exactly the shape
+ * `lineItemWrites.reorderNative` already established (see that file's own
+ * comment). The existing `reorderMany` in `convex/projectTasks.ts` stays
+ * `requireService`-gated and untouched — it has no production caller and
+ * this is its browser-reachable sibling, not a replacement.
+ *
+ * Scope: `orderedIds` is exactly the set of siblings being reordered — a
+ * stage column on the Work tab, or one project's flat list. Per-item org
+ * re-check (by_cuid is global); a foreign id is silently skipped, mirroring
+ * reorderMany's own posture, rather than failing the whole drag over one bad
+ * id. Structural only (sortOrder, never money or status) — never gated.
+ */
+export const reorderNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: { orgId: v.string(), orderedIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orgId, orderedIds, now }) => {
+    await assertWritesEnabled(ctx, "projectTask");
+    await enforceBrowserWriteLimit(ctx);
+    await assertBulkSizeOk(ctx, orderedIds.length);
+    await requireWorkOrProjectOrgUpdate(ctx, orgId);
+    for (let index = 0; index < orderedIds.length; index++) {
+      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", orderedIds[index])).first();
+      if (doc && doc.organizationId === orgId) {
+        await ctx.db.patch(doc._id, { sortOrder: index, updatedAt: now });
+      }
+    }
+    return { ok: true as const };
+  },
+});
+
+/** Toggle the CALLING user's own watcher membership on a task — the common
+ *  "watch this" / "stop watching" UI action, split out from updateNative's
+ *  general watcherUserIds patch (which stays for bulk/admin edits of the
+ *  whole list) so a single click never risks clobbering someone else's
+ *  concurrent watch/unwatch. `requireWorkOrProjectOrgUpdate` (not self-scope):
+ *  watching is task-collaboration, gated the same as every other task edit —
+ *  not a personal-only surface like workSignalStates. */
+export const setWatchingNative = mutation({
+  returns: v.object({ watching: v.boolean() }),
+  args: { id: v.string(), orgId: v.string(), userId: v.string(), watching: v.boolean(), now: v.number() },
+  handler: async (ctx, { id, orgId, userId, watching, now }) => {
+    await assertWritesEnabled(ctx, "projectTask");
+    await enforceBrowserWriteLimit(ctx);
+    await requireWorkOrProjectOrgUpdate(ctx, orgId);
+
+    const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc || doc.organizationId !== orgId) throw new ConvexError("Task not found");
+
+    const member = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId)).first();
+    if (!member) throw new ConvexError("Not a member of this organization");
+
+    const current = new Set(doc.watcherUserIds ?? []);
+    if (watching) current.add(userId);
+    else current.delete(userId);
+    const next = [...current];
+    assertArrayMax(next, "watcherUserIds", MAX_WATCHERS);
+
+    await ctx.db.patch(doc._id, { watcherUserIds: next.length > 0 ? next : undefined, updatedAt: now });
+    return { watching };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
   bulkDeleteNative: { danger: "high" },
   bulkUpdateNative: { danger: "medium" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },
   updateNative: { danger: "medium" },
+  reorderNative: { summary: "Reassign sortOrder for a set of tasks after a drag-reorder.", danger: "low", mcpTier: 3 },
+  setWatchingNative: { summary: "Watch or unwatch a task.", danger: "low", mcpTier: 3 },
 };

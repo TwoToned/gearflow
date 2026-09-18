@@ -53,6 +53,11 @@ public/workbox-*.js
 public/workbox-*.js.map
 public/swe-worker-*.js
 public/fallback-*.js
+public/fallback-*.js.map
+# #1244 — the custom worker (worker/index.ts) next-pwa compiles and
+# importScripts()-es into public/sw.js, content-hashed per build.
+public/worker-*.js
+public/worker-*.js.map
 .gstack/
 .claude/worktrees/
 package-lock.json

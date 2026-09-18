@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_ITEM_LINK_ENTITY_TYPES } from "./workVocabulary";
+import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_RECURRENCE_FREQUENCIES, WORK_ITEM_LINK_ENTITY_TYPES } from "./workVocabulary";
 
 /**
  * Convex validators for the 65 Prisma enums.
@@ -476,6 +476,16 @@ export const ProjectTaskStatus = v.union(...WORK_ITEM_STATUSES.map((s) => v.lite
 export const ProjectTaskPriority = v.union(...WORK_ITEM_PRIORITIES.map((p) => v.literal(p)));
 export const ProjectTaskKind = v.union(...WORK_ITEM_KINDS.map((k) => v.literal(k)));
 export const ProjectTaskStage = v.union(...WORK_STAGES.map((s) => v.literal(s)));
+// Work-layer phase 2 (#1244): recurrence, sourced the same way — see
+// workVocabulary.ts's WORK_RECURRENCE_FREQUENCIES.
+export const ProjectTaskRecurrenceFrequency = v.union(...WORK_RECURRENCE_FREQUENCIES.map((f) => v.literal(f)));
+export const ProjectTaskRecurrence = v.object({
+  freq: ProjectTaskRecurrenceFrequency,
+  // weekly only — ISO weekday numbers (0 Sun – 6 Sat). Absent/empty = every 7 days.
+  daysOfWeek: v.optional(v.array(v.number())),
+  // monthly only — 1-31, clamped to the shorter month. Absent = same day as the current due date.
+  dayOfMonth: v.optional(v.number()),
+});
 // Work-layer phase 3 (#1245): sourced from workVocabulary.ts.
 export const WorkItemLinkEntityType = v.union(...WORK_ITEM_LINK_ENTITY_TYPES.map((t) => v.literal(t)));
 

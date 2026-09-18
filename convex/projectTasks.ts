@@ -165,6 +165,11 @@ export const listByProjectWithRelations = query({
         assigneeCrewId: t.assigneeCrewId ?? null,
         assigneeUser,
         assigneeCrew,
+        // #1244 — the Work tab's stage columns/grouping and recurrence badge.
+        stage: t.stage ?? null,
+        recurrence: t.recurrence ?? null,
+        watcherUserIds: t.watcherUserIds ?? [],
+        sortOrder: t.sortOrder ?? 0,
       });
     }
     return out;
@@ -485,6 +490,51 @@ export const reorderMany = mutation({
   },
 });
 
+const WORK_COUNTS_MAX_PROJECTS = 300;
+
+/**
+ * Per-project work counts for the revived project board (#1244, design §8.3:
+ * "Cards show '9/14 work · 1 overdue'"). ONE batched query over N project
+ * ids — same shape `collaboration.listBlockingForProjects` already
+ * established for the board's blocking-comment badge — NOT an org-wide
+ * `projectTasks` collect: each project's tasks are fetched via
+ * `by_organizationId_projectId`, so every read is bounded by ONE project's
+ * own task count (which is what makes this a "bounded-by-domain" read per
+ * collect-ratchet.mjs's own carve-out, not the org-wide/no-index hazard
+ * shape the R-9.8 ratchet tracks) rather than the whole org's `projectTasks`
+ * table, which is a genuinely growing, transaction-scale table (unlike
+ * `projects`/`clients`, which the board's existing R-8.3.3 exception already
+ * covers as catalog-scale).
+ */
+export const workCountsForProjects = query({
+  args: { orgId: v.string(), projectIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orgId, projectIds, now }) => {
+    await requireWorkOrProjectOrgRead(ctx, orgId);
+    const ids = [...new Set(projectIds)].slice(0, WORK_COUNTS_MAX_PROJECTS);
+    const out: Record<string, { done: number; total: number; overdue: number }> = {};
+    await Promise.all(
+      ids.map(async (projectId) => {
+        const rows = await ctx.db
+          .query("projectTasks")
+          .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+          .collect();
+        let done = 0;
+        let total = 0;
+        let overdue = 0;
+        for (const t of rows) {
+          if (t.parentId) continue; // subtasks don't count toward the card's own total
+          if (t.status === "CANCELLED") continue;
+          total++;
+          if (t.status === "DONE") done++;
+          else if (t.dueDate != null && t.dueDate < now) overdue++;
+        }
+        out[projectId] = { done, total, overdue };
+      }),
+    );
+    return out;
+  },
+});
+
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
   getById: { summary: "Get one project task by id.", danger: "low", mcpTier: 1 },
@@ -493,4 +543,5 @@ export const agentOps: AgentOpsAnnotations = {
   listByProjectWithRelations: { summary: "List a project's tasks with assignee joins, sorted for the task board.", danger: "low", mcpTier: 1 },
   myOpenTasks: { summary: "List the caller's own open (TODO/IN_PROGRESS) tasks across all projects in an org.", danger: "low", mcpTier: 2 },
   listSubtasks: { summary: "List a task's subtasks (one level).", danger: "low", mcpTier: 2 },
+  workCountsForProjects: { summary: "Batched done/total/overdue task counts for a set of projects (project board cards).", danger: "low", mcpTier: 3 },
 };

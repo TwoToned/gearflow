@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useConvex, useConvexAuth } from "convex/react";
+import { useMemo, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useServerQuery } from "@/hooks/use-server-query";
-import { useProjectTasks as useConvexProjectTasks } from "@/hooks/use-projects";
 import { useProjectTaskWrites, type ProjectTaskInput } from "@/hooks/use-project-tasks-writes";
-import { api } from "../../../convex/_generated/api";
+import { useProjectWorkData } from "@/hooks/use-project-work-data";
 
 type BulkTaskPatch = Pick<
   ProjectTaskInput,
@@ -29,7 +26,6 @@ import {
 
 import { cn, focusRing } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,25 +59,121 @@ import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import {
   TASK_STATUS_LABELS,
   TASK_PRIORITY_LABELS,
+  TASK_STAGES,
+  TASK_STAGE_LABELS,
+  TASK_RECURRENCE_FREQUENCIES,
+  TASK_RECURRENCE_FREQUENCY_LABELS,
+  type ProjectTaskRow,
   type ChecklistItem,
   type ProjectTaskStatus,
   type ProjectTaskPriority,
+  type ProjectTaskRecurrenceFrequency,
 } from "@/lib/project-tasks";
 
-// Loosely-typed task row (server include shape; serialised dates are strings).
-type Task = {
-  id: string;
-  title: string;
-  description: string | null;
-  status: ProjectTaskStatus;
-  priority: ProjectTaskPriority;
-  dueDate: string | null;
-  checklist: ChecklistItem[] | null;
-  assigneeUserId: string | null;
-  assigneeCrewId: string | null;
-  assigneeUser: { id: string; name: string; image: string | null } | null;
-  assigneeCrew: { id: string; firstName: string; lastName: string } | null;
+// Re-exported for existing consumers — the type itself now lives in
+// project-tasks.ts (a plain lib module) so use-project-work-data.ts can
+// reference it without a tasks-panel.tsx <-> use-project-work-data.ts
+// import cycle (#1244; depcruise-ratchet.mjs).
+export type Task = ProjectTaskRow;
+
+/** "Group by" options the Work tab's list view offers (#1244, design §8.3).
+ *  `status` is the pre-existing default and stays the panel's own baseline
+ *  grouping — the others are additive. Pure so it's testable without React. */
+export type TaskGroupBy = "status" | "stage" | "assignee" | "due";
+
+const NO_STAGE_KEY = "none";
+const UNASSIGNED_KEY = "unassigned";
+const DUE_BUCKETS = ["overdue", "today", "week", "later", "none"] as const;
+type DueBucketKey = (typeof DUE_BUCKETS)[number];
+const DUE_BUCKET_LABELS: Record<DueBucketKey, string> = {
+  overdue: "Overdue",
+  today: "Today",
+  week: "This week",
+  later: "Later",
+  none: "No date",
 };
+
+function dueBucketFor(dueDate: string | null, now: Date): DueBucketKey {
+  if (!dueDate) return "none";
+  const d = new Date(dueDate);
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(startOfToday);
+  endOfToday.setHours(23, 59, 59, 999);
+  const endOfWeek = new Date(startOfToday);
+  endOfWeek.setDate(endOfWeek.getDate() + 7);
+  if (d < startOfToday) return "overdue";
+  if (d <= endOfToday) return "today";
+  if (d <= endOfWeek) return "week";
+  return "later";
+}
+
+function assigneeNameFor(task: Task): string | null {
+  return (
+    task.assigneeUser?.name ||
+    (task.assigneeCrew && `${task.assigneeCrew.firstName} ${task.assigneeCrew.lastName}`.trim()) ||
+    null
+  );
+}
+
+const GROUP_BY_LABELS: Record<TaskGroupBy, string> = {
+  status: "By status",
+  stage: "By stage",
+  assignee: "By assignee",
+  due: "By due date",
+};
+
+export interface TaskSection {
+  key: string;
+  label: string;
+  tasks: Task[];
+}
+
+/**
+ * Builds the sections a groupBy renders, in a fixed and stable order per
+ * grouping (never severity/count-sorted, matching the readiness panel's own
+ * "rows don't reshuffle under the cursor" rule). `status` reproduces the
+ * pre-#1244 grouping exactly (TODO / IN_PROGRESS / DONE / CANCELLED, empty
+ * sections dropped).
+ */
+export function buildTaskSections(tasks: Task[], groupBy: TaskGroupBy, now: Date = new Date()): TaskSection[] {
+  if (groupBy === "status") {
+    const order: ProjectTaskStatus[] = ["TODO", "IN_PROGRESS", "DONE", "CANCELLED"];
+    return order
+      .map((status) => ({ key: status, label: TASK_STATUS_LABELS[status], tasks: tasks.filter((t) => t.status === status) }))
+      .filter((s) => s.tasks.length > 0);
+  }
+  if (groupBy === "stage") {
+    const sections = TASK_STAGES.map((stage) => ({
+      key: stage,
+      label: TASK_STAGE_LABELS[stage],
+      tasks: tasks.filter((t) => t.stage === stage),
+    })).filter((s) => s.tasks.length > 0);
+    const none = tasks.filter((t) => !t.stage);
+    return none.length > 0 ? [...sections, { key: NO_STAGE_KEY, label: "No stage", tasks: none }] : sections;
+  }
+  if (groupBy === "assignee") {
+    const byName = new Map<string, Task[]>();
+    const unassigned: Task[] = [];
+    for (const t of tasks) {
+      const name = assigneeNameFor(t);
+      if (!name) { unassigned.push(t); continue; }
+      const list = byName.get(name) ?? [];
+      list.push(t);
+      byName.set(name, list);
+    }
+    const sections = [...byName.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, list]) => ({ key: name, label: name, tasks: list }));
+    return unassigned.length > 0 ? [...sections, { key: UNASSIGNED_KEY, label: "Unassigned", tasks: unassigned }] : sections;
+  }
+  // due
+  return DUE_BUCKETS.map((bucket) => ({
+    key: bucket,
+    label: DUE_BUCKET_LABELS[bucket],
+    tasks: tasks.filter((t) => dueBucketFor(t.dueDate, now) === bucket),
+  })).filter((s) => s.tasks.length > 0);
+}
 
 const STATUS_ORDER: ProjectTaskStatus[] = ["TODO", "IN_PROGRESS", "DONE"];
 
@@ -102,61 +194,18 @@ function dueState(due: string | null): { label: string; overdue: boolean } | nul
   return { label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), overdue };
 }
 
-export function TasksPanel({ projectId }: { projectId: string }) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const convex = useConvex();
-  const { isAuthenticated } = useConvexAuth();
+export function TasksPanel({ projectId, defaultGroupBy = "status" }: { projectId: string; defaultGroupBy?: TaskGroupBy }) {
+  const [groupBy, setGroupBy] = useState<TaskGroupBy>(defaultGroupBy);
   const writes = useProjectTaskWrites();
-  const tasksKey = ["project-tasks", orgId, projectId];
-
-  const { data: tasks = [], isLoading, refetch } = useServerQuery({
-    queryKey: tasksKey,
-    queryFn: () =>
-      convex.query(api.projectTasks.listByProjectWithRelations, {
-        projectId,
-        orgId: orgId as string,
-      }) as unknown as Promise<Task[]>,
-    enabled: !!orgId && isAuthenticated,
-  });
-
-  const { data: assignees } = useServerQuery({
-    queryKey: ["task-assignees", orgId],
-    queryFn: () =>
-      convex.query(api.projectTasks.assignees, { orgId: orgId as string }) as unknown as Promise<{
-        users: { id: string; name: string; image: string | null }[];
-        crew: { id: string; firstName: string; lastName: string }[];
-      }>,
-    enabled: !!orgId && isAuthenticated,
-  });
+  // #1244 — shared with the board/calendar views (one query, per-view is a
+  // display over it, not a separate fetch of it — see the hook's own
+  // comment for why calling it from each view independently is fine).
+  const { tasks, isLoading, refetch, assignees } = useProjectWorkData(projectId);
 
   const [newTitle, setNewTitle] = useState("");
   const [editing, setEditing] = useState<Task | null>(null);
 
   const invalidate = () => refetch();
-
-  // Cross-tab live sync: subscribe to the dual-written Convex projectTasks table.
-  // When another tab creates/edits/deletes a task, the mirror pushes the change;
-  // the fingerprint flips and we refetch the server-action read (which carries
-  // assignee join data Convex doesn't hold).
-  const taskDocs = useConvexProjectTasks(projectId, orgId);
-  const taskFp =
-    taskDocs === undefined
-      ? undefined
-      : taskDocs
-          .map((t) => {
-            const r = t as { id: string; updatedAt?: number; status?: string; title?: string; priority?: string; dueDate?: number; assigneeUserId?: string; assigneeCrewId?: string; sortOrder?: number; completedAt?: number };
-            return `${r.id}:${r.updatedAt ?? 0}:${r.status ?? ""}:${r.title ?? ""}:${r.priority ?? ""}:${r.dueDate ?? ""}:${r.assigneeUserId ?? ""}:${r.assigneeCrewId ?? ""}:${r.sortOrder ?? ""}:${r.completedAt ?? ""}`;
-          })
-          .sort()
-          .join("|");
-  const prevTaskFp = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (taskFp !== undefined && prevTaskFp.current !== undefined && taskFp !== prevTaskFp.current) {
-      refetch();
-    }
-    if (taskFp !== undefined) prevTaskFp.current = taskFp;
-  }, [taskFp, refetch]);
 
   const createMut = useServerMutation({
     mutationFn: (title: string) => writes.create({ projectId, title }),
@@ -212,13 +261,9 @@ export function TasksPanel({ projectId }: { projectId: string }) {
     onError: (e: Error) => toast.error(e.message || "Could not delete tasks"),
   });
 
-  const grouped = useMemo(() => {
-    const g: Record<ProjectTaskStatus, Task[]> = { TODO: [], IN_PROGRESS: [], DONE: [], CANCELLED: [] };
-    for (const t of tasks) g[t.status]?.push(t);
-    return g;
-  }, [tasks]);
-
-  const openCount = grouped.TODO.length + grouped.IN_PROGRESS.length;
+  const sections = useMemo(() => buildTaskSections(tasks, groupBy), [tasks, groupBy]);
+  const openCount = tasks.filter((t) => t.status === "TODO" || t.status === "IN_PROGRESS").length;
+  const doneCount = tasks.filter((t) => t.status === "DONE").length;
 
   // Assignee combobox options (users first, then crew).
   const assigneeOptions = useMemo(() => {
@@ -229,6 +274,13 @@ export function TasksPanel({ projectId }: { projectId: string }) {
     }));
     return [...users, ...crew];
   }, [assignees]);
+
+  // Watchers are always users, never crew (design §8.2 has no "crew watches
+  // a task" concept) — unprefixed ids, unlike assigneeOptions' `u:`/`c:`.
+  const userOptions = useMemo(
+    () => (assignees?.users ?? []).map((u) => ({ value: u.id, label: u.name })),
+    [assignees],
+  );
 
   function cycleStatus(task: Task) {
     const next: ProjectTaskStatus =
@@ -242,7 +294,8 @@ export function TasksPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-5">
-      {/* Quick add */}
+      {/* Quick add — scoped to this project (design §8.3): no projectId means
+          a personal task on Today, but every add here always carries one. */}
       <div className="flex items-center gap-2">
         <Input
           placeholder="Add a task and press Enter…"
@@ -259,6 +312,18 @@ export function TasksPanel({ projectId }: { projectId: string }) {
           {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           <span className="ml-1.5 hidden sm:inline">Add</span>
         </Button>
+        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskGroupBy)}>
+          <SelectTrigger className="w-[140px] shrink-0" aria-label="Group by">
+            <SelectValue>{GROUP_BY_LABELS[groupBy]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(GROUP_BY_LABELS) as TaskGroupBy[]).map((g) => (
+              <SelectItem key={g} value={g}>
+                {GROUP_BY_LABELS[g]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -349,13 +414,13 @@ export function TasksPanel({ projectId }: { projectId: string }) {
           </BulkActionBar>
 
           <div className="space-y-5">
-          {STATUS_ORDER.map((status) => {
-            const list = grouped[status];
+          {sections.map((section) => {
+            const list = section.tasks;
             if (list.length === 0) return null;
             return (
-              <section key={status} className="space-y-1.5">
+              <section key={section.key} className="space-y-1.5">
                 <h4 className="flex items-center gap-2 t-overline text-muted">
-                  {TASK_STATUS_LABELS[status]}
+                  {section.label}
                   <span className="text-faint">{list.length}</span>
                 </h4>
                 <div className="divide-y divide-line rounded-[var(--r)] border border-line">
@@ -506,7 +571,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
 
       {tasks.length > 0 && (
         <p className="text-caption text-muted">
-          {openCount} open · {grouped.DONE.length} done
+          {openCount} open · {doneCount} done
         </p>
       )}
 
@@ -525,6 +590,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
         <TaskEditDialog
           task={editing}
           assigneeOptions={assigneeOptions}
+          userOptions={userOptions}
           onClose={() => setEditing(null)}
           onSave={(data) => {
             void updateMut
@@ -540,14 +606,20 @@ export function TasksPanel({ projectId }: { projectId: string }) {
 
 // ─── Edit dialog ──────────────────────────────────────────────────────────
 
+const NO_RECURRENCE = "none" as const;
+type RecurrenceChoice = typeof NO_RECURRENCE | ProjectTaskRecurrenceFrequency;
+
 function TaskEditDialog({
   task,
   assigneeOptions,
+  userOptions,
   onClose,
   onSave,
 }: {
   task: Task;
   assigneeOptions: { value: string; label: string }[];
+  /** Users only (never crew) — recurrence/watchers are user concepts. */
+  userOptions: { value: string; label: string }[];
   onClose: () => void;
   onSave: (data: ProjectTaskInput) => void;
 }) {
@@ -561,6 +633,9 @@ function TaskEditDialog({
   );
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task.checklist ?? []);
   const [newItem, setNewItem] = useState("");
+  const [recurrenceFreq, setRecurrenceFreq] = useState<RecurrenceChoice>(task.recurrence?.freq ?? NO_RECURRENCE);
+  const [watcherUserIds, setWatcherUserIds] = useState<string[]>(task.watcherUserIds ?? []);
+  const [addWatcher, setAddWatcher] = useState("");
   const isMobile = useIsMobile();
 
   function addChecklistItem() {
@@ -583,6 +658,8 @@ function TaskEditDialog({
       assigneeUserId: isUser ? assignee.slice(2) : null,
       assigneeCrewId: isCrew ? assignee.slice(2) : null,
       checklist,
+      recurrence: recurrenceFreq === NO_RECURRENCE ? null : { freq: recurrenceFreq },
+      watcherUserIds: watcherUserIds.length > 0 ? watcherUserIds : null,
     });
   }
 
@@ -712,6 +789,65 @@ function TaskEditDialog({
               </div>
             </div>
           </div>
+
+          {/* #1244 — recurrence + watchers. A subtask never carries either
+              (the mutation silently ignores a recurrence patch on one), but
+              the dialog itself opens on top-level tasks only today. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-caption text-muted">Repeats</label>
+              <Select value={recurrenceFreq} onValueChange={(v) => setRecurrenceFreq(v as RecurrenceChoice)}>
+                <SelectTrigger>
+                  <SelectValue>
+                    {recurrenceFreq === NO_RECURRENCE ? "Doesn't repeat" : TASK_RECURRENCE_FREQUENCY_LABELS[recurrenceFreq]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_RECURRENCE}>Doesn&apos;t repeat</SelectItem>
+                  {TASK_RECURRENCE_FREQUENCIES.map((f) => (
+                    <SelectItem key={f} value={f}>
+                      {TASK_RECURRENCE_FREQUENCY_LABELS[f]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-caption text-muted">Add a watcher</label>
+              <ComboboxPicker
+                value={addWatcher}
+                onChange={(v) => {
+                  if (v && !watcherUserIds.includes(v)) setWatcherUserIds((prev) => [...prev, v]);
+                  setAddWatcher("");
+                }}
+                options={userOptions.filter((o) => !watcherUserIds.includes(o.value))}
+                placeholder="Choose a person…"
+              />
+            </div>
+          </div>
+          {watcherUserIds.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {watcherUserIds.map((id) => {
+                const name = userOptions.find((o) => o.value === id)?.label ?? id;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-full bg-paper-2 px-2 py-0.5 text-badge font-medium text-muted"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      onClick={() => setWatcherUserIds((prev) => prev.filter((w) => w !== id))}
+                      className={cn("rounded-sm text-faint hover:text-t-out", focusRing)}
+                      aria-label={`Stop ${name} watching`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="line" onClick={onClose}>

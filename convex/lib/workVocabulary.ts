@@ -97,6 +97,27 @@ export function defaultStageForProjectStatus(projectStatus: string): WorkStage |
   return STATUS_TO_STAGE[projectStatus];
 }
 
+// ─── Recurrence (phase 2, design §8.2) ─────────────────────────────────────
+// "every day / week on [days] / month on [n]" — the next occurrence is
+// created when the current one is done (Todoist model), never pre-generated.
+// Never stored on a subtask (one level of subtasks only, and a recurring
+// item is always a top-level task).
+export const WORK_RECURRENCE_FREQUENCIES = ["daily", "weekly", "monthly"] as const;
+export type WorkRecurrenceFrequency = (typeof WORK_RECURRENCE_FREQUENCIES)[number];
+
+export const WORK_RECURRENCE_FREQUENCY_LABELS: Record<WorkRecurrenceFrequency, string> = {
+  daily: "Every day",
+  weekly: "Every week",
+  monthly: "Every month",
+};
+
+/** Bounds mirrored server-side in fieldGuards-style checks and client-side in Zod. */
+export const WORK_RECURRENCE_BOUNDS = {
+  /** ISO weekday numbers, 0 (Sunday) – 6 (Saturday). */
+  daysOfWeek: { min: 0, max: 6, maxCount: 7 },
+  dayOfMonth: { min: 1, max: 31 },
+} as const;
+
 // ─── Work item link entity types ───────────────────────────────────────────
 // Phase 3 (#1245, design §8.2/§10.1) — what a `workItemLinks` row can point
 // at. One definition, shared by the Convex validator (`convex/lib/validators.ts`)

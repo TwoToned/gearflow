@@ -230,6 +230,124 @@ describe("projectTasksWrites", () => {
     const childDoc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "child")).unique());
     expect(childDoc?.stage).toBeUndefined(); // stage patch silently ignored on a subtask
   });
+
+  // ─── #1244 Phase 2 additions ────────────────────────────────────────────
+
+  test("reorderNative assigns sortOrder=index for exactly the given ids, org re-checked", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "A", status: "TODO", sortOrder: 5, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "t2", organizationId: ORG, projectId: "P1", title: "B", status: "TODO", sortOrder: 6, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "tX", organizationId: OTHER, projectId: "P1", title: "Foreign", status: "TODO", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.reorderNative, {
+      orgId: ORG, orderedIds: ["t2", "t1", "tX"], now: NOW + 1,
+    });
+    const rows = await tasks(t);
+    expect(rows.find((r) => r.id === "t2")?.sortOrder).toBe(0);
+    expect(rows.find((r) => r.id === "t1")?.sortOrder).toBe(1);
+    // Foreign-org id at index 2 is silently skipped — untouched, not reordered in.
+    const foreign = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "tX")).unique());
+    expect(foreign?.sortOrder).toBe(0);
+    expect(foreign?.updatedAt).toBe(NOW); // untouched
+  });
+
+  test("setWatchingNative adds/removes the caller from a task's watcherUserIds", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "T", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+    });
+    const res1 = await t.withIdentity(asUser).mutation(api.projectTasksWrites.setWatchingNative, {
+      id: "t1", orgId: ORG, userId: USER, watching: true, now: NOW,
+    });
+    expect(res1).toEqual({ watching: true });
+    expect((await tasks(t))[0].watcherUserIds).toEqual([USER]);
+
+    const res2 = await t.withIdentity(asUser).mutation(api.projectTasksWrites.setWatchingNative, {
+      id: "t1", orgId: ORG, userId: USER, watching: false, now: NOW + 1,
+    });
+    expect(res2).toEqual({ watching: false });
+    expect((await tasks(t))[0].watcherUserIds).toBeUndefined(); // empty array cleared to absent
+  });
+
+  test("createNative rejects a watcher who isn't an org member", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+        id: "t1", projectId: "P1", orgId: ORG, title: "X", watcherUserIds: ["outsider"], now: NOW, actor, auditId: "a1",
+      }),
+    ).rejects.toThrow(/watcher must be a member/i);
+  });
+
+  test("updateNative sets and clears recurrence; never applies it to a subtask", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "T", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "parent", organizationId: ORG, projectId: "P1", title: "Parent", status: "TODO", sortOrder: 2, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "child", organizationId: ORG, projectId: "P1", title: "Child", parentId: "parent", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "t1", orgId: ORG, recurrence: { freq: "weekly", daysOfWeek: [1, 3] }, now: NOW, actor, auditId: "a1",
+    });
+    let doc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "t1")).unique());
+    expect(doc?.recurrence).toEqual({ freq: "weekly", daysOfWeek: [1, 3] });
+
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "t1", orgId: ORG, recurrence: null, now: NOW + 1, actor, auditId: "a2",
+    });
+    doc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "t1")).unique());
+    expect(doc?.recurrence).toBeUndefined();
+
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "child", orgId: ORG, recurrence: { freq: "daily" }, now: NOW, actor, auditId: "a3",
+    });
+    const childDoc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "child")).unique());
+    expect(childDoc?.recurrence).toBeUndefined(); // silently ignored on a subtask
+  });
+
+  test("marking a recurring task DONE spawns the next occurrence (Todoist model), never pre-generated", async () => {
+    const t = makeT(); await seed(t);
+    const dueDate = Date.UTC(2026, 8, 10); // 2026-09-10, a Thursday
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", {
+        id: "t1", organizationId: ORG, projectId: "P1", title: "Chase balance", status: "TODO",
+        priority: "HIGH", stage: "close", dueDate, sortOrder: 1, createdAt: NOW, updatedAt: NOW,
+        recurrence: { freq: "weekly", daysOfWeek: [] },
+      });
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "t1", orgId: ORG, status: "DONE", now: NOW + 1, actor, auditId: "a1",
+    });
+    const rows = await tasks(t);
+    expect(rows).toHaveLength(2);
+    const original = rows.find((r) => r.id === "t1")!;
+    expect(original.status).toBe("DONE");
+    const spawned = rows.find((r) => r.id !== "t1")!;
+    expect(spawned.title).toBe("Chase balance");
+    expect(spawned.status).toBe("TODO");
+    expect(spawned.priority).toBe("HIGH");
+    expect(spawned.stage).toBe("close");
+    expect(spawned.recurrence).toEqual({ freq: "weekly", daysOfWeek: [] });
+    // No daysOfWeek given → weekly falls back to +7 calendar days.
+    expect(spawned.dueDate).toBe(dueDate + 7 * 86_400_000);
+
+    // Re-saving as DONE again (already DONE) must NOT spawn a second occurrence.
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "t1", orgId: ORG, priority: "NORMAL", now: NOW + 2, actor, auditId: "a2",
+    });
+    expect(await tasks(t)).toHaveLength(2);
+  });
+
+  test("marking a non-recurring task DONE spawns nothing", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "One-off", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+      id: "t1", orgId: ORG, status: "DONE", now: NOW + 1, actor, auditId: "a1",
+    });
+    expect(await tasks(t)).toHaveLength(1);
+  });
 });
 
 describe("projectTasks read composites", () => {
@@ -297,5 +415,25 @@ describe("projectTasks read composites", () => {
       { id: "child1", title: "First", status: "DONE", completedAt: NOW },
       { id: "child2", title: "Second", status: "TODO", completedAt: null },
     ]);
+  });
+
+  test("workCountsForProjects — done/total/overdue per project, bounded per project (not org-wide)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "P2", organizationId: ORG, projectNumber: "P2", name: "Other gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      // P1: 1 done, 1 overdue-open, 1 cancelled (excluded), 1 subtask (excluded).
+      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "Done", status: "DONE", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "t2", organizationId: ORG, projectId: "P1", title: "Overdue", status: "TODO", dueDate: NOW - 1000, sortOrder: 2, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "t3", organizationId: ORG, projectId: "P1", title: "Cancelled", status: "CANCELLED", sortOrder: 3, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectTasks", { id: "t4", organizationId: ORG, projectId: "P1", title: "Sub", status: "TODO", parentId: "t1", sortOrder: 4, createdAt: NOW, updatedAt: NOW });
+      // P2: nothing.
+      // Foreign org row under the SAME project id must never leak in.
+      await ctx.db.insert("projectTasks", { id: "leak", organizationId: OTHER, projectId: "P1", title: "Leak", status: "DONE", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+    });
+    const counts = await t.withIdentity(asUser).query(api.projectTasks.workCountsForProjects, {
+      orgId: ORG, projectIds: ["P1", "P2"], now: NOW,
+    });
+    expect(counts.P1).toEqual({ done: 1, total: 2, overdue: 1 });
+    expect(counts.P2).toEqual({ done: 0, total: 0, overdue: 0 });
   });
 });

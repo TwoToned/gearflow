@@ -102,6 +102,9 @@ export const DIRECT_TABLES = [
   // #1226 Phase 1 ("Project versioning v2", parent #1221) — has its own
   // `by_organizationId` index, same as every other project child table above.
   "projectVersions",
+  // Work-layer phase 2 (#1244) — has its own by_organizationId index (plus a
+  // composite by_organizationId_userId for the per-user read).
+  "pushSubscriptions",
   "quotes",
   "savedTableViews",
   "serviceSchedules",
@@ -261,7 +264,10 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1243 (Phase 1, work-layer): +2 — workSignalStates (FILTER, composite-indexed
 // only, per-user signal decisions) and workTemplates (DIRECT, org-scoped work
 // item templates seeded on a project lifecycle transition).
-export const EXPECTED_TABLE_COUNT = 122;
+// #1244 (Phase 2, work-layer): +1 — pushSubscriptions (DIRECT, org-scoped Web
+// Push subscription per device; see the table's own schema comment for the
+// documented push-send follow-up this phase does NOT wire up).
+export const EXPECTED_TABLE_COUNT = 123;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

@@ -105,7 +105,11 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
           </BreadcrumbList>
         </Breadcrumb>
         <PageHeader title="Edit model" description={model.name} />
-        <ModelForm initialData={initialData} />
+        <ModelForm
+          initialData={initialData}
+          existingAssetCount={model.assets.length}
+          existingBulkAssetCount={model.bulkAssets.length}
+        />
       </div>
     </FadeIn>
   );

@@ -48,9 +48,16 @@ const ASSET_TYPE_ORDER = ["SERIALIZED", "BULK"] as const;
 
 interface ModelFormProps {
   initialData?: ModelFormValues & { id: string };
+  // Active asset / bulk-asset counts under this model (edit only) — locks the
+  // Asset type select when flipping it would orphan existing stock from the
+  // model detail tab and the bulk-asset picker (both branch on this field).
+  // The server (modelWrites.ts updateNative) enforces the same rule; this is
+  // just the UI reflecting it before the user hits an error toast.
+  existingAssetCount?: number;
+  existingBulkAssetCount?: number;
 }
 
-export function ModelForm({ initialData }: ModelFormProps) {
+export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAssetCount = 0 }: ModelFormProps) {
   const router = useRouter();
   const isEditing = !!initialData;
   const [showCreateCategory, setShowCreateCategory] = useState(false);
@@ -93,6 +100,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
   });
 
   const v = form.watch();
+  const assetTypeLocked = isEditing && (existingAssetCount > 0 || existingBulkAssetCount > 0);
 
   const modelWrites = useModelWrites();
 
@@ -211,9 +219,16 @@ export function ModelForm({ initialData }: ModelFormProps) {
               )} />
             </SmartFormField>
             <div className="sm:col-span-2">
-              <SmartFormField label="Asset type" hint="Serialized assets are tracked individually; bulk by quantity.">
+              <SmartFormField
+                label="Asset type"
+                hint={
+                  assetTypeLocked
+                    ? `Locked — ${existingAssetCount > 0 ? `${existingAssetCount} serialized asset(s)` : `${existingBulkAssetCount} bulk asset record(s)`} already exist under this model. Archive or move them first to change this.`
+                    : "Serialized assets are tracked individually; bulk by quantity."
+                }
+              >
                 <Controller control={form.control} name="assetType" render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select value={field.value} onValueChange={field.onChange} disabled={assetTypeLocked}>
                     <SelectTrigger>
                       <SelectValue>{ASSET_TYPE_LABELS[field.value ?? "SERIALIZED"] ?? "Serialized (tracked individually)"}</SelectValue>
                     </SelectTrigger>

@@ -76,6 +76,41 @@ describe("modelWrites", () => {
     expect(bulk).toHaveLength(0);
   });
 
+  test("update: assetType flip rejected while conflicting active stock exists (own-org only)", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, assetType: "BULK" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, assetTag: "B", modelId: "mdl1", isActive: true });
+      await ctx.db.insert("bulkAssets", { id: "bX", organizationId: OTHER, assetTag: "Z", modelId: "mdl1", isActive: true }); // foreign, ignored
+    });
+    // Flipping BULK -> SERIALIZED must not silently orphan the active bulk row from
+    // the model detail tab / bulk-asset picker (both branch on assetType).
+    await expect(
+      t.withIdentity(asUser).mutation(api.modelWrites.updateNative, { ...base, assetType: "SERIALIZED", now: NOW + 1, auditId: "a2" }),
+    ).rejects.toThrow(/bulk asset record/i);
+    expect((await model(t, "mdl1"))?.assetType).toBe("BULK"); // unchanged
+
+    // Archiving the blocking row (soft-delete) clears the guard.
+    await t.run(async (ctx) => {
+      const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).unique();
+      await ctx.db.patch(doc!._id, { isActive: false });
+    });
+    await t.withIdentity(asUser).mutation(api.modelWrites.updateNative, { ...base, assetType: "SERIALIZED", now: NOW + 2, auditId: "a3" });
+    expect((await model(t, "mdl1"))?.assetType).toBe("SERIALIZED");
+  });
+
+  test("update: assetType flip rejected while active serialized assets exist", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, assetType: "SERIALIZED" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, assetTag: "A", modelId: "mdl1", isActive: true });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.modelWrites.updateNative, { ...base, assetType: "BULK", now: NOW + 1, auditId: "a2" }),
+    ).rejects.toThrow(/serialized asset/i);
+    expect((await model(t, "mdl1"))?.assetType).toBe("SERIALIZED");
+  });
+
   test("bulkUpdateRates: set/multiply/percent, dailyRate syncs, org re-check", async () => {
     const t = makeT(); await seedMember(t);
     await t.run(async (ctx) => {

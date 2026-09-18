@@ -50,6 +50,9 @@ export const DIRECT_TABLES = [
   "crewTimeEntries",
   "customFieldDefinitions",
   "dashboardCounters",
+  // #1267 — has its own `by_organizationId` index (alongside the read
+  // path's `by_organizationId_userId`) precisely so it can export DIRECT.
+  "dashboardLayouts",
   "fileUploads",
   "groupTemplateItems",
   "groupTemplates",
@@ -273,7 +276,10 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1245 (Phase 3, work-layer): +1 — workItemLinks (DIRECT — join table between
 // a work item and any other entity, has its own by_organizationId index).
 // #1246 (Phase 4, work-layer): +0 — no new table.
-export const EXPECTED_TABLE_COUNT = 124;
+// #1267 (customizable dashboard): +1 — dashboardLayouts (DIRECT — per-user
+// saved widget-board arrangement, has its own by_organizationId index
+// alongside the read path's by_organizationId_userId).
+export const EXPECTED_TABLE_COUNT = 125;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

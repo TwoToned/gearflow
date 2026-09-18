@@ -1518,6 +1518,76 @@ describe("lineItemWrites.updateAccessoryPlanNative", () => {
   });
 });
 
+describe("lineItemWrites.resyncProjectAccessoriesNative", () => {
+  async function seed(t: ReturnType<typeof makeT>, lineExtra: Record<string, unknown> = {}) {
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      await ctx.db.insert("bulkAssets", { id: "ba-def", organizationId: ORG, modelId: "m1", assetTag: "BA-DEF", isActive: true });
+      await ctx.db.insert("modelBulkAccessories", { id: "mba-def", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-def", quantity: 2, addedById: USER });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "li1",
+        id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", modelId: "m1", quantity: 2,
+        status: "CONFIRMED", isKitChild: false, checkedOutQuantity: 0, createdAt: NOW, updatedAt: NOW, ...lineExtra,
+      });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "child-def",
+        id: "child-def", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", parentLineItemId: "li1",
+        isKitChild: true, childKind: "ACCESSORY", bulkAssetId: "ba-def", quantity: 4, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+  }
+  const resyncArgs = { projectId: "p1", organizationId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
+  const childrenOfLi1 = (t: ReturnType<typeof makeT>) =>
+    t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "li1")).collect());
+
+  test("no-ops when the catalog hasn't changed since the line was added", async () => {
+    const t = makeT();
+    await seed(t);
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectAccessoriesNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 1, linesUpdated: 0, childrenAdded: 0, childrenRemoved: 0 });
+    expect(await childrenOfLi1(t)).toHaveLength(1);
+  });
+
+  test("adds a new model DEFAULT accessory configured after the line was already added", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "ba-new", organizationId: ORG, modelId: "m1", assetTag: "BA-NEW", isActive: true });
+      await ctx.db.insert("modelBulkAccessories", { id: "mba-new", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-new", quantity: 1, addedById: USER });
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectAccessoriesNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 1, linesUpdated: 1, childrenAdded: 1, childrenRemoved: 0 });
+    const kids = await childrenOfLi1(t);
+    expect(kids.map((c) => c.bulkAssetId).sort()).toEqual(["ba-def", "ba-new"]);
+    expect(kids.find((c) => c.bulkAssetId === "ba-new")?.quantity).toBe(2); // 1 × line qty 2
+  });
+
+  test("skips a line that has already deployed — catalog change never reaches it", async () => {
+    const t = makeT();
+    await seed(t, { status: "CHECKED_OUT", checkedOutQuantity: 2 });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "ba-new", organizationId: ORG, modelId: "m1", assetTag: "BA-NEW", isActive: true });
+      await ctx.db.insert("modelBulkAccessories", { id: "mba-new", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-new", quantity: 1, addedById: USER });
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectAccessoriesNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 0, linesUpdated: 0, childrenAdded: 0, childrenRemoved: 0 });
+    expect(await childrenOfLi1(t)).toHaveLength(1);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectAccessoriesNative, resyncArgs),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
 describe("lineItemWrites.recalcNative", () => {
   test("member recomputes + persists project totals (one round-trip)", async () => {
     const t = makeT();

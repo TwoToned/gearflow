@@ -26235,6 +26235,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "lineItemWrites.resyncProjectAccessoriesNative",
+    "module": "lineItemWrites",
+    "fn": "resyncProjectAccessoriesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "bd1e4daaa24fd248",
+    "returnsSha": "ad00e18e5055c423",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "lineItemWrites.unsellLineItemNative",
     "module": "lineItemWrites",
     "fn": "unsellLineItemNative",
@@ -63235,10 +63287,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1228,
-  agentReachable: 605,
+  total: 1229,
+  agentReachable: 606,
   queries: 442,
-  mutations: 786,
+  mutations: 787,
   agentReachableQueries: 311,
-  agentReachableMutations: 294,
+  agentReachableMutations: 295,
 } as const;

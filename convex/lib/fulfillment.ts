@@ -44,7 +44,7 @@ async function lineDocByCuid(ctx: Ctx, id: string) {
 /** A parent line's ACCESSORY child lines — one shared query (R-9.8 collect-ratchet:
  *  four call sites duplicated this exact `by_parentLineItemId` + childKind filter
  *  before this helper). */
-async function accessoryChildrenOf(ctx: Ctx, organizationId: string, parentLineItemId: string) {
+export async function accessoryChildrenOf(ctx: Ctx, organizationId: string, parentLineItemId: string) {
   return (
     // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
     await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", parentLineItemId)).collect()

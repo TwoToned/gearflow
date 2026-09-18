@@ -19,7 +19,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
-import { expandAccessoryChildLines, reconcileLineAccessoryChildren, type AccessoryPlan } from "./lib/fulfillment";
+import { expandAccessoryChildLines, reconcileLineAccessoryChildren, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
   loadModelAvailabilityBundle,
@@ -1760,6 +1760,101 @@ export const updateAccessoryPlanNative = mutation({
 });
 
 /**
+ * resyncProjectAccessoriesNative — re-run `reconcileLineAccessoryChildren`
+ * against every eligible line's OWN already-stored `accessoryPlan` (unchanged),
+ * so a model/asset accessory config edited in the catalog AFTER the line was
+ * added reaches jobs that haven't shipped yet. This is an explicit, PM-initiated
+ * per-project action — there is deliberately no trigger on the catalog write
+ * itself (a model-accessory edit reaches many projects at once; FEATUREDOCS/48
+ * documents "removing a model accessory ... does NOT retroactively delete the
+ * project line item" as a considered invariant, not an oversight — an
+ * already-quoted job's composition shouldn't change out from under the PM
+ * without them asking for it).
+ *
+ * Eligible = a top-level equipment line (not itself an accessory/kit child),
+ * asset- or model-based, with no deployed unit yet (`assertLineOwnsAccessoryPlan`'s
+ * same gate as the post-add "Edit accessories" picker — "office decides,
+ * warehouse verifies" holds here too). Accessory child lines carry no price
+ * of their own (FEATUREDOCS/48: "no separate price"), so this never touches a
+ * `PROJECT_MONEY_ANCHOR` and needs no `assertPricingUnlocked` check, unlike a
+ * money-field edit. RBAC(project, manage_line_items).
+ */
+export const resyncProjectAccessoriesNative = mutation({
+  returns: v.object({ linesChecked: v.number(), linesUpdated: v.number(), childrenAdded: v.number(), childrenRemoved: v.number() }),
+  args: {
+    projectId: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { projectId, organizationId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const project = await requireLineProjectInOrg(ctx, projectId, organizationId);
+
+    const lines = await liveRows(ctx, project, "projectLineItems");
+    let linesChecked = 0;
+    let linesUpdated = 0;
+    let childrenAdded = 0;
+    let childrenRemoved = 0;
+
+    for (const line of lines) {
+      if (line.isKitChild || line.childKind) continue; // accessory/kit children have no plan of their own
+      if (!line.modelId && !line.assetId) continue;
+      if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") continue; // deployed — warehouse owns it now
+      linesChecked++;
+
+      const before = await accessoryChildrenOf(ctx, organizationId, line.id);
+      await reconcileLineAccessoryChildren(ctx, {
+        id: line.id,
+        assetId: line.assetId,
+        modelId: line.modelId,
+        quantity: line.quantity ?? 1,
+        categoryId: line.categoryId,
+        groupId: line.groupId,
+        duration: line.duration,
+        pricingType: line.pricingType,
+        organizationId,
+        projectId: line.projectId,
+        versionId: line.versionId,
+      }, (line.accessoryPlan as AccessoryPlan | undefined) ?? null);
+      const after = await accessoryChildrenOf(ctx, organizationId, line.id);
+
+      const beforeIds = new Set(before.map((c) => c.id));
+      const afterIds = new Set(after.map((c) => c.id));
+      const added = after.filter((c) => !beforeIds.has(c.id)).length;
+      const removed = before.filter((c) => !afterIds.has(c.id)).length;
+      if (added > 0 || removed > 0) linesUpdated++;
+      childrenAdded += added;
+      childrenRemoved += removed;
+    }
+
+    if (linesUpdated > 0) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId,
+        action: "UPDATE",
+        entityType: "project",
+        entityId: projectId,
+        entityName: project.name || "Project",
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Resynced accessories from catalog defaults (${linesUpdated} line${linesUpdated === 1 ? "" : "s"}, +${childrenAdded}/-${childrenRemoved})`,
+        projectId,
+        createdAt: now,
+      });
+      const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
+      await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
+    }
+
+    return { linesChecked, linesUpdated, childrenAdded, childrenRemoved };
+  },
+});
+
+/**
  * addKitNative — add a kit to a project: parent line + expanded member child lines
  * (ITEMIZED pricing) via the SHARED createKitLineItemCore (same code createKitLineItem
  * runs) + CREATE audit, atomic. RBAC(project, manage_line_items). The kit
@@ -2565,6 +2660,7 @@ export const agentOps: AgentOpsAnnotations = {
   removeManyNative: { danger: "high" },
   removeNative: { danger: "high" },
   reorderNative: { danger: "low" },
+  resyncProjectAccessoriesNative: { danger: "medium" },
   unsellLineItemNative: { danger: "medium" },
   updateAccessoryPlanNative: { danger: "medium" },
 };

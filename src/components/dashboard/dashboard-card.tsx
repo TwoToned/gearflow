@@ -13,10 +13,13 @@ export interface DashboardCardProps {
   /** Title shown in the header bar — also the accessible name for the
    *  remove button. */
   title: string;
-  /** Edit ("Customize") mode — the drag handle, resize handle (CSS-driven,
-   *  see dashboard-grid.module.css) and remove button only exist in this
-   *  mode, so a normal view has nothing that could swallow a click meant
-   *  for the widget's own content/links. */
+  /** Edit ("Customize") mode — the drag handle and remove button only exist
+   *  in this mode (conditionally rendered below), so a normal view has
+   *  nothing that could swallow a click meant for the widget's own
+   *  content/links. The resize handle is different: react-grid-layout always
+   *  mounts that DOM node regardless of `resizeConfig.enabled`, so hiding it
+   *  outside edit mode is done in CSS via the `data-edit-mode` attribute on
+   *  the root below, not by conditional rendering here. */
   editMode: boolean;
   onRemove?: () => void;
   /** The widget's own rendered content. Deliberately NOT passed as JSX
@@ -50,6 +53,7 @@ export const DashboardCard = forwardRef<HTMLDivElement, DashboardCardProps>(func
   return (
     <div
       ref={ref}
+      data-edit-mode={editMode || undefined}
       className={cn(CARD_BASE, "dashboard-widget-card relative flex h-full flex-col overflow-hidden", className)}
       style={style}
       {...rest}
@@ -78,7 +82,16 @@ export const DashboardCard = forwardRef<HTMLDivElement, DashboardCardProps>(func
           </button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-4">{widget}</div>
+      {/* Scroll stays functional for a widget whose content genuinely
+          overflows its card (an open-ended feed, a long work list) — only
+          the native scrollbar CHROME is hidden, matching the app's existing
+          hide-the-bar-keep-the-scroll convention (see e.g. tabs.tsx,
+          project-lifecycle.tsx). A visible track/thumb inside every card,
+          even ones that barely overflow by a pixel, reads as broken chrome
+          rather than an intentional list. */}
+      <div className="min-h-0 flex-1 overflow-auto p-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {widget}
+      </div>
       {children}
     </div>
   );

@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { calculateTotalHours } from "./lib/crewTimeHours";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { assertRefInOrg } from "./lib/orgRef";
 
 /**
  * Native CREW-TIME-ENTRY write mutations (Phase 3 browser-direct — replaces
@@ -29,8 +30,12 @@ export const entryFields = {
   endTime: v.string(),
   breakMinutes: v.optional(v.number()),
   notes: v.optional(v.string()),
+  // Work-layer Phase 4 (#1246) — optional link to a crew-assigned work item
+  // (`projectTasks`) so its peek can show logged minutes. Read-side feature;
+  // the approval/dispute/export lifecycle below is otherwise untouched.
+  workItemId: v.optional(v.string()),
 };
-type EntryArgs = { assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; notes?: string };
+type EntryArgs = { assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; notes?: string; workItemId?: string };
 
 /**
  * Mirrors `crewTimeEntrySchema` (src/lib/validations/crew.ts) string-length +
@@ -50,6 +55,22 @@ function assertTimeEntrySharedFields(f: { description?: string; startTime: strin
 function assertTimeEntryFields(f: EntryArgs): void {
   assertStrLen(f.crewMemberId, "crewMemberId", { min: 1 });
   assertTimeEntrySharedFields(f);
+}
+
+/** Org-validate an optional `workItemId` FK (by_cuid is GLOBAL — cross-org refs
+ *  leak). Extracted so the branch lives here, not in each handler (R-3.6). */
+async function assertWorkItemRefIfSet(ctx: MutationCtx, orgId: string, workItemId: string | undefined): Promise<void> {
+  if (workItemId) await assertRefInOrg(ctx, "projectTasks", workItemId, orgId);
+}
+
+/** Set `target[key]` when `value` is truthy, else delete it — the "resend the
+ *  whole form" convention every optional string field on an update follows.
+ *  Extracted so `updateNative` calls it once per field instead of repeating
+ *  the if/else branch (R-3.6 — each inline branch counted toward its
+ *  handler's cyclomatic complexity). */
+function setOrClear(target: Record<string, unknown>, key: string, value: string | undefined): void {
+  if (value) target[key] = value;
+  else delete target[key];
 }
 
 async function memberName(ctx: MutationCtx, orgId: string, crewMemberId: string): Promise<{ ok: boolean; name: string }> {
@@ -78,6 +99,7 @@ function buildDoc(a: EntryArgs, orgId: string, id: string, now: number) {
     totalHours: calculateTotalHours(a.startTime, a.endTime, a.breakMinutes ?? 0),
     status: "DRAFT" as const,
     ...(a.notes ? { notes: a.notes } : {}),
+    ...(a.workItemId ? { workItemId: a.workItemId } : {}),
     createdAt: now, updatedAt: now,
   };
 }
@@ -101,6 +123,7 @@ export const createNative = mutation({
     const dup = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Time entry already exists");
     assertTimeEntryFields(a); // R-8.6.2 — crewTimeEntrySchema bounds
+    await assertWorkItemRefIfSet(ctx, a.orgId, a.workItemId);
     const member = await memberName(ctx, a.orgId, a.crewMemberId);
     if (!member.ok) throw new ConvexError("Crew member not found");
     let projectName = a.description || "General";
@@ -116,7 +139,7 @@ export const createManyNative = mutation({
   returns: v.object({ created: v.array(v.string()), errors: v.array(v.object({ crewMemberId: v.string(), message: v.string() })) }),
   args: {
     orgId: v.string(), now: v.number(), actor: actorValidator,
-    shared: v.object({ assignmentId: v.optional(v.string()), description: v.optional(v.string()), date: v.number(), startTime: v.string(), endTime: v.string(), breakMinutes: v.optional(v.number()), notes: v.optional(v.string()) }),
+    shared: v.object({ assignmentId: v.optional(v.string()), description: v.optional(v.string()), date: v.number(), startTime: v.string(), endTime: v.string(), breakMinutes: v.optional(v.number()), notes: v.optional(v.string()), workItemId: v.optional(v.string()) }),
     entries: v.array(v.object({ id: v.string(), crewMemberId: v.string(), auditId: v.string() })),
   },
   handler: async (ctx, a) => {
@@ -126,6 +149,7 @@ export const createManyNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     if (a.entries.length === 0) return { created: [], errors: [] };
     assertTimeEntrySharedFields(a.shared); // R-8.6.2 — bounds shared across the whole batch
+    await assertWorkItemRefIfSet(ctx, a.orgId, a.shared.workItemId);
 
     // Resolve the assignment once (org-verified); per-crew match checked below.
     let projectName = a.shared.description || "General";
@@ -175,6 +199,7 @@ export const updateNative = mutation({
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Time entry not found");
     if (doc.status === "EXPORTED") throw new ConvexError("Cannot edit exported time entries");
     assertTimeEntryFields(a); // R-8.6.2 — crewTimeEntrySchema bounds on the incoming patch
+    await assertWorkItemRefIfSet(ctx, a.orgId, a.workItemId);
     const member = await memberName(ctx, a.orgId, doc.crewMemberId);
     if (a.assignmentId) await assignmentProject(ctx, a.orgId, a.assignmentId, null); // org-verify the (possibly new) assignment
 
@@ -187,9 +212,10 @@ export const updateNative = mutation({
       status: "DRAFT", updatedAt: a.now,
     };
     delete merged.approvedById; delete merged.approvedAt;
-    if (a.assignmentId) merged.assignmentId = a.assignmentId; else delete merged.assignmentId;
-    if (a.description) merged.description = a.description; else delete merged.description;
-    if (a.notes) merged.notes = a.notes; else delete merged.notes;
+    setOrClear(merged, "assignmentId", a.assignmentId);
+    setOrClear(merged, "description", a.description);
+    setOrClear(merged, "notes", a.notes);
+    setOrClear(merged, "workItemId", a.workItemId);
     await ctx.db.replace(doc._id, merged as typeof rest);
 
     await logTime(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: member.name, summary: `Updated time entry for ${member.name}` });

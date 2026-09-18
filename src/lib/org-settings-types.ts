@@ -47,6 +47,34 @@ export interface OrgDocumentSettings {
   paymentTermsDays?: number;
 }
 
+/** Work-layer Phase 4 (#1246) — the crew planner's confirmation layer. See
+ *  `src/lib/crew-time-settings.ts` for bounds/defaults. */
+export interface CrewTimeSettings {
+  /** Hours an OFFERED assignment sits unanswered before it's a Triage signal
+   *  for the PM (design doc §8.5/§9). Absent = the documented default (48). */
+  unansweredOfferHours?: number;
+  /** Email the day before a confirmed shift with call time, location and PM
+   *  phone. Off by default — absent or `false` = disabled. */
+  callReminderEnabled?: boolean;
+}
+
+/** Work-layer Phase 3 (#1245, design §8.4) — per-org "rotting" thresholds for
+ *  the client pipeline. Absent (or an individual key absent) falls back to
+ *  the design doc's defaults (7 / 14 days) via
+ *  `convex/lib/rottingDates.ts`'s `resolveRottingDays` — every pre-Phase-3
+ *  org gets the default with no backfill, same posture as
+ *  `projectStatusAutomation`. No settings UI ships in this phase (same
+ *  posture as `workTemplates` — the table/field exists for a later admin
+ *  screen to write); edit via the raw settings JSON until then.
+ */
+interface OrgWorkSettings {
+  /** Days since a client's last timeline touch before its pipeline card
+   *  shades amber. Default 7. */
+  rottingAmberDays?: number;
+  /** Days before the card shades with the error tint. Default 14. */
+  rottingErrorDays?: number;
+}
+
 export interface TestTagSettings {
   prefix?: string;
   digits?: number;
@@ -110,4 +138,8 @@ export interface OrgSettings {
   /** #1160 — per-org opt-OUT switches for project status automation. Absent (and
    *  every absent key inside it) means ON; see `src/lib/project-status-automation.ts`. */
   projectStatusAutomation?: ProjectStatusAutomationSettings;
+  /** #1245 — client-pipeline rotting thresholds. See `OrgWorkSettings`. */
+  work?: OrgWorkSettings;
+  /** Work-layer Phase 4 (#1246) — crew planner confirmation-layer settings. */
+  crewTime?: CrewTimeSettings;
 }

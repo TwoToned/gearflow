@@ -6,6 +6,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 import { findLiveQuote, effectiveQuoteStatus } from "./lib/quoteState";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "./lib/quoteDates";
+import { resolveCrewOfferStaleHours } from "./lib/orgSettings";
 
 /**
  * BROWSER-facing native replacements for the bounded project/thread dashboard
@@ -193,7 +194,10 @@ export const home = query({
 // and don't need a `workSignalStates` row. "Work overdue/due soon" is also not
 // duplicated here — it's real, non-derived task rows already surfaced by
 // `projectTasks.myOpenTasks` in Today's Overdue/Today buckets.
-const STALE_OFFER_MS = 48 * 60 * 60 * 1000; // §8.5's "> 48h" — hardcoded until an org setting exists
+//
+// Phase 4 (#1246): the "> 48h" threshold is now the org's
+// `resolveCrewOfferStaleHours` setting (computed server-side, never the
+// browser's clock) instead of a hardcoded constant — see design doc §8.5.
 
 type CrewSignalRow = {
   sourceKey: string; // deterministic — design doc §9 ("crew:declined:<id>" / "crew:stale:<id>")
@@ -202,6 +206,8 @@ type CrewSignalRow = {
   projectName: string;
   projectNumber: string;
   crewMemberName: string;
+  crewRoleId: string | null; // Phase 4 (#1246) — feeds the Triage "Find cover" planner deep-link
+  startDate: number | null; // Phase 4 (#1246) — the planner week to land the "Find cover" link on
   at: number; // respondedAt for declined, offeredAt for stale
 };
 
@@ -215,6 +221,51 @@ type ExpiringQuoteRow = {
   validUntil: number | null;
   daysLeft: number | null;
 };
+
+// Work-layer Phase 3 (#1245, design §8.4/§9) — "24 hours after a quote send
+// with no next step logged, the quote:nonext source puts 'Quote v1 out, no
+// next step' in the PM's Triage." A SENT quote (via effectiveQuoteStatus,
+// never the raw column) whose client has no OPEN follow_up work item.
+const QUOTE_NO_NEXT_STEP_GRACE_MS = 24 * 60 * 60 * 1000;
+
+type QuoteNoNextStepRow = {
+  sourceKey: string; // "quote:nonext:<quoteId>" (design doc §9)
+  quoteId: string;
+  clientId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  version: number;
+  sentAt: number;
+};
+
+/** Whether `clientId` has at least one OPEN (not done/cancelled) `follow_up`
+ *  work item linked to it — the "a next step is required" test. Cached per
+ *  call so a PM managing several projects for the same client only pays for
+ *  this once. */
+function makeHasOpenFollowUpChecker(ctx: QueryCtx, orgId: string) {
+  const cache = new Map<string, Promise<boolean>>();
+  return (clientId: string): Promise<boolean> => {
+    let promise = cache.get(clientId);
+    if (!promise) {
+      promise = (async () => {
+        const links = await ctx.db
+          .query("workItemLinks")
+          .withIndex("by_organizationId_entityType_entityId", (q) =>
+            q.eq("organizationId", orgId).eq("entityType", "client").eq("entityId", clientId),
+          )
+          .collect();
+        if (links.length === 0) return false;
+        const items = await Promise.all(
+          links.map((l) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", l.workItemId)).first()),
+        );
+        return items.some((t) => t != null && t.kind === "follow_up" && t.status !== "DONE" && t.status !== "CANCELLED");
+      })();
+      cache.set(clientId, promise);
+    }
+    return promise;
+  };
+}
 
 /**
  * A human's decision (snooze/dismiss/promote, `workSignalStates`) hides a
@@ -241,22 +292,31 @@ export const needsYou = query({
   handler: async (
     ctx,
     { orgId, now },
-  ): Promise<{ declinedCrew: CrewSignalRow[]; staleOffers: CrewSignalRow[]; expiringQuotes: ExpiringQuoteRow[] }> => {
+  ): Promise<{
+    declinedCrew: CrewSignalRow[];
+    staleOffers: CrewSignalRow[];
+    expiringQuotes: ExpiringQuoteRow[];
+    quotesNeedingNextStep: QuoteNoNextStepRow[];
+  }> => {
     await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
-    const [projects, hiddenSourceKeys] = await Promise.all([
+    const [projects, hiddenSourceKeys, staleOfferHours] = await Promise.all([
       resolveManagedProjectDocs(ctx, orgId, userId),
       loadHiddenSourceKeys(ctx, orgId, userId, now),
+      resolveCrewOfferStaleHours(ctx, orgId), // Phase 4 (#1246) — org setting, default 48h
     ]);
+    const staleOfferMs = staleOfferHours * 60 * 60 * 1000;
 
     const declinedCrew: CrewSignalRow[] = [];
     const staleOffers: CrewSignalRow[] = [];
     const expiringQuotes: ExpiringQuoteRow[] = [];
+    const quotesNeedingNextStep: QuoteNoNextStepRow[] = [];
     const crewMemberIds = new Set<string>();
     const pendingCrewRows: { row: CrewSignalRow; crewMemberId: string; bucket: CrewSignalRow[] }[] = [];
+    const hasOpenFollowUp = makeHasOpenFollowUpChecker(ctx, orgId);
 
     await Promise.all(
       projects.map(async (p) => {
@@ -272,15 +332,17 @@ export const needsYou = query({
             if (hiddenSourceKeys.has(sourceKey)) continue;
             const row: CrewSignalRow = {
               sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
-              crewMemberName: "", at: a.respondedAt ?? a.updatedAt ?? now,
+              crewMemberName: "", crewRoleId: a.crewRoleId ?? null, startDate: a.startDate ?? null,
+              at: a.respondedAt ?? a.updatedAt ?? now,
             };
             pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: declinedCrew });
-          } else if (a.status === "OFFERED" && a.offeredAt != null && a.offeredAt < now - STALE_OFFER_MS) {
+          } else if (a.status === "OFFERED" && a.offeredAt != null && a.offeredAt < now - staleOfferMs) {
             const sourceKey = `crew:stale:${a.id}`;
             if (hiddenSourceKeys.has(sourceKey)) continue;
             const row: CrewSignalRow = {
               sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
-              crewMemberName: "", at: a.offeredAt,
+              crewMemberName: "", crewRoleId: a.crewRoleId ?? null, startDate: a.startDate ?? null,
+              at: a.offeredAt,
             };
             pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: staleOffers });
           }
@@ -292,6 +354,22 @@ export const needsYou = query({
             expiringQuotes.push({
               sourceKey, quoteId: liveQuote.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
               version: liveQuote.version, validUntil: liveQuote.validUntil ?? null, daysLeft,
+            });
+          }
+          // quote:nonext (#1245, design §8.4/§9) — sent 24h+ ago, this client
+          // still has no open follow_up. p.clientId is a plain field on the
+          // already org-scoped project doc, no extra org-check needed.
+          const nonextKey = `quote:nonext:${liveQuote.id}`;
+          if (
+            p.clientId &&
+            liveQuote.sentAt != null &&
+            liveQuote.sentAt <= now - QUOTE_NO_NEXT_STEP_GRACE_MS &&
+            !hiddenSourceKeys.has(nonextKey) &&
+            !(await hasOpenFollowUp(p.clientId))
+          ) {
+            quotesNeedingNextStep.push({
+              sourceKey: nonextKey, quoteId: liveQuote.id, clientId: p.clientId, projectId: p.id,
+              projectName: p.name, projectNumber: p.projectNumber, version: liveQuote.version, sentAt: liveQuote.sentAt,
             });
           }
         }
@@ -311,8 +389,9 @@ export const needsYou = query({
     declinedCrew.sort((a, b) => b.at - a.at);
     staleOffers.sort((a, b) => a.at - b.at);
     expiringQuotes.sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0));
+    quotesNeedingNextStep.sort((a, b) => a.sentAt - b.sentAt);
 
-    return { declinedCrew, staleOffers, expiringQuotes };
+    return { declinedCrew, staleOffers, expiringQuotes, quotesNeedingNextStep };
   },
 });
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { QUOTE_VALIDITY_BOUNDS } from "@/lib/quote-validity";
 import { isCountryEnabled } from "@/lib/countries";
 import { AUTO_STATUS_KEYS, type AutoStatusKey } from "@/lib/project-status-automation";
+import { UNANSWERED_OFFER_HOURS_BOUNDS } from "@/lib/crew-time-settings";
 
 /**
  * Global document settings (footer text, terms & conditions, quote
@@ -78,3 +79,19 @@ export const projectStatusAutomationSchema = z.object(
     [K in AutoStatusKey]: z.ZodOptional<z.ZodBoolean>;
   },
 ).strict();
+
+/**
+ * Work-layer Phase 4 (#1246) — the crew planner's confirmation-layer settings
+ * (`OrgSettings.crewTime`). Bounds mirror `src/lib/crew-time-settings.ts`,
+ * which is also what the server-side resolvers (`convex/lib/orgSettings.ts`)
+ * clamp to — one definition of the bound, not a third copy (R-8.6.3).
+ */
+export const crewTimeSettingsSchema = z.object({
+  unansweredOfferHours: z.coerce
+    .number()
+    .int()
+    .min(UNANSWERED_OFFER_HOURS_BOUNDS.min)
+    .max(UNANSWERED_OFFER_HOURS_BOUNDS.max)
+    .optional(),
+  callReminderEnabled: z.boolean().optional(),
+}).strict();

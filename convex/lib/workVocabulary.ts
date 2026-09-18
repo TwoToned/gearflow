@@ -117,3 +117,20 @@ export const WORK_RECURRENCE_BOUNDS = {
   daysOfWeek: { min: 0, max: 6, maxCount: 7 },
   dayOfMonth: { min: 1, max: 31 },
 } as const;
+
+// ─── Work item link entity types ───────────────────────────────────────────
+// Phase 3 (#1245, design §8.2/§10.1) — what a `workItemLinks` row can point
+// at. One definition, shared by the Convex validator (`convex/lib/validators.ts`)
+// and any UI that needs to render a link chip's icon/label.
+export const WORK_ITEM_LINK_ENTITY_TYPES = [
+  "client",
+  "contact",
+  "quote",
+  "invoice",
+  "service",
+  "crewAssignment",
+  "asset",
+  "lineItem",
+  "location",
+] as const;
+export type WorkItemLinkEntityType = (typeof WORK_ITEM_LINK_ENTITY_TYPES)[number];

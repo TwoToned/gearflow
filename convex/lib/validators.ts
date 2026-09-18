@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_RECURRENCE_FREQUENCIES } from "./workVocabulary";
+import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_RECURRENCE_FREQUENCIES, WORK_ITEM_LINK_ENTITY_TYPES } from "./workVocabulary";
 
 /**
  * Convex validators for the 65 Prisma enums.
@@ -486,6 +486,8 @@ export const ProjectTaskRecurrence = v.object({
   // monthly only — 1-31, clamped to the shorter month. Absent = same day as the current due date.
   dayOfMonth: v.optional(v.number()),
 });
+// Work-layer phase 3 (#1245): sourced from workVocabulary.ts.
+export const WorkItemLinkEntityType = v.union(...WORK_ITEM_LINK_ENTITY_TYPES.map((t) => v.literal(t)));
 
 // ─── WS1 Finance (#940) — Quote/Invoice entities, client payment profiles, Xero ───
 

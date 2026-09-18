@@ -429,6 +429,105 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 - Navigation: back/forward by week, "Today" button
 - Sidebar: "Planner" link under Crew
 
+## Crew Planner — confirmation layer, availability requests, planned vs actual (Work-layer Phase 4, #1246)
+
+> Design: `docs/designs/work-layer.md` §8.5/§9/§10, build plan phase 4.
+> Seam: ROADMAP §2.1 (crew & services overhaul) owns services, rates and the
+> offer flow itself; this phase owns the planner's confirmation layer and the
+> shared agenda engine on top of the EXISTING offer flow — no changes to
+> `crewCountRequired`, rates, or the core offer email content beyond three new
+> variants (reminder / position-filled / call-time). No open PR/branch touched
+> §2.1 when this shipped (verified fresh against `TwoToned/gearflow`).
+
+**Confirmation badges.** Every shift block on `/crew/planner` now carries a
+text glyph paired with its `getStatusColor("assignment", …)` intent —
+`✓ confirmed`, `? offered`, `✗ declined`, `· ` (not yet offered) — never
+colour alone (POLICY.md §3.3). `plannerData` (`convex/crewAvailability.ts`)
+used to exclude DECLINED assignments from the grid entirely (the shared
+`EXCLUDED_ASSIGNMENT_STATUSES` set, meant for "does this hold the member's
+time" conflict math); the planner now uses its OWN `PLANNER_HIDDEN_STATUSES`
+(CANCELLED only) so a declined shift still renders with its badge. The header
+strip gains a confirmation summary sentence — "6 of 9 confirmed · 2 offered ·
+1 declined" — computed client-side over every distinct assignment in the
+visible fortnight (PENDING/CANCELLED excluded from the math; they still get
+their own glyph on the block). `plannerData` also stops leaking
+`responseToken` (the single-use offer-respond bearer credential) into its
+payload — the same redaction `projectCrew` already does.
+
+**Triage: declined + unanswered offers, one-key actions.** The derived signal
+itself already existed as of Phase 1 (`dashboardLists.needsYou`, an indexed,
+per-PM-managed-project read — never a scan — computing `declinedCrew` and
+`staleOffers` against `crewAssignments.by_projectId`, minus a human's stored
+decision in `workSignalStates`). Phase 4 closes two gaps: (1) the "> 48h"
+staleness threshold is now `resolveCrewOfferStaleHours` (`convex/lib/orgSettings.ts`),
+an org setting (`OrgSettings.crewTime.unansweredOfferHours`, default 48,
+Settings → Crew & time) resolved server-side, replacing the hardcoded
+constant; (2) `TodayNeedsYouRail` gains **Re-offer** (calls the EXISTING
+`sendCrewOffer` server action — mints a fresh token, sends the offer email,
+no second offer path) and **Find cover** (a `/crew/planner?role=<id>&
+avail=AVAILABLE&week=<ms>` deep link — the planner reads these to land on the
+assignment's own week, pre-filtered to its role and to free crew via a new
+"Free" availability filter option).
+
+**Request availability… (bulk, first-come fill).** `CrewPanel` gains a
+"Request availability…" action (`RequestAvailabilityDialog`) — pick a
+project service (its `crewCountRequired` is what "filled" means), an optional
+role, and a date range. `requestCrewAvailability` (`src/server/crew-communication.ts`)
+resolves eligible crew via the EXISTING `crewAssignments.membersForAssignment`
+query (the same conflict/availability computation the assignment picker
+already uses — not a second eligibility definition), creates one
+`crewAssignments` row per eligible member linked to that `serviceId`, and
+sends each the existing offer email via `sendCrewOffer`. **First-come fill**:
+when enough of those rows reach ACCEPTED/CONFIRMED to meet the service's
+`crewCountRequired`, the public respond route
+(`/api/crew/respond/[token]`) calls a new service-gated mutation,
+`crewAssignments.autoFillServiceNative`, which auto-cancels the other still-open
+offers on that same service (no new table — `serviceId` is the existing
+grouping key) and the route best-effort emails each one a "position filled"
+notice (`notifyPositionFilled`). **24h auto-nudge**: `src/server/crew-time-nudges.ts`'s
+`sendCrewOfferNudges` rides the SAME 15-minute notification cron
+(`/api/cron/notifications`) and the SAME `notificationEmailLogs` dedupe ledger
+(`createIfMissing`, one nudge per assignment ever) — no second cron, no second
+dedupe mechanism. No SMS anywhere in this flow (none exists in the codebase).
+
+**Planned vs actual.** A new sticky "Planned / actual" column on the planner,
+per crew member, over the visible fortnight — derived and read-only, no new
+table. Planned = the sum of each visible assignment's own `estimatedHours`
+(already computed at booking time, `convex/lib/crewRate.ts`), excluding
+DECLINED/PENDING. Actual = approved logged hours from `crewTimeEntries`, via
+a new query `crewTimeEntries.approvedHoursByMember` (indexed
+`by_crewMemberId_date` per member, bounded to the planner's own roster).
+Approval, dispute and export flows on `crewTimeEntries` are untouched — this
+is a read-side addition only.
+
+**`crewTimeEntries.workItemId` (optional, read-side).** A crew-assigned work
+item (`projectTasks.assigneeCrewId` set) can now show "logged" minutes from
+its own approved time entries: `crewTimeEntries` gains an optional
+`workItemId` field (+ `by_workItemId` index) that `createNative`/
+`createManyNative`/`updateNative` accept and org-validate
+(`assertRefInOrg(ctx, "projectTasks", …)`), and a new query
+`crewTimeEntries.loggedMinutesForWorkItems` (gated on `work`, not `crew` — a
+work item's own peek needs `work:read`) sums approved minutes per work item.
+No UI writes this field yet and none of the approval/dispute/export lifecycle
+changes — the field exists so Phase 2's Work tab / work-item peek (design
+§8.2 "Estimate · logged") has something to read without another schema
+change.
+
+**Call-time reminders.** Off by default per org
+(`OrgSettings.crewTime.callReminderEnabled`, Settings → Crew & time).
+`sendCrewCallTimeReminders` (`src/server/crew-time-nudges.ts`), same cron and
+dedupe ledger as the offer nudge above, emails each crew member on a
+CONFIRMED assignment starting "tomorrow" — resolved in the **org's stored
+timezone** (`startOfDayInTimezone`/`endOfDayInTimezone`, `src/lib/quote-validity.ts`,
+never the server's clock, POLICY.md R-9.3) — with call time, location and PM
+phone (the existing site-contact fields the offer/confirmation emails already
+carry). Dedupe key includes the calendar day, so a long-running assignment
+still gets a fresh reminder on ITS day-before, not just once ever.
+
+**Deferred to Phase 5.** An overtime estimate at booking time (back-to-back
+shifts crossing a crew member's `overtimeMultiplier` threshold) needs the
+rate rules ROADMAP §2.1 owns — not built, not stubbed.
+
 ## Calendar Integration (Phase 4)
 
 ### iCal Feed per Crew Member

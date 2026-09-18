@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (590 agent-reachable)
+## Operations (597 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -29,13 +29,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectTasks.listByProjectWithRelations` (query, scope: work:read,project:read)
 - `projectTasks.listSubtasks` (query, scope: work:read,project:read)
 - `projectTasks.myOpenTasks` (query, scope: work:read,project:read)
-- `projectTasks.workCountsForProjects` (query, scope: work:read,project:read)
 - `projectTasksWrites.bulkDeleteNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.bulkUpdateNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.createNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.deleteNative` (mutation, scope: work:update,project:update)
-- `projectTasksWrites.reorderNative` (mutation, scope: work:update,project:update)
-- `projectTasksWrites.setWatchingNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.updateNative` (mutation, scope: work:update,project:update)
 
 ### asset
@@ -117,6 +114,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `clients.list` (query, scope: client:read)
 - `clients.listPage` (query, scope: client:read)
 - `clients.projectCounts` (query, scope: client:read)
+- `clientTimeline.forClient` (query, scope: client:read)
+- `clientTimeline.nextStep` (query, scope: client:read)
 - `clientWrites.archiveManyNative` (mutation, scope: client:update)
 - `clientWrites.archiveNative` (mutation, scope: client:update)
 - `clientWrites.createNative` (mutation, scope: client:create)
@@ -170,6 +169,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `crewSkills.getById` (query, scope: crew:read)
 - `crewSkills.list` (query, scope: crew:read)
 - `crewTimeEntries.allEntries` (query, scope: crew:read)
+- `crewTimeEntries.approvedHoursByMember` (query, scope: crew:read)
 - `crewTimeEntries.forMember` (query, scope: crew:read)
 - `crewTimeEntries.getById` (query, scope: crew:read)
 - `crewTimeEntries.list` (query, scope: crew:read)
@@ -400,6 +400,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `overbookingBoard.confirmImpact` (query, scope: project:read)
 - `overbookingBoard.counts` (query, scope: project:read)
 - `overbookingBoard.dateMoveImpact` (query, scope: project:read)
+- `pipeline.forOrg` (query, scope: project:read)
 - `projectCategories.getById` (query, scope: project:read)
 - `projectCategories.list` (query, scope: project:read)
 - `projectCategories.listByProject` (query, scope: project:read)
@@ -505,9 +506,6 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `orgActivationDismissalsWrites.mine` (query, scope: self:read)
 - `orgSetupDismissalsWrites.dismissNative` (mutation, scope: self:write)
 - `orgSetupDismissalsWrites.mine` (query, scope: self:read)
-- `pushSubscriptions.isSubscribed` (query, scope: self:read)
-- `pushSubscriptionsWrites.subscribeNative` (mutation, scope: self:write)
-- `pushSubscriptionsWrites.unsubscribeNative` (mutation, scope: self:write)
 - `savedTableViews.getById` (query, scope: self:read)
 - `savedTableViews.list` (query, scope: self:read)
 - `savedTableViewsWrites.createNative` (mutation, scope: self:write)
@@ -647,3 +645,14 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `warehouseWrites.unreturnItems` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.unreturnKit` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.unreturnKitsBatch` (mutation, scope: warehouse:check_out)
+
+### work
+- `clientTimelineWrites.addNoteNative` (mutation, scope: work:create)
+- `clientTimelineWrites.completeNextStepNative` (mutation, scope: work:create)
+- `clientTimelineWrites.logCallNative` (mutation, scope: work:create)
+- `clientTimelineWrites.logEmailNative` (mutation, scope: work:create)
+- `clientTimelineWrites.setNextStepNative` (mutation, scope: work:create)
+- `crewTimeEntries.loggedMinutesForWorkItems` (query, scope: work:read)
+- `workItemLinks.forEntity` (query, scope: work:read)
+- `workItemLinksWrites.linkNative` (mutation, scope: work:update)
+- `workItemLinksWrites.unlinkNative` (mutation, scope: work:update)

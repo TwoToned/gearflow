@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import {
   ChevronLeft,
@@ -21,12 +22,12 @@ import { api } from "../../../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgWeekStartsOn } from "@/lib/use-org-country";
 import { useOrgCrewAssignments, fingerprintCrewAssignments, useOrgAvailabilities, fingerprintAvailabilities } from "@/hooks/use-crew-scheduling";
-import { getStatusColor } from "@/lib/status-colors";
+import { getStatusColor, intentStyles } from "@/lib/status-colors";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { PageMeta } from "@/components/layout/page-meta";
 import { FadeIn } from "@/components/ui/motion";
 import { PageHeader } from "@/components/layout/page-header";
-import { focusRing } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -81,6 +82,73 @@ function dateToKey(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
+// ─── Confirmation badges (work-layer Phase 4, #1246, design §8.5) ──────────
+// "Colour is never the only carrier" — every badge below pairs a glyph/label
+// with its `getStatusColor("assignment", …)` intent, never color alone.
+
+type ConfirmationBucket = "confirmed" | "offered" | "declined";
+
+/** Which of the header summary's three named buckets a status counts toward.
+ *  PENDING (not yet offered) and CANCELLED (withdrawn) are real states a
+ *  shift can be in, but aren't part of "needs a response" math — they still
+ *  get their own glyph on the block (see CONFIRMATION_GLYPH), just not a
+ *  header count. */
+function confirmationBucket(status: string | null | undefined): ConfirmationBucket | null {
+  switch (status) {
+    case "CONFIRMED":
+    case "ACCEPTED":
+    case "COMPLETED":
+      return "confirmed";
+    case "OFFERED":
+      return "offered";
+    case "DECLINED":
+      return "declined";
+    default:
+      return null;
+  }
+}
+
+const CONFIRMATION_GLYPH: Record<string, string> = {
+  CONFIRMED: "✓",
+  ACCEPTED: "✓",
+  COMPLETED: "✓",
+  OFFERED: "?",
+  DECLINED: "✗",
+  PENDING: "·",
+};
+
+const CONFIRMATION_LABEL: Record<string, string> = {
+  CONFIRMED: "Confirmed",
+  ACCEPTED: "Accepted",
+  COMPLETED: "Confirmed",
+  OFFERED: "Offered",
+  DECLINED: "Declined",
+  PENDING: "Not yet offered",
+};
+
+/** Offer age, e.g. "2d" — matches the design doc's own "? offered · 2d". */
+function offerAgeLabel(offeredAt: string | null | undefined): string | null {
+  if (!offeredAt) return null;
+  const days = Math.floor((Date.now() - new Date(offeredAt).getTime()) / 86400000);
+  if (days <= 0) return "today";
+  return `${days}d`;
+}
+
+/** Worst-first precedence when a single day cell holds more than one
+ *  assignment (rare "2×" case) — the confirmation state most likely to need
+ *  the PM's attention wins the cell's glyph/color. */
+const CONFIRMATION_PRECEDENCE = ["DECLINED", "OFFERED", "PENDING", "ACCEPTED", "CONFIRMED", "COMPLETED"];
+function dominantStatus(statuses: (string | null | undefined)[]): string | null {
+  let best: string | null = null;
+  let bestRank = Infinity;
+  for (const s of statuses) {
+    if (!s) continue;
+    const rank = CONFIRMATION_PRECEDENCE.indexOf(s);
+    if (rank !== -1 && rank < bestRank) { bestRank = rank; best = s; }
+  }
+  return best;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -98,14 +166,28 @@ export default function CrewPlannerPage() {
   const pConvex = useConvex();
   const { isAuthenticated: pAuthed } = useConvexAuth();
   const weekStartsOn = useOrgWeekStartsOn();
+  // Triage "Find cover" deep-link (work-layer Phase 4, #1246): `?role=<id>&
+  // avail=AVAILABLE&week=<ms>` lands the planner on the declined/stale
+  // assignment's own week, pre-filtered to that role and free crew only.
+  const searchParams = useSearchParams();
+  const findCoverWeekParam = searchParams.get("week");
+  const findCoverRoleParam = searchParams.get("role");
+  const findCoverAvailParam = searchParams.get("avail");
 
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn }));
+  const [weekStart, setWeekStart] = useState(() => {
+    if (findCoverWeekParam) {
+      const ms = Number(findCoverWeekParam);
+      if (Number.isFinite(ms)) return startOfWeek(new Date(ms), { weekStartsOn });
+    }
+    return startOfWeek(new Date(), { weekStartsOn });
+  });
 
   // ── Filter state ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [projectFilter, setProjectFilter] = useState<string>(ALL);
   const [memberFilter, setMemberFilter] = useState<string>(ALL);
-  const [availFilter, setAvailFilter] = useState<string>(ALL);
+  const [roleFilter, setRoleFilter] = useState<string>(findCoverRoleParam || ALL);
+  const [availFilter, setAvailFilter] = useState<string>(findCoverAvailParam === "AVAILABLE" ? "AVAILABLE" : ALL);
 
   const days = useMemo(() => {
     const result: Date[] = [];
@@ -174,11 +256,24 @@ export default function CrewPlannerPage() {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [members]);
 
+  // Roles present on the loaded roster — feeds the "Find cover" role filter
+  // (work-layer Phase 4, #1246).
+  const roleOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of (members as CrewMemberData[]) ?? []) {
+      if (m.crewRole?.id) map.set(m.crewRole.id, m.crewRole.name ?? "Unnamed role");
+    }
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [members]);
+
   // ── Apply filters client-side over the loaded data ─────────────────────────
   const filteredMembers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return ((members as CrewMemberData[]) ?? []).filter((m) => {
       if (memberFilter !== ALL && m.id !== memberFilter) return false;
+      if (roleFilter !== ALL && m.crewRole?.id !== roleFilter) return false;
 
       if (q) {
         const name = `${m.firstName ?? ""} ${m.lastName ?? ""}`.toLowerCase();
@@ -208,6 +303,13 @@ export default function CrewPlannerPage() {
       if (availFilter !== ALL) {
         if (availFilter === "ASSIGNED") {
           if (!(m.assignments ?? []).length) return false;
+        } else if (availFilter === "AVAILABLE") {
+          // "Find cover" (design §8.5) — free crew: no assignment in the
+          // visible window and no hard UNAVAILABLE block. Tentative/preferred
+          // blocks don't disqualify (still worth offering to).
+          if ((m.assignments ?? []).length > 0) return false;
+          const hasUnavailable = (m.availability ?? []).some((av: { type: string }) => av.type === "UNAVAILABLE");
+          if (hasUnavailable) return false;
         } else {
           const hasType = (m.availability ?? []).some(
             (av: any) => av.type === availFilter,
@@ -218,18 +320,20 @@ export default function CrewPlannerPage() {
 
       return true;
     });
-  }, [members, search, memberFilter, projectFilter, availFilter]);
+  }, [members, search, memberFilter, roleFilter, projectFilter, availFilter]);
 
   const filtersActive =
     !!search.trim() ||
     projectFilter !== ALL ||
     memberFilter !== ALL ||
+    roleFilter !== ALL ||
     availFilter !== ALL;
 
   const clearFilters = () => {
     setSearch("");
     setProjectFilter(ALL);
     setMemberFilter(ALL);
+    setRoleFilter(ALL);
     setAvailFilter(ALL);
   };
 
@@ -265,6 +369,47 @@ export default function CrewPlannerPage() {
     const availableToday = Math.max(total - bookedToday - offToday, 0);
     return { total, bookedToday, availableToday, offToday };
   }, [members, today]);
+
+  // ── Confirmation summary (work-layer Phase 4, #1246, design §8.5) ──────────
+  // "6 of 9 confirmed · 2 offered · 1 declined" over every DISTINCT assignment
+  // visible in the current fortnight (across the whole roster, not just the
+  // filtered view — the header is a fixed fact about the window, filters are
+  // for finding a row). PENDING (not yet sent) and CANCELLED don't carry a
+  // confirmation state to report on, so they're excluded from the math even
+  // though PENDING still gets its own glyph on the block.
+  const confirmationSummary = useMemo(() => {
+    const seen = new Set<string>();
+    let confirmed = 0, offered = 0, declined = 0;
+    for (const m of (members as CrewMemberData[]) ?? []) {
+      for (const a of m.assignments ?? []) {
+        if (!a.id || seen.has(a.id)) continue;
+        seen.add(a.id);
+        const bucket = confirmationBucket(a.status);
+        if (bucket === "confirmed") confirmed++;
+        else if (bucket === "offered") offered++;
+        else if (bucket === "declined") declined++;
+      }
+    }
+    const total = confirmed + offered + declined;
+    return { confirmed, offered, declined, total };
+  }, [members]);
+
+  // ── Planned vs actual (work-layer Phase 4, #1246, design §8.5) ─────────────
+  // Planned hours are already on plannerData's own assignment rows
+  // (estimatedHours); actual is a separate indexed read over approved
+  // crewTimeEntries, bounded to the loaded roster's ids.
+  const rosterMemberIds = useMemo(() => ((members as CrewMemberData[]) ?? []).map((m) => m.id as string), [members]);
+  const { data: actualHoursByMember } = useServerQuery({
+    queryKey: ["crew-planner-actual-hours", orgId, startDate, endDate, rosterMemberIds.join(",")],
+    queryFn: () =>
+      pConvex.query(api.crewTimeEntries.approvedHoursByMember, {
+        orgId: orgId as string,
+        crewMemberIds: rosterMemberIds,
+        startMs: new Date(startDate).getTime(),
+        endMs: new Date(endDate).getTime(),
+      }),
+    enabled: !!orgId && pAuthed && rosterMemberIds.length > 0,
+  });
 
   return (
     <RequirePermission resource="crew" action="read">
@@ -323,6 +468,36 @@ export default function CrewPlannerPage() {
           />
         </div>
 
+        {/* ── Confirmation summary (work-layer Phase 4, #1246, design §8.5) ──
+            "6 of 9 confirmed · 2 offered · 1 declined" — a text sentence, not
+            a colour chip, so the count itself carries the state (§3.3: colour
+            is never the only carrier). Renders only once there's something to
+            confirm at all (a roster with zero offered/declined/confirmed
+            shifts has nothing to report). */}
+        {!isLoading && confirmationSummary.total > 0 && (
+          <p className="text-ui-text text-ink-2">
+            <span className="font-semibold tabular-nums">
+              {confirmationSummary.confirmed} of {confirmationSummary.total}
+            </span>{" "}
+            confirmed
+            {confirmationSummary.offered > 0 && (
+              <>
+                {" · "}
+                <span className="font-semibold tabular-nums">{confirmationSummary.offered}</span> offered
+              </>
+            )}
+            {confirmationSummary.declined > 0 && (
+              <>
+                {" · "}
+                <span className={cn("font-semibold tabular-nums", intentStyles.error.text)}>
+                  {confirmationSummary.declined}
+                </span>{" "}
+                <span className={intentStyles.error.text}>declined</span>
+              </>
+            )}
+          </p>
+        )}
+
         {/* ── Filter / search bar ────────────────────────────────────────── */}
         <div className="flex flex-col gap-2 rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)] sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative min-w-0 flex-1 sm:max-w-xs">
@@ -372,6 +547,27 @@ export default function CrewPlannerPage() {
             </SelectContent>
           </Select>
 
+          {/* Role filter — feeds "Find cover" (Triage's declined/stale crew
+              signal, work-layer Phase 4 #1246) alongside the "Free" availability
+              option below. */}
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-full sm:w-44" aria-label="Filter by role">
+              <SelectValue>
+                {roleFilter === ALL
+                  ? "All roles"
+                  : roleOptions.find((r) => r.id === roleFilter)?.label ?? "All roles"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All roles</SelectItem>
+              {roleOptions.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Select value={availFilter} onValueChange={setAvailFilter}>
             <SelectTrigger className="w-full sm:w-40" aria-label="Filter by availability">
               <SelectValue>
@@ -379,6 +575,7 @@ export default function CrewPlannerPage() {
                   {
                     [ALL]: "Any status",
                     ASSIGNED: "Booked",
+                    AVAILABLE: "Free",
                     UNAVAILABLE: "Unavailable",
                     TENTATIVE: "Tentative",
                     PREFERRED: "Preferred",
@@ -389,6 +586,7 @@ export default function CrewPlannerPage() {
             <SelectContent>
               <SelectItem value={ALL}>Any status</SelectItem>
               <SelectItem value="ASSIGNED">Booked</SelectItem>
+              <SelectItem value="AVAILABLE">Free</SelectItem>
               <SelectItem value="UNAVAILABLE">Unavailable</SelectItem>
               <SelectItem value="TENTATIVE">Tentative</SelectItem>
               <SelectItem value="PREFERRED">Preferred</SelectItem>
@@ -455,6 +653,11 @@ export default function CrewPlannerPage() {
                       </th>
                     );
                   })}
+                  {/* Planned vs actual (work-layer Phase 4, #1246, design §8.5)
+                      — derived, read-only, over the visible fortnight. */}
+                  <th className="text-right text-caption font-medium text-muted p-3 min-w-[92px]">
+                    Planned / actual
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -472,11 +675,14 @@ export default function CrewPlannerPage() {
                           <Skeleton className="mx-auto h-6 w-full rounded-[8px]" />
                         </td>
                       ))}
+                      <td className="p-3">
+                        <Skeleton className="ml-auto h-4 w-16" />
+                      </td>
                     </tr>
                   ))
                 ) : !members || members.length === 0 ? (
                   <tr>
-                    <td colSpan={DAYS_TO_SHOW + 1} className="p-6">
+                    <td colSpan={DAYS_TO_SHOW + 2} className="p-6">
                       <EmptyState
                         title="No active crew on the roster yet"
                         description="Add crew to your roster to start planning assignments."
@@ -485,7 +691,7 @@ export default function CrewPlannerPage() {
                   </tr>
                 ) : filteredMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={DAYS_TO_SHOW + 1} className="p-6">
+                    <td colSpan={DAYS_TO_SHOW + 2} className="p-6">
                       <EmptyState
                         title="No crew match these filters"
                         description="Try a different search or clear the filters."
@@ -505,6 +711,7 @@ export default function CrewPlannerPage() {
                       days={days}
                       today={today}
                       highlightProjectId={projectFilter !== ALL ? projectFilter : null}
+                      actualHours={actualHoursByMember?.[member.id as string] ?? 0}
                     />
                   ))
                 )}
@@ -514,7 +721,9 @@ export default function CrewPlannerPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-caption text-muted">
-          <LegendChip color={getStatusColor("assignment", "ACCEPTED").dot} label="Assignment" />
+          <LegendChip color={getStatusColor("assignment", "CONFIRMED").dot} label="✓ Confirmed" />
+          <LegendChip color={getStatusColor("assignment", "OFFERED").dot} label="? Offered" />
+          <LegendChip color={getStatusColor("assignment", "DECLINED").dot} label="✗ Declined" />
           <LegendChip color={getStatusColor("availabilityType", "UNAVAILABLE").dot} label="Unavailable" />
           <LegendChip color={getStatusColor("availabilityType", "TENTATIVE").dot} label="Tentative" />
           <LegendChip color={getStatusColor("availabilityType", "PREFERRED").dot} label="Preferred" />
@@ -585,18 +794,20 @@ function PlannerRow({
   days,
   today,
   highlightProjectId,
+  actualHours,
 }: {
   member: CrewMemberData;
   days: Date[];
   today: Date;
   highlightProjectId: string | null;
+  actualHours: number;
 }) {
   // Build day status map
   const dayData = useMemo(() => {
     const result: Record<
       string,
       {
-        assignments: { projectName: string; projectNumber: string; roleName: string | null; projectId: string }[];
+        assignments: { projectName: string; projectNumber: string; roleName: string | null; projectId: string; status: string | null; offeredAt: string | null }[];
         availability: { type: string; reason: string | null }[];
       }
     > = {};
@@ -626,6 +837,8 @@ function PlannerRow({
               projectNumber: a.project?.projectNumber || "",
               roleName: a.crewRole?.name || null,
               projectId: a.project?.id || "",
+              status: a.status ?? null,
+              offeredAt: a.offeredAt ?? null,
             });
           }
         }
@@ -664,6 +877,23 @@ function PlannerRow({
       Object.values(dayData).filter((d) => d.assignments.length > 0).length,
     [dayData],
   );
+
+  // Planned hours (work-layer Phase 4, #1246, design §8.5) — sum of this
+  // member's own `estimatedHours` (already computed at booking time,
+  // `convex/lib/crewRate.ts`) across every DISTINCT assignment in the visible
+  // window, excluding DECLINED (the member said no — it isn't planned work)
+  // and PENDING (not yet offered — nothing committed yet).
+  const plannedHours = useMemo(() => {
+    let total = 0;
+    const seen = new Set<string>();
+    for (const a of member.assignments ?? []) {
+      if (!a.id || seen.has(a.id)) continue;
+      seen.add(a.id);
+      if (a.status === "DECLINED" || a.status === "PENDING") continue;
+      total += typeof a.estimatedHours === "number" ? a.estimatedHours : 0;
+    }
+    return total;
+  }, [member]);
 
   return (
     <tr className="group border-b border-line transition-colors hover:bg-elev">
@@ -713,7 +943,33 @@ function PlannerRow({
           />
         );
       })}
+      {/* Planned vs actual (work-layer Phase 4, #1246) — derived, read-only. */}
+      <PlannedActualCell plannedHours={plannedHours} actualHours={actualHours} />
     </tr>
+  );
+}
+
+// ─── Planned / Actual Cell ───────────────────────────────────────────────────
+
+/** Own function so its label ternary doesn't add to `PlannerRow`'s complexity (R-3.6). */
+function plannedActualLabel(plannedHours: number, actualHours: number): string {
+  if (plannedHours === 0 && actualHours === 0) return "—";
+  const fmt = (h: number) => h.toFixed(h % 1 === 0 ? 0 : 1);
+  return `${fmt(plannedHours)}h / ${fmt(actualHours)}h`;
+}
+
+function PlannedActualCell({ plannedHours, actualHours }: { plannedHours: number; actualHours: number }) {
+  return (
+    <td className="p-3 text-right whitespace-nowrap">
+      <Tooltip>
+        <TooltipTrigger className={cn("text-caption tabular-nums text-muted", focusRing)}>
+          {plannedActualLabel(plannedHours, actualHours)}
+        </TooltipTrigger>
+        <TooltipContent side="left" className="max-w-xs">
+          <p className="text-caption">Planned {plannedHours.toFixed(1)}h from booked shifts · logged {actualHours.toFixed(1)}h from approved timesheets, this fortnight.</p>
+        </TooltipContent>
+      </Tooltip>
+    </td>
   );
 }
 
@@ -726,7 +982,7 @@ function DayCell({
   isWeekend: weekend,
   highlightProjectId,
 }: {
-  assignments: { projectName: string; projectNumber: string; roleName: string | null; projectId: string }[];
+  assignments: { projectName: string; projectNumber: string; roleName: string | null; projectId: string; status: string | null; offeredAt: string | null }[];
   availability: { type: string; reason: string | null }[];
   isToday: boolean;
   isWeekend: boolean;
@@ -758,17 +1014,22 @@ function DayCell({
 
   // Determine the dominant chip to render. An assignment wins over a soft
   // availability state; unavailable overrides everything (a hard block).
+  // Work-layer Phase 4 (#1246, design §8.5): an assignment chip now carries
+  // its CONFIRMATION state — a text glyph (✓/?/✗/·) AND its
+  // `getStatusColor("assignment", …)` intent, never colour alone (§3.3).
   let chip: { className: string; label: string } | null = null;
   if (hasUnavailable) {
     const c = getStatusColor("availabilityType", "UNAVAILABLE");
     chip = { className: `${c.bg} ${c.text}`, label: "Off" };
   } else if (hasAssignment) {
+    const status = dominantStatus(assignments.map((a) => a.status)) ?? "PENDING";
+    const glyph = CONFIRMATION_GLYPH[status] ?? "";
+    const c = getStatusColor("assignment", status);
     const label =
       assignments.length > 1
-        ? `${assignments.length}×`
-        : assignments[0].projectNumber || "Job";
-    // assignment = primary red (§3.7 on-fill: text-white on the --red fill)
-    chip = { className: "bg-red text-white", label };
+        ? `${glyph} ${assignments.length}×`.trim()
+        : `${glyph} ${assignments[0].projectNumber || "Job"}`.trim();
+    chip = { className: `${c.bg} ${c.text}`, label };
   } else if (hasTentative) {
     const c = getStatusColor("availabilityType", "TENTATIVE");
     chip = { className: `${c.bg} ${c.text}`, label: "Tent." };
@@ -779,8 +1040,11 @@ function DayCell({
 
   const tooltipLines: string[] = [];
   for (const a of assignments) {
+    const status = a.status ?? "PENDING";
+    const stateLabel = CONFIRMATION_LABEL[status] ?? status;
+    const age = status === "OFFERED" ? offerAgeLabel(a.offeredAt) : null;
     tooltipLines.push(
-      `${a.projectNumber} - ${a.projectName}${a.roleName ? ` (${a.roleName})` : ""}`
+      `${a.projectNumber} - ${a.projectName}${a.roleName ? ` (${a.roleName})` : ""} — ${stateLabel}${age ? ` · ${age}` : ""}`
     );
   }
   for (const av of availability) {

@@ -40,18 +40,18 @@ describe("TodayDayRail", () => {
 });
 
 describe("TodayNeedsYouRail", () => {
-  const EMPTY = { declinedCrew: [], staleOffers: [], expiringQuotes: [] };
+  const EMPTY = { declinedCrew: [], staleOffers: [], expiringQuotes: [], quotesNeedingNextStep: [] };
 
   it("shows a retry notice on a first-load failure", () => {
     const refresh = vi.fn();
-    render(<TodayNeedsYouRail data={undefined} asOf={undefined} error={new Error("boom")} onRefresh={refresh} onSnooze={vi.fn()} />);
+    render(<TodayNeedsYouRail data={undefined} asOf={undefined} error={new Error("boom")} onRefresh={refresh} onSnooze={vi.fn()} onReoffer={vi.fn()} />);
     expect(screen.getByText(/Couldn't load/)).toBeDefined();
     fireEvent.click(screen.getByText("Retry"));
     expect(refresh).toHaveBeenCalled();
   });
 
   it("shows a plain empty caption when nothing needs the caller", () => {
-    render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} onSnooze={vi.fn()} />);
+    render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} onSnooze={vi.fn()} onReoffer={vi.fn()} />);
     expect(screen.getByText("Nothing needs you.")).toBeDefined();
   });
 
@@ -60,17 +60,60 @@ describe("TodayNeedsYouRail", () => {
     render(
       <TodayNeedsYouRail
         data={{
-          declinedCrew: [{ sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", at: Date.now() }],
+          declinedCrew: [{ sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", crewRoleId: null, startDate: null, at: Date.now() }],
           staleOffers: [],
           expiringQuotes: [],
+          quotesNeedingNextStep: [],
         }}
         asOf={Date.now()}
         error={null}
         onRefresh={vi.fn()}
         onSnooze={onSnooze}
+        onReoffer={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByTitle("Snooze until tomorrow"));
     expect(onSnooze).toHaveBeenCalledWith("crew:declined:a1");
+  });
+
+  it("Phase 4 (#1246): clicking re-offer on a declined-crew row calls onReoffer with its assignmentId", () => {
+    const onReoffer = vi.fn();
+    render(
+      <TodayNeedsYouRail
+        data={{
+          declinedCrew: [{ sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", crewRoleId: null, startDate: null, at: Date.now() }],
+          staleOffers: [],
+          expiringQuotes: [],
+          quotesNeedingNextStep: [],
+        }}
+        asOf={Date.now()}
+        error={null}
+        onRefresh={vi.fn()}
+        onSnooze={vi.fn()}
+        onReoffer={onReoffer}
+      />,
+    );
+    fireEvent.click(screen.getByTitle("Re-offer this position"));
+    expect(onReoffer).toHaveBeenCalledWith("a1");
+  });
+
+  it("Phase 4 (#1246): find-cover link on a stale-offer row deep-links the planner with role/avail/week", () => {
+    render(
+      <TodayNeedsYouRail
+        data={{
+          declinedCrew: [],
+          staleOffers: [{ sourceKey: "crew:stale:a2", assignmentId: "a2", projectId: "p1", projectName: "Gig", projectNumber: "P1", crewMemberName: "Sam", crewRoleId: "role1", startDate: 1700000000000, at: Date.now() }],
+          expiringQuotes: [],
+          quotesNeedingNextStep: [],
+        }}
+        asOf={Date.now()}
+        error={null}
+        onRefresh={vi.fn()}
+        onSnooze={vi.fn()}
+        onReoffer={vi.fn()}
+      />,
+    );
+    const link = screen.getByTitle("Find cover") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/crew/planner?role=role1&avail=AVAILABLE&week=1700000000000");
   });
 });

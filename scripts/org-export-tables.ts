@@ -127,6 +127,9 @@ export const DIRECT_TABLES = [
   "wooCommerceOrderLogs",
   // Work-layer phase 1 (#1243) — has its own by_organizationId index.
   "workTemplates",
+  // Work-layer phase 3 (#1245) — has its own by_organizationId index
+  // (denormalised at link time, not a pure FK-only join).
+  "workItemLinks",
   // WS1 (#940) — Xero integration config + audit log.
   "xeroIntegrations",
   "xeroSyncLogs",
@@ -267,7 +270,10 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1244 (Phase 2, work-layer): +1 — pushSubscriptions (DIRECT, org-scoped Web
 // Push subscription per device; see the table's own schema comment for the
 // documented push-send follow-up this phase does NOT wire up).
-export const EXPECTED_TABLE_COUNT = 123;
+// #1245 (Phase 3, work-layer): +1 — workItemLinks (DIRECT — join table between
+// a work item and any other entity, has its own by_organizationId index).
+// #1246 (Phase 4, work-layer): +0 — no new table.
+export const EXPECTED_TABLE_COUNT = 124;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

@@ -2574,6 +2574,13 @@ export default defineSchema({
     notes: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
+    // Work-layer Phase 4 (#1246, design doc §8.2 "Estimate · logged"). Read-side
+    // only — nothing about the approval/dispute/export lifecycle changes.
+    // Absent on every pre-#1246 row; no backfill. When set, an APPROVED entry
+    // counts as "logged" time against that `projectTasks` row (a crew-assigned
+    // work item), so its peek can show minutes actually worked without a
+    // second, hand-maintained time-tracking source (R-3.1).
+    workItemId: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -2581,7 +2588,8 @@ export default defineSchema({
     .index("by_crewMemberId", ["crewMemberId"])
     .index("by_approvedById", ["approvedById"])
     .index("by_crewMemberId_date", ["crewMemberId", "date"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
+    .index("by_organizationId_status", ["organizationId", "status"])
+    .index("by_workItemId", ["workItemId"]),
 
   // ProjectService
   projectServices: defineTable({
@@ -3608,6 +3616,15 @@ export default defineSchema({
 
   // Lightweight activity log for collaboration context (not an audit trail).
   // Records quote changes, comments, markers for the project activity feed.
+  // Work-layer Phase 3 (#1245, design §10) — `clientId`/`contactId` are
+  // DENORMALISED at write time (`recordActivity` in collaboration.ts resolves
+  // them from entityType/entityId/projectId) so the client timeline read
+  // model (`convex/clientTimeline.ts`) is an indexed read, never a scan.
+  // Absent on every pre-Phase-3 row and on any row whose entity has no
+  // resolvable client (e.g. a comment on an asset/supplier) — a timeline
+  // read simply won't surface those, which is correct (there's no client to
+  // show them on). Human-logged rows (call/email/note/next-step outcome,
+  // `clientTimelineWrites.ts`) are also stored here, entityType "client".
   activityEvents: defineTable({
     orgId: v.string(),
     actorUserId: v.string(),
@@ -3620,10 +3637,36 @@ export default defineSchema({
     action: v.string(),
     summary: v.string(),
     metadata: v.optional(v.any()),
+    clientId: v.optional(v.string()),
+    contactId: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_orgId_entityId_createdAt", ["orgId", "entityId", "createdAt"])
-    .index("by_orgId_createdAt", ["orgId", "createdAt"]),
+    .index("by_orgId_createdAt", ["orgId", "createdAt"])
+    .index("by_orgId_clientId_createdAt", ["orgId", "clientId", "createdAt"])
+    .index("by_orgId_contactId_createdAt", ["orgId", "contactId", "createdAt"]),
+
+  // WorkItemLink — join table linking a work item (`projectTasks` row) to any
+  // other entity (client, contact, quote, invoice, service, crew assignment,
+  // asset, line item, location). Work-layer Phase 3 (#1245, design §8.2/§10).
+  // A JOIN TABLE rather than an array field on `projectTasks`: Convex cannot
+  // index inside an array, and "all work linked to this client" must be an
+  // indexed read (`by_organizationId_entityType_entityId`), not a collection
+  // scan filtering client-side. `organizationId` is denormalised from the
+  // work item at link time (not a foreign-key-only join) so every read here
+  // is org-checked without a second lookup — same posture as `workSignalStates`.
+  workItemLinks: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    workItemId: v.string(), // projectTasks.id
+    entityType: enums.WorkItemLinkEntityType,
+    entityId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_workItemId", ["workItemId"])
+    .index("by_organizationId_entityType_entityId", ["organizationId", "entityType", "entityId"]),
 
   // Denormalised dashboard stat counters (Phase 3). One row per org holding the
   // counts getDashboardStats used to derive by whole-org `.collect()` + JS count

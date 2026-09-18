@@ -37,6 +37,20 @@ describe("TodayDayRail", () => {
     render(<TodayDayRail entries={[]} asOf={Date.now()} error={null} onRefresh={vi.fn()} />);
     expect(screen.getByText("Nothing scheduled.")).toBeDefined();
   });
+
+  // the widget board regression: the dashboard-widget-board hosts this inside its own
+  // `<DashboardCard>` shell (bare), but /today renders it as page furniture
+  // with its own card + heading (non-bare, the default) — a hardcoded `bare`
+  // in the wrapper would silently drop /today's "Your day" heading and card.
+  it("renders its own card + heading by default (non-bare, the /today usage)", () => {
+    render(<TodayDayRail entries={[]} asOf={Date.now()} error={null} onRefresh={vi.fn()} />);
+    expect(screen.getByText("Your day")).toBeDefined();
+  });
+
+  it("omits its own heading when bare (the dashboard-widget-board usage)", () => {
+    render(<TodayDayRail entries={[]} asOf={Date.now()} error={null} onRefresh={vi.fn()} bare />);
+    expect(screen.queryByText("Your day")).toBeNull();
+  });
 });
 
 describe("TodayNeedsYouRail", () => {
@@ -53,6 +67,17 @@ describe("TodayNeedsYouRail", () => {
   it("shows a plain empty caption when nothing needs the caller", () => {
     render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} onSnooze={vi.fn()} onReoffer={vi.fn()} />);
     expect(screen.getByText("Nothing needs you.")).toBeDefined();
+  });
+
+  // the widget board regression — see the identical TodayDayRail case above.
+  it("renders its own heading by default (non-bare, the /today usage)", () => {
+    render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} onSnooze={vi.fn()} onReoffer={vi.fn()} />);
+    expect(screen.getByText("Needs you")).toBeDefined();
+  });
+
+  it("omits its own heading when bare (the dashboard-widget-board usage)", () => {
+    render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} onSnooze={vi.fn()} onReoffer={vi.fn()} bare />);
+    expect(screen.queryByText("Needs you")).toBeNull();
   });
 
   it("Phase 1 (#1243): clicking snooze on a declined-crew row calls onSnooze with its sourceKey", () => {

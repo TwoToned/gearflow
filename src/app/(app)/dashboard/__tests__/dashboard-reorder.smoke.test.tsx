@@ -1,18 +1,42 @@
 // @vitest-environment jsdom
 //
-// Dashboard reorder (#952 / QW-3), updated for work-layer phase 0.5 (#1242,
-// D10A): the personal "My work" zone (tasks-due block + per-project blocker
-// badges, formerly MyWorkSection) is GONE — Today (/today) now owns that
-// surface, and the dashboard would otherwise render the same rows twice.
-// "On the floor now" (an org-wide live-jobs view, not a personal work list)
-// stays and now renders directly ahead of the Org risk zone. Blockers still
+// Dashboard reorder (#952 / QW-3), updated for the customizable widget board
+//: `/dashboard` is now `<DashboardGrid>` over a per-user saved
+// layout (`useDashboardLayout`), so this test mocks that hook to a fixed
+// DEFAULT_DASHBOARD_LAYOUT arrangement (avoiding a real Convex client) and
+// asserts DOM order still follows array order — react-grid-layout renders
+// items in `widgets.map()` order regardless of their absolute CSS position.
+// The personal "My work" zone (tasks-due block + per-project blocker
+// badges, formerly MyWorkSection) stays GONE — Today (/today) owns that
+// surface. "On the floor now" (an org-wide live-jobs view, not a personal
+// work list) stays and renders ahead of the Org-risk zone. Blockers still
 // surface exactly once, via the needs-attention chip.
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { DEFAULT_DASHBOARD_LAYOUT } from "@/lib/dashboard-widgets";
 
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
+}));
+
+// Desktop grid path (react-grid-layout) — mobile stacking has its own test
+// in dashboard-grid.smoke.test.tsx.
+vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+
+// Avoids needing a real ConvexReactClient ancestor — same reasoning as the
+// checklist stubs below. A fixed DEFAULT_DASHBOARD_LAYOUT keeps widget order
+// deterministic for this test's assertions.
+vi.mock("@/hooks/use-dashboard-layout", () => ({
+  useDashboardLayout: () => ({
+    widgets: DEFAULT_DASHBOARD_LAYOUT,
+    isLoading: false,
+    setLayout: vi.fn(),
+    addWidget: vi.fn(),
+    removeWidget: vi.fn(),
+    resetToDefault: vi.fn(),
+    availableToAdd: [],
+  }),
 }));
 
 const STATS = {
@@ -75,9 +99,11 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
 // nothing, matching their own real behavior while loading/dismissed/complete.
 vi.mock("@/components/dashboard/finish-setup-checklist", () => ({
   FinishSetupChecklist: () => null,
+  useFinishSetupChecklistVisible: () => true,
 }));
 vi.mock("@/components/dashboard/activation-checklist", () => ({
   ActivationChecklist: () => null,
+  useActivationChecklistVisible: () => true,
 }));
 
 import DashboardPage from "../page";

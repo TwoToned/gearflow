@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { RefreshCw, Clock, Send, UserSearch } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { Clock, Send, UserSearch } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { intentStyles } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
+import { RailShell } from "@/components/today/today-rail-shell";
 import type { api } from "../../../convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
 
@@ -21,24 +21,6 @@ function findCoverHref(row: CrewSignalRow): string {
   if (row.startDate != null) params.set("week", String(row.startDate));
   const qs = params.toString();
   return `/crew/planner${qs ? `?${qs}` : ""}`;
-}
-
-function AsOfStamp({ asOf, onRefresh }: { asOf: number | undefined; onRefresh: () => void }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {asOf != null && (
-        <span className="text-[10px] text-faint">as of {formatDistanceToNow(asOf, { addSuffix: true })}</span>
-      )}
-      <button
-        type="button"
-        aria-label="Refresh"
-        onClick={onRefresh}
-        className={cn("touch-target -m-2.5 flex items-center justify-center rounded-full text-muted hover:text-ink", focusRing)}
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
 }
 
 function SnoozeButton({ sourceKey, onSnooze }: { sourceKey: string; onSnooze: (sourceKey: string) => void }) {
@@ -120,6 +102,10 @@ export function TodayNeedsYouRail({
   onSnooze,
   onReoffer,
   reofferingAssignmentId,
+  /** the widget board — see the identical prop on `TodayDayRail`: the dashboard-widget-
+   *  board hosts this inside `<DashboardCard>`, which already supplies the
+   *  card/title, so `bare` skips this component's own. */
+  bare = false,
 }: {
   data: NeedsYouData | undefined;
   asOf: number | undefined;
@@ -128,17 +114,14 @@ export function TodayNeedsYouRail({
   onSnooze: (sourceKey: string) => void;
   onReoffer: (assignmentId: string) => void;
   reofferingAssignmentId?: string | null;
+  bare?: boolean;
 }) {
   const rowCount = data
     ? data.declinedCrew.length + data.staleOffers.length + data.expiringQuotes.length + data.quotesNeedingNextStep.length
     : 0;
 
   return (
-    <div className="rounded-[var(--r-lg)] border border-line bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="t-overline text-muted">Needs you</h2>
-        <AsOfStamp asOf={asOf} onRefresh={onRefresh} />
-      </div>
+    <RailShell bare={bare} title="Needs you" asOf={asOf} onRefresh={onRefresh}>
       {data === undefined && error ? (
         <div className="flex items-center gap-2 border-l-2 border-l-t-out pl-2 py-1">
           <p className="flex-1 text-caption text-t-out">Couldn&apos;t load.</p>
@@ -204,6 +187,6 @@ export function TodayNeedsYouRail({
       {error && data !== undefined && (
         <p className="mt-2 text-[10px] text-t-out">Couldn&apos;t refresh — showing the last loaded data.</p>
       )}
-    </div>
+    </RailShell>
   );
 }

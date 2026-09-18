@@ -61,8 +61,14 @@
 }
 
 /* Resize handle — bottom-right corner glyph restyled to the app's ink/muted
-   tokens instead of the library's default grey triangle; visible only on
-   hover/focus of the card so it never competes with widget content. */
+   tokens instead of the library's default grey triangle. react-grid-layout
+   mounts this DOM node unconditionally regardless of `resizeConfig.enabled`
+   (that prop only gates the drag interaction, not the handle's presence), so
+   hiding it outside Customize mode is entirely this stylesheet's job — gated
+   on the `data-edit-mode` attribute `<DashboardCard>` sets on its root, not
+   on hover alone. `pointer-events: none` outside edit mode too, so the
+   handle can never intercept a click meant for the widget underneath it
+   even while invisible. */
 :global(.react-resizable-handle) {
   position: absolute;
   width: 22px;
@@ -71,13 +77,15 @@
   bottom: 0;
   cursor: se-resize;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms ease;
   touch-action: none;
 }
 
-:global(.dashboard-widget-card:hover) :global(.react-resizable-handle),
-:global(.dashboard-widget-card:focus-within) :global(.react-resizable-handle) {
+:global(.dashboard-widget-card[data-edit-mode="true"]:hover) :global(.react-resizable-handle),
+:global(.dashboard-widget-card[data-edit-mode="true"]:focus-within) :global(.react-resizable-handle) {
   opacity: 1;
+  pointer-events: auto;
 }
 
 :global(.react-resizable-handle::after) {

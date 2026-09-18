@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import {
+  DASHBOARD_WIDGET_REGISTRY,
   DEFAULT_DASHBOARD_LAYOUT,
   defaultWidgetPosition,
   DASHBOARD_WIDGET_ORDER,
@@ -17,6 +18,24 @@ import { api } from "../../convex/_generated/api";
 // writes on the client"). A user dragging around for a few seconds should
 // produce ONE write, not dozens.
 const SAVE_DEBOUNCE_MS = 800;
+
+/** A saved widget can predate a later registry change to that widget kind's
+ *  `minSize`/`maxSize` (e.g. the stat tiles' floor going from h:2 to h:4 once
+ *  their old default turned out to crush them) — clamp on load so an
+ *  existing board picks up a raised floor/lowered ceiling automatically,
+ *  rather than staying stuck at a now-invalid size until the user happens to
+ *  touch that widget. A no-op for any widget already within bounds. */
+function clampToRegistry(w: DashboardLayoutWidget): DashboardLayoutWidget {
+  const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
+  if (!def) return w;
+  let width = Math.max(w.w, def.minSize.w);
+  let height = Math.max(w.h, def.minSize.h);
+  if (def.maxSize) {
+    width = Math.min(width, def.maxSize.w);
+    height = Math.min(height, def.maxSize.h);
+  }
+  return width === w.w && height === w.h ? w : { ...w, w: width, h: height };
+}
 
 /**
  * The customizable dashboard's per-user layout (`convex/dashboardLayouts.ts`,
@@ -34,20 +53,6 @@ export function useDashboardLayout(orgId: string | undefined) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowIdRef = useRef<string>(createId());
 
-  // Hydrate local state exactly once from the server (or the default) — after
-  // that, local state is the source of truth so an in-flight edit is never
-  // clobbered by the query re-running.
-  useEffect(() => {
-    if (hydratedRef.current || saved === undefined) return;
-    hydratedRef.current = true;
-    if (saved) {
-      rowIdRef.current = saved.id;
-      setWidgets(saved.widgets as DashboardLayoutWidget[]);
-    } else {
-      setWidgets(DEFAULT_DASHBOARD_LAYOUT);
-    }
-  }, [saved]);
-
   const persist = useCallback(
     (next: DashboardLayoutWidget[]) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -62,6 +67,27 @@ export function useDashboardLayout(orgId: string | undefined) {
     },
     [saveMutation],
   );
+
+  // Hydrate local state exactly once from the server (or the default) — after
+  // that, local state is the source of truth so an in-flight edit is never
+  // clobbered by the query re-running.
+  useEffect(() => {
+    if (hydratedRef.current || saved === undefined) return;
+    hydratedRef.current = true;
+    if (saved) {
+      rowIdRef.current = saved.id;
+      const raw = saved.widgets as DashboardLayoutWidget[];
+      const healed = raw.map(clampToRegistry);
+      setWidgets(healed);
+      // Persist the healed sizes once, silently, so a board that predates a
+      // registry floor change doesn't stay stuck at an invalid size until
+      // the user happens to touch it — best-effort, same as every other
+      // layout write, no toast either way.
+      if (healed.some((w, i) => w !== raw[i])) persist(healed);
+    } else {
+      setWidgets(DEFAULT_DASHBOARD_LAYOUT);
+    }
+  }, [saved, persist]);
 
   useEffect(() => {
     return () => {

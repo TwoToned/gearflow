@@ -316,26 +316,64 @@ All detail pages (project, asset, model, kit, client, crew, supplier, maintenanc
 - Responsive: sidebar stacks below on mobile (see §15)
 
 ### Dashboard Layout
-- Dynamic greeting (Good morning/afternoon/evening) + date
-- Alert badges (red/amber) only when problems exist
-- **Bento grid of hard-offset-shadow tiles** (`TILE`/`TILE_LINK` in `dashboard/page.tsx`), NOT an
-  inline metrics strip with vertical dividers — that was an earlier draft that never shipped;
-  stat tiles are individually-bordered cards (§2 hard offset shadows), each linking to its
-  detail page.
-- **Three fixed zones, in this order (no widget boards — the zones are the layout, not a
-  drag-and-drop grid a user can rearrange):**
-  1. **My work** — `MyWorkSection` (renamed header "My work"): the "On the floor now" live-jobs
-     tile, a tasks-due block (top 5 open tasks assigned to the user, "N more →" to `/my-tasks`),
-     and the user's managed projects with per-project blocker badges + latest-blocker snippet.
-  2. **Org risk** — the "Needs attention" chip tray (overdue returns, maintenance due, crew
-     offers pending, blockers). Chips only render when a problem exists (no permanent zero-chip
-     UI). Carries a code-comment extension point for sibling-feature org-risk board chips —
-     never a stub or a dead link ahead of that work landing.
-  3. **Demoted** — stat tiles, upcoming projects, recent activity feed (staggered entrance).
-  Blockers surface in exactly two places — the My work zone's per-project badges, and the Org
-  risk needs-attention chip — never in a separate standalone blockers panel.
-- FadeIn delays are derived from section render order (`nextSectionDelay()` in `dashboard/page.tsx`),
-  not hand-numbered literals — inserting a section never requires renumbering the ones after it.
+
+**2026-09-18 decision — "no widget boards" is SUPERSEDED.** This section
+used to read "no widget boards — the zones are the layout, not a
+drag-and-drop grid a user can rearrange." Per explicit product-owner
+sign-off, `/dashboard` (#1267, FEATUREDOCS/81) is now exactly that: a
+customizable, per-user, drag-and-resize widget board (`react-grid-layout`),
+with a "Customize" mode gating the drag handles/resize corners/remove
+buttons and an "Add widget"/"Reset to default" affordance. The rationale for
+reversing it: a fixed-zone layout can't serve every role's "what matters to
+me" without either bloating into a kitchen sink or leaving someone's
+most-used number a scroll away — a personal board resolves that without a
+second dashboard-builder feature down the line. The fixed-zone list below is
+kept as HISTORY (what v1's default board seeds from, and what "Reset to
+default" restores), not as a description of a fixed constraint any more.
+
+Also fixed while touching this section: the old "My work" zone
+(`MyWorkSection` — a tasks-due block + per-project blocker badges) named
+below no longer exists in the codebase; it was removed in the work-layer
+program's phase 0.5 (#1242) when `/today` became the landing page and took
+over that surface (FEATUREDOCS/79). Don't resurrect the name.
+
+- Dynamic greeting (Good morning/afternoon/evening) + date — this is FIXED
+  page-header furniture, never a widget (#1267): a personal board can be
+  rearranged and emptied, but the greeting and the "New job"/"Warehouse"/
+  "Add gear"/"Customize" actions must always be there.
+- Alert badges (red/amber) only when problems exist.
+- **Bento grid of hard-offset-shadow tiles**, now hosted in `<DashboardCard>`
+  (`src/components/dashboard/dashboard-card.tsx`) cells on
+  `<DashboardGrid>` (`src/components/dashboard/dashboard-grid.tsx`) rather
+  than a fixed CSS grid — same tile look (§2 hard offset shadows, `--r-lg`
+  radii), now draggable/resizable in Customize mode. Each `DashboardCard`
+  supplies ONE title bar (drag handle + remove button, edit-mode only) so no
+  individual widget renders a second, nested card frame of its own — see
+  `src/lib/dashboard-widgets.ts`'s catalog and
+  `src/components/dashboard/widgets/`.
+- **v1's default board** (`DEFAULT_DASHBOARD_LAYOUT`, what "Reset to
+  default" restores) seeds from the pre-#1267 fixed-zone arrangement, in
+  this order:
+  1. **On the floor now** — the live-jobs tile (an org-wide warehouse view
+     of what's out right now, not a personal work list — this is why it
+     stayed on Dashboard rather than moving to Today).
+  2. **Needs attention** — the org-risk chip tray (overdue returns,
+     maintenance due, crew offers pending, blockers, overbookings). Chips
+     only render when a problem exists (no permanent zero-chip UI).
+  3. Stat tiles (active jobs / overdue returns / gear deployed / crew
+     booked — 4 separate widgets), upcoming projects, recent activity feed.
+  Today's three widgets (work list, day rail, needs-you rail) are in the
+  CATALOG but not pre-placed on the default board — a user adds them via
+  "Add widget" if they want their personal Today surface duplicated onto
+  Dashboard too. Blockers still surface in exactly two places — Today's
+  per-project badges, and the Needs-attention chip — never a third,
+  standalone blockers panel.
+- **Mobile** (`useIsMobile()`, matching the existing sidebar-stacks-on-mobile
+  convention): a plain single-column stack in the saved order, drag/resize
+  disabled (touch drag-resize is unreliable) — Customize can still add/
+  remove widgets there.
+- FadeIn delays for fixed, non-widget sections still derive from render
+  order, not hand-numbered literals.
 
 ### Breadcrumb Navigation
 ```

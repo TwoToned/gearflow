@@ -26,7 +26,7 @@ function AsOfStamp({ asOf, onRefresh }: { asOf: number | undefined; onRefresh: (
 }
 
 /**
- * Shared bare/card shell for Today's rails (#1267): `bare` (the dashboard-
+ * Shared bare/card shell for Today's rails: `bare` (the dashboard-
  * widget-board hosting, inside the shared `<DashboardCard>` shell) renders
  * just the header + body; the default (non-bare — `/today/page.tsx`'s own
  * usage) wraps them in the rail's own card + heading. Pulled out of

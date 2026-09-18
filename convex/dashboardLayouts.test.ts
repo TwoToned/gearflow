@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // convex/dashboardLayouts.ts — the customizable dashboard's per-user widget
-// board (#1267). Modeled on savedTableViewsWrites.test.ts: verifies
+// board. Modeled on savedTableViewsWrites.test.ts: verifies
 // userId/orgId are derived from the VERIFIED token (never a client arg),
 // upsert-not-duplicate on repeated saves, cross-user/cross-org isolation,
 // geometry validation, and the widget-count cap.

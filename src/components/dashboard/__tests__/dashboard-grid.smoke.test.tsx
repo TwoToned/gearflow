@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// `<DashboardGrid>` smoke coverage (#1267) — per CLAUDE.md's Tooltip-crash
+// `<DashboardGrid>` smoke coverage — per CLAUDE.md's Tooltip-crash
 // precedent, a drag-and-resize library integrated wrong can crash on mount
 // in ways typecheck/lint won't catch (react-grid-layout's `GridItem` CLONES
 // `<DashboardCard>` to attach position/drag/resize props directly onto its
@@ -17,6 +17,17 @@ import { render, screen, fireEvent } from "@testing-library/react";
 // paths without needing a second test file.
 const mobileState = vi.hoisted(() => ({ isMobile: false }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => mobileState.isMobile }));
+
+// `<DashboardGrid>` unconditionally calls both checklists' visibility hooks
+// (see dashboard-grid.tsx) regardless of whether either widget kind is in
+// this test's fixture registry — stub them out rather than standing up a
+// Convex provider for widgets this file isn't testing.
+vi.mock("@/components/dashboard/activation-checklist", () => ({
+  useActivationChecklistVisible: () => true,
+}));
+vi.mock("@/components/dashboard/finish-setup-checklist", () => ({
+  useFinishSetupChecklistVisible: () => true,
+}));
 
 function FixtureWidgetA() {
   return <p>Fixture A content</p>;

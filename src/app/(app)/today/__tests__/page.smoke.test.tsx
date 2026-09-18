@@ -76,7 +76,7 @@ describe("TodayPage (smoke)", () => {
     expect(screen.getByText(/All clear/)).toBeDefined();
   });
 
-  // #1267 regression: the day/needs-you rails are now shared widget
+  // the widget board regression: the day/needs-you rails are now shared widget
   // components (also hosted "bare" inside a `<DashboardCard>` on the
   // dashboard board) — /today must still get their own card + heading, not
   // the bare dashboard-board rendering.

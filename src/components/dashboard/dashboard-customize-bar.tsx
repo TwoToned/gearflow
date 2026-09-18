@@ -8,7 +8,7 @@ import { DASHBOARD_WIDGET_REGISTRY, type DashboardWidgetKind } from "@/lib/dashb
 import { cn, focusRing } from "@/lib/utils";
 
 /**
- * The dashboard's Customize-mode controls (#1267) — a page-header action
+ * The dashboard's Customize-mode controls — a page-header action
  * alongside "New job"/"Warehouse"/"Add gear". Default view has no drag
  * handles, resize corners or remove buttons (`editMode=false` everywhere in
  * `<DashboardGrid>`); entering Customize reveals them plus this bar's "Add

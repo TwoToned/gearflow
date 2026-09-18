@@ -1,6 +1,6 @@
 "use client";
 // Extracted out of `/today/page.tsx` (FEATUREDOCS/79) so the day rail can
-// also live on the dashboard board (#1267) — same one-shot-polled hooks
+// also live on the dashboard board — same one-shot-polled hooks
 // (`useFocusPolledQuery` + `useTodayDayRail`), same presentational
 // `TodayDayRail` component (R-3.1).
 
@@ -18,7 +18,7 @@ export function TodayDayRailWidget({
    *  fixed `{orgId}` signature), where it's always hosted inside the shared
    *  `<DashboardCard>` shell. `/today/page.tsx` is the one OTHER caller, and
    *  passes `bare={false}` explicitly to get this component's own card +
-   *  "Your day" heading back (its pre-#1267 look). */
+   *  "Your day" heading back (its pre-widget-board look). */
   bare = true,
 }: {
   orgId: string | undefined;

@@ -2,9 +2,9 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-09-18 (review quarterly — POLICY.md R-5.5)_
 
-#1267. Reverses the "no widget boards" decision DESIGN.md's "Dashboard
-Layout" section used to record — see that section for the dated rationale.
-`/dashboard` is now a per-user, drag-and-resize widget board built on
+Per explicit product-owner sign-off, reverses the "no widget boards" decision
+DESIGN.md's "Dashboard Layout" section used to record — see that section for
+the dated rationale. `/dashboard` is now a per-user, drag-and-resize widget board built on
 `react-grid-layout`; `/today` (FEATUREDOCS/79) is unaffected as the app's
 landing page, and three of its widgets are now also selectable onto the
 dashboard board.
@@ -42,7 +42,7 @@ Every v1 widget is a thin extraction of JSX/logic that already rendered on
 The registry (`src/lib/dashboard-widgets.ts`) is the single source of truth
 for `{ title, description, component, defaultSize, minSize, maxSize }` per
 kind, plus `DEFAULT_DASHBOARD_LAYOUT` (what a fresh board or "Reset to
-default" produces — everything from the pre-#1267 `/dashboard` at its
+default" produces — everything from the pre-widget-board `/dashboard` at its
 original order/size) and `DASHBOARD_WIDGET_ORDER` (the "Add widget" popover's
 listing order). A widget kind is a singleton per board (`id === kind`) — v1's
 widgets take no per-instance config.
@@ -188,7 +188,7 @@ add/remove on mobile (a plain click), just not drag-reorder or resize.
 - `src/app/(app)/dashboard/__tests__/dashboard-reorder.smoke.test.tsx` —
   updated for the board: mocks `useDashboardLayout` to a fixed
   `DEFAULT_DASHBOARD_LAYOUT` and re-asserts the same DOM-order/no-duplicate-
-  My-work/single-blocker-surface invariants the pre-#1267 page had.
+  My-work/single-blocker-surface invariants the pre-widget-board page had.
 - `src/app/(app)/today/__tests__/page.smoke.test.tsx` — same hook mocks
   resolve into the extracted widget components now, PLUS a regression
   assertion that the day/needs-you rails still render with their own

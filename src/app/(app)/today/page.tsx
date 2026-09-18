@@ -12,7 +12,7 @@ import { TodayNeedsYouRailWidget } from "@/components/dashboard/widgets/today-ne
 /**
  * `/today` — the personal landing page (FEATUREDOCS/79). The work list and
  * both rails are now shared widget components under
- * `src/components/dashboard/widgets/` (#1267) — this page renders the SAME
+ * `src/components/dashboard/widgets/` — this page renders the SAME
  * implementation the dashboard board's "Work list"/"Your day"/"Needs you"
  * widgets use (R-3.1), just laid out as fixed page furniture rather than a
  * grid cell. Greeting/quick-actions stay page-level exactly as before.

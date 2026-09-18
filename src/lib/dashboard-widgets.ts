@@ -16,7 +16,7 @@ import { TodayDayRailWidget } from "@/components/dashboard/widgets/today-day-rai
 import { TodayNeedsYouRailWidget } from "@/components/dashboard/widgets/today-needs-you-rail-widget";
 
 /**
- * The customizable dashboard's widget catalog (#1267 — see DESIGN.md's
+ * The customizable dashboard's widget catalog (see DESIGN.md's
  * "Dashboard Layout" section for the decision this supersedes, and
  * FEATUREDOCS/81). v1 is deliberately closed: every widget is sourced from
  * data the app already reads on `/dashboard` or `/today` (R-3.1) — no widget
@@ -203,7 +203,7 @@ function widget(kind: DashboardWidgetKind, x: number, y: number): DashboardLayou
 }
 
 /**
- * The default board — everything from the pre-#1267 `/dashboard` at its
+ * The default board — everything from the pre-widget-board `/dashboard` at its
  * existing order/size (CLAUDE.md: "everything from the current /dashboard at
  * its current position/size"). Today's three widgets are in the CATALOG
  * (`DASHBOARD_WIDGET_REGISTRY`/`DASHBOARD_WIDGET_ORDER` above) but

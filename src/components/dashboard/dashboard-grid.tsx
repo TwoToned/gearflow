@@ -5,6 +5,8 @@ import { Responsive, useContainerWidth } from "react-grid-layout";
 import type { Layout } from "react-grid-layout";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
+import { useActivationChecklistVisible } from "@/components/dashboard/activation-checklist";
+import { useFinishSetupChecklistVisible } from "@/components/dashboard/finish-setup-checklist";
 import {
   DASHBOARD_WIDGET_REGISTRY,
   GRID_COLS,
@@ -16,7 +18,7 @@ const ROW_HEIGHT = 32;
 const MARGIN: readonly [number, number] = [16, 16];
 
 /**
- * The customizable dashboard's grid engine (#1267) — `react-grid-layout` v2's
+ * The customizable dashboard's grid engine — `react-grid-layout` v2's
  * hooks-based API (`Responsive` + `useContainerWidth`, replacing v1's
  * `WidthProvider(Responsive)` HOC; see the PR's dependency-justification
  * note). Below the mobile breakpoint, drag/resize are unreliable on touch —
@@ -42,9 +44,28 @@ export function DashboardGrid({
   const isMobile = useIsMobile();
   const { width, containerRef, mounted } = useContainerWidth();
 
+  // The setup/activation checklists disappear once dismissed or complete —
+  // their `bare` render already returns null for that, but `<DashboardCard>`
+  // doesn't know a null `widget` means "skip my own title bar too" (it can't:
+  // React gives a parent no signal that a child rendered nothing). Compute
+  // the two conditionally-empty widgets' visibility HERE, once, and filter
+  // them out of what actually renders — never their own generic content
+  // check, since every other widget kind always has something to show.
+  const activationVisible = useActivationChecklistVisible(orgId);
+  const finishSetupVisible = useFinishSetupChecklistVisible(orgId);
+  const visibleWidgets = useMemo(
+    () =>
+      widgets.filter((w) => {
+        if (w.kind === "activationChecklist") return activationVisible;
+        if (w.kind === "finishSetupChecklist") return finishSetupVisible;
+        return true;
+      }),
+    [widgets, activationVisible, finishSetupVisible],
+  );
+
   const rglLayout: Layout = useMemo(
     () =>
-      widgets.map((w) => {
+      visibleWidgets.map((w) => {
         const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
         return {
           i: w.id,
@@ -58,26 +79,27 @@ export function DashboardGrid({
           maxH: def.maxSize?.h,
         };
       }),
-    [widgets],
+    [visibleWidgets],
   );
 
   const commitFromRglLayout = useCallback(
     (layout: Layout) => {
-      const byId = new Map(widgets.map((w) => [w.id, w]));
-      const next = layout
-        .map((item) => {
-          const existing = byId.get(item.i);
-          if (!existing) return null;
-          return { ...existing, x: item.x, y: item.y, w: item.w, h: item.h };
-        })
-        .filter((w): w is DashboardLayoutWidget => w !== null);
+      // Start from the FULL (unfiltered) widget list so a hidden checklist's
+      // saved position/size survives an unrelated drag/resize untouched —
+      // `layout` here only ever contains the currently-visible widgets RGL
+      // knows about, never the ones this component chose not to render.
+      const moved = new Map(layout.map((item) => [item.i, item]));
+      const next = widgets.map((w) => {
+        const item = moved.get(w.id);
+        return item ? { ...w, x: item.x, y: item.y, w: item.w, h: item.h } : w;
+      });
       onLayoutChange(next);
     },
     [widgets, onLayoutChange],
   );
 
   if (isMobile) {
-    const stacked = [...widgets].sort((a, b) => a.y - b.y || a.x - b.x);
+    const stacked = [...visibleWidgets].sort((a, b) => a.y - b.y || a.x - b.x);
     return (
       <div className="flex flex-col gap-4">
         {stacked.map((w) => {
@@ -114,7 +136,7 @@ export function DashboardGrid({
           onDragStop={(layout) => commitFromRglLayout(layout)}
           onResizeStop={(layout) => commitFromRglLayout(layout)}
         >
-          {widgets.map((w) => {
+          {visibleWidgets.map((w) => {
             const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
             const Component = def.component;
             return (

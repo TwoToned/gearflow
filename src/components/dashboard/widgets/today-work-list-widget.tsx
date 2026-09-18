@@ -1,7 +1,7 @@
 "use client";
 // The Overdue/Today/Triage/Later work list, extracted out of `/today/page.tsx`
 // (FEATUREDOCS/79) so it can be hosted both there AND as a dashboard-board
-// widget (#1267) from ONE implementation (R-3.1) — `/today/page.tsx` now
+// widget from ONE implementation (R-3.1) — `/today/page.tsx` now
 // renders this same component rather than keeping a second copy of the
 // bucketing/peek/quick-add logic. Same hooks, same reactivity posture (the
 // live `myOpenTasks` subscription is the only one here — everything else on

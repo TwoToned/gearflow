@@ -17,7 +17,7 @@ import { DashboardCustomizeBar } from "@/components/dashboard/dashboard-customiz
 const LIVE_STATUSES = new Set(["CHECKED_OUT", "ON_SITE"]);
 
 /**
- * `/dashboard` — the customizable widget board (#1267; DESIGN.md "Dashboard
+ * `/dashboard` — the customizable widget board (DESIGN.md "Dashboard
  * Layout" documents the "no widget boards" decision this supersedes, and
  * FEATUREDOCS/81 has the full writeup). The greeting hero + quick actions
  * stay a FIXED page header (never a widget, per that decision); everything

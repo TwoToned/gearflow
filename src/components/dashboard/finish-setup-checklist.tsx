@@ -112,6 +112,42 @@ function buildItems(org: OrgRecord | undefined, locationCount: number, teamCount
  * dismissed OR complete; each row links to the ONE place that setting is
  * actually edited, never back into a wizard step.
  */
+
+/**
+ * Same gating `FinishSetupChecklist`'s own early-return uses, exposed for
+ * the same reason as `useActivationChecklistVisible` beside it — a `bare`
+ * render correctly returns null once complete, but an external wrapper
+ * (the dashboard widget board's `<DashboardCard>`) needs to know that
+ * BEFORE deciding whether to render its own title bar around nothing.
+ */
+export function useFinishSetupChecklistVisible(orgId: string | undefined): boolean {
+  const { data: org, isLoading: orgLoading } = useOrganization(orgId) as {
+    data: OrgRecord | undefined;
+    isLoading: boolean;
+  };
+  const locations = useLocations(orgId);
+  const { data: members, isLoading: membersLoading } = useOrgMembers(orgId) as {
+    data: unknown[] | undefined;
+    isLoading: boolean;
+  };
+  const { data: invites, isLoading: invitesLoading } = usePendingInvitations(orgId) as {
+    data: unknown[] | undefined;
+    isLoading: boolean;
+  };
+  const { dismissedAt } = useSetupDismissal();
+  const { loading, complete } = checklistState({
+    org,
+    orgLoading,
+    locations,
+    members,
+    membersLoading,
+    invites,
+    invitesLoading,
+    dismissedAt,
+  });
+  return !loading && dismissedAt == null && !complete;
+}
+
 export function FinishSetupChecklist({ orgId, bare = false }: { orgId: string | undefined; bare?: boolean }) {
   const { data: org, isLoading: orgLoading } = useOrganization(orgId) as {
     data: OrgRecord | undefined;
@@ -176,7 +212,7 @@ export function FinishSetupChecklist({ orgId, bare = false }: { orgId: string | 
     </>
   );
 
-  // `bare` (dashboard-widget-board mode, #1267) — see the identical note on
+  // `bare` (dashboard-widget-board mode) — see the identical note on
   // ActivationChecklist: skip this component's own card/header (the shared
   // `<DashboardCard>` shell supplies both), keep Dismiss (a distinct,
   // org-wide "done showing me this" bit, not the same as removing the widget

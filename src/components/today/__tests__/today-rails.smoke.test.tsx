@@ -38,7 +38,7 @@ describe("TodayDayRail", () => {
     expect(screen.getByText("Nothing scheduled.")).toBeDefined();
   });
 
-  // #1267 regression: the dashboard-widget-board hosts this inside its own
+  // the widget board regression: the dashboard-widget-board hosts this inside its own
   // `<DashboardCard>` shell (bare), but /today renders it as page furniture
   // with its own card + heading (non-bare, the default) — a hardcoded `bare`
   // in the wrapper would silently drop /today's "Your day" heading and card.
@@ -69,7 +69,7 @@ describe("TodayNeedsYouRail", () => {
     expect(screen.getByText("Nothing needs you.")).toBeDefined();
   });
 
-  // #1267 regression — see the identical TodayDayRail case above.
+  // the widget board regression — see the identical TodayDayRail case above.
   it("renders its own heading by default (non-bare, the /today usage)", () => {
     render(<TodayNeedsYouRail data={EMPTY} asOf={Date.now()} error={null} onRefresh={vi.fn()} onSnooze={vi.fn()} onReoffer={vi.fn()} />);
     expect(screen.getByText("Needs you")).toBeDefined();

@@ -1,6 +1,6 @@
 "use client";
 // Extracted out of `/today/page.tsx` (FEATUREDOCS/79) so the "needs you" rail
-// can also live on the dashboard board (#1267) — same one-shot-polled hook +
+// can also live on the dashboard board — same one-shot-polled hook +
 // writes, same presentational `TodayNeedsYouRail` (R-3.1).
 
 import { useCallback, useState } from "react";

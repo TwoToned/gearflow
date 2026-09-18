@@ -19,9 +19,9 @@ import { api } from "../../convex/_generated/api";
 const SAVE_DEBOUNCE_MS = 800;
 
 /**
- * The customizable dashboard's per-user layout (#1267 — `convex/dashboardLayouts.ts`,
+ * The customizable dashboard's per-user layout (`convex/dashboardLayouts.ts`,
  * modeled on `savedTableViews`'s self-scoped per-user row pattern). No saved row
- * yet ⇒ `DEFAULT_DASHBOARD_LAYOUT` (everything from the pre-#1267 `/dashboard` at
+ * yet ⇒ `DEFAULT_DASHBOARD_LAYOUT` (everything from the pre-widget-board `/dashboard` at
  * its original position/size) — the default lives in exactly one place
  * (`src/lib/dashboard-widgets.ts`), never invented here or on the server.
  */

@@ -7,7 +7,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Browser-direct USER-scoped dashboard layout (the customizable widget-board
- * dashboard, #1267). At most one row per (organizationId, userId) — mirrors
+ * dashboard). At most one row per (organizationId, userId) — mirrors
  * `orgActivationDismissalsWrites.ts` / `savedTableViewsWrites.ts`'s shape: a
  * member owns their own board, so both ids are derived from the VERIFIED
  * token (`getAuthContext`), never a client arg. No resource permission to

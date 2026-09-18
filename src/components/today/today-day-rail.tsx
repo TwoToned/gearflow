@@ -15,7 +15,7 @@ export function TodayDayRail({
   asOf,
   error,
   onRefresh,
-  /** #1267 — the dashboard-widget-board hosts this inside the shared
+  /** the widget board — the dashboard-widget-board hosts this inside the shared
    *  `<DashboardCard>` shell, which already supplies the card/title; `bare`
    *  skips this component's own so the two don't nest. `/today/page.tsx`
    *  (the original consumer) keeps the default (non-bare) rendering. */

@@ -102,7 +102,7 @@ export function TodayNeedsYouRail({
   onSnooze,
   onReoffer,
   reofferingAssignmentId,
-  /** #1267 — see the identical prop on `TodayDayRail`: the dashboard-widget-
+  /** the widget board — see the identical prop on `TodayDayRail`: the dashboard-widget-
    *  board hosts this inside `<DashboardCard>`, which already supplies the
    *  card/title, so `bare` skips this component's own. */
   bare = false,

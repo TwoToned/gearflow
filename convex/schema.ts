@@ -3540,7 +3540,7 @@ export default defineSchema({
     .index("by_organizationId_userId_tableId_name", ["organizationId", "userId", "tableId", "name"])
     .index("by_userId_tableId", ["userId", "tableId"]),
 
-  // DashboardLayout — the customizable widget-board dashboard (#1267). One row
+  // DashboardLayout — the customizable widget-board dashboard. One row
   // per (organizationId, userId): a member's own drag-and-resize arrangement
   // of dashboard/Today widgets. `by_organizationId_userId` (never a bare
   // `by_userId` — R-8.4.3, a user is multi-org elsewhere in this codebase) is

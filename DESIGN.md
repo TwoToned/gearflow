@@ -320,7 +320,7 @@ All detail pages (project, asset, model, kit, client, crew, supplier, maintenanc
 **2026-09-18 decision — "no widget boards" is SUPERSEDED.** This section
 used to read "no widget boards — the zones are the layout, not a
 drag-and-drop grid a user can rearrange." Per explicit product-owner
-sign-off, `/dashboard` (#1267, FEATUREDOCS/81) is now exactly that: a
+sign-off, `/dashboard` (FEATUREDOCS/81) is now exactly that: a
 customizable, per-user, drag-and-resize widget board (`react-grid-layout`),
 with a "Customize" mode gating the drag handles/resize corners/remove
 buttons and an "Add widget"/"Reset to default" affordance. The rationale for
@@ -338,7 +338,7 @@ program's phase 0.5 (#1242) when `/today` became the landing page and took
 over that surface (FEATUREDOCS/79). Don't resurrect the name.
 
 - Dynamic greeting (Good morning/afternoon/evening) + date — this is FIXED
-  page-header furniture, never a widget (#1267): a personal board can be
+  page-header furniture, never a widget: a personal board can be
   rearranged and emptied, but the greeting and the "New job"/"Warehouse"/
   "Add gear"/"Customize" actions must always be there.
 - Alert badges (red/amber) only when problems exist.
@@ -352,7 +352,7 @@ over that surface (FEATUREDOCS/79). Don't resurrect the name.
   `src/lib/dashboard-widgets.ts`'s catalog and
   `src/components/dashboard/widgets/`.
 - **v1's default board** (`DEFAULT_DASHBOARD_LAYOUT`, what "Reset to
-  default" restores) seeds from the pre-#1267 fixed-zone arrangement, in
+  default" restores) seeds from the pre-widget-board fixed-zone arrangement, in
   this order:
   1. **On the floor now** — the live-jobs tile (an org-wide warehouse view
      of what's out right now, not a personal work list — this is why it

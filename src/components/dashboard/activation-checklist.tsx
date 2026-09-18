@@ -77,6 +77,26 @@ function buildItems(state: ActivationMilestonesState): MilestoneItem[] {
  * never merged with it — setup is "configure the company", activation is
  * "do the work". Disappears for good once dismissed OR all four are done.
  */
+
+/**
+ * Same gating this component's own early-return uses, exposed so a host
+ * that wraps the `bare` render in its own chrome (the dashboard widget
+ * board's `<DashboardCard>`) can skip that chrome too — a `bare`
+ * `ActivationChecklist` still correctly renders nothing once complete, but
+ * nothing about that null return tells an external wrapper to hide ITS OWN
+ * title bar. Two separate subscriptions to the same Convex queries as the
+ * component below is intentional and cheap — `useQuery` dedupes identical
+ * query args, and duplicating this one loading/complete condition is far
+ * cheaper than threading "am I empty" back up through a render return.
+ */
+export function useActivationChecklistVisible(orgId: string | undefined): boolean {
+  const state = useActivationMilestones(orgId);
+  const { dismissedAt } = useActivationDismissal();
+  if (state === undefined || dismissedAt === undefined || dismissedAt != null) return false;
+  const items = buildItems(state);
+  return items.some((i) => !i.done);
+}
+
 export function ActivationChecklist({ orgId, bare = false }: { orgId: string | undefined; bare?: boolean }) {
   const state = useActivationMilestones(orgId);
   const { dismissedAt, dismiss } = useActivationDismissal();
@@ -129,7 +149,7 @@ export function ActivationChecklist({ orgId, bare = false }: { orgId: string | u
     </>
   );
 
-  // `bare` (dashboard-widget-board mode, #1267): skip this component's own
+  // `bare` (dashboard-widget-board mode): skip this component's own
   // outer card/header — the shared `<DashboardCard>` shell already supplies
   // both — but keep the count + Dismiss row, a distinct action from removing
   // the widget from the board (that only hides it from THIS layout; Dismiss

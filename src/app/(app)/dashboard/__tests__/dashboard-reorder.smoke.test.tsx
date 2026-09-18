@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // Dashboard reorder (#952 / QW-3), updated for the customizable widget board
-// (#1267): `/dashboard` is now `<DashboardGrid>` over a per-user saved
+//: `/dashboard` is now `<DashboardGrid>` over a per-user saved
 // layout (`useDashboardLayout`), so this test mocks that hook to a fixed
 // DEFAULT_DASHBOARD_LAYOUT arrangement (avoiding a real Convex client) and
 // asserts DOM order still follows array order — react-grid-layout renders
@@ -99,9 +99,11 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
 // nothing, matching their own real behavior while loading/dismissed/complete.
 vi.mock("@/components/dashboard/finish-setup-checklist", () => ({
   FinishSetupChecklist: () => null,
+  useFinishSetupChecklistVisible: () => true,
 }));
 vi.mock("@/components/dashboard/activation-checklist", () => ({
   ActivationChecklist: () => null,
+  useActivationChecklistVisible: () => true,
 }));
 
 import DashboardPage from "../page";

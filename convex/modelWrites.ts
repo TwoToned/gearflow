@@ -9,6 +9,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { collectCapped } from "./lib/pagination";
 import { adjustModelSaleStock } from "./lib/saleStock";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -231,14 +232,14 @@ export const updateNative = mutation({
     const oldAssetType = (doc.assetType as "SERIALIZED" | "BULK" | undefined) ?? "SERIALIZED";
     if (newAssetType !== oldAssetType) {
       if (newAssetType === "BULK") {
-        const activeAssets = (await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
-          .filter((x) => x.organizationId === a.orgId && x.isActive !== false);
+        const { rows: assetRows } = await collectCapped(ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)));
+        const activeAssets = assetRows.filter((x) => x.organizationId === a.orgId && x.isActive !== false);
         if (activeAssets.length > 0) {
           throw new ConvexError(`Cannot change to Bulk — ${activeAssets.length} serialized asset(s) still exist under this model. Archive or move them first.`);
         }
       } else {
-        const activeBulk = (await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
-          .filter((x) => x.organizationId === a.orgId && x.isActive !== false);
+        const { rows: bulkRows } = await collectCapped(ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)));
+        const activeBulk = bulkRows.filter((x) => x.organizationId === a.orgId && x.isActive !== false);
         if (activeBulk.length > 0) {
           throw new ConvexError(`Cannot change to Serialized — ${activeBulk.length} bulk asset record(s) still exist under this model. Archive or move them first.`);
         }

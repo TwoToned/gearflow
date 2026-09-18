@@ -2574,6 +2574,13 @@ export default defineSchema({
     notes: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
+    // Work-layer Phase 4 (#1246, design doc §8.2 "Estimate · logged"). Read-side
+    // only — nothing about the approval/dispute/export lifecycle changes.
+    // Absent on every pre-#1246 row; no backfill. When set, an APPROVED entry
+    // counts as "logged" time against that `projectTasks` row (a crew-assigned
+    // work item), so its peek can show minutes actually worked without a
+    // second, hand-maintained time-tracking source (R-3.1).
+    workItemId: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -2581,7 +2588,8 @@ export default defineSchema({
     .index("by_crewMemberId", ["crewMemberId"])
     .index("by_approvedById", ["approvedById"])
     .index("by_crewMemberId_date", ["crewMemberId", "date"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
+    .index("by_organizationId_status", ["organizationId", "status"])
+    .index("by_workItemId", ["workItemId"]),
 
   // ProjectService
   projectServices: defineTable({

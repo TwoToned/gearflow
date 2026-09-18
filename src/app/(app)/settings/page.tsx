@@ -21,6 +21,7 @@ import type { OrgSettings } from "@/lib/org-settings-types";
 import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
 import { InvoiceNumberingSettings } from "@/components/settings/invoice-numbering-settings";
 import { StatusAutomationSettings } from "@/components/settings/status-automation-settings";
+import { CrewTimeSettingsPanel } from "@/components/settings/crew-time-settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -368,6 +369,22 @@ export default function GeneralSettingsPage() {
               commit stock, money or a lock, so they stay a deliberate click. Every automatic move is
               recorded in the job&rsquo;s activity log.
             </p>
+          </SettingsSection>
+        </div>
+
+        {/* Crew & time (work-layer Phase 4, #1246) — the crew planner's
+            confirmation layer. Its own section: unlike status automation this
+            governs Triage visibility and an email opt-in, not the job lifecycle. */}
+        <div className="border-t border-line">
+          <SettingsSection
+            title="Crew & time"
+            description="Tune the crew planner's confirmation layer — when an unanswered offer surfaces to you, and whether crew get a reminder before call time."
+          >
+            <CrewTimeSettingsPanel
+              value={settings.crewTime}
+              disabled={!canEdit}
+              onChange={(next) => setSettings((prev) => ({ ...prev, crewTime: next }))}
+            />
           </SettingsSection>
         </div>
       </div>

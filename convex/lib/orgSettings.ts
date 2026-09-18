@@ -109,3 +109,34 @@ export async function resolveOrgInvoiceConfig(
     timezone: config.timezone,
   };
 }
+
+// ─── Crew-time planner settings (work-layer Phase 4, #1246) ────────────────
+// Mirrors `src/lib/crew-time-settings.ts`'s bounds/default (this module can't
+// import from src/lib — Convex bundles separately, same posture as
+// quoteDates.ts/quote-validity.ts). Read server-side so a browser caller can
+// never spoof the Triage threshold or the reminder opt-in.
+
+const DEFAULT_UNANSWERED_OFFER_HOURS = 48;
+const UNANSWERED_OFFER_HOURS_BOUNDS = { min: 1, max: 24 * 14 } as const;
+
+/** Hours an OFFERED crew assignment can sit unanswered before it becomes a
+ *  Triage "unanswered offer" signal for the project's PM (design doc §8.5/§9).
+ *  A hand-edited/out-of-range blob degrades to the documented default. */
+export async function resolveCrewOfferStaleHours(ctx: MutationCtx | QueryCtx, orgId: string): Promise<number> {
+  const blob = (await loadOrgSettingsBlob(ctx, orgId)) as { crewTime?: { unansweredOfferHours?: unknown } };
+  const configured = blob.crewTime?.unansweredOfferHours;
+  if (typeof configured !== "number" || !Number.isFinite(configured)) return DEFAULT_UNANSWERED_OFFER_HOURS;
+  if (configured < UNANSWERED_OFFER_HOURS_BOUNDS.min || configured > UNANSWERED_OFFER_HOURS_BOUNDS.max) {
+    return DEFAULT_UNANSWERED_OFFER_HOURS;
+  }
+  return configured;
+}
+
+/** Whether the day-before call-time reminder email is enabled for this org.
+ *  Off by default — absent (every pre-#1246 org) or `false` = disabled, since
+ *  this emails crew on the org's behalf and is a deliberate opt-in, unlike
+ *  the status-automation switches above which default ON. */
+export async function resolveCrewCallReminderEnabled(ctx: MutationCtx | QueryCtx, orgId: string): Promise<boolean> {
+  const blob = (await loadOrgSettingsBlob(ctx, orgId)) as { crewTime?: { callReminderEnabled?: unknown } };
+  return blob.crewTime?.callReminderEnabled === true;
+}

@@ -47,6 +47,17 @@ export interface OrgDocumentSettings {
   paymentTermsDays?: number;
 }
 
+/** Work-layer Phase 4 (#1246) — the crew planner's confirmation layer. See
+ *  `src/lib/crew-time-settings.ts` for bounds/defaults. */
+export interface CrewTimeSettings {
+  /** Hours an OFFERED assignment sits unanswered before it's a Triage signal
+   *  for the PM (design doc §8.5/§9). Absent = the documented default (48). */
+  unansweredOfferHours?: number;
+  /** Email the day before a confirmed shift with call time, location and PM
+   *  phone. Off by default — absent or `false` = disabled. */
+  callReminderEnabled?: boolean;
+}
+
 export interface TestTagSettings {
   prefix?: string;
   digits?: number;
@@ -110,4 +121,6 @@ export interface OrgSettings {
   /** #1160 — per-org opt-OUT switches for project status automation. Absent (and
    *  every absent key inside it) means ON; see `src/lib/project-status-automation.ts`. */
   projectStatusAutomation?: ProjectStatusAutomationSettings;
+  /** Work-layer Phase 4 (#1246) — crew planner confirmation-layer settings. */
+  crewTime?: CrewTimeSettings;
 }

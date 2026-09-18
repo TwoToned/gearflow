@@ -19319,6 +19319,74 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "dashboardLayouts.get",
+    "module": "dashboardLayouts",
+    "fn": "get",
+    "kind": "query",
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [],
+    "privilegedArgs": [],
+    "argsSha": "5151b7eb8536aa97",
+    "returnsSha": "eb29fac8cd3e5a2a",
+    "stability": "tracks-app",
+    "summary": "Get the caller's own saved dashboard widget layout.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "dashboardLayouts.saveNative",
+    "module": "dashboardLayouts",
+    "fn": "saveNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "widgets",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ed6d8afc493b8fc0",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": "Save the caller's own dashboard widget layout (positions/sizes).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "dashboardLists.blocking",
     "module": "dashboardLists",
     "fn": "blocking",
@@ -63167,10 +63235,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1226,
-  agentReachable: 603,
-  queries: 441,
-  mutations: 785,
-  agentReachableQueries: 310,
-  agentReachableMutations: 293,
+  total: 1228,
+  agentReachable: 605,
+  queries: 442,
+  mutations: 786,
+  agentReachableQueries: 311,
+  agentReachableMutations: 294,
 } as const;

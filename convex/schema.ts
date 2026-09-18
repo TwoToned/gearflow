@@ -3540,6 +3540,39 @@ export default defineSchema({
     .index("by_organizationId_userId_tableId_name", ["organizationId", "userId", "tableId", "name"])
     .index("by_userId_tableId", ["userId", "tableId"]),
 
+  // DashboardLayout — the customizable widget-board dashboard. One row
+  // per (organizationId, userId): a member's own drag-and-resize arrangement
+  // of dashboard/Today widgets. `by_organizationId_userId` (never a bare
+  // `by_userId` — R-8.4.3, a user is multi-org elsewhere in this codebase) is
+  // the read path's own index; `by_organizationId` (same pattern as
+  // `savedTableViews`) exists purely so this table pages as a DIRECT export
+  // (`scripts/org-export-tables.ts`/`convex/orgExport.ts`) rather than a
+  // full-table FILTER scan — `exportTablePage` hardcodes that exact index
+  // name. `by_cuid` is kept for parity with every other cuid-keyed table but
+  // isn't on any read path. `widgets` intentionally has no per-widget config
+  // beyond geometry — v1's widgets are all parameter-free (see
+  // src/lib/dashboard-widgets.ts); a widget needing its own settings later
+  // adds an optional field here, not a second table.
+  dashboardLayouts: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    widgets: v.array(
+      v.object({
+        id: v.string(),
+        kind: v.string(),
+        x: v.number(),
+        y: v.number(),
+        w: v.number(),
+        h: v.number(),
+      }),
+    ),
+    updatedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_organizationId_userId", ["organizationId", "userId"]),
+
   // ─── Collaboration substrate ───────────────────────────────────────────────
 
   // Comment threads. Each thread belongs to an entity (e.g. project) and

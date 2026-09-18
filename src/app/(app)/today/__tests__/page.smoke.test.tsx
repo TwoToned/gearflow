@@ -76,6 +76,18 @@ describe("TodayPage (smoke)", () => {
     expect(screen.getByText(/All clear/)).toBeDefined();
   });
 
+  // the widget board regression: the day/needs-you rails are now shared widget
+  // components (also hosted "bare" inside a `<DashboardCard>` on the
+  // dashboard board) — /today must still get their own card + heading, not
+  // the bare dashboard-board rendering.
+  it("renders the day rail and needs-you rail with their own headings (non-bare)", () => {
+    tasks = [];
+    notifications = [];
+    render(<TodayPage />);
+    expect(screen.getByText("Your day")).toBeDefined();
+    expect(screen.getByText("Needs you")).toBeDefined();
+  });
+
   it("buckets a task due today (org tz) into the Today section, not Overdue or Later", () => {
     tasks = [
       {

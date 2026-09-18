@@ -77,6 +77,7 @@ import type * as customFieldDefinitions from "../customFieldDefinitions.js";
 import type * as customFieldDefinitionsWrites from "../customFieldDefinitionsWrites.js";
 import type * as dashboardActivity from "../dashboardActivity.js";
 import type * as dashboardCounters from "../dashboardCounters.js";
+import type * as dashboardLayouts from "../dashboardLayouts.js";
 import type * as dashboardLists from "../dashboardLists.js";
 import type * as dashboardStats from "../dashboardStats.js";
 import type * as dashboardSubHire from "../dashboardSubHire.js";
@@ -391,6 +392,7 @@ declare const fullApi: ApiFromModules<{
   customFieldDefinitionsWrites: typeof customFieldDefinitionsWrites;
   dashboardActivity: typeof dashboardActivity;
   dashboardCounters: typeof dashboardCounters;
+  dashboardLayouts: typeof dashboardLayouts;
   dashboardLists: typeof dashboardLists;
   dashboardStats: typeof dashboardStats;
   dashboardSubHire: typeof dashboardSubHire;

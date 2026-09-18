@@ -1,97 +1,45 @@
 "use client";
 // use-client: interactive client route (below-the-fold interactivity) (R-8.1.1)
 
+import { useState } from "react";
 import Link from "next/link";
-import {
-  useNativeDashboardStats,
-  useNativeSubHireStats,
-  useNativeUpcoming,
-  useNativeHome,
-  useNativeBlocking,
-  useNativePendingCrewOffers,
-  useNativeActivity,
-  useNativeOverbookingCounts,
-  useNativeOrgFinanceCounts,
-} from "@/hooks/use-native-dashboard";
+import { useNativeDashboardStats, useNativeHome } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
-import {
-  ScanBarcode,
-  Zap,
-  Wrench,
-  ArrowRight,
-  ShieldAlert,
-  AlertTriangle,
-  UserCheck,
-  Plus,
-  Boxes,
-  Send,
-} from "lucide-react";
-import {
-  FadeIn,
-  StaggerList,
-  StaggerItem,
-  AnimatedNumber,
-} from "@/components/ui/motion";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ScanBarcode, Plus, Boxes } from "lucide-react";
+import { FadeIn } from "@/components/ui/motion";
 import { Button } from "@/components/ui/button";
-import { FlowMascot } from "@/components/ui/flow-mascot";
 import { PageHeader } from "@/components/layout/page-header";
-import { getStatusIntent } from "@/lib/status-colors";
-import { cn, focusRing } from "@/lib/utils";
-import { formatDateLong, formatDateDayMonth } from "@/lib/formatters";
-import { FinishSetupChecklist } from "@/components/dashboard/finish-setup-checklist";
-import { ActivationChecklist } from "@/components/dashboard/activation-checklist";
-import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
-import { formatDistanceToNow } from "date-fns";
-import type { LucideIcon } from "lucide-react";
+import { formatDateLong } from "@/lib/formatters";
+import { useDashboardLayout } from "@/hooks/use-dashboard-layout";
+import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
+import { DashboardCustomizeBar } from "@/components/dashboard/dashboard-customize-bar";
 
-const DAY = 24 * 60 * 60 * 1000;
 const LIVE_STATUSES = new Set(["CHECKED_OUT", "ON_SITE"]);
 
-type Hue = "blue" | "amber" | "green" | "purple" | "coral" | "teal" | "red";
-const hueDot: Record<Hue, string> = {
-  blue: "bg-blue", amber: "bg-amber", green: "bg-green", purple: "bg-purple",
-  coral: "bg-coral", teal: "bg-teal", red: "bg-red",
-};
-const hueText: Record<Hue, string> = {
-  blue: "text-blue", amber: "text-amber", green: "text-green", purple: "text-purple",
-  coral: "text-coral", teal: "text-teal", red: "text-red",
-};
-
-const TILE = "rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)]";
-const TILE_LINK = `${TILE} ${focusRing} block transition-all motion-safe:hover:-translate-y-0.5 hover:shadow-[var(--sh-hover)]`;
-
+/**
+ * `/dashboard` — the customizable widget board (DESIGN.md "Dashboard
+ * Layout" documents the "no widget boards" decision this supersedes, and
+ * FEATUREDOCS/81 has the full writeup). The greeting hero + quick actions
+ * stay a FIXED page header (never a widget, per that decision); everything
+ * below it is `<DashboardGrid>`, backed by `useDashboardLayout` (per-user
+ * saved arrangement, `convex/dashboardLayouts.ts`).
+ */
 export default function DashboardPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
-  // Native read-layer path (Phase 4 — the getDashboardStats/... server-action reads
-  // are retired). The seven stats come from the counter-backed
-  // dashboardStats.bundle subscription (O(1) read + date-derived); the bounded
-  // project/thread/activity reads come from their own native subscriptions.
+  // Kept at the page level purely to compose the hero's "aside" line — the
+  // greeting is fixed page furniture, not a widget, so it needs this
+  // regardless of what's on the board. Same hooks the widgets themselves
+  // use (R-3.1) — Convex shares the underlying subscription, so this isn't a
+  // second read, just a second call site of one.
   const nativeStats = useNativeDashboardStats(orgId);
   const stats = nativeStats.data;
-  const statsLoading = nativeStats.isLoading;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const upcoming = useNativeUpcoming(orgId) as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const activity = useNativeActivity(orgId) as any;
-  const subHireStats = useNativeSubHireStats(orgId);
-  const overbookingCounts = useNativeOverbookingCounts(orgId);
-  const orgFinanceCounts = useNativeOrgFinanceCounts(orgId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myHome = useNativeHome(orgId) as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const myBlockers = useNativeBlocking(orgId) as any;
-  const pendingCrewOffers = useNativePendingCrewOffers(orgId);
 
-  // Delay ladder derived from section index instead of hand-numbered literals
-  // (§ "Dashboard reorder" — the old 0.04/0.05/0.08/0.1/0.12/0.14/0.16 chain
-  // meant inserting a section required renumbering every one after it).
-  // `nextSectionDelay()` is called once per top-level FadeIn'd section below,
-  // in render order, top to bottom.
-  let sectionIndex = 0;
-  const nextSectionDelay = () => 0.04 + 0.04 * sectionIndex++;
+  const { widgets, setLayout, addWidget, removeWidget, resetToDefault, availableToAdd } = useDashboardLayout(orgId);
+  const [editMode, setEditMode] = useState(false);
 
   const now = new Date();
   const hour = now.getHours();
@@ -100,13 +48,8 @@ export default function DashboardPage() {
 
   const myProjects = (myHome?.myProjects ?? []) as Record<string, unknown>[];
   const liveJobs = myProjects.filter((p) => LIVE_STATUSES.has(p.status as string));
-  const activityItems = buildActivityTimeline(activity);
 
   const overdue = stats?.overdueReturns ?? 0;
-  const deployed = stats?.checkedOutAssets ?? 0;
-  const total = stats?.totalAssets ?? 0;
-  const util = total > 0 ? Math.round((deployed / total) * 100) : 0;
-
   // §9: overdue is an alert context — plain copy, no personality/Kalam. The
   // calm and zero branches keep the handwritten voice.
   const asideOverdue = !!stats && overdue > 0;
@@ -120,363 +63,56 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Hero + quick actions ── */}
       <FadeIn>
         <PageHeader
           title={`${greeting}${firstName ? `, ${firstName}` : ""}`}
           description={formatDateLong(now)}
-          meta={aside && (asideOverdue
-            ? <p className="text-ui-text font-medium text-t-out">{aside}</p>
-            : <p className="font-hand text-[15px] text-t-out">{aside}</p>)}
+          meta={
+            aside &&
+            (asideOverdue ? (
+              <p className="text-ui-text font-medium text-t-out">{aside}</p>
+            ) : (
+              <p className="font-hand text-[15px] text-t-out">{aside}</p>
+            ))
+          }
           actions={
             <>
-              <Button asChild variant="halo"><Link href="/projects/new"><Plus className="h-4 w-4" /> New job</Link></Button>
-              <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/warehouse"><ScanBarcode className="h-4 w-4" /> Warehouse</Link></Button>
-              <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/assets/registry/new"><Boxes className="h-4 w-4" /> Add gear</Link></Button>
+              <Button asChild variant="halo">
+                <Link href="/projects/new">
+                  <Plus className="h-4 w-4" /> New job
+                </Link>
+              </Button>
+              <Button asChild variant="line" className="hidden sm:inline-flex">
+                <Link href="/warehouse">
+                  <ScanBarcode className="h-4 w-4" /> Warehouse
+                </Link>
+              </Button>
+              <Button asChild variant="line" className="hidden sm:inline-flex">
+                <Link href="/assets/registry/new">
+                  <Boxes className="h-4 w-4" /> Add gear
+                </Link>
+              </Button>
+              <DashboardCustomizeBar
+                editMode={editMode}
+                onToggleEditMode={() => setEditMode((v) => !v)}
+                availableToAdd={availableToAdd}
+                onAddWidget={addWidget}
+                onReset={resetToDefault}
+              />
             </>
           }
         />
       </FadeIn>
 
-      {/* Dashboard-side half of Phase C's "skip everything" safety net (C6,
-          #1104) — beside, not merged with, the activation checklist (D1,
-          #1105) right after it: setup is "configure the company", activation
-          is "do the work". Both render nothing once dismissed or complete,
-          so together they cost nothing once an org is set up and active. */}
-      <FadeIn delay={nextSectionDelay()}>
-        <FinishSetupChecklist orgId={orgId} />
+      <FadeIn delay={0.04}>
+        <DashboardGrid
+          widgets={widgets}
+          editMode={editMode}
+          orgId={orgId}
+          onLayoutChange={setLayout}
+          onRemove={removeWidget}
+        />
       </FadeIn>
-      <FadeIn delay={nextSectionDelay()}>
-        <ActivationChecklist orgId={orgId} />
-      </FadeIn>
-
-      {/* ══ Zone 1: On the floor now ══
-          The personal "My work" zone (tasks-due block + per-project blocker
-          badges, formerly MyWorkSection) was REMOVED here (work-layer phase
-          0.5, #1242, D10A) — Today (/today, now the landing page) owns that
-          surface, and rendering it on both pages would show the same rows
-          twice. Blockers still surface via the "needs attention" chip in
-          zone 2 below. This live-jobs tile stays: it's an org-wide warehouse
-          view (what's out right now), not a personal work list. */}
-      <FadeIn delay={nextSectionDelay()}>
-        <div className={`${TILE} flex flex-col p-5`}>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {liveJobs.length > 0 && <LivePulse />}
-              <h2 className="t-overline text-muted">On the floor now</h2>
-            </div>
-            {liveJobs.length > 0 && <span className="text-[11px] text-muted">{liveJobs.length} live</span>}
-          </div>
-          {!myHome ? (
-            <div className="space-y-2"><Skeleton className="h-16 w-full rounded-[var(--r)]" /><Skeleton className="h-16 w-full rounded-[var(--r)]" /></div>
-          ) : liveJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
-              <FlowMascot className="h-10 w-10" eyeColor="var(--ok)" />
-              <p className="text-[14px] font-medium text-ink">Nothing out right now</p>
-              <p className="t-micro text-muted">The warehouse is full and calm. Enjoy it.</p>
-            </div>
-          ) : (
-            <StaggerList className="flex flex-col gap-2 sm:grid sm:grid-cols-2">
-              {liveJobs.slice(0, 4).map((p) => (<StaggerItem key={p.id as string}><LiveJobRow project={p} now={now} /></StaggerItem>))}
-            </StaggerList>
-          )}
-        </div>
-      </FadeIn>
-
-      {/* ══ Zone 2: Org risk ══ */}
-      <FadeIn delay={nextSectionDelay()}>
-        <div className={`${TILE} p-5`}>
-          <h2 className="t-overline mb-3 text-muted">Needs attention</h2>
-          <NeedsAttention
-            stats={stats}
-            loading={statsLoading}
-            blockers={myBlockers ?? []}
-            pendingCrewOffers={pendingCrewOffers}
-            subHireOverdue={subHireStats?.overdueReturns ?? 0}
-            overbookingCounts={overbookingCounts}
-            orgFinanceCounts={orgFinanceCounts}
-          />
-          {/* WS3 #942 — the Overbookings & Gaps board's three chips (hard
-              overbookings / pencilled collisions / sale stock to procure)
-              render inside NeedsAttention above, backed by the cheap
-              overbookingBoard.counts query (not the full board subscription).
-              #992 (Phase F) — the org Finance section's "quotes out" and
-              "expiring" chips follow the same pattern via financeOrg.counts;
-              they link to /finance rather than duplicating the aggregation
-              logic (R-3.1). */}
-        </div>
-      </FadeIn>
-
-      {/* ══ Zone 3: Demoted (stats, upcoming, activity) ══ */}
-      <div className="grid auto-rows-[minmax(0,auto)] grid-cols-2 gap-3 lg:grid-cols-4">
-        {/* Stat tiles */}
-        <StatTile label="Active jobs" value={stats?.activeProjects} loading={statsLoading} hue="blue" sub="in flight" href="/projects" />
-        <StatTile label="Overdue returns" value={overdue} loading={statsLoading} hue="red" sub={overdue > 0 ? "chase them" : "all back"} href="/projects" problem={overdue > 0} />
-        <DeployTile deployed={deployed} total={total} util={util} loading={statsLoading} />
-        <StatTile label="Crew booked" value={stats?.activeCrew} loading={statsLoading} hue="purple" sub="on the books" href="/crew" />
-
-        {/* Upcoming */}
-        <FadeIn delay={nextSectionDelay()} className="col-span-2">
-          <div className={`${TILE} h-full p-5`}>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="t-overline text-muted">Upcoming</h2>
-              <Link href="/projects" className={cn("inline-flex items-center gap-1 rounded-[var(--r)] text-[11px] text-muted hover:text-ink", focusRing)}>All <ArrowRight className="h-3 w-3" /></Link>
-            </div>
-            {!upcoming ? (
-              <div className="space-y-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
-            ) : upcoming.length === 0 ? (
-              <p className="t-body text-muted">Nothing booked ahead. Quote something.</p>
-            ) : (
-              <StaggerList className="space-y-1">
-                {(upcoming as Record<string, unknown>[]).slice(0, 4).map((p) => {
-                  const client = p.client as { name?: string } | null;
-                  const start = p.rentalStartDate ? new Date(p.rentalStartDate as string) : null;
-                  const intent = getStatusIntent("project", p.status as string);
-                  return (
-                    <StaggerItem key={p.id as string}>
-                      <Link href={`/projects/${p.id}`} className={cn("group flex items-center justify-between gap-3 rounded-[var(--r)] px-2 py-2 transition-colors hover:bg-elev", focusRing)}>
-                        <div className="min-w-0">
-                          <p className="truncate text-[14px] font-medium text-ink">{p.name as string}</p>
-                          <p className="t-micro truncate text-muted"><span className="font-mono">{p.projectNumber as string}</span>{client?.name ? <> · {client.name}</> : null}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <ProjectLockGlyph status={p.status as string | null | undefined} />
-                          {start && (
-                            <span className={`text-[11px] font-medium ${hueText[intent === "primary" ? "red" : (intent as Hue)] ?? "text-muted"}`}>
-                              {formatDateDayMonth(start)}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-                    </StaggerItem>
-                  );
-                })}
-              </StaggerList>
-            )}
-          </div>
-        </FadeIn>
-
-        {/* Recent activity — full width */}
-        <FadeIn delay={nextSectionDelay()} className="col-span-2 lg:col-span-4">
-          <div className={`${TILE} p-5`}>
-            <h2 className="t-overline mb-4 text-muted">Recent activity</h2>
-            {!activity ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>
-            ) : activityItems.length === 0 ? (
-              <p className="t-body text-muted">Quiet so far. Scan some gear and it&rsquo;ll show up here.</p>
-            ) : (
-              <StaggerList className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {activityItems.map((item) => (<StaggerItem key={item.key}><ActivityItem item={item} /></StaggerItem>))}
-              </StaggerList>
-            )}
-          </div>
-        </FadeIn>
-      </div>
-    </div>
-  );
-}
-
-// ─── Tiles ─────────────────────────────────────────────────────
-
-function StatTile({ label, value, loading, hue, sub, href, problem = false }: { label: string; value: number | undefined; loading: boolean; hue: Hue; sub: string; href: string; problem?: boolean }) {
-  return (
-    <FadeIn delay={0.05}>
-      <Link href={href} className={`${TILE_LINK} h-full p-5`}>
-        <div className="flex items-center gap-1.5">
-          <span className={`size-1.5 rounded-full ${hueDot[hue]}`} aria-hidden />
-          <span className="t-overline text-muted">{label}</span>
-        </div>
-        {loading ? (
-          <Skeleton className="mt-2 h-9 w-14" />
-        ) : (
-          <p className={`mt-1 font-display text-[38px] font-extrabold leading-none tracking-tight tabular-nums ${problem && value ? "text-t-out" : "text-ink"}`}>
-            {typeof value === "number" ? <AnimatedNumber value={value} /> : <span className="text-faint">&mdash;</span>}
-          </p>
-        )}
-        <p className="mt-1.5 t-micro text-faint">{sub}</p>
-      </Link>
-    </FadeIn>
-  );
-}
-
-function DeployTile({ deployed, total, util, loading }: { deployed: number; total: number; util: number; loading: boolean }) {
-  const meterHue = util >= 85 ? "bg-t-out" : util >= 60 ? "bg-warn" : "bg-amber";
-  return (
-    <FadeIn delay={0.05}>
-      <Link href="/assets/registry" className={`${TILE_LINK} h-full p-5`}>
-        <div className="flex items-center gap-1.5">
-          <span className="size-1.5 rounded-full bg-amber" aria-hidden />
-          <span className="t-overline text-muted">Gear deployed</span>
-        </div>
-        {loading ? (
-          <Skeleton className="mt-2 h-9 w-14" />
-        ) : (
-          <p className="mt-1 font-display text-[38px] font-extrabold leading-none tracking-tight tabular-nums text-ink"><AnimatedNumber value={deployed} /></p>
-        )}
-        {/* Utilisation meter (not a chart — a fill bar) */}
-        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-elev">
-          <div className={`h-full rounded-full ${meterHue} transition-all`} style={{ width: `${Math.min(util, 100)}%` }} />
-        </div>
-        <p className="mt-1.5 t-micro text-faint">{util}% of {total} out</p>
-      </Link>
-    </FadeIn>
-  );
-}
-
-function NeedsAttention({ stats, loading, blockers, pendingCrewOffers, subHireOverdue, overbookingCounts, orgFinanceCounts }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number }; loading: boolean; blockers: Record<string, unknown>[]; pendingCrewOffers?: number; subHireOverdue: number; overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number }; orgFinanceCounts?: { quotesOutCount: number; expiringCount: number; neverSentCount: number; confirmedUninvoicedCount: number; depositDueCount: number; outstandingCount: number } }) {
-  if (loading) return <div className="flex gap-2"><Skeleton className="h-8 w-36 rounded-full" /><Skeleton className="h-8 w-28 rounded-full" /></div>;
-  const chips = [
-    blockers.length > 0 && { href: `/projects/${blockers[0].projectId}`, label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: ShieldAlert },
-    (stats?.overdueReturns ?? 0) > 0 && { href: "/projects", label: `${stats?.overdueReturns} overdue return${(stats?.overdueReturns ?? 0) > 1 ? "s" : ""}`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
-    subHireOverdue > 0 && { href: "/suppliers", label: `${subHireOverdue} sub-hire overdue`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
-    // WS3 #942 — Overbookings & Gaps board chips: hard = red (a real, already-
-    // committed overbooking), pencilled + sale-stock = amber (a heads-up, not
-    // yet a hard problem).
-    (overbookingCounts?.hardCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.hardCount} hard overbooking${(overbookingCounts?.hardCount ?? 0) > 1 ? "s" : ""}`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
-    (overbookingCounts?.pencilledCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.pencilledCount} pencilled collision${(overbookingCounts?.pencilledCount ?? 0) > 1 ? "s" : ""}`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: AlertTriangle },
-    (overbookingCounts?.saleStockCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.saleStockCount} sale stock to procure`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Boxes },
-    (stats?.maintenanceDue ?? 0) > 0 && { href: "/maintenance", label: `${stats?.maintenanceDue} maintenance due`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
-    // WS6 #945 — separate chip for recurring PM (excluded from maintenanceDue
-    // above so the two never double-count the same schedule-generated cycle).
-    (stats?.modelsDueForService ?? 0) > 0 && { href: "/maintenance/due", label: `${stats?.modelsDueForService} model${(stats?.modelsDueForService ?? 0) > 1 ? "s" : ""} due for service`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
-    (pendingCrewOffers ?? 0) > 0 && { href: "/crew", label: `${pendingCrewOffers} crew offer${(pendingCrewOffers ?? 0) > 1 ? "s" : ""} pending`, cls: "bg-blue-soft text-blue hover:bg-blue-soft/70", Icon: UserCheck },
-    // #992 (Phase F) — org Finance section chips, backed by the cheap
-    // financeOrg.counts query. Link to /finance rather than duplicating the
-    // aggregation logic here (R-3.1, decision 9). Expiring is the urgent one
-    // (amber); quotes out is informational, not yet a problem.
-    (orgFinanceCounts?.expiringCount ?? 0) > 0 && { href: "/finance", label: `${orgFinanceCounts?.expiringCount} quote${(orgFinanceCounts?.expiringCount ?? 0) > 1 ? "s" : ""} expiring`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: AlertTriangle },
-    (orgFinanceCounts?.quotesOutCount ?? 0) > 0 && { href: "/finance", label: `${orgFinanceCounts?.quotesOutCount} quote${(orgFinanceCounts?.quotesOutCount ?? 0) > 1 ? "s" : ""} out`, cls: "bg-blue-soft text-blue hover:bg-blue-soft/70", Icon: Send },
-  ].filter(Boolean) as { href: string; label: string; cls: string; Icon: LucideIcon }[];
-
-  if (chips.length === 0) {
-    return (
-      <div className="flex items-center gap-3 py-1">
-        <FlowMascot className="h-9 w-9 shrink-0" eyeColor="var(--ok)" />
-        <div>
-          <p className="text-[14px] font-medium text-ink">All clear.</p>
-          <p className="t-micro text-muted">No overdue returns, no clashes, nothing waiting on you. Frame it.</p>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-wrap gap-2">
-      {chips.map((c) => (
-        <Link key={c.label} href={c.href} className={cn("inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-table-cell font-medium shadow-[var(--sh-stk)] transition-colors", focusRing, c.cls)}>
-          <c.Icon className="h-4 w-4" /> {c.label}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-// ─── Live job ──────────────────────────────────────────────────
-
-function LivePulse() {
-  return (
-    <span className="relative flex h-2 w-2" aria-hidden>
-      <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-ok opacity-75" />
-      <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
-    </span>
-  );
-}
-
-function LiveJobRow({ project, now }: { project: Record<string, unknown>; now: Date }) {
-  const client = project.client as { name?: string } | null;
-  const end = project.rentalEndDate ? new Date(project.rentalEndDate as string) : null;
-  const itemCount = (project._count as { lineItems?: number } | undefined)?.lineItems ?? 0;
-  let back = "";
-  if (end) {
-    const days = Math.round((end.getTime() - now.getTime()) / DAY);
-    back = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "back today" : `back in ${days}d`;
-  }
-  const overdue = back.includes("overdue");
-  return (
-    <Link href={`/projects/${project.id}`} className={cn("group block rounded-[var(--r)] border border-line bg-elev p-3 shadow-[var(--lit)] transition-all motion-safe:hover:-translate-y-0.5 hover:shadow-[var(--sh-card),var(--lit)]", focusRing)}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-[14px] font-semibold text-ink">{project.name as string}</p>
-        <span className={`shrink-0 text-[11px] font-medium ${overdue ? "text-t-out" : "text-muted"}`}>{back}</span>
-      </div>
-      <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-1 text-ok"><LivePulse /> On site</span>
-        <span>·</span>
-        <span className="font-mono">{project.projectNumber as string}</span>
-        {client?.name ? <><span>·</span><span className="truncate">{client.name}</span></> : null}
-        <span>·</span>
-        <span>{itemCount} item{itemCount === 1 ? "" : "s"}</span>
-      </div>
-    </Link>
-  );
-}
-
-// ─── Activity timeline ─────────────────────────────────────────
-
-interface TimelineItem { key: string; type: "scan" | "test" | "maintenance"; time: Date; data: Record<string, unknown>; }
-
-function buildActivityTimeline(activity: Record<string, unknown> | undefined): TimelineItem[] {
-  if (!activity) return [];
-  const logs = activity.logs as Record<string, unknown>[] | undefined;
-  const testRecords = activity.testRecords as Record<string, unknown>[] | undefined;
-  const maintRecords = activity.maintenanceRecords as Record<string, unknown>[] | undefined;
-  const items: TimelineItem[] = [];
-  for (const log of logs || []) items.push({ key: `scan-${log.id}`, type: "scan", time: new Date(log.scannedAt as string), data: log });
-  for (const rec of testRecords || []) items.push({ key: `test-${rec.id}`, type: "test", time: new Date(rec.testDate as string), data: rec });
-  for (const mr of maintRecords || []) items.push({ key: `maint-${mr.id}`, type: "maintenance", time: new Date(mr.updatedAt as string), data: mr });
-  items.sort((a, b) => b.time.getTime() - a.time.getTime());
-  return items.slice(0, 9);
-}
-
-function ActivityItem({ item }: { item: TimelineItem }) {
-  if (item.type === "scan") {
-    const log = item.data;
-    const asset = log.asset as Record<string, unknown> | null;
-    const bulkAsset = log.bulkAsset as Record<string, unknown> | null;
-    const project = log.project as Record<string, unknown> | null;
-    const user = log.scannedBy as Record<string, unknown> | null;
-    const model = asset ? (asset.model as Record<string, unknown>) : bulkAsset ? (bulkAsset.model as Record<string, unknown>) : null;
-    const isCheckOut = log.action === "CHECK_OUT";
-    return (
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-green-soft text-green"><ScanBarcode className="h-3.5 w-3.5" /></div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[14px] leading-snug text-ink"><span className="font-medium">{(model?.name as string) || "Asset"}</span> <span className="text-muted">{isCheckOut ? "deployed to" : "returned from"}</span> {project ? <Link href={`/projects/${project.id}`} className="font-medium hover:underline">{project.name as string}</Link> : <span className="text-muted">unknown project</span>}</p>
-          <p className="mt-0.5 text-[11px] text-muted">{(user?.name as string) || "Unknown"} &middot; {formatDistanceToNow(item.time, { addSuffix: true })}</p>
-        </div>
-      </div>
-    );
-  }
-  if (item.type === "test") {
-    const rec = item.data;
-    const ttAsset = rec.testTagAsset as Record<string, unknown> | null;
-    const tester = rec.testedBy as Record<string, unknown> | null;
-    const result = rec.result as string;
-    const resultColor = result === "PASS" ? "text-ok" : result === "FAIL" ? "text-t-out" : "text-warn";
-    return (
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-teal-soft text-teal"><Zap className="h-3.5 w-3.5" /></div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[14px] leading-snug text-ink"><span className="font-medium">{(ttAsset?.description as string) || (ttAsset?.testTagId as string) || "Item"}</span> <span className="text-muted">tested &mdash;</span> <span className={`font-medium ${resultColor}`}>{result}</span></p>
-          <p className="mt-0.5 text-[11px] text-muted">{(tester?.name as string) || "Unknown"} &middot; {formatDistanceToNow(item.time, { addSuffix: true })}</p>
-        </div>
-      </div>
-    );
-  }
-  const mr = item.data;
-  const mrAssets = (mr.assets as Record<string, unknown>[]) || [];
-  const firstAsset = mrAssets[0]?.asset as Record<string, unknown> | undefined;
-  const firstModel = firstAsset?.model as Record<string, unknown> | undefined;
-  const reporter = mr.reportedBy as Record<string, unknown> | null;
-  const mrStatus = mr.status as string;
-  const mrStatusColor = mrStatus === "COMPLETED" ? "text-ok" : mrStatus === "IN_PROGRESS" ? "text-warn" : "text-blue";
-  const mrStatusLabel: Record<string, string> = { SCHEDULED: "scheduled", IN_PROGRESS: "in progress", COMPLETED: "completed", CANCELLED: "cancelled" };
-  return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-coral-soft text-coral"><Wrench className="h-3.5 w-3.5" /></div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[14px] leading-snug text-ink"><Link href={`/maintenance/${mr.id}`} className="font-medium hover:underline">{mr.title as string}</Link> <span className="text-muted">&mdash;</span> <span className={`font-medium ${mrStatusColor}`}>{mrStatusLabel[mrStatus] || mrStatus}</span></p>
-        <p className="mt-0.5 truncate text-[11px] text-muted">{firstModel ? `${firstAsset?.assetTag as string} ${firstModel.name as string}` : ""}{mrAssets.length > 1 ? ` + ${mrAssets.length - 1} more` : ""}</p>
-        <p className="text-[11px] text-muted">{(reporter?.name as string) || "Unknown"} &middot; {formatDistanceToNow(item.time, { addSuffix: true })}</p>
-      </div>
     </div>
   );
 }

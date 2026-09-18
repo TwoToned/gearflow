@@ -65,7 +65,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 28 | [Patterns](./FEATUREDOCS/28-patterns.md) | Key conventions, gotchas, code patterns |
 | 29 | [Integration Checklist](./FEATUREDOCS/29-integration-checklist.md) | What to update when adding new features |
 | 30 | [Maps Integration](./FEATUREDOCS/30-maps-integration.md) | Address autocomplete (Nominatim), Leaflet maps, coordinate fields |
-| 31 | [Crew Management](./FEATUREDOCS/31-crew-management.md) | Crew members, roles, skills, certifications |
+| 31 | [Crew Management](./FEATUREDOCS/31-crew-management.md) | Crew members, roles, skills, certifications. Work-layer phase 4 (#1246) adds the planner's confirmation badges/summary, Triage re-offer/find-cover, bulk "Request availability…" with first-come fill, planned-vs-actual, and off-by-default call-time reminders. |
 | 32 | [Preps](./FEATUREDOCS/32-preps.md) | Prep-kits (temporary kits), case assets, project staging |
 | 33 | [Enterprise SSO](./FEATUREDOCS/33-enterprise-sso.md) | SAML 2.0/OIDC SSO, provisioning modes, group mapping, enforcement |
 | 35 | [WooCommerce Integration](./FEATUREDOCS/35-woocommerce-integration.md) | Webhook-driven order import, client/product matching, location auto-creation |

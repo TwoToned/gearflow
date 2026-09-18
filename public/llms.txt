@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (584 agent-reachable)
+## Operations (590 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -29,10 +29,13 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectTasks.listByProjectWithRelations` (query, scope: work:read,project:read)
 - `projectTasks.listSubtasks` (query, scope: work:read,project:read)
 - `projectTasks.myOpenTasks` (query, scope: work:read,project:read)
+- `projectTasks.workCountsForProjects` (query, scope: work:read,project:read)
 - `projectTasksWrites.bulkDeleteNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.bulkUpdateNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.createNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.deleteNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.reorderNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.setWatchingNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.updateNative` (mutation, scope: work:update,project:update)
 
 ### asset
@@ -502,6 +505,9 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `orgActivationDismissalsWrites.mine` (query, scope: self:read)
 - `orgSetupDismissalsWrites.dismissNative` (mutation, scope: self:write)
 - `orgSetupDismissalsWrites.mine` (query, scope: self:read)
+- `pushSubscriptions.isSubscribed` (query, scope: self:read)
+- `pushSubscriptionsWrites.subscribeNative` (mutation, scope: self:write)
+- `pushSubscriptionsWrites.unsubscribeNative` (mutation, scope: self:write)
 - `savedTableViews.getById` (query, scope: self:read)
 - `savedTableViews.list` (query, scope: self:read)
 - `savedTableViewsWrites.createNative` (mutation, scope: self:write)

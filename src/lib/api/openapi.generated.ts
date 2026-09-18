@@ -12990,6 +12990,84 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/crewTimeEntries.approvedHoursByMember": {
+      "post": {
+        "operationId": "crewTimeEntries.approvedHoursByMember",
+        "summary": "crewTimeEntries.approvedHoursByMember (query)",
+        "description": "Requires scope: crew:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "crewMemberIds": {
+                        "type": "array"
+                      },
+                      "endMs": {
+                        "type": "number"
+                      },
+                      "startMs": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "crewMemberIds",
+                      "endMs",
+                      "startMs"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/crewTimeEntries.forMember": {
       "post": {
         "operationId": "crewTimeEntries.forMember",
@@ -13149,6 +13227,76 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/crewTimeEntries.loggedMinutesForWorkItems": {
+      "post": {
+        "operationId": "crewTimeEntries.loggedMinutesForWorkItems",
+        "summary": "crewTimeEntries.loggedMinutesForWorkItems (query)",
+        "description": "Requires scope: work:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "work"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "workItemIds": {
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "workItemIds"
+                    ],
                     "additionalProperties": false
                   }
                 },
@@ -13392,6 +13540,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "startTime": {
+                        "type": "string"
+                      },
+                      "workItemId": {
                         "type": "string"
                       }
                     },
@@ -13730,6 +13881,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "startTime": {
+                        "type": "string"
+                      },
+                      "workItemId": {
                         "type": "string"
                       }
                     },

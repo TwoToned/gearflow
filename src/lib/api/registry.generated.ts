@@ -12569,6 +12569,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewAssignments.autoFillServiceNative",
+    "module": "crewAssignments",
+    "fn": "autoFillServiceNative",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "acceptedAssignmentId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "serviceId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "92de54cbcae5d236",
+    "returnsSha": "2c5ad5c281718948",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewAssignments.conflictsForProject",
     "module": "crewAssignments",
     "fn": "conflictsForProject",
@@ -16802,6 +16844,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewTimeEntries.approvedHoursByMember",
+    "module": "crewTimeEntries",
+    "fn": "approvedHoursByMember",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "crewMemberIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "endMs",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "startMs",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c91b68543663b943",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Approved logged hours per crew member over a date range (planner 'planned vs actual').",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewTimeEntries.create",
     "module": "crewTimeEntries",
     "fn": "create",
@@ -17134,6 +17223,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewTimeEntries.loggedMinutesForWorkItems",
+    "module": "crewTimeEntries",
+    "fn": "loggedMinutesForWorkItems",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "work",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "workItemIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "700a1428a8b09f02",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Approved logged minutes per work item (crewTimeEntries.workItemId).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewTimeEntries.patchManyStatus",
     "module": "crewTimeEntries",
     "fn": "patchManyStatus",
@@ -17398,7 +17524,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "3c0af6f70d4b6ebb",
+    "argsSha": "1844f36354598300",
     "returnsSha": "5e36bfe745c39ad2",
     "stability": "tracks-app",
     "summary": null,
@@ -17487,10 +17613,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "startTime",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "workItemId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "16a4e485dfd99476",
+    "argsSha": "0b38a18aacad8284",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -17740,10 +17871,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "startTime",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "workItemId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "16a4e485dfd99476",
+    "argsSha": "0b38a18aacad8284",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -62205,10 +62341,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1206,
-  agentReachable: 584,
-  queries: 433,
-  mutations: 773,
-  agentReachableQueries: 302,
+  total: 1209,
+  agentReachable: 586,
+  queries: 435,
+  mutations: 774,
+  agentReachableQueries: 304,
   agentReachableMutations: 282,
 } as const;

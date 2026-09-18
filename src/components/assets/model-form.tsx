@@ -100,7 +100,12 @@ export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAss
   });
 
   const v = form.watch();
-  const assetTypeLocked = isEditing && (existingAssetCount > 0 || existingBulkAssetCount > 0);
+  // Directional, not blanket: switching TO Bulk orphans active SERIALIZED assets;
+  // switching TO Serialized orphans active BULK assets. Picking the type that
+  // already matches the existing stock (fixing a mismatch, e.g. #1266) must stay
+  // available — only the direction that would orphan data is disabled.
+  const bulkBlockedByAssets = isEditing && existingAssetCount > 0;
+  const serializedBlockedByBulk = isEditing && existingBulkAssetCount > 0;
 
   const modelWrites = useModelWrites();
 
@@ -222,19 +227,28 @@ export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAss
               <SmartFormField
                 label="Asset type"
                 hint={
-                  assetTypeLocked
-                    ? `Locked — ${existingAssetCount > 0 ? `${existingAssetCount} serialized asset(s)` : `${existingBulkAssetCount} bulk asset record(s)`} already exist under this model. Archive or move them first to change this.`
+                  bulkBlockedByAssets || serializedBlockedByBulk
+                    ? [
+                        bulkBlockedByAssets && `${existingAssetCount} serialized asset(s) block switching to Bulk`,
+                        serializedBlockedByBulk && `${existingBulkAssetCount} bulk asset record(s) block switching to Serialized`,
+                      ].filter(Boolean).join(" — ") + ". Archive or move them first."
                     : "Serialized assets are tracked individually; bulk by quantity."
                 }
               >
                 <Controller control={form.control} name="assetType" render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange} disabled={assetTypeLocked}>
+                  <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger>
                       <SelectValue>{ASSET_TYPE_LABELS[field.value ?? "SERIALIZED"] ?? "Serialized (tracked individually)"}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {ASSET_TYPE_ORDER.map((t) => (
-                        <SelectItem key={t} value={t}>{ASSET_TYPE_LABELS[t]}</SelectItem>
+                        <SelectItem
+                          key={t}
+                          value={t}
+                          disabled={(t === "BULK" && bulkBlockedByAssets) || (t === "SERIALIZED" && serializedBlockedByBulk)}
+                        >
+                          {ASSET_TYPE_LABELS[t]}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

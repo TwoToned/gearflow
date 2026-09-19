@@ -182,6 +182,30 @@ const eslintConfig = [
     },
   },
   {
+    // A Convex subscription is keyed by (function, args) — convex-helpers'
+    // `createQueryKey` JSON-stringifies the args into the cache key, and `useQueries`
+    // restarts the subscription whenever that key changes. So a `Date.now()` evaluated
+    // INSIDE a query call re-keys and re-subscribes on every render, and the result
+    // never settles out of `undefined`: a loading branch that renders forever, or a
+    // `return null` branch that never renders at all. #1245 shipped both failures
+    // (/clients/pipeline stuck on "Loading…", the client next-step banner invisible).
+    // Snapshot the timestamp once with `useStableNow()` instead. Scoped wider than the
+    // token rule above because any client hook can call a query, not just a page.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/__tests__/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            'CallExpression[callee.name=/^use(Authed)?(Query|Queries|PaginatedQuery)$/] CallExpression[callee.object.name="Date"][callee.property.name="now"]',
+          message:
+            "Date.now() inside a Convex query call re-keys the subscription on every render (permanent loading state) — snapshot it with useStableNow() from @/hooks/use-stable-now.",
+        },
+      ],
+    },
+  },
+  {
     // Vendor SDKs must be imported only from their adapter module (POLICY.md R-8.10.1):
     // maps → @/lib/maps-sdk; Resend → src/lib/email.ts (Next) or convex/emailActions.ts
     // (Convex — two runtimes, one adapter each); PostHog → posthog-provider.tsx (client)

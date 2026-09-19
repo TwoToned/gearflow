@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
 import { useClientTimelineWrites } from "@/hooks/use-client-timeline-writes";
@@ -174,7 +175,11 @@ export function NextStepBanner({ clientId }: { clientId: string }) {
   const orgId = activeOrg?.id;
   const writes = useClientTimelineWrites();
 
-  const data = useAuthedQuery(api.clientTimeline.nextStep, orgId ? { orgId, clientId, now: Date.now() } : "skip");
+  // Mount-time snapshot — a fresh `Date.now()` here re-keys the subscription on
+  // every render, so `data` stayed `undefined` and the banner never rendered
+  // (see src/hooks/use-stable-now.ts).
+  const now = useStableNow();
+  const data = useAuthedQuery(api.clientTimeline.nextStep, orgId ? { orgId, clientId, now } : "skip");
 
   if (data === undefined) return null;
   const { nextStep, requiresNextStep } = data;

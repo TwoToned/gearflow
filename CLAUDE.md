@@ -710,6 +710,28 @@ A readiness check that can't run reports `unknown`, never a pass — a dateless
 project's gear check says "not checked" rather than a false all-clear, and
 `unknown` never counts toward "all clear".
 
+### ⚠️ A Convex query's args are its SUBSCRIPTION KEY — never pass a fresh `Date.now()`
+`convex-helpers`' `createQueryKey` JSON-stringifies the args into the cache key, and
+`useQueries` tears the subscription down and restarts it whenever that key changes. So
+a timestamp evaluated **inside** the query call re-keys on every render, the result
+drops back to `undefined` the moment data arrives, and the query never settles:
+
+```tsx
+// BROKEN — stuck on "Loading…" forever (a `return null` loading branch never renders at all)
+const cards = useAuthedQuery(api.pipeline.forOrg, { orgId, now: Date.now() });
+
+// CORRECT
+const now = useStableNow();            // @/hooks/use-stable-now — mount-time snapshot
+const cards = useAuthedQuery(api.pipeline.forOrg, { orgId, now });
+```
+
+This shipped twice in #1245 (`/clients/pipeline`, the client next-step banner). It is
+now a `no-restricted-syntax` **error** (`eslint.config.mjs`) on any `Date.now()` inside a
+`use*Query*` call — `react-hooks/purity` only warned, which is how it got through. Any
+other per-render-fresh value (`createId()`, `new Date()`) in query args is the same bug.
+A surface that must genuinely tick needs its own interval and must keep that value OUT
+of the args.
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

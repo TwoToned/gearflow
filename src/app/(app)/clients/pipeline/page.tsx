@@ -8,6 +8,7 @@ import { PageMeta } from "@/components/layout/page-meta";
 import { ListPageLayout } from "@/components/layout/page-layouts";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { useActiveOrganization } from "@/lib/auth-client";
 import type { api } from "../../../../../convex/_generated/api";
 import { api as convexApi } from "../../../../../convex/_generated/api";
@@ -94,7 +95,11 @@ function PipelineStatusSection({ status, cards }: { status: (typeof PIPELINE_STA
 export default function ClientPipelinePage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const cards = useAuthedQuery(convexApi.pipeline.forOrg, orgId ? { orgId, now: Date.now() } : "skip");
+  // A mount-time snapshot, NEVER a fresh `Date.now()` — the arg is part of the
+  // Convex subscription key, so re-evaluating it each render re-subscribes every
+  // render and the page never leaves its loading branch (see use-stable-now.ts).
+  const now = useStableNow();
+  const cards = useAuthedQuery(convexApi.pipeline.forOrg, orgId ? { orgId, now } : "skip");
 
   return (
     <FadeIn>

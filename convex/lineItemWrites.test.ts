@@ -1588,6 +1588,151 @@ describe("lineItemWrites.resyncProjectAccessoriesNative", () => {
   });
 });
 
+describe("lineItemWrites.resyncProjectKitsNative", () => {
+  async function seedKit(t: ReturnType<typeof makeT>, opts: { pricingMode: "ITEMIZED" | "KIT_PRICE"; lineExtra?: Record<string, unknown> }) {
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Mic", assetType: "SERIALIZED", defaultRentalPrice: 20 });
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Cable", assetType: "BULK", defaultRentalPrice: 5 });
+      await ctx.db.insert("assets", { id: "a-def", organizationId: ORG, modelId: "m1", assetTag: "A-DEF", status: "AVAILABLE" });
+      await ctx.db.insert("bulkAssets", { id: "ba-def", organizationId: ORG, modelId: "m2", assetTag: "BA-DEF", isActive: true });
+      await ctx.db.insert("kits", { id: "kit1", organizationId: ORG, assetTag: "KIT-1", name: "Rack" });
+      await ctx.db.insert("kitSerializedItems", { id: "ks-def", organizationId: ORG, kitId: "kit1", assetId: "a-def", addedById: USER });
+      await ctx.db.insert("kitBulkItems", { id: "kb-def", organizationId: ORG, kitId: "kit1", bulkAssetId: "ba-def", quantity: 2, addedById: USER });
+      const itemized = opts.pricingMode === "ITEMIZED";
+      await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1", lineageId: "li1", id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT",
+        kitId: "kit1", isKitChild: false, pricingMode: opts.pricingMode, quantity: 1, status: "CONFIRMED",
+        checkedOutQuantity: 0, createdAt: NOW, updatedAt: NOW, ...opts.lineExtra,
+      });
+      await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1", lineageId: "child-a-def", id: "child-a-def", organizationId: ORG, projectId: "p1", type: "EQUIPMENT",
+        parentLineItemId: "li1", isKitChild: true, modelId: "m1", assetId: "a-def", quantity: 1,
+        unitPrice: itemized ? 20 : undefined, lineTotal: itemized ? 20 : undefined, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", {
+        versionId: "v-p1", lineageId: "child-ba-def", id: "child-ba-def", organizationId: ORG, projectId: "p1", type: "EQUIPMENT",
+        parentLineItemId: "li1", isKitChild: true, modelId: "m2", bulkAssetId: "ba-def", quantity: 2,
+        unitPrice: itemized ? 5 : undefined, lineTotal: itemized ? 10 : undefined, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+  }
+  const resyncArgs = { projectId: "p1", organizationId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
+  const childrenOfLi1 = (t: ReturnType<typeof makeT>) =>
+    t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "li1")).collect());
+
+  test("no-ops when the kit's membership hasn't changed since the line was added", async () => {
+    const t = makeT();
+    await seedKit(t, { pricingMode: "ITEMIZED" });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 1, linesUpdated: 0, childrenAdded: 0, childrenRemoved: 0, unpricedChildrenAdded: 0 });
+    expect(await childrenOfLi1(t)).toHaveLength(2);
+  });
+
+  test("ITEMIZED — adds a new member configured on the kit after the line was already added, priced from the model rate", async () => {
+    const t = makeT();
+    await seedKit(t, { pricingMode: "ITEMIZED" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m3", organizationId: ORG, name: "Stand", assetType: "SERIALIZED", defaultRentalPrice: 8 });
+      await ctx.db.insert("assets", { id: "a-new", organizationId: ORG, modelId: "m3", assetTag: "A-NEW", status: "AVAILABLE" });
+      await ctx.db.insert("kitSerializedItems", { id: "ks-new", organizationId: ORG, kitId: "kit1", assetId: "a-new", addedById: USER });
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 1, linesUpdated: 1, childrenAdded: 1, childrenRemoved: 0, unpricedChildrenAdded: 0 });
+    const kids = await childrenOfLi1(t);
+    expect(kids).toHaveLength(3);
+    const added = kids.find((c) => c.assetId === "a-new");
+    expect(added?.unitPrice).toBe(8);
+    expect(added?.lineTotal).toBe(8);
+  });
+
+  test("KIT_PRICE — a newly-added member lands unpriced (the bundle price doesn't change)", async () => {
+    const t = makeT();
+    await seedKit(t, { pricingMode: "KIT_PRICE", lineExtra: { unitPrice: 100, lineTotal: 100 } });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m3", organizationId: ORG, name: "Stand", assetType: "SERIALIZED", defaultRentalPrice: 8 });
+      await ctx.db.insert("assets", { id: "a-new", organizationId: ORG, modelId: "m3", assetTag: "A-NEW", status: "AVAILABLE" });
+      await ctx.db.insert("kitSerializedItems", { id: "ks-new", organizationId: ORG, kitId: "kit1", assetId: "a-new", addedById: USER });
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 1, linesUpdated: 1, childrenAdded: 1, childrenRemoved: 0, unpricedChildrenAdded: 1 });
+    const added = (await childrenOfLi1(t)).find((c) => c.assetId === "a-new");
+    expect(added?.unitPrice).toBeUndefined();
+    expect(added?.lineTotal).toBeUndefined();
+    // Parent's own bundle price is untouched — resync never reprices it.
+    const parent = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+    expect(parent?.unitPrice).toBe(100);
+  });
+
+  test("removes a child whose member was taken off the kit", async () => {
+    const t = makeT();
+    await seedKit(t, { pricingMode: "ITEMIZED" });
+    await t.run(async (ctx) => {
+      const ks = await ctx.db.query("kitSerializedItems").withIndex("by_cuid", (q) => q.eq("id", "ks-def")).unique();
+      if (ks) await ctx.db.delete(ks._id);
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 1, linesUpdated: 1, childrenAdded: 0, childrenRemoved: 1, unpricedChildrenAdded: 0 });
+    const kids = await childrenOfLi1(t);
+    expect(kids.map((c) => c.assetId).filter(Boolean)).toEqual([]);
+  });
+
+  test("rescales a kept bulk member's quantity (and ITEMIZED price) when the kit's own quantity changed", async () => {
+    const t = makeT();
+    await seedKit(t, { pricingMode: "ITEMIZED" });
+    await t.run(async (ctx) => {
+      const kb = await ctx.db.query("kitBulkItems").withIndex("by_cuid", (q) => q.eq("id", "kb-def")).unique();
+      if (kb) await ctx.db.patch(kb._id, { quantity: 5 });
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs);
+    expect(result.linesUpdated).toBe(0); // rescale isn't an add/remove — still counted as "checked"
+    const child = (await childrenOfLi1(t)).find((c) => c.bulkAssetId === "ba-def");
+    expect(child?.quantity).toBe(5);
+    expect(child?.unitPrice).toBe(5);
+    expect(child?.lineTotal).toBe(25);
+  });
+
+  test("skips a kit line whose parent has already deployed", async () => {
+    const t = makeT();
+    await seedKit(t, { pricingMode: "ITEMIZED", lineExtra: { status: "CHECKED_OUT", checkedOutQuantity: 1 } });
+    await t.run(async (ctx) => {
+      const ks = await ctx.db.query("kitSerializedItems").withIndex("by_cuid", (q) => q.eq("id", "ks-def")).unique();
+      if (ks) await ctx.db.delete(ks._id);
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 0, linesUpdated: 0, childrenAdded: 0, childrenRemoved: 0, unpricedChildrenAdded: 0 });
+    expect(await childrenOfLi1(t)).toHaveLength(2);
+  });
+
+  test("skips a kit line whose member child has already deployed, even though the parent hasn't", async () => {
+    const t = makeT();
+    await seedKit(t, { pricingMode: "ITEMIZED" });
+    await t.run(async (ctx) => {
+      const child = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "child-a-def")).unique();
+      if (child) await ctx.db.patch(child._id, { status: "CHECKED_OUT", checkedOutQuantity: 1 });
+      const ks = await ctx.db.query("kitSerializedItems").withIndex("by_cuid", (q) => q.eq("id", "ks-def")).unique();
+      if (ks) await ctx.db.delete(ks._id);
+    });
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs);
+    expect(result).toEqual({ linesChecked: 0, linesUpdated: 0, childrenAdded: 0, childrenRemoved: 0, unpricedChildrenAdded: 0 });
+    expect(await childrenOfLi1(t)).toHaveLength(2);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.resyncProjectKitsNative, resyncArgs),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
 describe("lineItemWrites.recalcNative", () => {
   test("member recomputes + persists project totals (one round-trip)", async () => {
     const t = makeT();

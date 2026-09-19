@@ -165,8 +165,15 @@ describe("overbooking.bundle — scoped vs unscoped parity", () => {
       rentalStartDate: NOW,
       rentalEndDate: NOW + 5 * DAY,
     });
-    const result = reconstructOverbookedStatus(scoped, p1LineItems, new Date(NOW), new Date(NOW + 5 * DAY), "P1");
-    expect(result.get("L1")?.overBy).toBe(3); // 8 booked - 5 stock
+    // FCFS (2026-09): L1 (P1) was created FIRST in `seed()`, so it claims its 2
+    // units and fits (5 stock available). L2 (P2, created second, bumped to 6)
+    // is the one that doesn't fit — this checks P2's own perspective instead of
+    // P1's, since P1 booking first means P1 is no longer the one flagged.
+    const p2LineItems: OverbookLineItem[] = [
+      { id: "L2", modelId: "mdl", quantity: 6, isKitChild: false, parentLineItemId: null, kitId: null, status: "CONFIRMED" },
+    ];
+    const result = reconstructOverbookedStatus(scoped, p2LineItems, new Date(NOW + 1 * DAY), new Date(NOW + 3 * DAY), "P2");
+    expect(result.get("L2")?.overBy).toBe(3); // 8 booked - 5 stock, P1's 2 already claimed
   });
 
   // WS2 (#941) — the scoped candidate scan is re-keyed to also catch a project
@@ -202,9 +209,17 @@ describe("overbooking.bundle — scoped vs unscoped parity", () => {
     });
     const projectIdsInBundle = new Set(scoped.lineItems.map((li) => li.projectId));
     expect(projectIdsInBundle.has("P6")).toBe(true);
-    const result = reconstructOverbookedStatus(scoped, p1LineItems, new Date(NOW), new Date(NOW + 5 * DAY), "P1");
+    // FCFS (2026-09): L1 (P1) and L2 (P2) were created first and together
+    // exactly fill the 5-asset stock (2 + 3 = 5); L6 (P6, created last, just
+    // now, via this test's own insert) is the one that doesn't fit at all —
+    // checking P6's own perspective instead of P1's, since P1 booking first
+    // means P1 is no longer the one flagged.
+    const p6LineItems: OverbookLineItem[] = [
+      { id: "L6", modelId: "mdl", quantity: 10, isKitChild: false, parentLineItemId: null, kitId: null, status: "CONFIRMED" },
+    ];
+    const result = reconstructOverbookedStatus(scoped, p6LineItems, new Date(NOW + 1 * DAY), new Date(NOW + 2 * DAY), "P6");
     // 2 (P1) + 3 (P2) + 10 (P6) = 15 booked against 5 stock.
-    expect(result.get("L1")?.overBy).toBe(10);
+    expect(result.get("L6")?.overBy).toBe(10);
   });
 
   test("dateless project (no rental window) scopes to only its own bookings, no org-wide read", async () => {

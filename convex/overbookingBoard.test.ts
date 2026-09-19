@@ -260,10 +260,14 @@ describe("overbookingBoard.dateMoveImpact (#1227, Q3)", () => {
     });
     expect(result.windowMoved).toBe(true);
     expect(result.rows).toHaveLength(1);
-    // Both P_target (moving, already CONFIRMED so its own demand counts as
-    // hard too) and P_other contribute — 2 + 2 = 4 booked against 2 stock.
+    // FCFS (2026-09): P_target's line was created FIRST (before P_other's, in
+    // `seedDateMove`) and claims its 2 units against the 2-stock model —
+    // fits. P_other's line, created second, is the one that gets stranded by
+    // the move — exactly the "does this strand someone" signal the gate is
+    // for, and it now names the specific job that would be hurt instead of
+    // vaguely naming both.
     expect(result.rows[0]).toMatchObject({ modelId: "mdl", qty: 2 });
-    expect(result.rows[0].projectNumbers.sort()).toEqual(["P-OTHER", "P-TARGET"]);
+    expect(result.rows[0].projectNumbers).toEqual(["P-OTHER"]);
   });
 
   test("uses the project's REAL status, not a CONFIRMED simulation (unlike confirmImpact)", async () => {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-09-19
+
+### Changed
+
+- **Overbooking alarms now attribute the conflict to whichever job actually can't get the gear, first-come-first-served, instead of flagging every job competing for the same units.** If Job A's gear was booked first and Job B's booking is what pushes a model over capacity, only Job B is flagged — Job A, which already has its stock, stays clean. This applies everywhere an overbooking is shown: the equipment tab, kit rollups, the warehouse pull sheet, the project list/board alerts, and the Overbookings & Gaps board. A CONFIRMED job's hard-held stock always takes priority over a QUOTED job's pencilled demand, regardless of booking order.
+
 ## [0.30.0] - 2026-09-19
 
 ### Added

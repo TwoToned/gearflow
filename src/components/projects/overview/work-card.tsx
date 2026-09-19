@@ -1,25 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { useProjectReadiness } from "@/hooks/use-project-readiness";
 import { useProjectConflicts } from "@/hooks/use-project-conflicts";
 import { useProjectWorkData } from "@/hooks/use-project-work-data";
-import { buildWorkCardStages, summariseWorkCard, type WorkCardRow } from "@/lib/project-work-card";
+import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
+import { useCanDo } from "@/lib/use-permissions";
+import { buildWorkDecisionRows, type WorkDecisionRow } from "@/lib/project-work-card";
+import { summariseProjectWork } from "@/lib/project-work";
 import type { ReadinessCheck } from "@/lib/project-readiness-checks";
 import type { ReservationConflict } from "@/lib/reservation-conflicts-types";
 import { ConflictRow } from "@/components/projects/conflict-row";
+import { WorkComposer } from "@/components/work/work-composer";
 import { Panel } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /** Which project tab a check's action sends you to, or "labour"/"equipment"
- *  for the two deep links the old Readiness panel had — mirrors that panel's
- *  own `CheckAction` exactly (the panel is deleted; this is its replacement,
- *  design §8.3: "keeps the existing 'Open labour / Open equipment' deep-link
- *  the readiness panel has today"). */
+ *  for the two deep links the old Readiness panel had. */
 export type WorkCardTab = "overview" | "equipment" | "labour" | "finance" | "work" | "notes" | "files";
 
 interface WorkCardProps {
@@ -33,17 +35,28 @@ function RowAction({
   projectId,
   onNavigateTab,
 }: {
-  row: WorkCardRow;
+  row: WorkDecisionRow;
   projectId: string;
   onNavigateTab: (tab: WorkCardTab) => void;
 }) {
-  if (!row.actionLabel || !row.checkId) return null;
+  if (!row.actionLabel) return null;
+
+  // The unowned summary's action is the Work tab, where you can fix all of
+  // them at once with the bulk bar — assigning them one at a time from here
+  // would be the slowest possible path.
+  if (row.id === "unowned") {
+    return (
+      <Button variant="line" size="sm" className="h-7 shrink-0" onClick={() => onNavigateTab("work")}>
+        {row.actionLabel}
+      </Button>
+    );
+  }
+  if (!row.checkId) return null;
   const checkId = row.checkId as ReadinessCheck["id"];
 
   // A gear shortage is resolved on the org board — a project-local view can't
   // show what else is competing for the stock. A dateless project instead
-  // needs the dates themselves. Mirrors project-readiness-panel.tsx's own
-  // CheckAction (deleted alongside the standalone panel).
+  // needs the dates themselves.
   const href = checkId === "gear" ? (row.severity === "unknown" ? `/projects/${projectId}/edit` : "/overbookings") : null;
   if (href) {
     return (
@@ -63,91 +76,92 @@ function RowAction({
   );
 }
 
-function StageProgress({ done, total }: { done: number; total: number }) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 100;
+/** The job's shape in one strip — six thin bars, one per stage that has work. */
+function StageMeter({ segments }: { segments: ReturnType<typeof summariseProjectWork>["meter"] }) {
+  if (segments.length === 0) return null;
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-line-2">
-        <div className={cn("h-full rounded-full transition-all", pct === 100 ? "bg-ok" : "bg-blue")} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="t-micro shrink-0 text-muted">
-        {done}/{total}
-      </span>
+    <div className="flex gap-1.5 px-4 pb-3 pt-1">
+      {segments.map((seg) => (
+        <div key={seg.stage} className="flex flex-1 flex-col gap-1.5">
+          <span className="h-1 overflow-hidden rounded-full bg-line-2">
+            <span
+              className={cn("block h-full rounded-full", seg.pct === 100 ? "bg-ok" : "bg-blue")}
+              style={{ width: `${seg.pct}%` }}
+            />
+          </span>
+          <span className="t-micro truncate text-muted" title={`${seg.label} — ${seg.done} of ${seg.total}`}>
+            {seg.label}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 
 /**
- * Overview → Work card (#1244, design §8.3). REPLACES the standalone
- * Readiness panel — the pure check logic in `project-readiness-checks.ts` is
- * unchanged, it's just one signal source among the card's rows now (§9's
- * "a readiness failure renders as a system row" rule).
+ * Overview → Work card (work-layer v2 §4.4).
+ *
+ * A SUMMARY, not a second Work tab. The rail carries the list on every
+ * working tab and the Work tab owns the full view; Overview has no sidebar
+ * (#1063), so this is work's counterpart there and it answers the one
+ * question the others can't at a glance: is this job in trouble?
+ *
+ * Meter, the rows that need a decision, one line to capture, a link out.
  */
 export function ProjectOverviewWorkCard({ projectId, orgId, onNavigateTab }: WorkCardProps) {
   const { checks, isLoading: readinessLoading } = useProjectReadiness(projectId, orgId);
-  const { tasks, isLoading: tasksLoading } = useProjectWorkData(projectId);
+  const { tasks, isLoading: tasksLoading, refetch, assignees } = useProjectWorkData(projectId);
   const { data: conflicts } = useProjectConflicts(projectId);
+  const { timezone } = useDocumentDatesConfig();
+  const canEdit = useCanDo("project", "update");
   const conflictList = (conflicts ?? []) as ReservationConflict[];
   const [conflictsExpanded, setConflictsExpanded] = useState(false);
 
+  const nowMs = Date.now();
+  const summary = useMemo(() => summariseProjectWork(tasks, nowMs, timezone), [tasks, nowMs, timezone]);
+  const decisions = useMemo(
+    () => buildWorkDecisionRows(checks, tasks, nowMs, timezone),
+    [checks, tasks, nowMs, timezone],
+  );
+
+  // DESIGN.md's state matrix: skeleton rows in the card's own shape, not the
+  // bare "Checking work…" line this card used to render.
   if (readinessLoading || tasksLoading) {
     return (
-      <Panel padding="default" className="p-4">
-        <p className="text-caption text-muted">Checking work…</p>
+      <Panel padding="default" className="space-y-3 p-4" aria-busy>
+        <Skeleton className="h-5 w-24 rounded-[var(--r)]" />
+        <Skeleton className="h-3 w-full rounded-full" />
+        <Skeleton className="h-8 w-full rounded-[var(--r)]" />
       </Panel>
     );
   }
 
-  const stages = buildWorkCardStages(
-    checks,
-    tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, stage: t.stage ?? null })),
-  );
-  const summary = summariseWorkCard(stages);
-  const allClear = stages.every((s) => s.rows.every((r) => r.done));
-
-  if (stages.length === 0) {
-    return (
-      <Panel padding="default" className="flex items-center gap-2.5 p-3.5">
-        <span className="grid size-[18px] shrink-0 place-items-center rounded-full bg-ok-soft text-ok" aria-hidden>
-          <Check className="size-3" strokeWidth={3} />
-        </span>
-        <p className="min-w-0 flex-1 text-ui-text">
-          <span className="font-semibold text-ink">Nothing to do yet</span>
-          <span className="text-muted"> — checks pass and no work is on this project.</span>
-        </p>
-        <Button variant="line" size="sm" className="h-7 shrink-0" onClick={() => onNavigateTab("work")}>
-          Open Work
-        </Button>
-      </Panel>
-    );
-  }
+  const allClear = decisions.length === 0;
 
   return (
     <Panel padding="default" className="p-0">
-      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
         <h2 className="text-card-title font-bold tracking-tight text-ink">Work</h2>
-        <div className="flex items-center gap-1.5">
-          {allClear ? (
-            <Badge status="ok">All clear</Badge>
-          ) : (
-            <span className="t-micro text-muted">
-              {summary.done} of {summary.total} done
-            </span>
-          )}
-          <Button variant="line" size="sm" className="h-7" onClick={() => onNavigateTab("work")}>
-            Open Work
-          </Button>
-        </div>
+        {summary.totalCount > 0 && (
+          <span className="t-mono text-muted">
+            {summary.doneCount} of {summary.totalCount} done
+          </span>
+        )}
+        {summary.lateCount > 0 && <Badge status="overbooked">{summary.lateCount} overdue</Badge>}
+        {allClear && summary.totalCount > 0 && <Badge status="ok">All clear</Badge>}
+        <span className="flex-1" />
+        <Button variant="line" size="sm" className="h-7" onClick={() => onNavigateTab("work")}>
+          Open Work tab
+        </Button>
       </div>
 
-      {stages.map((stage) => (
-        <div key={stage.stage} className="border-t border-line first:border-t-0">
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-            <h3 className="t-overline text-muted">{stage.label}</h3>
-            <StageProgress done={stage.doneCount} total={stage.totalCount} />
-          </div>
+      <StageMeter segments={summary.meter} />
+
+      {decisions.length > 0 && (
+        <div className="border-t border-line">
+          <h3 className="t-overline px-4 pb-1 pt-2 text-muted">Needs a decision</h3>
           <div className="divide-y divide-line">
-            {stage.rows.map((row) => (
+            {decisions.map((row) => (
               <WorkCardRowItem
                 key={row.id}
                 row={row}
@@ -160,14 +174,35 @@ export function ProjectOverviewWorkCard({ projectId, orgId, onNavigateTab }: Wor
             ))}
           </div>
         </div>
-      ))}
+      )}
+
+      {canEdit && (
+        <div className="border-t border-line p-3">
+          <WorkComposer
+            projectId={projectId}
+            assignees={assignees}
+            onCreated={refetch}
+            compact
+            placeholder="Add work to this job…"
+            className="border-dashed bg-transparent"
+          />
+        </div>
+      )}
+
+      {summary.openCount > 0 && (
+        <Link
+          href={`/projects/${projectId}?tab=work`}
+          className="flex items-center gap-1.5 border-t border-line px-4 py-2.5 text-caption font-medium text-muted hover:text-ink"
+        >
+          {summary.openCount} open · everything in the Work tab
+          <ChevronRight className="size-3" aria-hidden />
+        </Link>
+      )}
     </Panel>
   );
 }
 
-/** Split out of ProjectOverviewWorkCard (R-3.6) purely to keep that
- *  function's own complexity down — one row's rendering, including the
- *  conflicts check's expandable per-asset swap list. */
+/** One decision row, including the conflicts check's expandable swap list. */
 function WorkCardRowItem({
   row,
   projectId,
@@ -176,7 +211,7 @@ function WorkCardRowItem({
   conflictsExpanded,
   onToggleConflicts,
 }: {
-  row: WorkCardRow;
+  row: WorkDecisionRow;
   projectId: string;
   onNavigateTab: (tab: WorkCardTab) => void;
   conflictList: ReservationConflict[];
@@ -187,16 +222,19 @@ function WorkCardRowItem({
   return (
     <div>
       <div className="flex items-start gap-2.5 px-4 py-2">
-        {isConflicts && (
-          <ConflictsExpandButton expanded={conflictsExpanded} onToggle={onToggleConflicts} />
-        )}
+        {isConflicts && <ConflictsExpandButton expanded={conflictsExpanded} onToggle={onToggleConflicts} />}
         <WorkCardRowMark row={row} />
         <div className="min-w-0 flex-1">
-          <p className={cn("text-ui-text", row.done ? "text-muted line-through" : "text-ink-2")}>
+          <p className="text-ui-text text-ink-2">
             {row.title}
             {row.system && (
               <Badge status="repair" className="ml-1.5 align-middle">
                 auto
+              </Badge>
+            )}
+            {row.lateLabel && (
+              <Badge status="overbooked" className="ml-1.5 align-middle">
+                {row.lateLabel}
               </Badge>
             )}
           </p>
@@ -209,13 +247,13 @@ function WorkCardRowItem({
   );
 }
 
-/** Split out of WorkCardRowItem (R-3.6). */
 function ConflictsExpandButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}
+      aria-label={expanded ? "Hide conflicting items" : "Show conflicting items"}
       className="mt-px shrink-0 rounded-sm text-muted hover:text-ink"
     >
       {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
@@ -233,13 +271,14 @@ function ConflictsList({ conflictList, projectId }: { conflictList: ReservationC
   );
 }
 
-/** The status circle — done / system-auto / plain. Split out of
- *  WorkCardRowItem (R-3.6). */
-function WorkCardRowMark({ row }: { row: WorkCardRow }) {
-  const fill = row.done ? "bg-ok-soft text-ok" : row.system ? "bg-warn-soft text-warn" : "bg-paper-2 text-faint";
+/** The row mark — a derived signal (amber) or a real late task (problem red).
+ *  Never a checkbox: a system row has nothing to tick, and a late row is
+ *  ticked off in the rail or the tab where its full context lives. */
+function WorkCardRowMark({ row }: { row: WorkDecisionRow }) {
+  const fill = row.system ? "bg-warn-soft text-warn" : "bg-out-soft text-t-out";
   return (
     <span className={cn("mt-px grid size-[16px] shrink-0 place-items-center rounded-full", fill)} aria-hidden>
-      {row.done && <Check className="size-2.5" strokeWidth={3} />}
+      {!row.system && <Check className="size-2.5 opacity-0" strokeWidth={3} />}
     </span>
   );
 }

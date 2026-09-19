@@ -1,80 +1,69 @@
 /**
- * The Overview tab's Work card (#1244, design §8.3) — readiness checks and
- * work items merged into ONE list grouped by stage, each stage with a
- * progress bar. Replaces the standalone Readiness panel (deleted, per the
- * issue's guardrail: "two surfaces showing the same checks is exactly the
- * duplication this program exists to remove").
+ * The Overview tab's Work card (work-layer v2 §4.4).
  *
- * `project-readiness-checks.ts`'s pure check logic is UNCHANGED — this
- * module only decides which STAGE a failing check's system row belongs
- * under, and merges it with real `projectTasks` rows. A passing check
- * contributes no row (design §9's derived-signal philosophy: only a problem
- * is worth a row — the card's progress bar already carries the reassurance
- * a clean project needs).
+ * The card used to be the project's whole work list, grouped by stage. It is
+ * not any more: the **rail** carries the list on every working tab
+ * (`project-work-rail-section.tsx`), and the **Work tab** owns the full view.
+ * What is left for Overview is the question the other two can't answer at a
+ * glance — *is this job in trouble?* So the card keeps the job's shape (the
+ * stage meter, from `project-work.ts`) and the rows that need a decision, and
+ * nothing else. A clean job collapses to three rows.
  *
- * Plain module, no React/Convex — unit-testable on its own, same discipline
- * as `project-readiness-checks.ts` itself.
+ * "Needs a decision" is deliberately narrow. Work that is merely open and on
+ * track is not a decision — it's the rail's business. Only three things earn
+ * a row:
+ *   1. a failing readiness check (the derived system rows, unchanged —
+ *      `project-readiness-checks.ts` is untouched and keeps its deep links),
+ *   2. work that is actually late,
+ *   3. work nobody owns, as ONE summary row rather than one row each — the
+ *      decision is "assign these", not "read these".
+ *
+ * Plain module, no React/Convex — unit-testable on its own.
  */
 
 import type { ReadinessCheck, ReadinessSeverity } from "./project-readiness-checks";
-import { WORK_STAGES, WORK_STAGE_LABELS, type WorkStage } from "../../convex/lib/workVocabulary";
+import { isLateWork, isOpenWork, isUnownedWork, sortOpenWork, type WorkTaskLike } from "./project-work";
 
-export interface WorkCardTaskInput {
-  id: string;
-  title: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE" | "CANCELLED";
-  stage?: WorkStage | null;
-}
-
-export interface WorkCardRow {
+export interface WorkDecisionRow {
   id: string;
   title: string;
   detail?: string;
-  done: boolean;
-  /** A derived readiness signal, not a real projectTasks row — renders the
-   *  "auto" badge and (for gear/crew/services) the existing deep-link. */
+  /** A derived signal rather than a real `projectTasks` row — renders the
+   *  "auto" badge, has no checkbox, and resolves itself when the underlying
+   *  condition clears. */
   system: boolean;
   checkId?: ReadinessCheck["id"];
-  /** Only set on a system row — lets the card distinguish "not checked yet"
-   *  (needs dates) from an actual failing check (needs the org board). */
+  /** Only on a system row — distinguishes "not checked yet" (a dateless
+   *  project) from a check that actually failed. */
   severity?: ReadinessSeverity;
   actionLabel?: string;
+  /** Set on a late row: how the lateness reads, e.g. "1d late". */
+  lateLabel?: string;
 }
 
-export interface WorkCardStage {
-  stage: WorkStage;
-  label: string;
-  rows: WorkCardRow[];
-  doneCount: number;
-  totalCount: number;
+function lateLabel(dueDate: string, nowMs: number): string {
+  const days = Math.max(1, Math.round((nowMs - new Date(dueDate).getTime()) / 86_400_000));
+  return `${days}d late`;
 }
 
-/** Which stage a failing readiness check's system row surfaces under.
- *  Pricing is a QUOTE-phase concern (money agreed before it's a prep
- *  problem); gear/conflicts/crew/services are all "is this job ready to go
- *  out" — PREP. */
-const STAGE_FOR_CHECK: Record<ReadinessCheck["id"], WorkStage> = {
-  pricing: "quote",
-  gear: "prep",
-  conflicts: "prep",
-  crew: "prep",
-  services: "prep",
-};
-
-export function buildWorkCardStages(
+/**
+ * The card's rows, most structural problem first: failing checks (they can
+ * stop the job going out), then late work, then the unowned summary.
+ */
+export function buildWorkDecisionRows(
   checks: ReadinessCheck[],
-  tasks: WorkCardTaskInput[],
-): WorkCardStage[] {
-  const byStage = new Map<WorkStage, WorkCardRow[]>(WORK_STAGES.map((s) => [s, []]));
+  tasks: WorkTaskLike[],
+  nowMs: number,
+  timezone?: string,
+): WorkDecisionRow[] {
+  const rows: WorkDecisionRow[] = [];
 
   for (const check of checks) {
     if (check.severity === "pass") continue; // only a problem earns a row
-    const stage = STAGE_FOR_CHECK[check.id];
-    byStage.get(stage)!.push({
+    rows.push({
       id: `check:${check.id}`,
       title: check.title,
       detail: check.detail,
-      done: false,
       system: true,
       checkId: check.id,
       severity: check.severity,
@@ -82,32 +71,30 @@ export function buildWorkCardStages(
     });
   }
 
-  for (const task of tasks) {
-    if (!task.stage) continue; // no stage bucket to render it in on this card
-    if (task.status === "CANCELLED") continue; // cancelled work isn't tracked toward the bar
-    byStage.get(task.stage)!.push({
+  // Note: no `if (!task.stage) continue` here. The old stage-grouped card
+  // dropped stage-less rows, which is why its own total disagreed with the
+  // Work tab header directly above it (§2 D2). Lateness has nothing to do
+  // with whether someone set a stage.
+  for (const task of sortOpenWork(tasks)) {
+    if (!isLateWork(task, nowMs, timezone)) continue;
+    rows.push({
       id: task.id,
       title: task.title,
-      done: task.status === "DONE",
       system: false,
+      lateLabel: lateLabel(task.dueDate!, nowMs),
     });
   }
 
-  return WORK_STAGES.map((stage) => {
-    const rows = byStage.get(stage)!;
-    const doneCount = rows.filter((r) => r.done).length;
-    return { stage, label: WORK_STAGE_LABELS[stage], rows, doneCount, totalCount: rows.length };
-  }).filter((s) => s.totalCount > 0);
-}
+  const unowned = tasks.filter((t) => isOpenWork(t) && isUnownedWork(t));
+  if (unowned.length > 0) {
+    rows.push({
+      id: "unowned",
+      title: `${unowned.length} ${unowned.length === 1 ? "item has" : "items have"} no owner`,
+      detail: "They show on this job, but on nobody’s Today.",
+      system: true,
+      actionLabel: "Assign",
+    });
+  }
 
-export interface WorkCardSummary {
-  done: number;
-  total: number;
-}
-
-export function summariseWorkCard(stages: WorkCardStage[]): WorkCardSummary {
-  return stages.reduce(
-    (acc, s) => ({ done: acc.done + s.doneCount, total: acc.total + s.totalCount }),
-    { done: 0, total: 0 },
-  );
+  return rows;
 }

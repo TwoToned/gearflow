@@ -235,15 +235,34 @@ ids silently skipped. `danger: "low"` (structural only — never money or status
 
 **Overview → Work card (`src/components/projects/overview/work-card.tsx`) REPLACES the
 standalone Readiness panel** (`project-readiness-panel.tsx`, deleted — two surfaces showing
-the same checks was exactly the duplication this program exists to remove). The merge logic is
-`src/lib/project-work-card.ts` (`buildWorkCardStages`, pure, unit-tested):
-`project-readiness-checks.ts`'s pure check logic is **unchanged** — a *failing* check (severity
-≠ `pass`) becomes a system row (`auto` badge) under a stage (`pricing` → `quote`;
-`gear`/`conflicts`/`crew`/`services` → `prep`); a *real* `projectTasks` row (excluding
-cancelled and stageless) sits under its own `stage`. Each stage renders with a done/total
-progress bar. The conflicts check's expandable per-asset swap list (`ConflictRow`) is preserved
-inside the card (not dropped) so "no lost check" holds for its full interactive detail, not
-just the summary line.
+the same checks was exactly the duplication this program exists to remove).
+`project-readiness-checks.ts`'s pure check logic is **unchanged**; the card only decides what
+to do with a failing check.
+
+**Rewritten by work-layer v2 (`docs/designs/work-layer-v2-integration.md` §4.4): the card is a
+SUMMARY, not the project's work list.** The list moved to the context sidebar's Work section
+(`project-work-rail-section.tsx`, §4.3) on every working tab, and the Work tab owns the full
+view. Overview has no sidebar at all (#1063), so the card is work's counterpart there and
+answers the one question the others can't at a glance — *is this job in trouble?* It renders:
+
+- the **stage meter** — one thin bar per stage that HAS work, from
+  `summariseProjectWork` (`src/lib/project-work.ts`, shared with the rail so the two can't
+  disagree about open/late/unowned or the arithmetic);
+- **"Needs a decision"** — `buildWorkDecisionRows` (`src/lib/project-work-card.ts`, pure,
+  unit-tested): a failing check (severity ≠ `pass`) as a system row with its existing deep
+  link, then genuinely LATE work, then ONE summary row for unowned work ("3 items have no
+  owner", action → the Work tab's bulk bar). Work that is merely open and on track earns no
+  row — that is the rail's business;
+- a one-line **composer** (`WorkComposer`, §4.1) and a link out.
+
+The previous stage-grouped version listed every row and skipped any with no `stage`, so its
+own done/total disagreed with the Work tab header directly above it (§2 D2 — every pre-#1243
+row has no stage). Neither the meter nor the decision rows filter on stage now; the meter
+gives stage-less work its own trailing `No stage` segment.
+
+The conflicts check's expandable per-asset swap list (`ConflictRow`) is preserved inside the
+card (not dropped) so "no lost check" holds for its full interactive detail, not just the
+summary line.
 
 **Timeline row (`src/components/projects/overview/work-timeline-row.tsx`)** — a read-only
 7-day strip (current calendar week, Monday-start) with four tracks: gear window

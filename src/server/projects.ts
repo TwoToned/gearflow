@@ -21,6 +21,7 @@ import {
 import type { ProjectStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
+import { isHardOverbooked, type OverbookedInfo } from "@/lib/overbooking-core";
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
@@ -336,6 +337,28 @@ export async function getProjects(params?: {
 }
 
 /**
+ * Only a genuine HARD overage (isHardOverbooked) may set the full-severity
+ * `hasOverbooked` flag — an entry that exists purely from pencilled/quoted
+ * demand (`hardOverBy === 0`) is a speculative collision, not a real one, and
+ * must not render as the same red "Overbooked" badge (see isHardOverbooked's
+ * own doc comment). An overage caused solely by maintenance/lost stock
+ * (`reducedOnly`) IS still hard-real, so it still counts — `hasReducedStock`
+ * stays as additional tooltip context, not a lower-severity substitute.
+ * Returns `undefined` when nothing in the map is hard-overbooked.
+ */
+function summarizeOverbookedMap(
+  overbookedMap: Map<string, OverbookedInfo>,
+): { hasOverbooked: true; hasReducedStock: boolean } | undefined {
+  let hasOverbooked = false;
+  let hasReducedStock = false;
+  for (const info of overbookedMap.values()) {
+    if (isHardOverbooked(info)) hasOverbooked = true;
+    if (info.reducedOnly) hasReducedStock = true;
+  }
+  return hasOverbooked ? { hasOverbooked: true, hasReducedStock } : undefined;
+}
+
+/**
  * For a list of project IDs, returns which ones have overbooked or reduced-stock issues.
  * Only computes for projects in active statuses (not completed/cancelled/etc).
  */
@@ -383,15 +406,8 @@ export async function getProjectIssueFlags(projectIds: string[]) {
 
     if (overbookedMap.size === 0) continue;
 
-    // Every entry in the map genuinely can't be fulfilled today — an overage
-    // caused solely by maintenance/lost stock (`reducedOnly`) is not any less
-    // real, so it still counts as `hasOverbooked`. `hasReducedStock` stays as
-    // additional context for the tooltip, not a lower-severity substitute.
-    let hasReducedStock = false;
-    for (const info of overbookedMap.values()) {
-      if (info.reducedOnly) hasReducedStock = true;
-    }
-    result[project.id] = { hasOverbooked: true, hasReducedStock };
+    const flags = summarizeOverbookedMap(overbookedMap);
+    if (flags) result[project.id] = flags;
   }
 
   return result;

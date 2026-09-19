@@ -88,7 +88,39 @@ const statusLabels: Record<string, string> = {
   RETURNED: "Returned",
 };
 
-function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStock: number; effectiveStock?: number; totalBooked: number; inherited?: boolean; unavailableAssets?: number; reducedOnly?: boolean; hasOverbookedChildren?: boolean; hasReducedChildren?: boolean } | null }) {
+type PullSheetOverbookedInfo = { overBy: number; totalStock: number; effectiveStock?: number; totalBooked: number; inherited?: boolean; unavailableAssets?: number; reducedOnly?: boolean; hasOverbookedChildren?: boolean; hasReducedChildren?: boolean; hardOverBy?: number };
+
+/**
+ * Pencil-only: the overage is caused ENTIRELY by still-quoted/optional demand
+ * elsewhere in the org — nothing has hard-held this project's stock yet, so
+ * physical stock is fine to pull today. Mirrors equipment-rows.tsx's
+ * OverbookedBadge: without this check, a line flagged only by pencilled
+ * demand rendered as the same full-severity red badge as a genuine hard
+ * conflict, which read as an unavailable pull when it wasn't one.
+ *
+ * `severity` drives screen colour: inherited (kit-parent rollup) = warning
+ * (amber), pencilled-only = warning (amber), direct hard overbooked =
+ * problem (t-out). Maintenance/lost-reduced stock is NOT a reason to soften
+ * this further: demand exceeding today's USABLE stock is a real overbooking
+ * whether the missing units are on another job or in a service bay —
+ * `unavailableAssets` only adds context to the tooltip.
+ */
+function pullSheetBadgeSeverity(info: PullSheetOverbookedInfo): { severity: "warn" | "overbooked"; isPencilledOnly: boolean } {
+  const isPencilledOnly = !info.inherited && (info.hardOverBy ?? info.overBy) === 0;
+  return { severity: info.inherited || isPencilledOnly ? "warn" : "overbooked", isPencilledOnly };
+}
+
+function pullSheetBadgeTooltip(info: PullSheetOverbookedInfo, isPencilledOnly: boolean, effective: number, reducedNote: string): string {
+  if (info.inherited) {
+    return `Contains items that are ${info.overBy} over capacity${reducedNote}`;
+  }
+  if (isPencilledOnly) {
+    return `${info.overBy} over capacity if every pencilled (not-yet-confirmed) booking for this gear goes ahead — nothing is hard-booked over capacity yet (${info.totalBooked} booked / ${effective} usable${reducedNote})`;
+  }
+  return `${info.overBy} over capacity (${info.totalBooked} booked / ${effective} usable${reducedNote})`;
+}
+
+function PullSheetOverbookedBadge({ info }: { info?: PullSheetOverbookedInfo | null }) {
   if (!info) return null;
   // NOTE (RVLT polish §5 print exception): the `print:*-red-*` / `print:*-blue-*`
   // literals below are deliberately NOT swapped to theme tokens. The app default
@@ -101,35 +133,23 @@ function PullSheetOverbookedBadge({ info }: { info?: { overBy: number; totalStoc
   const unavail = info.unavailableAssets || 0;
   const reducedNote = unavail > 0 ? `, ${unavail} in maintenance or lost` : "";
 
-  // Screen colour: inherited (kit-parent rollup) = warning (amber), direct
-  // overbooked = problem (t-out). Print keeps a red outline. Maintenance/lost-
-  // reduced stock is NOT a reason to soften this: demand exceeding today's
-  // USABLE stock is a real overbooking whether the missing units are on
-  // another job or in a service bay — `unavailableAssets` only adds context
-  // to the tooltip below.
-  const screenClass = info.inherited ? "bg-warn-soft text-warn" : "bg-out-soft text-t-out";
-  const label = "Overbooked";
-
-  function getTooltip() {
-    if (info!.inherited) {
-      return `Contains items that are ${info!.overBy} over capacity${reducedNote}`;
-    }
-    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${reducedNote})`;
-  }
+  const { severity, isPencilledOnly } = pullSheetBadgeSeverity(info);
+  const screenClass = severity === "warn" ? "bg-warn-soft text-warn" : "bg-out-soft text-t-out";
+  const label = isPencilledOnly ? "Pencilled overbook" : "Overbooked";
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge
-            status={info.inherited ? "warn" : "overbooked"}
+            status={severity}
             className={`ml-1.5 cursor-help print:border print:border-red-500 print:text-red-600 ${screenClass}`}
           >
             {label}
           </Badge>
         </TooltipTrigger>
         <TooltipContent>
-          {getTooltip()}
+          {pullSheetBadgeTooltip(info, isPencilledOnly, effective, reducedNote)}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -290,7 +310,7 @@ export default function PullSheetPage({
                     const bulkAsset = item.bulkAsset as { assetTag: string } | null;
                     const kit = item.kit as { assetTag: string; name: string } | null;
                     const assetTag = asset?.assetTag || bulkAsset?.assetTag || null;
-                    const overbookedInfo = item.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean } | null;
+                    const overbookedInfo = item.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean; hardOverBy?: number } | null;
                     const supplier = item.supplier as { name: string } | null;
                     const isSubhire = !!(item.subHireId != null);
                     const isKit = !!(item.kitId) && !(item.isKitChild);
@@ -346,7 +366,7 @@ export default function PullSheetPage({
                           const childBulk = child.bulkAsset as { assetTag: string } | null;
                           const childName = childModel?.name || (child.description as string) || "-";
                           const childQty = child.quantity as number;
-                          const childOverbookedInfo = child.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean } | null;
+                          const childOverbookedInfo = child.overbookedInfo as { overBy: number; totalStock: number; totalBooked: number; inherited?: boolean; hardOverBy?: number } | null;
 
                           return (
                             <React.Fragment key={child.id as string}>

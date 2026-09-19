@@ -124,10 +124,22 @@ stale tier on an already-expanded child.
   override changed. **Hard-blocks** once any unit of the *parent* line has
   deployed (`checkedOutQuantity > 0` or `status === "CHECKED_OUT"`), and
   separately refuses to delete a child that itself has a `CHECKED_OUT` unit —
-  "office decides, warehouse verifies" holds even for edits. No row-menu
-  entry point wired into `equipment-rows.tsx` yet — the mutation exists and
-  is tested, but reopening the picker from the project equipment tab is a
-  follow-up (TODOS.md).
+  "office decides, warehouse verifies" holds even for edits.
+  **Row-menu entry point:** `equipment-rows.tsx`'s per-line "…" kebab now
+  offers an **"Edit accessories"** item, gated by `canEditAccessoryPlan`
+  (`src/lib/accessory-plan-eligibility.ts` — a top-level equipment line, not a
+  kit/accessory/sub-hire child, has a model or asset, not yet deployed; the
+  server's `assertLineOwnsAccessoryPlan` is the actual authority, this is UX
+  only). Opens `EditAccessoryPlanDialog`
+  (`src/components/projects/edit-accessory-plan-dialog.tsx`), which fetches
+  the line's own current `accessoryPlan` fresh via `projectLineItems.getById`
+  (not carried on the equipment tab's `LineItemData` display type — narrower
+  than a full doc on purpose) and reseeds the SAME checkbox list the add-time
+  picker uses — extracted to a shared `AccessorySelectionFields` component
+  (`src/components/projects/accessory-selection-fields.tsx`) so the two
+  pickers can't drift, differing only in how each caller seeds
+  `selection`/`excludeReasons` (add defaults every DEFAULT row to included;
+  edit seeds from the stored plan).
 - **Project-wide resync (opt-in, PM-initiated)** — `lineItemWrites.resyncProjectAccessoriesNative`
   (`convex/lineItemWrites.ts`), surfaced as a **"Sync accessories"** button in the project
   Equipment tab toolbar (`src/components/projects/equipment-tab.tsx`, gated on `manage_line_items`

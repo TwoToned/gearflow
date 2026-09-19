@@ -11,6 +11,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
+  // The composer resolves "Me" from the session (work-layer v2 §4.1).
+  useSession: () => ({ data: { user: { id: "user1", name: "Ada" } } }),
 }));
 vi.mock("@/lib/use-permissions", () => ({
   useCanDo: () => true,
@@ -56,11 +58,21 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
 }));
 
 let notifications: unknown[] | undefined = [];
+// Two callers now: the mentions feed (`{ limit }`) and the composer's owner
+// list (`{ orgId }`). Dispatch on the args rather than returning one shape to
+// both, which would hand the composer an array where it expects users/crew.
+const assignees = { users: [{ id: "user1", name: "Ada" }, { id: "user2", name: "Ben" }], crew: [] };
 vi.mock("@/hooks/use-authed-query", () => ({
-  useAuthedQuery: () => notifications,
+  useAuthedQuery: (_ref: unknown, args: unknown) =>
+    args && typeof args === "object" && "orgId" in args ? assignees : notifications,
 }));
 
 import TodayPage from "../page";
+
+/** A bucket's SectionHeader label, excluding the composer's same-named
+ *  due-preset chip (a button). */
+const bucketHeader = (re: RegExp) =>
+  screen.queryAllByText(re).find((el) => el.closest("button") === null);
 
 describe("TodayPage (smoke)", () => {
   beforeEach(() => {
@@ -187,7 +199,9 @@ describe("TodayPage (smoke)", () => {
     notifications = [];
     render(<TodayPage />);
     expect(screen.getByText(/^Overdue/)).toBeDefined();
-    expect(screen.queryByText(/^Today/)).toBeNull();
+    // Scoped to the bucket's SectionHeader: the composer's due chip is also
+    // labelled "Today" and is a button, so a bare text query now matches both.
+    expect(bucketHeader(/^Today/)).toBeUndefined();
   });
 
   it("an empty Triage doesn't render its section while Today still does", () => {
@@ -205,14 +219,25 @@ describe("TodayPage (smoke)", () => {
   });
 
   // Phase 1 (#1243) additions
-  it("quick-add: submitting the input creates a personal task and clears itself", async () => {
+  // Work-layer v2 §2 D1. The old quick-add posted `create({ title })` — no
+  // owner, no due date — so the row was written and then read by nothing:
+  // `myOpenTasks` scans the assignee indexes, and an undated task buckets to
+  // `later`, which renders COLLAPSED. Both halves are asserted here, because
+  // fixing either one alone still looks like the task vanished.
+  it("quick-add: creates the task owned by me and due today, then clears itself", async () => {
     tasks = [];
     notifications = [];
     render(<TodayPage />);
-    const input = screen.getByPlaceholderText(/Quick-add a task/);
+    const input = screen.getByPlaceholderText(/Add work/);
     fireEvent.change(input, { target: { value: "Call the venue" } });
     fireEvent.submit(input.closest("form")!);
-    expect(createMock).toHaveBeenCalledWith({ title: "Call the venue" });
+    // timezone is mocked to UTC, so "today" is today's UTC calendar date.
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Call the venue", assigneeUserId: "user1", dueDate: today }),
+    );
     await waitFor(() => expect((input as HTMLInputElement).value).toBe(""));
   });
 
@@ -220,9 +245,18 @@ describe("TodayPage (smoke)", () => {
     tasks = [];
     notifications = [];
     render(<TodayPage />);
-    const input = screen.getByPlaceholderText(/Quick-add a task/);
+    const input = screen.getByPlaceholderText(/Add work/);
     fireEvent.submit(input.closest("form")!);
     expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("quick-add: names where the task will land before it is created", () => {
+    tasks = [];
+    notifications = [];
+    render(<TodayPage />);
+    const input = screen.getByPlaceholderText(/Add work/);
+    fireEvent.change(input, { target: { value: "Call the venue" } });
+    expect(screen.getByText(/Lands in your work list · today/)).toBeDefined();
   });
 
   it("peek: 'Make a task' on a mention promotes the signal using its dedupeKey", () => {

@@ -23,6 +23,7 @@ import { SectionHeader } from "@/components/ui/section-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
+import { WorkComposer } from "@/components/work/work-composer";
 import { TodayRow } from "@/components/today/today-row";
 import { TodayPeek } from "@/components/today/today-peek";
 import type { TodayItem } from "@/components/today/today-types";
@@ -68,6 +69,9 @@ export function TodayWorkListWidget({
 
   const tasks = useNativeMyOpenTasks(orgId);
   const notificationsFeed = useAuthedQuery(api.notifications.listForMe, { limit: 20 });
+  // Powers the composer's owner chip. Same org-scoped read the project Work
+  // tab already uses, so no new query shape (R-3.1).
+  const assignees = useAuthedQuery(api.projectTasks.assignees, orgId ? { orgId } : "skip");
   const { markRead } = useNotifications();
 
   const [justCompleted, setJustCompleted] = useState<Map<string, NativeMyOpenTask>>(new Map());
@@ -103,19 +107,11 @@ export function TodayWorkListWidget({
     [signalWrites],
   );
 
-  const [quickAddValue, setQuickAddValue] = useState("");
-  const [quickAddBusy, setQuickAddBusy] = useState(false);
+  // The composer owns its own draft/owner/due state and its create call — the
+  // widget only needs the ref so `Q` can focus it. It replaces a bare input
+  // that posted `create({ title })`: no owner, no project, no due date, which
+  // wrote a row nothing could ever read (work-layer v2 §2 D1).
   const quickAddInputRef = useRef<HTMLInputElement>(null);
-  const submitQuickAdd = useCallback(() => {
-    const title = quickAddValue.trim();
-    if (!title || quickAddBusy) return;
-    setQuickAddBusy(true);
-    writes
-      .create({ title })
-      .then(() => setQuickAddValue(""))
-      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not add the task"))
-      .finally(() => setQuickAddBusy(false));
-  }, [quickAddValue, quickAddBusy, writes]);
 
   const taskItems = useMemo<TodayItem[]>(() => {
     const openTasks = (tasks ?? []).filter((t) => !justCompleted.has(t.id));
@@ -217,22 +213,11 @@ export function TodayWorkListWidget({
   return (
     <div className="min-w-0 space-y-5" data-shortcut-scope="today-list">
       {canEditTasks && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submitQuickAdd();
-          }}
-        >
-          <input
-            ref={quickAddInputRef}
-            type="text"
-            value={quickAddValue}
-            onChange={(e) => setQuickAddValue(e.target.value)}
-            placeholder="Quick-add a task (press Q)"
-            disabled={quickAddBusy}
-            className="w-full rounded-[var(--r)] border border-line bg-card px-3 py-2 text-[14px] text-ink placeholder:text-faint focus:border-primary focus:outline-none"
-          />
-        </form>
+        <WorkComposer
+          inputRef={quickAddInputRef}
+          assignees={assignees}
+          placeholder="Add work (press Q)"
+        />
       )}
 
       {isLoading ? (

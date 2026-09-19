@@ -18,7 +18,7 @@ import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertRefInOrg } from "./lib/orgRef";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
-import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren } from "./lib/kits";
+import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
@@ -1890,6 +1890,31 @@ async function kitLineHasDeployedUnit(
   return children.some((c) => (c.checkedOutQuantity ?? 0) > 0 || c.status === "CHECKED_OUT");
 }
 
+/** Reconcile one kit parent line if it's eligible — its kit still exists in
+ *  this org and no unit on the line has deployed — else `null` (skipped).
+ *  Extracted to keep the mutation handler's own branch count under the
+ *  complexity ratchet (R-3.6), same reason `resyncOneLineAccessories` exists
+ *  for the accessories resync above. */
+async function resyncOneKitLine(
+  ctx: MutationCtx,
+  organizationId: string,
+  line: Doc<"projectLineItems">,
+): Promise<KitLineReconcileResult | null> {
+  if (await kitLineHasDeployedUnit(ctx, organizationId, line)) return null; // deployed — warehouse owns it now
+  const kit = await getKitByCuid(ctx, line.kitId!);
+  if (!kit || kit.organizationId !== organizationId) return null; // kit deleted/foreign — nothing to reconcile against
+  return reconcileKitLineChildren(ctx, {
+    id: line.id,
+    kitId: line.kitId!,
+    organizationId,
+    projectId: line.projectId,
+    versionId: line.versionId,
+    pricingMode: line.pricingMode,
+    categoryId: line.categoryId,
+    groupId: line.groupId,
+  });
+}
+
 /**
  * resyncProjectKitsNative — re-run `reconcileKitLineChildren` against every
  * eligible kit parent line's CURRENT `KitSerializedItem`/`KitBulkItem`
@@ -1942,21 +1967,9 @@ export const resyncProjectKitsNative = mutation({
     let unpricedChildrenAdded = 0;
 
     for (const line of kitParents) {
-      if (await kitLineHasDeployedUnit(ctx, organizationId, line)) continue; // deployed — warehouse owns it now
-      const kit = await getKitByCuid(ctx, line.kitId!);
-      if (!kit || kit.organizationId !== organizationId) continue; // kit deleted/foreign — nothing to reconcile against
+      const result = await resyncOneKitLine(ctx, organizationId, line);
+      if (!result) continue;
       linesChecked++;
-
-      const result = await reconcileKitLineChildren(ctx, {
-        id: line.id,
-        kitId: line.kitId!,
-        organizationId,
-        projectId: line.projectId,
-        versionId: line.versionId,
-        pricingMode: line.pricingMode,
-        categoryId: line.categoryId,
-        groupId: line.groupId,
-      });
       if (result.added > 0 || result.removed > 0) linesUpdated++;
       childrenAdded += result.added;
       childrenRemoved += result.removed;

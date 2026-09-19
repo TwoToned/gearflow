@@ -122,30 +122,42 @@ type ReconcileParentLine = {
 
 type InsertCounts = { added: number; unpricedAdded: number };
 
+/** ITEMIZED pulls the model's `defaultRentalPrice` (scaled by `quantity`);
+ *  KIT_PRICE, or a model with no configured rate, leaves it unpriced. Pulled
+ *  out of both member-shape helpers below so each stays under the complexity
+ *  budget (R-3.6) — this is the one place the itemized-vs-unpriced branch lives. */
+function itemizedMemberPrice(itemized: boolean, rate: number | null | undefined, quantity: number): number | undefined {
+  if (!itemized || rate == null) return undefined;
+  return Number(rate) * quantity;
+}
+
+/** Load the model behind an asset/bulkAsset, if any — the shared "does this
+ *  member have a catalog model" lookup both member-shape helpers need. */
+async function modelOfMember(ctx: Ctx, modelId: string | null | undefined): Promise<Doc<"models"> | null> {
+  if (!modelId) return null;
+  return await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).unique();
+}
+
 /** Resolve a newly-added serialized member's insert shape — its model, display
  *  name, and (ITEMIZED only) unit price off the model's `defaultRentalPrice`.
  *  Split out purely to keep the loop that calls it under the complexity budget
- *  (R-3.6): the branching lives here, one call site per member there.
- *  R-3.6 justification: complexity 11 — an optional-chained lookup (asset may
- *  lack a model) feeding a 2-condition price ternary; irreducible without
- *  losing the null-safety, same shape as `createKitLineItemCore`'s own inline
- *  version of this exact computation. */
+ *  (R-3.6): the branching lives here, one call site per member there. */
 async function serializedKitMemberShape(ctx: Ctx, assetId: string, itemized: boolean): Promise<{ modelId: string | undefined; description: string; price: number | undefined }> {
   const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", assetId)).unique();
-  const model = asset?.modelId ? await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", asset.modelId!)).unique() : null;
-  const price = itemized && model?.defaultRentalPrice != null ? Number(model.defaultRentalPrice) : undefined;
-  return { modelId: asset?.modelId, description: model?.name ?? asset?.modelId ?? "", price };
+  const modelId = asset?.modelId;
+  const model = await modelOfMember(ctx, modelId);
+  const description = model?.name ?? modelId ?? "";
+  return { modelId, description, price: itemizedMemberPrice(itemized, model?.defaultRentalPrice, 1) };
 }
 
 /** Bulk-member counterpart of `serializedKitMemberShape` — same pricing rule,
- *  scaled by the kit-configured quantity.
- *  R-3.6 justification: complexity 11, same irreducible shape as its
- *  serialized counterpart above. */
+ *  scaled by the kit-configured quantity. */
 async function bulkKitMemberShape(ctx: Ctx, bulkAssetId: string, quantity: number, itemized: boolean): Promise<{ modelId: string | undefined; description: string; total: number | undefined }> {
   const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", bulkAssetId)).unique();
-  const model = ba?.modelId ? await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", ba.modelId!)).unique() : null;
-  const total = itemized && model?.defaultRentalPrice != null ? Number(model.defaultRentalPrice) * quantity : undefined;
-  return { modelId: ba?.modelId, description: `${quantity}x ${model?.name ?? ba?.modelId ?? ""}`, total };
+  const modelId = ba?.modelId;
+  const model = await modelOfMember(ctx, modelId);
+  const description = `${quantity}x ${model?.name ?? modelId ?? ""}`;
+  return { modelId, description, total: itemizedMemberPrice(itemized, model?.defaultRentalPrice, quantity) };
 }
 
 /** Insert a child for every kit-configured serialized member the line doesn't

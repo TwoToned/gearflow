@@ -196,6 +196,7 @@ export function useLineItemWrites() {
   const addM = useMutation(api.lineItemWrites.addLineItemSmartNative);
   const updateAccessoryPlanM = useMutation(api.lineItemWrites.updateAccessoryPlanNative);
   const resyncProjectAccessoriesM = useMutation(api.lineItemWrites.resyncProjectAccessoriesNative);
+  const resyncProjectKitsM = useMutation(api.lineItemWrites.resyncProjectKitsNative);
   const addCustomM = useMutation(api.lineItemWrites.addCustomNative);
   const addKitM = useMutation(api.lineItemWrites.addKitNative);
   const patchM = useMutation(api.lineItemWrites.patchNative);
@@ -363,6 +364,27 @@ export function useLineItemWrites() {
     ): Promise<{ linesChecked: number; linesUpdated: number; childrenAdded: number; childrenRemoved: number }> => {
       try {
         return await resyncProjectAccessoriesM({
+          projectId,
+          organizationId: requireOrg(),
+          actor: actor(),
+          auditId: createId(),
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** Re-run kit-membership expansion for every not-yet-deployed kit parent line
+     *  against the kit's CURRENT `KitSerializedItem`/`KitBulkItem` membership (a
+     *  member added/removed on the kit in the catalog AFTER it was already added
+     *  to this job). PM-initiated per project — see `resyncProjectKitsNative` for
+     *  why this is never automatic, and for how a newly-added member gets priced. */
+    resyncProjectKits: async (
+      projectId: string,
+    ): Promise<{ linesChecked: number; linesUpdated: number; childrenAdded: number; childrenRemoved: number; unpricedChildrenAdded: number }> => {
+      try {
+        return await resyncProjectKitsM({
           projectId,
           organizationId: requireOrg(),
           actor: actor(),

@@ -112,16 +112,47 @@ other line-item discount.
 - Project totals are recalculated inline (org tax rate) as part of the same mutation when any kit items were expanded
 - Activity log summary includes skipped kit warnings
 
-## Catalog changes after a kit is already on a project — NOT auto-synced
+## Catalog changes after a kit is already on a project — resynced on demand, not automatically
 
 A kit's member list is snapshotted onto the project as concrete child
 `ProjectLineItem` rows at `createKitLineItemCore` time (see "Data Model" above) —
 there is no live join back to `KitSerializedItem`/`KitBulkItem`. Editing a kit's
 membership after it's already on an open (not-yet-checked-out) project does
-**not** retroactively add/remove the project's child rows, and there is currently
-no "resync this kit's line items to its current membership" mutation, unlike
-accessories (`resyncProjectAccessoriesNative`, FEATUREDOCS/48) — a kit member is
-individually priced (`ITEMIZED` mode) or contributes to a hand-set bundle price
-(`KIT_PRICE` mode), so mechanically reconciling members would also mean deciding
-a price for a newly-added child, which needs its own design pass rather than
-reusing the accessory mechanism as-is. Tracked as a follow-up, not implemented here.
+**not** retroactively add/remove the project's child rows on its own.
+
+`resyncProjectKitsNative` (`convex/lineItemWrites.ts`, reconcile core in
+`convex/lib/kits.ts`'s `reconcileKitLineChildren`) closes that gap the same way
+`resyncProjectAccessoriesNative` (FEATUREDOCS/48) does for accessories: an
+explicit, PM-initiated, per-project action — never a trigger on the catalog
+write itself, since editing one kit can affect many open jobs at once and an
+already-quoted job's composition shouldn't change out from under the PM without
+them asking for it. Surfaced as the "Sync kits" toolbar action next to "Sync
+accessories" in the Equipment tab (`src/components/projects/equipment-tab.tsx`).
+
+For every kit parent line (`kitId` set, not itself a child) with no deployed
+unit anywhere on the line — parent or member child, since kit fulfillment can
+deploy members one at a time (`kitLineHasDeployedUnit`) — it diffs the line's
+current children against the kit's CURRENT membership:
+
+- A member no longer on the kit: its child line (+ units) is deleted.
+- A member the kit doesn't have a child for yet: a new child line is inserted,
+  same shape `createKitLineItemCore` would create for it.
+- A kept bulk member whose kit-configured `quantity` changed: the child's
+  `quantity` (and, in `ITEMIZED` mode, its price) is rescaled to match.
+
+**Pricing a newly-added member** mirrors `createKitLineItemCore` exactly, which
+is what answers the "needs its own design pass" question this section used to
+raise: `ITEMIZED` pulls the member's model `defaultRentalPrice`, same as at
+add-time; `KIT_PRICE` leaves it unpriced, because the bundle price is a
+hand-set number on the PARENT row and a new member can't assign itself a share
+of it — resync never touches the parent's own price. The mutation returns
+`unpricedChildrenAdded` for exactly this case (a `KIT_PRICE` addition, or an
+`ITEMIZED` member whose model has no rate configured) so the toolbar can flag
+"N added — review pricing" instead of implying every resync leaves the job
+fully priced.
+
+Never touched: an existing kept child's price when the kit member's own model
+rate changes after the fact — the same "office decides" boundary
+`resyncProjectAccessoriesNative` draws around a kept accessory. Repricing an
+already-quoted child from a catalog-rate change is a distinct, un-designed
+feature, not part of membership resync.

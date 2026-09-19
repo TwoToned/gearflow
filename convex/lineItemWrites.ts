@@ -18,7 +18,7 @@ import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertRefInOrg } from "./lib/orgRef";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
-import { getKitByCuid } from "./lib/kits";
+import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
@@ -1874,6 +1874,132 @@ export const resyncProjectAccessoriesNative = mutation({
   },
 });
 
+/** A kit parent line is off-limits to resync once ANY of its units have
+ *  deployed — its own aggregate (a partial checkout can roll the parent's
+ *  own `checkedOutQuantity`/`status` up before every child has) OR any
+ *  individual member child's, since kit fulfillment can deploy members one
+ *  at a time. Same "office decides, warehouse verifies" gate as
+ *  `assertLineOwnsAccessoryPlan` / `resyncProjectAccessoriesNative`. */
+async function kitLineHasDeployedUnit(
+  ctx: MutationCtx,
+  organizationId: string,
+  line: { id: string; checkedOutQuantity?: number; status?: string },
+): Promise<boolean> {
+  if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") return true;
+  const children = await kitChildrenOf(ctx, organizationId, line.id);
+  return children.some((c) => (c.checkedOutQuantity ?? 0) > 0 || c.status === "CHECKED_OUT");
+}
+
+/** Reconcile one kit parent line if it's eligible — its kit still exists in
+ *  this org and no unit on the line has deployed — else `null` (skipped).
+ *  Extracted to keep the mutation handler's own branch count under the
+ *  complexity ratchet (R-3.6), same reason `resyncOneLineAccessories` exists
+ *  for the accessories resync above. */
+async function resyncOneKitLine(
+  ctx: MutationCtx,
+  organizationId: string,
+  line: Doc<"projectLineItems">,
+): Promise<KitLineReconcileResult | null> {
+  if (await kitLineHasDeployedUnit(ctx, organizationId, line)) return null; // deployed — warehouse owns it now
+  const kit = await getKitByCuid(ctx, line.kitId!);
+  if (!kit || kit.organizationId !== organizationId) return null; // kit deleted/foreign — nothing to reconcile against
+  return reconcileKitLineChildren(ctx, {
+    id: line.id,
+    kitId: line.kitId!,
+    organizationId,
+    projectId: line.projectId,
+    versionId: line.versionId,
+    pricingMode: line.pricingMode,
+    categoryId: line.categoryId,
+    groupId: line.groupId,
+  });
+}
+
+/**
+ * resyncProjectKitsNative — re-run `reconcileKitLineChildren` against every
+ * eligible kit parent line's CURRENT `KitSerializedItem`/`KitBulkItem`
+ * membership, so a kit whose contents were edited in the catalog AFTER it was
+ * already added to a job can pick up the change without re-adding the whole
+ * kit. Companion to `resyncProjectAccessoriesNative` above (FEATUREDOCS/09 /
+ * FEATUREDOCS/48) — same explicit, PM-initiated, per-project shape, for the
+ * same reason: a catalog edit reaches many jobs at once, so it never pushes
+ * itself onto an open one automatically.
+ *
+ * Eligible = a kit parent line (`kitId` set, not itself a child) whose kit
+ * still exists in this org, with no deployed unit anywhere on the line
+ * (`kitLineHasDeployedUnit`). A newly-added member gets priced the same way
+ * `createKitLineItemCore` prices one at add time — ITEMIZED pulls the
+ * member's model rate, KIT_PRICE leaves it unpriced (the bundle price is a
+ * hand-set number that a new member can't assign itself a share of) — so
+ * `unpricedChildrenAdded` is surfaced separately for the caller to flag for
+ * PM review rather than imply every resync leaves the job fully priced.
+ * RBAC(project, manage_line_items).
+ */
+export const resyncProjectKitsNative = mutation({
+  returns: v.object({
+    linesChecked: v.number(),
+    linesUpdated: v.number(),
+    childrenAdded: v.number(),
+    childrenRemoved: v.number(),
+    unpricedChildrenAdded: v.number(),
+  }),
+  args: {
+    projectId: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { projectId, organizationId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const project = await requireLineProjectInOrg(ctx, projectId, organizationId);
+
+    const lines = await liveRows(ctx, project, "projectLineItems");
+    const kitParents = lines.filter((l) => !!l.kitId && !l.isKitChild);
+
+    let linesChecked = 0;
+    let linesUpdated = 0;
+    let childrenAdded = 0;
+    let childrenRemoved = 0;
+    let unpricedChildrenAdded = 0;
+
+    for (const line of kitParents) {
+      const result = await resyncOneKitLine(ctx, organizationId, line);
+      if (!result) continue;
+      linesChecked++;
+      if (result.added > 0 || result.removed > 0) linesUpdated++;
+      childrenAdded += result.added;
+      childrenRemoved += result.removed;
+      unpricedChildrenAdded += result.unpricedAdded;
+    }
+
+    if (linesUpdated > 0) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId,
+        action: "UPDATE",
+        entityType: "project",
+        entityId: projectId,
+        entityName: project.name || "Project",
+        userId: actor.userId,
+        userName: actor.userName,
+        summary:
+          `Resynced kit membership from catalog (${linesUpdated} line${linesUpdated === 1 ? "" : "s"}, +${childrenAdded}/-${childrenRemoved})` +
+          (unpricedChildrenAdded > 0 ? ` — ${unpricedChildrenAdded} added unpriced, review pricing` : ""),
+        projectId,
+        createdAt: now,
+      });
+      const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
+      await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
+    }
+
+    return { linesChecked, linesUpdated, childrenAdded, childrenRemoved, unpricedChildrenAdded };
+  },
+});
+
 /**
  * addKitNative — add a kit to a project: parent line + expanded member child lines
  * (ITEMIZED pricing) via the SHARED createKitLineItemCore (same code createKitLineItem
@@ -2681,6 +2807,7 @@ export const agentOps: AgentOpsAnnotations = {
   removeNative: { danger: "high" },
   reorderNative: { danger: "low" },
   resyncProjectAccessoriesNative: { danger: "medium" },
+  resyncProjectKitsNative: { danger: "medium" },
   unsellLineItemNative: { danger: "medium" },
   updateAccessoryPlanNative: { danger: "medium" },
 };

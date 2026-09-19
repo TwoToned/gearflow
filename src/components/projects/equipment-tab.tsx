@@ -1313,6 +1313,32 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Companion to resyncAccessoriesMut — see resyncProjectKitsNative for why a kit
+  // membership edit doesn't push itself onto every open project automatically.
+  const resyncKitsMut = useServerMutation({
+    mutationFn: () => {
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      return lineItemWrites.resyncProjectKits(projectId);
+    },
+    onSuccess: (r: { linesChecked: number; linesUpdated: number; childrenAdded: number; childrenRemoved: number; unpricedChildrenAdded: number }) => {
+      invalidate();
+      if (r.linesUpdated === 0) {
+        toast.success("Already up to date with the kit's catalog membership");
+        return;
+      }
+      const parts = [
+        r.childrenAdded ? `+${r.childrenAdded} added` : null,
+        r.childrenRemoved ? `-${r.childrenRemoved} removed` : null,
+      ].filter(Boolean);
+      toast.success(
+        `Updated ${r.linesUpdated} kit line${r.linesUpdated === 1 ? "" : "s"}` +
+          (parts.length ? ` (${parts.join(", ")})` : "") +
+          (r.unpricedChildrenAdded > 0 ? ` — ${r.unpricedChildrenAdded} added unpriced, review pricing` : ""),
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // No prune needed: a successfully-removed id simply stops matching any rendered
   // row (the refetch drops it). ids are cuids (never reused), so a retained dead id
   // is a harmless no-op in the filters — and skipping a prune effect avoids a
@@ -1557,6 +1583,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             title="Add any DEFAULT accessory added to a model/asset in the catalog since these lines were added, on lines that haven't deployed yet"
           >
             {resyncAccessoriesMut.isPending ? "Syncing…" : "Sync accessories"}
+          </Button>
+        )}
+        {canDragEquipment && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={resyncKitsMut.isPending}
+            onClick={() => resyncKitsMut.mutate()}
+            title="Add/remove kit members changed in the catalog since these kits were added, on kit lines that haven't deployed yet"
+          >
+            {resyncKitsMut.isPending ? "Syncing…" : "Sync kits"}
           </Button>
         )}
         <Button

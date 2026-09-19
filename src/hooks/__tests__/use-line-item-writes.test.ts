@@ -37,6 +37,7 @@ vi.mock("../../../convex/_generated/api", () => ({
       addKitNative: { __mock: "addKit" },
       updateAccessoryPlanNative: {},
       resyncProjectAccessoriesNative: {},
+      resyncProjectKitsNative: {},
       patchNative: {},
       removeNative: {},
       removeManyNative: {},

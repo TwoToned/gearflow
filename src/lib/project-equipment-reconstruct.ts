@@ -292,7 +292,12 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     subHireId: d.subHireId ?? null,
     subHireItemId: d.subHireItemId ?? null,
     subHireGroupId: d.subHireGroupId ?? null,
-    createdAt: msToDate(d.createdAt),
+    // `createdAt` is `v.optional` in the schema (older/backfilled rows can lack
+    // it) — fall back to Convex's own `_creationTime` (always present) so a
+    // consumer that needs a real "when was this line added" ordering (e.g. the
+    // FCFS overbooking allocation, overbooking-core.ts's `sumBookingsByModel`)
+    // never gets `null` for an otherwise-real row.
+    createdAt: msToDate(d.createdAt ?? d._creationTime),
     updatedAt: msToDate(d.updatedAt),
   };
 }

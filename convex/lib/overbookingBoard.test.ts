@@ -48,20 +48,21 @@ describe("computeGearShortageBoard", () => {
     expect(pencilled).toHaveLength(0);
   });
 
-  test("a shortage row lists EVERY contributing project, not just the one that tips it over", () => {
-    // Job A (10) + Job B (10) both CONFIRMED, model has 16 usable stock — the
-    // shortage is caused by both jobs together, so both must show up as
-    // affected, not only whichever line the aggregation happened to see last.
+  test("FCFS (2026-09): a shortage row lists only the LATER project, not the one that already claimed its stock", () => {
+    // Job A's line was created first, Job B's second, both CONFIRMED, both
+    // booking 10 against 16 usable stock — Job A's claim fits (0-10 of 16),
+    // Job B's doesn't (10-20 of 16, 4 over). Only Job B should be blamed —
+    // Job A already has its gear.
     const wideAssets: BoardAsset[] = Array.from({ length: 16 }, () => ({ modelId: "m1", status: "AVAILABLE", isActive: true }));
     const projects = [project({ id: "jobA", status: "CONFIRMED" }), project({ id: "jobB", status: "CONFIRMED" })];
     const lineItems = [
-      lineItem({ id: "liA", projectId: "jobA", modelId: "m1", quantity: 10 }),
-      lineItem({ id: "liB", projectId: "jobB", modelId: "m1", quantity: 10 }),
+      { ...lineItem({ id: "liA", projectId: "jobA", modelId: "m1", quantity: 10 }), _creationTime: 1000 },
+      { ...lineItem({ id: "liB", projectId: "jobB", modelId: "m1", quantity: 10 }), _creationTime: 2000 },
     ];
     const { hard } = computeGearShortageBoard(RANGE, projects, lineItems, models, wideAssets, []);
     expect(hard).toHaveLength(1);
     expect(hard[0]).toMatchObject({ modelId: "m1", qty: 4 });
-    expect(hard[0].projects.map((p) => p.id).sort()).toEqual(["jobA", "jobB"]);
+    expect(hard[0].projects.map((p) => p.id)).toEqual(["jobB"]);
   });
 
   test("a QUOTED project's demand alone is a pencilled collision, not a hard shortage", () => {
@@ -73,13 +74,12 @@ describe("computeGearShortageBoard", () => {
     expect(pencilled[0]).toMatchObject({ modelId: "m1", qty: 1 });
   });
 
-  test("a pencilled collision row lists the CONFIRMED job holding the gear, not just the QUOTED one", () => {
-    // Model has 10 usable stock. Job A (CONFIRMED, hard) books 8 — alone that's
-    // within stock, so it never makes the `hard` row. Job B (QUOTED, pencilled)
-    // books 5 — combined (13) exceeds stock by 3. That collision is only real
-    // because Job A is holding 8 of the 10 units; dropping Job A from the row
-    // (as `pencilledProjectIds` alone would) hides who the QUOTED job would
-    // actually collide with.
+  test("FCFS (2026-09): a pencilled collision row blames only the QUOTED job, not the CONFIRMED job already holding its stock", () => {
+    // Model has 10 usable stock. Job A (CONFIRMED, hard) books 8 — alone
+    // that's within stock (fits, and hard always allocates before pencilled),
+    // so it never makes the `hard` row. Job B (QUOTED, pencilled) books 5 —
+    // only 2 units are left after Job A's hard claim, so Job B is short by 3.
+    // Job A already has its gear; the collision is Job B's alone.
     const wideAssets: BoardAsset[] = Array.from({ length: 10 }, () => ({ modelId: "m1", status: "AVAILABLE", isActive: true }));
     const projects = [project({ id: "jobA", status: "CONFIRMED" }), project({ id: "jobB", status: "QUOTED" })];
     const lineItems = [
@@ -90,7 +90,7 @@ describe("computeGearShortageBoard", () => {
     expect(hard).toHaveLength(0);
     expect(pencilled).toHaveLength(1);
     expect(pencilled[0]).toMatchObject({ modelId: "m1", qty: 3 });
-    expect(pencilled[0].projects.map((p) => p.id).sort()).toEqual(["jobA", "jobB"]);
+    expect(pencilled[0].projects.map((p) => p.id)).toEqual(["jobB"]);
   });
 
   test("an isOptional line on a CONFIRMED project stays pencilled", () => {

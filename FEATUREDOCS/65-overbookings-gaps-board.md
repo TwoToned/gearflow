@@ -25,24 +25,24 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
 
 1. **Overbooked gear (hard)** — a model whose HARD demand (see the two-layer
    split, FEATUREDOCS/11) across every project overlapping the range exceeds
-   its effective stock. A real, already-committed problem. Red. Each row's
-   `projects` list is EVERY project with hard demand for that model in range,
-   not just whichever project's line the aggregation happened to tip the
-   total over capacity (`aggregateDemandByModel` in `overbookingBoard.ts`
-   unconditionally adds every hard-demand project to the same `Set` before any
-   shortage is computed) — e.g. two 10-unit CONFIRMED bookings against 16
-   usable stock surfaces both projects, not just one.
+   its effective stock. A real, already-committed problem. Red. A row's
+   `projects` list is FCFS-allocated (2026-09, `allocateFifo` in
+   `overbookingBoard.ts` — see FEATUREDOCS/11's "FCFS attribution" note): every
+   hard claim on the model is sorted by its earliest line-item creation time
+   and granted against whatever capacity is left after every earlier claim's
+   full quantity, so the row lists ONLY the claim(s) that don't fit — e.g. two
+   10-unit CONFIRMED bookings against 16 usable stock lists just whichever was
+   booked second, not both.
 2. **Pencilled collisions** — the ADDITIONAL shortage that would exist if
    every currently-pencilled booking for that model (an optional line, or any
    line on a not-yet-confirmed project) also went hard. A heads-up, not a
-   violation of today's rule — "would collide if confirmed." Amber. A row's
-   `projects` list is the union of every HARD-holding project and every
-   PENCILLED project contributing demand (2026-09 fix) — not just the pencilled
-   one(s). A CONFIRMED job can hold gear well within its own demand (never
-   making the `hard` row above) while still being the reason a QUOTED job's
-   demand would collide; listing only the pencilled project silently dropped
-   the CONFIRMED job that's actually holding the stock, which read as "only
-   one job flagged" even though two were involved.
+   violation of today's rule — "would collide if confirmed." Amber. Hard
+   claims always allocate first (a CONFIRMED job never loses stock to a mere
+   quote); pencilled claims then compete FCFS among themselves for whatever's
+   left. A row's `projects` list is only the pencilled claim(s) that don't
+   fit — a CONFIRMED job that already secured its own stock (even if that's
+   the entire reason a QUOTED job can't fit) is never listed here, since it
+   isn't the one with a shortfall.
 3. **Sale stock to procure** (WS11 #950) — models whose `Model.saleStockQuantity`
    (a single per-model sale-stock pool, independent of rental assets/bulk) has
    gone negative — sold below what was ever added as stock. Each row lists the

@@ -24,6 +24,10 @@ function bundleLineItem(p: {
   subHireId?: string | null;
   isOptional?: boolean;
   type?: string;
+  /** FCFS ordering key — mirrors Convex's own `_creationTime` system field.
+   *  Defaults to 0 so fixtures that don't care about order all tie (stable,
+   *  sorted by `projectId` as the fallback tiebreak in `allocateFifo`). */
+  _creationTime?: number;
 }) {
   return {
     id: p.id,
@@ -35,6 +39,7 @@ function bundleLineItem(p: {
     subHireId: p.subHireId ?? null,
     isOptional: p.isOptional ?? false,
     type: p.type ?? "EQUIPMENT",
+    _creationTime: p._creationTime ?? 0,
   };
 }
 
@@ -353,12 +358,13 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
     expect(map.has("li1")).toBe(false);
   });
 
-  it("computes pencilledOverBy as the extra collision from a separate not-yet-confirmed project's demand", () => {
-    // stock 2 (2 assets). THIS_PROJECT (CONFIRMED) books 3 → hard overBy 1.
-    // A SEPARATE project (QUOTED) books 2 more of the same model — pencilled
-    // demand that would push the overage to 3 if it were also confirmed, i.e.
-    // pencilledOverBy = 3 - 1 = 2. overBy is the COMBINED figure (badge-facing
-    // number): hardOverBy(1) + pencilledOverBy(2) = 3.
+  it("a project's own pencilledOverBy is 0 when it already secured stock via hard demand (FCFS, 2026-09)", () => {
+    // stock 2 (2 assets). THIS_PROJECT (CONFIRMED) books 3 → hard overBy 1 —
+    // its own badge reflects only that. A SEPARATE project (QUOTED) books 2
+    // more of the same model: that collision belongs to THAT project (it's
+    // the one that can't get the gear), not to THIS_PROJECT, which already
+    // has its hard claim resolved. See the FCFS test below for the QUOTED
+    // project's own (nonzero) pencilledOverBy.
     const items: OverbookLineItem[] = [
       { id: "li1", modelId: "m1", quantity: 3, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
     ];
@@ -375,7 +381,37 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
       ],
     });
     const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
-    expect(info).toMatchObject({ overBy: 3, hardOverBy: 1, pencilledOverBy: 2 });
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 0 });
+  });
+
+  it("FCFS: only the LATER project is flagged when an earlier one already claimed the stock", () => {
+    // Model has 16 usable stock. Job A's line was created first, Job B's
+    // second, both CONFIRMED, both booking 10 — combined (20) exceeds stock
+    // by 4. Job A claimed its 10 units first and fits; Job B is the one that
+    // doesn't. Only Job B's line should carry an OverbookedInfo entry.
+    const modelId = "m1";
+    const jobAItems: OverbookLineItem[] = [
+      { id: "liA", modelId, quantity: 10, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const jobBItems: OverbookLineItem[] = [
+      { id: "liB", modelId, quantity: 10, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model(modelId, "SERIALIZED")],
+      assets: Array.from({ length: 16 }, (_, i) => asset({ id: `a${i}`, modelId })),
+      projects: [
+        project({ id: "jobA", start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" }),
+        project({ id: "jobB", start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" }),
+      ],
+      lineItems: [
+        bundleLineItem({ id: "liA", projectId: "jobA", modelId, quantity: 10, _creationTime: 1000 }),
+        bundleLineItem({ id: "liB", projectId: "jobB", modelId, quantity: 10, _creationTime: 2000 }),
+      ],
+    });
+    const mapForA = reconstructOverbookedStatus(bundle, jobAItems, WINDOW_START, WINDOW_END, "jobA");
+    const mapForB = reconstructOverbookedStatus(bundle, jobBItems, WINDOW_START, WINDOW_END, "jobB");
+    expect(mapForA.has("liA")).toBe(false);
+    expect(mapForB.get("liB")).toMatchObject({ overBy: 4, hardOverBy: 4 });
   });
 
   it("pencilledOverBy is 0 when there is no pencilled demand at all (pure hard case, unchanged)", () => {

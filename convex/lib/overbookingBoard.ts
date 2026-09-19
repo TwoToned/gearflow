@@ -48,6 +48,11 @@ export interface BoardLineItem {
   subHireId?: string | null;
   isOptional?: boolean | null;
   type?: string | null;
+  /** `v.optional` in the schema — see `_creationTime` fallback below. */
+  createdAt?: number | null;
+  /** Convex system field, always present on a real doc. Real callers pass raw
+   *  `Doc<"projectLineItems">` (structurally compatible), so this is free. */
+  _creationTime?: number;
 }
 
 export interface BoardModel {
@@ -117,14 +122,42 @@ export interface GearBoardResult {
  * sub-windows within `range`), so a shortage here is a "somewhere in this
  * range, demand exceeds stock" signal, not a per-day guarantee.
  */
+/** One project's claim on a model — mirrors `ProjectModelClaim` in
+ *  `src/lib/overbooking-core.ts` (duplicated, not imported: this file lives in
+ *  `convex/lib/` and that one is `src/lib/`, no `@/` alias resolution between
+ *  the two — same reason `isConfirmedOrLater`/`PENCILLED_PROJECT_STATUSES` are
+ *  duplicated rather than shared). `claimedAt` is the EARLIEST creation time
+ *  among that project's lines for this model in this layer. */
+type ProjectClaim = { qty: number; claimedAt: number };
+
 type ModelAgg = {
-  hardQty: number;
-  combinedQty: number;
-  hardProjectIds: Set<string>;
-  pencilledProjectIds: Set<string>;
+  hardClaims: Map<string, ProjectClaim>; // projectId -> claim
+  pencilledClaims: Map<string, ProjectClaim>;
   spanStart: number;
   spanEnd: number;
 };
+
+/**
+ * First-come-first-served stock allocation (2026-09, superseding the symmetric
+ * "everyone competing for the pool is flagged" rule) — see the matching
+ * `allocateFifo` in `src/lib/overbooking-core.ts` for the full rationale.
+ * `claims` sorted ascending by `claimedAt` (earliest wins), ties broken by
+ * `projectId`; each is granted against whatever capacity remains after every
+ * earlier claim's FULL quantity is deducted. Returns `projectId -> overBy` for
+ * projects with a nonzero shortfall only.
+ */
+function allocateFifo(claims: Map<string, ProjectClaim>, capacity: number): Map<string, number> {
+  const overByProject = new Map<string, number>();
+  const sorted = [...claims].sort(([aId, a], [bId, b]) => a.claimedAt - b.claimedAt || aId.localeCompare(bId));
+  let allocated = 0;
+  for (const [projectId, c] of sorted) {
+    const available = Math.max(0, capacity - allocated);
+    const overBy = Math.max(0, c.qty - available);
+    if (overBy > 0) overByProject.set(projectId, overBy);
+    allocated += c.qty;
+  }
+  return overByProject;
+}
 
 /** Fold `lineItems` into a per-model hard/pencilled demand aggregate. */
 function isRelevantDemandLine(li: BoardLineItem, projectById: Map<string, BoardProject>): boolean {
@@ -143,23 +176,31 @@ function isRelevantDemandLine(li: BoardLineItem, projectById: Map<string, BoardP
 function getOrCreateAgg(byModel: Map<string, ModelAgg>, modelId: string, clampedStart: number, clampedEnd: number): ModelAgg {
   const existing = byModel.get(modelId);
   if (existing) return existing;
-  const created: ModelAgg = { hardQty: 0, combinedQty: 0, hardProjectIds: new Set(), pencilledProjectIds: new Set(), spanStart: clampedStart, spanEnd: clampedEnd };
+  const created: ModelAgg = { hardClaims: new Map(), pencilledClaims: new Map(), spanStart: clampedStart, spanEnd: clampedEnd };
   byModel.set(modelId, created);
   return created;
+}
+
+function bumpClaim(claims: Map<string, ProjectClaim>, projectId: string, qty: number, claimedAt: number): void {
+  const existing = claims.get(projectId);
+  if (existing) {
+    existing.qty += qty;
+    existing.claimedAt = Math.min(existing.claimedAt, claimedAt);
+  } else {
+    claims.set(projectId, { qty, claimedAt });
+  }
 }
 
 function applyDemandLine(agg: ModelAgg, li: BoardLineItem, p: BoardProject, clampedStart: number, clampedEnd: number): void {
   const isPencilled = li.isOptional === true || !isConfirmedOrLater(p.status);
   const qty = li.quantity ?? 0;
-  agg.combinedQty += qty;
   agg.spanStart = Math.min(agg.spanStart, clampedStart);
   agg.spanEnd = Math.max(agg.spanEnd, clampedEnd);
-  if (isPencilled) {
-    agg.pencilledProjectIds.add(p.id);
-  } else {
-    agg.hardQty += qty;
-    agg.hardProjectIds.add(p.id);
-  }
+  // `createdAt` is `v.optional`; `_creationTime` (Convex system field) is
+  // always present on a real doc and is the fallback — same reasoning as
+  // `mapLineItemDoc` in `project-equipment-reconstruct.ts`.
+  const claimedAt = li.createdAt ?? li._creationTime ?? Number.MAX_SAFE_INTEGER;
+  bumpClaim(isPencilled ? agg.pencilledClaims : agg.hardClaims, p.id, qty, claimedAt);
 }
 
 function aggregateDemandByModel(
@@ -241,21 +282,20 @@ export function computeGearShortageBoard(
     if (!m) continue;
     const effectiveStock = effectiveStockForModel(m, assetMap.get(modelId) ?? [], bulkMap.get(modelId) ?? []);
 
-    const hardShortage = Math.max(0, agg.hardQty - effectiveStock);
-    const combinedShortage = Math.max(0, agg.combinedQty - effectiveStock);
-    const pencilledCollision = Math.max(0, combinedShortage - hardShortage);
+    // FCFS (2026-09): hard claims allocate first against effectiveStock (a
+    // CONFIRMED-or-later job never loses stock to a mere quote); whatever's
+    // left is what pencilled claims compete for among themselves. A row's
+    // `projects` list is only the claim(s) that actually don't fit — not
+    // every project sharing the pool.
+    const hardQtyTotal = [...agg.hardClaims.values()].reduce((sum, c) => sum + c.qty, 0);
+    const hardOverByProject = allocateFifo(agg.hardClaims, effectiveStock);
+    const pencilledOverByProject = allocateFifo(agg.pencilledClaims, Math.max(0, effectiveStock - hardQtyTotal));
 
-    if (hardShortage > 0) hard.push(shortageRow(modelId, m, agg, hardShortage, agg.hardProjectIds, projectById));
-    if (pencilledCollision > 0) {
-      // A pencilled collision is "combined demand (existing hard holds +
-      // pencilled) would exceed stock" — the hard-holding project(s) are part
-      // of that collision even when their own demand alone doesn't exceed
-      // stock (hardShortage === 0, so they never make the `hard` row). Listing
-      // only `pencilledProjectIds` silently dropped whichever CONFIRMED job is
-      // already holding the gear that a QUOTED job would collide with.
-      const collisionProjectIds = new Set([...agg.hardProjectIds, ...agg.pencilledProjectIds]);
-      pencilled.push(shortageRow(modelId, m, agg, pencilledCollision, collisionProjectIds, projectById));
-    }
+    const hardShortage = [...hardOverByProject.values()].reduce((sum, v) => sum + v, 0);
+    const pencilledCollision = [...pencilledOverByProject.values()].reduce((sum, v) => sum + v, 0);
+
+    if (hardShortage > 0) hard.push(shortageRow(modelId, m, agg, hardShortage, new Set(hardOverByProject.keys()), projectById));
+    if (pencilledCollision > 0) pencilled.push(shortageRow(modelId, m, agg, pencilledCollision, new Set(pencilledOverByProject.keys()), projectById));
   }
 
   hard.sort((a, b) => b.qty - a.qty);

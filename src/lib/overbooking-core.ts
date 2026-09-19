@@ -231,17 +231,54 @@ export function indexProjectsById(projects: ConvexProject[]): Map<string, Convex
 }
 
 /**
+ * One project's claim on a model — the input unit for `allocateFifo`.
+ * `claimedAt` is the EARLIEST creation time among that project's line items for
+ * this model in this layer (hard or pencilled), so a project that added a
+ * second unit later doesn't lose its original place in line.
+ */
+export interface ProjectModelClaim {
+  projectId: string;
+  qty: number;
+  claimedAt: number;
+}
+
+/**
+ * First-come-first-served stock allocation (2026-09, superseding the symmetric
+ * "everyone competing for the same pool is flagged" rule — product decision
+ * after the symmetric version proved too noisy in practice, especially
+ * multiplied across kit children). `claims` are sorted ascending by
+ * `claimedAt` (earliest booking wins), ties broken by `projectId` for
+ * determinism; each claim is granted against whatever capacity remains AFTER
+ * every earlier claim's FULL quantity is deducted — so only the claim(s) that
+ * actually don't fit are "over," never a claim that was satisfied before a
+ * later one showed up. Returns `projectId -> overBy` for projects with a
+ * nonzero shortfall only (absent = fully allocated).
+ */
+export function allocateFifo(claims: ProjectModelClaim[], capacity: number): Map<string, number> {
+  const overByProject = new Map<string, number>();
+  const sorted = [...claims].sort((a, b) => a.claimedAt - b.claimedAt || a.projectId.localeCompare(b.projectId));
+  let allocated = 0;
+  for (const c of sorted) {
+    const available = Math.max(0, capacity - allocated);
+    const overBy = Math.max(0, c.qty - available);
+    if (overBy > 0) overByProject.set(c.projectId, overBy);
+    allocated += c.qty;
+  }
+  return overByProject;
+}
+
+/**
  * For overbooking: sum non-cancelled, non-sub-hire bookings per model across all
  * projects whose window overlaps (or, when `window` is null, only `thisProjectId`).
- * Returns total-by-model and this-project-by-model maps, mirroring
- * `computeOverbookedStatus`'s aggregation.
  *
- * WS3 (#942) additionally splits every sum into HARD (non-`isOptional` line on a
+ * WS3 (#942) splits every booking into HARD (non-`isOptional` line on a
  * `isConfirmedOrLater` project) vs PENCILLED (an `isOptional` line, on ANY
- * project, OR any line on a not-yet-confirmed project) — the two are a strict
- * partition of every counted booking, so `hard + pencilled === total` for every
- * model at every key. `total`/`thisProject` are kept (unchanged shape/values) so
- * this stays a drop-in superset for any existing caller.
+ * project, OR any line on a not-yet-confirmed project). Per-model, per-layer
+ * claims are grouped BY PROJECT (qty summed, `claimedAt` = earliest line-item
+ * creation time for that project+model+layer) so `allocateFifo` can decide
+ * FCFS who's actually over capacity, instead of flagging every project sharing
+ * the pool. `totalByModel` stays a plain org-wide sum (informational —
+ * `OverbookedInfo.totalBooked`, unaffected by ordering).
  */
 export function sumBookingsByModel(
   modelIds: string[],
@@ -251,22 +288,37 @@ export function sumBookingsByModel(
   thisProjectId: string,
 ): {
   totalByModel: Map<string, number>;
-  thisProjectByModel: Map<string, number>;
-  hardTotalByModel: Map<string, number>;
-  hardThisProjectByModel: Map<string, number>;
-  pencilledTotalByModel: Map<string, number>;
-  pencilledThisProjectByModel: Map<string, number>;
+  hardClaimsByModel: Map<string, ProjectModelClaim[]>;
+  pencilledClaimsByModel: Map<string, ProjectModelClaim[]>;
 } {
   const modelSet = new Set(modelIds);
   const totalByModel = new Map<string, number>();
-  const thisProjectByModel = new Map<string, number>();
-  const hardTotalByModel = new Map<string, number>();
-  const hardThisProjectByModel = new Map<string, number>();
-  const pencilledTotalByModel = new Map<string, number>();
-  const pencilledThisProjectByModel = new Map<string, number>();
+  const hardAcc = new Map<string, Map<string, ProjectModelClaim>>();
+  const pencilledAcc = new Map<string, Map<string, ProjectModelClaim>>();
 
-  const bump = (map: Map<string, number>, modelId: string, qty: number) =>
-    map.set(modelId, (map.get(modelId) ?? 0) + qty);
+  const bumpTotal = (modelId: string, qty: number) =>
+    totalByModel.set(modelId, (totalByModel.get(modelId) ?? 0) + qty);
+
+  const bumpClaim = (
+    acc: Map<string, Map<string, ProjectModelClaim>>,
+    modelId: string,
+    projectId: string,
+    qty: number,
+    claimedAt: number,
+  ) => {
+    let byProject = acc.get(modelId);
+    if (!byProject) {
+      byProject = new Map();
+      acc.set(modelId, byProject);
+    }
+    const existing = byProject.get(projectId);
+    if (existing) {
+      existing.qty += qty;
+      existing.claimedAt = Math.min(existing.claimedAt, claimedAt);
+    } else {
+      byProject.set(projectId, { projectId, qty, claimedAt });
+    }
+  };
 
   for (const li of lineItems) {
     if (li.modelId == null || !modelSet.has(li.modelId)) continue;
@@ -291,22 +343,24 @@ export function sumBookingsByModel(
     }
 
     const isPencilled = li.isOptional === true || !isConfirmedOrLater(p?.status);
+    // `createdAt` falls back to the Convex system creation time in
+    // `mapLineItemDoc`, so this is virtually always a real timestamp; the
+    // `?? Number.MAX_SAFE_INTEGER` is a last-resort defensive fallback only
+    // (a line with no timestamp at all goes to the back of the line, never
+    // jumps ahead of a real claim).
+    const claimedAt = li.createdAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
 
-    bump(totalByModel, li.modelId, li.quantity);
-    bump(isPencilled ? pencilledTotalByModel : hardTotalByModel, li.modelId, li.quantity);
-    if (li.projectId === thisProjectId) {
-      bump(thisProjectByModel, li.modelId, li.quantity);
-      bump(isPencilled ? pencilledThisProjectByModel : hardThisProjectByModel, li.modelId, li.quantity);
-    }
+    bumpTotal(li.modelId, li.quantity);
+    bumpClaim(isPencilled ? pencilledAcc : hardAcc, li.modelId, li.projectId, li.quantity, claimedAt);
   }
+
+  const toClaimsByModel = (acc: Map<string, Map<string, ProjectModelClaim>>) =>
+    new Map([...acc].map(([modelId, byProject]) => [modelId, [...byProject.values()]]));
 
   return {
     totalByModel,
-    thisProjectByModel,
-    hardTotalByModel,
-    hardThisProjectByModel,
-    pencilledTotalByModel,
-    pencilledThisProjectByModel,
+    hardClaimsByModel: toClaimsByModel(hardAcc),
+    pencilledClaimsByModel: toClaimsByModel(pencilledAcc),
   };
 }
 
@@ -395,12 +449,13 @@ export function reconstructOverbookedStatus(
 
   const orgLineItems = bundle.lineItems.map(mapLineItemDoc);
   const projectsById = indexProjectsById(bundle.projects as unknown as ConvexProject[]);
-  const {
-    totalByModel: totalBookedByModel,
-    thisProjectByModel: thisProjectBookedByModel,
-    hardTotalByModel,
-    hardThisProjectByModel,
-  } = sumBookingsByModel(modelIds, orgLineItems, projectsById, window, projectId);
+  const { totalByModel: totalBookedByModel, hardClaimsByModel, pencilledClaimsByModel } = sumBookingsByModel(
+    modelIds,
+    orgLineItems,
+    projectsById,
+    window,
+    projectId,
+  );
 
   const convexModelMap = new Map(bundle.models.map((m) => [m.id, m]));
   const assetsAll = bundle.assets;
@@ -436,19 +491,17 @@ export function reconstructOverbookedStatus(
     unavailableByModel.set(modelId, unavailable);
   }
 
-  // For each model, check if this project's total booking exceeds available.
-  // WS3 (#942) split hard (non-`isOptional` lines on a confirmed-or-later
-  // project) from pencilled (an optional line, or ANY line on a still-quoted
-  // project) demand and originally gated the badge on hard-only overage — a
-  // pencilled-only collision raised no flag anywhere. Per explicit product
-  // request, the gate now fires on COMBINED (hard + pencilled) overage: the
-  // badge should surface a pencilled collision too, not just a hard one.
-  // `hardOverBy`/`pencilledOverBy` stay on `OverbookedInfo` so a consumer that
-  // needs to tell the two apart (the equipment-tab/project-list badges, which
-  // show a softer "pencilled" treatment when `hardOverBy === 0`; the PDF
+  // For each model, run FCFS allocation (2026-09) to see if THIS project is
+  // one of the ones that doesn't fit — not "is total demand over capacity"
+  // (the old symmetric rule, which flagged every project sharing the pool).
+  // Hard claims allocate first against `effectiveStock` (a CONFIRMED-or-later
+  // job never loses stock to a mere quote); whatever's left over is what
+  // pencilled claims compete for among themselves, also FCFS. `hardOverBy`/
+  // `pencilledOverBy` stay on `OverbookedInfo` so a consumer that needs to
+  // tell the two apart (the equipment-tab badge's amber-vs-red; the PDF
   // pipeline, which deliberately keeps showing hard-only — see
   // `build-document-data.ts`) still can. `totalBooked`/`totalStock`/
-  // `effectiveStock` stay full-combined values (unchanged meaning) for
+  // `effectiveStock` stay full-org-wide values (unchanged meaning) for
   // back-compat with every existing consumer.
   for (const modelId of modelIds) {
     const totalStock = stockByModel.get(modelId) || 0;
@@ -456,33 +509,27 @@ export function reconstructOverbookedStatus(
     const unavailable = unavailableByModel.get(modelId) || 0;
     const totalBooked = totalBookedByModel.get(modelId) || 0;
 
-    const hardBookedByThisProject = hardThisProjectByModel.get(modelId) || 0;
-    const hardBookedByOthers = (hardTotalByModel.get(modelId) || 0) - hardBookedByThisProject;
-    const hardAvailableForProject = effectiveStock - hardBookedByOthers;
-    const hardOverBy = Math.max(0, hardBookedByThisProject - hardAvailableForProject);
+    const hardClaims = hardClaimsByModel.get(modelId) ?? [];
+    const pencilledClaims = pencilledClaimsByModel.get(modelId) ?? [];
+    const hardQtyTotal = hardClaims.reduce((sum, c) => sum + c.qty, 0);
 
-    // combinedOverBy: the SAME overage math, but counting every currently
-    // pencilled booking (org-wide) as if it were hard demand too — always
-    // >= hardOverBy, since combined demand/others can only be >= the hard
-    // subset. pencilledOverBy is the slice of that ONLY pencilled demand adds.
-    const combinedBookedByThisProject = thisProjectBookedByModel.get(modelId) || 0;
-    const combinedBookedByOthers = totalBooked - combinedBookedByThisProject;
-    const combinedAvailableForProject = effectiveStock - combinedBookedByOthers;
-    const combinedOverBy = Math.max(0, combinedBookedByThisProject - combinedAvailableForProject);
-    const pencilledOverBy = Math.max(0, combinedOverBy - hardOverBy);
+    const hardOverByProject = allocateFifo(hardClaims, effectiveStock);
+    const pencilledOverByProject = allocateFifo(pencilledClaims, Math.max(0, effectiveStock - hardQtyTotal));
+    const hardOverBy = hardOverByProject.get(projectId) ?? 0;
+    const pencilledOverBy = pencilledOverByProject.get(projectId) ?? 0;
+    const combinedOverBy = hardOverBy + pencilledOverBy;
 
     if (combinedOverBy > 0) {
-      // Would it be overbooked if all assets were available? Basis matches
-      // whichever layer actually produced the overage: when hard demand alone
-      // is already over, this is BYTE-FOR-BYTE the original hard-only
-      // computation (so PDFs / any hard-only consumer see the exact same
-      // reducedOnly value as before this function started firing on pencilled
-      // overage too); a pencil-only overage falls back to the combined basis,
-      // since that's the only overage that exists in that case.
+      // Would THIS project still be one of the ones that doesn't fit, in the
+      // SAME FCFS order, if every asset were available (full totalStock
+      // instead of effectiveStock)? If not, and some assets ARE unavailable,
+      // the shortfall is caused solely by maintenance/lost stock, not by
+      // competing demand (informational only — see equipment-rows.tsx; no
+      // longer softens the badge severity, just the tooltip wording).
+      const hardOverByProjectFullStock = allocateFifo(hardClaims, totalStock);
+      const pencilledOverByProjectFullStock = allocateFifo(pencilledClaims, Math.max(0, totalStock - hardQtyTotal));
       const wouldBeOverWithFullStock =
-        hardOverBy > 0
-          ? hardBookedByThisProject > totalStock - hardBookedByOthers
-          : combinedBookedByThisProject > totalStock - combinedBookedByOthers;
+        (hardOverByProjectFullStock.get(projectId) ?? 0) + (pencilledOverByProjectFullStock.get(projectId) ?? 0) > 0;
       const reducedOnly = !wouldBeOverWithFullStock && unavailable > 0;
 
       const info: OverbookedInfo = {

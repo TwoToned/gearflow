@@ -1,6 +1,7 @@
 # Work layer v2 — integration pass
 
-> _Owner: Jayden Nawotka · Drafted 2026-09-19 · Status: design, not yet built_
+> _Owner: Jayden Nawotka · Drafted 2026-09-19 · Status: **P1 + the rail shipped** (see the
+> change table's Built column); the rest is design_
 >
 > Successor to [`work-layer.md`](./work-layer.md). That doc designed the program and phases 0–4
 > shipped against it. This one audits what those phases actually produced, names why it reads as
@@ -166,8 +167,11 @@ click), system/`auto`, unowned (dashed avatar + `Assign`), snoozed, mention, blo
 **Work's home on a project is the context sidebar, not a card on Overview.**
 
 `DetailSidebar` (340px, sticky) already rides along on every tab except Overview, carrying
-Schedule · Location · Team · Activity. A **Work** section goes in at the top of it, above
-Schedule — the only actionable section sits first; the rest is reference.
+Schedule · Location · Team · Activity. A **Work** section goes in **between Team and
+Activity**: the standing reference facts (schedule, location, team) stay together above it,
+and the two "what is happening" sections — work and the activity feed — sit together below.
+Work above Schedule was the first proposal and is wrong: it splits the reference block in
+half to put a list where the eye expects facts.
 
 This is the difference between a destination and an ambient surface. Work is remembered *while
 you are doing something else*: you are pricing gear in Equipment and you remember the parking
@@ -190,7 +194,8 @@ written down. A rail that is already on screen means one click.
 ```
 
 - **Collapsible**, with the counts (`9 of 14`, `1 late`, `3 unowned`) in the header so it stays
-  glanceable when collapsed. Collapse state is per-user and remembered.
+  glanceable when collapsed. Collapse state is per-user and remembered in `localStorage` — a
+  convenience nothing reads back, so blocked storage just starts it expanded.
 - **Five rows, open work only**, ordered overdue → due → undated. `All 14 in the Work tab ›`
   carries the rest. The rail is a working set, not a list view — if it needs a scrollbar it has
   failed.
@@ -270,22 +275,22 @@ affordance. This is a deliberate divergence, not a responsive accident.
 
 ## 5. Changes required
 
-| # | Change | Where | Size |
-|---|---|---|---|
-| 1 | Default `assigneeUserId` to the acting user when a create has **no** `projectId`, no `parentId` and no explicit assignee | `convex/projectTasksWrites.ts` `createNative` | ~4 lines + test |
-| 2 | Pass the owner/when the composer chose | `today-work-list-widget.tsx` | small |
-| 3 | Stage-less rows into a `No stage yet` bucket | `src/lib/project-work-card.ts` | ~6 lines + test |
-| 4 | **Work section in the rail** — collapsible, 5 rows, live circles, composer, "all N" link | new `src/components/projects/project-work-rail-section.tsx`, mounted in `project-context-rail.tsx` | medium |
-| 5 | Suppress the rail's Work section on the Work tab (Overview has no rail already) | `projects/[id]/page.tsx` | small |
-| 6 | Slim the Overview card to meter + "needs a decision" + capture line + footer link | `overview/work-card.tsx`, `project-work-card.ts` | medium |
-| 7 | Unowned count + *Assign* (shared by the rail header and the card) | `project-work-card.ts` | small |
-| 8 | Composer component, shared by Today / rail / card / Work tab | new `src/components/work/work-composer.tsx` | medium |
-| 9 | Shared `WorkRow` used by every surface | new `src/components/work/work-row.tsx` | medium |
-| 10 | Group-by-owner default + `Nobody` lane + Only mine | `tasks-panel.tsx` | small |
-| 11 | Index `projectTasks` in global search (the `search_title` index already exists) | `convex/globalSearch.ts` | medium |
-| 12 | `/work/[id]` route rendering the peek full-page | new route | medium |
-| 13 | `/task` verb in the command palette | `command-search.tsx` | small |
-| 14 | Drop the fingerprint resync; **one** `useProjectWorkData` per page, shared by the rail, the card and the tab count | `use-project-work-data.ts`, `projects/[id]/page.tsx` | medium |
+| # | Change | Where | Size | Built |
+|---|---|---|---|---|
+| 1 | Default `assigneeUserId` to the acting user when a create has **no** `projectId`, no `parentId` and no explicit assignee | `convex/projectTasksWrites.ts` `createNative` | ~4 lines + test | ✅ |
+| 2 | Pass the owner/when the composer chose | `today-work-list-widget.tsx` | small | ✅ |
+| 3 | Stage-less rows counted, not dropped | `src/lib/project-work.ts`'s meter (the rail/card share it); `project-work-card.ts`'s own `continue` still stands until §4.4 lands | ~6 lines + test | partly |
+| 4 | **Work section in the rail** — collapsible, 5 rows, live circles, composer, "all N" link | new `src/components/projects/project-work-rail-section.tsx`, mounted in `project-context-rail.tsx` | medium | ✅ |
+| 5 | Suppress the rail's Work section on the Work tab (Overview has no rail already) | `projects/[id]/page.tsx` | small | ✅ |
+| 6 | Slim the Overview card to meter + "needs a decision" + capture line + footer link | `overview/work-card.tsx`, `project-work-card.ts` | medium | |
+| 7 | Unowned count (built, in `project-work.ts`) + the *Assign* action on it (not built) | `project-work.ts`, rail header, card | small | partly |
+| 8 | Composer component, shared by Today / rail / card / Work tab | new `src/components/work/work-composer.tsx` | medium | ✅ |
+| 9 | Shared `WorkRow` used by every surface — the rail still carries its own row markup, so this is the next extraction, not done | new `src/components/work/work-row.tsx` | medium | |
+| 10 | Group-by-owner default + `Nobody` lane + Only mine | `tasks-panel.tsx` | small | |
+| 11 | Index `projectTasks` in global search (the `search_title` index already exists) | `convex/globalSearch.ts` | medium | |
+| 12 | `/work/[id]` route rendering the peek full-page | new route | medium | |
+| 13 | `/task` verb in the command palette | `command-search.tsx` | small | |
+| 14 | Drop the fingerprint resync; **one** `useProjectWorkData` per page, shared by the rail, the card and the tab count | `use-project-work-data.ts`, `projects/[id]/page.tsx` | medium | |
 
 Nothing above needs a schema change. Every field the design uses (`stage`, `dueDate`,
 `assigneeUserId`, `parentId`, `estimateMinutes`, `tags`, `snoozedUntil`) shipped in phase 1.

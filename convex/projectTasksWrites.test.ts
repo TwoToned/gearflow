@@ -179,6 +179,58 @@ describe("projectTasksWrites", () => {
     expect(doc?.organizationId).toBe(ORG);
   });
 
+  // Work-layer v2 (docs/designs/work-layer-v2-integration.md §3, the routing
+  // rule). A personal item with neither an owner nor a project is read by
+  // NOTHING — myOpenTasks scans the assignee indexes, project surfaces need a
+  // projectId — so it is invisible permanently once written. These pin the
+  // backstop that makes that state unreachable.
+  test("quick-add: a personal task with no assignee defaults its owner to the creator", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "t1", orgId: ORG, title: "Call the venue", now: NOW, actor, auditId: "a1",
+    });
+    const doc = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "t1")).unique());
+    expect(doc?.assigneeUserId).toBe(USER);
+    expect(doc?.assigneeCrewId).toBeUndefined();
+  });
+
+  test("the owner default never overrides an explicit assignee, user or crew", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "t1", orgId: ORG, title: "For Bob", assigneeUserId: "u2", now: NOW, actor, auditId: "a1",
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "t2", orgId: ORG, title: "For Cara", assigneeCrewId: "c1", now: NOW, actor, auditId: "a2",
+    });
+    // Not the `tasks()` helper — these are personal rows, so they carry no
+    // projectId for its by_projectId scan to find.
+    const byCuid = (id: string) =>
+      t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique());
+    expect((await byCuid("t1"))?.assigneeUserId).toBe("u2");
+    expect((await byCuid("t2"))?.assigneeUserId).toBeUndefined();
+    expect((await byCuid("t2"))?.assigneeCrewId).toBe("c1");
+  });
+
+  test("project work stays unowned — the default is personal-only, so the job's Nobody lane keeps it", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "t1", projectId: "P1", orgId: ORG, title: "Print run sheets", now: NOW, actor, auditId: "a1",
+    });
+    expect((await tasks(t))[0].assigneeUserId).toBeUndefined();
+  });
+
+  test("a subtask stays unowned — it renders nested under a parent that carries the ownership", async () => {
+    const t = makeT(); await seed(t);
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "parent", orgId: ORG, title: "Personal parent", now: NOW, actor, auditId: "a1",
+    });
+    await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+      id: "kid", parentId: "parent", orgId: ORG, title: "Step 1", now: NOW, actor, auditId: "a2",
+    });
+    const kid = await t.run((ctx) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", "kid")).unique());
+    expect(kid?.assigneeUserId).toBeUndefined();
+  });
+
   test("a subtask (parentId) inherits the parent's project/org, carries no stage, and sorts among siblings", async () => {
     const t = makeT(); await seed(t);
     await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {

@@ -121,6 +121,19 @@ describe("ProjectWorkRailSection", () => {
     expect(screen.getByLabelText("No owner")).toBeTruthy();
   });
 
+  it("does not call a row unowned just because its assignee join is missing", () => {
+    // A since-deleted user leaves the id set and the join null. The header
+    // count uses the shared predicate, so the marker must too, or the two
+    // contradict each other on the same row.
+    workData = {
+      tasks: [row({ id: "1", title: "Orphaned assignee", assigneeUserId: "gone", assigneeUser: null })],
+      isLoading: false,
+    };
+    render(<ProjectWorkRailSection projectId="p1" />);
+    expect(screen.queryByLabelText("No owner")).toBeNull();
+    expect(screen.queryByText("1 unowned")).toBeNull();
+  });
+
   it("ticking a row writes the status and refetches", () => {
     workData = { tasks: [row({ id: "1", title: "Confirm access" })], isLoading: false };
     render(<ProjectWorkRailSection projectId="p1" />);

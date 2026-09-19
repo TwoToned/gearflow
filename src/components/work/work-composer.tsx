@@ -42,7 +42,7 @@ import { cn, focusRing } from "@/lib/utils";
  * looked exactly like "somewhere".
  */
 
-export interface WorkComposerAssignees {
+interface WorkComposerAssignees {
   users: { id: string; name: string; image?: string | null }[];
   crew: { id: string; firstName: string; lastName: string }[];
 }

@@ -195,6 +195,11 @@ export function ProjectWorkRailSection({ projectId }: { projectId: string }) {
                     const done = task.status === "DONE" || justDone.has(task.id);
                     const due = dueLabel(task, nowMs, timezone);
                     const late = !done && isLateWork(task, nowMs, timezone);
+                    // Unowned is the SHARED predicate, not "did the join
+                    // resolve" — a row assigned to a since-deleted user has
+                    // an id but no join row, and the header count (which uses
+                    // the predicate) would then disagree with this marker.
+                    const unowned = isUnownedWork(task);
                     const owner =
                       task.assigneeUser?.name ??
                       (task.assigneeCrew ? `${task.assigneeCrew.firstName} ${task.assigneeCrew.lastName}`.trim() : null);
@@ -235,8 +240,8 @@ export function ProjectWorkRailSection({ projectId }: { projectId: string }) {
                         {due && (
                           <span className={cn("t-mono shrink-0", late ? "text-t-out" : "text-muted")}>{due}</span>
                         )}
-                        {owner ? (
-                          <PersonAvatar name={owner} className="size-[18px] shrink-0 text-[9px]" />
+                        {!unowned ? (
+                          <PersonAvatar name={owner ?? "Assigned"} className="size-[18px] shrink-0 text-[9px]" />
                         ) : (
                           <span
                             className="grid size-[18px] shrink-0 place-items-center rounded-full border border-dashed border-faint text-[9px] text-muted"

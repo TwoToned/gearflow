@@ -36,8 +36,9 @@ export const WORK_RAIL_VISIBLE_LIMIT = 5;
 export const isOpenWork = (t: WorkTaskLike): boolean => t.status === "TODO" || t.status === "IN_PROGRESS";
 
 /** Cancelled work is not "open" and not counted toward the job's totals —
- *  it isn't outstanding and it isn't an achievement. */
-export const isCountedWork = (t: WorkTaskLike): boolean => t.status !== "CANCELLED";
+ *  it isn't outstanding and it isn't an achievement. Module-local: callers
+ *  read the counts off `summariseProjectWork` rather than re-deriving them. */
+const isCountedWork = (t: WorkTaskLike): boolean => t.status !== "CANCELLED";
 
 export const isUnownedWork = (t: WorkTaskLike): boolean => !t.assigneeUserId && !t.assigneeCrewId;
 
@@ -71,7 +72,7 @@ export function sortOpenWork<T extends WorkTaskLike>(tasks: T[]): T[] {
   });
 }
 
-export interface WorkStageMeterSegment {
+interface WorkStageMeterSegment {
   stage: WorkStage | "unstaged";
   label: string;
   done: number;

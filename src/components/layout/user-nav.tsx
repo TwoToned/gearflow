@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, User, ChevronsUpDown, Shield, HardHat, Check, Loader2, LayoutDashboard } from "lucide-react";
+import { LogOut, User, ChevronsUpDown, Shield, HardHat, Check, Loader2, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isSiteAdminRole } from "@/lib/admin-role";
 import { useSession, signOut, useActiveOrganization, organization } from "@/lib/auth-client";
@@ -160,11 +160,13 @@ export function UserNav() {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          {/* Dashboard moved here from the primary sidebar rail (work-layer
-              phase 0.5, #1242) — Today replaced it as the landing page. */}
-          <DropdownMenuItem onClick={() => router.push("/dashboard")}>
-            <LayoutDashboard className="mr-2 h-4 w-4" />
-            Dashboard
+          {/* Today lives here now — the reverse of #1242/D10A, which had put
+              Today in the rail and Dashboard in this menu. Today is still the
+              post-login landing page and still owns the bottom nav's first
+              slot on a phone; this is only where the DESKTOP entry point sits. */}
+          <DropdownMenuItem onClick={() => router.push("/today")}>
+            <Sun className="mr-2 h-4 w-4" />
+            Today
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push("/account")}>
             <User className="mr-2 h-4 w-4" />

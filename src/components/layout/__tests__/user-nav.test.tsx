@@ -84,6 +84,18 @@ describe("UserNav", () => {
     expect(screen.queryByText("ada@example.com")).toBeNull();
   });
 
+  // Dashboard went back to the sidebar rail and Today took its place in this
+  // menu (the reverse of #1242/D10A). Opening the menu is the only way to
+  // prove it — a closed-trigger render shows neither (CLAUDE.md).
+  it("offers Today, not Dashboard, and navigates there", async () => {
+    render(<UserNav />);
+    openMenu();
+    const menu = within(await waitFor(() => screen.getByRole("menu")));
+    expect(menu.queryByText("Dashboard")).toBeNull();
+    fireEvent.click(menu.getByText("Today"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/today"));
+  });
+
   it("hides the Organisations group entirely with a single membership", async () => {
     myOrgsResult = [{ id: "org_1", name: "Org One", slug: "org-one", role: "OWNER" }];
     render(<UserNav />);

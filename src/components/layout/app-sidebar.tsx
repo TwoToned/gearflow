@@ -5,7 +5,7 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Sun,
+  LayoutDashboard,
   Package,
   Boxes,
   FolderOpen,
@@ -94,14 +94,15 @@ interface RailItem {
 
 // Primary modules. Hues per DESIGN.md §3.7/§15.5.
 const RAIL: RailItem[] = [
-  // Today replaces Dashboard as the landing page + primary rail item
-  // (work-layer phase 0.5, #1242) — Dashboard moved to the account menu
-  // (user-nav.tsx). No `resource` gate — personal scope (this user's own
-  // work), not an org resource; skipping it entirely (rather than gating on
-  // "project") means viewer/warehouse roles keep their own Today even
-  // without project:read. Also supersedes the old "My tasks" entry — /my-tasks
-  // now redirects here.
-  { title: "Today", url: "/today", icon: Sun, hue: "blue" },
+  // Dashboard is back in the rail's first slot (reverting #1242/D10A's swap):
+  // the org-wide read is what people reach for from the nav, so burying it in
+  // the account menu cost more than it saved. Today keeps its place in that
+  // menu (user-nav.tsx) and stays the post-login landing page, so the personal
+  // view is still one click away and nothing about /today itself changes.
+  // Neither entry carries a `resource` gate: Dashboard never had one, and
+  // Today is personal scope, so viewer/warehouse roles keep both without
+  // project:read.
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
   {
     title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
     subs: [

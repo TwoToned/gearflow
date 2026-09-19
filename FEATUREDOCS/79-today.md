@@ -135,10 +135,18 @@ inputs/dialogs automatically).
 
 ## Navigation (DESIGN.md §16, D10A)
 
-Today takes Dashboard's slot in both `mobile-nav.tsx` (bottom nav) and
-`app-sidebar.tsx` (desktop rail) — phones have no sidebar and all five
-bottom-nav slots were already taken. Dashboard moved to the account menu
-(`user-nav.tsx`). Every "landing page after auth" default (`src/app/page.tsx`,
+Today takes Dashboard's slot in `mobile-nav.tsx` (bottom nav) — phones have
+no sidebar and all five bottom-nav slots were already taken.
+
+**Revised 2026-09-19 (DESIGN.md D10B): the desktop rail went back.**
+`app-sidebar.tsx`'s first slot is `Dashboard` again and **Today sits in the
+account menu** (`user-nav.tsx`) — the exact reverse of the desktop half of
+D10A, because the org-wide read is what people reach for from the sidebar and
+the account menu is not where anyone looks for it. The mobile bottom nav is
+unchanged (Today keeps slot one; there is no rail to put Dashboard back into),
+and Today is still the post-login landing page everywhere. So the two
+platforms differ deliberately: rail = Dashboard + Today-in-menu, phone =
+Today-in-nav + Dashboard-in-menu. Every "landing page after auth" default (`src/app/page.tsx`,
 login/register/select-organization/welcome/setup/two-factor/invite,
 the site-admin bounce/exit links) now targets `/today` instead of
 `/dashboard` — none of this touches the `safeCallbackUrl` allowlist logic,

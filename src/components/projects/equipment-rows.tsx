@@ -30,6 +30,7 @@ import {
   ListOrdered,
   Eye,
   EyeOff,
+  Puzzle,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -1111,6 +1112,7 @@ export function LineItemRow({
   onEdit,
   onMoveToCategory,
   onMoveToGroup,
+  onEditAccessories,
   onRemove,
   onClick,
   inRollupCategory,
@@ -1159,6 +1161,11 @@ export function LineItemRow({
   /** Opens the "Move to group" dialog. The item lands inside a
    *  specific group and adopts its category. */
   onMoveToGroup: () => void;
+  /** Opens the "Edit accessories" picker, reseeded from the line's own stored
+   *  `accessoryPlan`. Omitted (menu entry hides) for a line `canEditAccessoryPlan`
+   *  (src/lib/accessory-plan-eligibility.ts) rules out — a kit/accessory child, a
+   *  sub-hire line, a line with no model/asset, or one that's already deployed. */
+  onEditAccessories?: () => void;
   onRemove: () => void;
   /** Category price rollup — true when this row sits in a `ROLLUP` category, so
    *  its price is hidden on client-facing documents unless revealed. Gates the
@@ -1405,6 +1412,12 @@ export function LineItemRow({
             <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
             Move to group
           </DropdownMenuItem>
+          {onEditAccessories && (
+            <DropdownMenuItem onClick={onEditAccessories}>
+              <Puzzle className="mr-2 h-3.5 w-3.5" />
+              Edit accessories
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
             <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
             Needs review
@@ -1956,6 +1969,12 @@ export function LineItemRow({
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to group
                 </DropdownMenuItem>
+                {onEditAccessories && (
+                  <DropdownMenuItem onClick={onEditAccessories}>
+                    <Puzzle className="mr-2 h-3.5 w-3.5" />
+                    Edit accessories
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
                   <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
                   Needs review

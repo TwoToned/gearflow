@@ -30,6 +30,29 @@ interface WorkCardProps {
   onNavigateTab: (tab: WorkCardTab) => void;
 }
 
+/** Where a decision row's action goes. Pure, so `RowAction` renders one of
+ *  two shapes instead of carrying the whole routing table (R-3.6). */
+function resolveRowAction(
+  row: WorkDecisionRow,
+  projectId: string,
+): { kind: "href"; href: string } | { kind: "tab"; tab: WorkCardTab } | null {
+  if (!row.actionLabel) return null;
+  // The unowned summary goes to the Work tab, where the bulk bar fixes all of
+  // them in one pass — assigning one at a time from here is the slowest path.
+  if (row.id === "unowned") return { kind: "tab", tab: "work" };
+  if (!row.checkId) return null;
+
+  // A gear shortage is resolved on the org board — a project-local view can't
+  // show what else is competing for the stock. A dateless project instead
+  // needs the dates themselves.
+  if (row.checkId === "gear") {
+    return { kind: "href", href: row.severity === "unknown" ? `/projects/${projectId}/edit` : "/overbookings" };
+  }
+  if (row.checkId === "crew" || row.checkId === "services") return { kind: "tab", tab: "labour" };
+  if (row.checkId === "pricing") return { kind: "tab", tab: "equipment" };
+  return null;
+}
+
 function RowAction({
   row,
   projectId,
@@ -39,38 +62,17 @@ function RowAction({
   projectId: string;
   onNavigateTab: (tab: WorkCardTab) => void;
 }) {
-  if (!row.actionLabel) return null;
-
-  // The unowned summary's action is the Work tab, where you can fix all of
-  // them at once with the bulk bar — assigning them one at a time from here
-  // would be the slowest possible path.
-  if (row.id === "unowned") {
-    return (
-      <Button variant="line" size="sm" className="h-7 shrink-0" onClick={() => onNavigateTab("work")}>
-        {row.actionLabel}
-      </Button>
-    );
-  }
-  if (!row.checkId) return null;
-  const checkId = row.checkId as ReadinessCheck["id"];
-
-  // A gear shortage is resolved on the org board — a project-local view can't
-  // show what else is competing for the stock. A dateless project instead
-  // needs the dates themselves.
-  const href = checkId === "gear" ? (row.severity === "unknown" ? `/projects/${projectId}/edit` : "/overbookings") : null;
-  if (href) {
+  const action = resolveRowAction(row, projectId);
+  if (!action) return null;
+  if (action.kind === "href") {
     return (
       <Button variant="line" size="sm" className="h-7 shrink-0" asChild>
-        <Link href={href}>{row.actionLabel}</Link>
+        <Link href={action.href}>{row.actionLabel}</Link>
       </Button>
     );
   }
-
-  const tab: WorkCardTab | null =
-    checkId === "crew" || checkId === "services" ? "labour" : checkId === "pricing" ? "equipment" : null;
-  if (!tab) return null;
   return (
-    <Button variant="line" size="sm" className="h-7 shrink-0" onClick={() => onNavigateTab(tab)}>
+    <Button variant="line" size="sm" className="h-7 shrink-0" onClick={() => onNavigateTab(action.tab)}>
       {row.actionLabel}
     </Button>
   );
@@ -140,20 +142,7 @@ export function ProjectOverviewWorkCard({ projectId, orgId, onNavigateTab }: Wor
 
   return (
     <Panel padding="default" className="p-0">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-        <h2 className="text-card-title font-bold tracking-tight text-ink">Work</h2>
-        {summary.totalCount > 0 && (
-          <span className="t-mono text-muted">
-            {summary.doneCount} of {summary.totalCount} done
-          </span>
-        )}
-        {summary.lateCount > 0 && <Badge status="overbooked">{summary.lateCount} overdue</Badge>}
-        {allClear && summary.totalCount > 0 && <Badge status="ok">All clear</Badge>}
-        <span className="flex-1" />
-        <Button variant="line" size="sm" className="h-7" onClick={() => onNavigateTab("work")}>
-          Open Work tab
-        </Button>
-      </div>
+      <WorkCardHeader summary={summary} allClear={allClear} onNavigateTab={onNavigateTab} />
 
       <StageMeter segments={summary.meter} />
 
@@ -280,5 +269,34 @@ function WorkCardRowMark({ row }: { row: WorkDecisionRow }) {
     <span className={cn("mt-px grid size-[16px] shrink-0 place-items-center rounded-full", fill)} aria-hidden>
       {!row.system && <Check className="size-2.5 opacity-0" strokeWidth={3} />}
     </span>
+  );
+}
+
+/** The card's header strip. Split out (R-3.6): the count, the overdue badge
+ *  and the all-clear badge are three independent branches. */
+function WorkCardHeader({
+  summary,
+  allClear,
+  onNavigateTab,
+}: {
+  summary: ReturnType<typeof summariseProjectWork>;
+  allClear: boolean;
+  onNavigateTab: (tab: WorkCardTab) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+      <h2 className="text-card-title font-bold tracking-tight text-ink">Work</h2>
+      {summary.totalCount > 0 && (
+        <span className="t-mono text-muted">
+          {summary.doneCount} of {summary.totalCount} done
+        </span>
+      )}
+      {summary.lateCount > 0 && <Badge status="overbooked">{summary.lateCount} overdue</Badge>}
+      {allClear && summary.totalCount > 0 && <Badge status="ok">All clear</Badge>}
+      <span className="flex-1" />
+      <Button variant="line" size="sm" className="h-7" onClick={() => onNavigateTab("work")}>
+        Open Work tab
+      </Button>
+    </div>
   );
 }

@@ -14,6 +14,7 @@ import {
   resolveDuePreset,
   type WorkDuePreset,
 } from "@/lib/work-due-dates";
+import { describeWorkDestination, type WorkDestination } from "@/lib/work-destination";
 import { PersonAvatar } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -84,6 +85,64 @@ function ownerLabel(owner: WorkComposerOwner, assignees: WorkComposerAssignees |
   return assignees?.users.find((u) => u.id === owner.id)?.name ?? "Someone";
 }
 
+/** Who a new row starts owned by. Personal composers default to the signed-in
+ *  user (the server defaults the same way as a backstop); a project composer
+ *  starts unowned, because unowned project work is a legitimate, visible
+ *  state rather than something to pin on whoever typed it. */
+function resolveInitialOwner(
+  defaultOwner: WorkComposerOwner | undefined,
+  projectId: string | undefined,
+  meId: string | undefined,
+): WorkComposerOwner {
+  if (defaultOwner) return defaultOwner;
+  if (projectId || !meId) return { kind: "nobody" };
+  return { kind: "user", id: meId };
+}
+
+/** The create payload. Split out of the submit handler (R-3.6): the
+ *  project/personal split touches three fields, and each ternary is a branch
+ *  the component would otherwise carry. */
+function buildCreateInput(args: {
+  title: string;
+  projectId: string | undefined;
+  stage: ProjectTaskStage | null;
+  due: WorkDuePreset;
+  timezone: string | undefined;
+  owner: WorkComposerOwner;
+}) {
+  const scoped = !!args.projectId;
+  return {
+    title: args.title,
+    projectId: args.projectId,
+    stage: scoped ? (args.stage ?? undefined) : undefined,
+    dueDate: scoped ? undefined : resolveDuePreset(args.due, Date.now(), args.timezone),
+    assigneeUserId: args.owner.kind === "user" ? args.owner.id : undefined,
+    assigneeCrewId: args.owner.kind === "crew" ? args.owner.id : undefined,
+  };
+}
+
+const composerPlaceholder = (given: string | undefined, projectId: string | undefined): string =>
+  given ?? (projectId ? "Add work to this job…" : "Add work…");
+
+const canSubmitWork = (title: string, busy: boolean, blocked: boolean): boolean =>
+  title.length > 0 && !busy && !blocked;
+
+/** The "where will this land" line. Its own component so the composer doesn't
+ *  carry the warn/muted split and the icon's conditional (R-3.6). */
+function DestinationLine({ destination }: { destination: WorkDestination }) {
+  return (
+    <p
+      className={cn(
+        "flex items-center gap-1.5 border-t border-dashed border-line px-3 py-1.5 pl-[38px] text-caption",
+        destination.blocked ? "text-warn" : "text-muted",
+      )}
+    >
+      {destination.blocked && <AlertTriangle className="size-3 shrink-0" aria-hidden />}
+      {destination.text}
+    </p>
+  );
+}
+
 export function WorkComposer({
   projectId,
   defaultStage,
@@ -100,8 +159,8 @@ export function WorkComposer({
   const writes = useProjectTaskWrites();
   const { timezone } = useDocumentDatesConfig();
 
-  const initialOwner: WorkComposerOwner = useMemo(
-    () => defaultOwner ?? (projectId ? { kind: "nobody" } : meId ? { kind: "user", id: meId } : { kind: "nobody" }),
+  const initialOwner = useMemo(
+    () => resolveInitialOwner(defaultOwner, projectId, meId),
     [defaultOwner, projectId, meId],
   );
 
@@ -112,41 +171,25 @@ export function WorkComposer({
   const [busy, setBusy] = useState(false);
 
   const trimmed = title.trim();
-  // The one state the product must not be able to produce: nobody to show it
-  // to, and no job to hang it on.
-  const wouldLandNowhere = !projectId && owner.kind === "nobody";
-  const canSubmit = trimmed.length > 0 && !busy && !wouldLandNowhere;
-
-  const destination = useMemo(() => {
-    if (wouldLandNowhere) {
-      return "Nobody owns this and it has no job — it would land nowhere. Pick an owner.";
-    }
-    const who =
-      owner.kind === "nobody"
-        ? "this job's work list"
-        : owner.kind === "user" && owner.id === meId
-          ? "your work list"
-          : `${ownerLabel(owner, assignees, meId)}’s work list`;
-    const when = projectId
-      ? stage
-        ? TASK_STAGE_LABELS[stage]
-        : "no stage"
-      : WORK_DUE_PRESET_LABELS[due].toLowerCase();
-    return `Lands in ${who} · ${when}`;
-  }, [wouldLandNowhere, owner, meId, assignees, projectId, stage, due]);
+  const destination = useMemo(
+    () =>
+      describeWorkDestination({
+        hasProject: !!projectId,
+        ownerKind: owner.kind,
+        isMe: owner.kind === "user" && owner.id === meId,
+        ownerName: ownerLabel(owner, assignees, meId),
+        stageLabel: stage ? TASK_STAGE_LABELS[stage] : null,
+        dueLabel: WORK_DUE_PRESET_LABELS[due],
+      }),
+    [projectId, owner, meId, assignees, stage, due],
+  );
+  const canSubmit = canSubmitWork(trimmed, busy, destination.blocked);
 
   const submit = useCallback(() => {
     if (!canSubmit) return;
     setBusy(true);
     writes
-      .create({
-        title: trimmed,
-        projectId,
-        stage: projectId ? (stage ?? undefined) : undefined,
-        dueDate: projectId ? undefined : resolveDuePreset(due, Date.now(), timezone),
-        assigneeUserId: owner.kind === "user" ? owner.id : undefined,
-        assigneeCrewId: owner.kind === "crew" ? owner.id : undefined,
-      })
+      .create(buildCreateInput({ title: trimmed, projectId, stage, due, timezone, owner }))
       .then(() => {
         setTitle("");
         onCreated?.();
@@ -162,7 +205,7 @@ export function WorkComposer({
     <form
       className={cn(
         "rounded-[var(--r)] border bg-card",
-        wouldLandNowhere ? "border-warn" : "border-line",
+        destination.blocked ? "border-warn" : "border-line",
         className,
       )}
       onSubmit={(e) => {
@@ -181,48 +224,77 @@ export function WorkComposer({
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder={placeholder ?? (projectId ? "Add work to this job…" : "Add work…")}
+          placeholder={composerPlaceholder(placeholder, projectId)}
           disabled={busy}
           className="min-w-0 flex-1 bg-transparent text-ui-text text-ink placeholder:text-faint focus:outline-none"
         />
 
         {showChips && (
-          <>
-            <OwnerChip owner={owner} onChange={setOwner} assignees={assignees} meId={meId} allowNobody={!!projectId} />
-            {projectId ? (
-              <StageChip stage={stage} onChange={setStage} />
-            ) : (
-              <DueChip due={due} onChange={setDue} />
-            )}
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className={cn(
-                "shrink-0 rounded-full px-3.5 py-1.5 text-badge font-semibold transition-colors",
-                canSubmit
-                  ? "bg-primary text-primary-foreground shadow-[var(--sh-stk)]"
-                  : "cursor-not-allowed bg-elev text-faint",
-                focusRing,
-              )}
-            >
-              {busy ? <Loader2 className="size-3.5 animate-spin" aria-label="Adding" /> : "Add"}
-            </button>
-          </>
+          <ComposerControls
+            owner={owner}
+            onOwnerChange={setOwner}
+            assignees={assignees}
+            meId={meId}
+            projectId={projectId}
+            stage={stage}
+            onStageChange={setStage}
+            due={due}
+            onDueChange={setDue}
+            canSubmit={canSubmit}
+            busy={busy}
+          />
         )}
       </div>
 
-      {showChips && (
-        <p
-          className={cn(
-            "flex items-center gap-1.5 border-t border-dashed border-line px-3 py-1.5 pl-[38px] text-caption",
-            wouldLandNowhere ? "text-warn" : "text-muted",
-          )}
-        >
-          {wouldLandNowhere && <AlertTriangle className="size-3 shrink-0" aria-hidden />}
-          {destination}
-        </p>
-      )}
+      {showChips && <DestinationLine destination={destination} />}
     </form>
+  );
+}
+
+/** The chip row and the Add button. Split out of `WorkComposer` (R-3.6)
+ *  purely to keep that function's own branch count down — every chip and
+ *  every disabled state is a branch, and they all belong to one row. */
+function ComposerControls({
+  owner,
+  onOwnerChange,
+  assignees,
+  meId,
+  projectId,
+  stage,
+  onStageChange,
+  due,
+  onDueChange,
+  canSubmit,
+  busy,
+}: {
+  owner: WorkComposerOwner;
+  onOwnerChange: (o: WorkComposerOwner) => void;
+  assignees: WorkComposerAssignees | undefined;
+  meId: string | undefined;
+  projectId: string | undefined;
+  stage: ProjectTaskStage | null;
+  onStageChange: (s: ProjectTaskStage | null) => void;
+  due: WorkDuePreset;
+  onDueChange: (d: WorkDuePreset) => void;
+  canSubmit: boolean;
+  busy: boolean;
+}) {
+  return (
+    <>
+      <OwnerChip owner={owner} onChange={onOwnerChange} assignees={assignees} meId={meId} allowNobody={!!projectId} />
+      {projectId ? <StageChip stage={stage} onChange={onStageChange} /> : <DueChip due={due} onChange={onDueChange} />}
+      <button
+        type="submit"
+        disabled={!canSubmit}
+        className={cn(
+          "shrink-0 rounded-full px-3.5 py-1.5 text-badge font-semibold transition-colors",
+          canSubmit ? "bg-primary text-primary-foreground shadow-[var(--sh-stk)]" : "cursor-not-allowed bg-elev text-faint",
+          focusRing,
+        )}
+      >
+        {busy ? <Loader2 className="size-3.5 animate-spin" aria-label="Adding" /> : "Add"}
+      </button>
+    </>
   );
 }
 

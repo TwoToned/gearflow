@@ -15,6 +15,7 @@ import {
   isUnownedWork,
   sortOpenWork,
   summariseProjectWork,
+  type ProjectWorkSummary,
 } from "@/lib/project-work";
 import type { ProjectTaskRow } from "@/lib/project-tasks";
 import { WorkComposer } from "@/components/work/work-composer";
@@ -128,35 +129,12 @@ export function ProjectWorkRailSection({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-2 border-b border-border pb-4">
-      <button
-        type="button"
-        onClick={toggleCollapsed}
-        aria-expanded={!collapsed}
-        className={cn("flex w-full items-center gap-2 text-left", focusRing)}
-      >
-        {collapsed ? (
-          <ChevronRight className="size-3.5 shrink-0 text-muted" aria-hidden />
-        ) : (
-          <ChevronDown className="size-3.5 shrink-0 text-muted" aria-hidden />
-        )}
-        <SectionHeader label="Work" className="flex-1" />
-        {/* Counts live in the header so the section stays glanceable collapsed. */}
-        {!isLoading && summary.totalCount > 0 && (
-          <span className="t-mono shrink-0 text-muted">
-            {summary.doneCount} of {summary.totalCount}
-          </span>
-        )}
-        {summary.lateCount > 0 && (
-          <span className="shrink-0 rounded-full bg-out-soft px-2 py-0.5 text-badge font-semibold text-t-out">
-            {summary.lateCount} late
-          </span>
-        )}
-        {summary.unownedCount > 0 && (
-          <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-badge font-semibold text-warn">
-            {summary.unownedCount} unowned
-          </span>
-        )}
-      </button>
+      <RailHeader
+        collapsed={collapsed}
+        onToggle={toggleCollapsed}
+        isLoading={isLoading}
+        summary={summary}
+      />
 
       {!collapsed && (
         <>
@@ -191,69 +169,17 @@ export function ProjectWorkRailSection({ projectId }: { projectId: string }) {
                 </p>
               ) : (
                 <ul className="space-y-0.5">
-                  {visible.map((task) => {
-                    const done = task.status === "DONE" || justDone.has(task.id);
-                    const due = dueLabel(task, nowMs, timezone);
-                    const late = !done && isLateWork(task, nowMs, timezone);
-                    // Unowned is the SHARED predicate, not "did the join
-                    // resolve" — a row assigned to a since-deleted user has
-                    // an id but no join row, and the header count (which uses
-                    // the predicate) would then disagree with this marker.
-                    const unowned = isUnownedWork(task);
-                    const owner =
-                      task.assigneeUser?.name ??
-                      (task.assigneeCrew ? `${task.assigneeCrew.firstName} ${task.assigneeCrew.lastName}`.trim() : null);
-                    return (
-                      <li
-                        key={task.id}
-                        className={cn(
-                          "flex items-center gap-2 rounded-[var(--r)] py-1 pl-1.5 pr-1 hover:bg-paper-2",
-                          late && "border-l-2 border-red",
-                        )}
-                      >
-                        <button
-                          type="button"
-                          disabled={!canEdit}
-                          onClick={() => toggleDone(task)}
-                          aria-label={done ? `Mark ${task.title} not done` : `Mark ${task.title} done`}
-                          className={cn(
-                            "grid size-4 shrink-0 place-items-center rounded-full border",
-                            done ? "border-transparent bg-ok-soft text-ok" : "border-line-2 text-transparent",
-                            canEdit ? "cursor-pointer" : "cursor-default",
-                            focusRing,
-                          )}
-                        >
-                          {done && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
-                        </button>
-                        {/* Truncate, never wrap: 340px minus the circle, due
-                            and avatar leaves ~200px, and a wrapped title
-                            breaks the row rhythm. The peek has the full text. */}
-                        <span
-                          className={cn(
-                            "min-w-0 flex-1 truncate text-table-cell",
-                            done ? "text-muted line-through" : "text-ink-2",
-                          )}
-                          title={task.title}
-                        >
-                          {task.title}
-                        </span>
-                        {due && (
-                          <span className={cn("t-mono shrink-0", late ? "text-t-out" : "text-muted")}>{due}</span>
-                        )}
-                        {!unowned ? (
-                          <PersonAvatar name={owner ?? "Assigned"} className="size-[18px] shrink-0 text-[9px]" />
-                        ) : (
-                          <span
-                            className="grid size-[18px] shrink-0 place-items-center rounded-full border border-dashed border-faint text-[9px] text-muted"
-                            title="No owner — this is on the job, but on nobody's Today"
-                            aria-label="No owner"
-                          >
-                            ?
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
+                  {visible.map((task) => (
+                    <WorkRailRow
+                      key={task.id}
+                      task={task}
+                      done={task.status === "DONE" || justDone.has(task.id)}
+                      late={isLateWork(task, nowMs, timezone)}
+                      due={dueLabel(task, nowMs, timezone)}
+                      canEdit={canEdit}
+                      onToggle={() => toggleDone(task)}
+                    />
+                  ))}
                 </ul>
               )}
 
@@ -286,4 +212,145 @@ export function ProjectWorkRailSection({ projectId }: { projectId: string }) {
       )}
     </div>
   );
+}
+
+/** The collapse toggle and the glanceable counts. Split out (R-3.6): each
+ *  badge is a branch, and they all belong to one strip. */
+function RailHeader({
+  collapsed,
+  onToggle,
+  isLoading,
+  summary,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  isLoading: boolean;
+  summary: ProjectWorkSummary;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      className={cn("flex w-full items-center gap-2 text-left", focusRing)}
+    >
+      {collapsed ? (
+        <ChevronRight className="size-3.5 shrink-0 text-muted" aria-hidden />
+      ) : (
+        <ChevronDown className="size-3.5 shrink-0 text-muted" aria-hidden />
+      )}
+      <SectionHeader label="Work" className="flex-1" />
+      {/* Counts live in the header so the section stays glanceable collapsed. */}
+      {!isLoading && summary.totalCount > 0 && (
+        <span className="t-mono shrink-0 text-muted">
+          {summary.doneCount} of {summary.totalCount}
+        </span>
+      )}
+      {summary.lateCount > 0 && (
+        <span className="shrink-0 rounded-full bg-out-soft px-2 py-0.5 text-badge font-semibold text-t-out">
+          {summary.lateCount} late
+        </span>
+      )}
+      {summary.unownedCount > 0 && (
+        <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-badge font-semibold text-warn">
+          {summary.unownedCount} unowned
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** One row. Split out of the list's map (R-3.6) — done/late/owner each fork
+ *  the markup, which put the callback well over the branch limit. */
+function WorkRailRow({
+  task,
+  done,
+  late,
+  due,
+  canEdit,
+  onToggle,
+}: {
+  task: ProjectTaskRow;
+  done: boolean;
+  late: boolean;
+  due: string | null;
+  canEdit: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li
+      className={cn(
+        "flex items-center gap-2 rounded-[var(--r)] py-1 pl-1.5 pr-1 hover:bg-paper-2",
+        late && !done && "border-l-2 border-red",
+      )}
+    >
+      <RowCheck done={done} canEdit={canEdit} title={task.title} onToggle={onToggle} />
+      {/* Truncate, never wrap: 340px minus the circle, due and avatar leaves
+          ~200px, and a wrapped title breaks the row rhythm. */}
+      <span
+        className={cn("min-w-0 flex-1 truncate text-table-cell", done ? "text-muted line-through" : "text-ink-2")}
+        title={task.title}
+      >
+        {task.title}
+      </span>
+      {due && <span className={cn("t-mono shrink-0", late ? "text-t-out" : "text-muted")}>{due}</span>}
+      <RowOwner task={task} />
+    </li>
+  );
+}
+
+/** The done circle. Its own component so the row doesn't carry the done /
+ *  can-edit / label forks (R-3.6). */
+function RowCheck({
+  done,
+  canEdit,
+  title,
+  onToggle,
+}: {
+  done: boolean;
+  canEdit: boolean;
+  title: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={!canEdit}
+      onClick={onToggle}
+      aria-label={done ? `Mark ${title} not done` : `Mark ${title} done`}
+      className={cn(
+        "grid size-4 shrink-0 place-items-center rounded-full border",
+        done ? "border-transparent bg-ok-soft text-ok" : "border-line-2 text-transparent",
+        canEdit ? "cursor-pointer" : "cursor-default",
+        focusRing,
+      )}
+    >
+      {done && <Check className="size-2.5" strokeWidth={3} aria-hidden />}
+    </button>
+  );
+}
+
+/**
+ * The owner avatar, or a dashed placeholder when nobody owns the row.
+ *
+ * Unowned is the SHARED predicate, not "did the assignee join resolve" — a
+ * row assigned to a since-deleted user has an id and no join row, and the
+ * header count (which uses the predicate) would then disagree with this
+ * marker on the very same row.
+ */
+function RowOwner({ task }: { task: ProjectTaskRow }) {
+  if (isUnownedWork(task)) {
+    return (
+      <span
+        className="grid size-[18px] shrink-0 place-items-center rounded-full border border-dashed border-faint text-[9px] text-muted"
+        title="No owner — this is on the job, but on nobody's Today"
+        aria-label="No owner"
+      >
+        ?
+      </span>
+    );
+  }
+  const crew = task.assigneeCrew;
+  const owner = task.assigneeUser?.name ?? (crew ? `${crew.firstName} ${crew.lastName}`.trim() : null);
+  return <PersonAvatar name={owner ?? "Assigned"} className="size-[18px] shrink-0 text-[9px]" />;
 }

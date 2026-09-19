@@ -108,33 +108,40 @@ export interface GearBoardResult {
 }
 
 /**
- * Per model, org-wide, over the whole `range`: sum HARD demand (non-optional
- * line on a `isConfirmedOrLater` project) vs PENCILLED demand (an `isOptional`
- * line, or any line on a not-yet-confirmed project) across every candidate
- * project whose window overlaps `range`. `hard.qty` = shortage if only hard
- * demand ran; `pencilled.qty` = the ADDITIONAL shortage if pencilled demand
- * also ran — the "would this collide if confirmed" number. Sub-hire lines are
- * excluded (covered demand, third-party stock).
+ * Per model, org-wide: sum HARD demand (non-optional line on a
+ * `isConfirmedOrLater` project) vs PENCILLED demand (an `isOptional` line, or
+ * any line on a not-yet-confirmed project) across every candidate project
+ * whose window overlaps `range`. `hard.qty` = shortage if only hard demand
+ * ran; `pencilled.qty` = the ADDITIONAL shortage if pencilled demand also ran
+ * — the "would this collide if confirmed" number. Sub-hire lines are excluded
+ * (covered demand, third-party stock).
  *
- * This sums across the WHOLE range the same way the per-project engine
- * (`reconstructOverbookedStatus`) sums across a project's own window — a
- * deliberate, precedented simplification (it doesn't day-slice non-overlapping
- * sub-windows within `range`), so a shortage here is a "somewhere in this
- * range, demand exceeds stock" signal, not a per-day guarantee.
+ * **Day-sliced (2026-09 fix)**: two projects that each fit fine on their own
+ * but whose windows both happen to fall somewhere inside `range` used to be
+ * pooled into ONE combined demand figure even when their actual dates never
+ * overlap EACH OTHER (e.g. project A runs Oct 1-15, project B runs Oct 18-24,
+ * `range` is Oct 1-19 — A and B never compete for the same day, but both got
+ * summed as if they did). `sweepModelConflicts` below runs a proper sweep-line
+ * over each model's per-project claim windows, so a shortage is only reported
+ * for the actual time segment(s) where demand genuinely exceeds stock — a
+ * model can now produce more than one `GearShortageRow` if it has multiple,
+ * non-adjacent real conflict windows within `range`.
  */
 /** One project's claim on a model — mirrors `ProjectModelClaim` in
  *  `src/lib/overbooking-core.ts` (duplicated, not imported: this file lives in
  *  `convex/lib/` and that one is `src/lib/`, no `@/` alias resolution between
  *  the two — same reason `isConfirmedOrLater`/`PENCILLED_PROJECT_STATUSES` are
  *  duplicated rather than shared). `claimedAt` is the EARLIEST creation time
- *  among that project's lines for this model in this layer. */
-type ProjectClaim = { qty: number; claimedAt: number };
+ *  among that project's lines for this model in this layer; `start`/`end` are
+ *  that project's own (range-clamped) window — every line item on the same
+ *  project shares the same window (`getProjectWindow` is a function of the
+ *  project, not the line item), so one claim per project is exact, not an
+ *  approximation. */
+type ProjectClaim = { qty: number; claimedAt: number; start: number; end: number };
 
 type ModelAgg = {
   hardClaims: Map<string, ProjectClaim>; // projectId -> claim
   pencilledClaims: Map<string, ProjectClaim>;
-  spanStart: number;
-  spanEnd: number;
 };
 
 /**
@@ -173,34 +180,32 @@ function isRelevantDemandLine(li: BoardLineItem, projectById: Map<string, BoardP
   return projectById.has(li.projectId);
 }
 
-function getOrCreateAgg(byModel: Map<string, ModelAgg>, modelId: string, clampedStart: number, clampedEnd: number): ModelAgg {
+function getOrCreateAgg(byModel: Map<string, ModelAgg>, modelId: string): ModelAgg {
   const existing = byModel.get(modelId);
   if (existing) return existing;
-  const created: ModelAgg = { hardClaims: new Map(), pencilledClaims: new Map(), spanStart: clampedStart, spanEnd: clampedEnd };
+  const created: ModelAgg = { hardClaims: new Map(), pencilledClaims: new Map() };
   byModel.set(modelId, created);
   return created;
 }
 
-function bumpClaim(claims: Map<string, ProjectClaim>, projectId: string, qty: number, claimedAt: number): void {
+function bumpClaim(claims: Map<string, ProjectClaim>, projectId: string, qty: number, claimedAt: number, start: number, end: number): void {
   const existing = claims.get(projectId);
   if (existing) {
     existing.qty += qty;
     existing.claimedAt = Math.min(existing.claimedAt, claimedAt);
   } else {
-    claims.set(projectId, { qty, claimedAt });
+    claims.set(projectId, { qty, claimedAt, start, end });
   }
 }
 
 function applyDemandLine(agg: ModelAgg, li: BoardLineItem, p: BoardProject, clampedStart: number, clampedEnd: number): void {
   const isPencilled = li.isOptional === true || !isConfirmedOrLater(p.status);
   const qty = li.quantity ?? 0;
-  agg.spanStart = Math.min(agg.spanStart, clampedStart);
-  agg.spanEnd = Math.max(agg.spanEnd, clampedEnd);
   // `createdAt` is `v.optional`; `_creationTime` (Convex system field) is
   // always present on a real doc and is the fallback — same reasoning as
   // `mapLineItemDoc` in `project-equipment-reconstruct.ts`.
   const claimedAt = li.createdAt ?? li._creationTime ?? Number.MAX_SAFE_INTEGER;
-  bumpClaim(isPencilled ? agg.pencilledClaims : agg.hardClaims, p.id, qty, claimedAt);
+  bumpClaim(isPencilled ? agg.pencilledClaims : agg.hardClaims, p.id, qty, claimedAt, clampedStart, clampedEnd);
 }
 
 function aggregateDemandByModel(
@@ -216,11 +221,124 @@ function aggregateDemandByModel(
     const { start, end } = getProjectWindow(p);
     const clampedStart = Math.max(range.start, start ?? range.start);
     const clampedEnd = Math.min(range.end, end ?? range.end);
-    const agg = getOrCreateAgg(byModel, li.modelId!, clampedStart, clampedEnd);
+    const agg = getOrCreateAgg(byModel, li.modelId!);
     applyDemandLine(agg, li, p, clampedStart, clampedEnd);
   }
 
   return byModel;
+}
+
+// ─── Sweep-line: real day-by-day overlap, not "anywhere in range" pooling ─────
+
+type ConflictSegment = { start: number; end: number; overByProject: Map<string, number> };
+
+/** A stable string key for "which projects are over by how much" — used to
+ *  merge adjacent time segments that reached the identical outcome, so one
+ *  continuous conflict reports as ONE row instead of fragmenting at every
+ *  claim's start/end boundary. */
+function segmentSignature(overByProject: Map<string, number>): string {
+  return [...overByProject.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, qty]) => `${id}:${qty}`)
+    .join("|");
+}
+
+function mergeAdjacentSegments(segments: ConflictSegment[]): ConflictSegment[] {
+  if (segments.length === 0) return [];
+  const merged: ConflictSegment[] = [];
+  let current: ConflictSegment = { start: segments[0].start, end: segments[0].end, overByProject: segments[0].overByProject };
+  let currentSig = segmentSignature(current.overByProject);
+  for (let i = 1; i < segments.length; i++) {
+    const seg = segments[i];
+    const sig = segmentSignature(seg.overByProject);
+    if (seg.start === current.end + 1 && sig === currentSig) {
+      current = { ...current, end: seg.end };
+    } else {
+      merged.push(current);
+      current = { start: seg.start, end: seg.end, overByProject: seg.overByProject };
+      currentSig = sig;
+    }
+  }
+  merged.push(current);
+  return merged;
+}
+
+type ConflictEntry = { projectId: string; claim: ProjectClaim; layer: "hard" | "pencilled" };
+
+/** The claims active at `segStart`, split by layer — a claim is active on a
+ *  segment iff the segment's (breakpoint-derived, constant-active-set) start
+ *  point falls inside its inclusive [start, end]. */
+function activeClaimsAt(entries: ConflictEntry[], segStart: number): { activeHard: Map<string, ProjectClaim>; activePencilled: Map<string, ProjectClaim> } {
+  const activeHard = new Map<string, ProjectClaim>();
+  const activePencilled = new Map<string, ProjectClaim>();
+  for (const e of entries) {
+    if (e.claim.start <= segStart && e.claim.end >= segStart) {
+      (e.layer === "hard" ? activeHard : activePencilled).set(e.projectId, e.claim);
+    }
+  }
+  return { activeHard, activePencilled };
+}
+
+/** FCFS-allocates one sweep segment's active claims — hard claims always
+ *  allocate before pencilled ones, so pencilled capacity at this segment is
+ *  `effectiveStock` minus whatever hard demand is active RIGHT HERE, not the
+ *  claim's global hard total. */
+function allocateSegment(
+  segStart: number,
+  segEnd: number,
+  entries: ConflictEntry[],
+  effectiveStock: number,
+): { hard?: ConflictSegment; pencilled?: ConflictSegment } {
+  const { activeHard, activePencilled } = activeClaimsAt(entries, segStart);
+  if (activeHard.size === 0 && activePencilled.size === 0) return {};
+
+  const activeHardQtyTotal = [...activeHard.values()].reduce((sum, c) => sum + c.qty, 0);
+  const hardOverBy = allocateFifo(activeHard, effectiveStock);
+  const pencilledOverBy = allocateFifo(activePencilled, Math.max(0, effectiveStock - activeHardQtyTotal));
+
+  return {
+    hard: hardOverBy.size > 0 ? { start: segStart, end: segEnd, overByProject: hardOverBy } : undefined,
+    pencilled: pencilledOverBy.size > 0 ? { start: segStart, end: segEnd, overByProject: pencilledOverBy } : undefined,
+  };
+}
+
+/**
+ * Sweep-line over one model's hard + pencilled claims: only claims that are
+ * ACTUALLY active on the same day compete for the same stock. Returns merged,
+ * non-adjacent-duplicate segments per layer — each one a genuine, date-bounded
+ * conflict.
+ */
+function sweepModelConflicts(
+  hardClaims: Map<string, ProjectClaim>,
+  pencilledClaims: Map<string, ProjectClaim>,
+  effectiveStock: number,
+): { hardSegments: ConflictSegment[]; pencilledSegments: ConflictSegment[] } {
+  const entries: ConflictEntry[] = [
+    ...[...hardClaims].map(([projectId, claim]): ConflictEntry => ({ projectId, claim, layer: "hard" })),
+    ...[...pencilledClaims].map(([projectId, claim]): ConflictEntry => ({ projectId, claim, layer: "pencilled" })),
+  ];
+  if (entries.length === 0) return { hardSegments: [], pencilledSegments: [] };
+
+  // Breakpoints: every claim's start, and one tick past every claim's end
+  // (claims are inclusive [start, end], so `end + 1` is the exclusive
+  // boundary) — between two consecutive breakpoints, the active set never
+  // changes, so sampling at the segment's own start point is exact.
+  const breakpoints = [...new Set(entries.flatMap((e) => [e.claim.start, e.claim.end + 1]))].sort((a, b) => a - b);
+
+  const rawHard: ConflictSegment[] = [];
+  const rawPencilled: ConflictSegment[] = [];
+
+  for (let i = 0; i < breakpoints.length - 1; i++) {
+    const segStart = breakpoints[i];
+    const segEnd = breakpoints[i + 1] - 1;
+    if (segEnd < segStart) continue;
+
+    const { hard, pencilled } = allocateSegment(segStart, segEnd, entries, effectiveStock);
+    if (hard) rawHard.push(hard);
+    if (pencilled) rawPencilled.push(pencilled);
+  }
+
+  return { hardSegments: mergeAdjacentSegments(rawHard), pencilledSegments: mergeAdjacentSegments(rawPencilled) };
 }
 
 function groupByModelId<T extends { modelId?: string | null; isActive?: boolean | null }>(rows: T[]): Map<string, T[]> {
@@ -247,14 +365,14 @@ function projectRef(p: BoardProject | undefined): { id: string; name: string; pr
   return { id: p?.id ?? "", name: p?.name ?? "", projectNumber: p?.projectNumber ?? "" };
 }
 
-function shortageRow(modelId: string, m: BoardModel, agg: ModelAgg, qty: number, projectIds: Set<string>, projectById: Map<string, BoardProject>): GearShortageRow {
+function shortageRow(modelId: string, m: BoardModel, segment: ConflictSegment, projectById: Map<string, BoardProject>): GearShortageRow {
   return {
     modelId,
     modelName: m.name,
-    qty,
-    spanStart: agg.spanStart,
-    spanEnd: agg.spanEnd,
-    projects: [...projectIds].map((id) => projectRef(projectById.get(id))),
+    qty: [...segment.overByProject.values()].reduce((sum, v) => sum + v, 0),
+    spanStart: segment.start,
+    spanEnd: segment.end,
+    projects: [...segment.overByProject.keys()].map((id) => projectRef(projectById.get(id))),
   };
 }
 
@@ -282,20 +400,15 @@ export function computeGearShortageBoard(
     if (!m) continue;
     const effectiveStock = effectiveStockForModel(m, assetMap.get(modelId) ?? [], bulkMap.get(modelId) ?? []);
 
-    // FCFS (2026-09): hard claims allocate first against effectiveStock (a
-    // CONFIRMED-or-later job never loses stock to a mere quote); whatever's
-    // left is what pencilled claims compete for among themselves. A row's
-    // `projects` list is only the claim(s) that actually don't fit — not
-    // every project sharing the pool.
-    const hardQtyTotal = [...agg.hardClaims.values()].reduce((sum, c) => sum + c.qty, 0);
-    const hardOverByProject = allocateFifo(agg.hardClaims, effectiveStock);
-    const pencilledOverByProject = allocateFifo(agg.pencilledClaims, Math.max(0, effectiveStock - hardQtyTotal));
-
-    const hardShortage = [...hardOverByProject.values()].reduce((sum, v) => sum + v, 0);
-    const pencilledCollision = [...pencilledOverByProject.values()].reduce((sum, v) => sum + v, 0);
-
-    if (hardShortage > 0) hard.push(shortageRow(modelId, m, agg, hardShortage, new Set(hardOverByProject.keys()), projectById));
-    if (pencilledCollision > 0) pencilled.push(shortageRow(modelId, m, agg, pencilledCollision, new Set(pencilledOverByProject.keys()), projectById));
+    // Day-sliced FCFS (2026-09): only claims that are ACTUALLY active on the
+    // same day compete for the same stock, and only the claim(s) that don't
+    // fit are listed — not every project sharing the model, and not a project
+    // whose window never overlaps the other claimant's at all. A model can
+    // produce more than one row here if it has multiple distinct conflict
+    // windows within `range`.
+    const { hardSegments, pencilledSegments } = sweepModelConflicts(agg.hardClaims, agg.pencilledClaims, effectiveStock);
+    for (const seg of hardSegments) hard.push(shortageRow(modelId, m, seg, projectById));
+    for (const seg of pencilledSegments) pencilled.push(shortageRow(modelId, m, seg, projectById));
   }
 
   hard.sort((a, b) => b.qty - a.qty);

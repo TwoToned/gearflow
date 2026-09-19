@@ -32,7 +32,12 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
    and granted against whatever capacity is left after every earlier claim's
    full quantity, so the row lists ONLY the claim(s) that don't fit — e.g. two
    10-unit CONFIRMED bookings against 16 usable stock lists just whichever was
-   booked second, not both.
+   booked second, not both. **Day-sliced** (2026-09, `sweepModelConflicts` in
+   `overbookingBoard.ts` — see "Known limitations" below, formerly listed as a
+   limitation): a model can produce more than one row per query range if it has
+   multiple, non-adjacent conflict sub-windows — each row carries its own
+   `spanStart`/`spanEnd` bounding the ACTUAL overlapping period, not the whole
+   query range.
 2. **Pencilled collisions** — the ADDITIONAL shortage that would exist if
    every currently-pencilled booking for that model (an optional line, or any
    line on a not-yet-confirmed project) also went hard. A heads-up, not a
@@ -42,7 +47,8 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
    left. A row's `projects` list is only the pencilled claim(s) that don't
    fit — a CONFIRMED job that already secured its own stock (even if that's
    the entire reason a QUOTED job can't fit) is never listed here, since it
-   isn't the one with a shortfall.
+   isn't the one with a shortfall. Day-sliced the same way as the hard section
+   above.
 3. **Sale stock to procure** (WS11 #950) — models whose `Model.saleStockQuantity`
    (a single per-model sale-stock pool, independent of rental assets/bulk) has
    gone negative — sold below what was ever added as stock. Each row lists the
@@ -193,12 +199,24 @@ two unrelated things. Crew stays a follow-on.
 
 ## Known limitations / deferred
 
-- **Whole-range sums, not day-sliced.** Gear shortages sum ALL demand across
-  every project overlapping the selected range and compare against total
-  stock — the same simplification the per-project engine already makes (it
-  doesn't check whether two non-overlapping sub-windows within the range
-  could reuse the same units). A shortage here means "somewhere in this
-  range, demand exceeds stock," not a per-day guarantee.
+- ~~**Whole-range sums, not day-sliced.**~~ **Fixed (2026-09).** Gear
+  shortages used to sum ALL demand across every project overlapping the
+  selected range and compare against total stock in one pool, so two
+  projects with genuinely non-overlapping dates (e.g. Oct 1–15 and Oct
+  18–24) that both merely fell inside a wide admin-chosen query range (say,
+  the whole of October) were falsely reported as colliding — a real bug
+  report ("heaps of overbookings... same with kits") traced back to exactly
+  this. `sweepModelConflicts` in `overbookingBoard.ts` now breaks each
+  model's query range into contiguous sub-windows at every claim's start/end
+  boundary, runs FCFS allocation independently per sub-window, and merges
+  adjacent sub-windows with an identical outcome back into one row — so a
+  shortage row's `spanStart`/`spanEnd` bounds the genuinely-overlapping
+  period, and two non-overlapping projects sharing a query range never
+  collide. `computeConfirmImpactModels` counts DISTINCT models (not rows) for
+  `modelCount`, since a model can now produce more than one row;
+  `computePromoteOverbookingConflicts`'s row shape has no per-row date field,
+  so it merges same-model rows into one summary (combined qty, union of
+  projects) rather than surfacing an unexplained duplicate.
 - **Crew member names aren't resolved** in the "unconfirmed crew" / "crew
   double-bookings" board rows — they show `crewMemberId` and the project(s)
   involved, not a display name. A follow-up can join `crewMembers` for
@@ -215,3 +233,31 @@ one. Fixed via `isFilledAssignmentStatus()` (`src/lib/crew-assignment-status.ts`
 which the board's "services missing crew" section also uses (as
 `EXCLUDED_ASSIGNMENT_STATUSES` in `convex/lib/crewConflicts.ts` — same two
 literals, Convex-local copy since it can't import `src/lib`).
+
+## Pencilled-only severity bugs (found auditing the 2026-09 day-slicing fix)
+
+Two consumers of `OverbookedInfo` set full hard-error ("Overbooked", red)
+severity from a bare `!!info`/non-empty-map check instead of gating on
+`isHardOverbooked(info)` (`src/lib/overbooking-core.ts`) — so a project or
+line whose ONLY collision was pencilled (`hardOverBy === 0`, i.e. nothing is
+actually unavailable today, it would only collide if every not-yet-confirmed
+booking for the gear also went hard) rendered identically to a genuine hard
+shortage:
+
+- `getProjectIssueFlags` (`src/server/projects.ts`) — drove the project
+  list/board's red "Overbooked items" badge (`project-table.tsx`,
+  `project-board.tsx`). Fixed by only setting `hasOverbooked` when at least
+  one entry in the project's `overbookedMap` is `isHardOverbooked`.
+- `PullSheetOverbookedBadge` (warehouse pull-sheet page) — the only
+  `OverbookedInfo` consumer that hadn't been ported to the pencil/hard split
+  when it landed; unlike `equipment-rows.tsx`'s `OverbookedBadge` (the
+  reference implementation) it branched only on `info.inherited`. Fixed to
+  compute `isPencilledOnly` the same way and show the same softer amber
+  "Pencilled overbook" pill — this was the highest-risk of the two, since a
+  pull sheet showing a full red "Overbooked" on gear that's actually fine to
+  pull today is the kind of thing that sends warehouse staff second-guessing
+  a pull that would have gone fine.
+
+`src/lib/pdfme/build-document-data.ts` already filtered through
+`isHardOverbooked` correctly and needed no change — it's what made the
+pattern discoverable as "the two outliers," not a guess.

@@ -8,6 +8,9 @@ sold product). **Stage:** has users (the company runs on it daily at flow.rvlt.a
 **Binding constraint:** [`DESIGN.md`](../../DESIGN.md). **Governing policy:** [`POLICY.md`](../../POLICY.md).
 **Wireframes:** [`mockups/work-layer-wireframes.html`](./mockups/work-layer-wireframes.html)
 (intentionally rough — hierarchy and interaction shape only; DESIGN.md governs visuals).
+**Successor:** [`work-layer-v2-integration.md`](./work-layer-v2-integration.md) — the 2026-09-19
+audit of what phases 0–4 shipped, and the integration pass that makes work first-class in a
+project. Read it alongside this doc before touching a work surface.
 **Review status:** three adversarial cold-read passes on the original (16 → 14 → 7 findings,
 all applied), then a full `/plan-eng-review` on 2026-09-16 — 13 decisions (R1–R13) plus an
 independent outside voice. The review record, what was reused, what is out of scope, the failure

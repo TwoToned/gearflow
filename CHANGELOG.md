@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-19
+
+### Added
+
+- **Kits can now be re-synced to their current catalog membership from an open job.** If a kit's contents change after it's already on a project (a member added or removed), the Equipment tab's new "Sync kits" button pulls the project's kit lines up to date — adding new members, removing dropped ones, and rescaling a kept bulk member's quantity — without re-adding the whole kit. A newly-added member is priced the same way adding the kit fresh would price it (its own rate in itemized-pricing kits; unpriced in fixed-bundle-price kits, since the bundle price doesn't change), and the toolbar flags when something needs a pricing review. Kit lines that have already deployed to a job are left alone. Companion to the existing "Sync accessories" action.
+
 ## [0.29.2] - 2026-09-17
 
 ### Fixed

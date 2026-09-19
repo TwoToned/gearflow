@@ -5,8 +5,13 @@
 > Successor to [`work-layer.md`](./work-layer.md). That doc designed the program and phases 0–4
 > shipped against it. This one audits what those phases actually produced, names why it reads as
 > half-built, and specifies the pass that makes work a first-class citizen of a project.
-> Mockups: a Design canvas of five artboards (Today, project Overview, Work tab, phone, row
-> states) drawn on DESIGN.md's real tokens — linked from the PR that carries this doc.
+> Mockups: a Design canvas of six artboards (Today, project Overview, the Equipment tab with the
+> work rail, the Work tab, phone, row states) drawn on DESIGN.md's real tokens — linked from the
+> PR that carries this doc.
+>
+> **Revised 2026-09-19 after review:** work's home on a project is the **context sidebar**
+> (§4.3), not a card that dominates Overview. The rail rides every working tab; Overview keeps a
+> short summary. §4.3/§4.4 and the change table below reflect that.
 
 ## 1. The complaint, stated precisely
 
@@ -113,7 +118,7 @@ all of them; a fix in one input does not.
 
 ## 4. Design
 
-### 4.1 The composer — one component, three hosts
+### 4.1 The composer — one component, every host
 
 The bare text input becomes a composer that always **names its destination before you commit**.
 
@@ -156,31 +161,83 @@ Eight states, all drawn on the `RowStates` artboard: default, overdue (`--t-out`
 never brand red, no personality copy), done (struck, stays visible until refresh so undo is one
 click), system/`auto`, unowned (dashed avatar + `Assign`), snoozed, mention, blocked-by-lock.
 
-### 4.3 Project Overview — the Work card becomes the project's spine
+### 4.3 The rail — work rides the context sidebar
 
-The card stays where it is (first card, main column, under the stepper). It stops being a
-readout:
+**Work's home on a project is the context sidebar, not a card on Overview.**
 
-1. **Stage meter** across the top — six thin bars, one per stage, widths weighted by item count.
-   The whole job's state in one strip, replacing per-stage bars repeated down the card.
-2. **Project-scoped composer** (§4.1) inside the card. Adding work to a job should not require
-   changing tabs.
-3. **"3 items have no owner" strip** — amber, with *Assign all to me*. D4's silence becomes a
-   visible count. This is the single highest-value addition: it converts the failure mode into a
-   one-click resolution.
-4. **Rows are live**: the circle is a real `<button>` that toggles done, the owner avatar opens an
-   assign menu, the due date opens a date menu, the row opens the peek. Same mutations the Work
-   tab already calls — no new write path.
-5. **`No stage yet` group** — D2's `continue` becomes a real bucket. A row without a stage is a
-   row someone has to triage, not a row to hide.
-6. **Done rows collapse** behind `Show 5 done`, so the card stays short on a busy job. "Front and
-   centre without being over the top" is bought here: the card shows open work and problems, and
-   nothing else, but everything it shows is actionable.
+`DetailSidebar` (340px, sticky) already rides along on every tab except Overview, carrying
+Schedule · Location · Team · Activity. A **Work** section goes in at the top of it, above
+Schedule — the only actionable section sits first; the rest is reference.
 
-Readiness checks stay exactly as they are — derived system rows inside the same list, with their
-existing deep links. `project-readiness-checks.ts` is untouched.
+This is the difference between a destination and an ambient surface. Work is remembered *while
+you are doing something else*: you are pricing gear in Equipment and you remember the parking
+permits. A card on Overview means changing tabs twice to write that down, so it does not get
+written down. A rail that is already on screen means one click.
 
-### 4.4 Work tab — owners, not just stages
+```
+┌ Work   9 of 14        1 late   3 unowned ┐
+│ ▁▁▁ ▃▃▃▃▃▃ ▁▁▁ ▁▁▁ ▁▁▁ ▁▁▁                │  stage meter, one line
+├───────────────────────────────────────────┤
+│ ○ Confirm venue access      1d late  (JN) │
+│ ○ Book LX crew — 2 of 4        Thu   (JN) │
+│ ○ Print run sheets             Thu   (?)  │
+│ ○ Truck pack list              Fri   (BR) │
+│ ○ Dock booking — bay 2      23 Sep   (SO) │
+├───────────────────────────────────────────┤
+│ ⊕ Add work…                               │
+│ All 14 in the Work tab  ›                 │
+└───────────────────────────────────────────┘
+```
+
+- **Collapsible**, with the counts (`9 of 14`, `1 late`, `3 unowned`) in the header so it stays
+  glanceable when collapsed. Collapse state is per-user and remembered.
+- **Five rows, open work only**, ordered overdue → due → undated. `All 14 in the Work tab ›`
+  carries the rest. The rail is a working set, not a list view — if it needs a scrollbar it has
+  failed.
+- **Rows are live**: the circle toggles done, the row opens the peek, the avatar assigns. Same
+  mutations the Work tab already calls — no new write path.
+- **One-line composer** at the bottom, which grows its owner chip and Add button only once you
+  type. Collapsed it is one row of height; expanded it is the §4.1 composer.
+- **Truncate, don't wrap.** 340px minus the circle, due and avatar leaves ~200px of title. A
+  one-line ellipsis keeps the row rhythm; the peek has the full text.
+
+**Where it is suppressed, and why.** Two tabs:
+
+| Tab | Rail's Work section | Why |
+|---|---|---|
+| Work | hidden | The tab *is* the list. Rendering both shows the same rows twice on one screen. |
+| Overview | n/a — no sidebar at all | #1063: on Overview the sidebar's content is the point of the page, so it is composed into peer cards instead. Work follows that existing rule rather than inventing a second one. |
+
+That is the same dedupe rule the context rail already lives by, which is why this needs no new
+concept: `project-context.ts` shapes the facts once and two renderers present them. `Work`
+gets the same treatment — `project-work-card.ts` becomes the shared shaping module behind the
+rail section, the Overview card and the tab header count.
+
+### 4.4 Project Overview — a summary, not a second list
+
+Because the rail carries the list, the Overview card stops trying to. It keeps the job's *shape*
+and its *problems*, and nothing else:
+
+1. **Stage meter** — six thin bars, one per stage, widths weighted by item count. The whole job
+   in one strip.
+2. **"Needs a decision"** — failing readiness checks (with their existing `Open labour` /
+   `Open board` deep links), overdue items, and the **"3 items have no owner"** row with
+   *Assign*. D4's silence becomes a visible count, one click from resolution. Nothing that is
+   merely open and on track appears here.
+3. **One line to capture** a new item, same composer.
+4. **A footer link**: `5 more open · everything in the Work tab ›`.
+
+Where the rail answers *what is outstanding*, this answers *is this job in trouble*. A clean job
+collapses to a meter, an all-clear badge and the capture line — three rows of height instead of
+the current card's full stage-grouped list.
+
+Two things survive from the current card: readiness checks stay derived system rows with their
+deep links (`project-readiness-checks.ts` untouched), and **stage-less rows stop vanishing** —
+D2's `continue` is removed, and a row with no stage counts toward the meter's unallocated
+segment and appears in the rail. It no longer needs its own Overview bucket, because the rail
+lists it.
+
+### 4.5 Work tab — owners, not just stages
 
 The list/board/calendar toggle and the bulk bar are kept as built. Two changes:
 
@@ -191,19 +248,25 @@ The list/board/calendar toggle and the bulk bar are kept as built. Two changes:
   card's amber strip, in the place where you fix it in bulk.
 - **Only mine** toggle, since a PM on a big job wants their own slice without losing the lanes.
 
-### 4.5 Peek — the work item's home until `/work/[id]` exists
+### 4.6 Peek — the work item's home until `/work/[id]` exists
 
 The existing non-modal peek grows the fields the design always specified: owner, due, stage,
 priority, estimate, links (client · venue · quote chips), subtasks with an add row, activity, and
 a footer of *Mark done · Snooze · ⋯*. Docked on the Work tab, overlaid on Today, a bottom sheet on
 a phone. It stays non-modal for the documented reason (CLAUDE.md's Radix/Base UI note).
 
-### 4.6 Phone
+### 4.7 Phone
 
 Today keeps the bucket list and drops the rails to a single **Next up** strip. The composer pins
 above the bottom nav with its owner/when chips always visible — the destination guarantee matters
 most on the surface where people add work while walking. 44px hit areas on every circle via the
 existing `.touch-target` utility; the visual circle stays 20px.
+
+On a project, `DetailSidebar` stacks **below** the main column under `lg` — so on a phone the
+Work section would land at the bottom of a long gear table, which is not a working surface.
+Below `lg` the rail's Work section collapses by default and the tab bar carries the count
+(`Work · 9/14`) instead: on a phone the Work tab is the surface, and the rail is a desktop
+affordance. This is a deliberate divergence, not a responsive accident.
 
 ## 5. Changes required
 
@@ -212,15 +275,17 @@ existing `.touch-target` utility; the visual circle stays 20px.
 | 1 | Default `assigneeUserId` to the acting user when a create has **no** `projectId`, no `parentId` and no explicit assignee | `convex/projectTasksWrites.ts` `createNative` | ~4 lines + test |
 | 2 | Pass the owner/when the composer chose | `today-work-list-widget.tsx` | small |
 | 3 | Stage-less rows into a `No stage yet` bucket | `src/lib/project-work-card.ts` | ~6 lines + test |
-| 4 | Card rows: toggle-done, assign, due, peek; skeleton loading | `overview/work-card.tsx` | medium |
-| 5 | Unowned count + *Assign all to me* | `project-work-card.ts` + card | medium |
-| 6 | Composer component, shared by Today / card / Work tab | new `src/components/work/work-composer.tsx` | medium |
-| 7 | Shared `WorkRow` used by all three surfaces | new `src/components/work/work-row.tsx` | medium |
-| 8 | Group-by-owner default + `Nobody` lane + Only mine | `tasks-panel.tsx` | small |
-| 9 | Index `projectTasks` in global search (the `search_title` index already exists) | `convex/globalSearch.ts` | medium |
-| 10 | `/work/[id]` route rendering the peek full-page | new route | medium |
-| 11 | `/task` verb in the command palette | `command-search.tsx` | small |
-| 12 | Drop the fingerprint resync; one shared query per page | `use-project-work-data.ts`, `projects/[id]/page.tsx` | medium |
+| 4 | **Work section in the rail** — collapsible, 5 rows, live circles, composer, "all N" link | new `src/components/projects/project-work-rail-section.tsx`, mounted in `project-context-rail.tsx` | medium |
+| 5 | Suppress the rail's Work section on the Work tab (Overview has no rail already) | `projects/[id]/page.tsx` | small |
+| 6 | Slim the Overview card to meter + "needs a decision" + capture line + footer link | `overview/work-card.tsx`, `project-work-card.ts` | medium |
+| 7 | Unowned count + *Assign* (shared by the rail header and the card) | `project-work-card.ts` | small |
+| 8 | Composer component, shared by Today / rail / card / Work tab | new `src/components/work/work-composer.tsx` | medium |
+| 9 | Shared `WorkRow` used by every surface | new `src/components/work/work-row.tsx` | medium |
+| 10 | Group-by-owner default + `Nobody` lane + Only mine | `tasks-panel.tsx` | small |
+| 11 | Index `projectTasks` in global search (the `search_title` index already exists) | `convex/globalSearch.ts` | medium |
+| 12 | `/work/[id]` route rendering the peek full-page | new route | medium |
+| 13 | `/task` verb in the command palette | `command-search.tsx` | small |
+| 14 | Drop the fingerprint resync; **one** `useProjectWorkData` per page, shared by the rail, the card and the tab count | `use-project-work-data.ts`, `projects/[id]/page.tsx` | medium |
 
 Nothing above needs a schema change. Every field the design uses (`stage`, `dueDate`,
 `assigneeUserId`, `parentId`, `estimateMinutes`, `tags`, `snoozedUntil`) shipped in phase 1.
@@ -229,15 +294,17 @@ Nothing above needs a schema change. Every field the design uses (`stage`, `dueD
 
 - **P1 — stop losing rows (1 day).** Changes 1–3, each with a test. Independently shippable, and
   it closes the reported bug on its own.
-- **P2 — the card becomes the spine (3–4 days).** Changes 4–8. This is the pass that answers
-  "second-class citizen".
-- **P3 — reach (2–3 days).** Changes 9–12. Work gets a URL, a search entry and a palette verb.
+- **P2 — work rides along (3–4 days).** Changes 4–10, starting with the rail section: it is the
+  change that answers "second-class citizen", and the slimmed Overview card only makes sense once
+  the rail exists to carry the list. Change 14 lands here too if the triple-mount bites — one
+  query now feeds three renderers on the same page.
+- **P3 — reach (2–3 days).** Changes 11–13. Work gets a URL, a search entry and a palette verb.
 
 ## 7. Deliberately not doing
 
 - No new table, no new resource, no migration. The spine is `projectTasks` and stays so (R-3.1).
 - No time tracking, no timer, no "plan my day" auto-scheduler.
-- No second write path for any surface: the card, the tab and Today call the same
+- No second write path for any surface: the rail, the card, the tab and Today call the same
   `projectTasksWrites` mutations, and a curated Mira/MCP tool wraps the same registry operation
   rather than reaching Convex directly (CLAUDE.md, the dispatcher note).
 - No per-bucket cards on Today. Buckets stay `SectionHeader` + hairline (D7A in `work-layer.md`).
@@ -250,3 +317,8 @@ Nothing above needs a schema change. Every field the design uses (`stage`, `dueD
 2. Should the `Nobody` lane be visible to non-PM members, or only to whoever can assign?
 3. Does `/work/[id]` need its own permission, or does it inherit the project's (and, for a
    personal item, the owner's)?
+4. Should the rail's Work section default open or collapsed for a new user? Open shows the
+   feature exists; collapsed protects the Activity feed's position for people who never use it.
+   Proposed: open, remembered per user thereafter.
+5. Five rows in the rail is a guess. If jobs routinely carry more open work than that, the cut
+   should be "overdue + due this week" rather than a fixed count — worth watching once it ships.

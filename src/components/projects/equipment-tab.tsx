@@ -1286,6 +1286,33 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Explicit, PM-initiated: pulls in any DEFAULT accessory added to a model/asset
+  // in the catalog AFTER a line was already added to this job. Never automatic —
+  // see resyncProjectAccessoriesNative for why a catalog edit doesn't push itself
+  // onto every open project.
+  const resyncAccessoriesMut = useServerMutation({
+    mutationFn: () => {
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      return lineItemWrites.resyncProjectAccessories(projectId);
+    },
+    onSuccess: (r: { linesChecked: number; linesUpdated: number; childrenAdded: number; childrenRemoved: number }) => {
+      invalidate();
+      if (r.linesUpdated === 0) {
+        toast.success("Already up to date with the catalog defaults");
+        return;
+      }
+      const parts = [
+        r.childrenAdded ? `+${r.childrenAdded} added` : null,
+        r.childrenRemoved ? `-${r.childrenRemoved} removed` : null,
+      ].filter(Boolean);
+      toast.success(
+        `Updated ${r.linesUpdated} line${r.linesUpdated === 1 ? "" : "s"}` +
+          (parts.length ? ` (${parts.join(", ")})` : ""),
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // No prune needed: a successfully-removed id simply stops matching any rendered
   // row (the refetch drops it). ids are cuids (never reused), so a retained dead id
   // is a harmless no-op in the filters — and skipping a prune effect avoids a
@@ -1521,6 +1548,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       <div className="flex items-center gap-2">
         {!addMenuSlot && addMenu}
         <div className="flex-1" />
+        {canDragEquipment && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={resyncAccessoriesMut.isPending}
+            onClick={() => resyncAccessoriesMut.mutate()}
+            title="Add any DEFAULT accessory added to a model/asset in the catalog since these lines were added, on lines that haven't deployed yet"
+          >
+            {resyncAccessoriesMut.isPending ? "Syncing…" : "Sync accessories"}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

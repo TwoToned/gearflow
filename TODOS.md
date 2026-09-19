@@ -367,6 +367,25 @@ individually-checkable rows (closes the un-completable pick-progress bug);
   existing line without re-running `reconcileLineAccessoryChildren` — a
   pre-existing limitation (FEATUREDOCS/48) this issue didn't fix. P3.
 
+### ~~Resync accessories from catalog defaults onto open jobs~~ ✅ SHIPPED (v0.30.0)
+`resyncProjectAccessoriesNative` (`convex/lineItemWrites.ts`), surfaced as a
+"Sync accessories" button in the project Equipment tab toolbar. Re-runs
+`reconcileLineAccessoryChildren` against every not-yet-deployed line's own
+`accessoryPlan`, so a model/asset accessory added to the catalog after the
+line was created reaches the job without reopening the picker per line — also
+closes the "quantity-merge path never rescales" item above for any line it
+touches. Deliberately opt-in per project, never triggered by the catalog
+write itself. See FEATUREDOCS/48.
+
+**Left open, tracked here (not silently dropped):**
+- **Kit membership has no equivalent resync.** Editing a kit's member list
+  after the kit is already on a project does not retroactively update that
+  project's child line items — unlike accessories, a kit member is priced
+  (`ITEMIZED` per-child or `KIT_PRICE` bundle), so a resync needs its own
+  pricing-assignment design rather than reusing this mechanism as-is. See
+  FEATUREDOCS/09's "Catalog changes after a kit is already on a project" note.
+  P3.
+
 ## Warehouse Documents
 
 ### ~~Pick Slip + Delivery Docket Group/Category Awareness~~ ✅ SHIPPED

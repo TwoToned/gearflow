@@ -195,6 +195,7 @@ export function useLineItemWrites() {
 
   const addM = useMutation(api.lineItemWrites.addLineItemSmartNative);
   const updateAccessoryPlanM = useMutation(api.lineItemWrites.updateAccessoryPlanNative);
+  const resyncProjectAccessoriesM = useMutation(api.lineItemWrites.resyncProjectAccessoriesNative);
   const addCustomM = useMutation(api.lineItemWrites.addCustomNative);
   const addKitM = useMutation(api.lineItemWrites.addKitNative);
   const patchM = useMutation(api.lineItemWrites.patchNative);
@@ -344,6 +345,26 @@ export function useLineItemWrites() {
           id,
           organizationId: requireOrg(),
           accessoryPlan: plan,
+          actor: actor(),
+          auditId: createId(),
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** Re-run accessory expansion for every not-yet-deployed line against CURRENT
+     *  catalog defaults (a model/asset accessory added after the line was created).
+     *  PM-initiated per project — see `resyncProjectAccessoriesNative` for why this
+     *  is never automatic. */
+    resyncProjectAccessories: async (
+      projectId: string,
+    ): Promise<{ linesChecked: number; linesUpdated: number; childrenAdded: number; childrenRemoved: number }> => {
+      try {
+        return await resyncProjectAccessoriesM({
+          projectId,
+          organizationId: requireOrg(),
           actor: actor(),
           auditId: createId(),
           now: Date.now(),

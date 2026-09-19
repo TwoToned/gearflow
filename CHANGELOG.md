@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-19
+
+### Added
+
+- **"Sync accessories" action on the project Equipment tab.** A model or asset's DEFAULT
+  accessory config edited in the catalog after a line was already added to a job no longer
+  requires reopening the picker line-by-line — a PM can now pull the current catalog
+  defaults onto every not-yet-deployed line on that job with one click. Deliberately
+  opt-in and per-project: a catalog edit never pushes itself onto open jobs automatically,
+  and any line that's already deployed is skipped.
+
 ## [0.29.2] - 2026-09-17
 
 ### Fixed

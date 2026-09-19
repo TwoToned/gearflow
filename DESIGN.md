@@ -544,6 +544,17 @@ tasks-due block + per-project blocker badges) was removed from the dashboard
 page entirely, since Today now owns that surface and would otherwise render
 the same rows twice.
 
+**Decision D10B (2026-09-19): on DESKTOP, Dashboard is back in the rail.**
+D10A's swap held on phones and cost too much on desktop — the org-wide read is
+what people reach for from the sidebar, and the account menu is not where
+anyone looks for it. So the desktop rail's first slot is `Dashboard` again and
+**Today moved into the avatar menu** (`user-nav.tsx`), the exact reverse of
+D10A's desktop half. Everything else D10A decided is unchanged: Today is still
+the post-login landing page, still owns the **bottom nav's** first slot on a
+phone (where there is no rail to put Dashboard back into), and the dashboard
+page still has no "My work" zone. Desktop and mobile therefore differ on
+purpose — a phone has five slots and a rail has room for both.
+
 - Active tab: RVLT red icon + red label
 - Inactive tab: `fg-4` icon + `fg-4` label
 - Tab height: 56px (+ safe-area-inset-bottom)
@@ -561,8 +572,8 @@ the same rows twice.
   - Warehouse (check-out/in, scanning)
   - Crew (schedule, roster)
   - Assets (gear, kits)
-- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports. Dashboard is reachable from the avatar/account menu on both desktop and mobile (not a sidebar rail item — see D10A above). The old standalone "My tasks" sidebar entry is gone: `/my-tasks` now redirects to `/today`, which supersedes it.
-- Settings and Dashboard are both accessible via the avatar menu on mobile
+- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports. **Dashboard is the desktop rail's first item** (D10B); on mobile it stays in the avatar/account menu, since the bottom nav's five slots are full. Today is the mirror image — bottom-nav slot one on a phone, avatar menu on desktop. The old standalone "My tasks" sidebar entry is gone: `/my-tasks` now redirects to `/today`, which supersedes it.
+- Settings is accessible via the avatar menu on mobile, alongside Dashboard
 
 ### Deep Navigation on Mobile
 - Use Sheet (bottom-sheet) for detail panels, not full-page navigation where possible
@@ -630,3 +641,4 @@ Login / register / onboarding follow marketing aesthetics, not app UI rules:
 | 2026-06-18 | NavLink wrapper required in all nav PRs | Next.js/Base UI DOM crash risk if replaced with standard Link |
 | 2026-06-18 | Sidebar nav uses module-hue active/hover (not red-only) | Per-module colour makes the sidebar a wayfinding map; user-directed. Red stays non-module; mobile bottom nav keeps red-active (§16) |
 | 2026-09-16 | Bottom nav: Today replaces Dashboard (D10A, work-layer #1242) | Today becomes the personal landing page; phones have no sidebar and all 5 bottom-nav slots were taken, so it had to take Dashboard's slot. Dashboard moves to the avatar menu; its dashboard "My work" zone is deleted so Today's rows don't render twice |
+| 2026-09-19 | Desktop rail: Dashboard returns to slot one, Today moves to the avatar menu (D10B) | D10A's swap was right for phones and wrong for the rail — the org-wide read is what people reach for from the sidebar. Mobile is unchanged (Today keeps bottom-nav slot one); Today is still the post-login landing page |

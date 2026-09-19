@@ -215,3 +215,19 @@ aggregation core, so they can't disagree about the underlying numbers.
 - [10 — Projects](./10-projects.md) · [62 — Lifecycle locks](./62-project-lifecycle-locks.md)
 - [65 — Overbookings & Gaps board](./65-overbookings-gaps-board.md) — the org-wide sibling
 - [66 — Finance: quotes, invoices, Xero](./66-finance-quotes-invoices-xero.md)
+
+## Work on the project page (work-layer v2, 2026-09-19)
+
+`docs/designs/work-layer-v2-integration.md` moved work's home on a project into the
+**context sidebar**, which changes what Overview carries:
+
+- **The rail** (`project-work-rail-section.tsx`) renders in `DetailSidebar` **between Team and
+  Activity** on every tab except Overview (no sidebar there) and Work (that tab IS the list).
+  Collapsible, counts in the header, five open rows most-pressing-first, live done circles, the
+  composer, and a link to the tab for the rest.
+- **Overview's Work card** is now a summary — stage meter, "Needs a decision" rows, one capture
+  line, a link out. See FEATUREDOCS/50 for its full anatomy.
+
+Both read the same shaping module (`src/lib/project-work.ts`) for what open, late and unowned
+mean and for the stage meter's arithmetic, so the rail header and the card can't contradict
+each other on the same job.

@@ -177,6 +177,42 @@ const orUndef = <T,>(v: T | null | undefined): T | undefined => v ?? undefined;
 const falsyOrUndef = (v: string | null | undefined): string | undefined => v || undefined;
 const trimmedOrUndef = (v: string | null | undefined): string | undefined => v?.trim() || undefined;
 
+/**
+ * A personal item — no project AND no parent — with no explicit assignee
+ * defaults to its creator.
+ *
+ * Without this the row is written with neither an owner nor a project, and
+ * NOTHING reads it: `projectTasks.myOpenTasks` only range-scans
+ * `by_assigneeUserId_status`/`by_assigneeCrewId_status`, and every project
+ * surface needs a `projectId`. `/my-tasks` is a redirect and work isn't in
+ * `globalSearch`, so such a row is invisible permanently — which is exactly
+ * what Today's quick-add produced (`create({ title })`). See
+ * `docs/designs/work-layer-v2-integration.md` §3, the routing rule: every item
+ * has an owner, a project, or both.
+ *
+ * The fallback is the VERIFIED actor, who already passed
+ * `requireWorkOrProjectOrgUpdate` for this org, so it can't introduce an
+ * assignee `assertAssigneeInOrg` would have rejected. It's deliberately the
+ * backstop rather than the only guard — the composer states the destination up
+ * front (§4.1) — because every other writer (templates, Mira, the MCP create
+ * tool) funnels through here too, and a default in one shared mutation covers
+ * all of them.
+ *
+ * Deliberately NOT applied when a project IS set: unowned project work is a
+ * legitimate state, made visible by the rail's "Nobody" lane and the Overview
+ * card's unowned count rather than silently absorbed by whoever typed it.
+ * A subtask is excluded because it never renders as a standalone row — it
+ * shows nested under its parent, which carries the ownership.
+ */
+function resolvePersonalOwnerFallback(
+  a: NewTaskFields,
+  placement: { projectId: string | undefined },
+): string | undefined {
+  if (placement.projectId || a.parentId) return undefined;
+  if (falsyOrUndef(a.assigneeUserId) || falsyOrUndef(a.assigneeCrewId)) return undefined;
+  return a.actor.userId;
+}
+
 /** Split out of createNative (R-3.6) — the field-normalisation that used to
  *  sit inline in the ctx.db.insert() call. */
 function buildNewTaskDoc(
@@ -195,7 +231,7 @@ function buildNewTaskDoc(
     status,
     priority: a.priority ?? "NORMAL",
     dueDate: orUndef(a.dueDate),
-    assigneeUserId: falsyOrUndef(a.assigneeUserId),
+    assigneeUserId: falsyOrUndef(a.assigneeUserId) ?? resolvePersonalOwnerFallback(a, placement),
     assigneeCrewId: falsyOrUndef(a.assigneeCrewId),
     checklist: orUndef(normaliseChecklist(a.checklist)),
     kind: a.kind,

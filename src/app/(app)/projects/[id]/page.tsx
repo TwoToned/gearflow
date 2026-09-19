@@ -942,6 +942,9 @@ export default function ProjectDetailPage({
                   projectId={id}
                   orgId={orgId}
                   project={project as ProjectContextRailProject}
+                  /* The Work tab renders the full list — the rail's Work
+                     section would be the same rows again (§4.3). */
+                  showWork={activeTab !== "work"}
                 />
               </DetailSidebar>
             )}

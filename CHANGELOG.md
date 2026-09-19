@@ -7,11 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.30.0] - 2026-09-19
+## [0.31.0] - 2026-09-19
 
 ### Added
 
 - **Kits can now be re-synced to their current catalog membership from an open job.** If a kit's contents change after it's already on a project (a member added or removed), the Equipment tab's new "Sync kits" button pulls the project's kit lines up to date — adding new members, removing dropped ones, and rescaling a kept bulk member's quantity — without re-adding the whole kit. A newly-added member is priced the same way adding the kit fresh would price it (its own rate in itemized-pricing kits; unpriced in fixed-bundle-price kits, since the bundle price doesn't change), and the toolbar flags when something needs a pricing review. Kit lines that have already deployed to a job are left alone. Companion to the existing "Sync accessories" action.
+
+## [0.30.1] - 2026-09-19
+
+### Changed
+
+- **Overbooking alarms now attribute the conflict to whichever job actually can't get the gear, first-come-first-served, instead of flagging every job competing for the same units.** If Job A's gear was booked first and Job B's booking is what pushes a model over capacity, only Job B is flagged — Job A, which already has its stock, stays clean. This applies everywhere an overbooking is shown: the equipment tab, kit rollups, the warehouse pull sheet, the project list/board alerts, and the Overbookings & Gaps board. A CONFIRMED job's hard-held stock always takes priority over a QUOTED job's pencilled demand, regardless of booking order.
+
+## [0.30.0] - 2026-09-19
+
+### Added
+
+- **"Sync accessories" action on the project Equipment tab.** A model or asset's DEFAULT
+  accessory config edited in the catalog after a line was already added to a job no longer
+  requires reopening the picker line-by-line — a PM can now pull the current catalog
+  defaults onto every not-yet-deployed line on that job with one click. Deliberately
+  opt-in and per-project: a catalog edit never pushes itself onto open jobs automatically,
+  and any line that's already deployed is skipped.
 
 ## [0.29.2] - 2026-09-17
 

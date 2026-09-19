@@ -186,6 +186,31 @@ kit-parent rollup (`hasOverbookedChildren` in `reconstructOverbookedStatus`)
 was fixed the same way: a kit parent whose only overbooked child is
 `reducedOnly` now still counts as genuinely overbooked, not silently dropped.
 
+**FCFS attribution, not "everyone sharing the pool is flagged" (2026-09,
+supersedes the symmetric WS3 rule below).** The above fix made MORE overages
+alarm (maintenance-caused ones no longer soften), and that combined with the
+original WS3 rule — every project whose OWN demand exceeded `effectiveStock -
+everyone else's demand` got flagged, so two projects competing for the same
+units could BOTH show "Overbooked" — produced noticeably noisier badges,
+especially multiplied across kit children. Per explicit product decision, a
+model's stock is now allocated **first-come-first-served**: `allocateFifo`
+(`src/lib/overbooking-core.ts`, duplicated in `convex/lib/overbookingBoard.ts`
+for the org board — same reason `isConfirmedOrLater` is duplicated, no `@/`
+alias between `convex/lib/` and `src/lib/`) sorts every project's claim on a
+model ascending by `claimedAt` (the EARLIEST line-item creation time for that
+project+model+layer — `createdAt` falling back to Convex's own
+`_creationTime`, see `mapLineItemDoc`), then grants each claim against
+whatever capacity remains after every EARLIER claim's full quantity is
+deducted. Only the claim(s) that don't fit are "over" — a project that got its
+gear first is never flagged just because someone booked the same model later.
+Hard claims always allocate before pencilled ones (a CONFIRMED job never loses
+stock to a mere quote, regardless of which was created first); pencilled
+claims then compete FCFS among themselves for whatever's left. This also
+resolved (superseded) the "pencilled row should list the hard-holding project
+too" fix from the same week: a project that already secured its stock via
+hard demand is no longer part of ANY collision row, pencilled or hard — the
+collision belongs solely to whichever claim doesn't fit.
+
 ## Invariants (don't break these)
 
 1. **`effectiveStock` is the only enforcement baseline.** Both client and server availability checks compare `quantity` against `effectiveStock - booked`, never raw `totalStock`. In-maintenance / lost / retired assets must not be counted as bookable. The pure math (`resolveModelAssetType`, `computeStockBreakdown`) actually lives in `src/lib/overbooking-core.ts` and is re-exported from `src/lib/availability.ts` for back-compat — `checkAvailability` (`src/server/line-items.ts`) and `computeOverbookedStatus` (`src/lib/availability.ts`) import it from there. The browser-direct line-item mutations (`addNative`/`patchNative` in `convex/lineItemWrites.ts`, replacing the old `addLineItem`/`updateLineItem` server actions) can't resolve the `@/` alias, so `convex/lib/availabilityCore.ts` carries a byte-for-byte copy of the same two functions, pinned against the originals by a cross-import equality test in `convex/availabilityCore.test.ts` — treat the two as one source of truth, but know they're physically two files.

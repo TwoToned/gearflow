@@ -1779,6 +1779,47 @@ export const updateAccessoryPlanNative = mutation({
  * `PROJECT_MONEY_ANCHOR` and needs no `assertPricingUnlocked` check, unlike a
  * money-field edit. RBAC(project, manage_line_items).
  */
+/** A top-level equipment line is eligible for an accessory resync when it isn't
+ *  itself an accessory/kit child, has a model or asset to resolve accessories
+ *  from, and hasn't deployed yet — same gate as `assertLineOwnsAccessoryPlan`. */
+function isAccessoryResyncEligible(line: Doc<"projectLineItems">): boolean {
+  if (line.isKitChild || line.childKind) return false; // accessory/kit children have no plan of their own
+  if (!line.modelId && !line.assetId) return false;
+  if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") return false; // deployed — warehouse owns it now
+  return true;
+}
+
+/** Reconcile one line's accessory children against its own stored plan (picking
+ *  up any catalog change since it was last resolved) and report what changed. */
+async function resyncOneLineAccessories(
+  ctx: MutationCtx,
+  organizationId: string,
+  line: Doc<"projectLineItems">,
+): Promise<{ added: number; removed: number }> {
+  const before = await accessoryChildrenOf(ctx, organizationId, line.id);
+  await reconcileLineAccessoryChildren(ctx, {
+    id: line.id,
+    assetId: line.assetId,
+    modelId: line.modelId,
+    quantity: line.quantity ?? 1,
+    categoryId: line.categoryId,
+    groupId: line.groupId,
+    duration: line.duration,
+    pricingType: line.pricingType,
+    organizationId,
+    projectId: line.projectId,
+    versionId: line.versionId,
+  }, (line.accessoryPlan as AccessoryPlan | undefined) ?? null);
+  const after = await accessoryChildrenOf(ctx, organizationId, line.id);
+
+  const beforeIds = new Set(before.map((c) => c.id));
+  const afterIds = new Set(after.map((c) => c.id));
+  return {
+    added: after.filter((c) => !beforeIds.has(c.id)).length,
+    removed: before.filter((c) => !afterIds.has(c.id)).length,
+  };
+}
+
 export const resyncProjectAccessoriesNative = mutation({
   returns: v.object({ linesChecked: v.number(), linesUpdated: v.number(), childrenAdded: v.number(), childrenRemoved: v.number() }),
   args: {
@@ -1802,31 +1843,10 @@ export const resyncProjectAccessoriesNative = mutation({
     let childrenRemoved = 0;
 
     for (const line of lines) {
-      if (line.isKitChild || line.childKind) continue; // accessory/kit children have no plan of their own
-      if (!line.modelId && !line.assetId) continue;
-      if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") continue; // deployed — warehouse owns it now
+      if (!isAccessoryResyncEligible(line)) continue;
       linesChecked++;
 
-      const before = await accessoryChildrenOf(ctx, organizationId, line.id);
-      await reconcileLineAccessoryChildren(ctx, {
-        id: line.id,
-        assetId: line.assetId,
-        modelId: line.modelId,
-        quantity: line.quantity ?? 1,
-        categoryId: line.categoryId,
-        groupId: line.groupId,
-        duration: line.duration,
-        pricingType: line.pricingType,
-        organizationId,
-        projectId: line.projectId,
-        versionId: line.versionId,
-      }, (line.accessoryPlan as AccessoryPlan | undefined) ?? null);
-      const after = await accessoryChildrenOf(ctx, organizationId, line.id);
-
-      const beforeIds = new Set(before.map((c) => c.id));
-      const afterIds = new Set(after.map((c) => c.id));
-      const added = after.filter((c) => !beforeIds.has(c.id)).length;
-      const removed = before.filter((c) => !afterIds.has(c.id)).length;
+      const { added, removed } = await resyncOneLineAccessories(ctx, organizationId, line);
       if (added > 0 || removed > 0) linesUpdated++;
       childrenAdded += added;
       childrenRemoved += removed;

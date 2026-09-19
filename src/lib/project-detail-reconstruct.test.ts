@@ -167,9 +167,13 @@ describe("enrichProjectDetailOverbooked", () => {
       lineItems: [d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 1, status: "QUOTED" })],
     };
     const ob: OverbookingBundleData = {
+      // li2 claims first (FCFS, 2026-09) so p2's demand is the one that fits
+      // and p1's (li1, claimed second) is the one pushed over — this test is
+      // about the WINDOW resolution, not claim order, so the order is forced
+      // explicitly rather than left to rely on fixture insertion order.
       lineItems: [
-        d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 1, status: "QUOTED" }),
-        d({ id: "li2", organizationId: "o1", projectId: "p2", modelId: "m1", quantity: 2, status: "QUOTED" }),
+        d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 1, status: "QUOTED", _creationTime: 1 }),
+        d({ id: "li2", organizationId: "o1", projectId: "p2", modelId: "m1", quantity: 2, status: "QUOTED", _creationTime: 0 }),
       ],
       assets: [
         d({ id: "a1", organizationId: "o1", modelId: "m1", status: "AVAILABLE", isActive: true }),

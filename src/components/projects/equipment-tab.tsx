@@ -24,7 +24,13 @@ import {
 } from "@/hooks/use-native-line-item-writes";
 import { useEquipmentDnd, type DraggedRowClone } from "@/hooks/use-equipment-dnd";
 import { useCanDo } from "@/lib/use-permissions";
-import { FolderTree, Pencil, Trash2 } from "lucide-react";
+import { FolderTree, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EquipmentAddMenuTrigger } from "./equipment-add-menu-trigger";
 import { toast } from "sonner";
 import { ConvexError } from "convex/values";
@@ -71,6 +77,8 @@ import { AddCategoryDialog } from "./add-category-dialog";
 import { RenameCategoryDialog } from "./rename-category-dialog";
 import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
+import { EditAccessoryPlanDialog } from "./edit-accessory-plan-dialog";
+import { canEditAccessoryPlan } from "@/lib/accessory-plan-eligibility";
 import { SubHireExpandedItems } from "./sub-hire-expanded-items";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -701,6 +709,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
+  // EditAccessoryPlanDialog target — the dialog fetches the line's current
+  // accessoryPlan itself (not on LineItemData), so this just needs enough of
+  // the row to resolve the accessory catalog (modelId/assetId/quantity).
+  const [editAccessoryItem, setEditAccessoryItem] = useState<LineItemData | null>(null);
   // The clicked item's current placement — line items don't carry categoryId/groupId
   // directly (the tree position IS the placement), so each onEdit call site captures
   // it from the same closure the neighbouring onMoveToCategory/onMoveToGroup use.
@@ -1569,42 +1581,41 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     <ReassignProvider value={reassignValue}>
     <div className="space-y-3" data-shortcut-scope="equipment">
       {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
-          inline in this toolbar. The quiet margin toggle always stays here. */}
+          inline in this toolbar. Sync accessories/kits + the margin toggle are
+          secondary, infrequent actions — tucked behind the "More" menu so the
+          toolbar itself stays to the one primary action. */}
       {addMenuSlot ? createPortal(addMenu, addMenuSlot) : null}
       <div className="flex items-center gap-2">
         {!addMenuSlot && addMenu}
         <div className="flex-1" />
-        {canDragEquipment && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={resyncAccessoriesMut.isPending}
-            onClick={() => resyncAccessoriesMut.mutate()}
-            title="Add any DEFAULT accessory added to a model/asset in the catalog since these lines were added, on lines that haven't deployed yet"
-          >
-            {resyncAccessoriesMut.isPending ? "Syncing…" : "Sync accessories"}
-          </Button>
-        )}
-        {canDragEquipment && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={resyncKitsMut.isPending}
-            onClick={() => resyncKitsMut.mutate()}
-            title="Add/remove kit members changed in the catalog since these kits were added, on kit lines that haven't deployed yet"
-          >
-            {resyncKitsMut.isPending ? "Syncing…" : "Sync kits"}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-pressed={showCostColumn}
-          onClick={toggleShowCostColumn}
-          title="Toggle the supplier-cost column so margin is visible at a glance"
-        >
-          {showCostColumn ? "Hide margin" : "Show margin"}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" aria-label="More equipment actions">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {canDragEquipment && (
+              <DropdownMenuItem
+                disabled={resyncAccessoriesMut.isPending}
+                onClick={() => resyncAccessoriesMut.mutate()}
+              >
+                {resyncAccessoriesMut.isPending ? "Syncing accessories…" : "Sync accessories"}
+              </DropdownMenuItem>
+            )}
+            {canDragEquipment && (
+              <DropdownMenuItem
+                disabled={resyncKitsMut.isPending}
+                onClick={() => resyncKitsMut.mutate()}
+              >
+                {resyncKitsMut.isPending ? "Syncing kits…" : "Sync kits"}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={toggleShowCostColumn}>
+              {showCostColumn ? "Hide margin" : "Show margin"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Empty state */}
@@ -1754,6 +1765,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 setEditLineItemPlacement({ categoryId: cat.id });
                                 setEditLineItem(item);
                               }}
+                              onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                               onMoveToCategory={() => setMoveItemToCategory({
                                 lineItemId: item.id,
                                 initialCategoryId: cat.id,
@@ -1954,6 +1966,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     setEditLineItemPlacement({ categoryId: cat.id, groupId: group.id });
                                     setEditLineItem(item);
                                   }}
+                                  onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                                   onMoveToCategory={() => setMoveItemToCategory({
                                     lineItemId: item.id,
                                     initialCategoryId: cat.id,
@@ -2029,6 +2042,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             setEditLineItemPlacement({});
                             setEditLineItem(item);
                           }}
+                          onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                           onMoveToCategory={() => setMoveItemToCategory({
                             lineItemId: item.id,
                           })}
@@ -2165,6 +2179,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               setEditLineItemPlacement({ groupId: group.id });
                               setEditLineItem(item);
                             }}
+                            onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                             onMoveToCategory={() => setMoveItemToCategory({
                               lineItemId: item.id,
                             })}
@@ -2583,6 +2598,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
           });
         }}
       />
+
+      {/* Edit accessories dialog (kebab → "Edit accessories") */}
+      <EditAccessoryPlanDialog item={editAccessoryItem} onClose={() => setEditAccessoryItem(null)} />
 
       {/* Move-item-to-category dialog (kebab → "Move to category").
           Item lands as standalone under the picked category. */}

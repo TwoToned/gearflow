@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-09-19
+
+### Fixed
+
+- **The Overbookings & Gaps board no longer flags two genuinely non-overlapping projects as colliding just because both fall inside a wide admin-chosen query range.** Gear shortages used to pool ALL demand across the entire selected range into one bucket, so e.g. a job running Oct 1–15 and another running Oct 18–24 were falsely reported as competing for the same units when the query range spanned all of October. The board now day-slices each model's demand into its actual overlapping sub-windows before checking for a shortage, so a shortage row's dates bound the real conflict period, not the query range.
+- **Two places showed a full-severity "Overbooked" (red) badge for a collision that was only pencilled** (i.e. would only happen if every not-yet-confirmed booking for that gear also went ahead — nothing is actually unavailable today): the project list/board's "Overbooked items" flag, and the warehouse pull sheet's line-item badge. Both now match the equipment tab's existing behavior and show the softer amber "Pencilled overbook" pill instead, reserving the red badge for a genuine hard shortage.
+
 ## [0.31.0] - 2026-09-19
 
 ### Added

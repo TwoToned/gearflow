@@ -12,6 +12,12 @@ import type { CategoryPricingDisplay } from "@/lib/category-pricing-display";
 export interface LineItemData {
   id: string;
   modelId?: string | null;
+  /** Widened for the "Edit accessories" menu entry's eligibility check
+   *  (src/lib/accessory-plan-eligibility.ts) — already present on the runtime
+   *  object (MappedLineItem carries both; equipment-tab-reconstruct's attach
+   *  helpers spread the full row), just not previously declared here. */
+  assetId?: string | null;
+  checkedOutQuantity?: number;
   description: string | null;
   quantity: number;
   unitPrice: unknown;

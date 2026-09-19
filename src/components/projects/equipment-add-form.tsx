@@ -28,23 +28,17 @@ import { checkAvailability, lookupAssetByTag } from "@/server/line-items";
 import { useLineItemWrites, type AccessoryPlanInput } from "@/hooks/use-line-item-writes";
 import { useModelSearch, useModel } from "@/hooks/use-models";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { PlacementFields } from "./placement-fields";
+import { AccessorySelectionFields } from "./accessory-selection-fields";
 import { SectionTitle, Field, DiscountField, TaxRateField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -111,8 +105,6 @@ export function EquipmentAddForm({
   // override — gated behind a required typed reason (issue #794 follow-up),
   // unlike OPTIONAL rows which stay a plain, frictionless checkbox.
   const [excludeReasons, setExcludeReasons] = useState<Record<string, string>>({});
-  const [pendingExclude, setPendingExclude] = useState<{ id: string; label: string } | null>(null);
-  const [excludeReasonDraft, setExcludeReasonDraft] = useState("");
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -707,70 +699,14 @@ export function EquipmentAddForm({
             <span className="text-ui-text text-ink-2">Optional item (excluded from totals)</span>
           </label>
 
-          {accessories.length > 0 && (
-            <div className="space-y-2.5 rounded-[var(--r)] border border-line bg-paper-2/50 p-3">
-              <p className="t-overline text-muted">Accessories</p>
-
-              {defaultAccessories.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="t-micro text-faint">Included</p>
-                  {defaultAccessories.map((a) => {
-                    const checked = accessorySelection[a.id] ?? true;
-                    const label = a.modelName ?? a.assetTag;
-                    return (
-                      <div key={a.id} className="space-y-1">
-                        <label className="flex cursor-pointer items-center gap-2.5">
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(c) => {
-                              if (c === true) {
-                                setAccessorySelection((prev) => ({ ...prev, [a.id]: true }));
-                                setExcludeReasons((prev) => {
-                                  const next = { ...prev };
-                                  delete next[a.id];
-                                  return next;
-                                });
-                              } else {
-                                setExcludeReasonDraft("");
-                                setPendingExclude({ id: a.id, label });
-                              }
-                            }}
-                          />
-                          <span className="text-ui-text text-ink-2">
-                            <span className="t-data tabular-nums">{a.quantity * requestedQty}×</span>{" "}
-                            {label}
-                          </span>
-                        </label>
-                        {!checked && excludeReasons[a.id] && (
-                          <p className="pl-6 t-micro text-muted">Removed: {excludeReasons[a.id]}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {optionalAccessories.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="t-micro text-faint">Optional</p>
-                  {optionalAccessories.map((a) => (
-                    <label key={a.id} className="flex cursor-pointer items-center gap-2.5">
-                      <Checkbox
-                        checked={accessorySelection[a.id] ?? false}
-                        onCheckedChange={(c) =>
-                          setAccessorySelection((prev) => ({ ...prev, [a.id]: c === true }))
-                        }
-                      />
-                      <span className="text-ui-text text-ink-2">
-                        <span className="t-data tabular-nums">{a.quantity * requestedQty}×</span>{" "}
-                        {a.modelName ?? a.assetTag}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <AccessorySelectionFields
+            accessories={accessories}
+            quantity={requestedQty}
+            selection={accessorySelection}
+            onSelectionChange={setAccessorySelection}
+            excludeReasons={excludeReasons}
+            onExcludeReasonsChange={setExcludeReasons}
+          />
         </section>
 
         <DialogFooter>
@@ -790,47 +726,6 @@ export function EquipmentAddForm({
           </Button>
         </DialogFooter>
       </form>
-
-      {/* Removing a DEFAULT accessory is a deliberate override — require a
-          reason before it actually excludes (issue #794 follow-up). Optional
-          accessories stay a plain, frictionless checkbox. */}
-      <Dialog open={!!pendingExclude} onOpenChange={(o) => !o && setPendingExclude(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Remove default accessory?</DialogTitle>
-          </DialogHeader>
-          <p className="text-caption text-muted">
-            <span className="font-medium text-ink">{pendingExclude?.label}</span> ships with every asset
-            of this model by default. Removing it from just this line needs a reason.
-          </p>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="exclude-reason">Reason</Label>
-            <Textarea
-              id="exclude-reason"
-              value={excludeReasonDraft}
-              onChange={(e) => setExcludeReasonDraft(e.target.value)}
-              placeholder="e.g. customer is supplying their own"
-              rows={2}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="line" onClick={() => setPendingExclude(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!excludeReasonDraft.trim()}
-              onClick={() => {
-                if (!pendingExclude) return;
-                setAccessorySelection((prev) => ({ ...prev, [pendingExclude.id]: false }));
-                setExcludeReasons((prev) => ({ ...prev, [pendingExclude.id]: excludeReasonDraft.trim() }));
-                setPendingExclude(null);
-              }}
-            >
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

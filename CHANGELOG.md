@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-19
+
+### Added
+
+- **You can now edit a line's accessory selection after it's already on a project.** The project Equipment tab's per-line "…" menu has a new "Edit accessories" item — reopens the same DEFAULT/OPTIONAL accessory picker used when adding equipment, pre-filled with that line's current selection, instead of requiring the line to be re-added to change it. Hidden for lines it doesn't apply to (kit/accessory/sub-hire children, lines with no model or asset, or ones that have already deployed to the job).
+
+### Changed
+
+- **The Equipment tab toolbar is tidier.** "Sync accessories", "Sync kits", and the margin toggle — infrequent, secondary actions — are now behind a "More" (⋯) menu next to "Add ▾" instead of sitting inline in the toolbar at all times.
+
 ## [0.31.1] - 2026-09-19
 
 ### Fixed

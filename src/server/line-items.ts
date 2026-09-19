@@ -15,8 +15,10 @@ import { getKitById } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
 
 /** Model-accessory detail for the add-form picker (issue #794) — resolved bulk-asset
- *  tag + model name, not just the bare bulkAssetId. */
-type ModelAccessoryDetail = {
+ *  tag + model name, not just the bare bulkAssetId. Exported so `AccessorySelectionFields`
+ *  (shared by the add-form and the existing-line "Edit accessories" dialog) can type its
+ *  `accessories` prop against this shape without redeclaring it. */
+export type ModelAccessoryDetail = {
   id: string;
   bulkAssetId: string;
   quantity: number;

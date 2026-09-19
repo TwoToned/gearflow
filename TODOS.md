@@ -346,10 +346,6 @@ individually-checkable rows (closes the un-completable pick-progress bug);
 `KitChildRows` has an "Accessory" badge. Full design: `docs/designs/accessories-v2.md`.
 
 **Left open, tracked here (not silently dropped):**
-- **Row-menu "Edit accessories" entry point.** `updateAccessoryPlanNative` is
-  implemented and tested but nothing in `equipment-rows.tsx` calls it yet —
-  reopening the picker against an existing line's plan from the project
-  equipment tab needs a UI hook. P2.
 - **Main warehouse page kit-parity for accessory parents.** `groupItems`/
   `groupCheckinItems` (`warehouse/[projectId]/page.tsx`) still only
   special-case `isKitParent` — an accessory parent doesn't get its own
@@ -385,6 +381,15 @@ write itself. See FEATUREDOCS/48.
   pricing-assignment design rather than reusing this mechanism as-is. See
   FEATUREDOCS/09's "Catalog changes after a kit is already on a project" note.
   P3.
+
+### ~~Row-menu "Edit accessories" entry point~~ ✅ SHIPPED
+`updateAccessoryPlanNative` had no UI trigger since issue #794 shipped it —
+`equipment-rows.tsx`'s per-line "…" kebab now offers an "Edit accessories"
+item (gated by `canEditAccessoryPlan`,
+`src/lib/accessory-plan-eligibility.ts`), opening `EditAccessoryPlanDialog`
+which reseeds the SAME checkbox picker the add-form uses — extracted to a
+shared `AccessorySelectionFields` component so the two can't drift. See
+FEATUREDOCS/48.
 
 ## Warehouse Documents
 

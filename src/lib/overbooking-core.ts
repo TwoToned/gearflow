@@ -236,7 +236,7 @@ export function indexProjectsById(projects: ConvexProject[]): Map<string, Convex
  * this model in this layer (hard or pencilled), so a project that added a
  * second unit later doesn't lose its original place in line.
  */
-export interface ProjectModelClaim {
+interface ProjectModelClaim {
   projectId: string;
   qty: number;
   claimedAt: number;
@@ -254,7 +254,7 @@ export interface ProjectModelClaim {
  * later one showed up. Returns `projectId -> overBy` for projects with a
  * nonzero shortfall only (absent = fully allocated).
  */
-export function allocateFifo(claims: ProjectModelClaim[], capacity: number): Map<string, number> {
+function allocateFifo(claims: ProjectModelClaim[], capacity: number): Map<string, number> {
   const overByProject = new Map<string, number>();
   const sorted = [...claims].sort((a, b) => a.claimedAt - b.claimedAt || a.projectId.localeCompare(b.projectId));
   let allocated = 0;

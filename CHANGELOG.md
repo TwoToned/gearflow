@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-09-19
+
+### Fixed
+
+- **The Pipeline page (Clients → Pipeline) loaded forever.** It sat on "Loading…" and never
+  showed a single deal. The page passed a freshly-evaluated timestamp into its Convex query on
+  every render, and because a query's arguments are part of its subscription key, the
+  subscription restarted each render and the data never settled. Same fix for the client page's
+  **Next step banner**, which had the identical bug with a quieter symptom — it renders nothing
+  while loading, so it simply never appeared.
+- A lint rule now fails the build on a `Date.now()` evaluated inside a Convex query call, so
+  neither surface can regress this way again.
+
 ## [0.32.0] - 2026-09-19
 
 ### Added

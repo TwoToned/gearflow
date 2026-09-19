@@ -138,6 +138,14 @@ for a later admin screen to write); edit via the raw settings JSON until then.
 - **Day boundaries in the org's timezone, never the browser's** — rotting's days-since-touch
   (`convex/lib/rottingDates.ts`'s `daysSinceInTimezone`) and the 24h quote-send grace period are
   both resolved server-side.
+- **A `now` argument is a SUBSCRIPTION KEY, never a fresh `Date.now()`.** Both server reads that
+  take one (`pipeline.forOrg`, `clientTimeline.nextStep`) are called with `useStableNow()`
+  (`src/hooks/use-stable-now.ts`) — a mount-time snapshot. convex-helpers' `createQueryKey`
+  stringifies the args into the cache key, so re-evaluating `Date.now()` each render restarts the
+  subscription every render and the result never settles out of `undefined`: the pipeline page sat
+  on "Loading…" forever and the next-step banner (which returns `null` while loading) never
+  appeared at all. A `no-restricted-syntax` rule in `eslint.config.mjs` now fails the build on a
+  `Date.now()` inside a `use*Query*` call, so this cannot come back.
 - Contacts stay **one-per-client** in this phase — the many-to-many contact/venue model is Phase
   5 (see work-layer.md §8.4).
 
@@ -156,11 +164,14 @@ for a later admin screen to write); edit via the raw settings JSON until then.
   `client-log-actions.tsx`, `client-work-tab.tsx`; `src/hooks/use-client-timeline-writes.ts`;
   `src/lib/client-timeline.ts` (filter-chip vocabulary); `src/app/(app)/clients/[id]/page.tsx`
   (restructured tabs/hero); `src/app/(app)/clients/pipeline/page.tsx` (new); sidebar entry in
-  `src/components/layout/app-sidebar.tsx`.
+  `src/components/layout/app-sidebar.tsx`; `src/hooks/use-stable-now.ts` (the `now`-argument
+  snapshot both `now`-taking reads use).
 - Tests: `convex/workItemLinksWrites.test.ts`, `convex/clientTimeline.test.ts`,
   `convex/clientTimelineWrites.test.ts`, `convex/pipeline.test.ts`; extended
   `convex/dashboardLists.test.ts` (`quote:nonext`) and `convex/collaborationWrites.test.ts`
-  (clientId/contactId stamping).
+  (clientId/contactId stamping). Frontend: `src/hooks/use-stable-now.test.tsx`,
+  `src/app/(app)/clients/pipeline/__tests__/pipeline-page.smoke.test.tsx` (the stable-`now`
+  regression — it fails on the original inline `Date.now()`).
 
 ## Deferred (out of scope for this phase)
 

@@ -400,6 +400,26 @@ function WarehouseProjectPage({
   }>>([]);
   /** Typed / wedge-scanned text in the Assign-assets dialog's scan field. */
   const [assetPickerScanValue, setAssetPickerScanValue] = useState("");
+  /**
+   * Synchronous mirror of `assetPickerItems`, for scan resolution only.
+   *
+   * Continuous scanning delivers hits from a decode callback, so the handler
+   * React invokes is the one captured at the last COMMITTED render. Two units
+   * scanned before that commit lands would both resolve against the same rows,
+   * pick the same empty slot, and the second would silently overwrite the
+   * first — losing a unit in exactly the eleven-in-a-row flow this feature
+   * exists for. Writing the ref before the setState makes each scan see the
+   * previous one regardless of render timing.
+   */
+  const assetPickerItemsRef = useRef<typeof assetPickerItems>([]);
+  /** Write picker rows through here so the ref can never drift from state. */
+  const applyAssetPickerItems = (
+    next: typeof assetPickerItems | ((prev: typeof assetPickerItems) => typeof assetPickerItems)
+  ) => {
+    const resolved = typeof next === "function" ? next(assetPickerItemsRef.current) : next;
+    assetPickerItemsRef.current = resolved;
+    setAssetPickerItems(resolved);
+  };
 
   // Kit verification confirmation dialog
   const [kitConfirm, setKitConfirm] = useState<{
@@ -1897,7 +1917,7 @@ function WarehouseProjectPage({
         }
 
         if (pickerItems.length > 0) {
-          setAssetPickerItems(pickerItems);
+          applyAssetPickerItems(pickerItems);
           setAssetPickerBulkItems(bulkItems);
           setAssetPickerOpen(true);
           setSelectedPrep(new Set());
@@ -2354,12 +2374,12 @@ function WarehouseProjectPage({
    * applies the result and plays the matching feedback.
    */
   const handleAssetPickerScan = (rawTag: string) => {
-    const result = resolvePickerScan(assetPickerItems, rawTag);
+    const result = resolvePickerScan(assetPickerItemsRef.current, rawTag);
     setAssetPickerScanValue("");
 
     switch (result.kind) {
       case "assigned":
-        setAssetPickerItems((prev) =>
+        applyAssetPickerItems((prev) =>
           prev.map((item, i) => (i === result.index ? { ...item, selectedAssetId: result.assetId } : item))
         );
         scanFeedback.play("success", {
@@ -3341,7 +3361,7 @@ function WarehouseProjectPage({
                     value={pickerItem.selectedAssetId}
                     onValueChange={(val) => {
                       const assetId = val ?? "";
-                      setAssetPickerItems((prev) =>
+                      applyAssetPickerItems((prev) =>
                         prev.map((item, i) =>
                           i === idx ? { ...item, selectedAssetId: assetId } : item
                         )

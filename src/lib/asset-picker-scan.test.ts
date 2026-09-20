@@ -124,6 +124,53 @@ describe("resolvePickerScan — rejections", () => {
   });
 });
 
+describe("back-to-back scans — the continuous-mode contract", () => {
+  /** Apply an `assigned` result, the way the dialog's write helper does. */
+  function apply(slots: PickerSlot[], r: ReturnType<typeof resolvePickerScan>): PickerSlot[] {
+    if (r.kind !== "assigned") return slots;
+    return slots.map((s, i) => (i === r.index ? { ...s, selectedAssetId: r.assetId } : s));
+  }
+
+  it("fills DIFFERENT slots when each scan sees the previous one's result", () => {
+    // This is the contract the dialog's synchronous ref mirror upholds.
+    // Continuous scanning delivers hits from a decode callback, so the handler
+    // React invokes is the one captured at the last COMMITTED render. If two
+    // units land before that commit, both would resolve against the same rows
+    // and pick the same empty slot — the second silently overwriting the first
+    // and losing a unit, in exactly the eleven-in-a-row flow this exists for.
+    let slots = headsetSlots();
+
+    const first = resolvePickerScan(slots, "HS-001");
+    slots = apply(slots, first);
+    const second = resolvePickerScan(slots, "HS-002");
+    slots = apply(slots, second);
+    const third = resolvePickerScan(slots, "HS-003");
+    slots = apply(slots, third);
+
+    expect([first, second, third].map((r) => (r.kind === "assigned" ? r.index : -1))).toEqual([0, 1, 2]);
+    expect(slots.map((s) => s.selectedAssetId)).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("would COLLIDE if a scan resolved against stale rows — the bug being guarded", () => {
+    // Same two scans, but the second resolves against the pre-assignment rows,
+    // which is what a stale closure hands it. Both pick slot 0. Asserting the
+    // collision keeps the reason for the ref from being refactored away as
+    // redundant.
+    const stale = headsetSlots();
+    const first = resolvePickerScan(stale, "HS-001");
+    const secondAgainstStale = resolvePickerScan(stale, "HS-002");
+
+    expect(first.kind === "assigned" && first.index).toBe(0);
+    expect(secondAgainstStale.kind === "assigned" && secondAgainstStale.index).toBe(0);
+  });
+
+  it("reports the second scan as already-assigned once the first is applied", () => {
+    let slots = headsetSlots();
+    slots = apply(slots, resolvePickerScan(slots, "HS-001"));
+    expect(resolvePickerScan(slots, "HS-001").kind).toBe("already-assigned");
+  });
+});
+
 describe("countAssigned", () => {
   it("counts filled slots", () => {
     expect(countAssigned(headsetSlots())).toBe(0);

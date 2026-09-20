@@ -21,6 +21,11 @@ const TICK_MS = 10_000;
  *  here, and `info` is deliberately muted rather than the info-blue used
  *  elsewhere in the app). */
 const KIND_GLYPH: Record<ScanFeedbackKind, { Icon: typeof CheckCircle2; className: string }> = {
+  // `capture` is the camera's read-tick, not a verdict — it never reaches the
+  // strip (nothing records a history entry for it). Present because the Record
+  // is exhaustive, and mapped to the neutral glyph so a future caller that does
+  // record one degrades sensibly instead of crashing on a missing key.
+  capture: { Icon: Info, className: "text-muted" },
   success: { Icon: CheckCircle2, className: "text-ok" },
   exception: { Icon: AlertTriangle, className: "text-warn" },
   error: { Icon: XCircle, className: "text-t-out" },

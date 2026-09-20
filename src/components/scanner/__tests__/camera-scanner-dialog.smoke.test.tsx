@@ -14,6 +14,28 @@ beforeAll(() => {
   // stays out of the run — the hook deliberately swallows a play() rejection,
   // which is covered by the tests below reaching the "Searching…" state.
   HTMLMediaElement.prototype.play = () => Promise.resolve();
+  // jsdom reports videoWidth/videoHeight as 0 and has no canvas 2d context, so
+  // the frame pump correctly refuses to decode (an ROI computed off 0 would
+  // scan an empty canvas forever). Stub just enough of the pipeline for the
+  // decode-path tests below; the tests that only care about lifecycle are
+  // unaffected because they push no decode results.
+  Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+    configurable: true,
+    get: () => 1280,
+  });
+  Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+    configurable: true,
+    get: () => 720,
+  });
+  HTMLCanvasElement.prototype.getContext = (() => ({
+    drawImage: () => {},
+    getImageData: (_x: number, _y: number, w: number, h: number) => ({
+      data: new Uint8ClampedArray(w * h * 4),
+      width: w,
+      height: h,
+      colorSpace: "srgb" as const,
+    }),
+  })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
   // jsdom has no matchMedia, which `useIsMobile` calls on mount.
   window.matchMedia ??= ((query: string) => ({
     matches: false,
@@ -31,9 +53,15 @@ beforeAll(() => {
 // pixel-level proof that it decodes lives in `src/lib/barcode/decoder.test.ts`;
 // what THIS file proves is that the dialog reaches the right states and,
 // critically, always releases the camera.
+const decodeResults: unknown[] = [];
 vi.mock("@/lib/barcode/decoder", () => ({
   loadDecoder: () => Promise.resolve({}),
-  decodeImageData: () => Promise.resolve([]),
+  decodeImageData: () => Promise.resolve(decodeResults),
+}));
+
+const playMock = vi.fn();
+vi.mock("@/hooks/use-scan-feedback", () => ({
+  useScanFeedback: () => ({ enabled: true, toggle: () => {}, play: playMock, entries: [] }),
 }));
 
 import { CameraScannerDialog } from "../camera-scanner-dialog";
@@ -58,6 +86,8 @@ function rejectWith(name: string) {
 
 beforeEach(() => {
   stopTrack.mockClear();
+  playMock.mockClear();
+  decodeResults.length = 0;
   Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
 });
 
@@ -214,6 +244,31 @@ describe("CameraScannerDialog", () => {
     expect(getUserMedia).toHaveBeenCalledTimes(1);
 
     visibility.mockRestore();
+  });
+
+  it("plays CAPTURE on a decode, never a success verdict", async () => {
+    // The decoder only knows it read a code — whether that tag means anything
+    // is the caller's call, and the caller plays the verdict. Claiming success
+    // here made an unrecognised tag beep success-then-error: two contradictory
+    // answers to one scan.
+    decodeResults.push({ isValid: true, text: "A-1042", format: "QRCode" });
+    const onScan = vi.fn();
+    installCamera(() => Promise.resolve(fakeStream()));
+    render(<CameraScannerDialog open onOpenChange={() => {}} onScan={onScan} continuous />);
+
+    await waitFor(() => expect(onScan).toHaveBeenCalledWith("A-1042"));
+    expect(playMock).toHaveBeenCalledWith("capture");
+    expect(playMock).not.toHaveBeenCalledWith("success");
+  });
+
+  it("hands the caller the decoded value so IT can play the verdict", async () => {
+    decodeResults.push({ isValid: true, text: "A-1042", format: "MicroQRCode" });
+    const onScan = vi.fn();
+    installCamera(() => Promise.resolve(fakeStream()));
+    render(<CameraScannerDialog open onOpenChange={() => {}} onScan={onScan} continuous />);
+
+    await waitFor(() => expect(onScan).toHaveBeenCalledTimes(1));
+    expect(onScan).toHaveBeenCalledWith("A-1042");
   });
 
   it("closes on Done", async () => {

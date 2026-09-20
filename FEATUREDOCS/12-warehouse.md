@@ -293,6 +293,22 @@ dropped rather than reported as an unknown asset.
 eleven slots would scroll it out of view exactly when it's being used every few
 seconds.
 
+**⚠️ Scan resolution reads `assetPickerItemsRef`, never the `assetPickerItems`
+state directly.** Continuous scanning delivers hits from a decode callback, so
+the handler React invokes is the one captured at the last COMMITTED render. Two
+units scanned before that commit lands would both resolve against the same rows,
+pick the same empty slot, and the second would silently overwrite the first —
+eleven headsets scanned, ten assigned, no error anywhere. The ref is written
+synchronously *before* the `setState`, so each scan sees the previous one
+regardless of render timing.
+
+Every picker write (dialog open, scan, dropdown) goes through
+`applyAssetPickerItems`, which updates the ref and the state together;
+`setAssetPickerItems` is called in exactly one place. Don't add a second write
+site, and don't "simplify" the resolver's input back to the state value — a
+test in `asset-picker-scan.test.ts` deliberately asserts that resolving two
+scans against stale rows DOES collide, so the reason for the ref stays visible.
+
 **⚠️ This nests a Radix modal Dialog (the camera) inside a Radix modal Dialog
 (the picker).** That is supported and covered by
 `src/components/scanner/__tests__/nested-in-dialog.smoke.test.tsx`, which pins

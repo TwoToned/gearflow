@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which slot it went into instead of doing nothing, and a tag that isn't
   available for this job says so rather than failing silently. A running
   "N of M assigned" count sits under the field, which stays pinned as the list
-  scrolls.
+  scrolls. Scanning several units in quick succession assigns each to its own
+  slot — an early version could drop one when two scans landed close together.
 
 ### Added
 

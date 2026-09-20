@@ -11,8 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useCameraScanner, type ScanResult } from "@/hooks/use-camera-scanner";
-import { ROI_FRACTION } from "@/lib/barcode/camera";
+import { useCameraScanner, type ScanResult, type ScannerStatus } from "@/hooks/use-camera-scanner";
+import { ROI_FRACTION, type CameraError } from "@/lib/barcode/camera";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
 
 interface CameraScannerDialogProps {
@@ -27,7 +27,7 @@ interface CameraScannerDialogProps {
 }
 
 /**
- * Full-screen camera barcode scanner (#1278).
+ * Full-screen camera barcode scanner.
  *
  * Supports QR, **Micro QR** and **rMQR**, Data Matrix, Aztec, PDF417 and the
  * common linear symbologies — see `src/lib/barcode/formats.ts` for the list and
@@ -77,23 +77,24 @@ export function CameraScannerDialog({
     setLastFormat(null);
   }, [open, start, stop]);
 
-  const busy = status === "starting" || status === "loading-decoder";
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={
           isMobile
-            ? "h-[100dvh] max-h-[100dvh] w-full max-w-full rounded-none border-0 p-0 gap-0 overflow-hidden flex flex-col"
-            : "sm:max-w-xl p-0 gap-0 overflow-hidden"
+            ? "flex h-[100dvh] max-h-[100dvh] w-full max-w-full flex-col gap-0 overflow-hidden rounded-none border-0 p-0"
+            : "gap-0 overflow-hidden p-0 sm:max-w-xl"
         }
         style={
           isMobile
-            ? { paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }
+            ? {
+                paddingTop: "env(safe-area-inset-top, 0px)",
+                paddingBottom: "env(safe-area-inset-bottom, 0px)",
+              }
             : undefined
         }
       >
-        <DialogHeader className="px-4 pt-4 pb-3 text-left">
+        <DialogHeader className="px-4 pb-3 pt-4 text-left">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Hold the code inside the frame. Works with QR, Micro QR, rMQR, Data Matrix, and standard
@@ -101,7 +102,7 @@ export function CameraScannerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative flex-1 min-h-0 bg-black">
+        <div className="relative min-h-0 flex-1 bg-black">
           {/* `playsInline` + `muted` + `autoplay` are all three required for iOS
               to paint the stream rather than a black rectangle. */}
           <video
@@ -115,54 +116,17 @@ export function CameraScannerDialog({
           />
 
           {status === "scanning" && <ScanReticle />}
-
-          {busy && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 text-center px-6">
-              <Loader2 className="size-8 animate-spin text-white" aria-hidden="true" />
-              <p className="text-ui-text text-white">
-                {status === "starting" ? "Starting camera…" : "Loading decoder…"}
-              </p>
-            </div>
-          )}
-
-          {status === "error" && error && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
-              <TriangleAlert className="size-8 text-white" aria-hidden="true" />
-              <p className="text-ui-text text-white max-w-sm" role="alert">
-                {error.message}
-              </p>
-              {/* A retry is genuinely useful on iOS, where an installed PWA can
-                  lose a previously-granted camera permission between launches. */}
-              <Button variant="cream" onClick={() => void start()}>
-                <Camera aria-hidden="true" />
-                Try again
-              </Button>
-            </div>
-          )}
+          <ViewportOverlay status={status} error={error} onRetry={() => void start()} />
         </div>
 
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <p className="text-ui-text text-muted" aria-live="polite">
-            {status === "scanning"
-              ? lastFormat
-                ? `Scanned ${lastFormat} — keep going`
-                : "Searching for a code…"
-              : " "}
+            {statusLine(status, lastFormat)}
           </p>
           <div className="flex items-center gap-2">
             {/* iOS exposes no torch control at all, so this button simply
                 doesn't exist there rather than existing and doing nothing. */}
-            {capabilities.torch && (
-              <Button
-                variant="line"
-                size="icon"
-                onClick={() => void toggleTorch()}
-                aria-pressed={torchOn}
-                aria-label={torchOn ? "Turn torch off" : "Turn torch on"}
-              >
-                {torchOn ? <FlashlightOff aria-hidden="true" /> : <Flashlight aria-hidden="true" />}
-              </Button>
-            )}
+            {capabilities.torch && <TorchToggle on={torchOn} onToggle={() => void toggleTorch()} />}
             <Button variant="line" onClick={() => onOpenChange(false)}>
               Done
             </Button>
@@ -170,6 +134,70 @@ export function CameraScannerDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The footer's one line of state. A non-breaking space holds the row's height. */
+function statusLine(status: ScannerStatus, lastFormat: string | null): string {
+  if (status !== "scanning") return " ";
+  return lastFormat ? `Scanned ${lastFormat} — keep going` : "Searching for a code…";
+}
+
+/**
+ * What covers the viewport when it isn't showing a live picture: the startup /
+ * decoder-download wait, or a failure with a way out of it.
+ */
+function ViewportOverlay({
+  status,
+  error,
+  onRetry,
+}: {
+  status: ScannerStatus;
+  error: CameraError | null;
+  onRetry: () => void;
+}) {
+  if (status === "starting" || status === "loading-decoder") {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center">
+        <Loader2 className="size-8 animate-spin text-white" aria-hidden="true" />
+        <p className="text-ui-text text-white">
+          {status === "starting" ? "Starting camera…" : "Loading decoder…"}
+        </p>
+      </div>
+    );
+  }
+
+  if (status === "error" && error) {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
+        <TriangleAlert className="size-8 text-white" aria-hidden="true" />
+        <p className="text-ui-text max-w-sm text-white" role="alert">
+          {error.message}
+        </p>
+        {/* A retry is genuinely useful on iOS, where an installed PWA can lose a
+            previously-granted camera permission between launches. */}
+        <Button variant="cream" onClick={onRetry}>
+          <Camera aria-hidden="true" />
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function TorchToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <Button
+      variant="line"
+      size="icon"
+      onClick={onToggle}
+      aria-pressed={on}
+      aria-label={on ? "Turn torch off" : "Turn torch on"}
+    >
+      {on ? <FlashlightOff aria-hidden="true" /> : <Flashlight aria-hidden="true" />}
+    </Button>
   );
 }
 

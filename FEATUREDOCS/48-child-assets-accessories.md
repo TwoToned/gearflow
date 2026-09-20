@@ -140,6 +140,42 @@ stale tier on an already-expanded child.
   pickers can't drift, differing only in how each caller seeds
   `selection`/`excludeReasons` (add defaults every DEFAULT row to included;
   edit seeds from the stored plan).
+
+  **Edit Item entry point (second pass):** the row's **Edit Item** dialog
+  (`edit-line-item-dialog.tsx`) now carries an **Accessories** section too — the
+  PM edits what ships with a line in the same window they edit its quantity,
+  price and placement, rather than having to know a second menu item exists.
+  It renders `AccessoryPlanSection` (`accessory-plan-section.tsx` — a
+  `SectionTitle` around the same `AccessorySelectionFields`, with the card's own
+  overline off so one card doesn't get two headings), shown only when
+  `canEditAccessoryPlan(item)` passes AND the model/asset actually has
+  accessories configured. The picker scales its per-parent counts by the
+  quantity CURRENTLY TYPED in the dialog, so "3× XLR Cable" tracks the quantity
+  field live.
+
+  The two post-add entry points share `useAccessoryPlanEditor`
+  (`src/components/projects/use-accessory-plan-editor.ts` — the catalog query,
+  the `projectLineItems.getById` plan read, the seeding, the derived plan) over
+  the pure helpers in `src/lib/accessory-plan-editor.ts`; the kebab dialog is
+  now a thin shell around it. Only the SAVE differs:
+  - the kebab dialog saves on its own button, as before;
+  - the Edit Item dialog fires `onAccessoryPlanChange` (a separate callback from
+    `onSubmit`, because `updateAccessoryPlanNative` reconciles CHILD lines
+    rather than patching fields on this row — the same reason placement has its
+    own `onMove`), **only when `isDirty`** (`accessoryPlansEqual` compares the
+    `excluded`/`added` sets order-insensitively and ignores reason-only edits,
+    so saving a price change never reconciles an untouched line's children), and
+    **only after the line patch resolves** — `equipment-tab.tsx`'s `onSubmit`
+    returns `updateLineItemMut.mutateAsync(...)` for exactly this, since
+    `reconcileLineAccessoryChildren` rescales bulk children from the line's
+    CURRENT quantity and must therefore see a same-save quantity change. A
+    rejected line write skips the plan write entirely.
+
+  Tests: `src/lib/__tests__/accessory-plan-editor.test.ts` (seed/derive
+  round-trip, the dirty rules) and
+  `src/components/projects/__tests__/edit-line-item-accessories.smoke.test.tsx`
+  (section gating, the save sequencing, and that the nested reason dialog still
+  mounts inside the Edit Item dialog).
 - **Project-wide resync (opt-in, PM-initiated)** — `lineItemWrites.resyncProjectAccessoriesNative`
   (`convex/lineItemWrites.ts`), surfaced as a **"Sync accessories"** button in the project
   Equipment tab toolbar (`src/components/projects/equipment-tab.tsx`, gated on `manage_line_items`

@@ -401,6 +401,15 @@ jobs:
       - name: API registry + coverage + privileged-arg gates (#997)
         run: pnpm run api:registry:check
 
+      # The camera scanner's ZXing decoder binary is served from our own origin
+      # (public/wasm/), not a CDN, so it is committed like convex/_generated/.
+      # This proves the committed copy still matches the installed zxing-wasm —
+      # a version bump that skips `pnpm run wasm:sync` would otherwise pair new
+      # JS glue with an old binary, which only fails in the browser at
+      # instantiate time. See scripts/sync-zxing-wasm.mjs.
+      - name: ZXing wasm binary staleness gate
+        run: pnpm run wasm:sync:check
+
       # OpenAPI 3.1 + llms.txt staleness gate (#998, design §11). Regenerated
       # from the SAME registry the step above just verified is current, so this
       # can only drift if someone edits the committed output by hand.

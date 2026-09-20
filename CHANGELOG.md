@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scan to assign in the "Assign assets" dialog.** Prepping a line with eleven
+  headsets used to mean picking each one from eleven identical dropdowns. The
+  dialog now has its own scan field at the top: scan a unit as you pick it up
+  and it drops into the next slot. The camera stays open between units, so it's
+  one pass down the shelf rather than a tap per item. Typing and USB/Bluetooth
+  scanners work the same way. Re-scanning something you already logged tells you
+  which slot it went into instead of doing nothing, and a tag that isn't
+  available for this job says so rather than failing silently. A running
+  "N of M assigned" count sits under the field, which stays pinned as the list
+  scrolls.
+
+### Added
+
 - **The camera scanner is back, and it reads the small codes.** Scan a tag with your
   phone's camera from any tag field — the warehouse prep, deploy and return tabs, the
   returns desk, the warehouse search, and the asset/kit/test-tag forms. It reads

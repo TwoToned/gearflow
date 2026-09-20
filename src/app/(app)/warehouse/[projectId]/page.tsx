@@ -91,6 +91,8 @@ import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
 import { summarizeWarehouseStages } from "@/components/warehouse/warehouse-stages";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { resolvePickerScan, countAssigned } from "@/lib/asset-picker-scan";
 import {
   isBulkItem,
   modelDisplayName,
@@ -396,6 +398,8 @@ function WarehouseProjectPage({
     lineItemId: string;
     quantity: number;
   }>>([]);
+  /** Typed / wedge-scanned text in the Assign-assets dialog's scan field. */
+  const [assetPickerScanValue, setAssetPickerScanValue] = useState("");
 
   // Kit verification confirmation dialog
   const [kitConfirm, setKitConfirm] = useState<{
@@ -2341,6 +2345,47 @@ function WarehouseProjectPage({
     setSelectedOut(new Set());
   };
 
+  /**
+   * Scan a tag in the Assign-assets dialog: fill the next slot that can take it.
+   *
+   * Eleven identical headsets means eleven dropdowns; a packer holding the gear
+   * already knows which unit they picked up. All four outcomes come from the
+   * pure `resolvePickerScan` (tested in `asset-picker-scan.test.ts`) — this only
+   * applies the result and plays the matching feedback.
+   */
+  const handleAssetPickerScan = (rawTag: string) => {
+    const result = resolvePickerScan(assetPickerItems, rawTag);
+    setAssetPickerScanValue("");
+
+    switch (result.kind) {
+      case "assigned":
+        setAssetPickerItems((prev) =>
+          prev.map((item, i) => (i === result.index ? { ...item, selectedAssetId: result.assetId } : item))
+        );
+        scanFeedback.play("success", {
+          label: `${result.modelName} · ${result.assetTag}`,
+          outcome: `Assigned #${result.index + 1}`,
+        });
+        return;
+      case "already-assigned":
+        // Not a failure — the operator is checking whether it registered.
+        scanFeedback.play("exception", {
+          label: result.assetTag,
+          outcome: `Already assigned to #${result.index + 1}`,
+        });
+        toast.info(`${result.assetTag} is already assigned to ${result.modelName} #${result.index + 1}`);
+        return;
+      case "no-slot":
+        scanFeedback.play("exception", { label: result.assetTag, outcome: "No slot left" });
+        toast.warning(`Every ${result.modelName} slot is already filled`);
+        return;
+      case "unknown":
+        scanFeedback.play("error", { label: result.assetTag || "Unknown tag", outcome: "Not available here" });
+        toast.error(`${result.assetTag || "That tag"} isn't an available asset for this prep`);
+        return;
+    }
+  };
+
   const handleAssetPickerConfirm = () => {
     const incomplete = assetPickerItems.find((i) => !i.selectedAssetId);
     if (incomplete) {
@@ -3248,8 +3293,39 @@ function WarehouseProjectPage({
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-ui-text text-muted">
-              Select which specific asset to deploy for each item.
+              Scan each unit as you pick it, or choose from the dropdowns.
             </p>
+
+            {/* Scan-to-assign. Continuous, because assigning eleven headsets is
+                one pass down a shelf — the camera stays open between units.
+                Typing and HID wedges land on the same handler via Enter.
+
+                Sticky: DialogContent is the scroll container, and eleven slots
+                scroll the field out of view exactly when it is being used every
+                few seconds. Full-bleed (-mx-6/px-6 against the dialog's p-6) so
+                rows scrolling underneath don't show through the edges. */}
+            <div className="sticky top-0 z-10 -mx-6 space-y-1.5 border-b border-line bg-elev px-6 pb-3">
+              <AssetTagInput
+                value={assetPickerScanValue}
+                onChange={(e) => setAssetPickerScanValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAssetPickerScan(assetPickerScanValue);
+                  }
+                }}
+                onScan={handleAssetPickerScan}
+                scannerTitle="Scan to assign"
+                continuous
+                placeholder="Scan an asset tag to assign it..."
+                className="h-11 font-mono"
+                autoFocus
+              />
+              <p className="text-ui-text text-muted" aria-live="polite">
+                {countAssigned(assetPickerItems)} of {assetPickerItems.length} assigned
+              </p>
+            </div>
+
             {assetPickerItems.map((pickerItem, idx) => (
               <div key={`${pickerItem.lineItemId}-${idx}`} className="space-y-1.5">
                 <Label className="text-ui-text font-medium">

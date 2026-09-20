@@ -236,14 +236,90 @@ instead.
 ## Tag Entry & QR Code
 
 ### Tag Input (`src/components/ui/asset-tag-input.tsx`)
-- Plain text input for asset/test tags — no camera. The in-app camera scanner
-  (`html5-qrcode` via the old `BarcodeScanner`/`ScanInput`) was removed because
-  it never worked reliably on iPhone.
-- Manual typing works everywhere. External USB/Bluetooth HID barcode wedges
-  behave like a keyboard, so physical scanners still work — they "type" the tag
-  and submit on Enter through each call site's existing keydown/form handler.
-- QR generation (`qrcode`, `react-qr-code`) and `AssetScanLog` logging are
-  unaffected and retained.
+Three entry paths, all landing on the same `onScan` / `onChange` handlers:
+- **Typing** — the host call site's own `onChange` / keydown handling.
+- **HID wedge** — a USB/Bluetooth scanner is a keyboard; it types the tag and
+  fires Enter, which each call site's existing submit path already handles.
+- **Camera** — a `<ScanButton>` rendered beside the field (automatically
+  wherever `onScan` is supplied), opening `CameraScannerDialog`.
+
+`className` lands on the **Input**, not the wrapper — call sites style the field
+through it. Where the field sits in a `relative` box carrying absolutely
+positioned overlays (the warehouse and returns hero search bars), pass
+`showScanButton={false}` and place `<ScanButton>` as a flex sibling of that box,
+or the button lands underneath the overlays.
+
+QR generation (`qrcode`, `react-qr-code`) and `AssetScanLog` logging are
+unaffected.
+
+### Camera barcode scanner (`src/components/scanner/`, `src/lib/barcode/`)
+
+Reads **QR, Micro QR and rMQR**, Data Matrix, Aztec, PDF417 and the common
+linear symbologies. Replaces the `html5-qrcode`-based scanner that was removed
+for never working reliably on iPhone. Full rationale and the device-verification
+checklist: [`docs/designs/barcode-scanner-2d.md`](../docs/designs/barcode-scanner-2d.md).
+
+**One WASM engine on both platforms — never the platform `BarcodeDetector`.**
+`micro_qr_code` and `rm_qr_code` are not in the Shape Detection API spec, so
+Chrome/Android's ML Kit backend cannot decode them either; and WebKit has never
+shipped that API at all, so every browser on iOS needs WASM regardless. A
+native-plus-fallback split would mean two decoders with different format
+coverage behind one button — which is how the first scanner came to behave
+differently on the platform nobody tested.
+
+| Module | Responsibility |
+|---|---|
+| `src/lib/barcode/formats.ts` | The curated symbology list + tag normalisation. Single source of truth. |
+| `src/lib/barcode/decoder.ts` | The one ZXing-C++ WASM decode entry point. |
+| `src/lib/barcode/camera.ts` | Constraints, capability probing, ROI, error classification — all pure. |
+| `src/hooks/use-camera-scanner.ts` | Camera lifecycle + frame pump. |
+| `src/components/scanner/camera-scanner-dialog.tsx` | The full-screen viewport UI. |
+| `src/components/scanner/scan-button.tsx` | The trigger; the ONE "open camera, hand back a value". |
+
+**The decoder binary is self-hosted.** `zxing-wasm` would otherwise fetch ~930
+KiB from jsDelivr at first decode — a scanner that opens the camera and silently
+never decodes, on flaky warehouse wifi or behind an egress proxy. `pnpm run
+wasm:sync` copies it to `public/wasm/` (committed, so `pnpm dev` needs no build
+step) and `pnpm run wasm:sync:check` gates staleness in CI.
+
+**⚠️ Five iOS rules, all load-bearing.** Every browser on iOS is WKWebView, so
+"works in Chrome on iPhone" and "works in Safari on iPhone" are one question:
+
+1. `getUserMedia` runs **only inside a user gesture** — from the dialog's open
+   handler, never a mount effect. Safari rejects a prompt that isn't
+   gesture-attributed, and the rejection is indistinguishable from a denial.
+2. `playsInline` + `muted` + an **awaited `play()`**, set in JSX *and*
+   imperatively on each start (the element is reused across opens). Miss any of
+   them and the track is live while the `<video>` paints black.
+3. **Never `enumerateDevices` first.** Pre-permission, iOS returns blank labels
+   and deviceIds, so "pick the back camera by label" picks nothing. `facingMode:
+   { ideal: "environment" }` — `ideal`, never `exact`, which
+   `OverconstrainedError`s on any device without a rear camera.
+4. **One live capture at a time.** A leaked track blocks the next
+   `getUserMedia` app-wide, so `stopStream` runs on every teardown path: close,
+   unmount, visibility change, and each early return inside `start()`.
+5. **Release on hide, re-acquire on show.** iOS suspends capture when
+   backgrounded and never resumes it; holding a dead track means a permanently
+   black viewport.
+
+**No torch, no zoom on iOS** — `getCapabilities()` exposes neither and
+`applyConstraints({advanced:[{torch:true}]})` is a silent no-op. Both are
+feature-detected so the control is *absent* there rather than dead. Same reason
+there is no lens selection: the web has no equivalent of
+`AVCaptureDevice.minimumFocusDistance`, so a modern iPhone gets the wide camera
+(min focus ≈ 10 cm) and we compensate with resolution, not optics.
+
+**The decoded region is a native-resolution centre crop**, sized from the same
+`ROI_FRACTION` the on-screen reticle uses — so the box cannot lie about the scan
+area. Cropping is both faster than a full frame and better at small codes: the
+alternative downscales 1080p, which is exactly what destroys an 11×11-module
+Micro QR.
+
+**Testing rule:** a data-shape or option change here needs a round-trip test in
+`src/lib/barcode/decoder.test.ts` — encode a real symbol, render it to
+`ImageData` the way the pump does, decode it back. The absence of exactly that
+test is why "it doesn't work on iOS" could ship. Unit-testing the UI around a
+decoder proves nothing about whether it decodes.
 
 ### Scan Lookup (`convex/scanLookup.ts`, `resolve` query — formerly `src/server/scan-lookup.ts`)
 Resolves barcode value to entity URL:

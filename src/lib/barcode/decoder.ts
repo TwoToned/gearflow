@@ -36,7 +36,7 @@ import {
 import { SCANNER_FORMATS } from "./formats";
 
 /** Where `sync-zxing-wasm.mjs` puts the binary, served from `public/`. */
-export const ZXING_WASM_PATH = "/wasm/zxing_reader.wasm";
+const ZXING_WASM_PATH = "/wasm/zxing_reader.wasm";
 
 const DEFAULT_OVERRIDES: ZXingModuleOverrides = {
   locateFile: (path: string, prefix: string) =>

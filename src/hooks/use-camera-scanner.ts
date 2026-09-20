@@ -53,7 +53,7 @@ const FALLBACK_FRAME_MS = 100;
 /** Ignore a repeat of the same value inside this window (one label, many frames). */
 const DUPLICATE_WINDOW_MS = 1500;
 
-export type ScannerStatus = "idle" | "starting" | "loading-decoder" | "scanning" | "error";
+type ScannerStatus = "idle" | "starting" | "loading-decoder" | "scanning" | "error";
 
 export interface ScanResult {
   /** The decoded value, normalised and validated against the tag grammar. */

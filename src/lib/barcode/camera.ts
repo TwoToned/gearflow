@@ -64,7 +64,7 @@ export function buildVideoConstraints(): MediaStreamConstraints {
   };
 }
 
-export type CameraErrorKind =
+type CameraErrorKind =
   | "denied"
   | "insecure"
   | "unsupported"

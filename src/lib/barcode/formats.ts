@@ -49,8 +49,6 @@ export const SCANNER_FORMATS = [
   "UPCE",
 ] as const satisfies readonly ReadInputBarcodeFormat[];
 
-export type ScannerFormat = (typeof SCANNER_FORMATS)[number];
-
 /**
  * Human labels for the formats a scan can come back as. Keyed by the format
  * ZXing REPORTS (`ReadOutputBarcodeFormat`), which is not always one we asked

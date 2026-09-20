@@ -9,10 +9,10 @@ import { useProjectTaskWrites } from "@/hooks/use-project-tasks-writes";
 import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { TASK_STAGE_LABELS, type ProjectTaskStage, type ProjectTaskPriority } from "@/lib/project-tasks";
-import { resolveWorkDue, workDueLabel, workDueDefault, type WorkDueValue } from "@/lib/work-due-dates";
+import { resolveWorkDates, workDatesLabel, workDatesDefault, resolveWorkDue, type WorkDates } from "@/lib/work-due-dates";
 import { describeWorkDestination, type WorkDestination } from "@/lib/work-destination";
 import { cn, focusRing } from "@/lib/utils";
-import { OwnerChip, StageChip, DueChip, PriorityChip } from "./composer-chips";
+import { OwnerChip, StageChip, DatesChip, PriorityChip, NotesChip } from "./composer-chips";
 import { ownerLabel, type WorkComposerAssignees, type WorkComposerOwner } from "./work-composer-owner";
 
 export type { WorkComposerOwner };
@@ -86,19 +86,23 @@ function resolveInitialOwner(
  *  more — job work is dated the same way personal work is. */
 function buildCreateInput(args: {
   title: string;
+  notes: string;
   projectId: string | undefined;
   stage: ProjectTaskStage | null;
-  due: WorkDueValue;
+  dates: WorkDates;
   nowMs: number;
   timezone: string | undefined;
   owner: WorkComposerOwner;
   priority: ProjectTaskPriority;
 }) {
+  const { dueDate, startDate } = resolveWorkDates(args.dates, args.nowMs, args.timezone);
   return {
     title: args.title,
+    description: args.notes.trim() || undefined,
     projectId: args.projectId,
     stage: args.projectId ? (args.stage ?? undefined) : undefined,
-    dueDate: resolveWorkDue(args.due, args.nowMs, args.timezone),
+    dueDate,
+    startDate,
     // NORMAL is what the server writes for an unset priority, so sending it
     // explicitly changes nothing — only a deliberate LOW/HIGH is a choice.
     priority: args.priority === "NORMAL" ? undefined : args.priority,
@@ -155,13 +159,17 @@ export function WorkComposer({
 
   const [title, setTitle] = useState("");
   const [owner, setOwner] = useState<WorkComposerOwner>(initialOwner);
-  const [due, setDue] = useState<WorkDueValue>(() => workDueDefault(!!projectId));
+  const [dates, setDates] = useState<WorkDates>(() => workDatesDefault(!!projectId));
+  const [notes, setNotes] = useState("");
   const [stage, setStage] = useState<ProjectTaskStage | null>(defaultStage ?? null);
   const [priority, setPriority] = useState<ProjectTaskPriority>("NORMAL");
   const [busy, setBusy] = useState(false);
 
   const trimmed = title.trim();
-  const dueText = workDueLabel(due, nowMs, timezone);
+  const datesText = workDatesLabel(dates, nowMs, timezone);
+  // What the start field is allowed to reach, and the reason it exists at all:
+  // with no due date there is no span to open.
+  const resolvedDue = resolveWorkDue(dates.due, nowMs, timezone);
   const destination = useMemo(
     () =>
       describeWorkDestination({
@@ -170,9 +178,9 @@ export function WorkComposer({
         isMe: owner.kind === "user" && owner.id === meId,
         ownerName: ownerLabel(owner, assignees, meId),
         stageLabel: stage ? TASK_STAGE_LABELS[stage] : null,
-        dueLabel: dueText,
+        dueLabel: datesText,
       }),
-    [projectId, owner, meId, assignees, stage, dueText],
+    [projectId, owner, meId, assignees, stage, datesText],
   );
   const canSubmit = canSubmitWork(trimmed, busy, destination.blocked);
 
@@ -180,16 +188,18 @@ export function WorkComposer({
     if (!canSubmit) return;
     setBusy(true);
     writes
-      .create(buildCreateInput({ title: trimmed, projectId, stage, due, nowMs, timezone, owner, priority }))
+      .create(buildCreateInput({ title: trimmed, notes, projectId, stage, dates, nowMs, timezone, owner, priority }))
       .then(() => {
         // The chips keep their settings: adding five things to the same stage
-        // for the same person is one intent, not five. Only the title clears.
+        // for the same person is one intent, not five. Title and notes clear,
+        // because they are what was said about THIS one thing.
         setTitle("");
+        setNotes("");
         onCreated?.();
       })
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not add the work"))
       .finally(() => setBusy(false));
-  }, [canSubmit, writes, trimmed, projectId, stage, due, nowMs, timezone, owner, priority, onCreated]);
+  }, [canSubmit, writes, trimmed, notes, projectId, stage, dates, nowMs, timezone, owner, priority, onCreated]);
 
   // Compact hosts keep the chip row hidden until there's a draft to place.
   const showChips = !compact || trimmed.length > 0;
@@ -233,9 +243,12 @@ export function WorkComposer({
             projectId={projectId}
             stage={stage}
             onStageChange={setStage}
-            due={due}
-            dueText={dueText}
-            onDueChange={setDue}
+            dates={dates}
+            datesText={datesText}
+            resolvedDue={resolvedDue}
+            onDatesChange={setDates}
+            notes={notes}
+            onNotesChange={setNotes}
             priority={priority}
             onPriorityChange={setPriority}
             canSubmit={canSubmit}
@@ -264,9 +277,12 @@ function ComposerControls({
   projectId,
   stage,
   onStageChange,
-  due,
-  dueText,
-  onDueChange,
+  dates,
+  datesText,
+  resolvedDue,
+  onDatesChange,
+  notes,
+  onNotesChange,
   priority,
   onPriorityChange,
   canSubmit,
@@ -279,9 +295,12 @@ function ComposerControls({
   projectId: string | undefined;
   stage: ProjectTaskStage | null;
   onStageChange: (s: ProjectTaskStage | null) => void;
-  due: WorkDueValue;
-  dueText: string;
-  onDueChange: (d: WorkDueValue) => void;
+  dates: WorkDates;
+  datesText: string;
+  resolvedDue: string | null;
+  onDatesChange: (d: WorkDates) => void;
+  notes: string;
+  onNotesChange: (v: string) => void;
   priority: ProjectTaskPriority;
   onPriorityChange: (p: ProjectTaskPriority) => void;
   canSubmit: boolean;
@@ -291,8 +310,9 @@ function ComposerControls({
     <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
       <OwnerChip owner={owner} onChange={onOwnerChange} assignees={assignees} meId={meId} allowNobody={!!projectId} />
       {projectId && <StageChip stage={stage} onChange={onStageChange} />}
-      <DueChip due={due} label={dueText} onChange={onDueChange} />
+      <DatesChip dates={dates} label={datesText} resolvedDue={resolvedDue} onChange={onDatesChange} />
       <PriorityChip priority={priority} onChange={onPriorityChange} />
+      <NotesChip notes={notes} onChange={onNotesChange} />
       <button
         type="submit"
         disabled={!canSubmit}

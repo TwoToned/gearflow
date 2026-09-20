@@ -56,6 +56,10 @@ export interface ProjectTaskRow {
   status: import("../../convex/lib/workVocabulary").WorkItemStatus;
   priority: import("../../convex/lib/workVocabulary").WorkItemPriority;
   dueDate: string | null;
+  /** The span's opening end (#tae40e). Set together with `dueDate`, the row
+   *  RUNS from here to there — the calendar draws it as a bar instead of a
+   *  point. Optional on the type because `myOpenTasks` doesn't return it. */
+  startDate?: string | null;
   checklist: ChecklistItem[] | null;
   assigneeUserId: string | null;
   assigneeCrewId: string | null;

@@ -11,7 +11,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView ??= () => {};
 });
 
-type CreateArg = { title: string; projectId?: string; dueDate: string | null; priority?: string };
+type CreateArg = {
+  title: string; description?: string; projectId?: string;
+  dueDate: string | null; startDate: string | null; priority?: string;
+};
 const create = vi.fn((_input: CreateArg) => Promise.resolve("task-1"));
 
 vi.mock("@/lib/auth-client", () => ({
@@ -65,13 +68,13 @@ describe("WorkComposer", () => {
     render(<WorkComposer projectId="p1" assignees={assignees} />);
 
     await user.type(screen.getByLabelText("Add work"), "Book the truck");
-    await user.click(screen.getByLabelText("Due: No date"));
+    await user.click(screen.getByLabelText("Dates: No date"));
 
-    const dateField = await waitFor(() => screen.getByLabelText("Pick a date"));
+    const dateField = await waitFor(() => screen.getByLabelText("Due on"));
     await user.clear(dateField);
     await user.type(dateField, "2026-10-12");
 
-    await waitFor(() => expect(screen.getByLabelText(/^Due: /).textContent).toMatch(/12/));
+    await waitFor(() => expect(screen.getByLabelText(/^Dates: /).textContent).toMatch(/12/));
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
@@ -89,7 +92,7 @@ describe("WorkComposer", () => {
     await user.type(screen.getByLabelText("Add work"), "Prep the rack");
 
     expect(screen.getByLabelText("Stage: No stage")).toBeTruthy();
-    expect(screen.getByLabelText("Due: No date")).toBeTruthy();
+    expect(screen.getByLabelText("Dates: No date")).toBeTruthy();
     expect(screen.getByLabelText("Priority: Normal")).toBeTruthy();
   });
 
@@ -99,7 +102,7 @@ describe("WorkComposer", () => {
     await user.type(screen.getByLabelText("Add work"), "Call the client");
 
     expect(screen.queryByLabelText(/^Stage: /)).toBeNull();
-    expect(screen.getByLabelText("Due: Today")).toBeTruthy();
+    expect(screen.getByLabelText("Dates: Today")).toBeTruthy();
   });
 
   it("sends a deliberate priority and omits the default one", async () => {
@@ -128,6 +131,68 @@ describe("WorkComposer", () => {
 
     await waitFor(() => expect((screen.getByLabelText("Add work") as HTMLInputElement).value).toBe(""));
     expect(screen.getByLabelText(`Stage: ${stageLabel}`)).toBeTruthy();
+  });
+
+  it("turns two dates into a span, and says so on the chip", async () => {
+    const user = userEvent.setup();
+    render(<WorkComposer projectId="p1" assignees={assignees} />);
+
+    await user.type(screen.getByLabelText("Add work"), "Build the set");
+    await user.click(screen.getByLabelText("Dates: No date"));
+    await user.type(await screen.findByLabelText("Due on"), "2026-10-14");
+    // The start field only exists once there is a due date to run to.
+    await user.type(await screen.findByLabelText("Starts on"), "2026-10-12");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({ startDate: "2026-10-12", dueDate: "2026-10-14" });
+  });
+
+  it("offers no start date until there is a due date to run to", async () => {
+    const user = userEvent.setup();
+    render(<WorkComposer projectId="p1" assignees={assignees} />);
+
+    await user.type(screen.getByLabelText("Add work"), "Someday");
+    await user.click(screen.getByLabelText("Dates: No date"));
+
+    await waitFor(() => expect(screen.getByLabelText("Due on")).toBeTruthy());
+    expect(screen.queryByLabelText("Starts on")).toBeNull();
+  });
+
+  // The Convex mutation rejects an inverted span too; this is the client half
+  // so the user never round-trips a server error for something visible here.
+  it("drops a start date that is after the due date rather than sending it", async () => {
+    const user = userEvent.setup();
+    render(<WorkComposer projectId="p1" assignees={assignees} />);
+
+    await user.type(screen.getByLabelText("Add work"), "Backwards");
+    await user.click(screen.getByLabelText("Dates: No date"));
+    await user.type(await screen.findByLabelText("Due on"), "2026-10-12");
+    await user.type(await screen.findByLabelText("Starts on"), "2026-11-30");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({ dueDate: "2026-10-12", startDate: null });
+  });
+
+  it("carries notes typed before Add, and clears them after", async () => {
+    const user = userEvent.setup();
+    render(<WorkComposer projectId="p1" assignees={assignees} />);
+
+    await user.type(screen.getByLabelText("Add work"), "Collect the gear");
+    await user.click(screen.getByLabelText("Notes: none"));
+    await user.type(await screen.findByRole("textbox", { name: "Notes" }), "Loading dock is round the back");
+    await user.keyboard("{Escape}");
+
+    // The chip shows it is carrying something, so notes can't be invisible.
+    expect(screen.getByLabelText("Notes: added")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].description).toBe("Loading dock is round the back");
+    await waitFor(() => expect(screen.getByLabelText("Notes: none")).toBeTruthy());
   });
 
   it("still refuses the nowhere case — no owner and no job", async () => {

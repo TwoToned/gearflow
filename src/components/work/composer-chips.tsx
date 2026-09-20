@@ -2,7 +2,7 @@
 // use-client: interactive — Radix dropdown triggers (R-8.1.1)
 
 import React from "react";
-import { ChevronDown, Clock, Flag } from "lucide-react";
+import { ChevronDown, Clock, Flag, FileText } from "lucide-react";
 import {
   TASK_STAGES,
   TASK_STAGE_LABELS,
@@ -14,7 +14,7 @@ import {
 import {
   WORK_DUE_PRESETS,
   WORK_DUE_PRESET_LABELS,
-  type WorkDueValue,
+  type WorkDates,
 } from "@/lib/work-due-dates";
 import { PersonAvatar } from "@/components/ui/avatar";
 import {
@@ -157,61 +157,157 @@ export function OwnerChip({
 }
 
 /**
- * The "when" chip: the three presets that cover most work, plus a real date
- * field for everything else.
+ * The "when" chip: the due date, plus an optional start date that turns the
+ * row into a SPAN.
  *
- * The date field is a native `<input type="date">` — the codebase convention
+ * Both ends are native `<input type="date">` fields — the codebase convention
  * for a single date, and the one control that already has a keyboard path, a
- * locale-correct format and the platform's own calendar popover. Its value is
- * `YYYY-MM-DD`, which is exactly what `writes.create` takes, so nothing is
+ * locale-correct format and the platform's own calendar popover. Their value
+ * is `YYYY-MM-DD`, which is exactly what `writes.create` takes, so nothing is
  * parsed or reformatted on the way through.
+ *
+ * The start field's `max` is the resolved due date, so the browser itself
+ * refuses an inverted span; `resolveWorkDates` drops one anyway if it gets
+ * through, and the Convex mutation rejects it as the real gate. Three layers
+ * of the same rule, each doing the job of its own layer — the UI's is to not
+ * make the user round-trip a server error for something it can see.
  */
-export function DueChip({
-  due,
+export function DatesChip({
+  dates,
   label,
+  resolvedDue,
   onChange,
 }: {
-  due: WorkDueValue;
+  dates: WorkDates;
   label: string;
-  onChange: (d: WorkDueValue) => void;
+  /** The due date the presets resolve to, as `YYYY-MM-DD` — or null when
+   *  there is none, which is what makes a start date meaningless. */
+  resolvedDue: string | null;
+  onChange: (d: WorkDates) => void;
 }) {
-  const isSet = due.kind === "date" || due.preset !== "none";
+  const isSet = dates.due.kind === "date" || dates.due.preset !== "none";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <ChipButton ariaLabel={`Due: ${label}`} active={isSet}>
+        <ChipButton ariaLabel={`Dates: ${label}`} active={isSet}>
           <Clock className="size-3.5" aria-hidden />
           {label}
         </ChipButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" className="w-60">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Due</DropdownMenuLabel>
           {WORK_DUE_PRESETS.map((p) => (
-            <DropdownMenuItem key={p} onClick={() => onChange({ kind: "preset", preset: p })}>
+            <DropdownMenuItem
+              key={p}
+              onClick={() => onChange({ ...dates, due: { kind: "preset", preset: p } })}
+            >
               {WORK_DUE_PRESET_LABELS[p]}
             </DropdownMenuItem>
           ))}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <div className="px-2 pb-1.5 pt-1">
-          <label htmlFor="work-composer-due-date" className="mb-1 block text-caption text-muted">
-            Pick a date
-          </label>
-          <input
+        {/* Typing into a date field inside a menu would otherwise dismiss it
+            after the first digit — the menu treats keydown as navigation. */}
+        <div className="space-y-2 px-2 pb-1.5 pt-1" onKeyDown={(e) => e.stopPropagation()}>
+          <DateField
             id="work-composer-due-date"
-            type="date"
-            value={due.kind === "date" ? due.date : ""}
-            // The menu closes on keydown otherwise — typing a date would
-            // dismiss the thing you are typing into after the first digit.
-            onKeyDown={(e) => e.stopPropagation()}
-            onChange={(e) =>
-              onChange(
-                e.target.value ? { kind: "date", date: e.target.value } : { kind: "preset", preset: "none" },
-              )
+            label="Due on"
+            value={dates.due.kind === "date" ? dates.due.date : ""}
+            onChange={(v) =>
+              onChange({
+                ...dates,
+                due: v ? { kind: "date", date: v } : { kind: "preset", preset: "none" },
+              })
             }
+          />
+          {/* A start with no due date is not a span — there is nothing to run
+              to — so the field only appears once there is an end to run to. */}
+          {resolvedDue && (
+            <DateField
+              id="work-composer-start-date"
+              label="Starts on"
+              value={dates.start ?? ""}
+              max={resolvedDue}
+              hint="Runs as a bar on the calendar"
+              onChange={(v) => onChange({ ...dates, start: v || null })}
+            />
+          )}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** One labelled date field. Both ends of the span are the same control, so
+ *  they are the same component (R-3.1) — a second hand-rolled copy is how the
+ *  two ends end up with different sizing or a missing label. */
+function DateField({
+  id,
+  label,
+  value,
+  onChange,
+  max,
+  hint,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  max?: string;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-caption text-muted">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="date"
+        value={value}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          "w-full rounded-[var(--r-sm)] border border-line-2 bg-paper-2 px-2 py-1 text-caption text-ink",
+          focusRing,
+        )}
+      />
+      {hint && <p className="mt-0.5 text-[10px] text-faint">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * Notes. A chip rather than a permanent second line, because the composer's
+ * narrowest host is the 340px rail, where it is already two rows tall and a
+ * third would push the work list itself off the visible area. The chip shows a
+ * dot once there is something in it, so notes you typed can't be invisible.
+ */
+export function NotesChip({ notes, onChange }: { notes: string; onChange: (v: string) => void }) {
+  const has = notes.trim().length > 0;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <ChipButton ariaLabel={has ? "Notes: added" : "Notes: none"} active={has}>
+          <FileText className="size-3.5" aria-hidden />
+          Notes
+          {has && <span className="size-1.5 rounded-full bg-primary" aria-hidden />}
+        </ChipButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        <div className="px-2 pb-1.5 pt-1" onKeyDown={(e) => e.stopPropagation()}>
+          <label htmlFor="work-composer-notes" className="mb-1 block text-caption text-muted">
+            Notes
+          </label>
+          <textarea
+            id="work-composer-notes"
+            value={notes}
+            rows={4}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Anything the person doing this needs to know…"
             className={cn(
-              "w-full rounded-[var(--r-sm)] border border-line-2 bg-paper-2 px-2 py-1 text-caption text-ink",
+              "w-full resize-y rounded-[var(--r-sm)] border border-line-2 bg-paper-2 px-2 py-1.5 text-caption text-ink placeholder:text-faint",
               focusRing,
             )}
           />

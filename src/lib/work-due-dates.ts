@@ -140,3 +140,57 @@ export function resolveDuePreset(
   const today = calendarDateInTimezone(nowMs, timezone);
   return shiftCalendarDate(today, PRESET_DAY_OFFSET[preset]);
 }
+
+/**
+ * A work item's DATES as the composer holds them: when it is due, and
+ * optionally when it starts.
+ *
+ * A row with both runs as a SPAN — it draws as a bar on the Work tab's
+ * calendar and stays visible in every list for the whole stretch. A start with
+ * no due date is not a span (there is nothing to run to), so it is not
+ * representable here: `start` is only ever read alongside a resolved `due`.
+ */
+export interface WorkDates {
+  due: WorkDueValue;
+  /** `null` = no start; the row is a point on its due date. */
+  start: CalendarDate | null;
+}
+
+export const workDatesDefault = (hasProject: boolean): WorkDates => ({
+  due: workDueDefault(hasProject),
+  start: null,
+});
+
+/**
+ * The pair as the writer takes it, with the ordering invariant applied.
+ *
+ * A start that is after the due date, or a start with no due date at all, is
+ * dropped rather than sent — the span it describes does not exist. The Convex
+ * mutation rejects the same pair (`assertDateSpanOrdered`), so this is the
+ * client half of one rule, not a second rule: the UI's job is to not make the
+ * user round-trip a server error for something it can see is impossible.
+ */
+export function resolveWorkDates(
+  dates: WorkDates,
+  nowMs: number,
+  timezone?: string,
+): { dueDate: CalendarDate | null; startDate: CalendarDate | null } {
+  const dueDate = resolveWorkDue(dates.due, nowMs, timezone);
+  const startDate = dates.start && dueDate && dates.start <= dueDate ? dates.start : null;
+  return { dueDate, startDate };
+}
+
+/**
+ * The date chip's text. A span prints both ends ("12–14 Oct"); a point prints
+ * one. Uses the SAME `workDueLabel`/`formatCalendarDate` the point case does,
+ * so the two can't drift into different date formats on one chip.
+ */
+export function workDatesLabel(dates: WorkDates, nowMs: number, timezone?: string): string {
+  const dueText = workDueLabel(dates.due, nowMs, timezone);
+  const { startDate, dueDate } = resolveWorkDates(dates, nowMs, timezone);
+  if (!startDate || !dueDate) return dueText;
+  const today = calendarDateInTimezone(nowMs, timezone);
+  // The due end keeps its own label so a preset still reads as "Today", not as
+  // a date the user never typed.
+  return `${formatCalendarDate(startDate, today)} \u2192 ${dueText}`;
+}

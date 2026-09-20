@@ -616,6 +616,7 @@ function TaskEditDialog({
   const [status, setStatus] = useState<ProjectTaskStatus>(task.status);
   const [priority, setPriority] = useState<ProjectTaskPriority>(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate ? task.dueDate.slice(0, 10) : "");
+  const [startDate, setStartDate] = useState(task.startDate ? task.startDate.slice(0, 10) : "");
   const [assignee, setAssignee] = useState(
     task.assigneeUserId ? `u:${task.assigneeUserId}` : task.assigneeCrewId ? `c:${task.assigneeCrewId}` : "",
   );
@@ -643,6 +644,10 @@ function TaskEditDialog({
       status,
       priority,
       dueDate: dueDate || null,
+      // A start with no end is not a span; clear it rather than storing a
+      // date nothing can render (same rule as the composer's resolveWorkDates
+      // and the mutation's assertDateSpanOrdered).
+      startDate: (dueDate && startDate) || null,
       assigneeUserId: isUser ? assignee.slice(2) : null,
       assigneeCrewId: isCrew ? assignee.slice(2) : null,
       checklist,
@@ -714,6 +719,19 @@ function TaskEditDialog({
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div>
+              <label className="mb-1 block text-caption text-muted">Starts on</label>
+              {/* Only once there is a deadline to run to — a start with no due
+                  date describes no span. `max` lets the browser refuse an
+                  inverted one before the mutation has to. */}
+              <Input
+                type="date"
+                value={startDate}
+                max={dueDate || undefined}
+                disabled={!dueDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="col-span-2">
               <label className="mb-1 block text-caption text-muted">Assignee</label>
               <ComboboxPicker
                 value={assignee}

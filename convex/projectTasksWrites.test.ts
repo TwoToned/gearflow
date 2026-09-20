@@ -74,6 +74,108 @@ describe("projectTasksWrites", () => {
     ).rejects.toThrow(/either a user or a crew/i);
   });
 
+  // #tae40e — startDate is the opening end of a SPAN (start → due). The client
+  // drops an inverted one before sending, but *Native is browser-callable by
+  // anyone with a session, so the real gate is here.
+  describe("date span (startDate → dueDate)", () => {
+    const DAY = 86_400_000;
+
+    test("create stores a well-ordered span", async () => {
+      const t = makeT(); await seed(t);
+      await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+        id: "t1", projectId: "P1", orgId: ORG, title: "Build", startDate: NOW, dueDate: NOW + 2 * DAY,
+        now: NOW, actor, auditId: "a1",
+      });
+      const row = (await tasks(t))[0];
+      expect(row.startDate).toBe(NOW);
+      expect(row.dueDate).toBe(NOW + 2 * DAY);
+    });
+
+    test("create rejects a span that ends before it begins", async () => {
+      const t = makeT(); await seed(t);
+      await expect(
+        t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+          id: "t1", projectId: "P1", orgId: ORG, title: "Backwards", startDate: NOW + 2 * DAY, dueDate: NOW,
+          now: NOW, actor, auditId: "a1",
+        }),
+      ).rejects.toThrow(/start after it is due/i);
+    });
+
+    test("a start or a due date on its own is fine — only the pair is ordered", async () => {
+      const t = makeT(); await seed(t);
+      await t.withIdentity(asUser).mutation(api.projectTasksWrites.createNative, {
+        id: "t1", projectId: "P1", orgId: ORG, title: "Start only", startDate: NOW, now: NOW, actor, auditId: "a1",
+      });
+      expect((await tasks(t))[0].startDate).toBe(NOW);
+    });
+
+    // The case a naive "are both args present" check waves straight through:
+    // the update touches ONE end, and the inversion is against the end the row
+    // already has.
+    test("update rejects moving the due date back past an untouched start", async () => {
+      const t = makeT(); await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", {
+          id: "t1", organizationId: ORG, projectId: "P1", title: "T", status: "TODO",
+          startDate: NOW + 2 * DAY, dueDate: NOW + 4 * DAY, sortOrder: 1, createdAt: NOW, updatedAt: NOW,
+        });
+      });
+      await expect(
+        t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+          id: "t1", orgId: ORG, dueDate: NOW, now: NOW, actor, auditId: "a1",
+        }),
+      ).rejects.toThrow(/start after it is due/i);
+    });
+
+    test("update rejects moving the start past an untouched due date", async () => {
+      const t = makeT(); await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", {
+          id: "t1", organizationId: ORG, projectId: "P1", title: "T", status: "TODO",
+          startDate: NOW, dueDate: NOW + DAY, sortOrder: 1, createdAt: NOW, updatedAt: NOW,
+        });
+      });
+      await expect(
+        t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+          id: "t1", orgId: ORG, startDate: NOW + 5 * DAY, now: NOW, actor, auditId: "a1",
+        }),
+      ).rejects.toThrow(/start after it is due/i);
+    });
+
+    // Clearing an end can never invert a span, so it must not be blocked by
+    // the end it leaves behind.
+    test("update clears the start date with null", async () => {
+      const t = makeT(); await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", {
+          id: "t1", organizationId: ORG, projectId: "P1", title: "T", status: "TODO",
+          startDate: NOW, dueDate: NOW + DAY, sortOrder: 1, createdAt: NOW, updatedAt: NOW,
+        });
+      });
+      await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+        id: "t1", orgId: ORG, startDate: null, now: NOW, actor, auditId: "a1",
+      });
+      const row = (await tasks(t))[0];
+      expect(row.startDate).toBeUndefined();
+      expect(row.dueDate).toBe(NOW + DAY);
+    });
+
+    test("update accepts moving both ends together", async () => {
+      const t = makeT(); await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", {
+          id: "t1", organizationId: ORG, projectId: "P1", title: "T", status: "TODO",
+          startDate: NOW, dueDate: NOW + DAY, sortOrder: 1, createdAt: NOW, updatedAt: NOW,
+        });
+      });
+      await t.withIdentity(asUser).mutation(api.projectTasksWrites.updateNative, {
+        id: "t1", orgId: ORG, startDate: NOW + 10 * DAY, dueDate: NOW + 12 * DAY, now: NOW, actor, auditId: "a1",
+      });
+      const row = (await tasks(t))[0];
+      expect([row.startDate, row.dueDate]).toEqual([NOW + 10 * DAY, NOW + 12 * DAY]);
+    });
+  });
+
   test("update stamps completedAt on the DONE transition, clears it leaving DONE", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {

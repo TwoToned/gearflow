@@ -69,6 +69,29 @@ fixed `"server"` distinctId (no user PII). `instrumentation.ts`'s `onRequestErro
 `src/lib/process-safety.ts`'s uncaught-exception/unhandled-rejection net both report through
 it. Dynamically imported so it never loads in the edge runtime (posthog-node is Node-only).
 
+**A peer hanging up is not a fault.** The `uncaughtException` net exits(1) so the container
+restarts clean rather than serving from a corrupt process — but it makes an exception for
+socket-level codes that only mean the OTHER end went away mid-request (`ECONNRESET`,
+`ECONNABORTED`, `EPIPE`, `ERR_STREAM_PREMATURE_CLOSE`): a user navigating off, hitting
+Escape, losing signal, or a proxy timing out. Those are logged and execution continues.
+
+Exiting on them is worse than the error: nothing in the process is corrupt, yet the exit
+kills every OTHER in-flight request and hands the next visitors a 502 while the container
+comes back — which is the exact intermittent-502 failure mode this module exists to
+prevent, so treating a disconnect as fatal turns the safety net into the outage. They are
+deliberately NOT reported to PostHog either: a client hanging up is routine and its volume
+scales with traffic, while error tracking is for defects.
+
+The check is on `err.code` against a narrow list, never the message, so a genuine fault that
+merely mentions a disconnect code still exits (pinned by a test). Node's caveat about
+resuming after an uncaught exception governs everything outside that list.
+
+Seen in the wild as a dead Next dev server under Playwright: a request aborted while a route
+was still compiling threw a bare `Error: aborted` carrying `ECONNRESET`, this net exited, and
+every later test got `ERR_CONNECTION_REFUSED`. That is the #725 crash class
+`playwright.config.ts` separately works around by serving the harness suite from a prebuilt
+`next start`.
+
 ## Test Fake
 
 `src/lib/posthog-fake.ts`'s `createFakePostHog()` is the deterministic, inspectable

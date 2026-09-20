@@ -32794,6 +32794,7 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "recurrence": {},
                       "stage": {},
+                      "startDate": {},
                       "status": {},
                       "title": {
                         "type": "string"
@@ -33112,6 +33113,7 @@ export const OPENAPI_DOCUMENT = {
                       "priority": {},
                       "recurrence": {},
                       "stage": {},
+                      "startDate": {},
                       "status": {},
                       "title": {
                         "type": "string"

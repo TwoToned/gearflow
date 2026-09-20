@@ -46,6 +46,22 @@ describe("describeWorkDestination", () => {
     ).toBe(false);
   });
 
+  it("names the stage AND the date when a job's work carries both", () => {
+    const d = describeWorkDestination({
+      hasProject: true, ownerKind: "user", isMe: true, ownerName: "Ada", stageLabel: "Prep", dueLabel: "12 Oct",
+    });
+    expect(d.text).toBe("Lands in your work list \u00b7 Prep \u00b7 due 12 oct");
+  });
+
+  // The date chip defaults to "No date" on a job, so saying it would be on
+  // every line the composer ever draws there.
+  it("leaves an undated job item saying only its stage", () => {
+    const d = describeWorkDestination({
+      hasProject: true, ownerKind: "nobody", isMe: false, ownerName: "", stageLabel: "Prep", dueLabel: "No date",
+    });
+    expect(d.text).toBe("Lands in this job's work list \u00b7 Prep");
+  });
+
   it("treats a crew owner as an owner", () => {
     const d = describeWorkDestination({
       hasProject: false, ownerKind: "crew", isMe: false, ownerName: "Cara Crew", dueLabel: "No date",

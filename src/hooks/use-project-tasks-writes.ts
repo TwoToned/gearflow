@@ -20,6 +20,9 @@ export type ProjectTaskInput = {
   status?: ProjectTaskStatus;
   priority?: ProjectTaskPriority;
   dueDate?: string | null;
+  /** The span's opening end (#tae40e), same "YYYY-MM-DD" shape as dueDate —
+   *  converted to epoch-ms alongside it below. */
+  startDate?: string | null;
   assigneeUserId?: string | null;
   assigneeCrewId?: string | null;
   checklist?: ChecklistItem[] | null;
@@ -34,6 +37,9 @@ type BulkPatch = {
   status?: ProjectTaskStatus;
   priority?: ProjectTaskPriority;
   dueDate?: string | null;
+  /** The span's opening end (#tae40e), same "YYYY-MM-DD" shape as dueDate —
+   *  converted to epoch-ms alongside it below. */
+  startDate?: string | null;
   assigneeUserId?: string | null;
   assigneeCrewId?: string | null;
 };
@@ -67,7 +73,7 @@ export function useProjectTaskWrites() {
     create: async (
       data: { projectId?: string; parentId?: string; stage?: ProjectTaskStage; title: string } & TaskData,
     ): Promise<string> => {
-      const { projectId, parentId, stage, dueDate, title, ...rest } = data;
+      const { projectId, parentId, stage, dueDate, startDate, title, ...rest } = data;
       const id = createId();
       await createM({
         id,
@@ -78,6 +84,7 @@ export function useProjectTaskWrites() {
         title,
         ...rest,
         dueDate: toMs(dueDate),
+        startDate: toMs(startDate),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
@@ -85,12 +92,13 @@ export function useProjectTaskWrites() {
       return id;
     },
     update: async (id: string, data: TaskData & { stage?: ProjectTaskStage | null }): Promise<void> => {
-      const { dueDate, ...rest } = data;
+      const { dueDate, startDate, ...rest } = data;
       await updateM({
         id,
         orgId: requireOrg(),
         ...rest,
         dueDate: toMs(dueDate),
+        startDate: toMs(startDate),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

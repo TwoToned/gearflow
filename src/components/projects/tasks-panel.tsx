@@ -12,7 +12,7 @@ type BulkTaskPatch = Pick<
 import { toast } from "sonner";
 import {
   Plus,
-  Loader2,
+
   Trash2,
   Pencil,
   Circle,
@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { WorkComposer } from "@/components/work/work-composer";
 import {
   Select,
   SelectContent,
@@ -202,19 +203,9 @@ export function TasksPanel({ projectId, defaultGroupBy = "status" }: { projectId
   // comment for why calling it from each view independently is fine).
   const { tasks, isLoading, refetch, assignees } = useProjectWorkData(projectId);
 
-  const [newTitle, setNewTitle] = useState("");
   const [editing, setEditing] = useState<Task | null>(null);
 
   const invalidate = () => refetch();
-
-  const createMut = useServerMutation({
-    mutationFn: (title: string) => writes.create({ projectId, title }),
-    onSuccess: () => {
-      invalidate();
-      setNewTitle("");
-    },
-    onError: (e: Error) => toast.error(e.message || "Could not add task"),
-  });
 
   const updateMut = useServerMutation({
     mutationFn: (vars: { id: string; data: ProjectTaskInput }) =>
@@ -294,26 +285,23 @@ export function TasksPanel({ projectId, defaultGroupBy = "status" }: { projectId
 
   return (
     <div className="space-y-5">
-      {/* Quick add — scoped to this project (design §8.3): no projectId means
-          a personal task on Today, but every add here always carries one. */}
-      <div className="flex items-center gap-2">
-        <Input
-          placeholder="Add a task and press Enter…"
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && newTitle.trim()) createMut.mutate(newTitle.trim());
-          }}
+      {/* Quick add — the SAME composer Today, the rail and the Overview card
+          use (R-3.1). The bare input it replaces could only ever set a title,
+          so every dated or assigned task meant creating a row and immediately
+          opening it to finish the job; the composer sets owner, stage, due
+          date and priority before Add and says where the row will land.
+          Always project-scoped here: no projectId would mean a personal task
+          on Today, and every add on this tab carries one (design §8.3). */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+        <WorkComposer
+          projectId={projectId}
+          assignees={assignees}
+          onCreated={invalidate}
+          placeholder="Add work to this job…"
+          className="min-w-0 flex-1"
         />
-        <Button
-          onClick={() => newTitle.trim() && createMut.mutate(newTitle.trim())}
-          disabled={!newTitle.trim() || createMut.isPending}
-        >
-          {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          <span className="ml-1.5 hidden sm:inline">Add</span>
-        </Button>
         <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskGroupBy)}>
-          <SelectTrigger className="w-[140px] shrink-0" aria-label="Group by">
+          <SelectTrigger className="shrink-0 sm:w-[140px]" aria-label="Group by">
             <SelectValue>{GROUP_BY_LABELS[groupBy]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -628,6 +616,7 @@ function TaskEditDialog({
   const [status, setStatus] = useState<ProjectTaskStatus>(task.status);
   const [priority, setPriority] = useState<ProjectTaskPriority>(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate ? task.dueDate.slice(0, 10) : "");
+  const [startDate, setStartDate] = useState(task.startDate ? task.startDate.slice(0, 10) : "");
   const [assignee, setAssignee] = useState(
     task.assigneeUserId ? `u:${task.assigneeUserId}` : task.assigneeCrewId ? `c:${task.assigneeCrewId}` : "",
   );
@@ -655,6 +644,10 @@ function TaskEditDialog({
       status,
       priority,
       dueDate: dueDate || null,
+      // A start with no end is not a span; clear it rather than storing a
+      // date nothing can render (same rule as the composer's resolveWorkDates
+      // and the mutation's assertDateSpanOrdered).
+      startDate: (dueDate && startDate) || null,
       assigneeUserId: isUser ? assignee.slice(2) : null,
       assigneeCrewId: isCrew ? assignee.slice(2) : null,
       checklist,
@@ -726,6 +719,19 @@ function TaskEditDialog({
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
             <div>
+              <label className="mb-1 block text-caption text-muted">Starts on</label>
+              {/* Only once there is a deadline to run to — a start with no due
+                  date describes no span. `max` lets the browser refuse an
+                  inverted one before the mutation has to. */}
+              <Input
+                type="date"
+                value={startDate}
+                max={dueDate || undefined}
+                disabled={!dueDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="col-span-2">
               <label className="mb-1 block text-caption text-muted">Assignee</label>
               <ComboboxPicker
                 value={assignee}

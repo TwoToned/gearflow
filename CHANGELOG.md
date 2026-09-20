@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-20
+
+### Added
+
+- **Everything about a task is set before you add it.** The work composer — the one box behind
+  Today, the project sidebar, the Overview card and the Work tab — now carries owner, stage,
+  **due date**, **start date**, **priority** and **notes**. Previously a job's composer offered
+  no date control at all, so dating a task meant creating the row and immediately reopening it
+  to finish the job. The Work tab's list view had its own title-only box and now uses the same
+  composer as everywhere else.
+- **Work can run over a stretch of days, not just land on one.** Give a task a start date as
+  well as a due date and it becomes a span: it stays visible for the whole run and appears on
+  the Work tab's calendar under every day it covers, marked start/middle/end with a "day 2 of
+  3" caption. A span can never end before it begins — the server checks the resulting row, so
+  moving one end still has to hold against the end already stored.
+
+### Fixed
+
+- **The work composer's chips did nothing when clicked.** Owner, Stage and Due rendered
+  correctly and silently ignored every click. The chip button dropped the props Radix passes
+  through `asChild`, so the dropdown's own handlers and ref never reached the element.
+  Typecheck, lint and `next build` all passed on the broken form; only a test that clicks a
+  chip and looks for the menu catches it, and there is now one.
+- **You could not read what you were typing when adding work.** The composer laid its title
+  input, four chips and the Add button out on a single flex line, which in the 340px project
+  sidebar squeezed the field to roughly forty pixels. The title input now has its own row and
+  the chips wrap beneath it.
+
 ## [0.32.1] - 2026-09-19
 
 ### Fixed

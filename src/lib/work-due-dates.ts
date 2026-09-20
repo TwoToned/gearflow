@@ -17,14 +17,79 @@
  *  takes and converts to epoch ms. */
 export type CalendarDate = string;
 
-export const WORK_DUE_PRESETS = ["today", "tomorrow", "none"] as const;
+export const WORK_DUE_PRESETS = ["today", "tomorrow", "nextWeek", "none"] as const;
 export type WorkDuePreset = (typeof WORK_DUE_PRESETS)[number];
 
 export const WORK_DUE_PRESET_LABELS: Record<WorkDuePreset, string> = {
   today: "Today",
   tomorrow: "Tomorrow",
+  nextWeek: "Next week",
   none: "No date",
 };
+
+/** How many calendar days past today each preset lands. `none` has no
+ *  offset — it is the absence of a date, not a date far away. */
+const PRESET_DAY_OFFSET: Record<Exclude<WorkDuePreset, "none">, number> = {
+  today: 0,
+  tomorrow: 1,
+  nextWeek: 7,
+};
+
+/**
+ * What the composer's "when" chip is currently set to: one of the presets, or
+ * a calendar date the user picked outright.
+ *
+ * A union rather than `preset | customDate` as two pieces of state, because
+ * the two can't both be in force and a shape that can't represent that can't
+ * drift (R-3.1). Everything that needs "so what date IS it" goes through
+ * `resolveWorkDue`; everything that needs "what do I print on the chip" goes
+ * through `workDueLabel`. No caller re-derives either.
+ */
+export type WorkDueValue =
+  | { kind: "preset"; preset: WorkDuePreset }
+  | { kind: "date"; date: CalendarDate };
+
+/** The composer's starting "when". A job's work is undated until someone says
+ *  otherwise; personal work defaults to today, which is the list it lands in. */
+export const workDueDefault = (hasProject: boolean): WorkDueValue => ({
+  kind: "preset",
+  preset: hasProject ? "none" : "today",
+});
+
+/** The `YYYY-MM-DD` this value means, or `null` for "no date". */
+export function resolveWorkDue(
+  value: WorkDueValue,
+  nowMs: number,
+  timezone?: string,
+): CalendarDate | null {
+  return value.kind === "date" ? value.date : resolveDuePreset(value.preset, nowMs, timezone);
+}
+
+/**
+ * The chip's text. A picked date prints as a short human date ("12 Oct", with
+ * the year only when it isn't this one) rather than the raw ISO string — the
+ * chip is read at a glance, and `2026-10-12` isn't.
+ */
+export function workDueLabel(value: WorkDueValue, nowMs: number, timezone?: string): string {
+  if (value.kind === "preset") return WORK_DUE_PRESET_LABELS[value.preset];
+  return formatCalendarDate(value.date, calendarDateInTimezone(nowMs, timezone));
+}
+
+/** `YYYY-MM-DD` → "12 Oct" (same year as `todayDate`) or "12 Oct 2027". */
+export function formatCalendarDate(date: CalendarDate, todayDate: CalendarDate): string {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return date;
+  // Midday UTC, never midnight: the parts go straight back out through the
+  // UTC getters, so no zone can pull the rendered day off by one.
+  const at = new Date(Date.UTC(year, month - 1, day, 12));
+  const sameYear = date.slice(0, 4) === todayDate.slice(0, 4);
+  return at.toLocaleDateString(undefined, {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
 
 /**
  * The calendar date `instantMs` falls on in `timezone`, as `YYYY-MM-DD`.
@@ -73,5 +138,59 @@ export function resolveDuePreset(
 ): CalendarDate | null {
   if (preset === "none") return null;
   const today = calendarDateInTimezone(nowMs, timezone);
-  return preset === "today" ? today : shiftCalendarDate(today, 1);
+  return shiftCalendarDate(today, PRESET_DAY_OFFSET[preset]);
+}
+
+/**
+ * A work item's DATES as the composer holds them: when it is due, and
+ * optionally when it starts.
+ *
+ * A row with both runs as a SPAN — it draws as a bar on the Work tab's
+ * calendar and stays visible in every list for the whole stretch. A start with
+ * no due date is not a span (there is nothing to run to), so it is not
+ * representable here: `start` is only ever read alongside a resolved `due`.
+ */
+export interface WorkDates {
+  due: WorkDueValue;
+  /** `null` = no start; the row is a point on its due date. */
+  start: CalendarDate | null;
+}
+
+export const workDatesDefault = (hasProject: boolean): WorkDates => ({
+  due: workDueDefault(hasProject),
+  start: null,
+});
+
+/**
+ * The pair as the writer takes it, with the ordering invariant applied.
+ *
+ * A start that is after the due date, or a start with no due date at all, is
+ * dropped rather than sent — the span it describes does not exist. The Convex
+ * mutation rejects the same pair (`assertDateSpanOrdered`), so this is the
+ * client half of one rule, not a second rule: the UI's job is to not make the
+ * user round-trip a server error for something it can see is impossible.
+ */
+export function resolveWorkDates(
+  dates: WorkDates,
+  nowMs: number,
+  timezone?: string,
+): { dueDate: CalendarDate | null; startDate: CalendarDate | null } {
+  const dueDate = resolveWorkDue(dates.due, nowMs, timezone);
+  const startDate = dates.start && dueDate && dates.start <= dueDate ? dates.start : null;
+  return { dueDate, startDate };
+}
+
+/**
+ * The date chip's text. A span prints both ends ("12–14 Oct"); a point prints
+ * one. Uses the SAME `workDueLabel`/`formatCalendarDate` the point case does,
+ * so the two can't drift into different date formats on one chip.
+ */
+export function workDatesLabel(dates: WorkDates, nowMs: number, timezone?: string): string {
+  const dueText = workDueLabel(dates.due, nowMs, timezone);
+  const { startDate, dueDate } = resolveWorkDates(dates, nowMs, timezone);
+  if (!startDate || !dueDate) return dueText;
+  const today = calendarDateInTimezone(nowMs, timezone);
+  // The due end keeps its own label so a preset still reads as "Today", not as
+  // a date the user never typed.
+  return `${formatCalendarDate(startDate, today)} \u2192 ${dueText}`;
 }

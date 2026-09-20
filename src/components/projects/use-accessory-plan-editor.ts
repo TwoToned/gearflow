@@ -47,25 +47,40 @@ export interface AccessoryPlanEditor {
   loaded: boolean;
 }
 
+/** Which lookup resolves this line's accessory catalog, as a pair of mutually
+ *  exclusive keys: a specific-serial line resolves by asset tag, anything else
+ *  by model. Both null when the caller is disabled or the line has neither —
+ *  neither query runs then. Pulled out of the hook below so each stays inside
+ *  the per-function branch budget (R-3.6). */
+function accessorySource(
+  item: LineItemData | null,
+  enabled: boolean,
+): { modelId: string | null; assetTag: string | null } {
+  if (!enabled || !item) return { modelId: null, assetTag: null };
+  if (item.assetId) return { modelId: null, assetTag: item.asset?.assetTag ?? null };
+  return { modelId: item.modelId ?? null, assetTag: null };
+}
+
 /** Resolve the model/asset's configured accessory catalog for `item` — model
- *  rows via `checkAvailability` for a bulk/generic line, asset rows via
- *  `lookupAssetByTag` for a specific-serial line. Split out so the callers'
- *  bodies don't carry both queries' `enabled` branches (R-3.6). */
+ *  rows via `checkAvailability`, asset rows via `lookupAssetByTag`. Only the
+ *  one `accessorySource` picked has a key, so only it fetches; the other's
+ *  `data` is `undefined` (a `useServerQuery` result is tagged with the key it
+ *  was fetched for, so a previous line's value never leaks into a new one). */
 function useAccessoryCatalog(item: LineItemData | null, enabled: boolean): ModelAccessoryDetail[] {
-  const isAssetBased = !!item?.assetId;
+  const { modelId, assetTag } = accessorySource(item, enabled);
   const { data: modelAvailability } = useServerQuery({
-    queryKey: ["edit-accessories-model", item?.modelId],
-    queryFn: () => checkAvailability(item!.modelId!, null, null, undefined),
-    enabled: enabled && !!item && !isAssetBased && !!item.modelId,
+    queryKey: ["edit-accessories-model", modelId],
+    queryFn: () => checkAvailability(modelId!, null, null, undefined),
+    enabled: !!modelId,
   });
   const { data: assetLookup } = useServerQuery({
-    queryKey: ["edit-accessories-asset", item?.asset?.assetTag],
-    queryFn: () => lookupAssetByTag(item!.asset!.assetTag!, undefined, undefined, undefined),
-    enabled: enabled && !!item && isAssetBased && !!item.asset?.assetTag,
+    queryKey: ["edit-accessories-asset", assetTag],
+    queryFn: () => lookupAssetByTag(assetTag!, undefined, undefined, undefined),
+    enabled: !!assetTag,
   });
   return useMemo(
-    () => (isAssetBased ? (assetLookup?.accessories ?? []) : (modelAvailability?.accessories ?? [])),
-    [isAssetBased, assetLookup, modelAvailability],
+    () => (assetTag ? assetLookup?.accessories : modelAvailability?.accessories) ?? [],
+    [assetTag, assetLookup, modelAvailability],
   );
 }
 

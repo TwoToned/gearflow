@@ -66,6 +66,49 @@ describe("installProcessSafetyNet", () => {
     expect((reported as Error).message).toBe("string reason");
   });
 
+  it("does NOT exit when a peer hung up mid-request (the CI/prod 502 maker)", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    installProcessSafetyNet("web");
+
+    // The exact shape Next's dev server throws when a request is aborted while
+    // a route is still compiling: a bare `Error: aborted` carrying ECONNRESET.
+    const aborted = Object.assign(new Error("aborted"), { code: "ECONNRESET" });
+    handlers.uncaughtException?.(aborted);
+
+    await drain();
+    expect(exitSpy).not.toHaveBeenCalled(); // the whole point: keep serving
+    expect(phCapture).not.toHaveBeenCalled(); // routine, not a defect
+    expect(errSpy).toHaveBeenCalledWith("[web] ignored peer disconnect:", aborted);
+    exitSpy.mockRestore();
+  });
+
+  it.each(["ECONNRESET", "ECONNABORTED", "EPIPE", "ERR_STREAM_PREMATURE_CLOSE"])(
+    "treats %s as a peer disconnect, not a fatal fault",
+    async (code) => {
+      const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+      installProcessSafetyNet("web");
+
+      handlers.uncaughtException?.(Object.assign(new Error("socket hang up"), { code }));
+
+      await drain();
+      expect(exitSpy).not.toHaveBeenCalled();
+      exitSpy.mockRestore();
+    },
+  );
+
+  it("still exits on a real fault that merely mentions a disconnect code", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    installProcessSafetyNet("web");
+
+    // Message-matching would swallow this; the check is on `code` for that reason.
+    handlers.uncaughtException?.(new Error("ECONNRESET while rebuilding the index"));
+
+    await drain();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(phCapture).toHaveBeenCalledTimes(1);
+    exitSpy.mockRestore();
+  });
+
   it("reports and exits on an uncaught exception", async () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
     installProcessSafetyNet("worker");

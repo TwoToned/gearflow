@@ -37,6 +37,10 @@ export interface AccessorySelectionFieldsProps {
   onSelectionChange: (next: Record<string, boolean>) => void;
   excludeReasons: Record<string, string>;
   onExcludeReasonsChange: (next: Record<string, string>) => void;
+  /** The card's own "Accessories" overline. Off where the surrounding surface
+   *  already names the section — the Edit Item dialog gives it a `SectionTitle`
+   *  like every other section, and two headings for one card reads as a bug. */
+  showHeading?: boolean;
 }
 
 export function AccessorySelectionFields({
@@ -46,6 +50,7 @@ export function AccessorySelectionFields({
   onSelectionChange,
   excludeReasons,
   onExcludeReasonsChange,
+  showHeading = true,
 }: AccessorySelectionFieldsProps) {
   const [pendingExclude, setPendingExclude] = useState<{ id: string; label: string } | null>(null);
   const [excludeReasonDraft, setExcludeReasonDraft] = useState("");
@@ -58,7 +63,7 @@ export function AccessorySelectionFields({
   return (
     <>
       <div className="space-y-2.5 rounded-[var(--r)] border border-line bg-paper-2/50 p-3">
-        <p className="t-overline text-muted">Accessories</p>
+        {showHeading && <p className="t-overline text-muted">Accessories</p>}
 
         {defaultAccessories.length > 0 && (
           <div className="space-y-1.5">

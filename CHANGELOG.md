@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-20
+
+### Added
+
+- **Accessories are editable from the Edit Item window.** Choosing what ships with a line on
+  a job — the cables, clamps and adaptors a model carries — was only reachable from the
+  equipment row's "…" menu, a second place to go that you had to know about. The Edit Item
+  dialog now has its own **Accessories** section, so what travels with a line is set in the
+  same window as its quantity, price and placement. Defaults come pre-ticked (removing one
+  still asks why), optionals are opt-in, and the counts scale to the quantity you're typing,
+  so "3× XLR Cable" follows the quantity field as you change it. The section only appears for
+  a line that can actually have accessories: not a kit or accessory child, not a sub-hire, and
+  not already out the door. The row menu's "Edit accessories" stays as the direct route.
+
+### Changed
+
+- The accessory picker now has one implementation behind both entry points, so the row menu
+  and the Edit Item window can't drift apart. The accessory plan saves only when the
+  selection actually changed — editing a price no longer touches an untouched line's
+  accessory rows — and it saves after the line itself, so changing quantity and accessories
+  in one go scales the accessories to the new quantity.
+
 ## [0.33.0] - 2026-09-20
 
 ### Added

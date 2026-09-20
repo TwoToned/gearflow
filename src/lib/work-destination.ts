@@ -20,7 +20,7 @@ interface WorkDestinationInput {
   ownerName: string;
   /** Project scope: the stage's label, or null for "no stage". */
   stageLabel?: string | null;
-  /** Personal scope: the due preset's label, e.g. "Today". */
+  /** The "when" chip's label, e.g. "Today" or "12 Oct". */
   dueLabel?: string;
 }
 
@@ -40,8 +40,22 @@ export function describeWorkDestination(input: WorkDestinationInput): WorkDestin
   }
 
   const who = whoseList(input);
-  const when = input.hasProject ? (input.stageLabel ?? "no stage") : (input.dueLabel ?? "").toLowerCase();
-  return { text: `Lands in ${who} · ${when}`, blocked: false };
+  return { text: `Lands in ${who} · ${whenClause(input)}`, blocked: false };
+}
+
+/**
+ * The clause after the middle dot: where in the job it sits, and when it is
+ * due. Project work now carries BOTH (a stage says which phase of the job,
+ * a date says when it has to be done by) and the sentence has to say both,
+ * or the chip the user just set is a setting the destination line denies.
+ * Personal work has no stages, so it is the date alone.
+ */
+function whenClause(input: WorkDestinationInput): string {
+  const due = (input.dueLabel ?? "").toLowerCase();
+  if (!input.hasProject) return due;
+  const stage = input.stageLabel ?? "no stage";
+  // "No date" is the default on a job; saying it every time is noise.
+  return !due || due === "no date" ? stage : `${stage} · due ${due}`;
 }
 
 function whoseList(input: WorkDestinationInput): string {

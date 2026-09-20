@@ -2,30 +2,20 @@
 // use-client: interactive — local draft state, menus, optimistic write (R-8.1.1)
 
 import { useCallback, useMemo, useState, type RefObject } from "react";
-import { Plus, ChevronDown, Clock, AlertTriangle, Loader2 } from "lucide-react";
+import { Plus, AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSession } from "@/lib/auth-client";
 import { useProjectTaskWrites } from "@/hooks/use-project-tasks-writes";
 import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
-import { TASK_STAGES, TASK_STAGE_LABELS, type ProjectTaskStage } from "@/lib/project-tasks";
-import {
-  WORK_DUE_PRESETS,
-  WORK_DUE_PRESET_LABELS,
-  resolveDuePreset,
-  type WorkDuePreset,
-} from "@/lib/work-due-dates";
+import { useStableNow } from "@/hooks/use-stable-now";
+import { TASK_STAGE_LABELS, type ProjectTaskStage, type ProjectTaskPriority } from "@/lib/project-tasks";
+import { resolveWorkDue, workDueLabel, workDueDefault, type WorkDueValue } from "@/lib/work-due-dates";
 import { describeWorkDestination, type WorkDestination } from "@/lib/work-destination";
-import { PersonAvatar } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { cn, focusRing } from "@/lib/utils";
+import { OwnerChip, StageChip, DueChip, PriorityChip } from "./composer-chips";
+import { ownerLabel, type WorkComposerAssignees, type WorkComposerOwner } from "./work-composer-owner";
+
+export type { WorkComposerOwner };
 
 /**
  * ONE composer for every place work is created — Today, the project rail, the
@@ -41,17 +31,18 @@ import { cn, focusRing } from "@/lib/utils";
  * The destination line is not decoration. The vanishing quick-add shipped
  * because nothing in the UI ever said where a row would land, so "nowhere"
  * looked exactly like "somewhere".
+ *
+ * **Layout: the title input owns its own row, always.** The chips and the Add
+ * button sit on a second row beneath it. The one-row version put the input in
+ * a flex race against four chips it could never win — in the 340px project
+ * rail the field collapsed to about forty pixels and you could not read what
+ * you were typing. A row that wraps is the only arrangement whose narrowest
+ * case is still usable, and the composer's narrowest host is its most used one.
+ *
+ * Every field a new row can carry is set HERE, before Add: owner, stage, due
+ * date and priority. Creating a row and then opening it to set its date is two
+ * round trips for one thought.
  */
-
-interface WorkComposerAssignees {
-  users: { id: string; name: string; image?: string | null }[];
-  crew: { id: string; firstName: string; lastName: string }[];
-}
-
-export type WorkComposerOwner =
-  | { kind: "user"; id: string }
-  | { kind: "crew"; id: string }
-  | { kind: "nobody" };
 
 export interface WorkComposerProps {
   /** Absent = a personal item (Today). Set = scoped to that job. */
@@ -75,16 +66,6 @@ export interface WorkComposerProps {
   className?: string;
 }
 
-function ownerLabel(owner: WorkComposerOwner, assignees: WorkComposerAssignees | undefined, meId: string | undefined): string {
-  if (owner.kind === "nobody") return "Nobody";
-  if (owner.kind === "crew") {
-    const c = assignees?.crew.find((x) => x.id === owner.id);
-    return c ? `${c.firstName} ${c.lastName}`.trim() : "Crew";
-  }
-  if (owner.id === meId) return "Me";
-  return assignees?.users.find((u) => u.id === owner.id)?.name ?? "Someone";
-}
-
 /** Who a new row starts owned by. Personal composers default to the signed-in
  *  user (the server defaults the same way as a backstop); a project composer
  *  starts unowned, because unowned project work is a legitimate, visible
@@ -100,22 +81,27 @@ function resolveInitialOwner(
 }
 
 /** The create payload. Split out of the submit handler (R-3.6): the
- *  project/personal split touches three fields, and each ternary is a branch
- *  the component would otherwise carry. */
+ *  project/personal split touches two fields, and each ternary is a branch
+ *  the component would otherwise carry. A due date is NOT one of them any
+ *  more — job work is dated the same way personal work is. */
 function buildCreateInput(args: {
   title: string;
   projectId: string | undefined;
   stage: ProjectTaskStage | null;
-  due: WorkDuePreset;
+  due: WorkDueValue;
+  nowMs: number;
   timezone: string | undefined;
   owner: WorkComposerOwner;
+  priority: ProjectTaskPriority;
 }) {
-  const scoped = !!args.projectId;
   return {
     title: args.title,
     projectId: args.projectId,
-    stage: scoped ? (args.stage ?? undefined) : undefined,
-    dueDate: scoped ? undefined : resolveDuePreset(args.due, Date.now(), args.timezone),
+    stage: args.projectId ? (args.stage ?? undefined) : undefined,
+    dueDate: resolveWorkDue(args.due, args.nowMs, args.timezone),
+    // NORMAL is what the server writes for an unset priority, so sending it
+    // explicitly changes nothing — only a deliberate LOW/HIGH is a choice.
+    priority: args.priority === "NORMAL" ? undefined : args.priority,
     assigneeUserId: args.owner.kind === "user" ? args.owner.id : undefined,
     assigneeCrewId: args.owner.kind === "crew" ? args.owner.id : undefined,
   };
@@ -133,7 +119,7 @@ function DestinationLine({ destination }: { destination: WorkDestination }) {
   return (
     <p
       className={cn(
-        "flex items-center gap-1.5 border-t border-dashed border-line px-3 py-1.5 pl-[38px] text-caption",
+        "flex items-center gap-1.5 border-t border-dashed border-line px-3 py-1.5 text-caption",
         destination.blocked ? "text-warn" : "text-muted",
       )}
     >
@@ -158,6 +144,9 @@ export function WorkComposer({
   const meId = session?.user.id;
   const writes = useProjectTaskWrites();
   const { timezone } = useDocumentDatesConfig();
+  // Mount-time snapshot: presets resolve against it and the chip renders from
+  // it, so both agree on which day "today" is for as long as the draft lives.
+  const nowMs = useStableNow();
 
   const initialOwner = useMemo(
     () => resolveInitialOwner(defaultOwner, projectId, meId),
@@ -166,11 +155,13 @@ export function WorkComposer({
 
   const [title, setTitle] = useState("");
   const [owner, setOwner] = useState<WorkComposerOwner>(initialOwner);
-  const [due, setDue] = useState<WorkDuePreset>(projectId ? "none" : "today");
+  const [due, setDue] = useState<WorkDueValue>(() => workDueDefault(!!projectId));
   const [stage, setStage] = useState<ProjectTaskStage | null>(defaultStage ?? null);
+  const [priority, setPriority] = useState<ProjectTaskPriority>("NORMAL");
   const [busy, setBusy] = useState(false);
 
   const trimmed = title.trim();
+  const dueText = workDueLabel(due, nowMs, timezone);
   const destination = useMemo(
     () =>
       describeWorkDestination({
@@ -179,9 +170,9 @@ export function WorkComposer({
         isMe: owner.kind === "user" && owner.id === meId,
         ownerName: ownerLabel(owner, assignees, meId),
         stageLabel: stage ? TASK_STAGE_LABELS[stage] : null,
-        dueLabel: WORK_DUE_PRESET_LABELS[due],
+        dueLabel: dueText,
       }),
-    [projectId, owner, meId, assignees, stage, due],
+    [projectId, owner, meId, assignees, stage, dueText],
   );
   const canSubmit = canSubmitWork(trimmed, busy, destination.blocked);
 
@@ -189,14 +180,16 @@ export function WorkComposer({
     if (!canSubmit) return;
     setBusy(true);
     writes
-      .create(buildCreateInput({ title: trimmed, projectId, stage, due, timezone, owner }))
+      .create(buildCreateInput({ title: trimmed, projectId, stage, due, nowMs, timezone, owner, priority }))
       .then(() => {
+        // The chips keep their settings: adding five things to the same stage
+        // for the same person is one intent, not five. Only the title clears.
         setTitle("");
         onCreated?.();
       })
       .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not add the work"))
       .finally(() => setBusy(false));
-  }, [canSubmit, writes, trimmed, projectId, stage, due, timezone, owner, onCreated]);
+  }, [canSubmit, writes, trimmed, projectId, stage, due, nowMs, timezone, owner, priority, onCreated]);
 
   // Compact hosts keep the chip row hidden until there's a draft to place.
   const showChips = !compact || trimmed.length > 0;
@@ -226,10 +219,12 @@ export function WorkComposer({
           onChange={(e) => setTitle(e.target.value)}
           placeholder={composerPlaceholder(placeholder, projectId)}
           disabled={busy}
-          className="min-w-0 flex-1 bg-transparent text-ui-text text-ink placeholder:text-faint focus:outline-none"
+          className="w-full min-w-0 flex-1 bg-transparent text-ui-text text-ink placeholder:text-faint focus:outline-none"
         />
+      </div>
 
-        {showChips && (
+      {showChips && (
+        <>
           <ComposerControls
             owner={owner}
             onOwnerChange={setOwner}
@@ -239,21 +234,28 @@ export function WorkComposer({
             stage={stage}
             onStageChange={setStage}
             due={due}
+            dueText={dueText}
             onDueChange={setDue}
+            priority={priority}
+            onPriorityChange={setPriority}
             canSubmit={canSubmit}
             busy={busy}
           />
-        )}
-      </div>
-
-      {showChips && <DestinationLine destination={destination} />}
+          <DestinationLine destination={destination} />
+        </>
+      )}
     </form>
   );
 }
 
 /** The chip row and the Add button. Split out of `WorkComposer` (R-3.6)
  *  purely to keep that function's own branch count down — every chip and
- *  every disabled state is a branch, and they all belong to one row. */
+ *  every disabled state is a branch, and they all belong to one row.
+ *
+ *  It WRAPS: four chips plus a button will not fit a 340px rail on one line,
+ *  and the alternative to wrapping is a horizontal scroll that hides whichever
+ *  chip is off the end. The Add button is pushed to the end of the last line
+ *  by `ml-auto`, so it stays the rightmost thing at every width. */
 function ComposerControls({
   owner,
   onOwnerChange,
@@ -263,7 +265,10 @@ function ComposerControls({
   stage,
   onStageChange,
   due,
+  dueText,
   onDueChange,
+  priority,
+  onPriorityChange,
   canSubmit,
   busy,
 }: {
@@ -274,175 +279,31 @@ function ComposerControls({
   projectId: string | undefined;
   stage: ProjectTaskStage | null;
   onStageChange: (s: ProjectTaskStage | null) => void;
-  due: WorkDuePreset;
-  onDueChange: (d: WorkDuePreset) => void;
+  due: WorkDueValue;
+  dueText: string;
+  onDueChange: (d: WorkDueValue) => void;
+  priority: ProjectTaskPriority;
+  onPriorityChange: (p: ProjectTaskPriority) => void;
   canSubmit: boolean;
   busy: boolean;
 }) {
   return (
-    <>
+    <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
       <OwnerChip owner={owner} onChange={onOwnerChange} assignees={assignees} meId={meId} allowNobody={!!projectId} />
-      {projectId ? <StageChip stage={stage} onChange={onStageChange} /> : <DueChip due={due} onChange={onDueChange} />}
+      {projectId && <StageChip stage={stage} onChange={onStageChange} />}
+      <DueChip due={due} label={dueText} onChange={onDueChange} />
+      <PriorityChip priority={priority} onChange={onPriorityChange} />
       <button
         type="submit"
         disabled={!canSubmit}
         className={cn(
-          "shrink-0 rounded-full px-3.5 py-1.5 text-badge font-semibold transition-colors",
+          "ml-auto shrink-0 rounded-full px-3.5 py-1.5 text-badge font-semibold transition-colors",
           canSubmit ? "bg-primary text-primary-foreground shadow-[var(--sh-stk)]" : "cursor-not-allowed bg-elev text-faint",
           focusRing,
         )}
       >
         {busy ? <Loader2 className="size-3.5 animate-spin" aria-label="Adding" /> : "Add"}
       </button>
-    </>
-  );
-}
-
-function ChipButton({
-  children,
-  ariaLabel,
-}: {
-  children: React.ReactNode;
-  ariaLabel: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      className={cn(
-        "flex shrink-0 items-center gap-1.5 rounded-full border border-line-2 bg-paper-2 py-1 pl-2 pr-1.5 text-caption font-medium text-ink-2 hover:border-faint hover:text-ink",
-        focusRing,
-      )}
-    >
-      {children}
-      <ChevronDown className="size-3" aria-hidden />
-    </button>
-  );
-}
-
-function OwnerChip({
-  owner,
-  onChange,
-  assignees,
-  meId,
-  allowNobody,
-}: {
-  owner: WorkComposerOwner;
-  onChange: (o: WorkComposerOwner) => void;
-  assignees: WorkComposerAssignees | undefined;
-  meId: string | undefined;
-  allowNobody: boolean;
-}) {
-  const label = ownerLabel(owner, assignees, meId);
-  const others = (assignees?.users ?? []).filter((u) => u.id !== meId);
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <ChipButton ariaLabel={`Owner: ${label}`}>
-          {owner.kind === "nobody" ? (
-            <span
-              className="grid size-[18px] place-items-center rounded-full border border-dashed border-faint text-[9px] text-muted"
-              aria-hidden
-            >
-              ?
-            </span>
-          ) : (
-            <PersonAvatar name={label} className="size-[18px] text-[9px]" />
-          )}
-          {label}
-        </ChipButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Owner</DropdownMenuLabel>
-          {meId && (
-            <DropdownMenuItem onClick={() => onChange({ kind: "user", id: meId })}>Me</DropdownMenuItem>
-          )}
-          {allowNobody && (
-            <DropdownMenuItem onClick={() => onChange({ kind: "nobody" })}>
-              Nobody — leave it on the job
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuGroup>
-        {others.length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Team</DropdownMenuLabel>
-              {others.map((u) => (
-                <DropdownMenuItem key={u.id} onClick={() => onChange({ kind: "user", id: u.id })}>
-                  {u.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
-          </>
-        )}
-        {(assignees?.crew ?? []).length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Crew</DropdownMenuLabel>
-              {assignees!.crew.map((c) => (
-                <DropdownMenuItem key={c.id} onClick={() => onChange({ kind: "crew", id: c.id })}>
-                  {`${c.firstName} ${c.lastName}`.trim()}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function DueChip({ due, onChange }: { due: WorkDuePreset; onChange: (d: WorkDuePreset) => void }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <ChipButton ariaLabel={`Due: ${WORK_DUE_PRESET_LABELS[due]}`}>
-          <Clock className="size-3.5" aria-hidden />
-          {WORK_DUE_PRESET_LABELS[due]}
-        </ChipButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Due</DropdownMenuLabel>
-          {WORK_DUE_PRESETS.map((p) => (
-            <DropdownMenuItem key={p} onClick={() => onChange(p)}>
-              {WORK_DUE_PRESET_LABELS[p]}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function StageChip({
-  stage,
-  onChange,
-}: {
-  stage: ProjectTaskStage | null;
-  onChange: (s: ProjectTaskStage | null) => void;
-}) {
-  const label = stage ? TASK_STAGE_LABELS[stage] : "No stage";
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <ChipButton ariaLabel={`Stage: ${label}`}>{label}</ChipButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Stage</DropdownMenuLabel>
-          {TASK_STAGES.map((s) => (
-            <DropdownMenuItem key={s} onClick={() => onChange(s)}>
-              {TASK_STAGE_LABELS[s]}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuItem onClick={() => onChange(null)}>No stage</DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    </div>
   );
 }

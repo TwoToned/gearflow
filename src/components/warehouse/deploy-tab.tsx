@@ -140,6 +140,8 @@ export function DeployTab({
               <AssetTagInput
                 ref={deployScanInputRef}
                 placeholder="Scan asset tag to deploy..."
+                scannerTitle="Scan gear to deploy"
+                continuous
                 value={deployScanValue}
                 onChange={(e) => setDeployScanValue(e.target.value)}
                 onScan={(value) => deployScanMutationMutate(value)}

@@ -35,13 +35,35 @@ function dayLabel(key: string): string {
 }
 
 /**
- * One row on one day.
- *
- * The left rail is what makes a repeated row read as a continuous run instead
- * of three separate items: a middle day gets a full-height line, an end gets a
- * half one, and a point gets nothing at all. It is the only "bar" a day-strip
- * can honestly draw.
+ * The left rail: what makes a repeated row read as one continuous run instead
+ * of three separate items. A middle day gets a full-height line, each end gets
+ * a half one growing towards the middle, and a point gets nothing at all. It
+ * is the only "bar" a day-strip can honestly draw.
  */
+function SpanRail({ position }: { position: SpanPosition }) {
+  if (position === "point") return null;
+  return (
+    <span className="flex h-6 w-1 shrink-0 items-center" aria-hidden>
+      <span
+        className={cn(
+          "w-1 rounded-full bg-blue",
+          position === "start" && "h-3 self-end",
+          position === "middle" && "h-6",
+          position === "end" && "h-3 self-start",
+        )}
+      />
+    </span>
+  );
+}
+
+/** The person this row is on, user or crew, or null when nobody owns it. */
+function assigneeNameOf(task: Task): string | null {
+  if (task.assigneeUser?.name) return task.assigneeUser.name;
+  if (task.assigneeCrew) return `${task.assigneeCrew.firstName} ${task.assigneeCrew.lastName}`.trim() || null;
+  return null;
+}
+
+/** One row on one day. */
 function CalendarRow({
   task,
   day,
@@ -55,10 +77,7 @@ function CalendarRow({
   today: string;
   onOpen: (task: Task) => void;
 }) {
-  const assigneeName =
-    task.assigneeUser?.name ||
-    (task.assigneeCrew && `${task.assigneeCrew.firstName} ${task.assigneeCrew.lastName}`.trim()) ||
-    null;
+  const assigneeName = assigneeNameOf(task);
   const caption = spanCaption(task, day, (d) => formatCalendarDate(d, today));
 
   return (
@@ -67,18 +86,7 @@ function CalendarRow({
       onClick={() => onOpen(task)}
       className={cn("flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-select/40", focusRing)}
     >
-      {position !== "point" && (
-        <span className="flex h-6 w-1 shrink-0 items-center" aria-hidden>
-          <span
-            className={cn(
-              "w-1 rounded-full bg-blue",
-              position === "start" && "h-3 self-end",
-              position === "middle" && "h-6",
-              position === "end" && "h-3 self-start",
-            )}
-          />
-        </span>
-      )}
+      <SpanRail position={position} />
       <span className="min-w-0 flex-1">
         <span
           className={cn(

@@ -131,6 +131,8 @@ export function PickPrepTab({
                 <AssetTagInput
                   ref={scanInputRef}
                   placeholder="Scan or enter asset tag to prep..."
+                  scannerTitle="Scan gear to prep"
+                  continuous
                   value={scanValue}
                   onChange={(e) => setScanValue(e.target.value)}
                   onKeyDown={handleScanKeyDown}

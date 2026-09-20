@@ -38,6 +38,7 @@ import { useScanFeedback } from "@/hooks/use-scan-feedback";
 import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { ScanHistoryStrip } from "@/components/warehouse/scan-history-strip";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { ScanButton } from "@/components/scanner/scan-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -354,23 +355,38 @@ export default function ReturnsStationPage() {
 
         {/* ── Scan bar ─────────────────────────────────────────────────── */}
         <div className="rounded-[var(--r-lg)] border border-line bg-card p-3 shadow-[var(--sh-card)] sm:p-4">
-          <div className="relative">
-            <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-teal" />
-            <AssetTagInput
-              ref={inputRef}
-              placeholder="Scan any asset, bulk, or kit tag…"
-              value={scanValue}
-              onChange={(e) => setScanValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleScan(scanValue);
-              }}
+          {/* The camera button is a flex SIBLING of the field's box, not a
+              child: that box is `relative` and carries absolutely positioned
+              overlays (the left barcode icon, the right spinner), which the
+              button would otherwise sit underneath. */}
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-teal" />
+              <AssetTagInput
+                ref={inputRef}
+                placeholder="Scan any asset, bulk, or kit tag…"
+                value={scanValue}
+                onChange={(e) => setScanValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleScan(scanValue);
+                }}
+                disabled={scanning}
+                className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-24 text-[14px] text-ink placeholder:text-faint"
+                autoFocus
+              />
+              {scanning && (
+                <Loader2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-faint" />
+              )}
+            </div>
+            {/* The returns desk works a trolley at a time, so the camera stays
+                open between tags rather than closing on every hit. */}
+            <ScanButton
+              scannerTitle="Scan returning gear"
+              onScan={(scanned) => void handleScan(scanned)}
+              continuous
               disabled={scanning}
-              className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-24 text-[14px] text-ink placeholder:text-faint"
-              autoFocus
+              className="h-12 w-12"
             />
-            {scanning && (
-              <Loader2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-faint" />
-            )}
           </div>
         </div>
 

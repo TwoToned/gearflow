@@ -732,6 +732,43 @@ other per-render-fresh value (`createId()`, `new Date()`) in query args is the s
 A surface that must genuinely tick needs its own interval and must keep that value OUT
 of the args.
 
+### The camera scanner is ONE WASM engine — never the platform `BarcodeDetector`
+The in-app barcode scanner (`src/lib/barcode/`, `src/hooks/use-camera-scanner.ts`,
+`src/components/scanner/`) reads QR, **Micro QR**, **rMQR**, Data Matrix, Aztec,
+PDF417 and the common linear codes through ZXing-C++ WASM on **both** platforms.
+Adding a "use the native `BarcodeDetector` where available" fast path is the one
+change that is always wrong here: `micro_qr_code`/`rm_qr_code` aren't in the Shape
+Detection API spec (so Chrome/Android's ML Kit backend can't read them either), and
+WebKit has never shipped the API at all, so every browser on iOS needs WASM anyway.
+Two decoders behind one button is exactly how the previous scanner came to behave
+differently on the platform nobody tested — it was removed for "never working on
+iPhone". See FEATUREDOCS/19 and `docs/designs/barcode-scanner-2d.md`.
+
+Five things that look removable and aren't (all iOS; every browser there is WKWebView):
+1. **`getUserMedia` only inside a user gesture** — from the dialog's open handler,
+   never a mount effect. A non-gesture prompt rejects indistinguishably from a denial.
+2. **`playsInline` + `muted` + an awaited `play()`**, set in JSX *and* imperatively on
+   each start. Miss one → live track, black picture.
+3. **`facingMode: { ideal: "environment" }`, no `deviceId`.** `exact` throws on any
+   device without a rear camera; pre-permission `enumerateDevices()` returns blanks
+   on iOS, so label-matching picks nothing.
+4. **`stopStream` on EVERY teardown path** (close, unmount, visibilitychange, each
+   early return in `start()`). One live capture at a time on iOS — a leaked track
+   blocks the next `getUserMedia` app-wide.
+5. **Release on hide, re-acquire on show.** iOS suspends capture when backgrounded
+   and never resumes; a held track means a permanently black viewport.
+
+Torch/zoom are feature-detected and **absent** on iOS rather than dead. The decoded
+region is a native-resolution centre crop sized from the same `ROI_FRACTION` the
+reticle uses — don't hand-tune one of the two. The `.wasm` is self-hosted in
+`public/wasm/` (committed; `pnpm run wasm:sync:check` gates it), never the jsDelivr
+default, or the scanner silently stops decoding on warehouse wifi.
+
+**Any change to formats or reader options needs a round-trip test** in
+`src/lib/barcode/decoder.test.ts` — encode a real symbol, render it to `ImageData`
+the way the pump does, decode it back. The absence of exactly that test is how
+"it doesn't work on iOS" shipped.
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

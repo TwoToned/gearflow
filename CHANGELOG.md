@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The camera scanner is back, and it reads the small codes.** Scan a tag with your
+  phone's camera from any tag field — the warehouse prep, deploy and return tabs, the
+  returns desk, the warehouse search, and the asset/kit/test-tag forms. It reads
+  ordinary QR codes plus **Micro QR** and **rMQR** — the compact formats that fit on
+  cable labels and small-instrument plates where a full QR won't — along with Data
+  Matrix, Aztec, PDF417 and the usual barcodes off manufacturer plates. The three
+  warehouse tabs and the returns desk keep the camera open between tags, so you can
+  work a trolley without reaching for the screen after every item.
+- Warehouse and returns search bars get their own camera button beside the field.
+
+### Fixed
+
+- **Camera scanning works on iPhone.** The previous scanner was removed because it
+  never did. The causes were platform-level, not incidental: Safari has no built-in
+  barcode reader (so the old library silently fell back to a different decoder than
+  the one everyone tested on Android), the camera needs three specific video settings
+  or it grants permission and shows a black screen, iOS drops the camera permission
+  for home-screen-installed apps, and iOS suspends the camera when you switch apps
+  and never resumes it. Each is now handled explicitly, and a denied camera gets real
+  instructions and a Try again button instead of a black rectangle.
+- A camera that can't start now says why — blocked permission, no camera, another app
+  using it, or a non-HTTPS address — instead of failing silently.
+
+### Changed
+
+- Barcode decoding uses one engine on both Android and iPhone, so the two behave the
+  same. The decoder is served from the app itself rather than a public CDN, so
+  scanning keeps working on warehouse wifi and behind restrictive networks.
+
 ## [0.34.0] - 2026-09-20
 
 ### Added

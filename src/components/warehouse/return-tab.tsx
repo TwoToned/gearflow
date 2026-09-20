@@ -139,6 +139,8 @@ export function ReturnTab({
                   ref={returnScanInputRef}
                   id="scan-checkin"
                   placeholder="Scan or enter asset tag to return..."
+                  scannerTitle="Scan gear to return"
+                  continuous
                   value={returnScanValue}
                   onChange={(e) => setReturnScanValue(e.target.value)}
                   onKeyDown={handleReturnScanKeyDown}

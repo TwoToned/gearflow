@@ -24,6 +24,7 @@ import { format } from "date-fns";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { ScanButton } from "@/components/scanner/scan-button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -455,31 +456,43 @@ export default function WarehousePage() {
         {/* ── Scanner hero: the primary lookup ────────────────────── */}
         <FadeIn delay={0.04}>
           <div className="rounded-[var(--r-lg)] border border-line bg-card p-3 shadow-[var(--sh-card)] sm:p-4">
-            <div className="relative">
-              <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-lime" />
-              <AssetTagInput
-                placeholder="Scan a barcode or search project name / number…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+            {/* The camera button is a flex SIBLING of the field's box, not a
+                child: that box is `relative` and carries absolutely positioned
+                overlays (the left barcode icon, the right Clear / kbd hint),
+                which the button would otherwise sit underneath. */}
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-lime" />
+                <AssetTagInput
+                  placeholder="Scan a barcode or search project name / number…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onScan={(scanned) => setSearch(scanned)}
+                  showScanButton={false}
+                  className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-20 text-[14px] text-ink placeholder:text-faint"
+                  autoFocus
+                />
+                {search ? (
+                  <button
+                    onClick={() => setSearch("")}
+                    className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-[var(--r)] px-2 py-1 text-caption text-faint transition-colors hover:text-ink-2 ${focusRing}`}
+                  >
+                    Clear
+                  </button>
+                ) : (
+                  <span className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 items-center gap-1 text-[11px] text-faint sm:flex">
+                    <kbd className="rounded-[6px] border border-line-2 bg-paper px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted">
+                      scan
+                    </kbd>
+                    to look up
+                  </span>
+                )}
+              </div>
+              <ScanButton
+                scannerTitle="Scan to look up"
                 onScan={(scanned) => setSearch(scanned)}
-                className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-20 text-[14px] text-ink placeholder:text-faint"
-                autoFocus
+                className="h-12 w-12"
               />
-              {search ? (
-                <button
-                  onClick={() => setSearch("")}
-                  className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-[var(--r)] px-2 py-1 text-caption text-faint transition-colors hover:text-ink-2 ${focusRing}`}
-                >
-                  Clear
-                </button>
-              ) : (
-                <span className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 items-center gap-1 text-[11px] text-faint sm:flex">
-                  <kbd className="rounded-[6px] border border-line-2 bg-paper px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted">
-                    scan
-                  </kbd>
-                  to look up
-                </span>
-              )}
             </div>
           </div>
         </FadeIn>

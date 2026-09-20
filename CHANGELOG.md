@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The scanner no longer gives two contradictory answers to one scan.** Reading
+  a code played a "success" chime, and then whatever you scanned into played its
+  own verdict — so an unrecognised tag beeped success and then error. The camera
+  now plays a short, high tick the moment it reads a code (the "got it" beep a
+  handheld scanner makes), and the verdict chime follows once the tag is
+  actually resolved. The tick comes with a vibration on phones that support it,
+  which is the feedback that matters when you're looking at the gear rather than
+  the screen.
+- **The scanner window looked wrong on desktop.** The aiming frame was sized
+  from the window's width, so on a wide, short desktop window it came out taller
+  than the video and spilled past the top and bottom edges. The frame is now
+  sized from the shorter side, matching the area actually being scanned, and the
+  desktop window gets a proper 4:3 video frame instead of inheriting whatever
+  height it happened to get.
+
 ### Added
 
 - **Scan to assign in the "Assign assets" dialog.** Prepping a line with eleven

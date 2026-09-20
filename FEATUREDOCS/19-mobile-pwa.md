@@ -309,6 +309,31 @@ there is no lens selection: the web has no equivalent of
 `AVCaptureDevice.minimumFocusDistance`, so a modern iPhone gets the wide camera
 (min focus ≈ 10 cm) and we compensate with resolution, not optics.
 
+**The camera plays `capture`, never `success`.** All the decoder knows is that
+it read a code; whether that tag means anything is the caller's business, and
+the caller plays one of the four verdicts (`success`/`error`/`exception`/`info`)
+once it has resolved the value. An earlier version played `success` on decode,
+so an unrecognised tag beeped success-then-error — two contradictory answers to
+one scan. `capture` is deliberately the shortest and highest tone in the set
+(1200 Hz / 35 ms) plus a 25 ms haptic tick, so the pair reads as
+tick-then-answer rather than as competing opinions. It is the handheld
+scanner's "gun beep", and it's the feedback that matters most in a warehouse
+because you're looking at the gear, not the screen. `navigator.vibrate` is
+unimplemented on iOS Safari, so the haptic half is a documented no-op there.
+
+**Layout is split explicitly by breakpoint, not by one clever responsive
+class.** On a phone the viewport fills the remaining column height (`flex-1`);
+on desktop the dialog has no definite height, so the viewport defines its own
+with a 4/3 frame. Combining `flex-1` with `aspect-[4/3]` leaves the winner up to
+flex-basis resolution — which is how the square reticle once ended up taller
+than the short, wide desktop frame it sat in, poking out top and bottom.
+
+The reticle sizes itself with `min(72cqw, 72cqh)` against a
+`container-type: size` viewport. That is the CSS spelling of `computeRoi`'s
+`min(frameWidth, frameHeight) * ROI_FRACTION`: a square share of the SHORTER
+side, so it can never exceed the box in either axis. A plain `min(72%, 340px)`
+reads 72% of the WIDTH, which is the bug above.
+
 **The decoded region is a native-resolution centre crop**, sized from the same
 `ROI_FRACTION` the on-screen reticle uses — so the box cannot lie about the scan
 area. Cropping is both faster than a full frame and better at small codes: the

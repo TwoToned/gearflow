@@ -123,6 +123,26 @@ describe("playScanFeedback", () => {
     expect(SCAN_FEEDBACK_TONES.error).toEqual({ frequency: 300, durationMs: 400 });
   });
 
+  it("plays capture as the shortest and highest of the set", () => {
+    // `capture` is the camera's read-tick, fired immediately before the caller
+    // plays one of the four verdicts. If it were long or low it would collide
+    // with the verdict and the pair would read as two competing opinions
+    // instead of tick-then-answer.
+    const capture = SCAN_FEEDBACK_TONES.capture;
+    const verdicts = [
+      SCAN_FEEDBACK_TONES.success,
+      SCAN_FEEDBACK_TONES.error,
+      SCAN_FEEDBACK_TONES.exception,
+      SCAN_FEEDBACK_TONES.info,
+    ];
+    for (const v of verdicts) {
+      expect(capture.durationMs).toBeLessThan(v.durationMs);
+      expect(capture.frequency).toBeGreaterThan(v.frequency);
+    }
+    // Single blip — a double would muddy the boundary with `exception`.
+    expect(capture.secondBlipGapMs).toBeUndefined();
+  });
+
   it("plays info at 600Hz / 80ms as a single blip", () => {
     const fake = createFakeAudioContext();
     setScanFeedbackContextFactory(() => fake.ctx);

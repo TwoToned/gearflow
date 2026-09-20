@@ -54,7 +54,12 @@ export function CameraScannerDialog({
   const handleResult = useCallback(
     (result: ScanResult) => {
       setLastFormat(result.format);
-      play("success");
+      // `capture`, NOT `success`: all the decoder knows is that it read a code.
+      // Whether that tag means anything here is the caller's call, and the
+      // caller plays one of the four verdicts. Claiming success here made an
+      // unrecognised tag beep success-then-error — two contradictory answers to
+      // one scan.
+      play("capture");
       onScan(result.value);
       if (!continuous) onOpenChange(false);
     },
@@ -83,7 +88,11 @@ export function CameraScannerDialog({
         className={
           isMobile
             ? "flex h-[100dvh] max-h-[100dvh] w-full max-w-full flex-col gap-0 overflow-hidden rounded-none border-0 p-0"
-            : "gap-0 overflow-hidden p-0 sm:max-w-xl"
+            // Desktop needs `flex flex-col` too: without it the viewport's
+            // `flex-1` resolves against nothing, the video falls back to its
+            // intrinsic size, and the square reticle ends up taller than the
+            // short, wide box it sits in — poking out top and bottom.
+            : "flex flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
         }
         style={
           isMobile
@@ -102,7 +111,24 @@ export function CameraScannerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative min-h-0 flex-1 bg-black">
+        {/* Two explicitly different boxes rather than one clever responsive
+            class: on a phone the viewport FILLS the remaining column height
+            (`flex-1`), on desktop the dialog has no definite height so the
+            viewport defines its own via a 4/3 frame. Combining `flex-1` with
+            `aspect-[4/3]` would leave which one wins up to flex basis
+            resolution, which is how the reticle ended up overflowing a short,
+            wide frame in the first place.
+
+            `container-type: size` is what lets the reticle measure the SHORTER
+            side of whichever box this is — see ScanReticle. It needs a definite
+            size in both axes, which both branches give it. */}
+        <div
+          className={
+            isMobile
+              ? "relative min-h-0 flex-1 bg-black [container-type:size]"
+              : "relative aspect-[4/3] w-full bg-black [container-type:size]"
+          }
+        >
           {/* `playsInline` + `muted` + `autoplay` are all three required for iOS
               to paint the stream rather than a black rectangle. */}
           <video
@@ -208,12 +234,18 @@ function TorchToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
  * derived from.
  */
 function ScanReticle() {
-  const size = `${Math.round(ROI_FRACTION * 100)}%`;
+  const pct = Math.round(ROI_FRACTION * 100);
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
       <div
         className="rounded-[var(--radius)] border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
-        style={{ width: `min(${size}, 340px)`, aspectRatio: "1 / 1" }}
+        // `min(Ncqw, Ncqh)` is the CSS spelling of `computeRoi`'s
+        // `min(frameWidth, frameHeight) * ROI_FRACTION` — the box is a square
+        // share of the SHORTER side, so it can never exceed the viewport in
+        // either axis. A plain `min(N%, 340px)` reads N% of the WIDTH, which is
+        // why a short, wide desktop frame used to get a reticle taller than
+        // itself.
+        style={{ width: `min(${pct}cqw, ${pct}cqh)`, aspectRatio: "1 / 1" }}
       />
     </div>
   );

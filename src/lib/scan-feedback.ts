@@ -13,7 +13,7 @@
  * silently dropped), and ramps gain out instead of hard-stopping (no click).
  */
 
-export type ScanFeedbackKind = "success" | "error" | "exception" | "info";
+export type ScanFeedbackKind = "capture" | "success" | "error" | "exception" | "info";
 
 interface TonePlan {
   /** Oscillator frequency in Hz. */
@@ -34,8 +34,15 @@ interface TonePlan {
  *                 error (e.g. already-returned asset, unknown tag, disambiguation
  *                 needed — "scan the parent instead"). 500 Hz double-blip.
  * - `info`      — neutral heads-up, e.g. a quantity prompt opening (600 Hz / 80 ms).
+ * - `capture`   — the CAMERA read a code. Not a verdict: the decoder has no idea
+ *                 whether the tag means anything here, so this is the handheld
+ *                 scanner's "gun beep" and the caller still plays one of the four
+ *                 verdicts above once it has resolved the value. Deliberately the
+ *                 shortest and highest of the set so the pair reads as tick-then-
+ *                 answer rather than as two competing opinions.
  */
 export const SCAN_FEEDBACK_TONES: Record<ScanFeedbackKind, TonePlan> = {
+  capture: { frequency: 1200, durationMs: 35 },
   success: { frequency: 800, durationMs: 150 },
   error: { frequency: 300, durationMs: 400 },
   exception: { frequency: 500, durationMs: 120, secondBlipGapMs: 90 },
@@ -127,6 +134,7 @@ export function playScanFeedback(kind: ScanFeedbackKind): void {
  * be a silent half-verdict on a muted phone.
  */
 export const SCAN_FEEDBACK_HAPTICS: Record<ScanFeedbackKind, number | number[]> = {
+  capture: 25, // crisp single tick — "the camera has it", felt without looking up
   success: 30, // one short tick
   error: [60, 40, 60], // two firm buzzes — distinguishable through a glove
   exception: [30, 60, 30], // double tick, mirrors the double-blip tone

@@ -100,6 +100,8 @@ export function ScanStep({
           onKeyDown={(e) => {
             if (e.key === "Enter") handleScan(state.scanInput);
           }}
+          onScan={handleScan}
+          scannerTitle="Scan test tag"
           placeholder="Scan or type a tag ID..."
           className="h-12 text-lg font-mono"
         />

@@ -213,8 +213,9 @@ function ScanNavInput({ currentTag }: { currentTag: string }) {
     go(value);
   }
 
-  // Plain tag input. The leading ScanBarcode icon is preserved as a typed-input
-  // affordance; submitting (Enter / form submit) routes the typed tag to `go`.
+  // Typing (Enter / form submit) and the camera both route the tag to `go`.
+  // The leading ScanBarcode icon is positioned against this box and lands over
+  // the input, which is the first flex child — the camera button sits after it.
   return (
     <form onSubmit={handleSubmit} className="max-w-md">
       <div className="relative">
@@ -223,6 +224,8 @@ function ScanNavInput({ currentTag }: { currentTag: string }) {
           ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onScan={go}
+          scannerTitle="Scan an asset tag"
           placeholder="Scan another asset tag..."
           className="pl-10"
         />

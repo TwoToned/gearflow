@@ -160,6 +160,9 @@ export const listByProjectWithRelations = query({
         status: t.status ?? "TODO",
         priority: t.priority ?? "NORMAL",
         dueDate: t.dueDate != null ? new Date(t.dueDate).toISOString() : null,
+        // #tae40e — the span's opening end, same ISO shape as dueDate so the
+        // consumer slices both to YYYY-MM-DD the same way.
+        startDate: t.startDate != null ? new Date(t.startDate).toISOString() : null,
         checklist: t.checklist ?? null,
         assigneeUserId: t.assigneeUserId ?? null,
         assigneeCrewId: t.assigneeCrewId ?? null,

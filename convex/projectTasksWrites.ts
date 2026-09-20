@@ -105,6 +105,14 @@ const taskWriteFields = {
   status: v.optional(enums.ProjectTaskStatus),
   priority: v.optional(enums.ProjectTaskPriority),
   dueDate: v.optional(v.union(v.number(), v.null())),
+  // The span's opening end. A row with both dates RUNS from startDate to
+  // dueDate — it draws as a bar on the Work tab's calendar and stays visible
+  // in every list for the whole stretch. It is NOT a defer/"not before" date:
+  // nothing hides a row until its start (the schema's original Phase-1 comment
+  // said otherwise, but the field was never wired to anything, so this is the
+  // first and only meaning it has ever had). `assertDateSpanOrdered` below is
+  // what keeps it from outliving its own end.
+  startDate: v.optional(v.union(v.number(), v.null())),
   assigneeUserId: v.optional(v.union(v.string(), v.null())),
   assigneeCrewId: v.optional(v.union(v.string(), v.null())),
   checklist: v.optional(v.union(v.array(v.any()), v.null())),
@@ -115,6 +123,22 @@ const taskWriteFields = {
   recurrence: v.optional(v.union(enums.ProjectTaskRecurrence, v.null())),
   watcherUserIds: v.optional(v.union(v.array(v.string()), v.null())),
 };
+
+/**
+ * A span cannot end before it begins.
+ *
+ * Checked against the RESULTING row, not the incoming args, because an update
+ * that moves only one end still has to hold against the end already stored —
+ * patching `dueDate` earlier than an untouched `startDate` is exactly the
+ * inversion a naive "both args present" check waves through. The browser-direct
+ * `*Native` mutations are callable by anyone with a session, so this lives here
+ * and not only in the client Zod schema (see "The write security bar",
+ * FEATUREDOCS/54).
+ */
+function assertDateSpanOrdered(start: number | undefined, due: number | undefined): void {
+  if (start == null || due == null) return;
+  if (start > due) throw new ConvexError("Work cannot start after it is due");
+}
 
 /** Validate every watcher id is an org member. Mirrors assertAssigneeInOrg's
  *  shape but for an array — a watcher is always a user, never crew (design
@@ -164,7 +188,8 @@ async function resolveNewTaskPlacement(
 interface NewTaskFields {
   id: string; orgId: string; parentId?: string;
   description?: string | null; status?: WorkItemStatus; priority?: WorkItemPriority;
-  dueDate?: number | null; assigneeUserId?: string | null; assigneeCrewId?: string | null;
+  dueDate?: number | null; startDate?: number | null;
+  assigneeUserId?: string | null; assigneeCrewId?: string | null;
   checklist?: RawChecklistItem[] | null; kind?: WorkItemKind; now: number; actor: { userId: string };
   recurrence?: WorkRecurrenceSpec | null; watcherUserIds?: string[] | null;
 }
@@ -231,6 +256,7 @@ function buildNewTaskDoc(
     status,
     priority: a.priority ?? "NORMAL",
     dueDate: orUndef(a.dueDate),
+    startDate: orUndef(a.startDate),
     assigneeUserId: falsyOrUndef(a.assigneeUserId) ?? resolvePersonalOwnerFallback(a, placement),
     assigneeCrewId: falsyOrUndef(a.assigneeCrewId),
     checklist: orUndef(normaliseChecklist(a.checklist)),
@@ -276,6 +302,7 @@ export const createNative = mutation({
 
     await assertAssigneeInOrg(ctx, a.orgId, a.assigneeUserId, a.assigneeCrewId);
     await assertWatchersInOrg(ctx, a.orgId, a.watcherUserIds ?? undefined);
+    assertDateSpanOrdered(orUndef(a.startDate), orUndef(a.dueDate));
 
     const placement = await resolveNewTaskPlacement(ctx, a);
     await ctx.db.insert("projectTasks", buildNewTaskDoc({ ...a, actor }, placement, title));
@@ -318,6 +345,7 @@ export const updateNative = mutation({
     if (a.status !== undefined) patch.status = a.status;
     if (a.priority !== undefined) patch.priority = a.priority;
     if (a.dueDate !== undefined) patch.dueDate = a.dueDate ?? undefined;
+    if (a.startDate !== undefined) patch.startDate = a.startDate ?? undefined;
     if (a.assigneeUserId !== undefined) patch.assigneeUserId = a.assigneeUserId || undefined;
     if (a.assigneeCrewId !== undefined) patch.assigneeCrewId = a.assigneeCrewId || undefined;
     if (a.checklist !== undefined) patch.checklist = normaliseChecklist(a.checklist);
@@ -328,6 +356,12 @@ export const updateNative = mutation({
     if (a.stage !== undefined && !doc.parentId) patch.stage = a.stage ?? undefined;
     if (a.recurrence !== undefined && !doc.parentId) patch.recurrence = a.recurrence ?? undefined;
     if (a.watcherUserIds !== undefined) patch.watcherUserIds = a.watcherUserIds ?? undefined;
+    // Against the row as it will BE, not as it arrived: moving one end has to
+    // hold against the end already stored.
+    assertDateSpanOrdered(
+      (a.startDate !== undefined ? (a.startDate ?? undefined) : doc.startDate),
+      (a.dueDate !== undefined ? (a.dueDate ?? undefined) : doc.dueDate),
+    );
     if (a.status !== undefined && a.status !== doc.status) {
       patch.completedAt = a.status === "DONE" ? a.now : undefined;
     }

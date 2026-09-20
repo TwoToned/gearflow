@@ -3,6 +3,10 @@ import {
   calendarDateInTimezone,
   shiftCalendarDate,
   resolveDuePreset,
+  resolveWorkDue,
+  workDueLabel,
+  workDueDefault,
+  formatCalendarDate,
 } from "./work-due-dates";
 import { bucketForDueDate } from "./today-buckets";
 
@@ -86,5 +90,56 @@ describe("resolveDuePreset", () => {
     const due = resolveDuePreset("today", now, la)!;
     expect(due).toBe("2026-09-18"); // the composer picks the right calendar date
     expect(bucketForDueDate(new Date(due).getTime(), now, la)).toBe("overdue"); // …the reader disagrees
+  });
+});
+
+describe("resolveWorkDue", () => {
+  const tz = "Australia/Melbourne";
+  const nowMs = Date.UTC(2026, 8, 18, 3, 0); // 2026-09-18 13:00 in Melbourne
+
+  it("passes a picked date straight through — no preset arithmetic touches it", () => {
+    expect(resolveWorkDue({ kind: "date", date: "2027-01-04" }, nowMs, tz)).toBe("2027-01-04");
+  });
+
+  it("resolves a preset exactly as resolveDuePreset does", () => {
+    expect(resolveWorkDue({ kind: "preset", preset: "tomorrow" }, nowMs, tz)).toBe(
+      resolveDuePreset("tomorrow", nowMs, tz),
+    );
+    expect(resolveWorkDue({ kind: "preset", preset: "nextWeek" }, nowMs, tz)).toBe("2026-09-25");
+    expect(resolveWorkDue({ kind: "preset", preset: "none" }, nowMs, tz)).toBeNull();
+  });
+});
+
+describe("workDueDefault", () => {
+  // Job work is undated until someone says otherwise; personal work defaults
+  // to the list it will actually show up in.
+  it("starts a job composer undated and a personal one on today", () => {
+    expect(workDueDefault(true)).toEqual({ kind: "preset", preset: "none" });
+    expect(workDueDefault(false)).toEqual({ kind: "preset", preset: "today" });
+  });
+});
+
+describe("workDueLabel / formatCalendarDate", () => {
+  const tz = "Australia/Melbourne";
+  const nowMs = Date.UTC(2026, 8, 18, 3, 0);
+
+  it("prints the preset's own label", () => {
+    expect(workDueLabel({ kind: "preset", preset: "nextWeek" }, nowMs, tz)).toBe("Next week");
+  });
+
+  it("prints a picked date as a short human date, never the raw ISO string", () => {
+    expect(workDueLabel({ kind: "date", date: "2026-10-12" }, nowMs, tz)).not.toContain("2026-10-12");
+    expect(workDueLabel({ kind: "date", date: "2026-10-12" }, nowMs, tz)).toMatch(/12/);
+  });
+
+  it("adds the year only when it is not the current one", () => {
+    expect(formatCalendarDate("2026-10-12", "2026-09-18")).not.toMatch(/2026/);
+    expect(formatCalendarDate("2027-01-04", "2026-09-18")).toMatch(/2027/);
+  });
+
+  // Rendered through UTC getters off a midday instant, so no runtime zone can
+  // pull the printed day back to the 11th.
+  it("prints the day it was given, in any runtime zone", () => {
+    expect(formatCalendarDate("2026-10-12", "2026-10-01")).toMatch(/\b12\b/);
   });
 });

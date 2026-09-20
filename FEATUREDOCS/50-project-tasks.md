@@ -37,7 +37,9 @@ parallel `workItems` table, per the design doc's explicit "one table" decision:
   of subtasks — the new, structured replacement for `checklist`, which is kept for exactly
   one release after the backfill migration ships, then dropped — expand/contract, Convex
   functions deploy ahead of the app image).
-- Scheduling: `startDate` (org-tz midnight; hides the row until then), `dueTime` (`"HH:mm"`
+- Scheduling: `startDate` (org-tz midnight — the opening end of a **span**, see
+  "The composer" below; it does NOT hide or defer the row, despite what its original
+  Phase-1 comment claimed), `dueTime` (`"HH:mm"`
   in the org timezone), `scheduledStart`/`scheduledEnd` (the agenda block Today renders),
   `snoozedUntil`, `estimateMinutes`, `tags` (free-form strings, no tag table).
 - `sourceKey` — set ONLY when a human promotes a derived Triage signal (quote expiring,
@@ -330,6 +332,63 @@ deliverable; a server-side sender (a job that signs a Web Push request per subsc
 and calls the push service, on a `notifications`-table event) is a follow-up big enough to
 deserve its own pass rather than being rushed into an already-large phase. `worker/index.ts`'s
 `push` handler has no effect until that sender exists.
+
+### The composer (#tae40e) — every field set before Add
+
+`WorkComposer` (`src/components/work/work-composer.tsx`) is the ONE way work is created —
+Today, the project rail, the Overview card, and (since #tae40e) the Work tab's list view,
+which previously had its own title-only `<Input>` + Add button.
+
+**Layout.** The title input owns its own row; the chips and Add wrap onto a second row
+beneath it. The original one-row version raced the input against four chips in a flex line,
+which in the 340px project rail left the field about forty pixels wide — you could not read
+what you were typing. `work-composer.smoke.test.tsx` pins the two rows apart.
+
+**`ChipButton` MUST forward its props and ref.** Every chip is a `DropdownMenuTrigger
+asChild` child, and `asChild` clones the element with Radix's handlers, ref and
+`data-state` on it. The original component destructured the props it knew about and
+dropped the rest, so the chips rendered perfectly and **did nothing when clicked**.
+Typecheck, lint and `next build` all passed. Only a test that clicks a chip and looks for
+the menu catches it — which is why one exists.
+
+**The chips**, all set before the row is ever written:
+
+| Chip | Scope | Notes |
+| --- | --- | --- |
+| Owner | both | `nobody` allowed only on a job — an unowned personal item would land nowhere, and the composer blocks that (`describeWorkDestination`) |
+| Stage | job only | personal work has no stages |
+| Dates | both | due date (presets + a date field) plus an optional start date |
+| Priority | both | `NORMAL` is the unset state and prints as "Priority", not "Normal" |
+| Notes | both | `description`; a chip rather than a permanent line, because the rail is already two rows tall. Shows a dot when it is carrying something |
+
+Title and notes clear after Add; **the other chips keep their settings** — adding five
+things to the same stage for the same person is one intent, not five.
+
+### Date spans: `startDate` → `dueDate`
+
+A row with both dates **runs** over that stretch. It is not a defer/"not before" date:
+nothing hides a row until its start. (The schema's Phase-1 comment said otherwise, but the
+field was never written or read by anything, so this is the first meaning it has had.)
+
+The ordering invariant lives in three layers, each doing its own layer's job:
+
+1. **`assertDateSpanOrdered`** (`convex/projectTasksWrites.ts`) is the real gate — `*Native`
+   mutations are browser-callable by anyone with a session. It checks the **resulting** row,
+   not the incoming args: an update that moves one end still has to hold against the end
+   already stored, which is exactly the inversion a "both args present" check waves through.
+2. **`resolveWorkDates`** (`src/lib/work-due-dates.ts`) drops an impossible span client-side,
+   so the user never round-trips a server error for something the UI can see.
+3. The start field's `max` attribute, so the browser itself refuses one first.
+
+**On the calendar** (`work-calendar-view.tsx`), a span appears under **every day it runs**,
+marked start / middle / end with a "day 2 of 3" caption. The Work tab's calendar is a
+day-strip, not a month grid, so repetition *is* the bar — there is nothing to draw one
+across. `src/lib/work-calendar-spans.ts` owns that arithmetic and its tests; the component
+only draws the result. A span is capped at `MAX_SPAN_DAYS` (31) and **always keeps both
+ends** — truncating the tail would hide the deadline, the one day a reader is looking for.
+A backwards span (possible on a row stored before the guard existed) collapses to its due
+date rather than throwing: a renderer should make a bad row look wrong, not take the tab
+down.
 
 ## My tasks — superseded by Today (`src/app/(app)/my-tasks/page.tsx`)
 

@@ -43554,6 +43554,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       },
       {
+        "name": "startDate",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "status",
         "optional": true,
         "type": "union"
@@ -43570,7 +43575,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f8d2a78e0675a2e5",
+    "argsSha": "1f8940a0f0963a66",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -43828,6 +43833,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       },
       {
+        "name": "startDate",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "status",
         "optional": true,
         "type": "union"
@@ -43844,7 +43854,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a87e18033aafd90d",
+    "argsSha": "fc6dfe0586ae65d7",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

@@ -3398,7 +3398,13 @@ export default defineSchema({
     // One level of subtasks — replaces `checklist`. A child inherits
     // projectId/organizationId from its parent and has no stage/sourceKey.
     parentId: v.optional(v.string()),
-    startDate: v.optional(v.number()), // org-tz midnight; hides the row until then
+    // The opening end of a SPAN: a row with both dates runs from startDate to
+    // dueDate, drawing as a bar on the Work tab's calendar and staying visible
+    // in every list for the whole stretch. It does NOT defer or hide the row —
+    // the Phase-1 comment here claimed that, but the field was never written or
+    // read by anything, so #tae40e's span is the first meaning it has had.
+    // `assertDateSpanOrdered` (projectTasksWrites.ts) keeps start <= due.
+    startDate: v.optional(v.number()), // org-tz midnight
     dueTime: v.optional(v.string()), // "HH:mm" in the org timezone
     scheduledStart: v.optional(v.number()), // the agenda block (phase 1 Today)
     scheduledEnd: v.optional(v.number()),

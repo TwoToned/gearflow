@@ -256,6 +256,68 @@ See [Bulk Check-In Totals](./52-bulk-checkin.md) for the full engine writeup.
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
 - `lookupAssetForScan()` treats scanned serialized assets as serialized (not bulk) even if the matching line item has qty > 1
 
+#### Scan-to-assign in the "Assign assets" dialog
+
+Prepping a multi-quantity serialised line opens a dialog with one dropdown per
+unit — eleven headsets means eleven dropdowns. A packer holding the gear already
+knows which unit they picked up, so the dialog carries its own scan field
+(`AssetTagInput`, `continuous`) that fills the next slot the tag can go in.
+
+Resolution is a pure function, `resolvePickerScan`
+(`src/lib/asset-picker-scan.ts`), with four outcomes — the component only
+applies the result and plays the matching `useScanFeedback` tone:
+
+| Outcome | When | Feedback |
+|---|---|---|
+| `assigned` | first empty slot whose pool contains the tag | `success` |
+| `already-assigned` | the tag is already sitting in a slot | `exception` + which slot |
+| `no-slot` | the tag's model is in the dialog but every slot is full | `exception` |
+| `unknown` | not an available asset for anything here | `error` |
+
+Two ordering rules that look arbitrary and aren't:
+
+1. **`already-assigned` is checked BEFORE searching for an empty slot.** Without
+   it, re-scanning a unit you already logged would duplicate it into the next
+   empty slot. Head-down through eleven identical headsets, "did that one
+   register?" is the question actually being asked, so it answers with the slot
+   number instead of silently doing nothing.
+2. **`no-slot` is distinct from `unknown`.** "You've already got enough of
+   those" and "that tag is wrong" send the operator to different places.
+
+Matching is case-insensitive (printed labels and HID wedges disagree about case
+often enough that a case-sensitive miss reads as a broken scanner), and the tag
+passes `normaliseScannedValue` first, so a decode outside the tag grammar is
+dropped rather than reported as an unknown asset.
+
+**The scan field is `sticky`** — `DialogContent` is the scroll container, and
+eleven slots would scroll it out of view exactly when it's being used every few
+seconds.
+
+**⚠️ Scan resolution reads `assetPickerItemsRef`, never the `assetPickerItems`
+state directly.** Continuous scanning delivers hits from a decode callback, so
+the handler React invokes is the one captured at the last COMMITTED render. Two
+units scanned before that commit lands would both resolve against the same rows,
+pick the same empty slot, and the second would silently overwrite the first —
+eleven headsets scanned, ten assigned, no error anywhere. The ref is written
+synchronously *before* the `setState`, so each scan sees the previous one
+regardless of render timing.
+
+Every picker write (dialog open, scan, dropdown) goes through
+`applyAssetPickerItems`, which updates the ref and the state together;
+`setAssetPickerItems` is called in exactly one place. Don't add a second write
+site, and don't "simplify" the resolver's input back to the state value — a
+test in `asset-picker-scan.test.ts` deliberately asserts that resolving two
+scans against stale rows DOES collide, so the reason for the ref stays visible.
+
+**⚠️ This nests a Radix modal Dialog (the camera) inside a Radix modal Dialog
+(the picker).** That is supported and covered by
+`src/components/scanner/__tests__/nested-in-dialog.smoke.test.tsx`, which pins
+the behaviour that matters: the host stays mounted, the host is inert while the
+camera is on top, the host is INTERACTIVE again once the camera closes (the
+`pointer-events: none` leak CLAUDE.md warns about), and the camera is released
+both on scanner close and on host teardown. Don't swap the camera for a Base UI
+popup here — see the composition rule in CLAUDE.md.
+
 #### Scan Feedback (Audio + Haptics)
 The three scan mutations on `warehouse/[projectId]/page.tsx` — `scanMutation` (Pick/Prep),
 `deployScanMutation` (Deploy tab), `returnScanMutation` (Return tab) — play an audio tone

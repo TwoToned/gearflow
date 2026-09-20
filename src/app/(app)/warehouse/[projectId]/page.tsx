@@ -91,6 +91,8 @@ import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
 import { summarizeWarehouseStages } from "@/components/warehouse/warehouse-stages";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { resolvePickerScan, countAssigned } from "@/lib/asset-picker-scan";
 import {
   isBulkItem,
   modelDisplayName,
@@ -396,6 +398,28 @@ function WarehouseProjectPage({
     lineItemId: string;
     quantity: number;
   }>>([]);
+  /** Typed / wedge-scanned text in the Assign-assets dialog's scan field. */
+  const [assetPickerScanValue, setAssetPickerScanValue] = useState("");
+  /**
+   * Synchronous mirror of `assetPickerItems`, for scan resolution only.
+   *
+   * Continuous scanning delivers hits from a decode callback, so the handler
+   * React invokes is the one captured at the last COMMITTED render. Two units
+   * scanned before that commit lands would both resolve against the same rows,
+   * pick the same empty slot, and the second would silently overwrite the
+   * first — losing a unit in exactly the eleven-in-a-row flow this feature
+   * exists for. Writing the ref before the setState makes each scan see the
+   * previous one regardless of render timing.
+   */
+  const assetPickerItemsRef = useRef<typeof assetPickerItems>([]);
+  /** Write picker rows through here so the ref can never drift from state. */
+  const applyAssetPickerItems = (
+    next: typeof assetPickerItems | ((prev: typeof assetPickerItems) => typeof assetPickerItems)
+  ) => {
+    const resolved = typeof next === "function" ? next(assetPickerItemsRef.current) : next;
+    assetPickerItemsRef.current = resolved;
+    setAssetPickerItems(resolved);
+  };
 
   // Kit verification confirmation dialog
   const [kitConfirm, setKitConfirm] = useState<{
@@ -1893,7 +1917,7 @@ function WarehouseProjectPage({
         }
 
         if (pickerItems.length > 0) {
-          setAssetPickerItems(pickerItems);
+          applyAssetPickerItems(pickerItems);
           setAssetPickerBulkItems(bulkItems);
           setAssetPickerOpen(true);
           setSelectedPrep(new Set());
@@ -2339,6 +2363,47 @@ function WarehouseProjectPage({
 
     setSelectedDeprep(new Set());
     setSelectedOut(new Set());
+  };
+
+  /**
+   * Scan a tag in the Assign-assets dialog: fill the next slot that can take it.
+   *
+   * Eleven identical headsets means eleven dropdowns; a packer holding the gear
+   * already knows which unit they picked up. All four outcomes come from the
+   * pure `resolvePickerScan` (tested in `asset-picker-scan.test.ts`) — this only
+   * applies the result and plays the matching feedback.
+   */
+  const handleAssetPickerScan = (rawTag: string) => {
+    const result = resolvePickerScan(assetPickerItemsRef.current, rawTag);
+    setAssetPickerScanValue("");
+
+    switch (result.kind) {
+      case "assigned":
+        applyAssetPickerItems((prev) =>
+          prev.map((item, i) => (i === result.index ? { ...item, selectedAssetId: result.assetId } : item))
+        );
+        scanFeedback.play("success", {
+          label: `${result.modelName} · ${result.assetTag}`,
+          outcome: `Assigned #${result.index + 1}`,
+        });
+        return;
+      case "already-assigned":
+        // Not a failure — the operator is checking whether it registered.
+        scanFeedback.play("exception", {
+          label: result.assetTag,
+          outcome: `Already assigned to #${result.index + 1}`,
+        });
+        toast.info(`${result.assetTag} is already assigned to ${result.modelName} #${result.index + 1}`);
+        return;
+      case "no-slot":
+        scanFeedback.play("exception", { label: result.assetTag, outcome: "No slot left" });
+        toast.warning(`Every ${result.modelName} slot is already filled`);
+        return;
+      case "unknown":
+        scanFeedback.play("error", { label: result.assetTag || "Unknown tag", outcome: "Not available here" });
+        toast.error(`${result.assetTag || "That tag"} isn't an available asset for this prep`);
+        return;
+    }
   };
 
   const handleAssetPickerConfirm = () => {
@@ -3248,8 +3313,39 @@ function WarehouseProjectPage({
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-ui-text text-muted">
-              Select which specific asset to deploy for each item.
+              Scan each unit as you pick it, or choose from the dropdowns.
             </p>
+
+            {/* Scan-to-assign. Continuous, because assigning eleven headsets is
+                one pass down a shelf — the camera stays open between units.
+                Typing and HID wedges land on the same handler via Enter.
+
+                Sticky: DialogContent is the scroll container, and eleven slots
+                scroll the field out of view exactly when it is being used every
+                few seconds. Full-bleed (-mx-6/px-6 against the dialog's p-6) so
+                rows scrolling underneath don't show through the edges. */}
+            <div className="sticky top-0 z-10 -mx-6 space-y-1.5 border-b border-line bg-elev px-6 pb-3">
+              <AssetTagInput
+                value={assetPickerScanValue}
+                onChange={(e) => setAssetPickerScanValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAssetPickerScan(assetPickerScanValue);
+                  }
+                }}
+                onScan={handleAssetPickerScan}
+                scannerTitle="Scan to assign"
+                continuous
+                placeholder="Scan an asset tag to assign it..."
+                className="h-11 font-mono"
+                autoFocus
+              />
+              <p className="text-ui-text text-muted" aria-live="polite">
+                {countAssigned(assetPickerItems)} of {assetPickerItems.length} assigned
+              </p>
+            </div>
+
             {assetPickerItems.map((pickerItem, idx) => (
               <div key={`${pickerItem.lineItemId}-${idx}`} className="space-y-1.5">
                 <Label className="text-ui-text font-medium">
@@ -3265,7 +3361,7 @@ function WarehouseProjectPage({
                     value={pickerItem.selectedAssetId}
                     onValueChange={(val) => {
                       const assetId = val ?? "";
-                      setAssetPickerItems((prev) =>
+                      applyAssetPickerItems((prev) =>
                         prev.map((item, i) =>
                           i === idx ? { ...item, selectedAssetId: assetId } : item
                         )

@@ -1,22 +1,19 @@
 ---
 name: rvlt-flow
 description: >-
-  Run the rental business on RVLT Flow (flow.rvlt.app) — the AV/live-event
+  Run the hire business on RVLT Flow (flow.rvlt.app) — the AV/live-event
   production ops platform: jobs, quotes, gear availability, warehouse prep and
-  dispatch, crew, sub-hires, invoicing and Xero handoff. Use this skill whenever
-  the request touches the day-to-day running of the hire business — "what's on
-  next week", "can we cover this job", "are we double-booked", "prep sheet for
-  the Hilton gig", "why is this job still showing as quoted", "get the pick slip
-  out", "what's this job actually making us", "chase the unpaid invoices",
-  "which crew haven't confirmed" — even when the user never says "RVLT Flow" or
-  names a tool. It is equally the right skill for planning and prepping a job
-  (T-minus checks, readiness, pick list, dockets, crew calls, sub-hire cover)
-  and for answering business questions about jobs, utilisation, margin and the
-  warehouse. Reach for it before improvising with raw API calls or guessing at
-  domain terms — Flow's status machine, availability math and money rules have
-  specific semantics that are easy to get wrong from the outside. Not for
-  writing code in the gearflow repo (that is CLAUDE.md + POLICY.md territory);
-  this is about operating the business, not building the product.
+  dispatch, crew, sub-hires, invoicing and the Xero handoff. Use this whenever
+  the request touches running the business — "what's on next week", "can we
+  cover this job", "are we double-booked", "prep sheet for the Hilton gig",
+  "why is this still showing as quoted", "get the pick slip out", "what's this
+  job making us", "chase the unpaid invoices", "which crew haven't confirmed" —
+  even when RVLT Flow is never named. Covers both prepping a job (readiness
+  checks, pick lists, dockets, crew calls, sub-hire cover) and answering
+  business questions about jobs, margin and the warehouse. Reach for it before
+  improvising against the API: Flow's status machine, availability math and
+  money rules are easy to get wrong from outside. Not for writing gearflow
+  code — that's CLAUDE.md territory.
 ---
 
 # RVLT Flow — business operations & job prep

@@ -1860,6 +1860,58 @@ describe("lineItemWrites.patchNative — revealPriceInRollup", () => {
     expect(li?.revealPriceInRollup).toBe(true);
     expect(li?.showInGroupOnDocs).toBe(true);
   });
+
+  // #1249 — the revenue-allocation opt-out joins the same normalisation loop, so
+  // it inherits the same boundary guarantees. It is NOT a client-document flag:
+  // it changes internal attribution only, which is why it is absent from
+  // LOCKED_LINE_ITEM_FIELDS and never touches the line's money.
+  describe("excludeFromRoi (#1249)", () => {
+    test("follows the identical boundary rules and moves no money", async () => {
+      const t = makeT();
+      await seedPricedLine(t);
+      const set = (value: unknown) =>
+        t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+          ...pargs, set: { excludeFromRoi: value, updatedAt: NOW }, clear: [], emitSideEffects: true,
+        });
+
+      await set(true);
+      expect((await readLine(t))?.excludeFromRoi).toBe(true);
+      expect((await readLine(t))?.lineTotal).toBe(300);
+      expect((await readLine(t))?.unitPrice).toBe(50);
+
+      // "included" has exactly ONE representation — an absent field.
+      await set(false);
+      expect((await readLine(t))?.excludeFromRoi).toBeUndefined();
+
+      // A truthy non-boolean from a browser-direct caller fails closed.
+      await set("yes");
+      expect((await readLine(t))?.excludeFromRoi).toBeUndefined();
+    });
+
+    test("clear: [\"excludeFromRoi\"] is the include-again path", async () => {
+      const t = makeT();
+      await seedPricedLine(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+        ...pargs, set: { excludeFromRoi: true, updatedAt: NOW }, clear: [], emitSideEffects: true,
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+        ...pargs, set: { updatedAt: NOW }, clear: ["excludeFromRoi"], emitSideEffects: true,
+      });
+      expect((await readLine(t))?.excludeFromRoi).toBeUndefined();
+    });
+
+    test("is independent of the two client-document flags", async () => {
+      const t = makeT();
+      await seedPricedLine(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+        ...pargs, set: { excludeFromRoi: true, showInGroupOnDocs: true, updatedAt: NOW }, clear: [], emitSideEffects: true,
+      });
+      const li = await readLine(t);
+      expect(li?.excludeFromRoi).toBe(true);
+      expect(li?.showInGroupOnDocs).toBe(true);
+      expect(li?.revealPriceInRollup).toBeUndefined();
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

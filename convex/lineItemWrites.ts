@@ -635,7 +635,12 @@ export const patchNative = mutation({
     //     category (src/lib/category-pricing-display.ts).
     //   showInGroupOnDocs   — list this group member under the group's
     //     collapsed row (src/lib/group-child-disclosure.ts).
-    for (const flag of ["revealPriceInRollup", "showInGroupOnDocs"] as const) {
+    //   excludeFromRoi      — #1249, this line earned nothing: it takes no share
+    //     of its group/kit pool and never counts toward model ROI
+    //     (convex/lib/allocation.ts). Internal attribution only — it moves no
+    //     money and changes nothing the client sees, which is why it is NOT in
+    //     LOCKED_LINE_ITEM_FIELDS and stays editable on a priced-locked project.
+    for (const flag of ["revealPriceInRollup", "showInGroupOnDocs", "excludeFromRoi"] as const) {
       if (!(flag in setObj)) continue;
       if (setObj[flag] !== true) {
         delete setObj[flag];

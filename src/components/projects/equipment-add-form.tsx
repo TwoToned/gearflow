@@ -213,6 +213,23 @@ export function EquipmentAddForm({
 
   const mutation = useServerMutation({
     mutationFn: async (data: LineItemFormValues) => {
+      // #1249: a `%` discount is resolved HERE, against a gross built from the
+      // unit price on screen — but a blank price means the SERVER decides the
+      // price (auto-pricing off the model's rates), which the client cannot
+      // know. Resolving anyway gives `gross = 0`, so the percentage silently
+      // collapses to a $0 discount and the line lands fully priced and
+      // undiscounted. That was harmless while a blank price stayed $0; now that
+      // blank auto-prices, it is real money quietly dropped. There is no
+      // client-side answer (the percentage needs a price that doesn't exist
+      // yet), so refuse the combination instead of guessing.
+      const priceBlank = data.unitPrice == null || (data.unitPrice as unknown) === "";
+      const discountEntered =
+        data.discount != null && (data.discount as unknown) !== "" && Number(data.discount) > 0;
+      if (discountMode === "%" && priceBlank && discountEntered) {
+        throw new Error(
+          "Enter a unit price to use a % discount — this line auto-prices from the model's rate, so the percentage can't be worked out yet. Use a $ discount instead, or type the price.",
+        );
+      }
       // #1012: one shared conversion (resolveDiscountAmount) instead of a
       // hand-rolled copy, and the MODE is submitted alongside the resolved
       // dollar amount so documents can print it back as entered.

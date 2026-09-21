@@ -128,19 +128,51 @@ describe("lineItemSchema", () => {
       if (result.success) expect(result.data.unitPrice).toBe(75.5);
     });
 
-    // Regression: empty unitPrice coerces to 0 via z.coerce.number().
-    // Server-side optimizer gate uses !parsed.unitPrice to catch 0/null/undefined.
-    // Found by /qa on 2026-03-28
-    it("coerces empty string to 0 (server handles this case)", () => {
+    // #1249 — blank means BLANK, not $0.
+    //
+    // This test used to assert the opposite ("coerces empty string to 0 (server
+    // handles this case)", /qa 2026-03-28), which was true of the server gate at
+    // the time (`!parsed.unitPrice`). That gate later tightened to
+    // `fields.unitPrice == null` so a deliberate free line would survive — and
+    // from then on an untouched price box submitted `""` -> `0` and read as
+    // exactly that deliberate choice: auto-pricing was skipped and, inside a
+    // Project Group (where the bundle price is the charge and members are
+    // normally left blank), the gear was dropped from revenue allocation
+    // entirely and reported $0 ROI.
+    it("leaves an empty string unpriced — NOT $0", () => {
       const result = lineItemSchema.safeParse({ unitPrice: "" });
       expect(result.success).toBe(true);
+      if (result.success) expect(result.data.unitPrice).toBeUndefined();
+    });
+
+    it("keeps a typed 0 — a deliberately free line is still a real choice", () => {
+      const result = lineItemSchema.safeParse({ unitPrice: "0" });
+      expect(result.success).toBe(true);
       if (result.success) expect(result.data.unitPrice).toBe(0);
+    });
+
+    it("treats null like blank", () => {
+      const result = lineItemSchema.safeParse({ unitPrice: null });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.unitPrice).toBeUndefined();
     });
 
     it("treats undefined as undefined", () => {
       const result = lineItemSchema.safeParse({});
       expect(result.success).toBe(true);
       if (result.success) expect(result.data.unitPrice).toBeUndefined();
+    });
+
+    it("still rejects a non-numeric string", () => {
+      expect(lineItemSchema.safeParse({ unitPrice: "abc" }).success).toBe(false);
+    });
+
+    // The same blank-is-blank rule on `discount` — its bounds come from the same
+    // `blankableNumber` helper, so a divergence between the two would be a defect.
+    it("leaves an empty discount unset rather than a $0 discount", () => {
+      const result = lineItemSchema.safeParse({ discount: "" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.discount).toBeUndefined();
     });
   });
 

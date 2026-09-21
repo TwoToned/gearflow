@@ -39,7 +39,7 @@ self.addEventListener("push", (event: PushEvent) => {
     self.registration.showNotification(title, {
       body: payload.body,
       tag: payload.tag,
-      data: { href: payload.href ?? "/today" },
+      data: { href: payload.href ?? "/dashboard" },
       icon: "/icons/icon-192.png",
     }),
   );
@@ -47,7 +47,7 @@ self.addEventListener("push", (event: PushEvent) => {
 
 self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
-  const href = (event.notification.data as { href?: string } | undefined)?.href ?? "/today";
+  const href = (event.notification.data as { href?: string } | undefined)?.href ?? "/dashboard";
   event.waitUntil(
     (async () => {
       const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

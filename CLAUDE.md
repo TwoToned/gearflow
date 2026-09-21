@@ -454,6 +454,29 @@ always stops and asks a human to click Confirm in the chat UI
 can explain what it's about to do, but cannot approve it itself. See FEATUREDOCS/68
 before wiring a new Mira tool or changing the confirmation flow.
 
+### ⚠️ $0 is a PRICE, not a flag — ROI exclusion is its own field
+`projectLineItems.excludeFromRoi` (#1249, FEATUREDOCS/57) is the ONE way a line is
+kept out of revenue allocation by hand. A `lineTotal` of `0` means only "this costs
+nothing" — it weighs exactly like an unpriced `"—"` line, falling through to the
+rate → cost legs of `weightOf`. **Never reintroduce "$0 means excluded."** That rule
+read a deliberate free line and an empty price box as the same thing, and empty is
+the common case: inside a Project Group the BUNDLE price is the charge, so members
+are routinely left blank, and all that gear silently reported $0 ROI.
+
+The other half of that bug: a blank `<input type="number">` submits `""`, and
+`z.coerce.number()` turns `""` into a real `0`. `blankableNumber`
+(`src/lib/validations/line-item.ts`) is what keeps blank meaning blank — use it for
+any new optional money field rather than a bare `z.coerce.number().optional()`,
+which cannot express "left empty". (`taxRateField` is knowingly still on the old
+shape; its comment says why.)
+
+Same rule server-side: a mutation that auto-prices must guard on the model actually
+having a rate (`dailyRate != null || weeklyRate != null`) before calling
+`computeBlendedCharge` — with both null it returns `0`, which would write a
+price-looking $0 plus a `priceBreakdown` that makes it look auto-priced. See
+`addLineItemSmartNative` and `groupTemplatesWrites.applyNative`.
+
+
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved
 flat dollar amount** — recalc, allocation, invoicing and `lineTotal` read that

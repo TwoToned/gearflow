@@ -289,6 +289,31 @@ describe("groupTemplatesWrites.applyNative", () => {
     });
   });
 
+  // #1249 — a model with NO daily/weekly rate has nothing to auto-price from, so
+  // its line must land UNPRICED ("—"), not at an explicit $0. computeBlendedCharge
+  // with both rates null returns `(dailyRate ?? 0) * totalDays` = 0, which used to
+  // be written straight through (plus a priceBreakdown that made it look
+  // auto-priced) — indistinguishable from a deliberately free line. This is the
+  // same guard addLineItemSmartNative already applies.
+  test("(a2) a rate-less model lands unpriced, not at $0", async () => {
+    const t = makeT();
+    await seedBase(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      await ctx.db.patch(m!._id, { dailyRate: undefined, weeklyRate: undefined });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args);
+    await t.run(async (ctx) => {
+      const mLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "mLine1")).first();
+      expect(mLine?.modelId).toBe("m1");
+      expect(mLine?.quantity).toBe(2);
+      // The three money-shaped fields all stay absent — "—", not "$0.00".
+      expect(mLine?.unitPrice).toBeUndefined();
+      expect(mLine?.lineTotal).toBeUndefined();
+      expect(mLine?.priceBreakdown).toBeUndefined();
+    });
+  });
+
   test("(b) IN_MAINTENANCE kit skipped with a warning; model line still created", async () => {
     const t = makeT();
     await seedBase(t, { kitStatus: "IN_MAINTENANCE" });

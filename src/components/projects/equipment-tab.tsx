@@ -1011,6 +1011,28 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Revenue allocation, per-item opt-out (#1249) — "this gear earned nothing".
+  // The line takes no share of its group/kit bundle price and never counts
+  // toward model ROI. Internal reporting only: the project's totals, the
+  // invoice and every client-facing document are untouched, which is why this
+  // is available even on a price-locked project. patchNative's post-write
+  // recalc re-runs the allocation, so the sibling shares move with it.
+  const toggleRoiExclusionMut = useServerMutation({
+    mutationFn: ({ item }: { item: LineItemData }) =>
+      lineItemWrites.setRoiExclusion(item.id, !item.excludeFromRoi, {
+        entityName: item.description ?? "Line item",
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.item.excludeFromRoi
+          ? "Item counts toward ROI again"
+          : "Item excluded from ROI — the rest of its group keeps the revenue",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const deleteCategoryMut = useServerMutation({
     mutationFn: (id: string) => categoryWrites.remove(id),
     onSuccess: () => {
@@ -1775,6 +1797,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               })}
                               inRollupCategory={isRollupCategory(cat.pricingDisplay)}
                               onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
+                              onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                               onRemove={() => handleRemoveItem(item.id)}
                               onInlineUpdate={handleInlineLineItemUpdate}
                               moneyLocked={moneyLocked}
@@ -1979,6 +2002,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
                                   inProjectGroup
                                   onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
+                                  onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                                   onRemove={() => handleRemoveItem(item.id)}
                                   onInlineUpdate={handleInlineLineItemUpdate}
                                   moneyLocked={moneyLocked}
@@ -2049,6 +2073,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           onMoveToGroup={() => setMoveItemToGroup({
                             lineItemId: item.id,
                           })}
+                          onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                           onRemove={() => handleRemoveItem(item.id)}
                           onInlineUpdate={handleInlineLineItemUpdate}
                           moneyLocked={moneyLocked}
@@ -2189,6 +2214,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             })}
                             inProjectGroup
                             onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
+                            onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                             onRemove={() => handleRemoveItem(item.id)}
                             onInlineUpdate={handleInlineLineItemUpdate}
                             moneyLocked={moneyLocked}

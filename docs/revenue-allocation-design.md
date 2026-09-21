@@ -168,9 +168,11 @@ weightOf(item):        -- PER ITEM, all in the same unit (rental dollars)
   else 0                             -- equal-split fallback when NOTHING has a signal
 ```
 
-An **explicit `$0`** (a line priced at zero, shown as "$0.00", distinct from an unpriced "—") is a
-**freebie**: it takes no share of any split and never counts toward ROI. An unpriced "—" item is
-different — it still earns via its rate or cost.
+An explicit `$0` and an unpriced `"—"` weigh the same: both skip the `set price` leg (it requires
+`> 0`) and fall through to rate, then cost. **Nothing about a price excludes a line from ROI** — only
+the explicit `excludeFromRoi` flag does (#1249; see FEATUREDOCS/57). Until #1249 a `$0` line was a
+"freebie" excluded from every split, which silently swallowed every group member whose price box was
+left blank — the normal case, since a Project Group's bundle price is the charge.
 
 **Why per-item, and why the rate-equivalent.** An earlier version chose one rule for the whole set
 (all priced → price; else all-rated → rate; else all → cost). That zeroed a rate-less item the moment

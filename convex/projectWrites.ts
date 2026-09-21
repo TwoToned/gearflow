@@ -1096,6 +1096,8 @@ type SrcLine = {
   groupName?: string; notes?: string; isOptional?: boolean; showSubhireOnDocs?: boolean;
   pricingMode?: string; childKind?: string; isKitChild?: boolean; parentLineItemId?: string;
   categoryId?: string; groupId?: string;
+  /** #1249 — the ROI opt-out, carried through duplicate/save-as-template. */
+  excludeFromRoi?: boolean;
 };
 
 /**
@@ -1281,6 +1283,12 @@ export const duplicateNative = mutation({
         ...(li.isOptional != null ? { isOptional: li.isOptional } : {}),
         ...(li.showSubhireOnDocs != null ? { showSubhireOnDocs: li.showSubhireOnDocs } : {}),
         ...(li.pricingMode ? { pricingMode: li.pricingMode } : {}),
+        // #1249 — carry the ROI opt-out. This copy enumerates fields explicitly
+        // (unlike copyPlanGraph, which spreads), so a flag left out here is
+        // silently dropped: a duplicated project or a template would quietly
+        // start counting gear its source had excluded. Only `true` is copied,
+        // matching the absent-means-included representation everywhere else.
+        ...(li.excludeFromRoi === true ? { excludeFromRoi: true } : {}),
         isKitChild: false,
         status: "QUOTED",
         createdAt: now,
@@ -1307,6 +1315,7 @@ export const duplicateNative = mutation({
           ...(child.duration != null ? { duration: Number(child.duration) } : {}),
           ...(child.discount != null ? { discount: Number(child.discount) } : {}),
           ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
+          ...(child.excludeFromRoi === true ? { excludeFromRoi: true } : {}),
           ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
           ...(child.groupName != null ? { groupName: child.groupName } : {}),
           ...(child.notes != null ? { notes: child.notes } : {}),
@@ -1480,6 +1489,12 @@ export const saveAsTemplateNative = mutation({
         ...(li.isOptional != null ? { isOptional: li.isOptional } : {}),
         ...(li.showSubhireOnDocs != null ? { showSubhireOnDocs: li.showSubhireOnDocs } : {}),
         ...(li.pricingMode ? { pricingMode: li.pricingMode } : {}),
+        // #1249 — carry the ROI opt-out. This copy enumerates fields explicitly
+        // (unlike copyPlanGraph, which spreads), so a flag left out here is
+        // silently dropped: a duplicated project or a template would quietly
+        // start counting gear its source had excluded. Only `true` is copied,
+        // matching the absent-means-included representation everywhere else.
+        ...(li.excludeFromRoi === true ? { excludeFromRoi: true } : {}),
         isKitChild: false,
         status: "QUOTED",
         createdAt: now,
@@ -1504,6 +1519,7 @@ export const saveAsTemplateNative = mutation({
           ...(child.duration != null ? { duration: Number(child.duration) } : {}),
           ...(child.discount != null ? { discount: Number(child.discount) } : {}),
           ...(child.lineTotal != null ? { lineTotal: Number(child.lineTotal) } : {}),
+          ...(child.excludeFromRoi === true ? { excludeFromRoi: true } : {}),
           ...(child.sortOrder != null ? { sortOrder: child.sortOrder } : {}),
           ...(child.groupName != null ? { groupName: child.groupName } : {}),
           ...(child.notes != null ? { notes: child.notes } : {}),

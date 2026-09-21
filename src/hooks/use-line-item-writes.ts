@@ -482,6 +482,40 @@ export function useLineItemWrites() {
       }
     },
 
+    /** Revenue-allocation opt-out (#1249) — "this gear earned nothing". The line
+     *  takes no share of its group/kit bundle price and never counts toward
+     *  model ROI (convex/lib/allocation.ts). Same minimal-patch shape as
+     *  `setPriceReveal`/`setGroupChildDisclosure`: nothing but the flag moves.
+     *
+     *  It DOES change a number — `allocatedRevenue` on this line and its
+     *  siblings — but only the internal attribution one; the project's totals,
+     *  the invoice and every client-facing document are untouched, which is why
+     *  it is not a `LOCKED_LINE_ITEM_FIELDS` money edit and stays available on a
+     *  price-locked project. `patchNative`'s post-write recalc re-runs the
+     *  allocation, so the sibling shares move in the same transaction. */
+    setRoiExclusion: async (
+      id: string,
+      excluded: boolean,
+      opts: { entityName: string },
+    ): Promise<{ projectId: string }> => {
+      try {
+        return await patchM({
+          id,
+          orgId: requireOrg(),
+          set: excluded ? { excludeFromRoi: true, updatedAt: Date.now() } : { updatedAt: Date.now() },
+          clear: excluded ? [] : ["excludeFromRoi"],
+          entityName: opts.entityName,
+          allowOverbook: false,
+          actor: actor(),
+          auditId: createId(),
+          emitSideEffects: true,
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
     /** Remove a line — child-guard + cascade (children + units) + recalc + audit +
      *  collab, atomic. Structural — never gated by pricingLocked (#1230). */
     remove: async (id: string): Promise<{ projectId: string }> => {

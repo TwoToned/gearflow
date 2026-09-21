@@ -278,6 +278,11 @@ export const AllocationBasis = v.union(
   // projectModelRevenues (sale revenue lives in its own project.saleRevenue
   // bucket, not per-model rental ROI). Excluded from ROI_COUNTED_BASES.
   v.literal("EXCLUDED_SALE"),
+  // #1249 — the operator ticked "Exclude from ROI" on this line. It takes no
+  // share of any pool (the paying gear beside it splits the whole thing) and
+  // never reaches projectModelRevenues. Its own label rather than NO_REVENUE so
+  // a report can tell a deliberate exclusion from "the pool was $0".
+  v.literal("EXCLUDED_MANUAL"),
   v.literal("NO_REVENUE"),
 );
 export const KitCheckMode = v.union(

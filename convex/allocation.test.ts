@@ -172,8 +172,8 @@ describe("SALE lines (WS11 #950) — excluded from rental ROI", () => {
   test("a SALE line beside gear in a group takes no weight — the gear splits the whole bundle pool", () => {
     const r = run(
       [
-        // No own lineTotal (not a $0 freebie) — it's the group's bundle price
-        // being split, same shape the "groups" describe block above uses.
+        // No own lineTotal — it's the group's bundle price being split, same
+        // shape the "groups" describe block above uses.
         L("gear", { modelId: "m1", groupId: "g1" }),
         L("sale", { type: "SALE", modelId: "m2", groupId: "g1" }),
       ],
@@ -789,30 +789,30 @@ describe("composition", () => {
 
 // ── rollup ───────────────────────────────────────────────────────────────────
 
-describe("$0 items are excluded from the split", () => {
-  test("an explicit $0 gear item takes no share; the rest split the whole pool", () => {
+describe("excludeFromRoi — the explicit opt-out (#1249)", () => {
+  test("an excluded gear item takes no share; the rest split the whole pool", () => {
     const r = run(
       [
         L("a", { groupId: "g1", modelId: "m1", lineTotal: 600, sortOrder: 1 }),
-        L("free", { groupId: "g1", modelId: "m2", lineTotal: 0, sortOrder: 2 }),
+        L("free", { groupId: "g1", modelId: "m2", lineTotal: 250, excludeFromRoi: true, sortOrder: 2 }),
         L("b", { groupId: "g1", modelId: "m3", lineTotal: 400, sortOrder: 3 }),
       ],
       { groups: [{ id: "g1", price: 1000, quantity: 1 }] },
     );
     expect(rev(r, "free")).toBe(0);
-    expect(basis(r, "free")).toBe("NO_REVENUE");
-    // a and b split the full $1,000 by their prices (600:400), free gets nothing.
+    expect(basis(r, "free")).toBe("EXCLUDED_MANUAL");
+    // a and b split the full $1,000 by their prices (600:400); free gets nothing
+    // even though it carries a real price of its own.
     expect(rev(r, "a")).toBe(600);
     expect(rev(r, "b")).toBe(400);
     expect(sumOf(r, ["a", "b", "free"])).toBe(1000);
   });
 
-  test("$0 is excluded even when the rest of the group is on rate/cost", () => {
-    // "free" has a rated model but is priced $0 → still excluded (not a rate share).
+  test("excluded even when the rest of the group is on rate/cost", () => {
     const r = run(
       [
         L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
-        L("free", { groupId: "g1", modelId: "m2", lineTotal: 0, sortOrder: 2 }),
+        L("free", { groupId: "g1", modelId: "m2", excludeFromRoi: true, sortOrder: 2 }),
       ],
       {
         groups: [{ id: "g1", price: 500, quantity: 1 }],
@@ -823,37 +823,142 @@ describe("$0 items are excluded from the split", () => {
     expect(rev(r, "a")).toBe(500); // takes the whole pool
   });
 
-  test("a freebie nested under a sub-hire is still $0, not the sub-hire's audit value", () => {
-    // The sub-hire subtree is stamped wholesale with its pool value; the freebie
-    // must be forced back to $0 so it never shows a non-zero number.
+  test("a flagged line inside a sub-hire subtree keeps EXCLUDED_SUBHIRE", () => {
+    // The whole subtree is sub-hired, so every row in it was never our capital.
+    // `EXCLUDED_SUBHIRE` already says that AND keeps the audit value; relabelling
+    // it EXCLUDED_MANUAL would lose the audit trail and, at group level, release
+    // the weight the sub-hire is supposed to consume.
     const r = run([
       L("sh", { lineTotal: 100, subHireId: "s1", kitId: "k1", sortOrder: 1 }),
-      L("free", { parentLineItemId: "sh", modelId: "m1", lineTotal: 0, subHireId: "s1", sortOrder: 1 }),
+      L("free", { parentLineItemId: "sh", modelId: "m1", excludeFromRoi: true, subHireId: "s1", sortOrder: 1 }),
     ]);
-    expect(rev(r, "free")).toBe(0);
-    expect(basis(r, "free")).toBe("NO_REVENUE");
+    expect(basis(r, "free")).toBe("EXCLUDED_SUBHIRE");
+    expect(isRoiCounted(basis(r, "free"))).toBe(false);
   });
 
-  test("$0 and '—' behave differently: $0 excluded, '—' earns via its rate", () => {
+  test("the final override still forces a flagged line back to $0 after a wholesale stamp", () => {
+    // What the sub-hire case used to cover: a subtree stamped wholesale must not
+    // leave a flagged OWNED line showing the parent's number. Same shape, minus
+    // the sub-hire (which now has its own stronger rule above).
+    const r = run([
+      L("kit", { lineTotal: 300, kitId: "k1", sortOrder: 1 }),
+      L("free", { parentLineItemId: "kit", modelId: "m1", excludeFromRoi: true, status: "CANCELLED", sortOrder: 1 }),
+    ]);
+    expect(rev(r, "free")).toBe(0);
+  });
+
+  test("the flag can never drop a SUB-HIRE line from the split", () => {
+    // A sub-hire earns nothing but CONSUMES weight, so the owned gear beside it
+    // isn't over-credited. Honouring the flag here would hand that weight to the
+    // owned gear and inflate real ROI. `canExcludeFromRoi` hides the toggle, but
+    // patchNative takes `set: v.any()` — the engine is the enforcement point.
+    const withFlag = run(
+      [
+        L("owned", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("hired", { groupId: "g1", modelId: "m2", subHireId: "s1", excludeFromRoi: true, sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 400, quantity: 1 }],
+        models: models(M("m1", { dailyRate: 100 }), M("m2", { dailyRate: 100 })),
+      },
+    );
+    // Still a 50/50 split by rate; the sub-hire keeps its audit value and its weight.
+    expect(rev(withFlag, "owned")).toBe(200);
+    expect(basis(withFlag, "hired")).toBe("EXCLUDED_SUBHIRE");
+    expect(basis(withFlag, "hired")).not.toBe("EXCLUDED_MANUAL");
+  });
+
+  test("the flag can never drop a CONTAINER or custom line", () => {
+    // Both are already `isNonGear` — they take no share either way, and must keep
+    // reporting WHY they were excluded rather than being relabelled.
+    const r = run(
+      [
+        L("gear", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("case", { groupId: "g1", modelId: "m2", isContainerLineItem: true, excludeFromRoi: true, sortOrder: 2 }),
+        L("labour", { groupId: "g1", isCustomItem: true, excludeFromRoi: true, sortOrder: 3 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 500, quantity: 1 }],
+        models: models(M("m1", { dailyRate: 100 }), M("m2", { dailyRate: 100 })),
+      },
+    );
+    expect(rev(r, "gear")).toBe(500);
+    expect(basis(r, "case")).toBe("EXCLUDED_NON_GEAR");
+    expect(basis(r, "labour")).toBe("EXCLUDED_NON_GEAR");
+  });
+
+  test("the flag needs a modelId — there is nothing to exclude without one", () => {
+    const r = run([L("a", { modelId: "m1", lineTotal: 100, sortOrder: 1 }), L("mystery", { lineTotal: 50, excludeFromRoi: true, sortOrder: 2 })]);
+    expect(basis(r, "mystery")).not.toBe("EXCLUDED_MANUAL");
+  });
+
+  test("an excluded CHILD takes no share of its parent's pool", () => {
+    const r = run([
+      L("kit", { lineTotal: 300, kitId: "k1", sortOrder: 1 }),
+      L("keep", { parentLineItemId: "kit", modelId: "m1", sortOrder: 1 }),
+      L("drop", { parentLineItemId: "kit", modelId: "m2", excludeFromRoi: true, sortOrder: 2 }),
+    ]);
+    expect(rev(r, "drop")).toBe(0);
+    expect(basis(r, "drop")).toBe("EXCLUDED_MANUAL");
+    expect(rev(r, "keep")).toBe(300);
+  });
+});
+
+describe("$0 allocates like an unpriced '—' (#1249)", () => {
+  // Before #1249 an explicit $0 meant "freebie: exclude me". That conflated a
+  // deliberate free line with the FAR more common "price not filled in yet" —
+  // inside a Project Group the bundle price is the charge, so members are
+  // routinely left blank, and a blank price box parsed to $0. The gear in a
+  // priced group therefore reported $0 ROI. A $0 line now falls through to
+  // rate/cost exactly like "—"; `excludeFromRoi` is the only thing that excludes.
+  test("a $0 group member earns via its rate instead of being dropped", () => {
     const r = run(
       [
         L("priced", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
-        L("dash", { groupId: "g1", modelId: "m2", sortOrder: 2 }), // lineTotal undefined
-        L("zero", { groupId: "g1", modelId: "m3", lineTotal: 0, sortOrder: 3 }),
+        L("zero", { groupId: "g1", modelId: "m2", lineTotal: 0, sortOrder: 2 }),
       ],
       {
         groups: [{ id: "g1", price: 300, quantity: 1 }],
-        models: models(
-          M("m1", { dailyRate: 100 }),
-          M("m2", { dailyRate: 200 }), // "—" line → uses this rate
-          M("m3", { dailyRate: 999 }), // ignored: line is $0
-        ),
+        models: models(M("m1", { dailyRate: 100 }), M("m2", { dailyRate: 200 })),
       },
     );
-    expect(rev(r, "zero")).toBe(0);
-    // priced + dash split $300 by rate 100:200.
+    expect(rev(r, "zero")).toBe(200);
     expect(rev(r, "priced")).toBe(100);
-    expect(rev(r, "dash")).toBe(200);
+    expect(sumOf(r, ["priced", "zero"])).toBe(300);
+  });
+
+  test("$0 and '—' are now indistinguishable to the allocator", () => {
+    const opts = {
+      groups: [{ id: "g1", price: 300, quantity: 1 }],
+      models: models(M("m1", { dailyRate: 100 }), M("m2", { dailyRate: 200 })),
+    };
+    const zero = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", lineTotal: 0, sortOrder: 2 }),
+      ],
+      opts,
+    );
+    const dash = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", sortOrder: 2 }), // lineTotal undefined
+      ],
+      opts,
+    );
+    expect(rev(zero, "b")).toBe(rev(dash, "b"));
+    expect(basis(zero, "b")).toBe(basis(dash, "b"));
+  });
+
+  test("an UNGROUPED $0 line still earns $0 — its own lineTotal IS the pool", () => {
+    // Unchanged by #1249: nothing was billed for this line, so there is no
+    // revenue to attribute. Only a CONTAINER's pool (group/kit) ever reaches a
+    // blank-priced member.
+    const r = run([L("a", { modelId: "m1", lineTotal: 0 })], {
+      models: models(M("m1", { dailyRate: 500 })),
+    });
+    expect(rev(r, "a")).toBe(0);
+    expect(basis(r, "a")).toBe("NO_REVENUE");
   });
 });
 

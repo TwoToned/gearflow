@@ -31,6 +31,8 @@ import {
   Eye,
   EyeOff,
   Puzzle,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -49,6 +51,7 @@ import {
   isRollupCategory,
 } from "@/lib/category-pricing-display";
 import { canDiscloseGroupChild } from "@/lib/group-child-disclosure";
+import { canExcludeFromRoi } from "@/lib/roi";
 import type { OverbookedInfo } from "@/lib/overbooking-core";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1119,6 +1122,7 @@ export function LineItemRow({
   onTogglePriceReveal,
   inProjectGroup,
   onToggleGroupDisclosure,
+  onToggleRoiExclusion,
   dragHandleRef,
   dragAttributes,
   dragListeners,
@@ -1183,6 +1187,8 @@ export function LineItemRow({
   inProjectGroup?: boolean;
   /** Flip this row's `showInGroupOnDocs`. The menu entry hides without it. */
   onToggleGroupDisclosure?: () => void;
+  /** #1249 — flip this row's `excludeFromRoi`. The menu entry hides without it. */
+  onToggleRoiExclusion?: () => void;
   /** Multi-select: row click handler (not firing for grip handle clicks) */
   onClick?: (e: React.MouseEvent) => void;
   /** Inline (click-to-edit, save-on-blur) price/discount/description/notes —
@@ -1253,29 +1259,65 @@ export function LineItemRow({
       </DropdownMenuItem>
     ) : null;
 
-  /** Whichever toggle applies, under ONE "Client documents" heading — the same
-   *  section the category and group kebabs carry. The two are mutually
-   *  exclusive on a line item by construction (the price reveal requires a row
-   *  the document draws, which a group member never is), so the section holds
-   *  exactly one item; it stays generic so neither rule has to know that.
-   *  Defined once and rendered in both the desktop and mobile kebabs so they
-   *  can't drift.
+  /** Revenue allocation, per-item opt-out (#1249) — "this gear earned nothing".
+   *  The line takes no share of its group/kit bundle price and never counts
+   *  toward model ROI. Offered only where the allocator would otherwise credit
+   *  the row: `canExcludeFromRoi` (src/lib/roi.ts) drops the lines every
+   *  structural rule already excludes (no model, SALE, sub-hire), so the menu
+   *  can't offer a switch the engine ignores.
    *
-   *  It sits under a "Client documents" heading rather than spelling the
-   *  context out in each label: every toggle in that section answers the one
-   *  question "what does the client see on the quote?", so the heading carries
-   *  it and the labels stay short and parallel across category, group and item
-   *  rows. The section closes with its own separator because the destructive
-   *  Delete follows it — without one, Delete reads as part of the section. */
+   *  This exists because an explicit $0 USED to mean "exclude me" implicitly —
+   *  which silently swallowed every group member left unpriced, the normal case
+   *  when the bundle price is the charge. A $0 line now allocates by its
+   *  rate/cost like an unpriced "—" one, and THIS is the only way to say the
+   *  gear earned nothing. */
+  const roiExclusionItem =
+    canExcludeFromRoi(item) && onToggleRoiExclusion ? (
+      <DropdownMenuItem onClick={onToggleRoiExclusion}>
+        {item.excludeFromRoi ? (
+          <TrendingUp className="mr-2 h-3.5 w-3.5" />
+        ) : (
+          <TrendingDown className="mr-2 h-3.5 w-3.5" />
+        )}
+        {item.excludeFromRoi ? "Include in ROI" : "Exclude from ROI"}
+      </DropdownMenuItem>
+    ) : null;
+
+  /** The row's toggle sections, each under its own heading, defined once and
+   *  rendered in both the desktop and mobile kebabs so they can't drift.
+   *
+   *  Two headings, not one, because they answer different questions. "Client
+   *  documents" is the same heading the category and group kebabs carry — every
+   *  toggle in it answers "what does the client see on the quote?", so the
+   *  heading carries the context and the labels stay short and parallel across
+   *  category, group and item rows. Its two entries are mutually exclusive on a
+   *  line item by construction (the price reveal needs a row the document
+   *  draws, which a group member never is), so it holds exactly one; it stays
+   *  generic so neither rule has to know that. "Reporting" is internal and
+   *  changes nothing a client ever sees — filing it under the same heading
+   *  would say the opposite.
+   *
+   *  The block opens and closes with its own separator because the destructive
+   *  Delete follows it — without one, Delete reads as part of the last section.
+   *  The separator BETWEEN the two groups only renders when both are present. */
   const clientDocsSection =
-    priceRevealItem || groupDisclosureItem ? (
+    priceRevealItem || groupDisclosureItem || roiExclusionItem ? (
       <>
         <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Client documents</DropdownMenuLabel>
-          {priceRevealItem}
-          {groupDisclosureItem}
-        </DropdownMenuGroup>
+        {(priceRevealItem || groupDisclosureItem) && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Client documents</DropdownMenuLabel>
+            {priceRevealItem}
+            {groupDisclosureItem}
+          </DropdownMenuGroup>
+        )}
+        {(priceRevealItem || groupDisclosureItem) && roiExclusionItem && <DropdownMenuSeparator />}
+        {roiExclusionItem && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Reporting</DropdownMenuLabel>
+            {roiExclusionItem}
+          </DropdownMenuGroup>
+        )}
         <DropdownMenuSeparator />
       </>
     ) : null;

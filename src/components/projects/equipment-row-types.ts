@@ -38,6 +38,11 @@ export interface LineItemData {
    *  the group's collapsed row on client-facing documents (description +
    *  quantity, never a price). See src/lib/group-child-disclosure.ts. */
   showInGroupOnDocs?: boolean;
+  /** #1249 — the operator has excluded this line from revenue allocation, so it
+   *  takes no share of its group/kit bundle price and never counts toward model
+   *  ROI. Internal only: nothing on a client-facing document changes.
+   *  See convex/lib/allocation.ts. */
+  excludeFromRoi?: boolean;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
@@ -54,6 +59,9 @@ export interface LineItemData {
   pricedUnderLock?: boolean;
   // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
   isCustomItem?: boolean;
+  /** A container row (road case, trolley). `isNonGear` in the allocator, so it
+   *  takes no share of any pool — see canExcludeFromRoi (src/lib/roi.ts). */
+  isContainerLineItem?: boolean;
   isKitChild?: boolean;
   subHireId?: string | null;
   /** Client-document sub-hire visibility toggle ("Show as sub-hired").

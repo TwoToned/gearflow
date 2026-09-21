@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Gear added to a group no longer reports $0 in the ROI reports.** Leaving the
+  price box empty wrote a real **$0.00** rather than a blank "—", because an
+  untouched number input submits an empty string and the form coerced that to
+  zero. Two things went wrong from there: the server skipped its auto-pricing
+  (it saw a price already set), and revenue allocation read "$0" as *this item
+  was deliberately free* and dropped the gear from the split entirely — so
+  inside a Project Group, where the bundle price is the charge and members are
+  normally left blank, every piece of gear earned nothing. Blank now means blank
+  everywhere: the line stays unpriced, auto-pricing runs, and a **$0** line
+  earns its share exactly like an unpriced one. Typing a real `0` is still a
+  real choice and still reads as free. Two related cases went with it — re-adding
+  the same model into a group used to overwrite the existing line's price with
+  $0, and "Apply group template" wrote $0 members for any model with no daily or
+  weekly rate.
 - **The scanner no longer gives two contradictory answers to one scan.** Reading
   a code played a "success" chime, and then whatever you scanned into played its
   own verdict — so an unrecognised tag beeped success and then error. The camera
@@ -26,6 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Exclude from ROI, per item.** Now that a $0 price no longer quietly means
+  "don't count this", the item kebab has a **Reporting → Exclude from ROI**
+  toggle that says it outright. An excluded line takes no share of its group or
+  kit's price — the gear beside it keeps the whole thing — and never counts
+  toward a model's return. It changes nothing the client sees, so it stays
+  available even when the job's pricing is locked, and it's only offered on
+  lines that could otherwise earn (not on labour, sales or sub-hired gear, which
+  are already excluded). Reports show these as their own "excluded by hand"
+  reason rather than lumping them in with lines that simply earned nothing.
+  Past jobs are untouched: allocation is a snapshot, so existing figures only
+  change when a job is next edited.
 - **Scan to assign in the "Assign assets" dialog.** Prepping a line with eleven
   headsets used to mean picking each one from eleven identical dropdowns. The
   dialog now has its own scan field at the top: scan a unit as you pick it up

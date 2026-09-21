@@ -159,7 +159,7 @@ describe("SetupPage (smoke)", () => {
     expect(await screen.findByText("Step 2 stub for org1")).toBeTruthy();
   });
 
-  it("chains through steps 2, 3, 4 and 5 (each stub's onDone advances the wizard), and step 5's onDone lands on /today", async () => {
+  it("chains through steps 2, 3, 4 and 5 (each stub's onDone advances the wizard), and step 5's onDone lands on /dashboard", async () => {
     const user = userEvent.setup();
     render(<SetupPage />);
 
@@ -181,7 +181,7 @@ describe("SetupPage (smoke)", () => {
     expect(mocks.push).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /finish stub/i }));
 
-    expect(mocks.push).toHaveBeenCalledWith("/today");
+    expect(mocks.push).toHaveBeenCalledWith("/dashboard");
   });
 
   it("fires setup_step_viewed and setup_step_completed for step 1 ('company') on a successful create", async () => {
@@ -221,7 +221,7 @@ describe("SetupPage (smoke)", () => {
     await screen.findByText("Step 5 stub for org1");
     await user.click(screen.getByRole("button", { name: /finish stub/i }));
 
-    expect(mocks.push).toHaveBeenCalledWith("/today");
+    expect(mocks.push).toHaveBeenCalledWith("/dashboard");
     expect(mocks.captured).toContainEqual(["setup_completed", { steps_completed: 3, steps_skipped: 2 }]);
     // setup_completed must fire exactly once, at the very end.
     expect(mocks.captured.filter(([event]) => event === "setup_completed")).toHaveLength(1);

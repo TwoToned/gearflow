@@ -14,7 +14,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
  */
 
 const push = vi.fn();
-let currentPathname = "/today";
+let currentPathname = "/dashboard";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
@@ -25,7 +25,7 @@ import { MobileNav } from "@/components/layout/mobile-nav";
 
 beforeEach(() => {
   push.mockClear();
-  currentPathname = "/today";
+  currentPathname = "/dashboard";
 });
 
 describe("MobileNav", () => {
@@ -49,7 +49,7 @@ describe("MobileNav", () => {
 
   it("does not navigate when tapping the already-active tab", () => {
     render(<MobileNav />);
-    fireEvent.click(screen.getByText("Today"));
+    fireEvent.click(screen.getByText("Dashboard"));
     expect(push).not.toHaveBeenCalled();
   });
 });

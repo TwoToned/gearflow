@@ -12,8 +12,8 @@ vi.mock("next/navigation", () => ({
 import MyTasksPage from "../page";
 
 describe("MyTasksPage (redirect)", () => {
-  it("redirects to /today", () => {
+  it("redirects to /dashboard", () => {
     MyTasksPage();
-    expect(redirectSpy).toHaveBeenCalledWith("/today");
+    expect(redirectSpy).toHaveBeenCalledWith("/dashboard");
   });
 });

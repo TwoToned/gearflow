@@ -84,16 +84,13 @@ describe("UserNav", () => {
     expect(screen.queryByText("ada@example.com")).toBeNull();
   });
 
-  // Dashboard went back to the sidebar rail and Today took its place in this
-  // menu (the reverse of #1242/D10A). Opening the menu is the only way to
-  // prove it — a closed-trigger render shows neither (CLAUDE.md).
-  it("offers Today, not Dashboard, and navigates there", async () => {
+  // Today is hidden (D10C) — this menu no longer offers it; Dashboard lives
+  // in the sidebar rail / bottom nav instead.
+  it("does not offer Today", async () => {
     render(<UserNav />);
     openMenu();
     const menu = within(await waitFor(() => screen.getByRole("menu")));
-    expect(menu.queryByText("Dashboard")).toBeNull();
-    fireEvent.click(menu.getByText("Today"));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/today"));
+    expect(menu.queryByText("Today")).toBeNull();
   });
 
   it("hides the Organisations group entirely with a single membership", async () => {
@@ -119,7 +116,7 @@ describe("UserNav", () => {
     expect(menu.getByText("MEMBER")).toBeTruthy();
   });
 
-  it("switching org calls setActive then navigates to /today — never stays put", async () => {
+  it("switching org calls setActive then navigates to /dashboard — never stays put", async () => {
     myOrgsResult = [
       { id: "org_1", name: "Org One", slug: "org-one", role: "OWNER" },
       { id: "org_2", name: "Org Two", slug: "org-two", role: "MEMBER" },
@@ -130,7 +127,7 @@ describe("UserNav", () => {
     fireEvent.click(target);
 
     await waitFor(() => expect(setActive).toHaveBeenCalledWith({ organizationId: "org_2" }));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/today"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
   });
 
   it("clicking the already-active org is a no-op — no redundant setActive/navigate", async () => {

@@ -38,6 +38,11 @@ export interface LineItemData {
    *  the group's collapsed row on client-facing documents (description +
    *  quantity, never a price). See src/lib/group-child-disclosure.ts. */
   showInGroupOnDocs?: boolean;
+  /** #1249 — the operator has excluded this line from revenue allocation, so it
+   *  takes no share of its group/kit bundle price and never counts toward model
+   *  ROI. Internal only: nothing on a client-facing document changes.
+   *  See convex/lib/allocation.ts. */
+  excludeFromRoi?: boolean;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;

@@ -5,9 +5,14 @@
 Per explicit product-owner sign-off, reverses the "no widget boards" decision
 DESIGN.md's "Dashboard Layout" section used to record — see that section for
 the dated rationale. `/dashboard` is now a per-user, drag-and-resize widget board built on
-`react-grid-layout`; `/today` (FEATUREDOCS/79) is unaffected as the app's
-landing page, and three of its widgets are now also selectable onto the
-dashboard board.
+`react-grid-layout`; three of Today's widgets are selectable onto it.
+
+**Update (D10C, 2026-09-21, DESIGN.md §16):** `/today` (FEATUREDOCS/79) is
+now HIDDEN — it redirects to `/dashboard`, which is the app's landing page
+again on both desktop and mobile. This board is what made that safe: anyone
+who wants Today's personal-agenda view adds its three widgets (still in the
+catalog below, still not in the default layout) to their own board instead
+of visiting a separate page.
 
 ## What it is
 

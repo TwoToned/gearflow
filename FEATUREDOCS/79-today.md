@@ -1,21 +1,31 @@
-# Today (`/today`) — the personal landing page
+# Today (`/today`) — HIDDEN (D10C, 2026-09-21); see FEATUREDOCS/81
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-09-17 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-09-21 (review quarterly — POLICY.md R-5.5)_
+
+**`/today` now redirects to `/dashboard`** (DESIGN.md §16, D10C) — kept as a
+redirect, not deleted, so old bookmarks/links/⌘K muscle memory still land
+somewhere real, same as `/my-tasks` before it. Its three widgets (work list,
+day rail, needs-you rail) are unchanged and now live exclusively on the
+customizable dashboard board (FEATUREDOCS/81) — addable via "Add widget",
+not in the default layout. Everything below documents the page as it
+existed before D10C; the data model, widgets and `dashboardLists.needsYou`
+query are all still live and unchanged, just reached a different way.
 
 Work-layer program, phase 0.5 (#1242) — [`docs/designs/work-layer.md`](../docs/designs/work-layer.md)
 §8.1. Depends on phase 0's mentions inbox (#1241, FEATUREDOCS/17). "Composed"
 Today: assembled entirely from readers/writers that already exist, plus the
 `notifications` table phase 0 added — **no schema change in this phase.**
 
-## What it is
+## What it was
 
-Today replaces Dashboard as the app's landing page (D10A). It answers "what
-do I, personally, need to do today, across every job and every client?" —
-one page instead of the five unrelated "things you must do" surfaces the
-work-layer design doc's audit found (dashboard chip tray, `/overbookings`,
-the finance chase board, the project readiness checklist, `/my-tasks`).
-Only the first of those (the dashboard's derived org-wide "needs attention"
-chips) is untouched; `/my-tasks` is superseded and now redirects here.
+Today replaced Dashboard as the app's landing page (D10A, then hidden by
+D10C). It answered "what do I, personally, need to do today, across every
+job and every client?" — one page instead of the five unrelated "things you
+must do" surfaces the work-layer design doc's audit found (dashboard chip
+tray, `/overbookings`, the finance chase board, the project readiness
+checklist, `/my-tasks`). Only the first of those (the dashboard's derived
+org-wide "needs attention" chips) was untouched; `/my-tasks` was superseded
+and redirects to `/dashboard` too, now.
 
 ## Data model — composed, not new
 

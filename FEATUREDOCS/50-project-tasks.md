@@ -392,10 +392,12 @@ down.
 
 ## My tasks — superseded by Today (`src/app/(app)/my-tasks/page.tsx`)
 
-**As of work-layer phase 0.5 (#1242), `/my-tasks` is a pure redirect to
-`/today`.** Everything this section used to describe (the cross-project
-personal-scope task list, backed by `myOpenTasks` above, grouped Overdue /
-Today / Later) now lives on Today — see
+**As of work-layer phase 0.5 (#1242), `/my-tasks` is a pure redirect —
+originally to `/today`, and since D10C (2026-09-21) to `/dashboard`, since
+`/today` itself now just redirects there too.** Everything this section used
+to describe (the cross-project personal-scope task list, backed by
+`myOpenTasks` above, grouped Overdue / Today / Later) now lives in the
+`TodayWorkListWidget` dashboard-board widget — see
 [FEATUREDOCS/79](./79-today.md). The redirect is kept (not a hard delete) so
 old bookmarks/links and ⌘K muscle memory still land somewhere real. Today
 also fixes a real bug the old page had: its Overdue/Today/Later split

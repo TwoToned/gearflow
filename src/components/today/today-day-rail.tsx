@@ -17,8 +17,8 @@ export function TodayDayRail({
   onRefresh,
   /** the widget board — the dashboard-widget-board hosts this inside the shared
    *  `<DashboardCard>` shell, which already supplies the card/title; `bare`
-   *  skips this component's own so the two don't nest. `/today/page.tsx`
-   *  (the original consumer) keeps the default (non-bare) rendering. */
+   *  skips this component's own so the two don't nest. The default
+   *  (non-bare) rendering is `/today`'s pre-hide (D10C) look. */
   bare = false,
 }: {
   entries: DayRailEntry[] | undefined;

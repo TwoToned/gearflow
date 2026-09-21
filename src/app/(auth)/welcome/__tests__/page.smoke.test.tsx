@@ -151,11 +151,11 @@ describe("WelcomePage (smoke)", () => {
     expect(mocks.captured).toEqual([["onboarding_fork_chosen", { choice: "join_domain" }]]);
   });
 
-  it("bounces a user who already has exactly one org to /today", async () => {
+  it("bounces a user who already has exactly one org to /dashboard", async () => {
     mocks.getMyOrganizations.mockResolvedValue([{ id: "org1", name: "Acme", slug: "acme", role: "owner" }]);
     render(<WelcomePage />);
     await waitFor(() => expect(mocks.setActive).toHaveBeenCalledWith({ organizationId: "org1" }));
-    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/today"));
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/dashboard"));
   });
 
   it("sends a user with 2+ orgs to /select-organization", async () => {

@@ -529,51 +529,59 @@ Archivo is loaded via `next/font/google` with weights 400–900. Always referenc
 5-item fixed bottom navigation bar for mobile (< 768px). Desktop uses the sidebar.
 
 ```
-[ Today ] [ Jobs ] [ Warehouse ] [ Crew ] [ Assets ]
+[ Dashboard ] [ Jobs ] [ Warehouse ] [ Crew ] [ Assets ]
 ```
 
 **Decision D10A (work-layer phase 0.5, #1242): Today replaces Dashboard.**
-Today (`/today`) is now the landing page after login and the app's personal
+Today (`/today`) became the landing page after login and the app's personal
 home — the day's agenda plus the person's work, with Triage for inbound
 mentions (`docs/designs/work-layer.md` §8.1). Phones have no sidebar and all
-five bottom-nav slots were already taken, so Today had to take Dashboard's
-slot rather than add a sixth. **Dashboard moved to the account/avatar menu**
-(`user-nav.tsx`) — it's still the org-wide "what needs attention" view, just
-no longer the first thing either platform shows. Its "My work" zone (the
-tasks-due block + per-project blocker badges) was removed from the dashboard
-page entirely, since Today now owns that surface and would otherwise render
-the same rows twice.
+five bottom-nav slots were already taken, so Today took Dashboard's slot
+rather than add a sixth. **Dashboard moved to the account/avatar menu**
+(`user-nav.tsx`). Its "My work" zone (the tasks-due block + per-project
+blocker badges) was removed from the dashboard page entirely, since Today now
+owned that surface and would otherwise render the same rows twice. Superseded
+by D10C below.
 
 **Decision D10B (2026-09-19): on DESKTOP, Dashboard is back in the rail.**
 D10A's swap held on phones and cost too much on desktop — the org-wide read is
 what people reach for from the sidebar, and the account menu is not where
-anyone looks for it. So the desktop rail's first slot is `Dashboard` again and
-**Today moved into the avatar menu** (`user-nav.tsx`), the exact reverse of
-D10A's desktop half. Everything else D10A decided is unchanged: Today is still
-the post-login landing page, still owns the **bottom nav's** first slot on a
-phone (where there is no rail to put Dashboard back into), and the dashboard
-page still has no "My work" zone. Desktop and mobile therefore differ on
-purpose — a phone has five slots and a rail has room for both.
+anyone looks for it. So the desktop rail's first slot went back to `Dashboard`
+and Today moved into the avatar menu, the exact reverse of D10A's desktop
+half. Mobile was left unchanged at the time (Today kept the bottom nav's
+first slot, D10A's mobile half stood). Superseded by D10C below.
+
+**Decision D10C (2026-09-21): Today is hidden — Dashboard is the landing page
+everywhere, mobile included.** Now that `/dashboard` is a customizable widget
+board (FEATUREDOCS/81), the personal-agenda case D10A solved is handled by
+adding Today's three widgets (work list, day rail, needs-you rail — same
+components, still in the catalog) to your own board instead of a dedicated
+page. `/today` and `/my-tasks` both now just redirect to `/dashboard` (kept
+for old bookmarks/links/⌘K muscle memory, not deleted). This closes the
+D10A/D10B desktop-vs-mobile asymmetry: Dashboard is now the bottom nav's
+first slot, the sidebar logo's link, and every post-auth landing redirect, on
+both platforms. Today no longer has a nav entry point anywhere — the widgets
+are reachable only via "Add widget" on the dashboard board.
 
 - Active tab: RVLT red icon + red label
 - Inactive tab: `fg-4` icon + `fg-4` label
 - Tab height: 56px (+ safe-area-inset-bottom)
 - Icon size: 22px
 - Label: `t-micro` (11px/500)
-- No badges on nav items (alerts surface on Today's Triage bucket and the dashboard's needs-attention chips instead)
+- No badges on nav items (alerts surface on the dashboard's needs-attention chips, and on the Today work-list widget's Triage bucket for anyone who's added it)
 
 ### MobileNav Component
 `src/components/layout/mobile-nav.tsx` — **separate** from `app-sidebar.tsx`. Any IA change (add/remove tabs, reorder, rename) MUST be applied to BOTH files in the same PR.
 
 ### What Goes in the Bottom Nav vs Sidebar
 - Bottom nav (5 items): Daily-use operator workflows only
-  - Today (personal agenda, work list, Triage)
+  - Dashboard (org overview, customizable widget board)
   - Jobs (active projects, pull sheets)
   - Warehouse (check-out/in, scanning)
   - Crew (schedule, roster)
   - Assets (gear, kits)
-- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports. **Dashboard is the desktop rail's first item** (D10B); on mobile it stays in the avatar/account menu, since the bottom nav's five slots are full. Today is the mirror image — bottom-nav slot one on a phone, avatar menu on desktop. The old standalone "My tasks" sidebar entry is gone: `/my-tasks` now redirects to `/today`, which supersedes it.
-- Settings is accessible via the avatar menu on mobile, alongside Dashboard
+- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports. **Dashboard is the desktop rail's first item AND the mobile bottom nav's first slot** (D10C) — the old desktop/mobile split is gone. The old standalone "My tasks" sidebar entry is gone: `/my-tasks` now redirects to `/dashboard`, which supersedes it, same as the now-hidden `/today`.
+- Settings is accessible via the avatar menu on mobile
 
 ### Deep Navigation on Mobile
 - Use Sheet (bottom-sheet) for detail panels, not full-page navigation where possible
@@ -642,3 +650,4 @@ Login / register / onboarding follow marketing aesthetics, not app UI rules:
 | 2026-06-18 | Sidebar nav uses module-hue active/hover (not red-only) | Per-module colour makes the sidebar a wayfinding map; user-directed. Red stays non-module; mobile bottom nav keeps red-active (§16) |
 | 2026-09-16 | Bottom nav: Today replaces Dashboard (D10A, work-layer #1242) | Today becomes the personal landing page; phones have no sidebar and all 5 bottom-nav slots were taken, so it had to take Dashboard's slot. Dashboard moves to the avatar menu; its dashboard "My work" zone is deleted so Today's rows don't render twice |
 | 2026-09-19 | Desktop rail: Dashboard returns to slot one, Today moves to the avatar menu (D10B) | D10A's swap was right for phones and wrong for the rail — the org-wide read is what people reach for from the sidebar. Mobile is unchanged (Today keeps bottom-nav slot one); Today is still the post-login landing page |
+| 2026-09-21 | Today hidden everywhere; Dashboard is the landing page on mobile too (D10C) | The customizable dashboard board (FEATUREDOCS/81) already lets a user add Today's widgets to their own board, so a dedicated page is redundant. `/today`/`/my-tasks` redirect to `/dashboard`; mobile bottom-nav slot one, the sidebar logo, and every post-auth redirect now point at Dashboard on both platforms |

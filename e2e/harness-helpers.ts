@@ -3,7 +3,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
  * Shared steps every `harness-*.spec.ts` file otherwise duplicated verbatim
- * (register → land on /welcome or /today; create-org → all five wizard
+ * (register → land on /welcome or /dashboard; create-org → all five wizard
  * screens, skipped or filled). Extracted while adding D5 (#1109)'s new
  * specs, which needed the same steps again — a fifth copy was the last straw.
  */
@@ -37,7 +37,7 @@ export async function registerNewUser(page: Page, user: HarnessUser): Promise<vo
     .getByRole("button", { name: /create|register|sign up/i })
     .first()
     .click();
-  await page.waitForURL(/\/(today|welcome|invite)\b/, { timeout: 20000 });
+  await page.waitForURL(/\/(dashboard|welcome|invite)\b/, { timeout: 20000 });
 }
 
 /** From /welcome (or already at /setup), create a fresh org and skip every
@@ -60,7 +60,7 @@ export async function createOrgSkipAll(page: Page, orgName: string): Promise<voi
   await page.getByRole("button", { name: "Skip for now" }).click();
   await page.getByRole("button", { name: "Skip for now" }).click();
   await page.getByRole("button", { name: "Skip for now" }).click();
-  await page.waitForURL(/\/today\b/, { timeout: 20000 });
+  await page.waitForURL(/\/dashboard\b/, { timeout: 20000 });
 }
 
 /** Create a model via the equipment registry (not the wizard's inline

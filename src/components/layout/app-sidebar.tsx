@@ -94,14 +94,10 @@ interface RailItem {
 
 // Primary modules. Hues per DESIGN.md §3.7/§15.5.
 const RAIL: RailItem[] = [
-  // Dashboard is back in the rail's first slot (reverting #1242/D10A's swap):
-  // the org-wide read is what people reach for from the nav, so burying it in
-  // the account menu cost more than it saved. Today keeps its place in that
-  // menu (user-nav.tsx) and stays the post-login landing page, so the personal
-  // view is still one click away and nothing about /today itself changes.
-  // Neither entry carries a `resource` gate: Dashboard never had one, and
-  // Today is personal scope, so viewer/warehouse roles keep both without
-  // project:read.
+  // Dashboard is the rail's first slot and the landing page (D10C — Today is
+  // now hidden; its widgets live on the customizable dashboard board instead).
+  // No `resource` gate: Dashboard never had one, so viewer/warehouse roles
+  // keep it without project:read.
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
   {
     title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
@@ -407,7 +403,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-line bg-paper-2">
       <SidebarHeader className={cn("border-b border-line", collapsed ? "items-center py-3" : "px-3 py-3.5")}>
-        <Link href="/today" aria-label="RVLT Flow — today" className="flex items-center">
+        <Link href="/dashboard" aria-label="RVLT Flow — dashboard" className="flex items-center">
           {collapsed ? (
             <span className="flex size-9 items-center justify-center rounded-[var(--r)] bg-red shadow-[var(--lit)]">
               <RvltMark className="h-4 w-auto [&_path]:fill-white" />

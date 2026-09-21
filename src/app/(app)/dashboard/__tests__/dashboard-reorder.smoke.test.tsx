@@ -7,10 +7,12 @@
 // asserts DOM order still follows array order — react-grid-layout renders
 // items in `widgets.map()` order regardless of their absolute CSS position.
 // The personal "My work" zone (tasks-due block + per-project blocker
-// badges, formerly MyWorkSection) stays GONE — Today (/today) owns that
-// surface. "On the floor now" (an org-wide live-jobs view, not a personal
-// work list) stays and renders ahead of the Org-risk zone. Blockers still
-// surface exactly once, via the needs-attention chip.
+// badges, formerly MyWorkSection) stays GONE — its replacement is the
+// (now-hidden) Today widgets, addable to the board via "Add widget" but not
+// in DEFAULT_DASHBOARD_LAYOUT, so this test's fixed layout doesn't render
+// them. "On the floor now" (an org-wide live-jobs view, not a personal work
+// list) stays and renders ahead of the Org-risk zone. Blockers still surface
+// exactly once, via the needs-attention chip.
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -124,7 +126,7 @@ describe("DashboardPage reorder (smoke)", () => {
     expect(riskIdx).toBeLessThan(statIdx);
   });
 
-  it("no longer renders a personal 'My work' zone — Today owns tasks-due and per-project blocker badges now", () => {
+  it("no longer renders a personal 'My work' zone — tasks-due and per-project blocker badges live in the (opt-in) Today widgets now", () => {
     render(<DashboardPage />);
     expect(screen.queryByText("My work")).toBeNull();
     expect(screen.queryByText("Confirm crew call times")).toBeNull();

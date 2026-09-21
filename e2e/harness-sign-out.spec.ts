@@ -40,7 +40,7 @@ test.describe("harness: sign out", () => {
       .click();
     // A fresh registration with no org lands on the create-vs-join fork
     // (/welcome, #1092) rather than an authenticated dashboard directly.
-    await expect(page).toHaveURL(/\/(today|welcome)\b/, { timeout: 20000 });
+    await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
 
     // Run standalone against a fresh harness, this is the first-ever user, so
     // the (app) layout redirects to /welcome (no org yet) — which has no
@@ -61,7 +61,7 @@ test.describe("harness: sign out", () => {
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
-      await expect(page).toHaveURL(/\/today\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     }
 
     await page.getByRole("button", { name: "Account menu" }).click();

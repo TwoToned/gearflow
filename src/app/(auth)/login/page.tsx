@@ -18,8 +18,8 @@ import { AuthShell, HandNudge } from "../auth-playful";
 /** `callbackUrl` comes from `src/middleware.ts`'s login redirect (or a manual
  *  deep link like the invite flow) — only ever trust it as a SAME-ORIGIN
  *  relative path ("/foo", never "//evil.com" or an absolute URL), so this can
- *  never become an open redirect. Anything else falls back to "/today" (the
- *  landing page — work-layer phase 0.5, #1242, D10A). */
+ *  never become an open redirect. Anything else falls back to "/dashboard"
+ *  (the landing page — D10C). */
 function safeCallbackUrl(raw: string | null): string | null {
   if (!raw) return null;
   if (!raw.startsWith("/") || raw.startsWith("//")) return null;
@@ -75,11 +75,11 @@ async function handlePostLogin(router: ReturnType<typeof useRouter>, callbackUrl
   }
   if (orgs.length === 1) {
     await organization.setActive({ organizationId: orgs[0].id });
-    router.push(callbackUrl ?? "/today");
+    router.push(callbackUrl ?? "/dashboard");
     return;
   }
   // 2+ memberships: never guess which one — route to the picker (#1071, A1).
-  const target = callbackUrl ?? "/today";
+  const target = callbackUrl ?? "/dashboard";
   router.push(`/select-organization?callbackUrl=${encodeURIComponent(target)}`);
 }
 
@@ -134,7 +134,7 @@ function LoginForm() {
       if (matchingProvider) {
         await authClient.signIn.sso({
           providerId: matchingProvider.providerId,
-          callbackURL: callbackUrl ?? "/today",
+          callbackURL: callbackUrl ?? "/dashboard",
           loginHint: email,
         });
         return;

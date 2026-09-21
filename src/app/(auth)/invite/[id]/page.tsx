@@ -54,7 +54,7 @@ export default function InviteAcceptPage({
       if (orgId) {
         await organization.setActive({ organizationId: orgId });
       }
-      redirectTimerRef.current = setTimeout(() => router.push("/today"), 1500);
+      redirectTimerRef.current = setTimeout(() => router.push("/dashboard"), 1500);
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -158,7 +158,7 @@ export default function InviteAcceptPage({
         <Button
           variant="line"
           className="w-full"
-          onClick={() => router.push("/today")}
+          onClick={() => router.push("/dashboard")}
         >
           Go to Dashboard
         </Button>

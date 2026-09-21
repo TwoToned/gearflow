@@ -892,6 +892,19 @@ This applies everywhere a Prisma row is first written to Convex: `src/lib/*-mirr
 - Safe areas: use inline `style` with `env()`, not Tailwind arbitrary values
 - Project queries must add `isTemplate: false` to exclude templates
 
+## Business-operations skill (`/rvlt-flow`)
+
+`.claude/skills/rvlt-flow/` is the **operator-facing** counterpart to this file:
+domain knowledge for *running* the hire business on Flow (job lifecycle,
+availability math, job prep, money rules, the MCP tool surface), not for building
+the product. Invoke it when a session is about jobs/gear/crew/invoices rather
+than code — or when you need the authoritative operator-side reading of a domain
+rule. It cites this repo's own sources (`convex/lib/projectAutoStatus.ts`,
+`availabilityCore.ts`, `recalc.ts`, `src/lib/api/errors.ts`,
+`src/lib/api/mcp/curated-tool-defs.ts`, the FEATUREDOCS), so a behaviour change
+in any of those is a change to the skill in the same PR — same rule as a
+FEATUREDOC (R-5.2/R-5.3).
+
 ## gstack
 
 **Always use `/browse` from gstack for web browsing. Never use `mcp__Claude_in_Chrome__*` tools.**

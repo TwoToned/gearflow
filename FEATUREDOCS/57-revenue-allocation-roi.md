@@ -105,9 +105,16 @@ legs above and earn their share. Only `excludeFromRoi` (below) excludes.
 Exclude from ROI**. An excluded line takes **no** share of any pool (the paying gear beside it splits
 the whole thing), is stamped `EXCLUDED_MANUAL`, and never reaches `projectModelRevenues`. Absent =
 included, so there is no backfill and one representation of "off" (the patch clears the field rather
-than storing `false`). `canExcludeFromRoi` (`src/lib/roi.ts`) hides the menu entry on lines a
-structural rule already excludes — no `modelId`, `SALE`, sub-hire — so the menu can never offer a
-switch the engine ignores.
+than storing `false`).
+
+The flag may only ever REMOVE a line the allocator would otherwise credit, so `isRoiExcluded`
+(`convex/lib/allocation.ts`) requires a `modelId` and no `subHireId`, and skips anything `isNonGear`
+already covers. A sub-hire is the case that matters: `EXCLUDED_SUBHIRE` earns nothing but still
+**consumes pool weight**, so the owned gear beside it isn't over-credited — honouring the flag there
+would hand that weight over and inflate real ROI. `canExcludeFromRoi` (`src/lib/roi.ts`) is the
+MENU's copy of the same rule (it also drops container rows, which carry a `modelId` and render in the
+equipment tab), so the menu never offers a switch the engine ignores. The engine is the enforcement
+point, not the menu: `patchNative` takes `set: v.any()` and the field is patchable.
 
 It is **not** a money edit: it changes `allocatedRevenue` (internal attribution) and nothing the
 client sees, so it is absent from `LOCKED_LINE_ITEM_FIELDS` and stays available on a price-locked

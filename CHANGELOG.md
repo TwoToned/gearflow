@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same model into a group used to overwrite the existing line's price with
   $0, and "Apply group template" wrote $0 members for any model with no daily or
   weekly rate.
+- **A % discount on an unpriced line no longer vanishes.** A percentage is worked
+  out against the price on screen, so leaving the price blank — which now means
+  "price this from the model's rate" — turned "10%" into no discount at all, on
+  a line that then landed fully priced. The form now says so and asks for either
+  a price or a $ amount, instead of quietly dropping the entry.
 - **The scanner no longer gives two contradictory answers to one scan.** Reading
   a code played a "success" chime, and then whatever you scanned into played its
   own verdict — so an unrecognised tag beeped success and then error. The camera

@@ -823,15 +823,73 @@ describe("excludeFromRoi — the explicit opt-out (#1249)", () => {
     expect(rev(r, "a")).toBe(500); // takes the whole pool
   });
 
-  test("an excluded line nested under a sub-hire is still $0, not the sub-hire's audit value", () => {
-    // The sub-hire subtree is stamped wholesale with its pool value; the excluded
-    // line must be forced back to $0 so it never shows a non-zero number.
+  test("a flagged line inside a sub-hire subtree keeps EXCLUDED_SUBHIRE", () => {
+    // The whole subtree is sub-hired, so every row in it was never our capital.
+    // `EXCLUDED_SUBHIRE` already says that AND keeps the audit value; relabelling
+    // it EXCLUDED_MANUAL would lose the audit trail and, at group level, release
+    // the weight the sub-hire is supposed to consume.
     const r = run([
       L("sh", { lineTotal: 100, subHireId: "s1", kitId: "k1", sortOrder: 1 }),
       L("free", { parentLineItemId: "sh", modelId: "m1", excludeFromRoi: true, subHireId: "s1", sortOrder: 1 }),
     ]);
+    expect(basis(r, "free")).toBe("EXCLUDED_SUBHIRE");
+    expect(isRoiCounted(basis(r, "free"))).toBe(false);
+  });
+
+  test("the final override still forces a flagged line back to $0 after a wholesale stamp", () => {
+    // What the sub-hire case used to cover: a subtree stamped wholesale must not
+    // leave a flagged OWNED line showing the parent's number. Same shape, minus
+    // the sub-hire (which now has its own stronger rule above).
+    const r = run([
+      L("kit", { lineTotal: 300, kitId: "k1", sortOrder: 1 }),
+      L("free", { parentLineItemId: "kit", modelId: "m1", excludeFromRoi: true, status: "CANCELLED", sortOrder: 1 }),
+    ]);
     expect(rev(r, "free")).toBe(0);
-    expect(basis(r, "free")).toBe("EXCLUDED_MANUAL");
+  });
+
+  test("the flag can never drop a SUB-HIRE line from the split", () => {
+    // A sub-hire earns nothing but CONSUMES weight, so the owned gear beside it
+    // isn't over-credited. Honouring the flag here would hand that weight to the
+    // owned gear and inflate real ROI. `canExcludeFromRoi` hides the toggle, but
+    // patchNative takes `set: v.any()` — the engine is the enforcement point.
+    const withFlag = run(
+      [
+        L("owned", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("hired", { groupId: "g1", modelId: "m2", subHireId: "s1", excludeFromRoi: true, sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 400, quantity: 1 }],
+        models: models(M("m1", { dailyRate: 100 }), M("m2", { dailyRate: 100 })),
+      },
+    );
+    // Still a 50/50 split by rate; the sub-hire keeps its audit value and its weight.
+    expect(rev(withFlag, "owned")).toBe(200);
+    expect(basis(withFlag, "hired")).toBe("EXCLUDED_SUBHIRE");
+    expect(basis(withFlag, "hired")).not.toBe("EXCLUDED_MANUAL");
+  });
+
+  test("the flag can never drop a CONTAINER or custom line", () => {
+    // Both are already `isNonGear` — they take no share either way, and must keep
+    // reporting WHY they were excluded rather than being relabelled.
+    const r = run(
+      [
+        L("gear", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("case", { groupId: "g1", modelId: "m2", isContainerLineItem: true, excludeFromRoi: true, sortOrder: 2 }),
+        L("labour", { groupId: "g1", isCustomItem: true, excludeFromRoi: true, sortOrder: 3 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 500, quantity: 1 }],
+        models: models(M("m1", { dailyRate: 100 }), M("m2", { dailyRate: 100 })),
+      },
+    );
+    expect(rev(r, "gear")).toBe(500);
+    expect(basis(r, "case")).toBe("EXCLUDED_NON_GEAR");
+    expect(basis(r, "labour")).toBe("EXCLUDED_NON_GEAR");
+  });
+
+  test("the flag needs a modelId — there is nothing to exclude without one", () => {
+    const r = run([L("a", { modelId: "m1", lineTotal: 100, sortOrder: 1 }), L("mystery", { lineTotal: 50, excludeFromRoi: true, sortOrder: 2 })]);
+    expect(basis(r, "mystery")).not.toBe("EXCLUDED_MANUAL");
   });
 
   test("an excluded CHILD takes no share of its parent's pool", () => {

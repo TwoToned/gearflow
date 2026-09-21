@@ -130,21 +130,30 @@ export function formatPayback(payback: number | null): string {
  *  - no `modelId` — a custom/labour/transport/container line has nothing to
  *    attribute revenue TO (`EXCLUDED_NON_GEAR`);
  *  - a `SALE` line — a disposal, never rental ROI (`EXCLUDED_SALE`);
- *  - a sub-hire line — it was never our capital (`EXCLUDED_SUBHIRE`).
+ *  - a sub-hire line — it was never our capital (`EXCLUDED_SUBHIRE`);
+ *  - a container row (road case, trolley) — `isNonGear`, and it carries a
+ *    `modelId` and renders in the equipment tab, so `modelId != null` alone
+ *    would offer it a toggle that persists and flips its own label while
+ *    changing nothing.
  *
  * The mirror of `canRevealPriceInRollup` / `canDiscloseGroupChild`: the menu
- * can't offer a toggle the engine then ignores.
+ * can't offer a toggle the engine then ignores. This is the MENU's copy of the
+ * rule; `isRoiExcluded` in convex/lib/allocation.ts enforces the same
+ * exclusions server-side, because the field is patchable and the UI is not a
+ * trust boundary.
  */
 export function canExcludeFromRoi(item: {
   modelId?: string | null;
   type?: string | null;
   isCustomItem?: boolean | null;
+  isContainerLineItem?: boolean | null;
   subHireId?: string | null;
 }): boolean {
   return (
     item.modelId != null &&
     item.type !== "SALE" &&
     item.isCustomItem !== true &&
+    item.isContainerLineItem !== true &&
     item.subHireId == null
   );
 }

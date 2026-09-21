@@ -59,6 +59,9 @@ export interface LineItemData {
   pricedUnderLock?: boolean;
   // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
   isCustomItem?: boolean;
+  /** A container row (road case, trolley). `isNonGear` in the allocator, so it
+   *  takes no share of any pool — see canExcludeFromRoi (src/lib/roi.ts). */
+  isContainerLineItem?: boolean;
   isKitChild?: boolean;
   subHireId?: string | null;
   /** Client-document sub-hire visibility toggle ("Show as sub-hired").

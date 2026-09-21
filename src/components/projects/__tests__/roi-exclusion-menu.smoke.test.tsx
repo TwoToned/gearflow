@@ -131,6 +131,16 @@ describe("ROI exclusion toggle (smoke)", () => {
     await openKebab(container);
     expect(screen.queryByText("Exclude from ROI")).toBeNull();
   });
+
+  // A container row (road case, trolley) DOES carry a modelId and does render in
+  // the equipment tab, so `modelId != null` alone would offer it a toggle that
+  // persists and flips its own label while changing nothing — `isNonGear`
+  // already excludes it.
+  it("never offers it on a container row", async () => {
+    const { container } = renderItem({ item: { ...baseItem, isContainerLineItem: true } });
+    await openKebab(container);
+    expect(screen.queryByText("Exclude from ROI")).toBeNull();
+  });
 });
 
 describe("the Reporting section (smoke)", () => {

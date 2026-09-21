@@ -263,8 +263,21 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
   // An explicit $0 is now treated exactly like an unpriced "—": it still earns
   // via its rate/cost (see `subtreeWeight`, which already skips a non-positive
   // price). Only this flag excludes, and only a human can set it.
+  //
+  // The flag only ever REMOVES a line the allocator would otherwise credit. It
+  // must not reach a line that is already excluded structurally, because there
+  // "excluded" means something different and stronger: a sub-hire line
+  // (`EXCLUDED_SUBHIRE`) earns nothing but still CONSUMES pool weight, so the
+  // owned gear beside it isn't over-credited. Letting the flag drop it from the
+  // split entirely would hand that weight to the owned gear — inflating real
+  // ROI. `patchNative` takes `set: v.any()` and this field is patchable, so the
+  // UI's `canExcludeFromRoi` gate is not the enforcement point; this is.
   const isRoiExcluded = (l: AllocLine): boolean =>
-    l.excludeFromRoi === true && !isInactive(l) && !isNonGear(l);
+    l.excludeFromRoi === true &&
+    !isInactive(l) &&
+    !isNonGear(l) &&
+    l.subHireId == null &&
+    l.modelId != null;
   for (const l of lines) {
     if (isRoiExcluded(l)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "EXCLUDED_MANUAL" });
   }

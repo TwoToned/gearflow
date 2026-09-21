@@ -1600,6 +1600,17 @@ export default defineSchema({
     // See src/lib/group-child-disclosure.ts.
     showInGroupOnDocs: v.optional(v.boolean()),
     lineTotal: v.optional(v.number()),
+    // Revenue-allocation opt-OUT (#1249). The ONE way to say "this gear earned
+    // nothing" — it takes no share of its group/kit pool (the paying gear beside
+    // it splits the whole thing) and never counts toward model ROI.
+    // Before #1249 that meaning was carried implicitly by `lineTotal === 0`,
+    // which conflated "deliberately free" with "price not filled in yet" — the
+    // far more common case inside a Project Group, where the bundle price is the
+    // charge and the member prices are left blank. A $0 line now allocates by its
+    // rate/cost like an unpriced "—" line; only this flag excludes.
+    // Absent = included, so there is no backfill and no second representation
+    // of "off" (patchNative clears the field rather than storing `false`).
+    excludeFromRoi: v.optional(v.boolean()),
     allocatedRevenue: v.optional(v.number()),
     allocationBasis: v.optional(enums.AllocationBasis),
     priceBreakdown: v.optional(v.string()),

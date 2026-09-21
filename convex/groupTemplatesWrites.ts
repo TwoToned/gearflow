@@ -476,11 +476,22 @@ export const applyNative = mutation({
       const model = await getModel(item.modelId);
       if (!model) continue; // parity: server dropped items whose model didn't resolve
       const quantity = item.quantity ?? 1;
-      const { perUnitCharge, breakdown } = computeBlendedCharge({
-        chargeableDays,
-        dailyRate: model.dailyRate ?? null,
-        weeklyRate: model.weeklyRate ?? null,
-      });
+      // #1249 — the SAME rate guard `addLineItemSmartNative` applies before it
+      // auto-prices. computeBlendedCharge with both rates null returns
+      // `(dailyRate ?? 0) * totalDays` = 0, so applying a template used to write
+      // an explicit $0 (plus a priceBreakdown that made it look auto-priced) for
+      // every model with no daily/weekly rate — indistinguishable from a
+      // deliberately free line, and inside a priced group that gear then
+      // reported $0 ROI. No rate to price from means NO price: the line lands
+      // unpriced ("—"), which is what allocation and the Unpriced badge expect.
+      const hasRate = model.dailyRate != null || model.weeklyRate != null;
+      const priced = hasRate
+        ? computeBlendedCharge({
+            chargeableDays,
+            dailyRate: model.dailyRate ?? null,
+            weeklyRate: model.weeklyRate ?? null,
+          })
+        : null;
       const sortOrder = await nextLineSort(ctx, a.projectId, a.orgId, targetVersionId);
       const modelLineId = nextModelId();
       // Dup-guard the client-minted line cuid (by_cuid is global + non-unique).
@@ -497,10 +508,10 @@ export const applyNative = mutation({
         modelId: item.modelId,
         description: model.name,
         quantity,
-        unitPrice: perUnitCharge,
+        unitPrice: priced?.perUnitCharge,
         duration: 1,
-        priceBreakdown: serializePriceBreakdown(breakdown),
-        lineTotal: perUnitCharge * quantity,
+        priceBreakdown: priced ? serializePriceBreakdown(priced.breakdown) : undefined,
+        lineTotal: priced ? priced.perUnitCharge * quantity : undefined,
         status: "CONFIRMED",
         sortOrder,
         createdAt: a.now,

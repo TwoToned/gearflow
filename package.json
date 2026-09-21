@@ -127,7 +127,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0",
-    "@size-limit/file": "^13.0.3",
+    "@size-limit/file": "^14.0.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
@@ -150,7 +150,7 @@
     "knip": "^6.35.1",
     "pdf-parse": "^2.4.5",
     "prisma": "^7.10.0",
-    "size-limit": "^13.0.3",
+    "size-limit": "^14.0.0",
     "tailwindcss": "^4.3.3",
     "ts-morph": "^28.0.0",
     "tsx": "^4.23.13",

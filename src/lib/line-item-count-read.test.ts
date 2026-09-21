@@ -45,6 +45,7 @@ function li(over: Partial<MappedLineItem>): MappedLineItem {
     pricingType: "PER_DAY",
     revealPriceInRollup: false,
     showInGroupOnDocs: false,
+    excludeFromRoi: false,
     duration: 1,
     discount: null,
     discountMode: null,

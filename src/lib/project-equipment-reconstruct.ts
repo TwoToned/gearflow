@@ -182,6 +182,9 @@ export interface MappedLineItem {
    *  quantity, never a price). Absent on the row = false.
    *  See src/lib/group-child-disclosure.ts. */
   showInGroupOnDocs: boolean;
+  /** #1249 — excluded from revenue allocation / model ROI by the operator.
+   *  Absent on the row = included. See convex/lib/allocation.ts. */
+  excludeFromRoi: boolean;
   /** Set only when `type === "SALE"` — which stock pool the sale drew from. */
   saleMode: "NEW_STOCK" | "FROM_RENTAL_STOCK" | null;
   /** NEW_STOCK sale-item pick checklist timestamp — absent = to pick. */
@@ -256,6 +259,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     taxRate: d.taxRate ?? null,
     revealPriceInRollup: d.revealPriceInRollup ?? false,
     showInGroupOnDocs: d.showInGroupOnDocs ?? false,
+    excludeFromRoi: d.excludeFromRoi ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,

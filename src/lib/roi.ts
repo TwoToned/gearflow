@@ -118,3 +118,33 @@ export function formatPayback(payback: number | null): string {
   if (payback == null) return "—";
   return `${payback.toFixed(payback < 10 ? 2 : 1)}×`;
 }
+
+/**
+ * May this line item be excluded from revenue allocation by hand (#1249)?
+ *
+ * Only a line the allocator would otherwise CREDIT is worth offering the toggle
+ * on. Everything ruled out here is already excluded by a structural rule in
+ * `convex/lib/allocation.ts`, so a toggle there would be a switch that does
+ * nothing:
+ *
+ *  - no `modelId` — a custom/labour/transport/container line has nothing to
+ *    attribute revenue TO (`EXCLUDED_NON_GEAR`);
+ *  - a `SALE` line — a disposal, never rental ROI (`EXCLUDED_SALE`);
+ *  - a sub-hire line — it was never our capital (`EXCLUDED_SUBHIRE`).
+ *
+ * The mirror of `canRevealPriceInRollup` / `canDiscloseGroupChild`: the menu
+ * can't offer a toggle the engine then ignores.
+ */
+export function canExcludeFromRoi(item: {
+  modelId?: string | null;
+  type?: string | null;
+  isCustomItem?: boolean | null;
+  subHireId?: string | null;
+}): boolean {
+  return (
+    item.modelId != null &&
+    item.type !== "SALE" &&
+    item.isCustomItem !== true &&
+    item.subHireId == null
+  );
+}

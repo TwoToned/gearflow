@@ -109,6 +109,7 @@ export type MappedLineItem = Omit<
   | "taxRate"
   | "revealPriceInRollup"
   | "showInGroupOnDocs"
+  | "excludeFromRoi"
   | "lineTotal"
   | "priceBreakdown"
   | "priceOverridden"
@@ -182,6 +183,11 @@ export type MappedLineItem = Omit<
    *  quantity, never a price). Absent on the row = false.
    *  See src/lib/group-child-disclosure.ts. */
   showInGroupOnDocs: boolean;
+  /** #1249 — the operator has excluded this line from revenue allocation: it
+   *  takes no share of its group/kit pool and never counts toward model ROI.
+   *  Absent on the row = included (the default). Internal only — it changes
+   *  nothing on a client-facing document. See convex/lib/allocation.ts. */
+  excludeFromRoi: boolean;
   lineTotal: number | null;
   priceBreakdown: string | null;
   priceOverridden: boolean;
@@ -252,6 +258,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     taxRate: d.taxRate ?? null,
     revealPriceInRollup: d.revealPriceInRollup ?? false,
     showInGroupOnDocs: d.showInGroupOnDocs ?? false,
+    excludeFromRoi: d.excludeFromRoi ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,

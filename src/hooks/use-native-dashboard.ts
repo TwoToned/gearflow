@@ -146,9 +146,10 @@ export interface NativeMyOpenTask {
 /**
  * projectTasks.myOpenTasks: this user's open tasks across every project (direct +
  * crew assignment) plus personal tasks with no project, sorted overdue → due asc →
- * undated last → priority, bounded to 100. Backs `/today` (`/my-tasks` redirects
- * there — work-layer phase 0.5, #1242). Minute-bucketed `now`, same convention as
- * the rest of this file (queries can't read the clock).
+ * undated last → priority, bounded to 100. Backs `TodayWorkListWidget`
+ * (`/today` and `/my-tasks` both now just redirect to `/dashboard` — D10C).
+ * Minute-bucketed `now`, same convention as the rest of this file (queries
+ * can't read the clock).
  */
 export function useNativeMyOpenTasks(orgId: string | undefined) {
   const enabled = !!orgId;

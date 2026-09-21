@@ -39,7 +39,7 @@ export default function TwoFactorPage() {
         }
       }
 
-      router.push("/today");
+      router.push("/dashboard");
     } catch {
       toast.error("Verification failed");
     } finally {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
-  Sun,
+  LayoutDashboard,
   FolderOpen,
   Warehouse,
   HardHat,
@@ -22,11 +22,11 @@ import { cn, focusRing } from "@/lib/utils";
 const PENDING_NAV_TIMEOUT_MS = 1500;
 
 // DESIGN.md §16 — mobile bottom nav is the 5 daily-operator workflows:
-// Today / Jobs / Warehouse / Crew / Assets. Settings lives in the avatar
-// menu; Dashboard moved there too (work-layer phase 0.5, #1242 — phones have
-// no sidebar and all five slots were already taken, so Today takes
-// Dashboard's slot as the new landing page). Everything else (Test & Tag,
-// Maintenance, Clients, Suppliers, Locations, Activity) is sidebar-only.
+// Dashboard / Jobs / Warehouse / Crew / Assets. Settings lives in the avatar
+// menu. Dashboard reclaims slot 1 (D10C) now that Today is hidden — the
+// customizable board carries Today's old widgets for anyone who wants them
+// back. Everything else (Test & Tag, Maintenance, Clients, Suppliers,
+// Locations, Activity) is sidebar-only.
 interface MobileNavItem {
   href: string;
   icon: LucideIcon;
@@ -36,7 +36,7 @@ interface MobileNavItem {
 }
 
 const navItems: MobileNavItem[] = [
-  { href: "/today", icon: Sun, label: "Today" },
+  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/projects", icon: FolderOpen, label: "Jobs" },
   { href: "/warehouse", icon: Warehouse, label: "Warehouse" },
   { href: "/crew", icon: HardHat, label: "Crew" },

@@ -1,7 +1,8 @@
 "use client";
-// Extracted out of `/today/page.tsx` (FEATUREDOCS/79) so the "needs you" rail
-// can also live on the dashboard board — same one-shot-polled hook +
-// writes, same presentational `TodayNeedsYouRail` (R-3.1).
+// Extracted out of the now-hidden `/today` page (D10C; FEATUREDOCS/79) so
+// the "needs you" rail can also live on the dashboard board — same
+// one-shot-polled hook + writes, same presentational `TodayNeedsYouRail`
+// (R-3.1).
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -16,8 +17,9 @@ const MINUTE = 60_000;
 export function TodayNeedsYouRailWidget({
   orgId,
   /** See the identical default on `TodayDayRailWidget`: `true` for the
-   *  dashboard-board registry, `false` from `/today/page.tsx` (its own
-   *  card + "Needs you" heading). */
+   *  dashboard-board registry, `false` for `/today`'s pre-hide (D10C)
+   *  page-furniture rendering — kept on the prop for `TodayNeedsYouRail`'s
+   *  own direct-render tests. */
   bare = true,
 }: {
   orgId: string | undefined;

@@ -242,8 +242,10 @@ function widget(kind: DashboardWidgetKind, x: number, y: number): DashboardLayou
  * existing order/size (CLAUDE.md: "everything from the current /dashboard at
  * its current position/size"). Today's three widgets are in the CATALOG
  * (`DASHBOARD_WIDGET_REGISTRY`/`DASHBOARD_WIDGET_ORDER` above) but
- * deliberately NOT pre-placed here — a user adds them via "Add widget" if
- * they want dashboard to also carry their personal work list.
+ * deliberately NOT pre-placed here — same as before `/today` was hidden
+ * (D10C): a user adds them via "Add widget" if they want dashboard to also
+ * carry their personal work list, rather than every board defaulting to
+ * showing one person's tasks.
  */
 export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutWidget[] = [
   widget("finishSetupChecklist", 0, 0),

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, User, ChevronsUpDown, Shield, HardHat, Check, Loader2, Sun } from "lucide-react";
+import { LogOut, User, ChevronsUpDown, Shield, HardHat, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isSiteAdminRole } from "@/lib/admin-role";
 import { useSession, signOut, useActiveOrganization, organization } from "@/lib/auth-client";
@@ -73,9 +73,9 @@ export function UserNav() {
       // the previous org into the newly-activated one (design doc §4.3.1). The
       // Convex client re-authenticates for free (src/components/providers/
       // convex-provider.tsx reacts to the orgId change), so nothing else here
-      // needs to force a token refresh or drop a cache. Today, not Dashboard,
-      // is that landing page (work-layer phase 0.5, #1242).
-      router.push("/today");
+      // needs to force a token refresh or drop a cache. Dashboard is that
+      // landing page (D10C).
+      router.push("/dashboard");
     } finally {
       setSwitchingId(null);
     }
@@ -160,14 +160,6 @@ export function UserNav() {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          {/* Today lives here now — the reverse of #1242/D10A, which had put
-              Today in the rail and Dashboard in this menu. Today is still the
-              post-login landing page and still owns the bottom nav's first
-              slot on a phone; this is only where the DESKTOP entry point sits. */}
-          <DropdownMenuItem onClick={() => router.push("/today")}>
-            <Sun className="mr-2 h-4 w-4" />
-            Today
-          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push("/account")}>
             <User className="mr-2 h-4 w-4" />
             Account settings

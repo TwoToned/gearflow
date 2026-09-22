@@ -126,12 +126,12 @@ export function ClientsDashboard() {
         return (
           <div
             key={tile.label}
-            className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)]"
+            className="overflow-hidden rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)]"
           >
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-start justify-between gap-2">
               <span
                 className={cn(
-                  "font-display font-extrabold leading-none tracking-tight tabular-nums",
+                  "block break-all font-display font-extrabold leading-none tracking-tight tabular-nums",
                   tile.bright ? "text-[38px] text-ink" : "text-[24px] text-ink-2",
                 )}
               >

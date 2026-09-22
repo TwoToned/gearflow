@@ -750,8 +750,8 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
 /** At-a-glance metric cell for the hero strip — figure over a muted label. */
 function GlanceCell({ figure, label }: { figure: React.ReactNode; label: React.ReactNode }) {
   return (
-    <div className="px-3 py-2.5 first:pl-4 last:pr-4">
-      <div className="font-display text-[18px] font-extrabold leading-none tracking-tight tabular-nums text-ink">
+    <div className="min-w-0 overflow-hidden px-3 py-2.5 first:pl-4 last:pr-4">
+      <div className="break-all font-display text-[18px] font-extrabold leading-none tracking-tight tabular-nums text-ink">
         {figure}
       </div>
       <div className="mt-1 text-caption text-muted">{label}</div>

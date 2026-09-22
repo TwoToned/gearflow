@@ -80,7 +80,11 @@ CardFooter.displayName = "CardFooter";
  * Card/CardHeader/CardContent structure (R-8.7.3).
  */
 const panelVariants = cva(
-  "rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]",
+  // overflow-hidden also zeroes the grid/flex-item automatic minimum size (CSS sizing
+  // spec: non-"visible" overflow drops the min-content floor to 0), which is what lets
+  // a `minmax(0,1fr)` grid track actually shrink a Panel below an unbreakable child's
+  // content width instead of the child bursting past the card's rounded border.
+  "overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]",
   {
     variants: {
       padding: {

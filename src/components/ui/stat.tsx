@@ -11,10 +11,10 @@ const Stat = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & { figure: React.ReactNode; label: React.ReactNode; bright?: boolean }
 >(({ className, figure, label, bright = false, ...props }, ref) => (
-  <div ref={ref} className={cn("flex flex-col gap-1", className)} {...props}>
+  <div ref={ref} className={cn("flex min-w-0 flex-col gap-1", className)} {...props}>
     <span
       className={cn(
-        "font-display font-extrabold leading-none tracking-tight tabular-nums",
+        "block break-all font-display font-extrabold leading-none tracking-tight tabular-nums",
         bright ? "text-[38px] text-ink" : "text-[24px] text-ink-2",
       )}
     >

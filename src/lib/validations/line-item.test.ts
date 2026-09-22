@@ -239,6 +239,53 @@ describe("lineItemSchema", () => {
     });
   });
 
+  describe("taxRate (blankableNumber, min 0, max 100) — split off #1249", () => {
+    it("leaves an empty string unset — NOT an explicit 0% override", () => {
+      const result = lineItemSchema.safeParse({ taxRate: "" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBeUndefined();
+    });
+
+    it("treats null like blank", () => {
+      const result = lineItemSchema.safeParse({ taxRate: null });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBeUndefined();
+    });
+
+    it("keeps a typed 0 — a deliberate zero-rated line is still a real choice", () => {
+      const result = lineItemSchema.safeParse({ taxRate: "0" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBe(0);
+    });
+
+    it("treats undefined as undefined", () => {
+      const result = lineItemSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBeUndefined();
+    });
+
+    it("coerces a numeric string", () => {
+      const result = lineItemSchema.safeParse({ taxRate: "15" });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.taxRate).toBe(15);
+    });
+
+    it("accepts the maximum value", () => {
+      const result = lineItemSchema.safeParse({ taxRate: 100 });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects exceeding the maximum", () => {
+      const result = lineItemSchema.safeParse({ taxRate: 101 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects negative", () => {
+      const result = lineItemSchema.safeParse({ taxRate: -1 });
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe("subhireOrderNumber (optional, max 100)", () => {
     it("accepts at max length", () => {
       const result = lineItemSchema.safeParse({ subhireOrderNumber: "x".repeat(100) });

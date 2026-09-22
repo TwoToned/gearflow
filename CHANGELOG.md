@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same model into a group used to overwrite the existing line's price with
   $0, and "Apply group template" wrote $0 members for any model with no daily or
   weekly rate.
+- **Clearing a line's tax-rate override now actually clears it.** The same defect
+  fixed above for price and discount also applied to the per-line tax-rate
+  override: leaving the box empty submitted an explicit **0%** override rather
+  than clearing back to inheriting the project/org rate, so a line edited with
+  an empty tax box was silently taxed at 0% instead of whatever it should have
+  inherited. Blank now clears the override; typing a real `0` still stays a
+  deliberate zero-rated line. Existing rows are untouched — a stored 0% could
+  be a genuine zero-rated line, so there is no way to backfill it safely; only
+  how a newly-emptied box behaves has changed.
 - **A % discount on an unpriced line no longer vanishes.** A percentage is worked
   out against the price on screen, so leaving the price blank — which now means
   "price this from the model's rate" — turned "10%" into no discount at all, on

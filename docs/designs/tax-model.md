@@ -196,6 +196,34 @@ service-add flow), and no market reality in §3.4 of the parent doc requires it 
 If a real customer needs a mixed-rate line to be a SERVICE row rather than an equipment row, that
 is new scope for a future issue, not silently swallowed here.
 
+### 3.5 Blank means inherit, not an explicit 0% override
+
+`src/lib/validations/line-item.ts`'s `taxRateField` originally shipped as a bare
+`z.coerce.number().min(0).max(100).optional()`. `.optional()` only rescues a genuinely `undefined`
+input — an untouched `<input type="number">` submits `""`, and `z.coerce.number()` turns that into
+a real `0`, not "left blank". So an empty tax-rate box landed as an **explicit 0% override**
+(`clear: []`, `taxRate: 0` written to the row) rather than clearing back to
+`effectiveRate` inheriting the project/org rate (§3.1) — every line edited with the box emptied was
+silently taxed at 0% instead of whatever it should have inherited.
+
+This is the identical shape of defect #1249 fixed for `unitPrice`/`discount` (blank landing as a
+real `$0` rather than "unpriced"), fixed the same way: `taxRateField` now uses the same
+`blankableNumber` helper, so `""`/`null` map to `undefined` (→ `clear: ["taxRate"]` in
+`buildLineItemSetClear`, `src/hooks/use-line-item-writes.ts`) before the 0-100 bound runs, while a
+typed `0` still parses to `0` — a deliberate zero-rated line (§2.3) stays distinguishable from a
+cleared override. It was deliberately split out of #1249 rather than riding along, because unlike
+price/discount this changes what a client is actually invoiced on every line touched with an empty
+box, and deserved its own review.
+
+**No backfill.** Same reasoning as §4 below: a stored `taxRate: 0` on an existing row is
+indistinguishable, after the fact, from a deliberate zero-rated line (§2.3) — there is no way to
+tell "this was left blank under the old bug" apart from "this was intentionally zero-rated" without
+guessing, and guessing wrong would silently change what a project is taxed. Any pre-fix row keeps
+whatever `taxRate` it already has; the fix only changes how a box left blank behaves **from now
+on**. An operator who suspects a specific line was mistakenly zeroed can re-open it and clear the
+box by hand — the same manual correction §4 already expects for a rendered document that predates a
+behaviour change.
+
 ## 4. The stored-bytes rule closes the historical-migration problem
 
 CLAUDE.md's finance-document rule — a sent quote / issued invoice PDF is rendered once and its

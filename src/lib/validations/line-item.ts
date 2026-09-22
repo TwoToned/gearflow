@@ -48,13 +48,12 @@ const discountField = blankableNumber(z.number().min(0).max(999999.99));
 export const discountModeField = z.enum(DISCOUNT_MODES).optional();
 // T3 (#1091, docs/designs/tax-model.md §3/§6) — per-line tax rate override,
 // same 0-100 bound as the project-level rate (src/lib/validations/project.ts)
-// and moneyGuards.ts's server-side re-check. Blank = inherit.
-//
-// NOT on `blankableNumber` yet: today a blank box still lands as an explicit 0%
-// override, which contradicts the "Blank = inherit" above. That is the same
-// defect #1249 fixed for price/discount, but it changes what a CLIENT is taxed
-// on every line edited with an empty box, so it belongs in its own change.
-const taxRateField = z.coerce.number().min(0).max(100).optional();
+// and moneyGuards.ts's server-side re-check. Blank = inherit, now on the same
+// `blankableNumber` shape as `unitPrice`/`discount` above — this was the exact
+// #1249 defect (blank landing as an explicit 0 override), deliberately split
+// off into its own change since it affects what a client is taxed rather than
+// what a line displays. See docs/designs/tax-model.md §3.5.
+const taxRateField = blankableNumber(z.number().min(0).max(100));
 const categoryIdField = z.string().optional();
 const groupIdField = z.string().optional();
 const isOptionalField = z.boolean().default(false);

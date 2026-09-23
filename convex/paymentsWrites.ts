@@ -11,6 +11,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus, revertAutoAdvanceByTrigger } from "./lib/projectAutoStatus";
+import { reconcileFollowUps } from "./lib/followUpReconcile";
 
 /**
  * Payment write mutations (#1055) — browser-direct, standard 4-guard shape,
@@ -43,9 +44,17 @@ function round(v: number): number {
 }
 
 /** Recompute `amountPaid`/`paymentStatus` from this invoice's own non-voided
- *  payments and patch the invoice row — called from inside the same mutation
- *  that just wrote or voided a payment, so the two can never drift apart. */
-async function recomputeInvoicePaymentState(ctx: MutationCtx, invoice: Doc<"invoices">, now: number): Promise<string> {
+ *  payments AND the invoice-level truth the Xero payment sync reads back
+ *  (FEATUREDOCS/82), and patch the invoice row — called from inside the same
+ *  mutation that just wrote/voided a payment or applied a sync, so the two can
+ *  never drift apart.
+ *
+ *  Flow-recorded and Xero-reconciled payments are usually the SAME money
+ *  entered twice (in Flow for the auto-status, in Xero for the books), so the
+ *  paid amount is the LARGER of the two, never their sum. A Xero credit note
+ *  allocated against the invoice settles it too, and Xero reporting the
+ *  invoice PAID is authoritative on its own. */
+export async function recomputeInvoicePaymentState(ctx: MutationCtx, invoice: Doc<"invoices">, now: number): Promise<string> {
   // Bounded by invoiceId (R-9.8) — a single invoice never realistically carries
   // more than a handful of payments; 500 is a generous safety cap, not an
   // expected count.
@@ -53,11 +62,42 @@ async function recomputeInvoicePaymentState(ctx: MutationCtx, invoice: Doc<"invo
     .query("payments")
     .withIndex("by_organizationId_invoiceId", (q) => q.eq("organizationId", invoice.organizationId).eq("invoiceId", invoice.id))
     .take(500);
-  const amountPaid = round(payments.filter((p) => p.voidedAt == null).reduce((sum, p) => sum + p.amount, 0));
+  const flowPaid = round(payments.filter((p) => p.voidedAt == null).reduce((sum, p) => sum + p.amount, 0));
+  const amountPaid = Math.max(flowPaid, round(invoice.xeroAmountPaid ?? 0));
+  const settled = amountPaid + round(invoice.xeroAmountCredited ?? 0);
   const total = Number(invoice.total) || 0;
-  const paymentStatus = amountPaid <= 0 ? "UNPAID" : amountPaid >= total ? "PAID" : "PARTIALLY_PAID";
+  const paymentStatus =
+    invoice.xeroStatus === "PAID" || (settled > 0 && settled >= total) ? "PAID" : amountPaid <= 0 ? "UNPAID" : "PARTIALLY_PAID";
   await ctx.db.patch(invoice._id, { amountPaid, paymentStatus, updatedAt: now });
   return paymentStatus;
+}
+
+/** Everything that follows a payment-state change, in one place: recompute,
+ *  then #1236's PAYMENT_SETTLED auto-status on a FULL settlement of a
+ *  non-CREDIT invoice, then the follow-up reconcile. Shared by the user-gated
+ *  `recordNative` and the service-only Xero sync so neither path can drift.
+ *  Returns the auto-status move, if any. */
+export async function settleInvoicePaymentState(
+  ctx: MutationCtx,
+  invoice: Doc<"invoices">,
+  actor: { userId: string; userName: string },
+  now: number,
+): Promise<string | null> {
+  const paymentStatus = await recomputeInvoicePaymentState(ctx, invoice, now);
+  // A CREDIT note is excluded: its `total` is NEGATIVE (`createCreditNative`
+  // stores `-original.total`), so ANY positive amount recorded against it
+  // satisfies `amountPaid >= total` and reads as PAID. Money moving on a
+  // credit is a refund going OUT, never the client's payment coming in.
+  const autoStatus =
+    paymentStatus === "PAID" && invoice.kind !== "CREDIT"
+      ? autoAdvanceStatus(
+          await maybeAutoAdvanceProjectStatus(ctx, {
+            orgId: invoice.organizationId, projectId: invoice.projectId, trigger: "PAYMENT_SETTLED", actor, now,
+          }),
+        )
+      : null;
+  await reconcileFollowUps(ctx, { orgId: invoice.organizationId, projectId: invoice.projectId, now });
+  return autoStatus;
 }
 
 /** The client-input subset of recordNative's args (mirrors paymentSchema in
@@ -123,8 +163,6 @@ export const recordNative = mutation({
       updatedAt: now,
     });
 
-    const paymentStatus = await recomputeInvoicePaymentState(ctx, invoice, now);
-
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
@@ -143,18 +181,7 @@ export const recordNative = mutation({
     // partial payment leaves the job exactly where it was. The rule itself
     // re-checks the accepted-quote gate the manual confirm enforces and takes
     // the same snapshot, so this is not a way around either.
-    // A CREDIT note is excluded: its `total` is NEGATIVE (`createCreditNative`
-    // stores `-original.total`), so ANY positive amount recorded against it
-    // satisfies `amountPaid >= total` and reads as PAID. Money moving on a
-    // credit is a refund going OUT, never the client's payment coming in.
-    const autoStatus =
-      paymentStatus === "PAID" && invoice.kind !== "CREDIT"
-        ? autoAdvanceStatus(
-            await maybeAutoAdvanceProjectStatus(ctx, {
-              orgId, projectId: invoice.projectId, trigger: "PAYMENT_SETTLED", actor, now,
-            }),
-          )
-        : null;
+    const autoStatus = await settleInvoicePaymentState(ctx, invoice, actor, now);
 
     return { id, autoStatus };
   },
@@ -232,6 +259,8 @@ export const voidNative = mutation({
       projectId: invoice.projectId,
       createdAt: now,
     });
+    // A voided payment can re-open an invoice chase (FEATUREDOCS/82).
+    await reconcileFollowUps(ctx, { orgId, projectId: invoice.projectId, now });
 
     return { id };
   },

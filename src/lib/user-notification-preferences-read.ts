@@ -51,6 +51,7 @@ export function resolvePreferenceValues(
     flaggedAsset: coerce(raw.flaggedAsset, NOTIFICATION_PREFERENCE_DEFAULTS.flaggedAsset),
     incidentReport: coerce(raw.incidentReport, NOTIFICATION_PREFERENCE_DEFAULTS.incidentReport),
     quoteExpiring: coerce(raw.quoteExpiring, NOTIFICATION_PREFERENCE_DEFAULTS.quoteExpiring),
+    followUpBrief: coerce(raw.followUpBrief, NOTIFICATION_PREFERENCE_DEFAULTS.followUpBrief),
   };
 }
 

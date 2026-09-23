@@ -20499,6 +20499,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "followUpTick.briefForOrg",
+    "module": "followUpTick",
+    "fn": "briefForOrg",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "dueBy",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a9b3ec48b81b498d",
+    "returnsSha": "9923de5442f4b073",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "globalSearch.search",
     "module": "globalSearch",
     "fn": "search",
@@ -56754,6 +56786,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "followUpBrief",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -56825,7 +56862,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "9fa25dfeb72b2bd9",
+    "argsSha": "6666044218c4b627",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -56871,6 +56908,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "followUpBrief",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -56942,7 +56984,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "9fa25dfeb72b2bd9",
+    "argsSha": "6666044218c4b627",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -57023,7 +57065,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "bba2f5516a38df4d",
+    "returnsSha": "ea667ab2074fd75f",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -57081,7 +57123,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a3c5cb78df7c7149",
+    "argsSha": "6f199b74c2e272c9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -57133,7 +57175,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "5f0edc7a83f2e292",
+    "argsSha": "11195ba12a24af8f",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -63420,9 +63462,9 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1231,
+  total: 1232,
   agentReachable: 608,
-  queries: 442,
+  queries: 443,
   mutations: 789,
   agentReachableQueries: 311,
   agentReachableMutations: 297,

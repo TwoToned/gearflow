@@ -59,6 +59,7 @@ export const create = mutation({
     dueSoon: v.optional(v.boolean()),
     overdue: v.optional(v.boolean()),
     quoteExpiring: v.optional(v.boolean()),
+    followUpBrief: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -87,6 +88,7 @@ export const createIfMissing = mutation({
     dueSoon: v.optional(v.boolean()),
     overdue: v.optional(v.boolean()),
     quoteExpiring: v.optional(v.boolean()),
+    followUpBrief: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -119,6 +121,7 @@ export const update = mutation({
       dueSoon: v.optional(v.boolean()),
       overdue: v.optional(v.boolean()),
       quoteExpiring: v.optional(v.boolean()),
+      followUpBrief: v.optional(v.boolean()),
       updatedAt: v.optional(v.number()),
     }),
   },
@@ -159,6 +162,7 @@ export const prefFields = {
   flaggedAsset: v.boolean(),
   incidentReport: v.boolean(),
   quoteExpiring: v.boolean(),
+  followUpBrief: v.boolean(),
 };
 
 const prefValuesValidator = v.object(prefFields);

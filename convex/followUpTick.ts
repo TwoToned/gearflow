@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
+import { requireService } from "./lib/auth";
 import { collectCapped } from "./lib/pagination";
 import { reconcileFollowUps } from "./lib/followUpReconcile";
 
@@ -69,3 +70,64 @@ export const reconcileOrg = internalMutation({
     return { projects: projectIds.size };
   },
 });
+
+/**
+ * The morning brief's read (design §8.6): every OPEN automated follow-up in
+ * the org due on or before `dueBy` (the end of the org's today), with what the
+ * email needs. SERVICE-only — the brief is sent by the cron → Next hop
+ * (`src/server/follow-up-brief.ts`), which owns recipients and roles in
+ * Postgres; no user or agent token reaches it.
+ */
+interface BriefRow {
+  id: string;
+  title: string;
+  why: string;
+  urgent: boolean;
+  rung: number;
+  dueDate: number;
+  assigneeUserId: string;
+  projectId: string | null;
+}
+
+export const briefForOrg = query({
+  args: { orgId: v.string(), dueBy: v.number() },
+  returns: v.array(
+    v.object({
+      id: v.string(),
+      title: v.string(),
+      why: v.string(),
+      urgent: v.boolean(),
+      rung: v.number(),
+      dueDate: v.number(),
+      assigneeUserId: v.string(),
+      projectId: v.union(v.string(), v.null()),
+    }),
+  ),
+  handler: async (ctx, { orgId, dueBy }) => {
+    await requireService(ctx);
+    const out: BriefRow[] = [];
+    for (const status of ["TODO", "IN_PROGRESS"] as const) {
+      const { rows } = await collectCapped(
+        ctx.db
+          .query("projectTasks")
+          .withIndex("by_organizationId_status_dueDate", (q) => q.eq("organizationId", orgId).eq("status", status).lte("dueDate", dueBy)),
+        MAX_ROWS_PER_ORG,
+      );
+      for (const t of rows) {
+        if (!t.automation || !t.assigneeUserId || t.dueDate === undefined) continue;
+        out.push({
+          id: t.id,
+          title: t.title,
+          why: t.automation.why,
+          urgent: t.automation.urgent,
+          rung: t.automation.rung,
+          dueDate: t.dueDate,
+          assigneeUserId: t.assigneeUserId,
+          projectId: t.projectId ?? null,
+        });
+      }
+    }
+    return out;
+  },
+});
+

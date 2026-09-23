@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, query, type MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { collectCapped } from "./lib/pagination";
 import { reconcileFollowUps } from "./lib/followUpReconcile";
+import { resolveOrgFollowUpConfig } from "./lib/orgSettings";
 
 /**
  * Follow-up automation — the hourly tick (docs/designs/follow-up-automation.md
@@ -42,6 +43,42 @@ export const tick = internalMutation({
   },
 });
 
+/** Projects with a quote out, or an open automated follow-up of any kind. */
+async function addQuoteLoopProjects(ctx: MutationCtx, orgId: string, projectIds: Set<string>): Promise<void> {
+  for (const status of ["SENT", "PUBLISHED"] as const) {
+    const { rows } = await collectCapped(
+      ctx.db.query("quotes").withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status)),
+      MAX_ROWS_PER_ORG,
+    );
+    for (const q of rows) if (q.projectId) projectIds.add(q.projectId);
+  }
+  for (const status of ["TODO", "IN_PROGRESS"] as const) {
+    const { rows } = await collectCapped(
+      ctx.db.query("projectTasks").withIndex("by_organizationId_status_dueDate", (q) => q.eq("organizationId", orgId).eq("status", status)),
+      MAX_ROWS_PER_ORG,
+    );
+    for (const t of rows) if (t.automation && t.projectId) projectIds.add(t.projectId);
+  }
+}
+
+/** Phase 2: issued invoices that aren't settled (the chase), and jobs that
+ *  ended after the cut-over (invoice not raised). */
+async function addInvoiceLoopProjects(ctx: MutationCtx, orgId: string, now: number, projectIds: Set<string>): Promise<void> {
+  const { rows: issued } = await collectCapped(
+    ctx.db.query("invoices").withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", "ISSUED")),
+    MAX_ROWS_PER_ORG,
+  );
+  for (const i of issued) if (i.paymentStatus !== "PAID" && i.kind !== "CREDIT") projectIds.add(i.projectId);
+  const { cutoverAt } = await resolveOrgFollowUpConfig(ctx, orgId);
+  const { rows: ended } = await collectCapped(
+    ctx.db
+      .query("projects")
+      .withIndex("by_organizationId_rentalEndDate", (q) => q.eq("organizationId", orgId).gte("rentalEndDate", cutoverAt).lte("rentalEndDate", now)),
+    MAX_ROWS_PER_ORG,
+  );
+  for (const p of ended) if (p.status === "RETURNED" || p.status === "COMPLETED") projectIds.add(p.id);
+}
+
 /** Reconcile every project in one org that has a quote out or an open
  *  automated follow-up. Both reads are org-prefixed indexes, capped. */
 export const reconcileOrg = internalMutation({
@@ -50,22 +87,8 @@ export const reconcileOrg = internalMutation({
   handler: async (ctx, { orgId }) => {
     const now = Date.now();
     const projectIds = new Set<string>();
-
-    for (const status of ["SENT", "PUBLISHED"] as const) {
-      const { rows } = await collectCapped(
-        ctx.db.query("quotes").withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status)),
-        MAX_ROWS_PER_ORG,
-      );
-      for (const q of rows) if (q.projectId) projectIds.add(q.projectId);
-    }
-    for (const status of ["TODO", "IN_PROGRESS"] as const) {
-      const { rows } = await collectCapped(
-        ctx.db.query("projectTasks").withIndex("by_organizationId_status_dueDate", (q) => q.eq("organizationId", orgId).eq("status", status)),
-        MAX_ROWS_PER_ORG,
-      );
-      for (const t of rows) if (t.automation && t.projectId) projectIds.add(t.projectId);
-    }
-
+    await addQuoteLoopProjects(ctx, orgId, projectIds);
+    await addInvoiceLoopProjects(ctx, orgId, now, projectIds);
     for (const projectId of projectIds) await reconcileFollowUps(ctx, { orgId, projectId, now });
     return { projects: projectIds.size };
   },

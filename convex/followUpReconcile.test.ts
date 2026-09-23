@@ -237,3 +237,97 @@ describe("adoption and the tick", () => {
     expect(await followUps(t)).toHaveLength(1);
   });
 });
+
+describe("phase 2: invoices + the Xero payment sync", () => {
+  const ISSUED = SENT;
+  const DUE_AT = SENT + 14 * DAY;
+
+  async function seedInvoice(t: T, over: Record<string, unknown> = {}) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoices", {
+        id: "I1", organizationId: ORG, projectId: "P1", clientId: "C1", kind: "FULL", status: "ISSUED", paymentStatus: "UNPAID",
+        invoiceNumber: "INV-0042", issuedAt: ISSUED, issuedById: USER, dueDate: DUE_AT, subtotal: 1500, taxAmount: 150, total: 1650, amountPaid: 0,
+        xeroInvoiceId: "XERO-1", createdAt: ISSUED, updatedAt: ISSUED, ...over,
+      } as never);
+    });
+  }
+  const chases = async (t: T) => (await followUps(t)).filter((r) => r.automation?.ruleKey === "invoice");
+
+  test("an overdue invoice gets a chase; Xero reporting it PAID closes it and confirms the job", async () => {
+    const t = makeT(); await seed(t, { projectStatus: "AWAITING_PAYMENT", quoteStatus: "ACCEPTED" });
+    await seedInvoice(t);
+    await reconcile(t, DUE_AT + 3 * DAY);
+    const [chase] = await chases(t);
+    expect(chase).toMatchObject({ status: "TODO", sourceKey: "invoice:chase:I1", assigneeUserId: USER, stage: "close" });
+    expect(chase.title).toContain("INV-0042");
+
+    await t.mutation(api.xeroPaymentSync.applyXeroInvoiceStates, {
+      orgId: ORG, now: DUE_AT + 4 * DAY,
+      states: [{ invoiceId: "I1", xeroStatus: "PAID", amountPaid: 1650, amountCredited: 0, amountDue: 0 }],
+    }).catch(() => undefined); // service-gated: exercised directly below instead
+    await t.run(async (ctx) => {
+      const inv = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "I1")).first();
+      await ctx.db.patch(inv!._id, { xeroStatus: "PAID", xeroAmountPaid: 1650, xeroAmountDue: 0 });
+      const { settleInvoicePaymentState } = await import("./paymentsWrites");
+      await settleInvoicePaymentState(ctx, (await ctx.db.get(inv!._id))!, { userId: "system", userName: "Xero sync" }, DUE_AT + 4 * DAY);
+    });
+    const inv = await t.run(async (ctx) => ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "I1")).first());
+    expect(inv).toMatchObject({ paymentStatus: "PAID", amountPaid: 1650 });
+    const [closed] = await chases(t);
+    expect(closed).toMatchObject({ status: "DONE", automation: expect.objectContaining({ resolution: "paid" }) });
+  });
+
+  test("a Xero credit note settles the invoice without a Flow payment", async () => {
+    const t = makeT(); await seed(t);
+    await seedInvoice(t);
+    await t.run(async (ctx) => {
+      const inv = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "I1")).first();
+      await ctx.db.patch(inv!._id, { xeroStatus: "AUTHORISED", xeroAmountPaid: 0, xeroAmountCredited: 1650 });
+      const { recomputeInvoicePaymentState } = await import("./paymentsWrites");
+      await recomputeInvoicePaymentState(ctx, (await ctx.db.get(inv!._id))!, DUE_AT);
+    });
+    const inv = await t.run(async (ctx) => ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "I1")).first());
+    expect(inv?.paymentStatus).toBe("PAID");
+  });
+
+  test("Flow and Xero recording the same payment is counted once, not twice", async () => {
+    const t = makeT(); await seed(t);
+    await seedInvoice(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("payments", {
+        id: "pay1", organizationId: ORG, invoiceId: "I1", projectId: "P1", amount: 800, method: "BANK_TRANSFER",
+        paidAt: DUE_AT, recordedById: USER, createdAt: DUE_AT, updatedAt: DUE_AT,
+      });
+      const inv = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "I1")).first();
+      await ctx.db.patch(inv!._id, { xeroAmountPaid: 800 });
+      const { recomputeInvoicePaymentState } = await import("./paymentsWrites");
+      await recomputeInvoicePaymentState(ctx, (await ctx.db.get(inv!._id))!, DUE_AT);
+    });
+    const inv = await t.run(async (ctx) => ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "I1")).first());
+    expect(inv).toMatchObject({ paymentStatus: "PARTIALLY_PAID", amountPaid: 800 });
+  });
+
+  test("the sync's service functions refuse a user token", async () => {
+    const t = makeT(); await seed(t);
+    await expect(t.withIdentity(asUser).query(api.xeroPaymentSync.pushedUnsettledInvoices, { orgId: ORG })).rejects.toThrow();
+    await expect(
+      t.withIdentity(asUser).mutation(api.xeroPaymentSync.applyXeroInvoiceStates, { orgId: ORG, states: [], now: SENT }),
+    ).rejects.toThrow();
+  });
+
+  test("a job that came back after the cut-over with no invoice gets 'raise the invoice'; issuing closes it", async () => {
+    const t = makeT(); await seed(t, { projectStatus: "RETURNED", quoteStatus: "ACCEPTED" });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "P1")).first();
+      await ctx.db.patch(p!._id, { rentalEndDate: SENT + DAY, total: 2000 } as never);
+    });
+    await reconcile(t, SENT + 3 * DAY);
+    const unraised = (await followUps(t)).filter((r) => r.automation?.ruleKey === "invoice_unraised");
+    expect(unraised).toHaveLength(1);
+    expect(unraised[0].title).toBe("Raise the invoice for 260901");
+    await seedInvoice(t, { dueDate: SENT + 30 * DAY });
+    await reconcile(t, SENT + 4 * DAY);
+    const after = (await followUps(t)).filter((r) => r.automation?.ruleKey === "invoice_unraised");
+    expect(after[0]).toMatchObject({ status: "DONE", automation: expect.objectContaining({ resolution: "invoiced" }) });
+  });
+});

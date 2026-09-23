@@ -22,7 +22,7 @@ import {
   DEFAULT_INVOICE_NUMBER_INCREMENT_RESET,
   DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
 } from "@/lib/invoice-number";
-import { orgDocumentSettingsSchema, projectStatusAutomationSchema, crewTimeSettingsSchema } from "@/lib/validations/org-settings";
+import { orgDocumentSettingsSchema, projectStatusAutomationSchema, crewTimeSettingsSchema, followUpSettingsSchema } from "@/lib/validations/org-settings";
 import { DEFAULT_QUOTE_VALIDITY_DAYS } from "@/lib/quote-validity";
 import { DEFAULT_PAYMENT_TERMS_DAYS } from "@/lib/invoice-terms";
 import type { OrgSettings, TestTagSettings } from "@/lib/org-settings-types";
@@ -101,6 +101,15 @@ export async function updateOrganization(data: {
     const parsed = crewTimeSettingsSchema.safeParse(data.settings.crewTime);
     if (!parsed.success) {
       throw new Error(`Crew & time settings: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+    }
+  }
+
+  // Follow-up automation (FEATUREDOCS/82) — same posture: a bad offset is a
+  // save-time error, not a value the engine silently clamps.
+  if (data.settings.followUps) {
+    const parsed = followUpSettingsSchema.safeParse(data.settings.followUps);
+    if (!parsed.success) {
+      throw new Error(`Follow-up settings: ${parsed.error.issues[0]?.message ?? "invalid"}`);
     }
   }
 

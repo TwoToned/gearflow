@@ -79,9 +79,9 @@ interface OrgWorkSettings {
  *  (and every absent key inside it) means the defaults in
  *  `convex/lib/followUpRules.ts` — quote follow-ups ON, 2 / 5 business days,
  *  decided 14 days before the event, cut-over at the phase-1 ship date. The
- *  blob only ever records an opt-out or a tuned offset. No settings UI yet
- *  (phase 3); edit via the raw settings JSON until then. */
-interface OrgFollowUpSettings {
+ *  blob only ever records an opt-out or a tuned offset. Edited in Settings →
+ *  Follow-ups (`FollowUpSettingsPanel`), validated by `followUpSettingsSchema`. */
+export interface OrgFollowUpSettings {
   quotesEnabled?: boolean;
   /** Invoice chasing + "invoice not raised" (phase 2). */
   invoicesEnabled?: boolean;

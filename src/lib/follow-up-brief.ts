@@ -24,7 +24,7 @@ export function localClock(nowMs: number, timezone: string): { hour: number; wee
 
 /** The brief goes out from 07:00 org time on business days; the dedupe key
  *  (one per person per local date) makes every later hourly tick a no-op. */
-export const BRIEF_HOUR = 7;
+const BRIEF_HOUR = 7;
 
 export function isBriefWindow(nowMs: number, timezone: string): boolean {
   const { hour, weekday } = localClock(nowMs, timezone);

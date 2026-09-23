@@ -24,7 +24,7 @@ export interface TodayItem {
   raw: unknown;
 }
 
-export interface FollowUpMeta {
+interface FollowUpMeta {
   why: string;
   urgent: boolean;
   rung: number;

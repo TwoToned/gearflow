@@ -190,126 +190,171 @@ function currentLoopRows(rows: FollowUpRow[]): FollowUpRow[] {
   return after.filter((r) => r.loopStartAt === newestStart);
 }
 
-export function planQuoteLoop(facts: QuoteLoopFacts): QuoteLoopPlan {
-  const { now, config, project, quote } = facts;
-  const tz = config.timezone;
-  const openRows = facts.rows.filter((r) => r.open);
+type LiveQuote = NonNullable<QuoteLoopFacts["quote"]> & { sentAt: number };
+type Close = QuoteLoopPlan["close"];
+const NONE: QuoteLoopPlan = { close: [], desired: null };
 
-  // ── Loops that end, or never start ──────────────────────────────────────
+/** Why a loop ends, or never starts, before any ladder maths. Null = it runs. */
+const ENDING_BY_QUOTE_STATUS: Record<string, [FollowUpResolution, "DONE" | "CANCELLED"]> = {
+  ACCEPTED: ["accepted", "DONE"],
+  DECLINED: ["declined", "DONE"],
+};
+
+function endedPlan(facts: QuoteLoopFacts, openRows: FollowUpRow[]): QuoteLoopPlan | null {
+  const { project, quote, config } = facts;
   if (project.status === "CANCELLED") return { close: closeAll(openRows, "cancelled", "CANCELLED"), desired: null };
   if (!quote) return { close: closeAll(openRows, "recalled", "CANCELLED"), desired: null };
-  if (quote.effectiveStatus === "ACCEPTED") return { close: closeAll(openRows, "accepted", "DONE"), desired: null };
-  if (quote.effectiveStatus === "DECLINED") return { close: closeAll(openRows, "declined", "DONE"), desired: null };
+  const ending = ENDING_BY_QUOTE_STATUS[quote.effectiveStatus];
+  if (ending) return { close: closeAll(openRows, ending[0], ending[1]), desired: null };
   if (quote.effectiveStatus !== "SENT" && quote.effectiveStatus !== "EXPIRED") {
     return { close: closeAll(openRows, "recalled", "CANCELLED"), desired: null };
   }
-  if (quote.sentAt == null || quote.sentAt < config.cutoverAt) return { close: [], desired: null };
+  if (quote.sentAt == null || quote.sentAt < config.cutoverAt) return NONE;
   if (!config.quotesEnabled) return { close: closeAll(openRows, "disabled", "CANCELLED"), desired: null };
+  return null;
+}
 
-  // ── Which loop are we in? ───────────────────────────────────────────────
+function lastTerminalCloseAt(rows: FollowUpRow[]): number {
+  const times = rows
+    .filter((r) => !r.open && r.resolution !== undefined && TERMINAL.has(r.resolution))
+    .map((r) => r.completedAt ?? r.createdAt);
+  return Math.max(0, ...times);
+}
+
+/** The loop's rows after re-send handling: a re-send well after the loop's
+ *  last activity is a new conversation (rung 1 again); a quick one continues
+ *  the ladder — six resends must not mean six fresh grace periods. */
+function resolveLoop(facts: QuoteLoopFacts, quote: LiveQuote): { loop: FollowUpRow[]; close: Close } {
+  const loop = currentLoopRows(facts.rows);
+  if (!loop.length) return { loop, close: [] };
+  const lastActivity = Math.max(...loop.map((r) => Math.max(r.loopStartAt, r.completedAt ?? 0)));
+  const restartAt = addBusinessDaysInTimezone(lastActivity, facts.config.nextFollowUpBusinessDays, facts.config.timezone);
+  if (quote.sentAt < restartAt) return { loop, close: [] };
+  const close: Close = loop.filter((r) => r.open).map((r) => ({ id: r.id, resolution: "superseded", status: "CANCELLED" }));
+  return { loop: [], close };
+}
+
+/** Stray extra open rows (should never happen) are closed, never duplicated. */
+function closeStrays(openRows: FollowUpRow[], keepId: string | undefined, close: Close): Close {
+  const already = new Set(close.map((c) => c.id));
+  const strays: Close = openRows
+    .filter((r) => r.id !== keepId && !already.has(r.id))
+    .map((r) => ({ id: r.id, resolution: "superseded", status: "CANCELLED" }));
+  return [...close, ...strays];
+}
+
+function isJobPastQuoting(facts: QuoteLoopFacts): { past: boolean; eventStarted: boolean } {
+  const start = facts.project.eventStart;
+  const eventStarted = start !== undefined && start <= facts.now;
+  return { past: eventStarted || !PRE_CONFIRM.has(facts.project.status ?? ""), eventStarted };
+}
+
+function housekeeping(facts: QuoteLoopFacts, quote: LiveQuote, ctx: LoopCtx, eventStarted: boolean): DesiredFollowUp | null {
+  if (ctx.closed.some((r) => r.rung === HOUSEKEEPING_RUNG)) return null;
+  const label = quoteLabelFor(facts.project.projectNumber, quote.version);
+  const moved = eventStarted ? "The job has started" : "The job has moved on";
+  return {
+    rung: HOUSEKEEPING_RUNG,
+    loopStartAt: ctx.loopStartAt,
+    subjectId: quote.id,
+    dueDate: startOfDayInTimezone(facts.now, facts.config.timezone),
+    priority: "NORMAL",
+    urgent: false,
+    title: `Record the outcome of quote ${label}`,
+    why: `${moved} but ${label} is still marked as sent.`,
+  };
+}
+
+interface LoopCtx {
+  loopStartAt: number;
+  closed: FollowUpRow[];
+  consumed: number;
+  last: FollowUpRow | undefined;
+}
+
+function nextRung(facts: QuoteLoopFacts, quote: LiveQuote, consumed: number): number {
+  const nearExpiry = quote.validUntil !== undefined && facts.now >= quote.validUntil - 2 * DAY_MS;
+  const rung = Math.min(consumed + 1, DECISION_RUNG + 1);
+  return quote.effectiveStatus === "EXPIRED" || nearExpiry ? Math.max(rung, DECISION_RUNG) : rung;
+}
+
+function ladderDueDate(facts: QuoteLoopFacts, quote: LiveQuote, ctx: LoopCtx, rung: number, urgent: boolean): number {
+  const tz = facts.config.timezone;
+  if (ctx.last?.nextDate !== undefined) return startOfDayInTimezone(ctx.last.nextDate, tz);
+  const anchor = ctx.last?.completedAt ?? ctx.loopStartAt;
+  const gap = urgent ? 1 : rung === 1 ? facts.config.firstFollowUpBusinessDays : facts.config.nextFollowUpBusinessDays;
+  const caps = [addBusinessDaysInTimezone(anchor, gap, tz)];
+  const deadline = loopDeadline(facts);
+  if (deadline !== undefined) caps.push(startOfDayInTimezone(deadline, tz));
+  if (quote.effectiveStatus === "EXPIRED") caps.push(startOfDayInTimezone(facts.now, tz));
+  return Math.min(...caps);
+}
+
+function ladderTitle(label: string, rung: number, expired: boolean): string {
+  if (expired) return `Quote ${label} expired — won, lost, re-send or park?`;
+  if (rung === DECISION_RUNG) return `Decide on quote ${label}: won, lost, extend or park?`;
+  return rung === 2 ? `Second follow-up on quote ${label}` : `Follow up on quote ${label}`;
+}
+
+function ladderWhy(facts: QuoteLoopFacts, quote: LiveQuote, consumed: number, urgent: boolean): string {
+  const tz = facts.config.timezone;
+  const label = quoteLabelFor(facts.project.projectNumber, quote.version);
+  const plural = consumed === 1 ? "" : "s";
+  const touches = consumed === 0 ? "no reply logged" : `${consumed} follow-up${plural}, no reply`;
+  const start = facts.project.eventStart;
+  const eventNote = urgent && start !== undefined ? ` · event ${formatShortDate(start, tz)}` : "";
+  return `${label} sent ${formatShortDate(quote.sentAt, tz)} · ${touches}${eventNote}.`;
+}
+
+function ladder(facts: QuoteLoopFacts, quote: LiveQuote, ctx: LoopCtx): DesiredFollowUp | null {
+  const rung = nextRung(facts, quote, ctx.consumed);
+  // Deleting the decision rung ends the chase — nothing comes after it.
+  if (rung > DECISION_RUNG) return null;
+  const deadline = loopDeadline(facts);
+  const urgent = deadline !== undefined && deadline - facts.now < URGENT_WINDOW_MS;
+  const label = quoteLabelFor(facts.project.projectNumber, quote.version);
+  return {
+    rung,
+    loopStartAt: ctx.loopStartAt,
+    subjectId: quote.id,
+    dueDate: ladderDueDate(facts, quote, ctx, rung, urgent),
+    priority: urgent || rung === DECISION_RUNG ? "HIGH" : "NORMAL",
+    urgent,
+    title: ladderTitle(label, rung, quote.effectiveStatus === "EXPIRED"),
+    why: ladderWhy(facts, quote, ctx.consumed, urgent),
+  };
+}
+
+function loopContext(loop: FollowUpRow[], quote: LiveQuote): LoopCtx {
+  const closed = loop.filter((r) => !r.open).sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
+  return {
+    loopStartAt: loop.length ? loop[0].loopStartAt : quote.sentAt,
+    closed,
+    consumed: closed.filter((r) => r.resolution !== undefined && RUNG_CONSUMING.has(r.resolution)).length,
+    last: closed[closed.length - 1],
+  };
+}
+
+export function planQuoteLoop(facts: QuoteLoopFacts): QuoteLoopPlan {
+  const openRows = facts.rows.filter((r) => r.open);
+  const ended = endedPlan(facts, openRows);
+  if (ended) return ended;
+  const quote = facts.quote as LiveQuote; // endedPlan guarantees a sent quote
+
   // A loop someone already ended (decided / housekeeping recorded) stays ended
   // for this send — only a send AFTER that close starts a new conversation.
-  const lastTerminalAt = Math.max(
-    0,
-    ...facts.rows.filter((r) => !r.open && r.resolution && TERMINAL.has(r.resolution)).map((r) => r.completedAt ?? r.createdAt),
-  );
-  if (lastTerminalAt > 0 && quote.sentAt <= lastTerminalAt) {
-    return { close: closeAll(openRows, "superseded", "CANCELLED"), desired: null };
-  }
-  let loop = currentLoopRows(facts.rows);
-  const close: QuoteLoopPlan["close"] = [];
-  if (loop.length) {
-    const lastActivity = Math.max(...loop.map((r) => Math.max(r.loopStartAt, r.completedAt ?? 0)));
-    // A re-send (new version, or recall → re-send) well after the loop's last
-    // activity is a new conversation: start again at rung 1. A quick re-send
-    // continues the ladder — six resends must not mean six fresh grace periods.
-    if (quote.sentAt >= addBusinessDaysInTimezone(lastActivity, config.nextFollowUpBusinessDays, tz)) {
-      for (const r of loop.filter((x) => x.open)) close.push({ id: r.id, resolution: "superseded", status: "CANCELLED" });
-      loop = [];
-    }
-  }
-  const loopStartAt = loop.length ? loop[0].loopStartAt : quote.sentAt;
-  const open = loop.find((r) => r.open);
-  // Stray extra open rows (should never happen) are closed, never duplicated.
-  for (const r of openRows) {
-    if (r.id !== open?.id && !close.some((c) => c.id === r.id)) close.push({ id: r.id, resolution: "superseded", status: "CANCELLED" });
-  }
+  const terminalAt = lastTerminalCloseAt(facts.rows);
+  if (terminalAt > 0 && quote.sentAt <= terminalAt) return { close: closeAll(openRows, "superseded", "CANCELLED"), desired: null };
 
-  const closedInLoop = loop.filter((r) => !r.open).sort((a, b) => (a.completedAt ?? 0) - (b.completedAt ?? 0));
-  if (closedInLoop.some((r) => r.resolution === "decided")) return { close, desired: null };
-  const consumed = closedInLoop.filter((r) => r.resolution && RUNG_CONSUMING.has(r.resolution));
-  const last = closedInLoop[closedInLoop.length - 1];
+  const resolved = resolveLoop(facts, quote);
+  const open = resolved.loop.find((r) => r.open);
+  const close = closeStrays(openRows, open?.id, resolved.close);
+  const ctx = loopContext(resolved.loop, quote);
+  if (ctx.closed.some((r) => r.resolution === "decided")) return { close, desired: null };
 
-  const label = quoteLabelFor(project.projectNumber, quote.version);
-  const sentOn = formatShortDate(quote.sentAt, tz);
-  const deadline = loopDeadline(facts);
-  const eventStarted = project.eventStart != null && project.eventStart <= now;
-
-  // ── Housekeeping: the job moved on without the quote being settled ─────
-  if (!PRE_CONFIRM.has(project.status ?? "") || eventStarted) {
-    if (closedInLoop.some((r) => r.rung === HOUSEKEEPING_RUNG)) return { close, desired: null };
-    return {
-      close,
-      desired: {
-        existingId: open?.id,
-        rung: HOUSEKEEPING_RUNG,
-        loopStartAt,
-        subjectId: quote.id,
-        dueDate: startOfDayInTimezone(now, tz),
-        priority: "NORMAL",
-        urgent: false,
-        title: `Record the outcome of quote ${label}`,
-        why: eventStarted
-          ? `The job has started but ${label} is still marked as sent.`
-          : `The job has moved on but ${label} is still marked as sent.`,
-      },
-    };
-  }
-
-  // ── The ladder ──────────────────────────────────────────────────────────
-  const expiredOrClose = quote.effectiveStatus === "EXPIRED" || (quote.validUntil != null && now >= quote.validUntil - 2 * DAY_MS);
-  let rung = Math.min(consumed.length + 1, DECISION_RUNG + 1);
-  if (expiredOrClose) rung = Math.max(rung, DECISION_RUNG);
-  // Deleting the decision rung ends the chase — nothing comes after it.
-  if (rung > DECISION_RUNG) return { close, desired: null };
-
-  const anchor = last?.completedAt ?? loopStartAt;
-  const urgent = deadline != null && deadline - now < URGENT_WINDOW_MS;
-  let dueDate: number;
-  if (last?.nextDate != null) {
-    dueDate = startOfDayInTimezone(last.nextDate, tz);
-  } else {
-    const gap = urgent ? 1 : rung === 1 ? config.firstFollowUpBusinessDays : config.nextFollowUpBusinessDays;
-    dueDate = addBusinessDaysInTimezone(anchor, gap, tz);
-    if (deadline != null) dueDate = Math.min(dueDate, startOfDayInTimezone(deadline, tz));
-    if (quote.effectiveStatus === "EXPIRED") dueDate = Math.min(dueDate, startOfDayInTimezone(now, tz));
-  }
-
-  const title =
-    quote.effectiveStatus === "EXPIRED"
-      ? `Quote ${label} expired — won, lost, re-send or park?`
-      : rung === DECISION_RUNG
-        ? `Decide on quote ${label}: won, lost, extend or park?`
-        : rung === 2
-          ? `Second follow-up on quote ${label}`
-          : `Follow up on quote ${label}`;
-  const touches = consumed.length === 0 ? "no reply logged" : `${consumed.length} follow-up${consumed.length === 1 ? "" : "s"}, no reply`;
-  const eventNote = project.eventStart != null && urgent ? ` · event ${formatShortDate(project.eventStart, tz)}` : "";
-
-  return {
-    close,
-    desired: {
-      existingId: open?.id,
-      rung,
-      loopStartAt,
-      subjectId: quote.id,
-      dueDate,
-      priority: urgent || rung === DECISION_RUNG ? "HIGH" : "NORMAL",
-      urgent,
-      title,
-      why: `${label} sent ${sentOn} · ${touches}${eventNote}.`,
-    },
-  };
+  const { past, eventStarted } = isJobPastQuoting(facts);
+  const desired = past ? housekeeping(facts, quote, ctx, eventStarted) : ladder(facts, quote, ctx);
+  return { close, desired: desired ? { ...desired, existingId: open?.id } : null };
 }
 
 /** How a HUMAN closing an automated row should be recorded: a plain "done" on

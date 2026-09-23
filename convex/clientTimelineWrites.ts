@@ -9,6 +9,7 @@ import { assertStrLen } from "./lib/fieldGuards";
 import { requireClientInOrg } from "./lib/clientScope";
 import { getUserColor } from "./lib/collaborationColors";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { automationForHumanChange, reconcileFollowUps } from "./lib/followUpReconcile";
 
 /**
  * Browser-direct writes for the client relationship layer (#1245, design
@@ -38,7 +39,7 @@ async function requireClientOrgUpdate(ctx: MutationCtx, orgId: string): Promise<
   await requireOrgPermission(ctx, orgId, "work", "create");
 }
 
-async function insertClientActivity(
+export async function insertClientActivity(
   ctx: MutationCtx,
   a: {
     orgId: string;
@@ -233,7 +234,9 @@ export const completeNextStepNative = mutation({
     const task = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.workItemId)).first();
     if (!task || task.organizationId !== a.orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Work item not found." });
 
-    await ctx.db.patch(task._id, { status: "DONE", completedAt: a.now, updatedAt: a.now });
+    const automation = automationForHumanChange(task, { status: "DONE" }, actor.userId);
+    await ctx.db.patch(task._id, { status: "DONE", completedAt: a.now, updatedAt: a.now, ...(automation ? { automation } : {}) });
+    if (automation) await reconcileFollowUps(ctx, { orgId: a.orgId, projectId: task.projectId, now: a.now });
 
     const link = await ctx.db
       .query("workItemLinks")

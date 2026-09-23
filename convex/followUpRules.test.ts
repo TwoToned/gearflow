@@ -22,7 +22,12 @@ const DAY = 86_400_000;
 const SENT = Date.UTC(2026, 9, 5, 22, 0, 0);
 const CUTOVER = Date.UTC(2026, 8, 22, 14, 0, 0);
 
-function facts(over: Partial<QuoteLoopFacts> & { quote?: Partial<NonNullable<QuoteLoopFacts["quote"]>> | null } = {}): QuoteLoopFacts {
+type FactsOverride = Omit<Partial<QuoteLoopFacts>, "quote" | "project"> & {
+  quote?: Partial<NonNullable<QuoteLoopFacts["quote"]>> | null;
+  project?: Partial<QuoteLoopFacts["project"]>;
+};
+
+function facts(over: FactsOverride = {}): QuoteLoopFacts {
   const base: QuoteLoopFacts = {
     now: SENT + 60_000,
     config: { quotesEnabled: true, ...FOLLOW_UP_DEFAULTS, cutoverAt: CUTOVER, timezone: TZ },

@@ -20499,6 +20499,122 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "followUpPush.claimPush",
+    "module": "followUpPush",
+    "fn": "claimPush",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cap",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "dayKey",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "itemKey",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d001b8acd27eb8de",
+    "returnsSha": "9ab99d6e685fd481",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "followUpPush.removeGoneSubscription",
+    "module": "followUpPush",
+    "fn": "removeGoneSubscription",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "endpoint",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "76f63599c9121a19",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "followUpPush.subscriptionsForUser",
+    "module": "followUpPush",
+    "fn": "subscriptionsForUser",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "bd03b0d0b0393c05",
+    "returnsSha": "9f06f672c51fd67f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "followUpTick.briefForOrg",
     "module": "followUpTick",
     "fn": "briefForOrg",
@@ -63600,10 +63716,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1236,
+  total: 1239,
   agentReachable: 608,
-  queries: 444,
-  mutations: 792,
+  queries: 445,
+  mutations: 794,
   agentReachableQueries: 311,
   agentReachableMutations: 297,
 } as const;

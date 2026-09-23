@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 444 | 311 | 131 | 1 | 1 |
-| Mutations | 792 | 297 | 488 | 0 | 7 |
-| **Total** | **1236** | **608** | **619** | **1** | **8** |
+| Queries | 445 | 311 | 132 | 1 | 1 |
+| Mutations | 794 | 297 | 490 | 0 | 7 |
+| **Total** | **1239** | **608** | **622** | **1** | **8** |
 
 <!-- reachability-floor: 608 -->
 
@@ -77,6 +77,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `crewShifts` | 9 |
 | `emails` | 1 |
 | `financeArtifacts` | 4 |
+| `followUpPush` | 3 |
 | `followUpTick` | 1 |
 | `globalSearch` | 1 |
 | `mediaWrites` | 4 |

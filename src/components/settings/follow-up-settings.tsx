@@ -28,7 +28,7 @@ const SWITCHES: { key: SwitchKey; title: string; detail: string }[] = [
     key: "invoicesEnabled",
     title: "Invoice chasing",
     detail:
-      "An invoice past its due date and not paid (in Flow or Xero) gets a chase task, then a call, then a decision. A job that came back with no invoice gets a \"Raise the invoice\" task.",
+      "An invoice past its due date and not paid gets a chase task, then a call, then a decision. A job that came back with no invoice gets a \"Raise the invoice\" task. Payments are read from Xero when it's connected; otherwise only payments recorded in Flow count.",
   },
 ];
 
@@ -43,7 +43,7 @@ const OFFSETS: { key: OffsetKey; label: string; detail: string; unit: string; bo
   {
     key: "nextFollowUpBusinessDays",
     label: "Next follow-up",
-    detail: "Business days after each \"No reply yet\", for quotes and invoices.",
+    detail: "Business days after each \"No reply yet\" on a quote.",
     unit: "business days",
     bounds: FOLLOW_UP_BOUNDS.businessDays,
   },

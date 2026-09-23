@@ -16,6 +16,7 @@ export const notificationPreferenceSchema = z.object({
   flaggedAsset: z.boolean(),
   incidentReport: z.boolean(),
   quoteExpiring: z.boolean(),
+  followUpBrief: z.boolean(),
 });
 
 export type NotificationPreferenceInput = z.input<typeof notificationPreferenceSchema>;
@@ -34,6 +35,9 @@ export const NOTIFICATION_PREFERENCE_DEFAULTS: NotificationPreferenceValues = {
   // #1225 (Q2) — a high-signal revenue event, matching overdueReturn/
   // flaggedAsset rather than the advisory upcomingProject tier.
   quoteExpiring: true,
+  // Follow-up automation (FEATUREDOCS/82) — the morning brief of the caller's
+  // own due follow-ups. On by default: it only sends when something is due.
+  followUpBrief: true,
 };
 
 /** Maps an AppNotification.type to the preference field that controls it. */
@@ -47,6 +51,7 @@ export const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, keyof NotificationP
   flagged_asset: "flaggedAsset",
   incident_report: "incidentReport",
   quote_expiring: "quoteExpiring",
+  follow_up_brief: "followUpBrief",
 };
 
 /** Human-readable labels for the preferences UI. */
@@ -86,5 +91,9 @@ export const NOTIFICATION_PREFERENCE_LABELS: Record<keyof NotificationPreference
   quoteExpiring: {
     label: "Quotes expiring soon",
     description: "Email me when a sent quote is about to expire, or has expired, unanswered.",
+  },
+  followUpBrief: {
+    label: "Morning follow-up brief",
+    description: "One email on business-day mornings with the quote follow-ups due for me — only when something is due.",
   },
 };

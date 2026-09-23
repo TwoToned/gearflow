@@ -5,6 +5,7 @@ import {
   upsertXeroDraftInvoice,
   exchangeXeroAuthCode,
   fetchXeroAccounts,
+  fetchXeroInvoiceStates,
   fetchXeroTaxRates,
   findXeroContactByEmail,
   listXeroConnections,
@@ -402,5 +403,23 @@ describe("upsertXeroDraftInvoice", () => {
         { ...authOpts, fetchImpl: impl },
       ),
     ).rejects.toThrow(/Account code '9999' is not a valid code for this document/);
+  });
+});
+
+describe("fetchXeroInvoiceStates", () => {
+  it("batches IDs 40 per request with summaryOnly, and parses invoice-level state", async () => {
+    const ids = Array.from({ length: 41 }, (_, i) => `x${i}`);
+    const { impl, calls } = mockFetch({ Invoices: [{ InvoiceID: "x0", Status: "PAID", AmountPaid: 100, AmountCredited: 0, AmountDue: 0 }] });
+    const result = await fetchXeroInvoiceStates(ids, { ...authOpts, fetchImpl: impl });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.url).toContain("summaryOnly=true");
+    expect(calls[0]!.url.split("IDs=")[1]!.split("&")[0]!.split(",")).toHaveLength(40);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ InvoiceID: "x0", Status: "PAID", AmountPaid: 100 });
+  });
+
+  it("throws on a response that fails schema validation", async () => {
+    const { impl } = mockFetch({ Invoices: [{ Status: "PAID" }] });
+    await expect(fetchXeroInvoiceStates(["x0"], { ...authOpts, fetchImpl: impl })).rejects.toThrow(XeroApiError);
   });
 });

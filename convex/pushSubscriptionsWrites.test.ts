@@ -41,20 +41,29 @@ describe("pushSubscriptionsWrites", () => {
   test("subscribeNative creates a row scoped to the caller's own org/user", async () => {
     const t = makeT(); await seed(t);
     await t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.subscribeNative, {
-      endpoint: "https://push.example/abc", p256dh: "p256dh-key", auth: "auth-secret", now: NOW,
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc", p256dh: "p256dh-key", auth: "auth-secret", now: NOW,
     });
-    const row = await rowByEndpoint(t, "https://push.example/abc");
+    const row = await rowByEndpoint(t, "https://fcm.googleapis.com/fcm/send/abc");
     expect(row?.organizationId).toBe(ORG);
     expect(row?.userId).toBe(USER);
+  });
+
+  test("rejects an endpoint that isn't a known push service — the server POSTs to it later", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.subscribeNative, {
+        endpoint: "https://169.254.169.254/latest/meta-data", p256dh: "k", auth: "a", now: NOW,
+      }),
+    ).rejects.toThrow(/supported push service/);
   });
 
   test("re-subscribing the SAME endpoint upserts, never duplicates", async () => {
     const t = makeT(); await seed(t);
     await t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.subscribeNative, {
-      endpoint: "https://push.example/abc", p256dh: "key1", auth: "auth1", now: NOW,
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc", p256dh: "key1", auth: "auth1", now: NOW,
     });
     await t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.subscribeNative, {
-      endpoint: "https://push.example/abc", p256dh: "key2", auth: "auth2", now: NOW + 1,
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc", p256dh: "key2", auth: "auth2", now: NOW + 1,
     });
     const rows = await t.run((ctx) => ctx.db.query("pushSubscriptions").collect());
     expect(rows).toHaveLength(1);
@@ -64,25 +73,25 @@ describe("pushSubscriptionsWrites", () => {
   test("unsubscribeNative removes only the caller's own row for that endpoint", async () => {
     const t = makeT(); await seed(t);
     await t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.subscribeNative, {
-      endpoint: "https://push.example/abc", p256dh: "key", auth: "auth", now: NOW,
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc", p256dh: "key", auth: "auth", now: NOW,
     });
     // A different user/org calling unsubscribe on someone else's endpoint is a no-op.
     await t.withIdentity(asOtherUser).mutation(api.pushSubscriptionsWrites.unsubscribeNative, {
-      endpoint: "https://push.example/abc",
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc",
     });
-    expect(await rowByEndpoint(t, "https://push.example/abc")).not.toBeNull();
+    expect(await rowByEndpoint(t, "https://fcm.googleapis.com/fcm/send/abc")).not.toBeNull();
 
     await t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.unsubscribeNative, {
-      endpoint: "https://push.example/abc",
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc",
     });
-    expect(await rowByEndpoint(t, "https://push.example/abc")).toBeNull();
+    expect(await rowByEndpoint(t, "https://fcm.googleapis.com/fcm/send/abc")).toBeNull();
   });
 
   test("subscribeNative rejects an oversized field", async () => {
     const t = makeT(); await seed(t);
     await expect(
       t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.subscribeNative, {
-        endpoint: "https://push.example/abc", p256dh: "x".repeat(600), auth: "auth", now: NOW,
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc", p256dh: "x".repeat(600), auth: "auth", now: NOW,
       }),
     ).rejects.toThrow(/at most/i);
   });
@@ -91,7 +100,7 @@ describe("pushSubscriptionsWrites", () => {
     const t = makeT(); await seed(t);
     expect(await t.withIdentity(asUser).query(api.pushSubscriptions.isSubscribed, { orgId: ORG })).toBe(false);
     await t.withIdentity(asUser).mutation(api.pushSubscriptionsWrites.subscribeNative, {
-      endpoint: "https://push.example/abc", p256dh: "key", auth: "auth", now: NOW,
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc", p256dh: "key", auth: "auth", now: NOW,
     });
     expect(await t.withIdentity(asUser).query(api.pushSubscriptions.isSubscribed, { orgId: ORG })).toBe(true);
     expect(await t.withIdentity(asOtherUser).query(api.pushSubscriptions.isSubscribed, { orgId: OTHER_ORG })).toBe(false);

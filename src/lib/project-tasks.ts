@@ -71,4 +71,7 @@ export interface ProjectTaskRow {
   stage?: import("../../convex/lib/workVocabulary").WorkStage | null;
   recurrence?: ProjectTaskRecurrence | null;
   watcherUserIds?: string[];
+  /** Set only when the follow-up engine owns the row (follow-up automation
+   *  design §8.7) — why it exists, its rung, whether it's urgent. */
+  followUp?: { ruleKey: string; rung: number; why: string; urgent: boolean; subjectId: string } | null;
 }

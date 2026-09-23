@@ -4,6 +4,7 @@ import { QUOTE_VALIDITY_BOUNDS } from "@/lib/quote-validity";
 import { isCountryEnabled } from "@/lib/countries";
 import { AUTO_STATUS_KEYS, type AutoStatusKey } from "@/lib/project-status-automation";
 import { UNANSWERED_OFFER_HOURS_BOUNDS } from "@/lib/crew-time-settings";
+import { FOLLOW_UP_BOUNDS } from "../../../convex/lib/followUpRules";
 
 /**
  * Global document settings (footer text, terms & conditions, quote
@@ -94,4 +95,26 @@ export const crewTimeSettingsSchema = z.object({
     .max(UNANSWERED_OFFER_HOURS_BOUNDS.max)
     .optional(),
   callReminderEnabled: z.boolean().optional(),
+}).strict();
+
+/**
+ * Follow-up automation (FEATUREDOCS/82, `OrgSettings.followUps`). Bounds are
+ * `FOLLOW_UP_BOUNDS` — the same constant `resolveOrgFollowUpConfig` clamps to
+ * server-side, so the form and the engine can't disagree (R-8.6.3). Absent keys
+ * mean the engine defaults; `cutoverAt` is never edited in the UI but must
+ * round-trip, so it's accepted here.
+ */
+const businessDays = z.coerce.number().int().min(FOLLOW_UP_BOUNDS.businessDays.min).max(FOLLOW_UP_BOUNDS.businessDays.max).optional();
+export const followUpSettingsSchema = z.object({
+  quotesEnabled: z.boolean().optional(),
+  invoicesEnabled: z.boolean().optional(),
+  firstFollowUpBusinessDays: businessDays,
+  nextFollowUpBusinessDays: businessDays,
+  decisionLeadDays: z.coerce
+    .number()
+    .int()
+    .min(FOLLOW_UP_BOUNDS.decisionLeadDays.min)
+    .max(FOLLOW_UP_BOUNDS.decisionLeadDays.max)
+    .optional(),
+  cutoverAt: z.number().int().positive().optional(),
 }).strict();

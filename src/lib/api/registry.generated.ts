@@ -20499,6 +20499,154 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "followUpPush.claimPush",
+    "module": "followUpPush",
+    "fn": "claimPush",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cap",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "dayKey",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "itemKey",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d001b8acd27eb8de",
+    "returnsSha": "9ab99d6e685fd481",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "followUpPush.removeGoneSubscription",
+    "module": "followUpPush",
+    "fn": "removeGoneSubscription",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "endpoint",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "76f63599c9121a19",
+    "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "followUpPush.subscriptionsForUser",
+    "module": "followUpPush",
+    "fn": "subscriptionsForUser",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "bd03b0d0b0393c05",
+    "returnsSha": "9f06f672c51fd67f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "followUpTick.briefForOrg",
+    "module": "followUpTick",
+    "fn": "briefForOrg",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "dueBy",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a9b3ec48b81b498d",
+    "returnsSha": "9923de5442f4b073",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "globalSearch.search",
     "module": "globalSearch",
     "fn": "search",
@@ -43641,6 +43789,77 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectTasksWrites.recordFollowUpOutcomeNative",
+    "module": "projectTasksWrites",
+    "fn": "recordFollowUpOutcomeNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "nextDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "note",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "outcome",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "09b1dd110030af2e",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Record \"no reply\" or \"parked until a date\" on an automated quote follow-up; the engine schedules the next step.",
+    "danger": "medium",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectTasksWrites.reorderNative",
     "module": "projectTasksWrites",
     "fn": "reorderNative",
@@ -56683,6 +56902,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "followUpBrief",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -56754,7 +56978,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "9fa25dfeb72b2bd9",
+    "argsSha": "6666044218c4b627",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -56800,6 +57024,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "followUpBrief",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -56871,7 +57100,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "9fa25dfeb72b2bd9",
+    "argsSha": "6666044218c4b627",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -56952,7 +57181,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "bba2f5516a38df4d",
+    "returnsSha": "ea667ab2074fd75f",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -57010,7 +57239,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a3c5cb78df7c7149",
+    "argsSha": "6f199b74c2e272c9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -57062,7 +57291,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "5f0edc7a83f2e292",
+    "argsSha": "11195ba12a24af8f",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -62951,7 +63180,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b21345538722cfa9",
-    "returnsSha": "368bbc0701ab1802",
+    "returnsSha": "21ff541876797972",
     "stability": "tracks-app",
     "summary": "Get the org's Xero connection status/config (never the encrypted refresh token).",
     "danger": "low",
@@ -62989,6 +63218,144 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "edfdc4fcd007f27f",
     "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "xeroPaymentSync.acquireTokenLease",
+    "module": "xeroPaymentSync",
+    "fn": "acquireTokenLease",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "holder",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ttlMs",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "149006c0e271accd",
+    "returnsSha": "7cb541e84f226754",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "xeroPaymentSync.applyXeroInvoiceStates",
+    "module": "xeroPaymentSync",
+    "fn": "applyXeroInvoiceStates",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "states",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4690118f695563ca",
+    "returnsSha": "f582c2a27a9ee033",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "xeroPaymentSync.pushedUnsettledInvoices",
+    "module": "xeroPaymentSync",
+    "fn": "pushedUnsettledInvoices",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "ee9ef02873d8e067",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "xeroPaymentSync.releaseTokenLease",
+    "module": "xeroPaymentSync",
+    "fn": "releaseTokenLease",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "holder",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "72572761de6a079c",
+    "returnsSha": "bcde375ebd4cbacf",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -63257,7 +63624,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b40cc4bd690a2e28",
+    "argsSha": "0862f8ea1fe1fa72",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -63349,10 +63716,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1230,
-  agentReachable: 607,
-  queries: 442,
-  mutations: 788,
+  total: 1239,
+  agentReachable: 608,
+  queries: 445,
+  mutations: 794,
   agentReachableQueries: 311,
-  agentReachableMutations: 296,
+  agentReachableMutations: 297,
 } as const;

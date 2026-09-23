@@ -8,11 +8,10 @@
  * `public/sw.js`, so it runs alongside next-pwa's own Workbox caching, not
  * instead of it.
  *
- * SCOPE (documented follow-up, FEATUREDOCS/50): nothing in this deployment
- * SENDS a push yet — this handler is what fires WHEN one arrives, once a
- * server-side sender exists. `src/hooks/use-push-subscription.ts` completes
- * the other half (subscribe/unsubscribe, storing the row in
- * `pushSubscriptions`). Until a sender ships, this file has no effect.
+ * Sender: `src/lib/web-push.ts`, called by the urgent follow-up push
+ * (`src/server/follow-up-push.ts`, FEATUREDOCS/82), with a `{ title, body,
+ * href, tag }` payload. `src/hooks/use-push-subscription.ts` is the other
+ * half (subscribe/unsubscribe, storing the row in `pushSubscriptions`).
  */
 
 declare const self: ServiceWorkerGlobalScope;

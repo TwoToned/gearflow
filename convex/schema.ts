@@ -2866,6 +2866,17 @@ export default defineSchema({
     xeroInvoiceId: v.optional(v.string()),
     xeroSyncStatus: v.optional(enums.XeroSyncStatus),
     lastSyncError: v.optional(v.string()),
+    // Xero payment sync (follow-up automation phase 2, FEATUREDOCS/82) — the
+    // invoice-level truth read back from Xero, which owns reconciliation:
+    // Xero's own Status (DRAFT/SUBMITTED/AUTHORISED/PAID/VOIDED/DELETED) and
+    // its AmountPaid/AmountCredited/AmountDue. `paymentsWrites`'s recompute
+    // folds these into `paymentStatus`, so an invoice paid or credited in Xero
+    // reads as settled in Flow without a hand-entered payment.
+    xeroStatus: v.optional(v.string()),
+    xeroAmountPaid: v.optional(v.number()),
+    xeroAmountCredited: v.optional(v.number()),
+    xeroAmountDue: v.optional(v.number()),
+    xeroCheckedAt: v.optional(v.number()),
     createdById: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -3074,6 +3085,13 @@ export default defineSchema({
     cacheRefreshedAt: v.optional(v.number()),
     cacheError: v.optional(v.string()),
     lastSyncError: v.optional(v.string()),
+    // Refresh-token lease (FEATUREDOCS/82): Xero rotates the refresh token on
+    // every use, so two concurrent refreshes (a user push + the payment sync)
+    // would race and persist a dead token. Every refresh holds this lease.
+    tokenLeaseHolder: v.optional(v.string()),
+    tokenLeaseUntil: v.optional(v.number()),
+    // When the payment sync last ran for this org (hourly throttle).
+    paymentsSyncedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -3282,6 +3300,7 @@ export default defineSchema({
     dueSoon: v.optional(v.boolean()),
     overdue: v.optional(v.boolean()),
     quoteExpiring: v.optional(v.boolean()),
+    followUpBrief: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
@@ -3422,9 +3441,10 @@ export default defineSchema({
     snoozedUntil: v.optional(v.number()),
     estimateMinutes: v.optional(v.number()),
     tags: v.optional(v.array(v.string())), // free-form strings, FEATUREDOCS/26 shape — no tag table
-    // Set only when a human promotes a derived Triage signal into a real row
-    // (§9) — deterministic, names the underlying entity (e.g.
-    // "quote:expiring:<quoteId>"). Never set by anything else.
+    // Deterministic identity for system-created or promoted rows — set when a
+    // human promotes a derived Triage signal (§9, e.g. "quote:expiring:<quoteId>"),
+    // by template seeding ("template:<key>:<status>"), and by the follow-up
+    // engine ("quote:nonext:<quoteId>", reusing the signal key it replaces).
     sourceKey: v.optional(v.string()),
     isPrivate: v.optional(v.boolean()),
     // Set when seeded from a workTemplates row on a lifecycle transition (§8.2).
@@ -3440,6 +3460,11 @@ export default defineSchema({
     // (FEATUREDOCS/50) — this phase ships the field + the add/remove UI, not
     // a new notification type.
     watcherUserIds: v.optional(v.array(v.string())),
+    // Follow-up automation (docs/designs/follow-up-automation.md §8.4) — set
+    // ONLY on rows the follow-up engine owns (convex/lib/followUpReconcile.ts).
+    // Its presence is what makes a row "automated": human closes/edits of such
+    // a row go back through the reconciler.
+    automation: v.optional(enums.FollowUpAutomation),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])

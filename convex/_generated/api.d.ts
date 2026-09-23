@@ -88,6 +88,8 @@ import type * as fileUploads from "../fileUploads.js";
 import type * as files from "../files.js";
 import type * as financeArtifacts from "../financeArtifacts.js";
 import type * as financeOrg from "../financeOrg.js";
+import type * as followUpPush from "../followUpPush.js";
+import type * as followUpTick from "../followUpTick.js";
 import type * as globalSearch from "../globalSearch.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
 import type * as groupTemplates from "../groupTemplates.js";
@@ -313,6 +315,7 @@ import type * as workItemLinks from "../workItemLinks.js";
 import type * as workItemLinksWrites from "../workItemLinksWrites.js";
 import type * as workSignalStatesWrites from "../workSignalStatesWrites.js";
 import type * as xeroIntegrations from "../xeroIntegrations.js";
+import type * as xeroPaymentSync from "../xeroPaymentSync.js";
 import type * as xeroPush from "../xeroPush.js";
 import type * as xeroSyncLogs from "../xeroSyncLogs.js";
 
@@ -403,6 +406,8 @@ declare const fullApi: ApiFromModules<{
   files: typeof files;
   financeArtifacts: typeof financeArtifacts;
   financeOrg: typeof financeOrg;
+  followUpPush: typeof followUpPush;
+  followUpTick: typeof followUpTick;
   globalSearch: typeof globalSearch;
   groupTemplateItems: typeof groupTemplateItems;
   groupTemplates: typeof groupTemplates;
@@ -628,6 +633,7 @@ declare const fullApi: ApiFromModules<{
   workItemLinksWrites: typeof workItemLinksWrites;
   workSignalStatesWrites: typeof workSignalStatesWrites;
   xeroIntegrations: typeof xeroIntegrations;
+  xeroPaymentSync: typeof xeroPaymentSync;
   xeroPush: typeof xeroPush;
   xeroSyncLogs: typeof xeroSyncLogs;
 }>;

@@ -42,10 +42,15 @@ parallel `workItems` table, per the design doc's explicit "one table" decision:
   Phase-1 comment claimed), `dueTime` (`"HH:mm"`
   in the org timezone), `scheduledStart`/`scheduledEnd` (the agenda block Today renders),
   `snoozedUntil`, `estimateMinutes`, `tags` (free-form strings, no tag table).
-- `sourceKey` — set ONLY when a human promotes a derived Triage signal (quote expiring,
-  crew declined, etc.) into a real row; deterministic, names the underlying entity (e.g.
-  `"quote:expiring:<quoteId>"`). Never set by anything else — it's the join key back to
-  `workSignalStates` below.
+- `sourceKey` — deterministic identity for a system-created or promoted row, naming the
+  underlying entity: set when a human promotes a derived Triage signal (e.g.
+  `"quote:expiring:<quoteId>"`, the join key back to `workSignalStates` below), by template
+  seeding (`"template:<key>:<status>"`), and by the follow-up engine
+  (`"quote:nonext:<quoteId>"`, [FEATUREDOCS/82](./82-follow-up-automation.md)).
+- `automation` — set ONLY on rows the follow-up engine owns (FEATUREDOCS/82): rule, subject,
+  rung, loop start, urgency, why, human-locked fields, resolution. Its presence routes a
+  human's edit/close/delete of the row back through `reconcileFollowUps` (DONE advances or
+  ends the ladder; delete becomes a soft `CANCELLED` tombstone; edited fields are locked).
 - `isPrivate`, `templateId` (set when seeded from a `workTemplates` row on a project
   lifecycle transition — see the tracking issue's §8.2; the seeding mutation itself is a
   later Phase 1 slice, not yet built).
@@ -326,6 +331,10 @@ change needed) and `importScripts`-es into the generated `public/sw.js`, handlin
 vapid:generate`) — plain Node `crypto` EC P-256 key pair, base64url-encoded; **no new
 dependency**, since only the SEND side needs a sender library.
 
+**Update (follow-up automation, FEATUREDOCS/82):** a sender now exists —
+`src/lib/web-push.ts` — and the urgent follow-up push is its one caller; the note below is
+the #1244 phase's original scope.
+
 **Deliberately NOT wired this phase**: nothing in this deployment sends a push. The
 table + subscribe/unsubscribe flow + service-worker receive handler are the complete
 deliverable; a server-side sender (a job that signs a Web Push request per subscription row
@@ -411,8 +420,12 @@ Test: `src/app/(app)/my-tasks/__tests__/page.smoke.test.tsx` now just asserts th
   system exists ([FEATUREDOCS/17](./17-notifications.md)); wiring task assignment/due-soon/
   watcher-activity reminders is the obvious next step. Left out to keep this phase's scope
   bounded — see the "Watchers" section above.
-- **Web push send.** The subscription table + browser flow + service-worker receive handler
-  are complete (see "Web push" above); a server-side sender is the deferred half.
+- ~~**Web push send.**~~ Built: `src/lib/web-push.ts` (RFC 8291/8292 on `node:crypto`).
+  Its first and only caller is follow-up automation's urgent push
+  ([FEATUREDOCS/82](./82-follow-up-automation.md)); task assignment / due-soon pushes are
+  still the notification follow-up above.
+  `subscribeNative` now rejects an endpoint that isn't FCM, Mozilla or Apple push
+  (`convex/lib/pushEndpoints.ts`) — the server POSTs to it, so it's request-forgery input.
 - **Drag-and-drop reordering** — done this phase (#1244): `reorderNative`, see above.
   (Previously listed here as deferred; superseded.)
 - **Comments / @mentions on tasks.** Ties into the broader Wave 3 comments feature.

@@ -18,5 +18,14 @@ export interface TodayItem {
   done?: boolean;
   /** Mentions only — undefined (already "read") once opened. */
   readAt?: number | null;
+  /** Tasks only — set when the follow-up engine owns the row (design §8.7):
+   *  why it exists, which rung, whether it's urgent. */
+  followUp?: FollowUpMeta | null;
   raw: unknown;
+}
+
+interface FollowUpMeta {
+  why: string;
+  urgent: boolean;
+  rung: number;
 }

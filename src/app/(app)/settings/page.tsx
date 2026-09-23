@@ -21,6 +21,7 @@ import type { OrgSettings } from "@/lib/org-settings-types";
 import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
 import { InvoiceNumberingSettings } from "@/components/settings/invoice-numbering-settings";
 import { StatusAutomationSettings } from "@/components/settings/status-automation-settings";
+import { FollowUpSettingsPanel } from "@/components/settings/follow-up-settings";
 import { CrewTimeSettingsPanel } from "@/components/settings/crew-time-settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -368,6 +369,26 @@ export default function GeneralSettingsPage() {
               Jobs only ever move FORWARD, and never into Confirmed, Completed or Invoiced — those
               commit stock, money or a lock, so they stay a deliberate click. Every automatic move is
               recorded in the job&rsquo;s activity log.
+            </p>
+          </SettingsSection>
+        </div>
+
+        {/* Follow-ups (FEATUREDOCS/82) — tasks the app writes on its own when a
+            quote or invoice goes quiet. Sits beside status automation: both
+            change what the app does unprompted. */}
+        <div className="border-t border-line">
+          <SettingsSection
+            title="Follow-ups"
+            description="Put the next chase on someone's list when a quote or invoice goes quiet — so nothing depends on remembering."
+          >
+            <FollowUpSettingsPanel
+              value={settings.followUps}
+              disabled={!canEdit}
+              onChange={(next) => setSettings((prev) => ({ ...prev, followUps: next }))}
+            />
+            <p className="t-micro text-muted">
+              Follow-ups are internal tasks — Flow never emails your clients. Only quotes and invoices
+              sent after follow-ups were switched on are ever chased.
             </p>
           </SettingsSection>
         </div>

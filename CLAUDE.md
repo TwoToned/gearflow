@@ -241,14 +241,15 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 - `XERO_REDIRECT_URI` — OAuth2 callback URL registered with the Xero app. Defaults
   to `${NEXT_PUBLIC_APP_URL}/api/integrations/xero/callback` when unset.
 
-**Web push (work-layer Phase 2, #1244, subscription-only — see FEATUREDOCS/50 for the
-documented push-SEND follow-up this does NOT wire up):**
+**Web push (subscriptions #1244, FEATUREDOCS/50; first sender = follow-up automation's
+urgent-only push, FEATUREDOCS/82):**
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — public half of the VAPID key pair, inlined into the
   browser bundle (not a secret — it's how a push service identifies the sending
   application). Unset = the account notifications page's push toggle stays hidden
   (`usePushSubscription`'s `support` never becomes actionable without it).
-- `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — server-only; not read by anything yet (no
-  sender exists), reserved for when the push-send follow-up lands.
+- `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — server-only; read by `src/lib/web-push.ts`
+  (`node:crypto` RFC 8291/8292 sender — no `web-push` dependency). All three unset = no
+  push is ever sent.
 - Generate a pair with `pnpm run vapid:generate` (`scripts/generate-vapid-keys.mts` —
   plain Node `crypto`, no new dependency). Rotating invalidates every existing
   browser subscription; do it rarely.
@@ -581,6 +582,28 @@ which sit at `CONFIRMED` for the life of the job — from pinning it at `PREPPIN
 Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical work
 is the second way out of the money phase, for orgs that reconcile payments in Xero
 and never write a `payments` row. See FEATUREDOCS/76.
+
+### Follow-ups are ONE engine — add a RULE, never a second task writer
+`convex/lib/followUpRules.ts` (pure `planQuoteLoop`), `convex/lib/followUpInvoiceRules.ts`
+(pure `planInvoiceLoop` / `planUnraisedLoop`) + `convex/lib/followUpReconcile.ts`
+(`reconcileFollowUps`) own every automated follow-up task (FEATUREDOCS/82). Three rules:
+
+1. **A new automated follow-up is a rule, not a call site.** Add it to the rule module and
+   `reconcileFollowUps`; call `reconcileFollowUps` ONCE at the end of any mutation that
+   changes the facts (quote send/recall/accept/decline, project status, invoice
+   issue/void/credit/delete, payment record/void — via `settleInvoicePaymentState`) — never
+   in a loop.
+2. **A row with `automation` set is the engine's.** Human edits of it must go through
+   `automationForHumanChange` (locks edited fields; DONE records `no_reply`/`decided`) and
+   then the reconciler; deleting one is a SOFT close (`CANCELLED` + `resolution: "deleted"`),
+   or the next reconcile recreates it. Won/lost stay on the quote's own accept/decline.
+3. **Never chase what Flow can't verify** — nothing before the org's `followUps.cutoverAt`,
+   nothing on a `CANCELLED` project. "Paid" is `invoices.paymentStatus`, which folds in
+   the Xero payment sync (`xeroAmountPaid`/`xeroAmountCredited`, max with Flow payments —
+   never a sum) — don't read `payments` rows directly to decide a chase. The hourly tick
+   runs on its OWN flag (`ENABLE_FOLLOW_UP_CRON`), not `ENABLE_CONVEX_CRONS`. Push is
+   rationed in `followUpPush.claimPush` (urgent only, one per rung, 2/person/day) — a new
+   push caller goes through it, never straight to `sendWebPush`.
 
 ### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
 The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:

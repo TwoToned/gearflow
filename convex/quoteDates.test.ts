@@ -14,6 +14,7 @@
 import { describe, test, expect } from "vitest";
 import {
   addCalendarDays as convexAddDays,
+  addBusinessDaysInTimezone as convexAddBusinessDays,
   computeValidUntil as convexValidUntil,
   daysUntilValidUntil as convexDaysUntil,
   endOfDayInTimezone as convexEndOfDay,
@@ -26,6 +27,7 @@ import {
 } from "./lib/quoteDates";
 import {
   addCalendarDays as srcAddDays,
+  addBusinessDaysInTimezone as srcAddBusinessDays,
   computeValidUntil as srcValidUntil,
   daysUntilValidUntil as srcDaysUntil,
   endOfDayInTimezone as srcEndOfDay,
@@ -211,3 +213,37 @@ function localPartsIn(timezone: string, instantMs: number): string {
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour") === "24" ? "00" : get("hour")}:${get("minute")}:${get("second")}`;
 }
+
+describe("addBusinessDaysInTimezone (follow-up automation)", () => {
+  test("mirror parity across the timezone x instant matrix", () => {
+    for (const tz of TIMEZONES) {
+      for (const at of INSTANTS) {
+        for (const n of [0, 1, 2, 5, 7]) {
+          expect(convexAddBusinessDays(at, n, tz)).toBe(srcAddBusinessDays(at, n, tz));
+        }
+      }
+    }
+  });
+
+  test("skips weekends in the org's timezone", () => {
+    const tz = "Australia/Sydney";
+    // Thu 2026-09-24 10:00 AEST → +2 business days = Mon 2026-09-28 00:00 AEST
+    const thu = Date.UTC(2026, 8, 24, 0, 0, 0);
+    expect(convexAddBusinessDays(thu, 2, tz)).toBe(Date.UTC(2026, 8, 27, 14, 0, 0));
+    // Fri → +1 = Mon
+    const fri = Date.UTC(2026, 8, 25, 0, 0, 0);
+    expect(convexAddBusinessDays(fri, 1, tz)).toBe(Date.UTC(2026, 8, 27, 14, 0, 0));
+    // Sat → +1 = Mon (a weekend start rolls forward)
+    const sat = Date.UTC(2026, 8, 26, 0, 0, 0);
+    expect(convexAddBusinessDays(sat, 1, tz)).toBe(Date.UTC(2026, 8, 27, 14, 0, 0));
+    // 0 = start of the same local day
+    expect(convexAddBusinessDays(thu, 0, tz)).toBe(convexStartOfDay(thu, tz));
+  });
+
+  test("a local day differs from the UTC day near midnight", () => {
+    // Fri 2026-09-25 23:30 UTC is already Sat 09:30 AEST → +1 business day = Mon
+    const lateFriUtc = Date.UTC(2026, 8, 25, 23, 30, 0);
+    expect(convexAddBusinessDays(lateFriUtc, 1, "Australia/Sydney")).toBe(Date.UTC(2026, 8, 27, 14, 0, 0));
+    expect(convexAddBusinessDays(lateFriUtc, 1, "UTC")).toBe(Date.UTC(2026, 8, 28, 0, 0, 0));
+  });
+});

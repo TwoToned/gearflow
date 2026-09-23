@@ -8,15 +8,18 @@
 // items in `widgets.map()` order regardless of their absolute CSS position.
 // The personal "My work" zone (tasks-due block + per-project blocker
 // badges, formerly MyWorkSection) stays GONE — its replacement is the
-// (now-hidden) Today widgets, addable to the board via "Add widget" but not
-// in DEFAULT_DASHBOARD_LAYOUT, so this test's fixed layout doesn't render
-// them. "On the floor now" (an org-wide live-jobs view, not a personal work
+// `todayWorkList` widget, which IS in DEFAULT_DASHBOARD_LAYOUT since follow-up
+// automation (design D3) but is filtered out of this test's fixed layout: it
+// needs its own session/Convex mocks and has its own smoke tests
+// (src/app/(app)/today/__tests__/page.smoke.test.tsx). "On the floor now" (an org-wide live-jobs view, not a personal work
 // list) stays and renders ahead of the Org-risk zone. Blockers still surface
 // exactly once, via the needs-attention chip.
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DEFAULT_DASHBOARD_LAYOUT } from "@/lib/dashboard-widgets";
+
+const ORG_WIDE_LAYOUT = DEFAULT_DASHBOARD_LAYOUT.filter((w) => w.kind !== "todayWorkList");
 
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
@@ -31,7 +34,7 @@ vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 // deterministic for this test's assertions.
 vi.mock("@/hooks/use-dashboard-layout", () => ({
   useDashboardLayout: () => ({
-    widgets: DEFAULT_DASHBOARD_LAYOUT,
+    widgets: ORG_WIDE_LAYOUT,
     isLoading: false,
     setLayout: vi.fn(),
     addWidget: vi.fn(),
@@ -154,5 +157,14 @@ describe("DashboardPage reorder (smoke)", () => {
     expect(screen.getByText(/3 sale stock to procure/)).toBeDefined();
     const link = screen.getByText(/2 hard overbookings/).closest("a");
     expect(link?.getAttribute("href")).toBe("/overbookings");
+  });
+});
+
+describe("DEFAULT_DASHBOARD_LAYOUT (follow-up automation, design D3)", () => {
+  it("pre-places the personal work list, where automated follow-ups land", () => {
+    expect(DEFAULT_DASHBOARD_LAYOUT.map((w) => w.kind)).toContain("todayWorkList");
+    // the day rail and needs-you rail stay catalog-only
+    expect(DEFAULT_DASHBOARD_LAYOUT.map((w) => w.kind)).not.toContain("todayDayRail");
+    expect(DEFAULT_DASHBOARD_LAYOUT.map((w) => w.kind)).not.toContain("todayNeedsYouRail");
   });
 });

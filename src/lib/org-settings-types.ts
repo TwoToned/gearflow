@@ -75,6 +75,23 @@ interface OrgWorkSettings {
   rottingErrorDays?: number;
 }
 
+/** Follow-up automation (docs/designs/follow-up-automation.md §8.4). Absent
+ *  (and every absent key inside it) means the defaults in
+ *  `convex/lib/followUpRules.ts` — quote follow-ups ON, 2 / 5 business days,
+ *  decided 14 days before the event, cut-over at the phase-1 ship date. The
+ *  blob only ever records an opt-out or a tuned offset. Edited in Settings →
+ *  Follow-ups (`FollowUpSettingsPanel`), validated by `followUpSettingsSchema`. */
+export interface OrgFollowUpSettings {
+  quotesEnabled?: boolean;
+  /** Invoice chasing + "invoice not raised" (phase 2). */
+  invoicesEnabled?: boolean;
+  firstFollowUpBusinessDays?: number;
+  nextFollowUpBusinessDays?: number;
+  decisionLeadDays?: number;
+  /** Epoch ms; nothing sent before it is ever chased. */
+  cutoverAt?: number;
+}
+
 export interface TestTagSettings {
   prefix?: string;
   digits?: number;
@@ -142,4 +159,6 @@ export interface OrgSettings {
   work?: OrgWorkSettings;
   /** Work-layer Phase 4 (#1246) — crew planner confirmation-layer settings. */
   crewTime?: CrewTimeSettings;
+  /** Follow-up automation — see `OrgFollowUpSettings`. */
+  followUps?: OrgFollowUpSettings;
 }

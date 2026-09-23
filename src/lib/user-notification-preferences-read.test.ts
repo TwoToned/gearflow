@@ -33,6 +33,7 @@ describe("resolvePreferenceValues", () => {
         flaggedAsset: false,
         incidentReport: false,
         quoteExpiring: false,
+        followUpBrief: false,
       }),
     );
     expect(out).toEqual({
@@ -45,6 +46,7 @@ describe("resolvePreferenceValues", () => {
       flaggedAsset: false,
       incidentReport: false,
       quoteExpiring: false,
+      followUpBrief: false,
     });
   });
 

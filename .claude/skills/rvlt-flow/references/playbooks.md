@@ -70,9 +70,28 @@ Answers: what money is sitting still.
 3. **Jobs parked in `AWAITING_PAYMENT`** — especially any whose gear window has
    already started. That is gear hard-held against money that hasn't landed.
 
+Every quote sent after the org's follow-up cut-over already carries an
+**automated follow-up task** (`kind: follow_up`, `automation` set, an `auto` badge
+in the app — FEATUREDOCS/82): rung 1 two business days after sending, a second five
+business days after a "no reply", then a won/lost/extend/park decision, all pulled
+earlier when the event is close. Read those tasks before inventing a chase list —
+their `why` line says what's been tried. Don't create a parallel follow-up task for
+the same quote; record the outcome on the automated one instead (accept/decline the
+quote for won/lost, which closes it).
+
+Invoices work the same way: an issued invoice one business day past due gets an
+automated **chase** (due + 7 d a second chase, + 14 d "call the client", + 30 d a
+payment-plan / write-off decision), and a job that came back with no invoice gets one
+"Raise the invoice" task. They close themselves when the invoice is paid — in Flow
+**or in Xero** (the Xero payment sync reads it back hourly) — voided or fully credited.
+Only urgent items (a quote decision or a deposit with the event under a week away)
+buzz a phone, at most twice a day per person.
+
 Before reporting a job as "stuck unpaid", check whether the org records payments
-in Flow at all. Many reconcile in Xero only, in which case the payment trigger
-never fires and the job moves forward on physical work instead. That is normal,
+in Flow or has Xero connected. With Xero connected, a payment reconciled there is
+read back within the hour and settles the invoice like one recorded in Flow; with
+neither, the payment trigger never fires and the job moves forward on physical work
+instead. That is normal,
 not a fault — say so rather than raising a false alarm.
 
 ## Job readiness sweep

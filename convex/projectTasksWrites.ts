@@ -2,16 +2,20 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
-import { assertArrayMax } from "./lib/fieldGuards";
+import { assertArrayMax, assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import { defaultStageForProjectStatus, type WorkStage, type WorkItemStatus, type WorkItemPriority, type WorkItemKind } from "./lib/workVocabulary";
 import { computeNextOccurrenceDueDate, type WorkRecurrenceSpec } from "./lib/workRecurrence";
 import { resolveOrgQuoteConfig } from "./lib/orgSettings";
+import { automationForHumanChange, reconcileFollowUps } from "./lib/followUpReconcile";
+import { insertClientActivity } from "./clientTimelineWrites";
+import { startOfDayInTimezone } from "./lib/quoteDates";
 
 /** Bound on watcherUserIds — mirrors the cap other free-form id arrays on this
  *  table use (tags, checklist); a browser-direct caller bypassing client Zod
@@ -369,8 +373,18 @@ export const updateNative = mutation({
     // incoming fields): assigning one clears the other so a task can't end up with both.
     if (patch.assigneeUserId) patch.assigneeCrewId = undefined;
     else if (patch.assigneeCrewId) patch.assigneeUserId = undefined;
+    // Follow-up automation (design §8.2): a human edit locks the field; a close
+    // records how it was closed so the ladder advances or stops.
+    const automation = automationForHumanChange(doc, {
+      status: a.status,
+      dueDate: a.dueDate !== undefined && (a.dueDate ?? undefined) !== doc.dueDate,
+      title: a.title !== undefined && a.title.trim() !== doc.title,
+      assignee: a.assigneeUserId !== undefined || a.assigneeCrewId !== undefined,
+    }, actor.userId);
+    if (automation) patch.automation = automation;
 
     await ctx.db.patch(doc._id, patch);
+    if (automation) await reconcileFollowUps(ctx, { orgId: a.orgId, projectId: doc.projectId, now: a.now });
     const title = (patch.title as string | undefined) ?? doc.title;
     await logTask(ctx, { orgId: a.orgId, projectId: doc.projectId, actor, auditId: a.auditId, now: a.now, action: "updated", entityId: a.id, entityName: title, summary: `Updated task "${title}"` });
 
@@ -438,6 +452,39 @@ async function spawnNextOccurrence(
   });
 }
 
+/** Delete one task row. An automated follow-up is SOFT-deleted instead: its
+ *  tombstone is what stops that rung coming back on the next reconcile
+ *  (follow-up automation design §8.2). Returns true when it was automated. */
+async function removeTaskRow(ctx: MutationCtx, doc: Doc<"projectTasks">, userId: string, now: number): Promise<boolean> {
+  const automation = automationForHumanChange(doc, { deleted: true }, userId);
+  if (!automation) {
+    await ctx.db.delete(doc._id);
+    return false;
+  }
+  await ctx.db.patch(doc._id, { status: "CANCELLED", completedAt: now, updatedAt: now, automation });
+  return true;
+}
+
+/** Bulk delete body: per-row org re-check, soft-delete for automated rows,
+ *  then ONE reconcile per project that had one (never inside the loop). */
+async function removeTaskRows(ctx: MutationCtx, ids: string[], orgId: string, userId: string, now: number) {
+  const projectIds = new Set<string>();
+  const automatedProjectIds = new Set<string>();
+  let deleted = 0;
+  for (const id of ids) {
+    const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc || doc.organizationId !== orgId) continue;
+    const automated = await removeTaskRow(ctx, doc, userId, now);
+    if (doc.projectId) (automated ? automatedProjectIds : projectIds).add(doc.projectId);
+    deleted++;
+  }
+  for (const projectId of automatedProjectIds) {
+    projectIds.add(projectId);
+    await reconcileFollowUps(ctx, { orgId, projectId, now });
+  }
+  return { projectIds, deleted, skipped: ids.length - deleted };
+}
+
 export const deleteNative = mutation({
   returns: v.object({ ok: v.boolean() }),
   args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -450,7 +497,9 @@ export const deleteNative = mutation({
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Task not found");
 
-    await ctx.db.delete(doc._id);
+    if (await removeTaskRow(ctx, doc, actor.userId, a.now)) {
+      await reconcileFollowUps(ctx, { orgId: a.orgId, projectId: doc.projectId, now: a.now });
+    }
     await logTask(ctx, { orgId: a.orgId, projectId: doc.projectId, actor, auditId: a.auditId, now: a.now, action: "deleted", entityId: a.id, entityName: doc.title, summary: `Deleted task "${doc.title}"` });
     return { ok: true };
   },
@@ -491,6 +540,7 @@ export const bulkUpdateNative = mutation({
     else if (set.assigneeCrewId) set.assigneeUserId = undefined;
 
     const projectIds = new Set<string>();
+    const automatedProjectIds = new Set<string>();
     let updated = 0;
     let skipped = 0;
     for (const id of a.ids) {
@@ -500,10 +550,21 @@ export const bulkUpdateNative = mutation({
       if (set.status !== undefined && set.status !== doc.status) {
         applied.completedAt = set.status === "DONE" ? a.now : undefined;
       }
+      const automation = automationForHumanChange(doc, {
+        status: a.status,
+        dueDate: a.dueDate !== undefined,
+        assignee: a.assigneeUserId !== undefined || a.assigneeCrewId !== undefined,
+      }, actor.userId);
+      if (automation) {
+        applied.automation = automation;
+        if (doc.projectId) automatedProjectIds.add(doc.projectId);
+      }
       await ctx.db.patch(doc._id, applied);
       if (doc.projectId) projectIds.add(doc.projectId);
       updated++;
     }
+    // Once per distinct project, after the loop — never inside it.
+    for (const projectId of automatedProjectIds) await reconcileFollowUps(ctx, { orgId: a.orgId, projectId, now: a.now });
 
     if (updated > 0) {
       await logTask(ctx, { orgId: a.orgId, projectId: [...projectIds][0], actor, auditId: a.auditId, now: a.now, action: "updated", entityId: a.ids[0], entityName: `${updated} task${updated === 1 ? "" : "s"}`, summary: `Bulk updated ${updated} task${updated === 1 ? "" : "s"}` });
@@ -522,16 +583,7 @@ export const bulkDeleteNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     if (a.ids.length === 0) return { deleted: 0, skipped: 0 };
 
-    const projectIds = new Set<string>();
-    let deleted = 0;
-    let skipped = 0;
-    for (const id of a.ids) {
-      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-      if (!doc || doc.organizationId !== a.orgId) { skipped++; continue; }
-      await ctx.db.delete(doc._id);
-      if (doc.projectId) projectIds.add(doc.projectId);
-      deleted++;
-    }
+    const { projectIds, deleted, skipped } = await removeTaskRows(ctx, a.ids, a.orgId, actor.userId, a.now);
 
     if (deleted > 0) {
       await logTask(ctx, { orgId: a.orgId, projectId: [...projectIds][0], actor, auditId: a.auditId, now: a.now, action: "deleted", entityId: a.ids[0], entityName: `${deleted} task${deleted === 1 ? "" : "s"}`, summary: `Deleted ${deleted} task${deleted === 1 ? "" : "s"}` });
@@ -604,7 +656,111 @@ export const setWatchingNative = mutation({
   },
 });
 
+const FOLLOW_UP_NOTE_BOUNDS = { max: 500 } as const;
+
+/** An automated follow-up that is still open, org-checked (by_cuid is global). */
+async function loadOpenAutomatedTask(ctx: MutationCtx, id: string, orgId: string): Promise<Doc<"projectTasks">> {
+  const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  if (!doc || doc.organizationId !== orgId) throw new ConvexError("Task not found");
+  if (!doc.automation) throw new ConvexError({ code: "NOT_AUTOMATED", message: "Only automated follow-ups record an outcome." });
+  if (doc.status === "DONE" || doc.status === "CANCELLED") {
+    throw new ConvexError({ code: "ALREADY_CLOSED", message: "This follow-up is already closed." });
+  }
+  return doc;
+}
+
+async function applyFollowUpOutcome(
+  ctx: MutationCtx,
+  doc: Doc<"projectTasks">,
+  outcome: "no_reply" | "parked",
+  nextDate: number | undefined,
+  userId: string,
+  now: number,
+): Promise<void> {
+  const automation = doc.automation!;
+  if (outcome === "no_reply") {
+    await ctx.db.patch(doc._id, {
+      status: "DONE",
+      completedAt: now,
+      updatedAt: now,
+      automation: { ...automation, resolution: "no_reply", resolvedBy: userId, nextDate },
+    });
+    return;
+  }
+  if (nextDate === undefined) throw new ConvexError({ code: "VALIDATION_FAILED", message: "Choose a date to come back to it." });
+  const { timezone } = await resolveOrgQuoteConfig(ctx, doc.organizationId);
+  await ctx.db.patch(doc._id, {
+    dueDate: startOfDayInTimezone(nextDate, timezone),
+    snoozedUntil: nextDate,
+    automation: { ...automation, lockedFields: [...new Set([...automation.lockedFields, "dueDate"])] },
+    updatedAt: now,
+  });
+}
+
+/** The outcome as a row on the linked client's timeline (the existing
+ *  `next_step_completed` substrate, FEATUREDOCS/80). */
+async function logFollowUpOutcomeOnTimeline(
+  ctx: MutationCtx,
+  doc: Doc<"projectTasks">,
+  a: { outcome: "no_reply" | "parked"; nextDate?: number; note?: string; actor: Actor; now: number },
+): Promise<void> {
+  const links = await ctx.db.query("workItemLinks").withIndex("by_workItemId", (q) => q.eq("workItemId", doc.id)).take(100);
+  const clientLink = links.find((l) => l.organizationId === doc.organizationId && l.entityType === "client");
+  if (!clientLink) return;
+  const what = a.outcome === "parked" ? "Parked" : "Followed up — no reply yet";
+  const note = a.note?.trim();
+  await insertClientActivity(ctx, {
+    orgId: doc.organizationId, clientId: clientLink.entityId, actor: a.actor, now: a.now,
+    action: "next_step_completed",
+    summary: note ? `${what}: ${note}` : what,
+    metadata: { workItemId: doc.id, title: doc.title, outcome: a.outcome, nextDate: a.nextDate },
+  });
+}
+
+/**
+ * Record what happened on an automated follow-up (docs/designs/follow-up-automation.md
+ * §8.3). Two outcomes only — the ones that keep the loop open:
+ *  - `no_reply`: I followed up, no answer yet. Closes this rung; the engine
+ *    opens the next one, due on `nextDate` when given, else on the ladder.
+ *  - `parked`: the client asked us to come back later. Keeps the row open and
+ *    moves (and locks) its due date to `nextDate`.
+ * WON and LOST are deliberately NOT outcomes here: they go through the existing
+ * `quotesWrites.markAcceptedNative` / `markDeclinedNative` (invoice:publish,
+ * danger high), which close the loop themselves via the reconciler.
+ */
+export const recordFollowUpOutcomeNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    outcome: v.union(v.literal("no_reply"), v.literal("parked")),
+    nextDate: v.optional(v.number()),
+    note: v.optional(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "projectTask");
+    await enforceBrowserWriteLimit(ctx);
+    await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
+    const actor = await resolveActor(ctx, a.actor);
+    assertStrLen(a.note, "note", FOLLOW_UP_NOTE_BOUNDS);
+    assertNumRange(a.nextDate, "nextDate", { min: a.now - 86_400_000, max: a.now + 366 * 86_400_000 });
+
+    const doc = await loadOpenAutomatedTask(ctx, a.id, a.orgId);
+
+    await applyFollowUpOutcome(ctx, doc, a.outcome, a.nextDate, actor.userId, a.now);
+    await logFollowUpOutcomeOnTimeline(ctx, doc, { outcome: a.outcome, nextDate: a.nextDate, note: a.note, actor, now: a.now });
+    const summary = a.outcome === "parked" ? `Parked follow-up "${doc.title}"` : `Logged a follow-up with no reply on "${doc.title}"`;
+    await logTask(ctx, { orgId: a.orgId, projectId: doc.projectId, actor, auditId: a.auditId, now: a.now, action: "updated", entityId: doc.id, entityName: doc.title, summary });
+    await reconcileFollowUps(ctx, { orgId: a.orgId, projectId: doc.projectId, now: a.now });
+    return { id: doc.id };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
+  recordFollowUpOutcomeNative: { summary: "Record \"no reply\" or \"parked until a date\" on an automated quote follow-up; the engine schedules the next step.", danger: "medium", mcpTier: 2 },
   bulkDeleteNative: { danger: "high" },
   bulkUpdateNative: { danger: "medium" },
   createNative: { danger: "medium" },

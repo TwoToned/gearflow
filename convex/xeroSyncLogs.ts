@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService, requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { XeroSyncDirection } from "./lib/validators";
 
 /**
  * XeroSyncLog (WS1 #940) — audit trail of every Xero API interaction, modeled
@@ -14,12 +15,7 @@ export const create = mutation({
   args: {
     id: v.string(),
     organizationId: v.string(),
-    direction: v.union(
-      v.literal("PUSH_INVOICE"),
-      v.literal("SYNC_CONTACT"),
-      v.literal("REFRESH_TOKEN"),
-      v.literal("FETCH_REFERENCE_DATA"),
-    ),
+    direction: XeroSyncDirection,
     status: v.union(v.literal("PENDING"), v.literal("SUCCESS"), v.literal("FAILED")),
     invoiceId: v.optional(v.string()),
     xeroInvoiceId: v.optional(v.string()),

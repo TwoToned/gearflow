@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isMemberAuth } from "./lib/auth";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -170,6 +171,7 @@ export const listByProjectWithRelations = query({
         assigneeCrew,
         // #1244 — the Work tab's stage columns/grouping and recurrence badge.
         stage: t.stage ?? null,
+        followUp: followUpView(t),
         recurrence: t.recurrence ?? null,
         watcherUserIds: t.watcherUserIds ?? [],
         sortOrder: t.sortOrder ?? 0,
@@ -205,7 +207,17 @@ type MyOpenTaskDoc = {
   assigneeCrewId?: string;
   parentId?: string;
   stage?: string;
+  automation?: Doc<"projectTasks">["automation"];
 };
+
+/** The slice of an automated follow-up the UI shows (design §8.7): why the row
+ *  exists, which rung, whether it's urgent, and the quote it chases. Null for
+ *  every human-created row. */
+function followUpView(t: { automation?: Doc<"projectTasks">["automation"] }) {
+  const a = t.automation;
+  if (!a) return null;
+  return { ruleKey: a.ruleKey, rung: a.rung, why: a.why, urgent: a.urgent, subjectId: a.subjectId };
+}
 
 async function resolveCrewIdsForUser(ctx: QueryCtx, userId: string, orgId: string): Promise<string[]> {
   // by_userId is global — a person can hold crew records in more than one org
@@ -310,6 +322,7 @@ function serializeMyOpenTask(
     assigneeUserId: t.assigneeUserId ?? null,
     assigneeCrewId: t.assigneeCrewId ?? null,
     stage: t.stage ?? null,
+    followUp: followUpView(t),
   };
 }
 

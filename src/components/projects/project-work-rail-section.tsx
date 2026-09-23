@@ -23,6 +23,7 @@ import { PersonAvatar } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "@/components/ui/section-header";
 import { cn, focusRing } from "@/lib/utils";
+import { FollowUpBadges } from "@/components/work/follow-up-badges";
 
 /**
  * Work, in the project's context sidebar (work-layer v2 §4.3).
@@ -293,6 +294,7 @@ function WorkRailRow({
       >
         {task.title}
       </span>
+      {task.followUp && <FollowUpBadges urgent={task.followUp.urgent} />}
       {due && <span className={cn("t-mono shrink-0", late ? "text-t-out" : "text-muted")}>{due}</span>}
       <RowOwner task={task} />
     </li>

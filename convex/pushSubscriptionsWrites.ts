@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertStrLen } from "./lib/fieldGuards";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { pushRequestUrl } from "./lib/pushEndpoints";
 
 /**
  * Browser-direct USER-scoped writes for `pushSubscriptions` (#1244, design
@@ -53,6 +54,8 @@ export const subscribeNative = mutation({
     assertStrLen(a.p256dh, "p256dh", { min: 1, max: 500 });
     assertStrLen(a.auth, "auth", { min: 1, max: 500 });
     assertStrLen(a.userAgent, "userAgent", { max: 500 });
+    // The server POSTs to this URL later — only a real push service may be stored.
+    if (!pushRequestUrl(a.endpoint)) throw new ConvexError("endpoint is not a supported push service");
 
     const existing = await ctx.db.query("pushSubscriptions").withIndex("by_endpoint", (q) => q.eq("endpoint", a.endpoint)).first();
     if (existing) {

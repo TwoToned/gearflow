@@ -6,6 +6,9 @@ import {
   sendNotificationEmails,
 } from "@/server/notification-email-sender";
 import { sendCrewOfferNudges, sendCrewCallTimeReminders } from "@/server/crew-time-nudges";
+import { sendFollowUpBriefs } from "@/server/follow-up-brief";
+import { syncXeroPayments } from "@/server/xero-payment-sync";
+import { sendUrgentFollowUpPushes } from "@/server/follow-up-push";
 
 /**
  * POST /api/cron/notifications
@@ -34,16 +37,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await sendNotificationEmails();
+    // Follow-up automation phase 2 (FEATUREDOCS/82) — read payment state back
+    // from Xero (hourly per org) BEFORE the brief, so an invoice paid in Xero
+    // overnight has already closed its chase by the time the email is built.
+    const xeroPayments = await syncXeroPayments().catch((e: unknown) => ({ orgs: 0, checked: 0, settled: 0, errors: [e instanceof Error ? e.message : String(e)] }));
     // Work-layer Phase 4 (#1246) — rides the SAME cron + dedupe ledger as the
     // sweep above, per the issue's own instruction. Each sweep is independent
     // and best-effort against the other: a failure in one must not skip the
     // rest of this route's work.
-    const [crewOfferNudges, crewCallReminders] = await Promise.all([
+    const [crewOfferNudges, crewCallReminders, followUpBriefs, followUpPushes] = await Promise.all([
       sendCrewOfferNudges().catch((e: unknown) => ({ sent: 0, skipped: 0, errors: [e instanceof Error ? e.message : String(e)] })),
       sendCrewCallTimeReminders().catch((e: unknown) => ({ sent: 0, skipped: 0, errors: [e instanceof Error ? e.message : String(e)] })),
+      // Follow-up automation (FEATUREDOCS/82) — the morning brief; same ledger.
+      sendFollowUpBriefs().catch((e: unknown) => ({ sent: 0, skipped: 0, errors: [e instanceof Error ? e.message : String(e)] })),
+      // ...and the urgent-only phone push (inert without VAPID keys).
+      sendUrgentFollowUpPushes().catch((e: unknown) => ({ pushed: 0, skipped: 0, errors: [e instanceof Error ? e.message : String(e)] })),
     ]);
     const pruned = await pruneStaleNotificationEmailLogs();
-    return NextResponse.json({ ...result, prunedLogs: pruned, crewOfferNudges, crewCallReminders });
+    return NextResponse.json({ ...result, prunedLogs: pruned, crewOfferNudges, crewCallReminders, followUpBriefs, followUpPushes, xeroPayments });
   } catch (e) {
     logger.error("[Cron] Notification emails failed", { error: e });
     return NextResponse.json(

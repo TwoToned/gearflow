@@ -240,24 +240,26 @@ function widget(kind: DashboardWidgetKind, x: number, y: number): DashboardLayou
 /**
  * The default board — everything from the pre-widget-board `/dashboard` at its
  * existing order/size (CLAUDE.md: "everything from the current /dashboard at
- * its current position/size"). Today's three widgets are in the CATALOG
- * (`DASHBOARD_WIDGET_REGISTRY`/`DASHBOARD_WIDGET_ORDER` above) but
- * deliberately NOT pre-placed here — same as before `/today` was hidden
- * (D10C): a user adds them via "Add widget" if they want dashboard to also
- * carry their personal work list, rather than every board defaulting to
- * showing one person's tasks.
+ * its current position/size"), plus the personal work list (`todayWorkList`)
+ * directly under the setup checklists. Follow-up automation (design D3,
+ * docs/designs/follow-up-automation.md §8.6) made that list where automated
+ * quote follow-ups land, so a board without it would hide them — this
+ * reverses the earlier "don't pre-place Today's widgets" call for the work
+ * list only. The day rail and needs-you rail stay catalog-only. An existing
+ * saved board is not rewritten; "Add widget" or "Reset to default" brings it in.
  */
 export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutWidget[] = [
   widget("finishSetupChecklist", 0, 0),
   widget("activationChecklist", 6, 0),
-  widget("onTheFloorNow", 0, 6),
-  widget("needsAttention", 0, 11),
-  widget("statActiveJobs", 0, 14),
-  widget("statOverdueReturns", 3, 14),
-  widget("statGearDeployed", 6, 14),
-  widget("statCrewBooked", 9, 14),
-  widget("upcomingProjects", 0, 18),
-  widget("recentActivity", 0, 23),
+  widget("todayWorkList", 0, 6),
+  widget("onTheFloorNow", 0, 14),
+  widget("needsAttention", 0, 19),
+  widget("statActiveJobs", 0, 22),
+  widget("statOverdueReturns", 3, 22),
+  widget("statGearDeployed", 6, 22),
+  widget("statCrewBooked", 9, 22),
+  widget("upcomingProjects", 0, 26),
+  widget("recentActivity", 0, 31),
 ];
 
 export function defaultWidgetPosition(kind: DashboardWidgetKind, existing: DashboardLayoutWidget[]): DashboardLayoutWidget {

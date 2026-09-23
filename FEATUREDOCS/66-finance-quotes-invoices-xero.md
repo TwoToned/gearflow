@@ -44,10 +44,12 @@ Project (recalc-owned pricing) → Quote revision (snapshot, versioned) → PDF
   (the ONE numbering moment — drafts stay unnumbered). Immutable once
   `ISSUED` — a correction is `VOID` + reissue, or a `CREDIT` invoice.
   `paymentStatus` (`UNPAID | PARTIALLY_PAID | PAID`) and `amountPaid` are
-  DERIVED, written by `paymentsWrites.ts` `recordNative`/`voidNative` (#1055)
-  from this invoice's own non-voided `payments` rows — not by a Xero poll
-  (that phase-2 idea was never built — see "Deferred" below, which now only
-  covers Xero-side payment reconciliation, not Flow-recorded payments).
+  DERIVED by `paymentsWrites.recomputeInvoicePaymentState` from this invoice's
+  own non-voided `payments` rows (#1055) **and** the invoice-level state the
+  Xero payment sync reads back (`xeroStatus`, `xeroAmountPaid`,
+  `xeroAmountCredited`, `xeroAmountDue` — FEATUREDOCS/82 "Xero payment sync"):
+  paid = max(Flow paid, Xero paid), so one payment recorded in both counts
+  once; Xero `PAID`, or paid + credited ≥ total, reads `PAID`.
 - **InvoiceLine** (`invoiceLines` table) — snapshot rows under an invoice.
   `PARENT_JOIN` for org-export (no `organizationId` column — joined via
   `invoiceId` into the already org-scoped `invoices` row, same pattern as
@@ -982,7 +984,7 @@ bounded sections in `convex/financeOrg.ts`'s single `bundle` query:
 | Never sent | `DRAFT` revisions on active (non-template, non-`CANCELLED`) projects |
 | Confirmed but uninvoiced | Project status `CONFIRMED` or later (excluding `CANCELLED`) with zero `ISSUED` invoices |
 | Deposit due | Same CONFIRMED-or-later candidate set, client `paymentProfile === "DEPOSIT_BALANCE"`, no `ISSUED` `DEPOSIT` invoice — the per-project nudge chip (`project-finance-panel.tsx`) lifted to org scope |
-| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); the remaining gap is Xero-side payments Flow doesn't know about, since the Xero payment-status poll itself is still deferred (see "Deferred" below) |
+| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); Xero-side payments are read back at most hourly by the Xero payment sync (FEATUREDOCS/82) |
 
 ### Perf — bounded, not a per-project loop (the #942 lesson)
 
@@ -1658,17 +1660,11 @@ duplicated here.
 
 ## Deferred (not built in this PR)
 
-- **Xero payment-status poll.** Flow-recorded payments (#1055,
-  `paymentsWrites.ts`) now make `invoices.paymentStatus`/`amountPaid` real for
-  money collected and entered in Flow — what's still deferred is a cron that
-  polls Xero itself for payments collected/reconciled on the Xero side (e.g. a
-  client paying an invoice Flow pushed) and reflects those back. `convex/
-  scheduledJobs.ts`'s `ENABLE_CONVEX_CRONS` off-by-default discipline
-  (FEATUREDOCS in that file) is the pattern to follow when this lands; it
-  would need to merge with, not overwrite, Flow-recorded payments (e.g. sum
-  both sources, or treat a Xero-side reconciliation as its own `payments` row
-  with a distinguishing `method`/source marker) rather than assuming Xero is
-  the only payment source once built.
+- ~~**Xero payment-status poll.**~~ Built by follow-up automation phase 2
+  (FEATUREDOCS/82): `src/server/xero-payment-sync.ts` on the notification
+  cron, invoice-level (Status / AmountPaid / AmountCredited / AmountDue) rather
+  than Payments, merged with Flow-recorded payments as max(Flow, Xero) — never
+  overwriting them.
 - **Project financial tab "invoiced/paid/outstanding" summary** beyond what
   `financial-summary.tsx`'s new Invoicing block already shows.
 - **Live Xero verification — partial.** The OAuth connect/callback round trip

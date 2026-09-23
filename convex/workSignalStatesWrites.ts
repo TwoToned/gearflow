@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertAssigneeInOrg } from "./projectTasksWrites";
+import { QUOTE_LOOP_SOURCE_PREFIX } from "./lib/followUpReconcile";
 
 /**
  * Browser-direct USER-scoped writes for `workSignalStates` (#1243 Phase 1, design
@@ -137,6 +138,15 @@ export const promoteSignalNative = mutation({
     const assigneeUserId = a.assigneeCrewId ? undefined : (a.assigneeUserId ?? userId);
     await assertAssigneeInOrg(ctx, orgId, assigneeUserId, a.assigneeCrewId);
 
+    // Follow-up automation (design §8.2): if the engine already owns an open
+    // follow-up for this quote, promoting the same signal adopts that row —
+    // two paths, one row, never a duplicate.
+    const adopted = await findOpenAutomatedRowForSignal(ctx, orgId, a.sourceKey, a.projectId);
+    if (adopted) {
+      await upsertSignalState(ctx, orgId, userId, a.sourceKey, { state: "promoted", promotedWorkItemId: adopted }, a.now);
+      return { id: adopted };
+    }
+
     const id = createId();
     await ctx.db.insert("projectTasks", {
       id,
@@ -173,6 +183,27 @@ export const promoteSignalNative = mutation({
     return { id };
   },
 });
+
+/** The open automated follow-up a `quote:nonext:<quoteId>` signal refers to,
+ *  if the engine already created one (matched on the row's current subject,
+ *  since a loop's key is minted from its FIRST quote). */
+async function findOpenAutomatedRowForSignal(
+  ctx: MutationCtx,
+  orgId: string,
+  sourceKey: string,
+  projectId: string | undefined,
+): Promise<string | null> {
+  if (!projectId || !sourceKey.startsWith(QUOTE_LOOP_SOURCE_PREFIX)) return null;
+  const quoteId = sourceKey.slice(QUOTE_LOOP_SOURCE_PREFIX.length);
+  const rows = await ctx.db
+    .query("projectTasks")
+    .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+    .take(2000);
+  const hit = rows.find(
+    (t) => t.automation?.subjectId === quoteId && (t.status === "TODO" || t.status === "IN_PROGRESS" || t.status === undefined),
+  );
+  return hit?.id ?? null;
+}
 
 /**
  * Phase 1 danger classification (#1243). Personal-scope (self:write) signal

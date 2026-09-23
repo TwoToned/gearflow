@@ -100,7 +100,7 @@ function invoiceTitle(label: string, owed: string, rung: number): string {
 
 /** Rung N+1 is due on the parked date, else five business days after the
  *  last no-reply, else one business day after the invoice's due date. */
-function nextChaseDue(last: FollowUpRow | undefined, dueStart: number, tz: string): number {
+function nextChaseDue(last: FollowUpRow | undefined, dueStart: number, tz: string | undefined): number {
   if (last?.nextDate !== undefined) return startOfDayInTimezone(last.nextDate, tz);
   if (last?.completedAt !== undefined) return addBusinessDaysInTimezone(last.completedAt, NEXT_RUNG_BUSINESS_DAYS, tz);
   return addBusinessDaysInTimezone(dueStart, 1, tz);

@@ -1,6 +1,6 @@
 // Follow-up automation — the morning brief's pure logic (FEATUREDOCS/82).
 import { describe, it, expect } from "vitest";
-import { briefDedupeKey, groupBrief, isBriefWindow, localClock, type BriefRow } from "./follow-up-brief";
+import { briefDedupeKey, groupBrief, isBriefWindow, isPushWindow, localClock, pushKeys, pushPayload, urgentPushRows, type BriefRow } from "./follow-up-brief";
 import { followUpBriefEmail } from "./notification-emails";
 
 const TZ = "Australia/Sydney";
@@ -62,5 +62,27 @@ describe("followUpBriefEmail", () => {
     expect(email.html).toContain("and 2 more in Flow");
     expect(email.html).not.toContain("<b>Q0</b>");
     expect(email.html).toContain("https://flow.rvlt.app/projects/p1");
+  });
+});
+
+describe("urgent push helpers", () => {
+  const row = (p: Partial<BriefRow>): BriefRow => ({ id: "t1", title: "Decide on 260901", why: "why", urgent: true, rung: 3, dueDate: 1, assigneeUserId: "u1", projectId: "p1", ...p });
+
+  it("pushes only between 07:00 and 19:00 org time", () => {
+    // 2026-10-01 is AEST (UTC+10): 21:00 UTC = 07:00 local, 09:00 UTC = 19:00 local.
+    expect(isPushWindow(Date.UTC(2026, 8, 30, 20, 59), TZ)).toBe(false);
+    expect(isPushWindow(Date.UTC(2026, 8, 30, 21, 0), TZ)).toBe(true);
+    expect(isPushWindow(Date.UTC(2026, 9, 1, 8, 59), TZ)).toBe(true);
+    expect(isPushWindow(Date.UTC(2026, 9, 1, 9, 0), TZ)).toBe(false);
+  });
+
+  it("keys one push per rung and one day bucket per person", () => {
+    expect(pushKeys("o1", row({}), "2026-10-01")).toEqual({ itemKey: "follow-up-push:o1:t1:3", dayKey: "follow-up-push-day:o1:u1:2026-10-01" });
+  });
+
+  it("keeps only urgent rows, oldest due first, and links to the job's Work tab", () => {
+    const rows = urgentPushRows([row({ id: "a", dueDate: 5 }), row({ id: "b", urgent: false }), row({ id: "c", dueDate: 2 })]);
+    expect(rows.map((r) => r.id)).toEqual(["c", "a"]);
+    expect(pushPayload(row({}))).toMatchObject({ title: "Decide on 260901", href: "/projects/p1?tab=work", tag: "follow-up:t1" });
   });
 });

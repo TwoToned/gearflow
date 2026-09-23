@@ -65,3 +65,40 @@ export function groupBrief(rows: BriefRow[], nowMs: number, timezone: string): M
   }
   return out;
 }
+
+// ─── Urgent phone push (design D3) ────────────────────────────────────────
+
+/** Pushes per person per local day — push is the loudest channel, so it's
+ *  rationed hard; everything else waits for the brief and the dashboard. */
+export const FOLLOW_UP_PUSH_DAILY_CAP = 2;
+/** Quiet hours: nothing buzzes before 07:00 or from 19:00 org time. */
+const PUSH_START_HOUR = 7;
+const PUSH_END_HOUR = 19;
+
+export function isPushWindow(nowMs: number, timezone: string): boolean {
+  const { hour } = localClock(nowMs, timezone);
+  return hour >= PUSH_START_HOUR && hour < PUSH_END_HOUR;
+}
+
+/** One push per follow-up RUNG (a later rung of the same loop may push again),
+ *  and the per-person day prefix the daily slots hang off. */
+export function pushKeys(orgId: string, row: Pick<BriefRow, "id" | "rung" | "assigneeUserId">, dateKey: string): { itemKey: string; dayKey: string } {
+  return {
+    itemKey: `follow-up-push:${orgId}:${row.id}:${row.rung}`,
+    dayKey: `follow-up-push-day:${orgId}:${row.assigneeUserId}:${dateKey}`,
+  };
+}
+
+/** The urgent rows, most pressing first (oldest due date). */
+export function urgentPushRows(rows: BriefRow[]): BriefRow[] {
+  return rows.filter((r) => r.urgent).sort((a, b) => a.dueDate - b.dueDate);
+}
+
+export function pushPayload(row: BriefRow): { title: string; body: string; href: string; tag: string } {
+  return {
+    title: row.title,
+    body: row.why,
+    href: row.projectId ? `/projects/${row.projectId}?tab=work` : "/dashboard",
+    tag: `follow-up:${row.id}`,
+  };
+}

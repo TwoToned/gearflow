@@ -51,7 +51,7 @@ describe("vapidAuthorization", () => {
 
 describe("sendWebPush", () => {
   const target = {
-    endpoint: "https://push.example.com/sub/1",
+    endpoint: "https://web.push.apple.com/QGuQyavXutnMH/sub1",
     p256dh: "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
     auth: "BTBZMqHH6r4Tts7J_aSIgg",
   };
@@ -65,6 +65,21 @@ describe("sendWebPush", () => {
     expect(url).toBe(target.endpoint);
     expect(headers).toMatchObject({ "Content-Encoding": "aes128gcm", Urgency: "high", Topic: "follow-upt1" });
     expect(headers.Authorization).toMatch(/^vapid t=/);
+  });
+
+  it("never requests an endpoint that isn't a known push service (request forgery)", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 201 }));
+    for (const endpoint of [
+      "http://web.push.apple.com/x",
+      "https://169.254.169.254/latest/meta-data",
+      "https://web.push.apple.com.evil.test/x",
+      "https://user@web.push.apple.com/x",
+      "https://web.push.apple.com:8443/x",
+      "not a url",
+    ]) {
+      expect(await sendWebPush({ ...target, endpoint }, {}, vapidKeys(), { fetchImpl })).toEqual({ ok: false, status: 0, gone: true });
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("reports a 410 as a gone subscription", async () => {

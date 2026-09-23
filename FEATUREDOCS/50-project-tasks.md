@@ -424,6 +424,8 @@ Test: `src/app/(app)/my-tasks/__tests__/page.smoke.test.tsx` now just asserts th
   Its first and only caller is follow-up automation's urgent push
   ([FEATUREDOCS/82](./82-follow-up-automation.md)); task assignment / due-soon pushes are
   still the notification follow-up above.
+  `subscribeNative` now rejects an endpoint that isn't FCM, Mozilla or Apple push
+  (`convex/lib/pushEndpoints.ts`) — the server POSTs to it, so it's request-forgery input.
 - **Drag-and-drop reordering** — done this phase (#1244): `reorderNative`, see above.
   (Previously listed here as deferred; superseded.)
 - **Comments / @mentions on tasks.** Ties into the broader Wave 3 comments feature.

@@ -1,4 +1,5 @@
 import "server-only";
+import { pushRequestUrl } from "../../convex/lib/pushEndpoints";
 import { createCipheriv, createECDH, createPrivateKey, createSign, hkdfSync, randomBytes } from "node:crypto";
 
 /**
@@ -30,7 +31,8 @@ export interface VapidKeys {
 export interface PushResult {
   ok: boolean;
   status: number;
-  /** 404/410: the subscription is dead and should be deleted. */
+  /** 404/410: the subscription is dead and should be deleted — as is an
+   *  endpoint that isn't a known push service (never requested at all). */
   gone: boolean;
 }
 
@@ -99,9 +101,11 @@ export async function sendWebPush(
   keys: VapidKeys,
   opts: { ttlSeconds?: number; urgency?: "normal" | "high"; topic?: string; now?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<PushResult> {
+  const url = pushRequestUrl(target.endpoint);
+  if (!url) return { ok: false, status: 0, gone: true };
   const body = encryptPayload(target, Buffer.from(JSON.stringify(payload)));
   const headers: Record<string, string> = {
-    Authorization: vapidAuthorization(target.endpoint, keys, opts.now ?? Date.now()),
+    Authorization: vapidAuthorization(url, keys, opts.now ?? Date.now()),
     "Content-Encoding": "aes128gcm",
     "Content-Type": "application/octet-stream",
     TTL: String(opts.ttlSeconds ?? 4 * 3600),
@@ -109,6 +113,6 @@ export async function sendWebPush(
   };
   // A topic replaces an undelivered push with the same topic (≤32 url-safe chars).
   if (opts.topic) headers.Topic = opts.topic.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32);
-  const res = await (opts.fetchImpl ?? fetch)(target.endpoint, { method: "POST", headers, body: new Uint8Array(body) });
+  const res = await (opts.fetchImpl ?? fetch)(url, { method: "POST", headers, body: new Uint8Array(body) });
   return { ok: res.ok, status: res.status, gone: res.status === 404 || res.status === 410 };
 }

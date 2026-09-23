@@ -408,9 +408,9 @@ task writer" note next to the auto-status one. Registry / OpenAPI / MCP regenera
 | Phase | State |
 |---|---|
 | 0 · Plumbing | **Done in code:** `todayWorkList` in `DEFAULT_DASHBOARD_LAYOUT`. **Deviation:** existing saved boards are not rewritten (no per-user migration for two users; "Add widget" / "Reset to default"). **Ops, not code:** set `ENABLE_FOLLOW_UP_CRON=true` on prod Convex and set the prod org's timezone. |
-| 1 · Quotes | **Built:** rule + reconciler + write-path hooks + human-edit policy + `recordFollowUpOutcomeNative` + hourly tick + settings JSON + UI (badges, why line, no reply / park / won-or-lost). **Not yet:** the morning brief email (needs the cron → Next hop and a new email template). |
-| 2 · Money | Not started (Xero payment sync first). |
-| 3 · Reach | Not started. |
+| 1 · Quotes | **Built:** rule + reconciler + write-path hooks + human-edit policy + `recordFollowUpOutcomeNative` + hourly tick + UI (badges, why line, no reply / park / won-or-lost) + the morning brief (per-user opt-out `followUpBrief`). |
+| 2 · Money | **Built:** Xero payment sync (invoice-level state, `max(Flow, Xero)` merge, hourly on the notification cron + a "Check now" button, token-refresh lease) + shared `settleInvoicePaymentState` + invoice chase (due +1 bd / +7 / +14 call / +30 decision) + invoice-not-raised. **Not built:** the one-time backlog clean-up list — the cut-over guard keeps the 42 pre-cut-over jobs out of the engine; produce the list from the read-only MCP when the backlog is worked. |
+| 3 · Reach | **Built:** urgent-only push (`node:crypto` RFC 8291/8292 sender — no dependency; one per rung, 2/person/day, quiet 19:00–07:00) + the settings UI. **Deviation:** the settings live as a **Follow-ups** section on `/settings` beside Status automation, not a separate `/settings/automation` page — both are "what the app does on its own", and one page keeps them together. No tick heartbeat in the UI yet (the Xero payment check shows its own last-checked time). **Ops:** set `NEXT_PUBLIC_VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT` for push to send. |
 
 FEATUREDOCS/82 is the as-built reference.
 

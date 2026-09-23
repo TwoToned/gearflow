@@ -126,6 +126,7 @@ export function TodayWorkListWidget({
         title: t.title,
         contextLine: taskContextLine(t),
         href: t.projectId ? `/projects/${t.projectId}` : undefined,
+        followUp: t.followUp ?? null,
         overdue: !done && bucket === "overdue",
         done,
         raw: t,
@@ -327,6 +328,15 @@ export function TodayWorkListWidget({
         onMakeTask={(item) => {
           if (item.kind === "mention") promoteMention(item.raw as Doc<"notifications">);
         }}
+        onFollowUpOutcome={(item, outcome, nextDate) =>
+          writes
+            .recordFollowUpOutcome((item.raw as NativeMyOpenTask).id, outcome, { nextDate })
+            .then(() => {
+              toast.success(outcome === "parked" ? "Parked — it'll come back on that date" : "Logged — the next follow-up is scheduled");
+              closePeek();
+            })
+            .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not record that"))
+        }
       />
     </div>
   );

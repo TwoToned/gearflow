@@ -59,6 +59,7 @@ export function useProjectTaskWrites() {
   const bulkDeleteM = useMutation(api.projectTasksWrites.bulkDeleteNative);
   const reorderM = useMutation(api.projectTasksWrites.reorderNative);
   const setWatchingM = useMutation(api.projectTasksWrites.setWatchingNative);
+  const recordOutcomeM = useMutation(api.projectTasksWrites.recordFollowUpOutcomeNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -126,6 +127,24 @@ export function useProjectTaskWrites() {
     // sibling set in its new order (a stage column or the flat list).
     reorder: async (orderedIds: string[]): Promise<void> => {
       await reorderM({ orgId: requireOrg(), orderedIds, now: Date.now() });
+    },
+    // Follow-up automation — "no reply" (next rung, optionally on a chosen
+    // date) or "parked until" a date. Won/lost go through the quote itself.
+    recordFollowUpOutcome: async (
+      id: string,
+      outcome: "no_reply" | "parked",
+      opts: { nextDate?: string; note?: string } = {},
+    ): Promise<void> => {
+      await recordOutcomeM({
+        id,
+        orgId: requireOrg(),
+        outcome,
+        nextDate: toMs(opts.nextDate) ?? undefined,
+        note: opts.note,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
     },
     setWatching: async (id: string, watching: boolean): Promise<boolean> => {
       const res = await setWatchingM({ id, orgId: requireOrg(), userId: session?.user.id ?? "", watching, now: Date.now() });

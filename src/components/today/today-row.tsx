@@ -4,6 +4,7 @@ import { AtSign, Check, Circle } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
 import { intentStyles } from "@/lib/status-colors";
 import type { TodayItem } from "./today-types";
+import { FollowUpBadges } from "@/components/work/follow-up-badges";
 
 interface TodayRowProps {
   item: TodayItem;
@@ -80,6 +81,7 @@ export function TodayRow({ item, active, canEdit, onOpen, onToggleDone }: TodayR
               mention
             </span>
           )}
+          {item.followUp && <FollowUpBadges urgent={item.followUp.urgent} />}
         </div>
       </div>
     </div>

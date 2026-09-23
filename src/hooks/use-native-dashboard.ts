@@ -141,6 +141,8 @@ export interface NativeMyOpenTask {
   assigneeUserId: string | null;
   assigneeCrewId: string | null;
   stage: string | null;
+  /** Set only on rows the follow-up engine owns (follow-up automation §8.7). */
+  followUp: { ruleKey: string; rung: number; why: string; urgent: boolean; subjectId: string } | null;
 }
 
 /**

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn, focusRing } from "@/lib/utils";
 import { TodaySubtasks } from "./today-subtasks";
 import type { TodayItem } from "./today-types";
+import { FollowUpPanel } from "./follow-up-panel";
 
 interface TodayPeekProps {
   item: TodayItem | null;
@@ -16,6 +17,9 @@ interface TodayPeekProps {
   onToggleDone: (item: TodayItem) => void;
   /** Mentions only — "make a task" (design doc §9's Triage table). */
   onMakeTask: (item: TodayItem) => void;
+  /** Automated follow-ups only (follow-up automation §8.3). Optional so hosts
+   *  that don't wire it simply don't show the actions. */
+  onFollowUpOutcome?: (item: TodayItem, outcome: "no_reply" | "parked", nextDate?: string) => void;
 }
 
 /** Split out of TodayPeek (R-3.6) — the footer's per-kind action buttons. */
@@ -59,7 +63,7 @@ function PeekActions({
  * open, returns to the triggering row on Esc, and the row list stays
  * arrow-navigable while this is open (it isn't a focus trap).
  */
-export function TodayPeek({ item, canEdit, orgId, onClose, onToggleDone, onMakeTask }: TodayPeekProps) {
+export function TodayPeek({ item, canEdit, orgId, onClose, onToggleDone, onMakeTask, onFollowUpOutcome }: TodayPeekProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -110,6 +114,9 @@ export function TodayPeek({ item, canEdit, orgId, onClose, onToggleDone, onMakeT
           <p className={cn("text-[15px] font-medium", item.done ? "text-muted line-through" : "text-ink")}>{item.title}</p>
           <p className="text-caption text-muted">{item.contextLine}</p>
         </div>
+        {item.followUp && (
+          <FollowUpPanel item={item} canEdit={canEdit} onOutcome={onFollowUpOutcome} />
+        )}
         {item.kind === "task" && (
           <TodaySubtasks parentId={(item.raw as { id: string }).id} orgId={orgId} canEdit={canEdit} />
         )}

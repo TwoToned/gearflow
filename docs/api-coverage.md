@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 443 | 311 | 130 | 1 | 1 |
-| Mutations | 789 | 297 | 485 | 0 | 7 |
-| **Total** | **1232** | **608** | **615** | **1** | **8** |
+| Queries | 444 | 311 | 131 | 1 | 1 |
+| Mutations | 792 | 297 | 488 | 0 | 7 |
+| **Total** | **1236** | **608** | **619** | **1** | **8** |
 
 <!-- reachability-floor: 608 -->
 
@@ -108,6 +108,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `webhooks` | 14 |
 | `wooCommerceIntegrations` | 8 |
 | `wooCommerceOrderLogs` | 7 |
+| `xeroPaymentSync` | 4 |
 
 ## Deliberately denied (Phase 5 triage, #1001)
 

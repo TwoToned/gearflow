@@ -17,7 +17,7 @@ import { api } from "../../convex/_generated/api";
 import { env } from "@/env";
 import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { endOfDayInTimezone } from "@/lib/quote-validity";
-import { sendWebPush, type VapidKeys } from "@/lib/web-push";
+import { sendWebPush, type VapidIdentity } from "@/lib/web-push";
 import { FOLLOW_UP_PUSH_DAILY_CAP, isPushWindow, localClock, pushKeys, pushPayload, urgentPushRows, type BriefRow } from "@/lib/follow-up-brief";
 
 export interface FollowUpPushResult {
@@ -26,13 +26,13 @@ export interface FollowUpPushResult {
   errors: string[];
 }
 
-function vapidKeys(): VapidKeys | null {
+function vapidIdentity(): VapidIdentity | null {
   const publicKey = env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   if (!publicKey || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) return null;
   return { publicKey, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT };
 }
 
-async function pushToDevices(orgId: string, row: BriefRow, keys: VapidKeys, result: FollowUpPushResult): Promise<void> {
+async function pushToDevices(orgId: string, row: BriefRow, keys: VapidIdentity, result: FollowUpPushResult): Promise<void> {
   const convex = await getConvexClient();
   const devices = await convex.query(api.followUpPush.subscriptionsForUser, { orgId, userId: row.assigneeUserId });
   for (const device of devices) {
@@ -46,7 +46,7 @@ async function pushToDevices(orgId: string, row: BriefRow, keys: VapidKeys, resu
   }
 }
 
-async function pushOrg(orgId: string, keys: VapidKeys, now: number, result: FollowUpPushResult): Promise<void> {
+async function pushOrg(orgId: string, keys: VapidIdentity, now: number, result: FollowUpPushResult): Promise<void> {
   const settings = await readOrgSettingsBlob(orgId);
   if (!settings.timezone || !isPushWindow(now, settings.timezone)) return;
   const convex = await getConvexClient();
@@ -65,7 +65,7 @@ async function pushOrg(orgId: string, keys: VapidKeys, now: number, result: Foll
 
 export async function sendUrgentFollowUpPushes(): Promise<FollowUpPushResult> {
   const result: FollowUpPushResult = { pushed: 0, skipped: 0, errors: [] };
-  const keys = vapidKeys();
+  const keys = vapidIdentity();
   if (!keys) return result;
   const now = Date.now();
   const orgs = await prisma.organization.findMany({ where: { archivedAt: null }, select: { id: true } });

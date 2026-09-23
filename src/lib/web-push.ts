@@ -1,6 +1,6 @@
 import "server-only";
 import { pushRequestUrl } from "../../convex/lib/pushEndpoints";
-import { createCipheriv, createECDH, createPrivateKey, createSign, hkdfSync, randomBytes } from "node:crypto";
+import { createCipheriv, createECDH, createPrivateKey, hkdfSync, randomBytes, sign } from "node:crypto";
 
 /**
  * Web Push sender — RFC 8291 (message encryption, `aes128gcm`) + RFC 8292
@@ -22,7 +22,7 @@ export interface PushTarget {
   auth: string;
 }
 
-export interface VapidKeys {
+export interface VapidIdentity {
   publicKey: string;
   privateKey: string;
   subject: string;
@@ -76,7 +76,7 @@ export function encryptPayload(
 }
 
 /** RFC 8292 — the `Authorization: vapid t=…, k=…` header for `endpoint`. */
-export function vapidAuthorization(endpoint: string, keys: VapidKeys, nowMs: number): string {
+export function vapidAuthorization(endpoint: string, keys: VapidIdentity, nowMs: number): string {
   const pub = b64u(keys.publicKey);
   const jwk = {
     kty: "EC",
@@ -89,16 +89,16 @@ export function vapidAuthorization(endpoint: string, keys: VapidKeys, nowMs: num
   const claims = Buffer.from(
     JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(nowMs / 1000) + 12 * 3600, sub: keys.subject }),
   ).toString("base64url");
-  const signer = createSign("SHA256");
-  signer.update(`${header}.${claims}`);
-  const sig = signer.sign({ key: createPrivateKey({ key: jwk, format: "jwk" }), dsaEncoding: "ieee-p1363" }).toString("base64url");
+  // ES256 over the JWT signing input (a signature, not a password hash).
+  const signingKey = createPrivateKey({ key: jwk, format: "jwk" });
+  const sig = sign("sha256", Buffer.from(`${header}.${claims}`), { key: signingKey, dsaEncoding: "ieee-p1363" }).toString("base64url");
   return `vapid t=${header}.${claims}.${sig}, k=${keys.publicKey}`;
 }
 
 export async function sendWebPush(
   target: PushTarget,
   payload: unknown,
-  keys: VapidKeys,
+  keys: VapidIdentity,
   opts: { ttlSeconds?: number; urgency?: "normal" | "high"; topic?: string; now?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<PushResult> {
   const url = pushRequestUrl(target.endpoint);

@@ -27,7 +27,7 @@ describe("encryptPayload", () => {
   });
 });
 
-function vapidKeys() {
+function vapidIdentity() {
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const pub = publicKey.export({ format: "jwk" }) as { x: string; y: string };
   const raw = Buffer.concat([Buffer.from([4]), b64u(pub.x), b64u(pub.y)]).toString("base64url");
@@ -36,7 +36,7 @@ function vapidKeys() {
 
 describe("vapidAuthorization", () => {
   it("signs an ES256 JWT for the endpoint's origin that the public key verifies", () => {
-    const keys = vapidKeys();
+    const keys = vapidIdentity();
     const header = vapidAuthorization("https://fcm.googleapis.com/fcm/send/abc", keys, Date.UTC(2026, 8, 23));
     const [, token, k] = /^vapid t=([^,]+), k=(.+)$/.exec(header)!;
     expect(k).toBe(keys.publicKey);
@@ -58,7 +58,7 @@ describe("sendWebPush", () => {
 
   it("posts an aes128gcm body with VAPID, TTL, urgency and a sanitised topic", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 201 }));
-    const res = await sendWebPush(target, { title: "x" }, vapidKeys(), { urgency: "high", topic: "follow-up:t1", fetchImpl });
+    const res = await sendWebPush(target, { title: "x" }, vapidIdentity(), { urgency: "high", topic: "follow-up:t1", fetchImpl });
     expect(res).toEqual({ ok: true, status: 201, gone: false });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
@@ -77,13 +77,13 @@ describe("sendWebPush", () => {
       "https://web.push.apple.com:8443/x",
       "not a url",
     ]) {
-      expect(await sendWebPush({ ...target, endpoint }, {}, vapidKeys(), { fetchImpl })).toEqual({ ok: false, status: 0, gone: true });
+      expect(await sendWebPush({ ...target, endpoint }, {}, vapidIdentity(), { fetchImpl })).toEqual({ ok: false, status: 0, gone: true });
     }
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("reports a 410 as a gone subscription", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 410 }));
-    expect(await sendWebPush(target, {}, vapidKeys(), { fetchImpl })).toEqual({ ok: false, status: 410, gone: true });
+    expect(await sendWebPush(target, {}, vapidIdentity(), { fetchImpl })).toEqual({ ok: false, status: 410, gone: true });
   });
 });

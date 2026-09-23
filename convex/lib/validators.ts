@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_RECURRENCE_FREQUENCIES, WORK_ITEM_LINK_ENTITY_TYPES } from "./workVocabulary";
+import { FOLLOW_UP_RESOLUTIONS, FOLLOW_UP_RULE_KEYS } from "./followUpRules";
 
 /**
  * Convex validators for the 65 Prisma enums.
@@ -490,6 +491,30 @@ export const ProjectTaskRecurrence = v.object({
   daysOfWeek: v.optional(v.array(v.number())),
   // monthly only — 1-31, clamped to the shorter month. Absent = same day as the current due date.
   dayOfMonth: v.optional(v.number()),
+});
+// Follow-up automation (docs/designs/follow-up-automation.md §8.4): set only on
+// rows the follow-up engine owns. Sourced from followUpRules.ts's unions.
+export const FollowUpResolution = v.union(...FOLLOW_UP_RESOLUTIONS.map((r) => v.literal(r)));
+export const FollowUpAutomation = v.object({
+  ruleKey: v.union(...FOLLOW_UP_RULE_KEYS.map((k) => v.literal(k))),
+  /** The quote/invoice/project the row is currently about. */
+  subjectId: v.string(),
+  /** 1, 2 = chasing; 3 = decision; 0 = housekeeping. */
+  rung: v.number(),
+  /** When this loop started (the send that opened it) — groups a loop's rungs. */
+  loopStartAt: v.number(),
+  /** Push-eligible (the loop's deadline is under a week away). Not a priority. */
+  urgent: v.boolean(),
+  /** Why the row exists, in one line — shown under the title. */
+  why: v.string(),
+  /** Fields a human edited; the reconciler never writes them again. */
+  lockedFields: v.array(v.string()),
+  /** How the row was closed; absent while open. */
+  resolution: v.optional(FollowUpResolution),
+  /** "system" or the userId who closed it. */
+  resolvedBy: v.optional(v.string()),
+  /** A human's chosen date for the NEXT rung (from "no reply — next on…"). */
+  nextDate: v.optional(v.number()),
 });
 // Work-layer phase 3 (#1245): sourced from workVocabulary.ts.
 export const WorkItemLinkEntityType = v.union(...WORK_ITEM_LINK_ENTITY_TYPES.map((t) => v.literal(t)));

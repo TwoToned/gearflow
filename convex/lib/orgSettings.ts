@@ -2,6 +2,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { resolveQuoteValidityDays } from "./quoteDates";
 import { resolvePaymentTermsDays } from "./invoiceDates";
 import { resolveRottingDays, DEFAULT_ROTTING_AMBER_DAYS, DEFAULT_ROTTING_ERROR_DAYS } from "./rottingDates";
+import { FOLLOW_UP_BOUNDS, FOLLOW_UP_DEFAULTS, FOLLOW_UP_DEFAULT_CUTOVER_AT, type FollowUpConfig } from "./followUpRules";
 
 /** Org default tax rate from the Convex orgSettings mirror (source of truth; the
  *  Postgres column is deprecated). null when unset. Resolved IN-mutation so browser
@@ -171,3 +172,26 @@ export async function resolveCrewCallReminderEnabled(ctx: MutationCtx | QueryCtx
   const blob = (await loadOrgSettingsBlob(ctx, orgId)) as { crewTime?: { callReminderEnabled?: unknown } };
   return blob.crewTime?.callReminderEnabled === true;
 }
+
+/** Follow-up automation config (docs/designs/follow-up-automation.md §8.4),
+ *  resolved server-side so neither the reconciler nor a browser caller can
+ *  spoof it. Absent keys fall back to `FOLLOW_UP_DEFAULTS`; out-of-range values
+ *  clamp; `quotesEnabled` is ON unless explicitly `false`. */
+export async function resolveOrgFollowUpConfig(ctx: MutationCtx | QueryCtx, orgId: string): Promise<FollowUpConfig> {
+  const blob = (await loadOrgSettingsBlob(ctx, orgId)) as {
+    timezone?: unknown;
+    followUps?: Record<string, unknown>;
+  };
+  const f = blob.followUps && typeof blob.followUps === "object" ? blob.followUps : {};
+  const clampInt = (raw: unknown, fallback: number, b: { min: number; max: number }) =>
+    typeof raw === "number" && Number.isFinite(raw) ? Math.min(b.max, Math.max(b.min, Math.round(raw))) : fallback;
+  return {
+    quotesEnabled: f.quotesEnabled !== false,
+    firstFollowUpBusinessDays: clampInt(f.firstFollowUpBusinessDays, FOLLOW_UP_DEFAULTS.firstFollowUpBusinessDays, FOLLOW_UP_BOUNDS.businessDays),
+    nextFollowUpBusinessDays: clampInt(f.nextFollowUpBusinessDays, FOLLOW_UP_DEFAULTS.nextFollowUpBusinessDays, FOLLOW_UP_BOUNDS.businessDays),
+    decisionLeadDays: clampInt(f.decisionLeadDays, FOLLOW_UP_DEFAULTS.decisionLeadDays, FOLLOW_UP_BOUNDS.decisionLeadDays),
+    cutoverAt: typeof f.cutoverAt === "number" && Number.isFinite(f.cutoverAt) ? f.cutoverAt : FOLLOW_UP_DEFAULT_CUTOVER_AT,
+    timezone: typeof blob.timezone === "string" && blob.timezone ? blob.timezone : undefined,
+  };
+}
+

@@ -3422,9 +3422,10 @@ export default defineSchema({
     snoozedUntil: v.optional(v.number()),
     estimateMinutes: v.optional(v.number()),
     tags: v.optional(v.array(v.string())), // free-form strings, FEATUREDOCS/26 shape — no tag table
-    // Set only when a human promotes a derived Triage signal into a real row
-    // (§9) — deterministic, names the underlying entity (e.g.
-    // "quote:expiring:<quoteId>"). Never set by anything else.
+    // Deterministic identity for system-created or promoted rows — set when a
+    // human promotes a derived Triage signal (§9, e.g. "quote:expiring:<quoteId>"),
+    // by template seeding ("template:<key>:<status>"), and by the follow-up
+    // engine ("quote:nonext:<quoteId>", reusing the signal key it replaces).
     sourceKey: v.optional(v.string()),
     isPrivate: v.optional(v.boolean()),
     // Set when seeded from a workTemplates row on a lifecycle transition (§8.2).
@@ -3440,6 +3441,11 @@ export default defineSchema({
     // (FEATUREDOCS/50) — this phase ships the field + the add/remove UI, not
     // a new notification type.
     watcherUserIds: v.optional(v.array(v.string())),
+    // Follow-up automation (docs/designs/follow-up-automation.md §8.4) — set
+    // ONLY on rows the follow-up engine owns (convex/lib/followUpReconcile.ts).
+    // Its presence is what makes a row "automated": human closes/edits of such
+    // a row go back through the reconciler.
+    automation: v.optional(enums.FollowUpAutomation),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])

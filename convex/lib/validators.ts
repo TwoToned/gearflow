@@ -556,8 +556,9 @@ export const InvoiceStatus = v.union(
   v.literal("ISSUED"),
   v.literal("VOID"),
 );
-/** Written by paymentsWrites.ts recordNative/voidNative, derived from the invoice's
- *  own amountPaid vs total — NOT by a Xero poll (that phase-2 idea was never built;
+/** Written by paymentsWrites.ts recordNative/voidNative and the Xero payment sync
+ *  (FEATUREDOCS/82), derived from the invoice's own payments plus Xero's reported
+ *  paid/credited amounts — the historical note below predates that sync (
  *  see FEATUREDOCS/66). Vocabulary matches SubHirePaymentStatus (same shape, separate
  *  enum — a different entity). */
 export const InvoicePaymentStatus = v.union(
@@ -612,4 +613,6 @@ export const XeroSyncDirection = v.union(
   v.literal("SYNC_CONTACT"),
   v.literal("REFRESH_TOKEN"),
   v.literal("FETCH_REFERENCE_DATA"),
+  // Follow-up automation phase 2 — reading invoice payment state back from Xero.
+  v.literal("PULL_PAYMENTS"),
 );

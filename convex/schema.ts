@@ -2866,6 +2866,17 @@ export default defineSchema({
     xeroInvoiceId: v.optional(v.string()),
     xeroSyncStatus: v.optional(enums.XeroSyncStatus),
     lastSyncError: v.optional(v.string()),
+    // Xero payment sync (follow-up automation phase 2, FEATUREDOCS/82) — the
+    // invoice-level truth read back from Xero, which owns reconciliation:
+    // Xero's own Status (DRAFT/SUBMITTED/AUTHORISED/PAID/VOIDED/DELETED) and
+    // its AmountPaid/AmountCredited/AmountDue. `paymentsWrites`'s recompute
+    // folds these into `paymentStatus`, so an invoice paid or credited in Xero
+    // reads as settled in Flow without a hand-entered payment.
+    xeroStatus: v.optional(v.string()),
+    xeroAmountPaid: v.optional(v.number()),
+    xeroAmountCredited: v.optional(v.number()),
+    xeroAmountDue: v.optional(v.number()),
+    xeroCheckedAt: v.optional(v.number()),
     createdById: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -3074,6 +3085,13 @@ export default defineSchema({
     cacheRefreshedAt: v.optional(v.number()),
     cacheError: v.optional(v.string()),
     lastSyncError: v.optional(v.string()),
+    // Refresh-token lease (FEATUREDOCS/82): Xero rotates the refresh token on
+    // every use, so two concurrent refreshes (a user push + the payment sync)
+    // would race and persist a dead token. Every refresh holds this lease.
+    tokenLeaseHolder: v.optional(v.string()),
+    tokenLeaseUntil: v.optional(v.number()),
+    // When the payment sync last ran for this org (hourly throttle).
+    paymentsSyncedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

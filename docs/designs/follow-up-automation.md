@@ -1,6 +1,6 @@
 # Follow-up automation — the follow-up engine
 
-> _Owner: Jayden Nawotka · Created: 2026-09-23 · Status: **DRAFT** (office-hours, decisions D1–D7) · Review quarterly (POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Created: 2026-09-23 · Status: **APPROVED** 2026-09-23 (office-hours, decisions D1–D7) · Review quarterly (POLICY.md R-5.5)_
 
 **Mode:** intrapreneurship (RVLT Flow is the company's own operating system and a sold product).
 **Stage:** has users. **Builds on:** [`work-layer.md`](./work-layer.md) and

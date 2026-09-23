@@ -476,6 +476,38 @@ export async function upsertXeroDraftInvoice(
   return created;
 }
 
+const invoiceStateSchema = z.object({
+  InvoiceID: z.string(),
+  Status: z.string(),
+  AmountPaid: z.number().optional(),
+  AmountCredited: z.number().optional(),
+  AmountDue: z.number().optional(),
+});
+const invoiceStatesResponseSchema = z.object({ Invoices: z.array(invoiceStateSchema) });
+export type XeroInvoiceState = z.infer<typeof invoiceStateSchema>;
+
+/** Xero's `IDs` filter takes a comma-separated list; keep each request's URL
+ *  well inside limits. */
+const INVOICE_IDS_PER_REQUEST = 40;
+
+/**
+ * Invoice-level payment state for the Flow-pushed invoices (follow-up
+ * automation phase 2, FEATUREDOCS/82): Status, AmountPaid, AmountCredited,
+ * AmountDue. Read-only; batched by `IDs`. `summaryOnly=true` keeps Xero from
+ * returning line items we don't need.
+ */
+export async function fetchXeroInvoiceStates(xeroInvoiceIds: string[], opts: AuthedRequestOpts): Promise<XeroInvoiceState[]> {
+  const out: XeroInvoiceState[] = [];
+  for (let i = 0; i < xeroInvoiceIds.length; i += INVOICE_IDS_PER_REQUEST) {
+    const ids = xeroInvoiceIds.slice(i, i + INVOICE_IDS_PER_REQUEST).map(encodeURIComponent).join(",");
+    const json = await xeroGet(`/api.xro/2.0/Invoices?IDs=${ids}&summaryOnly=true`, opts);
+    const parsed = invoiceStatesResponseSchema.safeParse(json);
+    if (!parsed.success) throw new XeroApiError("Xero Invoices state response failed schema validation", undefined, json);
+    out.push(...parsed.data.Invoices);
+  }
+  return out;
+}
+
 async function safeJson(res: Response): Promise<unknown> {
   try {
     return await res.json();

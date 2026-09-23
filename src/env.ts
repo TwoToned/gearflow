@@ -60,6 +60,13 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
+  // Web Push (#1244 subscription side; follow-up automation's urgent push is
+  // the first sender, FEATUREDOCS/82). All three optional: unset = no push is
+  // sent. The public key is also inlined client-side as NEXT_PUBLIC_*.
+  NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
+
   // Xero integration (WS1 #940) — optional; the OAuth connect flow throws a
   // clear error at click-time if unset rather than gating the whole app boot
   // (no org may have connected Xero yet, and never connecting is a valid

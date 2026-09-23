@@ -63064,7 +63064,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b21345538722cfa9",
-    "returnsSha": "368bbc0701ab1802",
+    "returnsSha": "21ff541876797972",
     "stability": "tracks-app",
     "summary": "Get the org's Xero connection status/config (never the encrypted refresh token).",
     "danger": "low",

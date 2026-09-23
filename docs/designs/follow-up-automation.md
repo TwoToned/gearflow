@@ -403,6 +403,17 @@ FEATUREDOCS/82 for the engine; CLAUDE.md gains a short "follow-ups: add a RULE, 
 task writer" note next to the auto-status one. Registry / OpenAPI / MCP regenerated for
 `recordOutcomeNative`.
 
+### 9.1 Build status (2026-09-23)
+
+| Phase | State |
+|---|---|
+| 0 · Plumbing | **Done in code:** `todayWorkList` in `DEFAULT_DASHBOARD_LAYOUT`. **Deviation:** existing saved boards are not rewritten (no per-user migration for two users; "Add widget" / "Reset to default"). **Ops, not code:** set `ENABLE_FOLLOW_UP_CRON=true` on prod Convex and set the prod org's timezone. |
+| 1 · Quotes | **Built:** rule + reconciler + write-path hooks + human-edit policy + `recordFollowUpOutcomeNative` + hourly tick + settings JSON + UI (badges, why line, no reply / park / won-or-lost). **Not yet:** the morning brief email (needs the cron → Next hop and a new email template). |
+| 2 · Money | Not started (Xero payment sync first). |
+| 3 · Reach | Not started. |
+
+FEATUREDOCS/82 is the as-built reference.
+
 ## 10. Not building
 
 Client-facing email of any kind (D2). A free-form rule builder (presets + toggles beat builders

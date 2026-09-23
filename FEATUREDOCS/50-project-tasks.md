@@ -42,10 +42,15 @@ parallel `workItems` table, per the design doc's explicit "one table" decision:
   Phase-1 comment claimed), `dueTime` (`"HH:mm"`
   in the org timezone), `scheduledStart`/`scheduledEnd` (the agenda block Today renders),
   `snoozedUntil`, `estimateMinutes`, `tags` (free-form strings, no tag table).
-- `sourceKey` — set ONLY when a human promotes a derived Triage signal (quote expiring,
-  crew declined, etc.) into a real row; deterministic, names the underlying entity (e.g.
-  `"quote:expiring:<quoteId>"`). Never set by anything else — it's the join key back to
-  `workSignalStates` below.
+- `sourceKey` — deterministic identity for a system-created or promoted row, naming the
+  underlying entity: set when a human promotes a derived Triage signal (e.g.
+  `"quote:expiring:<quoteId>"`, the join key back to `workSignalStates` below), by template
+  seeding (`"template:<key>:<status>"`), and by the follow-up engine
+  (`"quote:nonext:<quoteId>"`, [FEATUREDOCS/82](./82-follow-up-automation.md)).
+- `automation` — set ONLY on rows the follow-up engine owns (FEATUREDOCS/82): rule, subject,
+  rung, loop start, urgency, why, human-locked fields, resolution. Its presence routes a
+  human's edit/close/delete of the row back through `reconcileFollowUps` (DONE advances or
+  ends the ladder; delete becomes a soft `CANCELLED` tombstone; edited fields are locked).
 - `isPrivate`, `templateId` (set when seeded from a `workTemplates` row on a project
   lifecycle transition — see the tracking issue's §8.2; the seeding mutation itself is a
   later Phase 1 slice, not yet built).

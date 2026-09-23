@@ -14,6 +14,11 @@ who wants Today's personal-agenda view adds its three widgets (still in the
 catalog below, still not in the default layout) to their own board instead
 of visiting a separate page.
 
+**Update (follow-up automation, 2026-09-23, FEATUREDOCS/82):** `todayWorkList` is now in
+`DEFAULT_DASHBOARD_LAYOUT`, directly under the setup checklists — it is where automated
+quote follow-ups land, so a default board without it would hide them (design D3). The day
+rail and needs-you rail stay catalog-only. Existing saved boards are not rewritten.
+
 ## What it is
 
 A "Customize" toggle in the dashboard page header switches between a locked
@@ -40,7 +45,7 @@ Every v1 widget is a thin extraction of JSX/logic that already rendered on
 | `recentActivity` | `useNativeActivity` | dashboard Zone 3 |
 | `finishSetupChecklist` | `<FinishSetupChecklist bare>` | dashboard (C6, #1104) |
 | `activationChecklist` | `<ActivationChecklist bare>` | dashboard (D1, #1105) |
-| `todayWorkList` | `<TodayWorkListWidget>` | `/today`'s Overdue/Today/Triage/Later list |
+| `todayWorkList` | `<TodayWorkListWidget>` | `/today`'s Overdue/Today/Triage/Later list — **in the default layout** since follow-up automation |
 | `todayDayRail` | `<TodayDayRailWidget>` | `/today`'s "Your day" rail |
 | `todayNeedsYouRail` | `<TodayNeedsYouRailWidget>` | `/today`'s "Needs you" rail |
 

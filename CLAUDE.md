@@ -582,6 +582,21 @@ Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical wor
 is the second way out of the money phase, for orgs that reconcile payments in Xero
 and never write a `payments` row. See FEATUREDOCS/76.
 
+### Follow-ups are ONE engine — add a RULE, never a second task writer
+`convex/lib/followUpRules.ts` (pure `planQuoteLoop`) + `convex/lib/followUpReconcile.ts`
+(`reconcileFollowUps`) own every automated follow-up task (FEATUREDOCS/82). Three rules:
+
+1. **A new automated follow-up is a rule, not a call site.** Add it to the rule module and
+   `reconcileFollowUps`; call `reconcileFollowUps` ONCE at the end of any mutation that
+   changes the facts (quote send/recall/accept/decline, project status) — never in a loop.
+2. **A row with `automation` set is the engine's.** Human edits of it must go through
+   `automationForHumanChange` (locks edited fields; DONE records `no_reply`/`decided`) and
+   then the reconciler; deleting one is a SOFT close (`CANCELLED` + `resolution: "deleted"`),
+   or the next reconcile recreates it. Won/lost stay on the quote's own accept/decline.
+3. **Never chase what Flow can't verify** — nothing before the org's `followUps.cutoverAt`,
+   nothing on a `CANCELLED` project, and no invoice rule until the Xero payment sync exists.
+   The hourly tick runs on its OWN flag (`ENABLE_FOLLOW_UP_CRON`), not `ENABLE_CONVEX_CRONS`.
+
 ### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
 The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
 the client has agreed and/or an invoice is out, but the money hasn't landed.

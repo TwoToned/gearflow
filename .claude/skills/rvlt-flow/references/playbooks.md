@@ -70,6 +70,15 @@ Answers: what money is sitting still.
 3. **Jobs parked in `AWAITING_PAYMENT`** — especially any whose gear window has
    already started. That is gear hard-held against money that hasn't landed.
 
+Every quote sent after the org's follow-up cut-over already carries an
+**automated follow-up task** (`kind: follow_up`, `automation` set, an `auto` badge
+in the app — FEATUREDOCS/82): rung 1 two business days after sending, a second five
+business days after a "no reply", then a won/lost/extend/park decision, all pulled
+earlier when the event is close. Read those tasks before inventing a chase list —
+their `why` line says what's been tried. Don't create a parallel follow-up task for
+the same quote; record the outcome on the automated one instead (accept/decline the
+quote for won/lost, which closes it).
+
 Before reporting a job as "stuck unpaid", check whether the org records payments
 in Flow at all. Many reconcile in Xero only, in which case the payment trigger
 never fires and the job moves forward on physical work instead. That is normal,

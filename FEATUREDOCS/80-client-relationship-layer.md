@@ -90,6 +90,11 @@ FEATUREDOCS/50).
   `workSignalStates` snooze/dismiss subtraction as every other Triage signal, `sourceKey`
   `quote:nonext:<quoteId>`.
 
+  **Follow-up automation (FEATUREDOCS/82):** the engine now creates that `follow_up` itself
+  on send — linked to the client, keyed `quote:nonext:<quoteId>` — so for any quote sent
+  after the org's cut-over this signal goes quiet on its own; it remains the backstop for
+  older quotes and orgs that opt out.
+
 - **Pipeline view** (`convex/pipeline.ts`'s `forOrg`, page at `/clients/pipeline`) — the project
   board filtered to `ENQUIRY`/`QUOTING`/`QUOTED`/`CONFIRMED`, sorted by next-step date (falling
   back to the live quote's `sentAt` when no next step is logged yet, so a dateless deal doesn't

@@ -314,6 +314,7 @@ import type * as workItemLinks from "../workItemLinks.js";
 import type * as workItemLinksWrites from "../workItemLinksWrites.js";
 import type * as workSignalStatesWrites from "../workSignalStatesWrites.js";
 import type * as xeroIntegrations from "../xeroIntegrations.js";
+import type * as xeroPaymentSync from "../xeroPaymentSync.js";
 import type * as xeroPush from "../xeroPush.js";
 import type * as xeroSyncLogs from "../xeroSyncLogs.js";
 
@@ -630,6 +631,7 @@ declare const fullApi: ApiFromModules<{
   workItemLinksWrites: typeof workItemLinksWrites;
   workSignalStatesWrites: typeof workSignalStatesWrites;
   xeroIntegrations: typeof xeroIntegrations;
+  xeroPaymentSync: typeof xeroPaymentSync;
   xeroPush: typeof xeroPush;
   xeroSyncLogs: typeof xeroSyncLogs;
 }>;

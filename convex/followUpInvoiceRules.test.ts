@@ -78,6 +78,17 @@ describe("planInvoiceLoop", () => {
     expect(planInvoiceLoop(facts({}, { rows: closed(4), now: DUE + 30 * DAY })).desired).toBeNull();
   });
 
+  test("later rungs land on the design's schedule: due + 7, + 14, + 30 days", () => {
+    const start = startOfDayInTimezone(DUE, TZ);
+    const noReply = (i: number, at: number) => row({ id: `c${i}`, open: false, resolution: "no_reply", completedAt: at });
+    expect(planInvoiceLoop(facts({}, { rows: [noReply(0, DUE + 2 * DAY)] })).desired!.dueDate).toBe(start + 7 * DAY);
+    expect(planInvoiceLoop(facts({}, { rows: [noReply(0, DUE + 2 * DAY), noReply(1, DUE + 8 * DAY)], now: DUE + 9 * DAY })).desired!.dueDate).toBe(start + 14 * DAY);
+    // A no-reply logged after the scheduled day: the next rung is due the next business day.
+    const late = DUE + 40 * DAY;
+    const rows = [noReply(0, DUE + 2 * DAY), noReply(1, DUE + 8 * DAY), noReply(2, late)];
+    expect(planInvoiceLoop(facts({}, { rows, now: late })).desired!.dueDate).toBe(addBusinessDaysInTimezone(late, 1, TZ));
+  });
+
   test("human done on the call rung keeps chasing; on the decision it ends", () => {
     expect(resolutionForHumanDone(3, "invoice")).toBe("no_reply");
     expect(resolutionForHumanDone(4, "invoice")).toBe("decided");

@@ -17,9 +17,9 @@ import {
  *
  *  - **Invoice chase** — a Flow invoice (issued after the cut-over, not a
  *    credit) that is past its due date and not settled. Rung 1 one business
- *    day after the due date; each "no reply" moves the next rung five business
- *    days on; rung 3 says "call"; rung 4 is the decision (payment plan,
- *    write-off, keep chasing). A DEPOSIT whose event is under a week away is
+ *    day after the due date; each "no reply" opens the next rung, scheduled at
+ *    due + 7 d, the call (rung 3) at + 14 d and the decision (rung 4: payment
+ *    plan, write-off, keep chasing) at + 30 d. A DEPOSIT whose event is under a week away is
  *    urgent — the gear is held against money that hasn't landed. Closes when
  *    the invoice is PAID (Flow or Xero), voided (Flow or Xero) or fully
  *    credited (settled via `xeroAmountCredited`, so it reads PAID).
@@ -54,7 +54,6 @@ export interface InvoiceLoopFacts {
 export const INVOICE_DECISION_RUNG = 4;
 const DAY_MS = 86_400_000;
 const URGENT_DEPOSIT_WINDOW_MS = 7 * DAY_MS;
-const NEXT_RUNG_BUSINESS_DAYS = 5;
 const CLOSED_IN_XERO = new Set(["VOIDED", "DELETED"]);
 
 function money(n: number): string {
@@ -98,12 +97,17 @@ function invoiceTitle(label: string, owed: string, rung: number): string {
   return rung === 2 ? `Second chase: ${label} (${owed} overdue)` : `Chase payment: ${label} (${owed} overdue)`;
 }
 
-/** Rung N+1 is due on the parked date, else five business days after the
- *  last no-reply, else one business day after the invoice's due date. */
-function nextChaseDue(last: FollowUpRow | undefined, dueStart: number, tz: string | undefined): number {
+/** Design §8.3: rung 2 at due + 7 d, the call at + 14 d, the decision at + 30 d. */
+const RUNG_DAYS_AFTER_DUE: Record<number, number> = { 2: 7, 3: 14, 4: 30 };
+
+/** Rung 1 is one business day after the due date. A later rung is due on its
+ *  scheduled day after the due date — or, if the no-reply that opened it came
+ *  late, the next business day — unless the human parked it to a date. */
+function nextChaseDue(rung: number, last: FollowUpRow | undefined, dueStart: number, tz: string | undefined): number {
   if (last?.nextDate !== undefined) return startOfDayInTimezone(last.nextDate, tz);
-  if (last?.completedAt !== undefined) return addBusinessDaysInTimezone(last.completedAt, NEXT_RUNG_BUSINESS_DAYS, tz);
-  return addBusinessDaysInTimezone(dueStart, 1, tz);
+  const scheduled = RUNG_DAYS_AFTER_DUE[rung];
+  if (scheduled === undefined || last?.completedAt === undefined) return addBusinessDaysInTimezone(dueStart, 1, tz);
+  return Math.max(dueStart + scheduled * DAY_MS, addBusinessDaysInTimezone(last.completedAt, 1, tz));
 }
 
 function chaseWhy(f: InvoiceLoopFacts, label: string, owed: string, dueStart: number, urgent: boolean): string {
@@ -140,7 +144,7 @@ export function planInvoiceLoop(f: InvoiceLoopFacts): QuoteLoopPlan {
     rung,
     loopStartAt: dueStart,
     subjectId: inv.id,
-    dueDate: nextChaseDue(last, dueStart, tz),
+    dueDate: nextChaseDue(rung, last, dueStart, tz),
     priority: urgent || rung >= 3 ? "HIGH" : "NORMAL",
     urgent,
     title: invoiceTitle(label, owed, rung),

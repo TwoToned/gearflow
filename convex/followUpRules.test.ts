@@ -30,7 +30,7 @@ type FactsOverride = Omit<Partial<QuoteLoopFacts>, "quote" | "project"> & {
 function facts(over: FactsOverride = {}): QuoteLoopFacts {
   const base: QuoteLoopFacts = {
     now: SENT + 60_000,
-    config: { quotesEnabled: true, ...FOLLOW_UP_DEFAULTS, cutoverAt: CUTOVER, timezone: TZ },
+    config: { quotesEnabled: true, invoicesEnabled: true, ...FOLLOW_UP_DEFAULTS, cutoverAt: CUTOVER, timezone: TZ },
     project: { status: "QUOTED", eventStart: SENT + 120 * DAY, projectNumber: "260901" },
     quote: { id: "q1", version: 1, effectiveStatus: "SENT", sentAt: SENT, validUntil: SENT + 30 * DAY },
     rows: [],

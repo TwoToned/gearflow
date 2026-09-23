@@ -28,6 +28,8 @@ export interface FollowUpConfig {
   /** Quote follow-ups on/off. Absent in the stored blob = ON (same convention
    *  as the project-status automation keys: the blob only records an opt-out). */
   quotesEnabled: boolean;
+  /** Invoice chasing + "invoice not raised" on/off (phase 2). Absent = ON. */
+  invoicesEnabled: boolean;
   /** Business days from the send to the first follow-up. */
   firstFollowUpBusinessDays: number;
   /** Business days from a "no reply" to the next rung. */
@@ -59,7 +61,7 @@ export const FOLLOW_UP_DEFAULT_CUTOVER_AT = Date.UTC(2026, 8, 22, 14, 0, 0);
 
 // ─── Row + plan shapes ────────────────────────────────────────────────────
 
-export const FOLLOW_UP_RULE_KEYS = ["quote"] as const;
+export const FOLLOW_UP_RULE_KEYS = ["quote", "invoice", "invoice_unraised"] as const;
 export type FollowUpRuleKey = (typeof FOLLOW_UP_RULE_KEYS)[number];
 
 /** How an automated row was closed. `no_reply` and `deleted` consume a rung
@@ -75,11 +77,14 @@ export const FOLLOW_UP_RESOLUTIONS = [
   "recalled",
   "superseded",
   "disabled",
+  "paid",
+  "voided",
+  "invoiced",
 ] as const;
 export type FollowUpResolution = (typeof FOLLOW_UP_RESOLUTIONS)[number];
 
-const TERMINAL: ReadonlySet<FollowUpResolution> = new Set(["accepted", "declined", "cancelled", "decided"]);
-const RUNG_CONSUMING: ReadonlySet<FollowUpResolution> = new Set(["no_reply", "deleted"]);
+export const TERMINAL: ReadonlySet<FollowUpResolution> = new Set(["accepted", "declined", "cancelled", "decided", "paid", "voided", "invoiced"]);
+export const RUNG_CONSUMING: ReadonlySet<FollowUpResolution> = new Set(["no_reply", "deleted"]);
 
 /** Fields a human can take over; once edited the reconciler never writes them. */
 export const FOLLOW_UP_LOCKABLE_FIELDS = ["dueDate", "title", "assignee"] as const;
@@ -153,7 +158,7 @@ export function quoteLabelFor(projectNumber: string, version: number): string {
   return `${projectNumber} v${version}`;
 }
 
-function formatShortDate(ms: number, timezone: string | undefined): string {
+export function formatShortDate(ms: number, timezone: string | undefined): string {
   try {
     return new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: timezone || "UTC" }).format(new Date(ms));
   } catch {
@@ -172,7 +177,7 @@ export function loopDeadline(facts: Pick<QuoteLoopFacts, "config" | "project" | 
   return candidates.length ? Math.min(...candidates) : undefined;
 }
 
-function closeAll(rows: FollowUpRow[], resolution: FollowUpResolution, status: "DONE" | "CANCELLED"): QuoteLoopPlan["close"] {
+export function closeAll(rows: FollowUpRow[], resolution: FollowUpResolution, status: "DONE" | "CANCELLED"): QuoteLoopPlan["close"] {
   return rows.filter((r) => r.open).map((r) => ({ id: r.id, resolution, status }));
 }
 
@@ -359,7 +364,11 @@ export function planQuoteLoop(facts: QuoteLoopFacts): QuoteLoopPlan {
 
 /** How a HUMAN closing an automated row should be recorded: a plain "done" on
  *  a chasing rung means "I followed up, no answer yet" (advance the ladder); on
- *  the decision or housekeeping rung it means "decided" (end the loop). */
-export function resolutionForHumanDone(rung: number): FollowUpResolution {
-  return rung === DECISION_RUNG || rung === HOUSEKEEPING_RUNG ? "decided" : "no_reply";
+ *  the loop's decision (or housekeeping) rung it means "decided" (end it). The
+ *  invoice chase decides at rung 4; "invoice not raised" is one item, so any
+ *  done ends it. */
+export function resolutionForHumanDone(rung: number, ruleKey: FollowUpRuleKey = "quote"): FollowUpResolution {
+  if (ruleKey === "invoice_unraised") return "decided";
+  const decision = ruleKey === "invoice" ? 4 : DECISION_RUNG;
+  return rung >= decision || rung === HOUSEKEEPING_RUNG ? "decided" : "no_reply";
 }

@@ -187,6 +187,7 @@ export async function resolveOrgFollowUpConfig(ctx: MutationCtx | QueryCtx, orgI
     typeof raw === "number" && Number.isFinite(raw) ? Math.min(b.max, Math.max(b.min, Math.round(raw))) : fallback;
   return {
     quotesEnabled: f.quotesEnabled !== false,
+    invoicesEnabled: f.invoicesEnabled !== false,
     firstFollowUpBusinessDays: clampInt(f.firstFollowUpBusinessDays, FOLLOW_UP_DEFAULTS.firstFollowUpBusinessDays, FOLLOW_UP_BOUNDS.businessDays),
     nextFollowUpBusinessDays: clampInt(f.nextFollowUpBusinessDays, FOLLOW_UP_DEFAULTS.nextFollowUpBusinessDays, FOLLOW_UP_BOUNDS.businessDays),
     decisionLeadDays: clampInt(f.decisionLeadDays, FOLLOW_UP_DEFAULTS.decisionLeadDays, FOLLOW_UP_BOUNDS.decisionLeadDays),

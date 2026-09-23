@@ -83,6 +83,8 @@ interface OrgWorkSettings {
  *  (phase 3); edit via the raw settings JSON until then. */
 interface OrgFollowUpSettings {
   quotesEnabled?: boolean;
+  /** Invoice chasing + "invoice not raised" (phase 2). */
+  invoicesEnabled?: boolean;
   firstFollowUpBusinessDays?: number;
   nextFollowUpBusinessDays?: number;
   decisionLeadDays?: number;

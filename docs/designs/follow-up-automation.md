@@ -1,6 +1,6 @@
 # Follow-up automation — the follow-up engine
 
-> _Owner: Jayden Nawotka · Created: 2026-09-23 · Status: **DRAFT** (office-hours, decisions D1–D6) · Review quarterly (POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Created: 2026-09-23 · Status: **DRAFT** (office-hours, decisions D1–D7) · Review quarterly (POLICY.md R-5.5)_
 
 **Mode:** intrapreneurship (RVLT Flow is the company's own operating system and a sold product).
 **Stage:** has users. **Builds on:** [`work-layer.md`](./work-layer.md) and
@@ -52,7 +52,7 @@ default below is a starting guess to be recalibrated at ~30 sent quotes (§12).
 |---|---|---|
 | `quote:nonext` signal — quote SENT 24h+, client has no open `follow_up` | `dashboardLists.needsYou` (derived) | Asks a human to create the follow-up; nobody does. Lives in a widget not on the default dashboard |
 | `quote:expiring` signal + `quote_expiring` bell/email | `needsYou`, `getNotifications()` | Anchored to **expiry**, not to **send** — fires 23 days after a 30-day quote goes out |
-| Pipeline rotting (amber 7 / error 14 days since client touch) | `pipeline.forOrg`, `rottingDates.ts` | Idle days only; blind to the event date (§5, eureka) |
+| Pipeline rotting (amber 7 / error 14 days since client touch) | `pipeline.forOrg`, `rottingDates.ts` | Idle days only; blind to the event date (§4.1) |
 | Work templates seeded on `CONFIRMED` | `workTemplateSeeding.ts` | Only one trigger; nothing resolves them automatically; no admin UI |
 | `/finance` chase board (quotes out, expiring, uninvoiced, deposit due, outstanding) | `financeOrg.bundle` | Pull-only; carries the 42-job backlog as noise; "outstanding" is wrong for Xero-paid invoices |
 | Snooze / dismiss / promote of derived signals | `workSignalStates` | Works; stays |
@@ -95,22 +95,24 @@ date. **An event-hire job has an immovable date.** Idle time only matters relati
 left. Production proves it: the rotting board shows a confirmed job starting tomorrow as red
 (189 idle days) and an unconfirmed quote whose event is 8 days away as amber.
 
-So urgency here is two-dimensional:
+So the follow-up ladder is anchored to the **send date** but **clamped by the runway**:
 
 ```
-decideBy = eventStart − decisionLeadDays        (default 14; the job needs to be secure by then)
-runway   = decideBy − now
+decideBy = eventStart − decisionLeadDays     (default 14; the job must be secure by then)
+deadline = min(decideBy, validUntil − 2d)
 
-             runway > 21d        7–21d             < 7d / past
-silent  ┌──────────────────┬─────────────────┬──────────────────┐
-≤ 2bd   │ nothing          │ nothing         │ follow up today  │
-2–7d    │ follow-up #1     │ follow-up #1    │ URGENT (push)    │
-> 7d    │ follow-up #2     │ follow-up #2 ↑  │ URGENT (push)    │
-        └──────────────────┴─────────────────┴──────────────────┘
+rung 1 : send + 2 bd
+rung 2 : rung 1 + 5 bd
+rung 3 : the decision ("won, lost, extend or park?")
+every rung is clamped to ≤ deadline; if deadline − now < 7d, remaining rungs are daily
+and the item is push-eligible ("urgent")
 ```
 
-The follow-up ladder compresses as `decideBy` approaches, and every rung lands before
-`min(decideBy, validUntil − 2d)`.
+That single rule gives the right answer on all three production cases: the quote with an
+8-day runway goes urgent now; the quote 170 days out gets two gentle rungs and a decision
+before its validity lapses; the confirmed job starting tomorrow gets nothing (it has no open
+quote loop — readiness is a different concern). A richer runway × silence matrix is not needed
+for v1.
 
 ## 5. Decisions (this session)
 
@@ -122,6 +124,28 @@ The follow-up ladder compresses as `decideBy` approaches, and every rung lands b
 | D4 | Real pain | **Quotes going quiet; late/unpaid invoices** | Build order: quotes, then invoices. Prep and relationship rules later |
 | D5 | Premises (§6) | **Agreed** | — |
 | D6 | Approach | **B — follow-up engine**, shipped quotes-first | §8 |
+| D7 | **Supersedes work-layer R3 for follow-ups** (spec review) | Follow-ups are **stored** rows kept in sync by a reconciler; a **scheduled** run exists | See §5.1 |
+
+### 5.1 Why this supersedes work-layer R3 (for follow-ups only)
+
+R3 (work-layer.md §9) chose *derive on read, store only a human's decision, no cron*. It deleted
+the sweep, dedupe keys, reopen/cancel rules and the `ENABLE_CONVEX_CRONS` dependency. This design
+brings back stored rows, one scheduled run, close rules and the cron dependency — deliberately,
+for three reasons R3 could not satisfy:
+
+1. **The owner asked for tasks** — assignable, snoozable, visible on the job's Work list and the
+   owner's work list. A derived signal is none of these until a human promotes it, and in
+   production nobody does (0 of 7 jobs have a next step).
+2. **D3 requires push and email.** A derived signal cannot notify anyone: something has to
+   evaluate it on a schedule. R3's design had no answer for "tell me at 7am".
+3. **The read R3 feared is not this read.** R3 was driven by `projectReadiness`' quadratic
+   org-history scan. The reconciler reads one project's quotes, invoices and open auto rows; the
+   daily run reads status-indexed, capped sets of SENT quotes and ISSUED invoices (the
+   `financeOrg` bundle's shape).
+
+What R3 still governs: every *other* derived signal (crew declined/stale, readiness, overbookings)
+stays derived. And R3's own escape hatch is honoured — an auto row **reuses the signal's
+sourceKey**, so a promoted signal and an auto row are the same row (§8.2).
 
 ## 6. Premises (agreed)
 
@@ -134,26 +158,24 @@ The follow-up ladder compresses as `decideBy` approaches, and every rung lands b
    invoice, cancelled project → the item closes with a system note. A human completing one is
    asked *what happened*: **no reply → next on [date]**, **won**, **lost (reason)**, **parked
    until [date]**.
-4. **Escalate, then stop.** Two follow-ups (2 bd, then 7–10 d, compressed near the event), then
-   a forced decision. No infinite nagging.
+4. **Escalate, then stop.** Two follow-ups (send + 2 bd, then + 5 bd, clamped near the event),
+   then a forced decision. No infinite nagging.
 5. **No chasing without truth.** Invoice rules wait for the Xero payment sync and start at a
    cut-over date.
 6. **Batch by default.** Silent at creation; surfaces when due, in the brief and the widget.
    Push only when runway is short, capped at 2/day/person.
-7. **One daily run + reconcile-on-write**, not a 15-minute sweep. The inputs are open quotes and
-   unpaid invoices — small, status-indexed sets — not the quadratic readiness read that
-   work-layer R3 rejected.
+7. **One scheduled run + reconcile-on-write**, not a 15-minute sweep (§5.1).
 
 ## 7. Approaches considered
 
 | | A — Quote follow-ups only | **B — Follow-up engine (chosen)** | C — Next-step invariant only |
 |---|---|---|---|
-| Summary | On send, create a follow-up; close it on accept/decline/new version. Widget + brief | One rule table + reconciler; event-aware ladder; outcome capture; Xero payment sync; invoice rules; brief; urgent push; settings | Stage transitions propose a next step; completing one requires the next or a close-out |
-| Effort | S (human ~1.5 wk / CC ~1–2 d) | L (human ~4–5 wk / CC ~5–7 d), phased | M (human ~2 wk / CC ~2–3 d) |
+| Summary | On send, create a follow-up; close it on accept/decline/new version. Widget + brief | One rule table + reconciler; event-clamped ladder; outcome capture; Xero payment sync; invoice rules; brief; urgent push; settings | Stage transitions propose a next step; completing one requires the next or a close-out |
+| Effort | S (human ~1.5 wk / CC ~1–2 d) | L (human ~5 wk / CC ~6–8 d), phased | M (human ~2 wk / CC ~2–3 d) |
 | Risk | Low | Med | Low |
 | Pros | Fastest; fixes pain #1 | Both pains; one place for rules; self-healing; future rules are rows, not plumbing | Tiny surface; very explainable |
-| Cons | No invoices; close-hooks scattered per mutation; not event-aware | Needs a reliable daily scheduler; most moving parts | Humans pick dates; weak escalation; still needs Xero sync |
-| Reuses | `projectTasks`, `workItemLinks`, `WorkComposer` | A + `projectAutoStatus` rule-table pattern, `notification-email-sender` + dedupe log, `pushSubscriptions`, `xero-client`, `orgSettings` | A + next-step banner |
+| Cons | No invoices; close-hooks scattered per mutation; not event-aware | Needs a scheduler actually running in prod; most moving parts | Humans pick dates; weak escalation; still needs Xero sync |
+| Reuses | `projectTasks`, `workItemLinks`, `WorkComposer` | A + `projectAutoStatus` rule-table pattern, the cron → Next route hop, `notification-email-sender` + `notificationEmailLogs`, `pushSubscriptions`, `src/server/xero.ts`, `orgSettings` | A + next-step banner |
 
 B is A plus C's invariant plus the plumbing both lack. A's close-hooks-per-mutation is exactly
 the drift CLAUDE.md warns about for status automation ("add a TRIGGER, never a second patch site").
@@ -163,128 +185,179 @@ the drift CLAUDE.md warns about for status automation ("add a TRIGGER, never a s
 ### 8.1 The rule table — `convex/lib/followUpRules.ts`
 
 Same shape and discipline as `AUTO_STATUS_RULES` (FEATUREDOCS/76): a table, one reconciler,
-called once at the end of a mutation, never in a loop.
+called once at the end of a mutation, never in a loop. **One rule per loop, one key per loop**:
+the decision is the last rung of the follow-up rule, not a second rule, so a quote can never
+carry two open items.
 
 ```ts
 type FollowUpRule = {
-  key: "quote_followup" | "quote_expiry_decision" | "invoice_chase" | "invoice_not_raised" /* … */;
-  settingKey: FollowUpSettingKey;           // absent = ON (same convention as AUTO_STATUS_KEYS)
-  subject: "quote" | "invoice" | "project";
-  // Pure: given the subject's current facts + org settings + now, what SHOULD exist?
-  desired(facts, settings, now): null | {
-    step: number;                            // 1, 2, … ; drives copy + priority
-    dueDate: number; dueTime?: string;       // org-tz, business days
-    urgency: "normal" | "high" | "urgent";   // urgent ⇒ push-eligible
+  key: "quote" | "invoice" | "invoice_not_raised";
+  settingKey: FollowUpSettingKey;       // absent = ON (same convention as AUTO_STATUS_KEYS)
+  // Pure: given one project's facts + org settings + now, what SHOULD exist for this loop?
+  desired(facts: ProjectFollowUpFacts, settings, now): null | {
+    subjectId: string;                   // quoteId / invoiceId / projectId
+    rung: number;                        // 1, 2, … last = decision
+    dueDate: number;                     // org-tz midnight, business days (weekends only in v1)
+    priority: "NORMAL" | "HIGH";         // the existing WORK_ITEM_PRIORITIES
+    urgent: boolean;                     // push-eligible; stored in automation.urgent, not priority
     title: string; why: string; resolvesWhen: string;
-    chaseText?: string;                      // paste-ready (D2)
+    chaseText?: string;                  // paste-ready (D2); uses amount still owed
   };
-  owner(facts): OwnerChain;                  // sender → project PM → earliest projectManagers → org owner
+};
+
+type ProjectFollowUpFacts = {
+  project: { id, status, clientId, eventStart?, managerUserIds[] };  // from projectManagers
+  liveQuote?: { id, version, effectiveStatus, sentAt, sentById?, validUntil?, sendCount };
+  invoices: { id, kind, status, dueDate, total, amountPaid, paymentStatus, xeroInvoiceId? }[];
+  openAuto: ProjectTaskDoc[];            // open rows with automation set, this project
+  humanOutcomes: { subjectId, outcome, at, nextDate? }[];  // from next_step_completed events
+  cutoverAt: number; orgTimezone: string; activeMemberIds: Set<string>;
 };
 ```
 
-`desired()` is pure and unit-tested against a table of fixtures — including the production cases
-in §2 (8-day runway, confirmed-tomorrow, expired-on-cancelled).
+`desired()` is pure and unit-tested against fixtures, including the production cases in §2
+(8-day runway, confirmed-tomorrow, expired-on-cancelled, v7 recalled-and-resent).
 
-### 8.2 The reconciler — `reconcileFollowUps(ctx, { projectId }, now)`
+**Owner chain:** quote `sentById` → first `projectManagers` row → org owner — each checked
+against **live** org membership; a departed owner falls through. Never unassigned (v2 rule:
+"no work item may exist that no surface will show").
 
-Desired state (rules × facts) vs. actual state (open rows whose `sourceKey` starts `auto:`) →
-create / update (due, step, copy, priority) / close. Idempotent; identity is
-`sourceKey = auto:<ruleKey>:<subjectId>`, so there is never a second open row for one thing.
+### 8.2 The reconciler — `reconcileFollowUps(ctx, projectId, now)`
+
+A plain helper (not a public function) in `convex/lib/followUpReconcile.ts`. Desired state vs.
+actual state (this project's open rows with `automation` set — a per-project read, so no new
+`sourceKey` index is needed) → create / update / close.
+
+**Identity reuses the signal keys** so R3's promote path and the engine converge on one row:
+`quote:nonext:<quoteId>` for the quote loop, `invoice:chase:<invoiceId>`,
+`invoice:unraised:<projectId>`. If a human already promoted the signal, the reconciler adopts
+that row (sets `automation`) instead of creating a second.
+
+**Human edits win.** The reconciler only writes fields it owns and a human hasn't touched:
+`automation.lockedFields` records `dueDate` / `assignee` / `title` once a human edits them, and
+those are never overwritten. A human-**deleted** auto row is recorded as `parked` for that rung
+(`workSignalStates`, same sourceKey) — the next rung still comes, the deleted one does not return.
+
+Guards, in the facts not in each rule: nothing on a `CANCELLED` project; nothing for subjects
+created before `cutoverAt`; a quote whose job went ahead (`CONFIRMED`+) without acceptance, or
+whose event has started while still SENT, yields one "record the outcome" item and no chase; a
+project with no event date uses `validUntil − 2d` as its deadline.
+
+**Resends:** a new version or a recall→resend restarts the ladder at rung 1 **only if** the
+previous send was ≥ 5 bd ago; otherwise the ladder continues where it was (the v7 case: six
+resends must not mean six fresh 2-day grace periods).
 
 Called:
 - **On write**, once at the end of: quote send / accept / decline / recall / new version
-  (`quotesWrites`), invoice issue / void / credit and payment record / void (`invoicesWrites`,
-  `paymentsWrites`), project status change (`updateStatusNative`,
-  `maybeAutoAdvanceProjectStatus`), and the Xero payment sync.
-- **Daily**, per org at 06:30 org-tz: reconcile every project with a SENT quote or an unpaid
-  Flow invoice (status-indexed, capped scans — the `financeOrg` bundle's read shape), then build
-  the brief and the urgent pushes. The daily run is also the backstop that heals anything a
-  missed write path left behind.
-
-Lifecycle guards live in the facts, not in each rule: nothing is chased on a `CANCELLED`
-project, and a quote whose job went ahead without acceptance (`CONFIRMED`+ with no accepted
-revision) yields at most one "record the outcome" housekeeping item, never a chase.
+  (`quotesWrites`), invoice issue / void / credit (`invoicesWrites`), payment record / void
+  (`paymentsWrites`), project status change (`updateStatusNative`,
+  `maybeAutoAdvanceProjectStatus`), project date change, the outcome mutation (§8.3), and the
+  Xero payment sync.
+- **Scheduled**: an **hourly** Convex cron (`internal.followUps.tick`, internal mutation, no user
+  auth) that selects orgs whose local time just crossed 06:30 (org timezone; **orgs with no
+  timezone default to `Australia/Sydney`**, not UTC), reconciles every project with a SENT quote
+  or an unpaid Flow invoice (status-indexed, capped scans), and records which urgent items need
+  a push. Delivery (brief, push) is then triggered through the existing cron → Next route hop
+  (§8.6), because recipients and roles live in Postgres.
 
 ### 8.3 v1 rules
 
 | Rule | Opens when | Ladder (defaults, settings-tunable) | Closes when |
 |---|---|---|---|
-| **Quote follow-up** | a revision becomes the live SENT quote | #1 at send + 2 bd; #2 at #1 + 5 bd; both clamped before `min(decideBy, validUntil − 2d)`; runway < 7d ⇒ daily + `urgent` | accepted / declined / recalled / superseded (new rung-1 for the new version) / project cancelled |
-| **Quote decision** | ladder exhausted, or `validUntil` within 2 d, or expired with no outcome | one item: "Won, lost, extend or park?" | any outcome recorded |
-| **Invoice chase** *(phase 2)* | Flow invoice ISSUED, unpaid per Xero sync, past due | due + 1 bd; + 7 d; + 14 d (call); + 30 d decision (plan / write-off). Deposit with event ≤ 7 d ⇒ `urgent` ("gear is held, deposit unpaid") | PAID (Flow or Xero), VOID, credited |
-| **Invoice not raised** *(phase 2)* | project RETURNED/COMPLETED ≥ cut-over, no ISSUED non-credit invoice | returned + 2 bd | invoice issued / project cancelled |
+| **Quote** | a revision becomes the live SENT quote (created ≥ cutover) | 1: send + 2 bd · 2: + 5 bd · 3: decision "Won, lost, extend or park?" — all ≤ deadline; deadline < 7 d away ⇒ daily, `urgent` | accepted / declined / recalled-not-resent / project cancelled; superseded ⇒ continues on the new version (resend rule above) |
+| **Invoice** *(phase 2)* | Flow invoice ISSUED (≥ cutover), not PAID, past due | 1: due + 1 bd · 2: + 7 d · 3: + 14 d "call" · 4: + 30 d decision (plan / write-off). DEPOSIT with event ≤ 7 d ⇒ `urgent` ("gear is held, deposit unpaid"). Chase text uses **amount still owed** | PAID, VOID, or fully credited (a partial credit keeps it open with the new balance) |
+| **Invoice not raised** *(phase 2)* | project RETURNED/COMPLETED ≥ cutover, no ISSUED non-credit invoice, not fully invoiced by deposit | returned + 2 bd | invoice issued / project cancelled |
 
-Human outcome on a follow-up (premise 3) writes an `activityEvents` row on the client timeline
-(the existing `next_step_completed` substrate) and moves the ladder: *no reply* advances a rung,
-*won* opens the existing accept flow, *lost* opens the decline flow with a reason, *park* sets
-`snoozedUntil` and pauses the ladder until then.
+A deposit and a balance invoice are separate loops (separate invoice ids) and can both be open;
+the brief lists the deposit first. **Orgs without Xero connected:** invoice rules run on
+Flow-recorded payments only and the settings page says so.
+
+**Outcome capture:** `followUpsWrites.recordOutcomeNative({ taskId, outcome, nextDate?,
+reason? })` (browser-direct, `requireWorkOrProjectUpdate`, `agentOps` danger `medium`; `won` and
+`lost` delegate to the existing `quotesWrites.markAcceptedNative` / `markDeclinedNative` logic
+via shared helpers, never a second write path). It writes the `next_step_completed` timeline
+row and calls the reconciler: *no reply* advances a rung (or to `nextDate`), *park* sets
+`snoozedUntil` and pauses the ladder. UI: the outcome menu on the row's circle in the work list
+and the project rail (`WorkRow` extraction, v2 §5 change 9).
 
 ### 8.4 Data — additive only
 
 - `projectTasks`: reuse `kind: "follow_up"`, `sourceKey`, `snoozedUntil`, `priority`. Add
-  `automation: v.optional(v.object({ ruleKey, subjectType, subjectId, step, resolvedBy?,
-  resolution? }))` — `resolvedBy: "system" | userId` is what measures the ≥ 90 % auto-resolve
-  target. FEATUREDOCS/50's "sourceKey is only set by promotion" line is already untrue
-  (templates set it) and gets corrected.
+  `automation: v.optional(v.object({ ruleKey, subjectId, rung, urgent, lockedFields:
+  v.array(v.string()), resolvedBy: v.optional(v.string()), resolution: v.optional(v.string()) }))`.
+  `resolvedBy: "system" | userId` measures the ≥ 90 % auto-resolve target. FEATUREDOCS/50's
+  "sourceKey is only set by promotion" line and the `schema.ts` comment are stale (templates set
+  it) and get corrected.
+- `payments` (phase 2): add `source: v.optional(v.union(v.literal("flow"), v.literal("xero")))`
+  (absent = flow) and `externalPaymentId: v.optional(v.string())` with index
+  `by_organizationId_externalPaymentId` for idempotency; `recordedById` becomes optional for
+  `source: "xero"` rows (display "Xero"); `method` gains `XERO`.
 - `workItemLinks`: each auto item links to its client **and** its quote/invoice (existing
   entity types), so the client page and the pipeline see it with no new read.
-- Org settings: `OrgSettings.followUps` in the existing JSON blob, resolved server-side like
-  `resolveOrgWorkConfig` (clamped, absent = default). Key registry on both sides with a parity
-  test, like `AUTO_STATUS_KEYS`.
-- `cutoverAt` per org: rules ignore subjects created before automation was switched on. The
-  backlog is shown **once** as a clean-up list (bulk "invoiced in Xero" / dismiss), never as tasks.
+- Org settings: `OrgSettings.followUps` (`enabled` per rule, offsets, `decisionLeadDays`,
+  `cutoverAt`) in the existing JSON blob, resolved server-side like `resolveOrgWorkConfig`
+  (clamped, absent = default). Key registry on both sides with a parity test, like
+  `AUTO_STATUS_KEYS`. **`cutoverAt` is stamped the first time a rule is enabled for an org**
+  (for existing orgs: at deploy of phase 1); nothing older is ever touched.
+- New business-day helper in `convex/lib/quoteDates.ts` (weekends only in v1, org timezone).
 
 ### 8.5 Xero payment sync (phase 2 prerequisite)
 
-A daily (and on-demand "Refresh from Xero") Convex action per connected org: fetch the Xero
-invoices Flow pushed that are not yet PAID (by stored Xero InvoiceID, batched), and write each
-Xero-side payment as a `payments` row with `source: "xero"` + the Xero PaymentID for idempotency
-— merged with, never overwriting, Flow-recorded payments (FEATUREDOCS/66's own deferred-item
-spec). `paymentsWrites`' existing `PAYMENT_SETTLED` automation then fires unchanged. Webhooks
-(Xero `INVOICE` events) are a later latency improvement, not a requirement.
+The Xero client and token vault live in `src/` (`src/server/xero.ts`, `src/lib/xero-client.ts`),
+which Convex cannot import. So the sync is a **Next route** (`/api/cron/xero-payments`,
+`CRON_SECRET`-authed), triggered by the hourly cron hop and by an on-demand "Refresh from Xero"
+button. It fetches the org's Flow-pushed invoices that are not PAID (batched by `xeroInvoiceId`,
+well inside 60 req/min), and for each Xero payment calls an internal Convex mutation
+`paymentsWrites.recordFromXero` that upserts on `externalPaymentId` — merged with, never
+overwriting, Flow-recorded payments (FEATUREDOCS/66's deferred spec). **The settlement logic
+(`paymentStatus` recompute + `PAYMENT_SETTLED` auto-status + reconciler call) is extracted out
+of `recordNative` into a shared helper** both paths call; it does not "fire unchanged" today,
+because it lives inside a user-gated mutation. Xero webhooks are a later latency improvement.
 
 ### 8.6 Delivery
 
-- **Morning brief** (email, 07:00 org-tz, business days, per user): *Chase today* (ordered by
-  urgency), *Decisions needed*, *Payments overdue* (phase 2), *Coming up* on Mondays (R9).
-  Top 5 per section + "and N more". **Not sent when empty**; Monday always sends. Built on
-  `notification-email-sender.ts` with dedupe key `brief:<userId>:<yyyy-mm-dd>`; gated on
-  `invoice:read` for money lines (the #1225 audience rule).
+- **Morning brief** (email, ~07:00 org-tz, business days, per user per org): *Chase today*
+  (ordered by deadline), *Decisions needed*, *Payments overdue* (phase 2). Top 5 per section +
+  "and N more". **Not sent when empty.** Path: the existing `notification-email-sender.ts` in
+  Next (it owns recipients and roles in Postgres), invoked by the cron hop; it reads each user's
+  open auto items from Convex. Dedupe key **`brief:<orgId>:<userId>:<yyyy-mm-dd>`** in
+  `notificationEmailLogs`. Money lines gated on `invoice:read` (the #1225 audience rule).
 - **Dashboard:** `todayWorkList` joins `DEFAULT_DASHBOARD_LAYOUT` at the top; existing saved
-  layouts get it inserted once. Auto rows carry the `auto` badge, the *why* line, and one-click
-  outcomes.
-- **Push (phase 3):** web-push sender over the existing `pushSubscriptions`; only `urgent`
-  items; ≤ 2 per person per day; quiet hours 19:00–07:00 org-tz; deep link to the item. iOS
-  requires the installed PWA — say so in the settings toggle.
-- No bell traffic for auto items (D3). The derived `needsYou` rail keeps its non-follow-up
-  signals; `quote:nonext` retires once every SENT quote carries an auto follow-up.
+  layouts get it inserted once. Auto rows carry the `auto` badge, the *why* line, and the
+  outcome menu.
+- **Push (phase 3):** web-push sender over `pushSubscriptions`; only `automation.urgent` items;
+  ≤ 2 per person per day; quiet hours 19:00–07:00 org-tz; deep link. iOS needs the installed
+  PWA — the toggle says so. A sender library needs an R-6.3 justification.
+- No bell traffic for auto items (D3). The derived `needsYou` rail keeps its other signals;
+  its `quote:nonext` row disappears naturally once the auto row with the same key exists.
 
 ### 8.7 Trust surfaces (R11)
 
-- Every auto item: *why* ("v2 sent 15 Sep · no reply logged") + *resolves when* ("client
-  accepts or declines") + *Change timing* → settings.
-- **Coverage line** on the pipeline page: "Watching 3 quotes · 1 invoice · all have a next step".
-- `/settings/automation`: rules grouped *Quotes · Money · Delivery (later)*, each with a toggle,
-  its offsets, and its last-30-day health (created / auto-resolved / completed / parked). A rule
-  parked or dismissed > 50 % of the time shows a "timing may be off" hint.
-- Product events to PostHog (cuid-only props, per `docs/pii-inventory.md`):
-  `follow_up_created|resolved|completed|parked`, `brief_sent|opened`, `push_sent|opened`.
+- Every auto item shows *why* ("v2 sent 15 Sep · no reply logged"), *resolves when* ("client
+  accepts or declines") and *Change timing* → settings. (Phase 1.)
+- `/settings/automation` UI with per-rule toggles and offsets. (Phase 3.)
+- Later, not v1: per-rule health stats, a pipeline coverage line, product analytics events.
 
 ## 9. Phasing
 
 | Phase | Ships | Exit criteria | Effort |
 |---|---|---|---|
-| **0 · Plumbing that already hurts** | `todayWorkList` in the default dashboard; confirm the notification cron actually runs in prod (external cron or `ENABLE_CONVEX_CRONS`) | Widget visible to both users; a test brief email lands | ½ d / 2 h |
-| **1 · Quotes** | Rule table + reconciler; quote follow-up + decision rules; outcome capture; morning brief; `cutoverAt`; settings JSON (no UI yet) | Every SENT quote has an auto follow-up within one write; zero auto items on cancelled/finished jobs; first briefs land | 1.5 wk / 2–3 d |
-| **2 · Money** | Xero payment sync; invoice chase + invoice-not-raised rules; backlog clean-up list | Xero-paid invoice closes its chase within one daily run; zero chases on paid invoices over 2 weeks | 1.5 wk / 2 d |
-| **3 · Reach** | Push sender (urgent only); `/settings/automation` UI with rule health | Urgent push ≤ 2/day; settings round-trip | 1 wk / 1–2 d |
-| **Later** | Delivery rules (templates for more statuses, auto-resolving checklist items), anniversary rebooking (repeat clients' annual shows), Mira-drafted chase text, p85-calibrated thresholds | — | — |
+| **0 · Plumbing** | `todayWorkList` in the default dashboard (+ one-time insert into saved layouts); **flip `ENABLE_CONVEX_CRONS` + `CONVEX_CRON_TARGET_URL` + `CRON_SECRET` on prod** and prove a tick; set the prod org's timezone | Widget visible to both users; the existing notification cron logs a successful prod run | ½ d / 2 h |
+| **1 · Quotes** | Rule table + reconciler + hourly tick; quote rule with decision rung; outcome capture; business-day helper; morning brief; `cutoverAt`; settings JSON (no UI) | Every new SENT quote has an auto item after one write; zero items on cancelled/finished jobs or pre-cutover quotes; first briefs land | 1.5 wk / 3 d |
+| **2 · Money** | Xero payment sync route + `payments` fields + shared settlement helper; invoice + invoice-not-raised rules; one-time backlog clean-up list | A Xero-paid invoice closes its chase within one tick; zero chases on paid invoices over 2 weeks | 1.5 wk / 2–3 d |
+| **3 · Reach** | Push sender (urgent only); `/settings/automation` UI | Urgent push ≤ 2/day; settings round-trip | 1 wk / 1–2 d |
+| **Later** | Delivery rules (templates for more statuses, auto-resolving checklists), anniversary rebooking, Mira-drafted chase text, p85-calibrated offsets, rule health, public holidays | — | — |
+
+**Same-PR docs (R-5.2):** FEATUREDOCS 50 (automation field, sourceKey note), 17 (brief type),
+66 (Xero payment sync, phase 2), 79/81 (default layout), 80 (`quote:nonext` convergence), a new
+FEATUREDOCS/82 for the engine; CLAUDE.md gains a short "follow-ups: add a RULE, never a second
+task writer" note next to the auto-status one. Registry / OpenAPI / MCP regenerated for
+`recordOutcomeNative`.
 
 ## 10. Not building
 
-- Client-facing email of any kind (D2). A free-form rule builder (research: presets + toggles
-  beat builders for noise). Auto-scheduling. A bell entry per auto item. Chasing anything Flow
-  cannot verify. SMS.
+Client-facing email of any kind (D2). A free-form rule builder (presets + toggles beat builders
+for noise). Auto-scheduling. A bell entry per auto item. Chasing anything Flow cannot verify. SMS.
 
 ## 11. Success criteria
 
@@ -294,31 +367,30 @@ spec). `paymentsWrites`' existing `PAYMENT_SETTLED` automation then fires unchan
 - 100 % of SENT quotes and unpaid Flow invoices carry a dated next step (by construction); < 10 %
   of them overdue at any time.
 - ≥ 90 % of auto items resolved by the system, not a human close (work-layer §15 target).
-- Park + dismiss rate < 20 % per rule (noise ceiling).
+- Park + delete rate < 20 % (noise ceiling; read from `automation.resolution`).
 - Phase 2: days-past-due on Flow invoices trends down month over month.
 
 ## 12. Open questions
 
-1. `decisionLeadDays` default (14): right for dry hire and small jobs, maybe short for jobs with
-   sub-hires or crew. Derive per job from sub-hire presence later?
-2. Owner for invoice chases: the PM, or a finance role holder? (Proposed: PM, overridable per org.)
-3. Business days: org timezone weekends only, or add AU public holidays (state-specific)?
-4. Should parking a quote also release held gear? (Proposed: no — separate, explicit action.)
-5. Recalibration: switch ladder offsets to the org's own p50/p85 send→decision times once
-   n ≥ 30 sent quotes.
+1. `decisionLeadDays` default (14): right for dry hire; short for jobs with sub-hires or crew?
+2. Invoice chase owner: the PM, or a finance role holder? (Proposed: PM, overridable per org.)
+3. Should parking a quote also release held gear? (Proposed: no — separate, explicit action.)
+4. Recalibrate offsets to the org's own p50/p85 send → decision time once n ≥ 30 sent quotes.
+
+Closed by review: business days are **weekends only** in v1 (public holidays later).
 
 ## 13. Risks
 
-- **The scheduler is the single point of failure.** If the daily run doesn't fire, items still
-  open on write but nothing escalates and no brief goes out. Phase 0 proves it runs; the brief
-  itself is the heartbeat (a missing Monday brief is noticed).
-- **Xero rate limits** (60/min, 5,000/day per tenant) — batch by InvoiceID; only unpaid invoices.
-- **Backfill flood** — prevented by `cutoverAt` (§8.4). Getting this wrong recreates alarm
-  fatigue on day one.
+- **The scheduler is a single point of failure.** Items still open on write without it, but
+  nothing escalates and no brief goes out. Phase 0 proves the cron runs; the brief is the
+  heartbeat.
+- **Xero rate limits** (60/min, 5,000/day per tenant) — batch by InvoiceID; unpaid only.
+- **Backfill flood** — prevented by `cutoverAt`. Getting it wrong recreates alarm fatigue on day one.
+- **Reconciler vs. humans** — `lockedFields` + parked-on-delete; covered by tests that edit,
+  reassign and delete auto rows and then run the tick twice.
 - **Convex rules** (CLAUDE.md): `ConvexError` only; `requireOrgReadFor` with a resource;
-  `agentOps` with danger classes on every new operation; org-check every `by_cuid` read
-  (ratchet at 0); regenerate registry / OpenAPI / MCP together; `orgExport` table count if a
-  table is added (none planned).
+  `agentOps` on every new operation; org-check every `by_cuid` read (ratchet at 0); regenerate
+  registry / OpenAPI / MCP together.
 
 ## 14. The assignment
 
@@ -336,3 +408,14 @@ right now there are three data points.
   front of phase 2.
 - You picked *internal only* when full automation was on the menu. Same boundary you held a week
   ago (work-layer D3), and it keeps every false positive in-house.
+
+## 16. Review record
+
+Adversarial spec review (independent agent, code-verified), round 1: 5/10, 22 findings. Applied:
+R3 superseded explicitly (§5.1) with sourceKey reuse; `payments` fields + shared settlement
+helper; urgency vs. priority; one ladder timing; phase-0 exit fixed; owner chain; hourly
+org-tz cron with a default timezone; brief via the Next hop; Xero sync as a Next route;
+business-day helper; human-edit policy; one rule per loop; multi-org dedupe key; resend,
+date-move, dateless, departed-owner, partial-payment, partial-credit, deposit/balance, no-Xero
+and event-started cases; phase-1 clarity (tick, facts, cutover, outcome mutation, agentOps,
+docs); scope trimmed (matrix → clamped ladder; health/coverage/analytics moved later).

@@ -23,12 +23,12 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/env";
-import { encryptSecret, decryptSecret } from "@/lib/crypto/secret-vault";
+import { encryptSecret } from "@/lib/crypto/secret-vault";
 import { createXeroOAuthState, verifyXeroOAuthState } from "@/lib/xero-oauth-state";
+import { getFreshAccessToken, requireXeroAppCredentials } from "@/lib/xero-token";
 import {
   buildXeroAuthorizeUrl,
   exchangeXeroAuthCode,
-  refreshXeroAccessToken,
   listXeroConnections,
   fetchXeroAccounts,
   fetchXeroTaxRates,
@@ -42,13 +42,6 @@ import {
 
 function xeroRedirectUri(): string {
   return env.XERO_REDIRECT_URI || `${env.NEXT_PUBLIC_APP_URL}/api/integrations/xero/callback`;
-}
-
-function requireXeroAppCredentials(): { clientId: string; clientSecret: string } {
-  if (!env.XERO_CLIENT_ID || !env.XERO_CLIENT_SECRET) {
-    throw new Error("Xero is not configured on this deployment (XERO_CLIENT_ID / XERO_CLIENT_SECRET unset).");
-  }
-  return { clientId: env.XERO_CLIENT_ID, clientSecret: env.XERO_CLIENT_SECRET };
 }
 
 // ─── Connection status + settings ──────────────────────────────────────────
@@ -193,7 +186,7 @@ export async function refreshXeroReferenceData() {
   }
 
   try {
-    const { accessToken, refreshToken } = await getFreshAccessToken(integration.refreshTokenEncrypted);
+    const { accessToken } = await getFreshAccessToken(convex, organizationId);
     const [accounts, taxRates] = await Promise.all([
       fetchXeroAccounts({ accessToken, tenantId: integration.tenantId }),
       fetchXeroTaxRates({ accessToken, tenantId: integration.tenantId }),
@@ -202,7 +195,6 @@ export async function refreshXeroReferenceData() {
     await convex.mutation(api.xeroIntegrations.patchXeroIntegration, {
       id: integration.id,
       set: {
-        refreshTokenEncrypted: encryptSecret(refreshToken),
         cachedAccounts: accounts,
         cachedTaxRates: taxRates,
         cacheRefreshedAt: now,
@@ -236,7 +228,7 @@ export async function searchXeroContactsAction(searchTerm: string) {
   const { organizationId } = await requirePermission("invoice", "xero_manage");
   const convex = await getConvexClient();
   const integration = await requireLinkedIntegration(convex, organizationId);
-  const { accessToken } = await getFreshAccessToken(integration.refreshTokenEncrypted!, integration.id, convex);
+  const { accessToken } = await getFreshAccessToken(convex, organizationId);
   const results = await searchXeroContactsByName(searchTerm, { accessToken, tenantId: integration.tenantId! });
   return serialize(results);
 }
@@ -326,7 +318,7 @@ export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResu
 
     let autoCreatedContact = false;
     let xeroContactId = client.xeroContactId as string | undefined;
-    const { accessToken } = await getFreshAccessToken(integration.refreshTokenEncrypted!, integration.id, convex);
+    const { accessToken } = await getFreshAccessToken(convex, organizationId);
     const tenantId = integration.tenantId!;
 
     if (!xeroContactId) {
@@ -463,33 +455,9 @@ async function requireLinkedIntegration(convex: Awaited<ReturnType<typeof getCon
   return integration;
 }
 
-/**
- * Exchange the stored (encrypted) refresh token for a fresh access token,
- * persisting Xero's ROTATED refresh token immediately (Xero invalidates the
- * old one on every refresh — never reuse it). When `integrationId`/`convex`
- * are omitted the rotated token is returned but NOT persisted (used by
- * refreshXeroReferenceData, which persists it itself alongside the cache).
- */
-async function getFreshAccessToken(
-  refreshTokenEncrypted: string,
-  integrationId?: string,
-  convex?: Awaited<ReturnType<typeof getConvexClient>>,
-): Promise<{ accessToken: string; refreshToken: string }> {
-  const { clientId, clientSecret } = requireXeroAppCredentials();
-  const tokens = await refreshXeroAccessToken({ refreshToken: decryptSecret(refreshTokenEncrypted), clientId, clientSecret });
-  if (integrationId && convex) {
-    await convex.mutation(api.xeroIntegrations.patchXeroIntegration, {
-      id: integrationId,
-      set: { refreshTokenEncrypted: encryptSecret(tokens.refresh_token), updatedAt: Date.now() },
-      clear: [],
-    });
-  }
-  return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token };
-}
-
 async function logSyncEvent(
   organizationId: string,
-  direction: "PUSH_INVOICE" | "SYNC_CONTACT" | "REFRESH_TOKEN" | "FETCH_REFERENCE_DATA",
+  direction: "PUSH_INVOICE" | "SYNC_CONTACT" | "REFRESH_TOKEN" | "FETCH_REFERENCE_DATA" | "PULL_PAYMENTS",
   status: "SUCCESS" | "FAILED",
   payload: Record<string, unknown>,
   invoiceId?: string,

@@ -43641,6 +43641,77 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectTasksWrites.recordFollowUpOutcomeNative",
+    "module": "projectTasksWrites",
+    "fn": "recordFollowUpOutcomeNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "nextDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "note",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "outcome",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "09b1dd110030af2e",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Record \"no reply\" or \"parked until a date\" on an automated quote follow-up; the engine schedules the next step.",
+    "danger": "medium",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectTasksWrites.reorderNative",
     "module": "projectTasksWrites",
     "fn": "reorderNative",
@@ -63349,10 +63420,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1230,
-  agentReachable: 607,
+  total: 1231,
+  agentReachable: 608,
   queries: 442,
-  mutations: 788,
+  mutations: 789,
   agentReachableQueries: 311,
-  agentReachableMutations: 296,
+  agentReachableMutations: 297,
 } as const;

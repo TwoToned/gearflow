@@ -88,6 +88,7 @@ import type * as fileUploads from "../fileUploads.js";
 import type * as files from "../files.js";
 import type * as financeArtifacts from "../financeArtifacts.js";
 import type * as financeOrg from "../financeOrg.js";
+import type * as followUpPush from "../followUpPush.js";
 import type * as followUpTick from "../followUpTick.js";
 import type * as globalSearch from "../globalSearch.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
@@ -405,6 +406,7 @@ declare const fullApi: ApiFromModules<{
   files: typeof files;
   financeArtifacts: typeof financeArtifacts;
   financeOrg: typeof financeOrg;
+  followUpPush: typeof followUpPush;
   followUpTick: typeof followUpTick;
   globalSearch: typeof globalSearch;
   groupTemplateItems: typeof groupTemplateItems;

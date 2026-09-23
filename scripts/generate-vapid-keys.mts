@@ -4,9 +4,8 @@
  *
  * No new dependency: VAPID keys are a plain EC P-256 (prime256v1) key pair,
  * base64url-encoded — Node's built-in `crypto` generates them directly, so
- * this doesn't need the `web-push` package (deliberately not added; the
- * actual push-SEND side is a documented follow-up, see FEATUREDOCS/50, and
- * only THAT side needs a sender library).
+ * this doesn't need the `web-push` package — and neither does the sender,
+ * `src/lib/web-push.ts`, which signs and encrypts with `node:crypto` too.
  *
  * Usage: `pnpm exec tsx scripts/generate-vapid-keys.mts`
  *

@@ -331,6 +331,10 @@ change needed) and `importScripts`-es into the generated `public/sw.js`, handlin
 vapid:generate`) — plain Node `crypto` EC P-256 key pair, base64url-encoded; **no new
 dependency**, since only the SEND side needs a sender library.
 
+**Update (follow-up automation, FEATUREDOCS/82):** a sender now exists —
+`src/lib/web-push.ts` — and the urgent follow-up push is its one caller; the note below is
+the #1244 phase's original scope.
+
 **Deliberately NOT wired this phase**: nothing in this deployment sends a push. The
 table + subscribe/unsubscribe flow + service-worker receive handler are the complete
 deliverable; a server-side sender (a job that signs a Web Push request per subscription row
@@ -416,8 +420,10 @@ Test: `src/app/(app)/my-tasks/__tests__/page.smoke.test.tsx` now just asserts th
   system exists ([FEATUREDOCS/17](./17-notifications.md)); wiring task assignment/due-soon/
   watcher-activity reminders is the obvious next step. Left out to keep this phase's scope
   bounded — see the "Watchers" section above.
-- **Web push send.** The subscription table + browser flow + service-worker receive handler
-  are complete (see "Web push" above); a server-side sender is the deferred half.
+- ~~**Web push send.**~~ Built: `src/lib/web-push.ts` (RFC 8291/8292 on `node:crypto`).
+  Its first and only caller is follow-up automation's urgent push
+  ([FEATUREDOCS/82](./82-follow-up-automation.md)); task assignment / due-soon pushes are
+  still the notification follow-up above.
 - **Drag-and-drop reordering** — done this phase (#1244): `reorderNative`, see above.
   (Previously listed here as deferred; superseded.)
 - **Comments / @mentions on tasks.** Ties into the broader Wave 3 comments feature.

@@ -8,10 +8,8 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * reads — a caller only ever sees whether THEIR OWN device is subscribed,
  * never another member's. Writes live in `pushSubscriptionsWrites.ts`.
  *
- * SCOPE (documented follow-up): this module + its writes are the full
- * subscribe/unsubscribe flow. Nothing in this repo sends a push yet — see
- * FEATUREDOCS/50's "Web push (subscription only)" section for what a future
- * send-side integration needs to do with these rows.
+ * Sending: `convex/followUpPush.ts` (service-only) reads these rows for the
+ * urgent follow-up push, FEATUREDOCS/82.
  */
 
 /** Whether the CALLING user has an active push subscription in this org (for

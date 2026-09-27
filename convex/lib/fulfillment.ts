@@ -1110,6 +1110,58 @@ export interface ContainerStatusFlip {
   status: "CHECKED_OUT" | "RETURNED";
 }
 
+/** Loads a container's own line item + its live (non-CANCELLED) member units,
+ *  org-checked at every hop — `null` when there's nothing to roll up. Split
+ *  out of `syncContainerStatuses` to keep each helper's branching under the
+ *  complexity ratchet (R-3.6). */
+async function loadContainerFlipContext(ctx: Ctx, containerId: string, organizationId: string) {
+  const container = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
+  if (!container || container.organizationId !== organizationId) return null;
+  const containerLI = await lineDocByCuid(ctx, container.lineItemId);
+  if (!containerLI || containerLI.organizationId !== organizationId) return null;
+
+  const members = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", containerId)).collect())
+    .filter((u) => u.organizationId === organizationId && u.status !== "CANCELLED");
+  if (members.length === 0) return null;
+  return { containerLI, members };
+}
+
+/** `null` when the container's members don't (yet) unanimously agree on a
+ *  status the container line item doesn't already have. */
+function resolveContainerFlipStatus(
+  containerLI: { status: string },
+  members: Array<{ status: string }>,
+): "CHECKED_OUT" | "RETURNED" | null {
+  if (members.every((u) => u.status === "CHECKED_OUT") && containerLI.status !== "CHECKED_OUT") return "CHECKED_OUT";
+  if (members.every((u) => u.status === "RETURNED") && containerLI.status !== "RETURNED") return "RETURNED";
+  return null;
+}
+
+async function flipForContainer(
+  ctx: Ctx,
+  containerId: string,
+  args: { organizationId: string; userId: string; now: number },
+): Promise<ContainerStatusFlip | null> {
+  const context = await loadContainerFlipContext(ctx, containerId, args.organizationId);
+  if (!context) return null;
+  const { containerLI, members } = context;
+  const status = resolveContainerFlipStatus(containerLI, members);
+  if (!status) return null;
+
+  if (status === "CHECKED_OUT") {
+    await ctx.db.patch(containerLI._id, {
+      status: "CHECKED_OUT", checkedOutQuantity: containerLI.quantity ?? 1,
+      checkedOutAt: args.now, checkedOutById: args.userId, updatedAt: args.now,
+    });
+  } else {
+    await ctx.db.patch(containerLI._id, {
+      status: "RETURNED", returnedQuantity: 1,
+      returnedAt: args.now, returnedById: args.userId, returnCondition: "GOOD", updatedAt: args.now,
+    });
+  }
+  return { containerId, lineItemId: containerLI.id, assetId: containerLI.assetId ?? undefined, status };
+}
+
 /**
  * #1296 — the container status roll-up, moved server-side and keyed by
  * `containerId` (replaces `syncContainersBatchCore`'s label bucketing).
@@ -1130,37 +1182,8 @@ export async function syncContainerStatuses(
   for (const containerId of containerIds) {
     if (seen.has(containerId)) continue;
     seen.add(containerId);
-
-    const container = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
-    if (!container || container.organizationId !== args.organizationId) continue;
-    const containerLI = await lineDocByCuid(ctx, container.lineItemId);
-    if (!containerLI || containerLI.organizationId !== args.organizationId) continue;
-
-    const members = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", containerId)).collect())
-      .filter((u) => u.organizationId === args.organizationId && u.status !== "CANCELLED");
-    if (members.length === 0) continue;
-
-    const allDeployed = members.every((u) => u.status === "CHECKED_OUT");
-    const allReturned = members.every((u) => u.status === "RETURNED");
-    const allDeployedFlag = allDeployed && containerLI.status !== "CHECKED_OUT";
-    const allReturnedFlag = allReturned && containerLI.status !== "RETURNED";
-    if (!allDeployedFlag && !allReturnedFlag) continue;
-
-    if (allDeployedFlag) {
-      await ctx.db.patch(containerLI._id, {
-        status: "CHECKED_OUT", checkedOutQuantity: containerLI.quantity ?? 1,
-        checkedOutAt: args.now, checkedOutById: args.userId, updatedAt: args.now,
-      });
-    } else {
-      await ctx.db.patch(containerLI._id, {
-        status: "RETURNED", returnedQuantity: 1,
-        returnedAt: args.now, returnedById: args.userId, returnCondition: "GOOD", updatedAt: args.now,
-      });
-    }
-    flips.push({
-      containerId, lineItemId: containerLI.id, assetId: containerLI.assetId ?? undefined,
-      status: allDeployedFlag ? "CHECKED_OUT" : "RETURNED",
-    });
+    const flip = await flipForContainer(ctx, containerId, args);
+    if (flip) flips.push(flip);
   }
   return flips;
 }

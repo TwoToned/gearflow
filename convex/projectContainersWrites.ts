@@ -114,6 +114,54 @@ async function assertNoParentCycle(
   }
 }
 
+/** The two kind-specific "you must pick one" guards — split out of
+ *  `createNative`'s handler to keep its branching under the complexity
+ *  ratchet (R-3.6). */
+function assertValidContainerKindInputs(kind: string, assetId: string | undefined, bulkAssetId: string | undefined): void {
+  if (kind === "ASSET" && !assetId) throw new ConvexError({ code: "INVALID_FIELD", message: "An asset must be selected for an ASSET container." });
+  if (kind === "BULK_ASSET" && !bulkAssetId) throw new ConvexError({ code: "INVALID_FIELD", message: "A bulk asset must be selected for a BULK_ASSET container." });
+}
+
+async function assertContainerRefsInOrg(
+  ctx: MutationCtx,
+  orgId: string,
+  refs: { assetId?: string; bulkAssetId?: string; modelId?: string },
+): Promise<void> {
+  if (refs.assetId) await assertRefInOrg(ctx, "assets", refs.assetId, orgId);
+  if (refs.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", refs.bulkAssetId, orgId);
+  if (refs.modelId) await assertRefInOrg(ctx, "models", refs.modelId, orgId);
+}
+
+async function assertParentContainerOnSameProject(
+  ctx: MutationCtx,
+  parentContainerId: string | undefined,
+  projectId: string,
+  orgId: string,
+): Promise<void> {
+  if (!parentContainerId) return;
+  const parent = await requireContainerInOrg(ctx, parentContainerId, orgId);
+  if (parent.projectId !== projectId) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: "A container can only be packed inside a container on the same job." });
+  }
+}
+
+/** The kind-derived fields shared by both inserts (the container's own line
+ *  item and the container row itself) — computed once rather than repeating
+ *  the same four ternaries twice. */
+function deriveContainerKindFields(
+  kind: "ASSET" | "BULK_ASSET" | "CUSTOM",
+  assetId: string | undefined,
+  bulkAssetId: string | undefined,
+  label: string,
+): { assetId?: string; bulkAssetId?: string; isCustomItem?: true; description?: string } {
+  return {
+    assetId: kind === "ASSET" ? assetId : undefined,
+    bulkAssetId: kind === "BULK_ASSET" ? bulkAssetId : undefined,
+    isCustomItem: kind === "CUSTOM" ? true : undefined,
+    description: kind === "CUSTOM" ? label : undefined,
+  };
+}
+
 /** Delete a container's own units + line item (mirrors lineItemWrites.ts's
  *  `deleteLineWithUnits` — a container's line item is a real line item, so it
  *  can carry its own prep units if it was ever packed/checked out itself). */
@@ -152,24 +200,15 @@ export const createNative = mutation({
 
     assertStrLen(label, "label", { min: 1, max: LABEL_MAX });
     assertStrLen(description, "description", { max: DESCRIPTION_MAX });
-
-    if (kind === "ASSET" && !assetId) throw new ConvexError({ code: "INVALID_FIELD", message: "An asset must be selected for an ASSET container." });
-    if (kind === "BULK_ASSET" && !bulkAssetId) throw new ConvexError({ code: "INVALID_FIELD", message: "A bulk asset must be selected for a BULK_ASSET container." });
+    assertValidContainerKindInputs(kind, assetId, bulkAssetId);
 
     await assertProjectInOrg(ctx, projectId, orgId);
     const project = await requireProjectForGuard(ctx, projectId, orgId);
     // Creating a container is structural — never gated (D5: never priced).
     const targetVersionId = await resolveWriteVersionId(ctx, project, versionId);
 
-    if (assetId) await assertRefInOrg(ctx, "assets", assetId, orgId);
-    if (bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", bulkAssetId, orgId);
-    if (modelId) await assertRefInOrg(ctx, "models", modelId, orgId);
-    if (parentContainerId) {
-      const parent = await requireContainerInOrg(ctx, parentContainerId, orgId);
-      if (parent.projectId !== projectId) {
-        throw new ConvexError({ code: "INVALID_FIELD", message: "A container can only be packed inside a container on the same job." });
-      }
-    }
+    await assertContainerRefsInOrg(ctx, orgId, { assetId, bulkAssetId, modelId });
+    await assertParentContainerOnSameProject(ctx, parentContainerId, projectId, orgId);
 
     // Idempotent on a retried create with the same client-minted cuid.
     const existing = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -178,6 +217,7 @@ export const createNative = mutation({
       return { id, lineItemId: existing.lineItemId };
     }
 
+    const kindFields = deriveContainerKindFields(kind, assetId, bulkAssetId, label);
     const lineItemId = createId();
     const lineSort = await nextLineSort(ctx, targetVersionId, orgId);
     await ctx.db.insert("projectLineItems", {
@@ -188,10 +228,10 @@ export const createNative = mutation({
       lineageId: lineItemId,
       type: "EQUIPMENT",
       modelId,
-      assetId: kind === "ASSET" ? assetId : undefined,
-      bulkAssetId: kind === "BULK_ASSET" ? bulkAssetId : undefined,
-      isCustomItem: kind === "CUSTOM" ? true : undefined,
-      description: kind === "CUSTOM" ? label : undefined,
+      assetId: kindFields.assetId,
+      bulkAssetId: kindFields.bulkAssetId,
+      isCustomItem: kindFields.isCustomItem,
+      description: kindFields.description,
       quantity: 1,
       sortOrder: lineSort,
       status: "CONFIRMED",
@@ -212,8 +252,8 @@ export const createNative = mutation({
       versionId: targetVersionId,
       lineageId: id,
       kind,
-      assetId: kind === "ASSET" ? assetId : undefined,
-      bulkAssetId: kind === "BULK_ASSET" ? bulkAssetId : undefined,
+      assetId: kindFields.assetId,
+      bulkAssetId: kindFields.bulkAssetId,
       label,
       description,
       lineItemId,
@@ -232,6 +272,61 @@ export const createNative = mutation({
     return { id, lineItemId };
   },
 });
+
+async function assertParentContainerReparentValid(
+  ctx: MutationCtx,
+  id: string,
+  parentContainerId: string | null | undefined,
+  currentProjectId: string,
+  orgId: string,
+): Promise<void> {
+  if (parentContainerId === undefined || parentContainerId === null) return;
+  if (parentContainerId === id) {
+    throw new ConvexError({ code: "CYCLE", message: "A container can't be packed inside itself." });
+  }
+  const parent = await requireContainerInOrg(ctx, parentContainerId, orgId);
+  if (parent.projectId !== currentProjectId) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: "A container can only be packed inside a container on the same job." });
+  }
+  await assertNoParentCycle(ctx, id, parentContainerId, orgId);
+}
+
+function buildContainerUpdatePatch(
+  label: string | undefined,
+  description: string | null | undefined,
+  parentContainerId: string | null | undefined,
+  now: number,
+): { label?: string; description?: string; parentContainerId?: string; updatedAt: number } {
+  const patch: { label?: string; description?: string; parentContainerId?: string; updatedAt: number } = { updatedAt: now };
+  if (label !== undefined) patch.label = label;
+  if (description !== undefined) patch.description = description ?? undefined;
+  if (parentContainerId !== undefined) patch.parentContainerId = parentContainerId ?? undefined;
+  return patch;
+}
+
+/** Keep the container's own line item's label in sync — it's the widen-step
+ *  fallback (`prepContainer`) other not-yet-migrated readers still use. */
+async function syncContainerLineLabel(
+  ctx: MutationCtx,
+  container: { lineItemId: string },
+  label: string,
+  now: number,
+  orgId: string,
+): Promise<void> {
+  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", container.lineItemId)).first();
+  if (!line || line.organizationId !== orgId) return;
+  await ctx.db.patch(line._id, {
+    prepContainer: label,
+    ...(line.isCustomItem ? { description: label } : {}),
+    updatedAt: now,
+  });
+}
+
+function describeReparentSummary(label: string, parentContainerId: string | null | undefined): string {
+  return parentContainerId
+    ? `Packed container "${label}" into another container`
+    : `Unpacked container "${label}" to the top level`;
+}
 
 export const updateNative = mutation({
   returns: v.object({ ok: v.boolean() }),
@@ -255,35 +350,12 @@ export const updateNative = mutation({
     if (label !== undefined) assertStrLen(label, "label", { min: 1, max: LABEL_MAX });
     if (description) assertStrLen(description, "description", { max: DESCRIPTION_MAX });
 
-    if (parentContainerId !== undefined && parentContainerId !== null) {
-      if (parentContainerId === id) {
-        throw new ConvexError({ code: "CYCLE", message: "A container can't be packed inside itself." });
-      }
-      const parent = await requireContainerInOrg(ctx, parentContainerId, orgId);
-      if (parent.projectId !== container.projectId) {
-        throw new ConvexError({ code: "INVALID_FIELD", message: "A container can only be packed inside a container on the same job." });
-      }
-      await assertNoParentCycle(ctx, id, parentContainerId, orgId);
-    }
+    await assertParentContainerReparentValid(ctx, id, parentContainerId, container.projectId, orgId);
 
-    const patch: { label?: string; description?: string; parentContainerId?: string; updatedAt: number } = { updatedAt: now };
-    if (label !== undefined) patch.label = label;
-    if (description !== undefined) patch.description = description ?? undefined;
-    if (parentContainerId !== undefined) patch.parentContainerId = parentContainerId ?? undefined;
+    const patch = buildContainerUpdatePatch(label, description, parentContainerId, now);
     await ctx.db.patch(container._id, patch);
 
-    // Keep the container's own line item's label in sync — it's the widen-
-    // step fallback (`prepContainer`) other not-yet-migrated readers still use.
-    if (label !== undefined) {
-      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", container.lineItemId)).first();
-      if (line && line.organizationId === orgId) {
-        await ctx.db.patch(line._id, {
-          prepContainer: label,
-          ...(line.isCustomItem ? { description: label } : {}),
-          updatedAt: now,
-        });
-      }
-    }
+    if (label !== undefined) await syncContainerLineLabel(ctx, container, label, now, orgId);
 
     // Label/description edits are metadata, not a physical change — no audit
     // row (parity with projectCategoriesWrites.ts's rename). A parent change
@@ -292,9 +364,7 @@ export const updateNative = mutation({
       await logContainerChange(ctx, {
         orgId, projectId: container.projectId, actor, auditId, now,
         action: "UPDATE", entityId: id, entityName: container.label,
-        summary: parentContainerId
-          ? `Packed container "${container.label}" into another container`
-          : `Unpacked container "${container.label}" to the top level`,
+        summary: describeReparentSummary(container.label, parentContainerId),
       });
     }
 
@@ -340,6 +410,34 @@ export const deleteNative = mutation({
 /** Move (or un-pack, with `toContainerId: null`) a batch of units into a
  *  different container in ONE atomic mutation. The missing operation behind
  *  the old "clear + re-prep is the only path" defect (design §1.5 #7). */
+async function moveUnitsToContainer(
+  ctx: MutationCtx,
+  unitIds: string[],
+  toContainerId: string | null,
+  orgId: string,
+  now: number,
+): Promise<{ moved: number; projectId?: string }> {
+  let moved = 0;
+  let projectId: string | undefined;
+  for (const unitId of unitIds) {
+    const unit = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).first();
+    if (!unit || unit.organizationId !== orgId) continue; // missing/cross-org — skipped, never moved
+    await ctx.db.patch(unit._id, { containerId: toContainerId ?? undefined, updatedAt: now });
+    moved++;
+    if (projectId) continue;
+    const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", unit.lineItemId)).first();
+    projectId = line?.projectId;
+  }
+  return { moved, projectId };
+}
+
+function describeMoveSummary(moved: number, targetLabel: string | undefined): string {
+  const suffix = moved === 1 ? "" : "s";
+  return targetLabel
+    ? `Moved ${moved} unit${suffix} into container "${targetLabel}"`
+    : `Moved ${moved} unit${suffix} to Loose`;
+}
+
 export const moveUnitsNative = mutation({
   returns: v.object({ moved: v.number() }),
   args: {
@@ -359,19 +457,7 @@ export const moveUnitsNative = mutation({
     const actor = await resolveActor(ctx, suppliedActor);
 
     const target = toContainerId ? await requireContainerInOrg(ctx, toContainerId, orgId) : null;
-
-    let moved = 0;
-    let projectId: string | undefined;
-    for (const unitId of unitIds) {
-      const unit = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).first();
-      if (!unit || unit.organizationId !== orgId) continue; // missing/cross-org — skipped, never moved
-      await ctx.db.patch(unit._id, { containerId: toContainerId ?? undefined, updatedAt: now });
-      moved++;
-      if (!projectId) {
-        const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", unit.lineItemId)).first();
-        projectId = line?.projectId;
-      }
-    }
+    const { moved, projectId } = await moveUnitsToContainer(ctx, unitIds, toContainerId, orgId, now);
 
     if (moved > 0 && projectId) {
       await logContainerChange(ctx, {
@@ -379,9 +465,7 @@ export const moveUnitsNative = mutation({
         action: "UPDATE",
         entityId: toContainerId ?? "loose",
         entityName: target?.label ?? "Loose",
-        summary: target
-          ? `Moved ${moved} unit${moved === 1 ? "" : "s"} into container "${target.label}"`
-          : `Moved ${moved} unit${moved === 1 ? "" : "s"} to Loose`,
+        summary: describeMoveSummary(moved, target?.label),
       });
     }
 

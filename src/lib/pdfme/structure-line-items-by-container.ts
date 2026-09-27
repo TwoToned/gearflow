@@ -153,6 +153,86 @@ function containerHeaderRow(
   };
 }
 
+function byCategoryThenKit(a: DocumentLineItem, b: DocumentLineItem): number {
+  const ac = a.categoryName ?? "";
+  const bc = b.categoryName ?? "";
+  if (ac !== bc) return ac.localeCompare(bc);
+  const an = a.model?.name ?? a.description ?? "";
+  const bn = b.model?.name ?? b.description ?? "";
+  return an.localeCompare(bn);
+}
+
+/** A kit/group parent moves as one row (its whole-row container); an
+ *  ordinary line's units may genuinely split across containers, which
+ *  fans out into one entry per container (defect §1.5 #7's "6 in Tub 3, 4
+ *  in Tub 4" case). Split out of `structureLineItemsByContainer` to keep
+ *  each helper's branching under the complexity ratchet (R-3.6). */
+function placeLineIntoContainers(
+  li: DocumentLineItem,
+  byId: Map<string, ContainerForStructuring>,
+): PlacedEntry[] {
+  const isKitOrGroupParent = (!!li.kitId && !li.isKitChild) || li.isGroupRow;
+  if (isKitOrGroupParent) {
+    const containerId = resolveWholeRowContainerId(li);
+    return [{ ...li, _containerId: containerId, _topId: topLevelAncestorId(containerId, byId) }];
+  }
+
+  const groups = groupUnitsByContainer(li.units);
+  if (!groups || groups.size <= 1) {
+    const containerId = groups ? [...groups.keys()][0] : null;
+    return [{ ...li, _containerId: containerId, _topId: topLevelAncestorId(containerId, byId) }];
+  }
+
+  return [...groups].map(([containerId, units]) => ({
+    ...li,
+    id: `${li.id}__c-${containerId ?? "loose"}`,
+    units,
+    quantity: units.length,
+    checkedOutQuantity: units.filter((u) => u.status === "CHECKED_OUT").length,
+    _containerId: containerId,
+    _topId: topLevelAncestorId(containerId, byId),
+  }));
+}
+
+/** Emits one top-level container's whole section: its own header, every
+ *  nested container's header (indented), then its items sorted by
+ *  category/kit. All rows share `top.label` as `groupName` so
+ *  `filterAndGroupItems` buckets the whole section as one. */
+function emitContainerSection(
+  top: ContainerForStructuring,
+  entries: PlacedEntry[],
+  containers: ContainerForStructuring[],
+  byId: Map<string, ContainerForStructuring>,
+): DocumentLineItem[] {
+  const out: DocumentLineItem[] = [];
+  const sectionMembers = entries.filter((e) => e._topId === top.id);
+  const descendants = containers
+    .filter((c) => topLevelAncestorId(c.id, byId) === top.id && c.id !== top.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const directChildContainerCount = (containerId: string): number =>
+    descendants.filter((d) => d.parentContainerId === containerId).length;
+
+  out.push(containerHeaderRow(
+    top, 0, top.label,
+    sectionMembers.filter((e) => e._containerId === top.id),
+    directChildContainerCount(top.id),
+  ));
+  for (const desc of descendants) {
+    out.push(containerHeaderRow(
+      desc, depthOf(desc.id, byId), top.label,
+      sectionMembers.filter((e) => e._containerId === desc.id),
+      directChildContainerCount(desc.id),
+    ));
+  }
+
+  for (const e of sectionMembers.sort(byCategoryThenKit)) {
+    const { _containerId, _topId, ...rest } = e;
+    void _containerId; void _topId;
+    out.push({ ...rest, groupName: top.label, containerDepth: depthOf(e._containerId, byId) + 1 });
+  }
+  return out;
+}
+
 export function structureLineItemsByContainer(
   rawLineItems: DocumentLineItem[],
   containers: ContainerForStructuring[],
@@ -161,81 +241,14 @@ export function structureLineItemsByContainer(
   // A container line item is the box itself — a GEAR row, never one of its
   // own contents (it's the header now, matching structureLineItems' rule).
   const gearLines = rawLineItems.filter((li) => !li.isKitChild && !li.isContainerLineItem);
-
-  const entries: PlacedEntry[] = [];
-  for (const li of gearLines) {
-    const isKitOrGroupParent = (!!li.kitId && !li.isKitChild) || li.isGroupRow;
-    if (isKitOrGroupParent) {
-      const containerId = resolveWholeRowContainerId(li);
-      entries.push({ ...li, _containerId: containerId, _topId: topLevelAncestorId(containerId, byId) });
-      continue;
-    }
-
-    const groups = groupUnitsByContainer(li.units);
-    if (!groups || groups.size <= 1) {
-      const containerId = groups ? [...groups.keys()][0] : null;
-      entries.push({ ...li, _containerId: containerId, _topId: topLevelAncestorId(containerId, byId) });
-      continue;
-    }
-
-    // Genuinely split across containers — one row per container, carrying
-    // only that subset (defect §1.5 #7's "6 in Tub 3, 4 in Tub 4" case).
-    for (const [containerId, units] of groups) {
-      entries.push({
-        ...li,
-        id: `${li.id}__c-${containerId ?? "loose"}`,
-        units,
-        quantity: units.length,
-        checkedOutQuantity: units.filter((u) => u.status === "CHECKED_OUT").length,
-        _containerId: containerId,
-        _topId: topLevelAncestorId(containerId, byId),
-      });
-    }
-  }
-
-  const byCategoryThenKit = (a: DocumentLineItem, b: DocumentLineItem): number => {
-    const ac = a.categoryName ?? "";
-    const bc = b.categoryName ?? "";
-    if (ac !== bc) return ac.localeCompare(bc);
-    const an = a.model?.name ?? a.description ?? "";
-    const bn = b.model?.name ?? b.description ?? "";
-    return an.localeCompare(bn);
-  };
+  const entries: PlacedEntry[] = gearLines.flatMap((li) => placeLineIntoContainers(li, byId));
 
   const structured: DocumentLineItem[] = [];
   const topLevel = containers
     .filter((c) => !c.parentContainerId || !byId.has(c.parentContainerId))
     .sort((a, b) => a.sortOrder - b.sortOrder);
-  const descendantsOf = (rootId: string): ContainerForStructuring[] =>
-    containers.filter((c) => topLevelAncestorId(c.id, byId) === rootId && c.id !== rootId).sort((a, b) => a.sortOrder - b.sortOrder);
-
   for (const top of topLevel) {
-    const sectionMembers = entries.filter((e) => e._topId === top.id);
-    const descendants = descendantsOf(top.id);
-    const directChildContainerCount = (containerId: string): number =>
-      descendants.filter((d) => d.parentContainerId === containerId).length;
-
-    // Every row in this TOP-LEVEL container's section — header(s) + items —
-    // shares ONE groupName so filterAndGroupItems buckets them as one section.
-    structured.push(containerHeaderRow(
-      top, 0, top.label,
-      sectionMembers.filter((e) => e._containerId === top.id),
-      directChildContainerCount(top.id),
-    ));
-    for (const desc of descendants) {
-      structured.push(containerHeaderRow(
-        desc, depthOf(desc.id, byId), top.label,
-        sectionMembers.filter((e) => e._containerId === desc.id),
-        directChildContainerCount(desc.id),
-      ));
-    }
-
-    const items = sectionMembers.sort(byCategoryThenKit);
-    for (const e of items) {
-      const { _containerId, _topId, ...rest } = e;
-      void _containerId; void _topId;
-      structured.push({ ...rest, groupName: top.label, containerDepth: depthOf(e._containerId, byId) + 1 });
-    }
+    structured.push(...emitContainerSection(top, entries, containers, byId));
   }
 
   const loose = entries.filter((e) => e._topId === null && e._containerId === null).sort(byCategoryThenKit);

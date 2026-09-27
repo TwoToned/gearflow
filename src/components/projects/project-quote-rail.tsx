@@ -24,6 +24,7 @@ import { generateQuoteArtifact } from "@/server/finance-documents";
 import { diffSnapshotEntries, type SnapshotEntryLike } from "@/lib/project-snapshot-diff";
 import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { quoteStatusIntent, intentToBadgeStatus, intentStyles, intentBorderClass } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
@@ -665,6 +666,7 @@ function QuoteRailTargetDialogs({
           onOpenChange={(open) => !open && onCloseAccept()}
           quoteId={acceptTarget.id}
           version={acceptTarget.version}
+          isExpired={acceptTarget.effectiveStatus === "EXPIRED"}
         />
       )}
 
@@ -737,10 +739,12 @@ export function standardQuoteRowActions(
     onChase: () => void;
   },
 ): RowAction[] {
-  const { isSent, isHeldByClient } = flags;
+  const { isHeldByClient } = flags;
   const actions: RowAction[] = [];
   actions.push({ key: "rename", label: "Rename version", icon: Pencil, onClick: handlers.onEditLabel });
-  if (isSent) actions.push({ key: "accept", label: "Mark accepted", icon: CheckCircle2, onClick: handlers.onAccept });
+  // Expiry is advisory, not a hard stop (2026-09) — an operator can still mark
+  // an EXPIRED revision accepted exactly as they would a still-live SENT one.
+  if (isHeldByClient) actions.push({ key: "accept", label: "Mark accepted", icon: CheckCircle2, onClick: handlers.onAccept });
   // #1225 (Q2) — a follow-up nudge for the client. Flow doesn't email the
   // client itself (decision 7 of #989); this just hands the operator text
   // for their own mail client, same as the send dialog's own copy-summary.
@@ -1067,7 +1071,7 @@ function EditLabelDialogContent({ target, onClose }: { target: QuoteRevisionDoc;
       toast.success(label ? `Labelled v${target.version} "${label}"` : `Cleared v${target.version}'s label`);
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to rename");
+      toast.error(convexErrorMessage(e, "Failed to rename"));
     } finally {
       setPending(false);
     }
@@ -1124,7 +1128,7 @@ function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClos
       setReason("");
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
+      toast.error(convexErrorMessage(e, "Failed"));
     }
   }
 

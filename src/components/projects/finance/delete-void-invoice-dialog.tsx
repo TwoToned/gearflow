@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,7 +57,7 @@ export function DeleteVoidInvoiceDialog({ open, onOpenChange, invoiceId, label, 
       onDeleted?.();
       handleOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete");
+      toast.error(convexErrorMessage(e, "Failed to delete"));
     } finally {
       setPending(false);
     }

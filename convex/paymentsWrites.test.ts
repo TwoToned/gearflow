@@ -56,8 +56,10 @@ async function seedProjectAndClient(t: ReturnType<typeof makeT>, orgId = ORG) {
       liveVersionId: "v-p1",
     });
     await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: orgId, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
-    // `seedIssuedInvoice` below issues against this project — issuing now
-    // requires an ACCEPTED quote at the invoice's linked revision (2026-08).
+    // `seedIssuedInvoice` below issues against this project. Issuing no
+    // longer requires an ACCEPTED quote (that 2026-08 gate was reversed
+    // 2026-09), but the project is CONFIRMED so an accepted quote is seeded
+    // anyway to match a real confirmed project's shape.
     await ctx.db.insert("quotes", {
       id: "q1", organizationId: orgId, projectId: "p1", version: 1, status: "ACCEPTED",
       snapshot: null, createdAt: NOW, updatedAt: NOW,

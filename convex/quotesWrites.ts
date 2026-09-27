@@ -1084,9 +1084,12 @@ export const deleteRecalledNative = mutation({
 });
 
 /**
- * ACCEPT — `SENT → ACCEPTED`, the thing that unblocks `CONFIRMED`
- * (`projectWrites.updateStatusNative`). An EXPIRED revision cannot be accepted:
- * the client's window closed, and re-sending is the honest way to reopen it.
+ * ACCEPT — `SENT`/`EXPIRED` → `ACCEPTED`, the thing that unblocks `CONFIRMED`
+ * (`projectWrites.updateStatusNative`). `validUntil` is advisory, not a hard
+ * stop (2026-09): it gives the org an "out" to re-quote at a new price once a
+ * quote goes stale, but it never strips the client's ability to simply say
+ * yes to the price they were already sent — an operator can still mark an
+ * EXPIRED revision accepted exactly as they would a still-live SENT one.
  *
  * **#1233 (Phase 6, D20) — accept = make live.** Accepting a NON-live
  * version's quote first composes `performMakeLive` (`convex/lib/
@@ -1202,7 +1205,7 @@ export const markAcceptedNative = mutation({
     assertNumRange(acceptedAt, "acceptedAt", DATE_BOUNDS);
 
     const label = quoteLabel(project.projectNumber, quote.version);
-    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT"], label, "accept");
+    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "EXPIRED"], label, "accept");
 
     const config = await resolveOrgQuoteConfig(ctx, organizationId);
     const stampedAcceptedAt = startOfDayInTimezone(acceptedAt ?? now, config.timezone);

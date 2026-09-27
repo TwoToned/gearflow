@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A quote's expiry date no longer blocks accepting it.** `validUntil` is an
+  operator's "out" to re-quote at a new price once a quote goes stale, not a
+  hard deadline the client's yes stops counting after — an operator can now
+  mark an EXPIRED revision accepted exactly as they would a still-live SENT
+  one, with no re-send required first.
+- **Issuing an invoice no longer requires an accepted quote.** The 2026-08
+  gate that blocked `DRAFT → ISSUED` unless the invoice's linked quote
+  revision was ACCEPTED is removed — an invoice already bills whatever the
+  project's own pricing looks like right now (server-computed at creation,
+  never the quote's figures), so there was never a money reason to also
+  require the quote to have been formally accepted. This unblocks invoicing a
+  job the client agreed to verbally, or before a quote was ever sent.
+
 ### Fixed
 
+- **Convex write failures (quote accept/send/recall/decline, invoice
+  create/issue/void, payments) no longer show a raw Convex exception.** These
+  flows caught errors with a bare `e.message`, which for a `ConvexError` is
+  the client's internal `"[CONVEX M(module:fn)] Server Error\nUncaught
+  ConvexError: ..."` wrapper, not the message the mutation actually wrote.
+  They now unwrap the structured `{ message }` payload every Convex mutation
+  throws, the same way asset/kit writes already did — a shared
+  `convexErrorMessage` helper closes the gap instead of a third copy of the
+  same logic.
 - **Gear added to a group no longer reports $0 in the ROI reports.** Leaving the
   price box empty wrote a real **$0.00** rather than a blank "—", because an
   untouched number input submits an empty string and the form coerced that to

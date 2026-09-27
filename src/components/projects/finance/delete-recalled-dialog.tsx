@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 
 import { useQuoteWrites } from "@/hooks/use-quote-writes";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,7 +60,7 @@ export function DeleteRecalledDialog({ open, onOpenChange, quoteId, label, onDel
       onDeleted?.();
       handleOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete");
+      toast.error(convexErrorMessage(e, "Failed to delete"));
     } finally {
       setPending(false);
     }

@@ -50,6 +50,9 @@ import {
   isRollupCategory,
 } from "@/lib/category-pricing-display";
 import { disclosedGroupChildren } from "@/lib/group-child-disclosure";
+import { structureLineItemsByContainer, type ContainerForStructuring } from "./structure-line-items-by-container";
+
+export type { ContainerForStructuring } from "./structure-line-items-by-container";
 
 /** Category metadata as already loaded by build-document-data's project include. */
 export interface CategoryForStructuring {
@@ -110,6 +113,17 @@ export interface StructureOptions {
    * change.
    */
   packerSort?: boolean;
+  /**
+   * #1296 — bucket by container FIRST (see structure-line-items-by-container.ts
+   * for the full algorithm), category/kit second, "Loose" last. Requires
+   * `containers`; every other option is ignored when this is on (containers
+   * are a distinct, simpler structuring mode — sub-hire/rollup/group-child-
+   * disclosure are quote/invoice-only concerns that don't apply to a
+   * warehouse/manifest doc). Manifest, delivery-docket and return-sheet pass
+   * this; quote/invoice never do.
+   */
+  byContainer?: boolean;
+  containers?: ContainerForStructuring[];
 }
 
 /**
@@ -159,6 +173,9 @@ export function structureLineItems(
   options: StructureOptions = {},
   subHireGroups: SubHireGroupForStructuring[] = [],
 ): DocumentLineItem[] {
+  if (options.byContainer) {
+    return structureLineItemsByContainer(rawLineItems, options.containers ?? []);
+  }
   if (!categories || categories.length === 0) {
     return rawLineItems;
   }

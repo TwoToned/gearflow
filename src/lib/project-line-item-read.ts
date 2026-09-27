@@ -751,6 +751,8 @@ export async function buildDocumentLineItemData(projectId: string, organizationI
       parentUnitAssetId: u.parentUnitAssetId,
       assetId: u.assetId,
       bulkAssetId: u.bulkAssetId,
+      // #1296 — the container this unit is packed in (byContainer structuring).
+      containerId: u.containerId,
       // lineItemId + ordinal drive indexUnits (bucket + sort); harmless extras on output.
       lineItemId: u.lineItemId,
       ordinal: u.ordinal,

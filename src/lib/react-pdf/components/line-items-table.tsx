@@ -170,9 +170,22 @@ export function filterAndGroupItems(items: DocumentLineItem[], config: TablePlug
     // excluded entirely from the return sheet (regardless of status), and
     // bypass the status filter everywhere else `filterByStatus` applies.
     const isReturnSheet = config.documentType === "return-sheet";
-    filtered = filtered.filter((i) => {
+    const passesStatus = (i: DocumentLineItem): boolean => {
       if (i.type === "SALE") return !isReturnSheet;
       if (isBulk(i)) return i.checkedOutQuantity > 0;
+      return statuses.includes(i.status);
+    };
+    // #1296 — a container header row's own `status` is a best-effort derived
+    // summary (structure-line-items-by-container.ts), not authoritative for
+    // filtering — same "meaningless own status" shape isGroupRow gets below.
+    // It passes iff ANY real row sharing its section (groupName) passes.
+    const passingContainerSections = new Set(
+      items
+        .filter((i) => !i.isContainerRow && !i.isKitChild && !i.isContainerLineItem && i.groupName && passesStatus(i))
+        .map((i) => i.groupName as string),
+    );
+    filtered = filtered.filter((i) => {
+      if (i.isContainerRow) return !!i.groupName && passingContainerSections.has(i.groupName);
       // Synthetic Project Group row: its own status is meaningless (a
       // label, not a real line item) — pass through if ANY attached child
       // passes the filter, or the parent + all members silently drop.
@@ -183,7 +196,7 @@ export function filterAndGroupItems(items: DocumentLineItem[], config: TablePlug
           return statuses.includes(c.status);
         });
       }
-      return statuses.includes(i.status);
+      return passesStatus(i);
     });
   }
 

@@ -116,6 +116,7 @@ import {
   isMoveableAtDeployStage,
   isMoveableAtReturnStage,
   isMoveableAtDeprepStage,
+  keysForGroupEntries,
 } from "@/components/warehouse/warehouse-types";
 import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
 import {
@@ -2187,6 +2188,15 @@ function WarehouseProjectPage({
     return null;
   }
 
+  // #1296 D4 — "Deploy container": select every one of the container's
+  // entries so the EXISTING Deploy button (already wired, already tested)
+  // becomes the trigger — never a second deploy code path alongside
+  // handleCheckOutSelected's own accessory-gate/kit-batch/partial-verify
+  // branching below.
+  const handleDeployContainer = (entries: GroupEntry[]) => {
+    setSelectedOut(new Set(keysForGroupEntries(entries)));
+  };
+
   const handleCheckOutSelected = async () => {
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
@@ -2955,6 +2965,7 @@ function WarehouseProjectPage({
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
           onMoveSelected={() => setMoveDialogFor("deploy")}
+          onDeployContainer={handleDeployContainer}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2990,6 +3001,7 @@ function WarehouseProjectPage({
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
           onMoveSelected={() => setMoveDialogFor("deprep")}
+          onDeployContainer={() => {}}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}

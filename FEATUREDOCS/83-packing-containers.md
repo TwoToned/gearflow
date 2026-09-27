@@ -258,10 +258,30 @@ Landed so far:
   `ContainerRail` — the rail always mirrors live prep state with exactly one
   chip active; this dialog starts with nothing chosen each time it opens).
 
-Still open (see the build plan's Phase 2 checklist): generalizing the
-kit-verify dialog into a shared `deploy-container-dialog.tsx`, and the
-`clearPrepContainer` label-matching gap noted above (Move-to didn't need to
-touch it — it moves units directly, never by container label).
+- **Deploy container (D4)**: a "Deploy container" button on each container's
+  header in the Deploy tab (desktop table + mobile card, both render paths)
+  selects every one of that container's entries
+  (`warehouse-types.ts`'s `keysForGroupEntries` — the same per-`GroupEntry`-kind
+  key derivation `page.tsx`'s `allOutKeys`/`allPrepKeys`/etc. already use) into
+  `selectedOut`, so the EXISTING "Deploy (N)" button — already visible,
+  already wired, already covers kit-batch/accessory-gate/partial-verify
+  correctly — becomes the trigger. Deliberately NOT a second deploy code
+  path, and deliberately NOT a literal extraction of the `kitConfirm` dialog
+  (`page.tsx`'s inline kit-verify-then-deploy UI): that dialog is deeply
+  embedded in a 3,700-line, production-critical prep/return flow with no
+  existing test harness, and refactoring it carries real regression risk for
+  what the design doc's own decision table (D4) already frames as "an
+  option". This ships the same underlying capability — deploy an entire
+  container in one action — without touching that fragile code at all. The
+  full scan-to-verify ceremony (mark individual units present before
+  offering "Deploy Verified Only" vs "Deploy All") is deliberately deferred;
+  today's version deploys everything currently in the container, which is
+  the common case (an operator wouldn't click "Deploy container" on a case
+  they know is short).
+
+Still open (see the build plan's Phase 2 checklist): the `clearPrepContainer`
+label-matching gap noted above (Move-to and Deploy container both move/select
+units directly, never by container label, so neither needed to touch it).
 
 ## Packing tab (phase 4, #1301 — landed except drag)
 

@@ -13,7 +13,10 @@ import {
   isMoveableAtDeployStage,
   isMoveableAtReturnStage,
   isMoveableAtDeprepStage,
+  keysForGroupEntries,
+  bulkUnitKey,
   type LineItem,
+  type GroupEntry,
 } from "./warehouse-types";
 
 // Issue #794 follow-up — warehouse must render accessories like a kit's
@@ -353,5 +356,22 @@ describe("resolveSelectionToUnitIds (Move to…, #1296 phase 2)", () => {
 
   test("a key with no matching line item is silently ignored (never throws)", () => {
     expect(resolveSelectionToUnitIds(new Set(["missing", "missing:0"]), [], isMoveableAtDeployStage)).toEqual([]);
+  });
+});
+
+describe("keysForGroupEntries (Deploy container, #1296 D4)", () => {
+  test("single/serialized-group/kit-group/accessory-group each contribute their line-item id(s)", () => {
+    const entries: GroupEntry[] = [
+      { kind: "single", item: line({ id: "a" }) },
+      { kind: "serialized-group", groupKey: "s", modelName: "M", items: [line({ id: "b" }), line({ id: "c" })] },
+      { kind: "kit-group", groupKey: "k", item: line({ id: "kit1" }), children: [line({ id: "child" })] },
+      { kind: "accessory-group", groupKey: "acc", item: line({ id: "acc1" }), children: [] },
+    ];
+    expect(keysForGroupEntries(entries)).toEqual(["a", "b", "c", "kit1", "acc1"]);
+  });
+
+  test("a bulk-group contributes one positional key per unit", () => {
+    const entries: GroupEntry[] = [{ kind: "bulk-group", groupKey: "bulk", item: line({ id: "bulk1" }), unitCount: 3 }];
+    expect(keysForGroupEntries(entries)).toEqual([bulkUnitKey("bulk1", 0), bulkUnitKey("bulk1", 1), bulkUnitKey("bulk1", 2)]);
   });
 });

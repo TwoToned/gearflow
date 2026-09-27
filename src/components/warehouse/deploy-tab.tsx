@@ -86,6 +86,11 @@ export interface DeployTabProps {
   /** #1296 Move-to… — open the shared MoveToContainerDialog against this
    *  tab's current selection. */
   onMoveSelected: () => void;
+  /** #1296 D4 — "Deploy container": select every one of this container's
+   *  entries so the existing Deploy button (already visible, already wired)
+   *  becomes the trigger, instead of a second deploy code path. Deploy tab
+   *  only (never passed a meaningful handler in deprep mode). */
+  onDeployContainer: (entries: GroupEntry[]) => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -128,6 +133,7 @@ export function DeployTab({
   clearContainerIsPending,
   checkOutIsPending,
   onMoveSelected,
+  onDeployContainer,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -270,16 +276,26 @@ export function DeployTab({
                               {container}
                             </div>
                             {!isDeprep && (
-                              <button
-                                type="button"
-                                onClick={() => clearContainerMutate(container)}
-                                disabled={clearContainerIsPending}
-                                className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
-                                title="Remove container"
-                                aria-label={`Remove container ${container}`}
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="line"
+                                  size="sm"
+                                  className="h-7"
+                                  onClick={() => onDeployContainer(deployContainerGroups.find((g) => g.container === container)?.entries ?? [])}
+                                >
+                                  Deploy container
+                                </Button>
+                                <button
+                                  type="button"
+                                  onClick={() => clearContainerMutate(container)}
+                                  disabled={clearContainerIsPending}
+                                  className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                                  title="Remove container"
+                                  aria-label={`Remove container ${container}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             )}
                           </div>
                         </TableCell>
@@ -597,16 +613,26 @@ export function DeployTab({
                     label={container}
                     action={
                       isDeprep ? undefined : (
-                        <button
-                          type="button"
-                          onClick={() => clearContainerMutate(container)}
-                          disabled={clearContainerIsPending}
-                          className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
-                          title="Remove container"
-                          aria-label={`Remove container ${container}`}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="line"
+                            size="sm"
+                            className="h-7"
+                            onClick={() => onDeployContainer(deployContainerGroups.find((g) => g.container === container)?.entries ?? [])}
+                          >
+                            Deploy
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => clearContainerMutate(container)}
+                            disabled={clearContainerIsPending}
+                            className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                            title="Remove container"
+                            aria-label={`Remove container ${container}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
                       )
                     }
                   />

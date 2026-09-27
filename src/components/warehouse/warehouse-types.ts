@@ -72,6 +72,24 @@ export type GroupEntry =
   | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] }
   | { kind: "accessory-group"; groupKey: string; item: LineItem; children: LineItem[] };
 
+/** Every selection key a list of `GroupEntry` would expose — the same
+ *  per-kind derivation `page.tsx`'s `allOutKeys`/`allPrepKeys`/etc. use
+ *  (a bare line-item id for single/serialized/kit/accessory entries, a
+ *  positional `bulkUnitKey` for each unit of a bulk entry). Used by "Deploy
+ *  container" (#1296 D4) to select an entire container's contents in one
+ *  click — reuses the EXISTING selection state and Deploy button rather
+ *  than adding a second deploy code path. */
+export function keysForGroupEntries(entries: GroupEntry[]): string[] {
+  const keys: string[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "single") keys.push(entry.item.id);
+    else if (entry.kind === "serialized-group") entry.items.forEach((i) => keys.push(i.id));
+    else if (entry.kind === "kit-group" || entry.kind === "accessory-group") keys.push(entry.item.id);
+    else for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
+  }
+  return keys;
+}
+
 // "Bulk" means: a multi-unit line item without individual serialized assets.
 export function isBulkItem(item: LineItem) {
   if (item.quantity <= 1) return false;

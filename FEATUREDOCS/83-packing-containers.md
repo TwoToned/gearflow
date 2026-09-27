@@ -199,10 +199,19 @@ Landed so far:
   `containerId` onto at that exact step — the very next prep action on that
   same line does get the real container.
 
-Still open (see the build plan's Phase 2 checklist): scan-to-activate (a
-scanned container asset switches the active chip instead of erroring),
-Prepped/Return/De-prep tabs regrouping by `containerId` instead of the label,
-the Move-to… sheet, and generalizing the kit-verify dialog into a shared
+- **Scan-to-activate**: `projectContainers.listForProject` now resolves each
+  container's own asset/bulk-asset tag (`tag: string | null`, batched lookup —
+  same shape as `assets.listByIds`, bounded by container count, never a
+  point-read per container). The pick/prep scan bar (`handleScanKeyDown`)
+  matches the scanned tag against `realContainers` BEFORE calling
+  `lookupAssetForScan`: a match switches the active rail chip
+  (`handleSelectContainer`) and plays "info" feedback instead of running the
+  normal prep flow, which would otherwise either try to re-prep the
+  container's own line item or report it as unassigned.
+
+Still open (see the build plan's Phase 2 checklist): Prepped/Return/De-prep
+tabs regrouping by `containerId` instead of the label, the Move-to… sheet,
+and generalizing the kit-verify dialog into a shared
 `deploy-container-dialog.tsx`.
 
 ## Not yet started

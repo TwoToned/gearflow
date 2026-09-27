@@ -35862,7 +35862,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "001b41a0ac3258ca",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "List a project's packing containers, each with its current unit count.",
+    "summary": "List a project's packing containers, each with its current unit count and resolved asset tag.",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,

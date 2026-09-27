@@ -380,6 +380,15 @@ function WarehouseProjectPage({
     setSelectedContainer(container.label);
     setNewContainerSheetOpen(false);
   }, []);
+  // #1296 phase 2 — scan-to-activate: scanning a container's OWN asset tag
+  // (the case/tub itself, not its contents) on the pick/prep scan bar
+  // switches the active rail chip instead of running the normal
+  // lookupAssetForScan prep flow, which would otherwise either try to
+  // (re-)prep the container's own line item or report it as unassigned.
+  const matchContainerByTag = useCallback(
+    (scannedTag: string) => realContainers.find((c) => c.tag && c.tag === scannedTag) ?? null,
+    [realContainers],
+  );
 
   // Selection state
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
@@ -1500,10 +1509,20 @@ function WarehouseProjectPage({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && scanValue.trim()) {
         e.preventDefault();
-        scanMutation.mutate(scanValue.trim());
+        const trimmed = scanValue.trim();
+        const container = matchContainerByTag(trimmed);
+        if (container) {
+          handleSelectContainer(container.id);
+          scanFeedback.play("info", { label: container.label, outcome: "Active container" });
+          toast.info(`Active container: ${container.label}`);
+          setScanValue("");
+          scanInputRef.current?.focus();
+          return;
+        }
+        scanMutation.mutate(trimmed);
       }
     },
-    [scanValue, scanMutation]
+    [scanValue, scanMutation, matchContainerByTag, handleSelectContainer, scanFeedback]
   );
 
   const handleDeployScanKeyDown = useCallback(

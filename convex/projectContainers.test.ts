@@ -85,6 +85,35 @@ describe("projectContainers.listForProject", () => {
     expect(res[1]).toMatchObject({ id: "c2", label: "Tub 3", kind: "CUSTOM", unitCount: 0 });
   });
 
+  test("resolves each container's own asset/bulk-asset tag (scan-to-activate, #1296 phase 2) — null for CUSTOM or a stale reference", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "case-asset", organizationId: ORG, modelId: "mdl1", assetTag: "CASE-012", status: "AVAILABLE" });
+      // A third, BULK_ASSET-kind container with a resolvable bulk-asset tag.
+      await ctx.db.insert("projectLineItems", {
+        id: "bulk-tub-li", organizationId: ORG, projectId: "p1", versionId: V1, lineageId: "bulk-tub-li",
+        type: "EQUIPMENT", quantity: 1, sortOrder: 3, isContainerLineItem: true, containerId: "c3",
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectContainers", {
+        id: "c3", organizationId: ORG, projectId: "p1", versionId: V1, lineageId: "c3",
+        kind: "BULK_ASSET", bulkAssetId: "bulk-tub", label: "Tub Batch", lineItemId: "bulk-tub-li",
+        sortOrder: 2, createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("bulkAssets", { id: "bulk-tub", organizationId: ORG, modelId: "mdl2", assetTag: "TUB-BATCH-1" });
+    });
+
+    const res = await t.withIdentity(asUser(ORG)).query(api.projectContainers.listForProject, {
+      orgId: ORG, projectId: "p1",
+    });
+
+    expect(res.find((c) => c.id === "c1")?.tag).toBe("CASE-012");
+    // CUSTOM — no asset backing it.
+    expect(res.find((c) => c.id === "c2")?.tag).toBeNull();
+    expect(res.find((c) => c.id === "c3")?.tag).toBe("TUB-BATCH-1");
+  });
+
   test("cross-org project returns empty rather than another org's containers", async () => {
     const t = makeT();
     await seed(t);

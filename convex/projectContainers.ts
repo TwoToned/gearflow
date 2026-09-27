@@ -37,10 +37,33 @@ export const listForProject = query({
       }),
     );
 
-    return withCounts.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    // The container's own asset/bulk-asset tag (batched — same shape as
+    // `assets.listByIds`/`bulkAssets.listByIds`, bounded by container count),
+    // so a scan-to-activate flow (#1296 phase 2) can match a scanned tag to
+    // a container without a second round trip. `null` for CUSTOM containers
+    // (no asset backing them) or a stale/deleted asset reference.
+    const assetIds = [...new Set(withCounts.filter((c) => c.kind === "ASSET" && c.assetId).map((c) => c.assetId as string))];
+    const bulkAssetIds = [...new Set(withCounts.filter((c) => c.kind === "BULK_ASSET" && c.bulkAssetId).map((c) => c.bulkAssetId as string))];
+    const [assetDocs, bulkAssetDocs] = await Promise.all([
+      Promise.all(assetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+      Promise.all(bulkAssetIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    ]);
+    const assetTagById = new Map(assetDocs.filter((a): a is NonNullable<typeof a> => !!a).map((a) => [a.id, a.assetTag]));
+    const bulkAssetTagById = new Map(bulkAssetDocs.filter((b): b is NonNullable<typeof b> => !!b).map((b) => [b.id, b.assetTag]));
+    const withTags = withCounts.map((c) => ({
+      ...c,
+      tag:
+        c.kind === "ASSET"
+          ? (c.assetId ? assetTagById.get(c.assetId) ?? null : null)
+          : c.kind === "BULK_ASSET"
+            ? (c.bulkAssetId ? bulkAssetTagById.get(c.bulkAssetId) ?? null : null)
+            : null,
+    }));
+
+    return withTags.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   },
 });
 
 export const agentOps: AgentOpsAnnotations = {
-  listForProject: { summary: "List a project's packing containers, each with its current unit count.", danger: "low", mcpTier: 2 },
+  listForProject: { summary: "List a project's packing containers, each with its current unit count and resolved asset tag.", danger: "low", mcpTier: 2 },
 };

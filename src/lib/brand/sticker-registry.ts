@@ -248,4 +248,3 @@ export type StickerIllustrationId =
   | "stage-curtains"
   | "pelican";
 export type StickerWordmarkId = "standby" | "go" | "crew" | "load-in" | "on-air" | "show-time" | "rvlt-flow";
-export type StickerId = keyof typeof stickerRegistry;

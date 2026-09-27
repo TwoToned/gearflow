@@ -200,7 +200,7 @@ lives on the LINE as `projectLineItems.plannedContainerId?` (whole line → one 
 a warehouse-time act). At prep, `prepUnit` defaults the unit's `containerId` to the line's planned
 container when the operator has no container active, and the operator's active container wins when
 they do. The two fields answer different questions (intent vs reality), the same way `quantity` and
-`packedQuantity` do — not a second copy of one fact. The Packing view (§5.5) shows both: planned in
+`packedQuantity` do — not a second copy of one fact. The Packing tab (§5.5) shows both: planned in
 muted text until a unit lands, then actual.
 
 Migration: backfill `containerId` from existing `prepContainer` labels (unit first, line as
@@ -220,7 +220,7 @@ Every container has exactly one line item (`lineItemId`), created with the conta
 
 **Containers are never billed lines (decision D5).** All three kinds are unpriced (`unitPrice`
 unset, the `"—"` state, never `$0`), excluded from quote/invoice/recalc/allocation/ROI, and shown
-only on the job (equipment tab, Packing view) and on warehouse + manifest documents. A case the
+only on the job (equipment tab, Packing tab) and on warehouse + manifest documents. A case the
 client IS charged for is an ordinary priced line the PM adds, unrelated to packing — the same
 Pelican can be both, and the two rows mean different things.
 
@@ -349,7 +349,8 @@ signature block for the whole delivery. It is not reduced to a container-count s
    should include cases if their model has weight).
 5. `regression.test.tsx` + a new full-pipeline test with a realistic packed fixture.
 6. `document-layouts.ts` registry, the MCP `get_project_document` enum + prose, `api:docs`, the
-   operator skill (`.claude/skills/rvlt-flow`), FEATUREDOCS/13, /32 (rewrite), /12, glossary.
+   operator skill (`.claude/skills/rvlt-flow`), FEATUREDOCS/13, /32 (rewrite), /12, /69 (new tab),
+   glossary.
 
 ## 5. UI / UX
 
@@ -392,16 +393,25 @@ Per-container A6/thermal label: job number + name, container label + tag + QR (t
 Q14), description, `n items`, "1 of 3". Print from the container sheet or "Print all labels" on the
 Prepped tab. pdfme or react-pdf: react-pdf, since it's the pipeline with automatic layout.
 
-### 5.5 Project → Equipment tab: a Packing view
+### 5.5 Project → a Packing tab (its own tab, not a view inside Equipment)
 
-A third view toggle (next to list/cards): **Packing** — an editable tree container → category →
-line, with Loose last and a "not yet packed" count. The PM creates containers here and drags lines
-into them before the warehouse starts (decision D9: planning happens here, packing happens in the
+A new project tab, **Packing**, next to Equipment (decision D11: separate from equipment
+planning). Equipment stays the place gear is added, priced and categorised; Packing only decides
+where it travels. Adding a tab means adding it to `VALID_TABS` in
+`src/app/(app)/projects/[id]/page.tsx` (CLAUDE.md; FEATUREDOCS/69) so `?tab=packing` deep-links
+resolve, and the Overview readiness checklist gets a row ("3 lines not planned") that navigates
+here the way the other checks do.
+
+Contents: an editable tree container → category → line, with a dashed **Not planned** bucket last
+and a "not planned" count chip in the toolbar. The PM creates containers here and drags lines into
+them before the warehouse starts (decision D9: planning happens here, packing happens in the
 warehouse; §3.3 "plan vs actual"). Drag reuses the equipment tab's existing dnd-kit container map
 pattern (FEATUREDOCS/47 `buildContainerMap`) with containers as a new drop-target kind. Same
 `structureLineItems` `byContainer` output the manifest uses, so the screen and the PDF cannot
-disagree (R-3.1). Container line items render with a **Container** badge (today they render as
-plain gear with no marker).
+disagree (R-3.1). Planned membership prints in muted italic until a unit lands, then the row shows
+the green `Packed` pill with the actual container. On the Equipment tab itself, container line
+items render with a **Container** badge (today they render as plain gear with no marker) and a line
+that has a plan shows a small container chip — read-only there, edited on Packing.
 
 ### 5.6 Mobile
 
@@ -425,7 +435,8 @@ Numbered by the question list in the PR thread.
 | D6 | "Where it goes" | **A box is just a box — no on-site destination.** Optional free-text description per container instead. | `projectContainers.description?` printed under the container header on the manifest; no destination field anywhere (§3.2, §4.1, §5). |
 | D7 | What the customer signs on the docket | **The docket as a whole, one signature at the bottom, like now.** | Itemised rows in container order, no per-row Received column, single signature block (§4.2). |
 | D8 | Manifest granularity | **Continuous list.** | No page break per container (§4.1). |
-| D9 | When packing is decided | **Both** — PM plans on the project page, warehouse packs. | `plannedContainerId` on the line (plan) + `containerId` on the unit (actual); editable Packing view (§3.3, §5.5). |
+| D9 | When packing is decided | **Both** — PM plans on the project page, warehouse packs. | `plannedContainerId` on the line (plan) + `containerId` on the unit (actual); editable Packing tab (§3.3, §5.5). |
+| D11 | Where planning lives on the project page | **Its own Packing tab**, not a view toggle inside Equipment. | New `VALID_TABS` entry; Overview readiness row links to it (§5.5). |
 | D10 | Return-side container tracking | **Not worth the effort.** | Return sheet groups by the container gear LEFT in (read-only); no "came back in the wrong case" (§4.3). |
 
 ### 6.2 Still open (smaller, can be defaulted)
@@ -433,7 +444,7 @@ Numbered by the question list in the PR thread.
 | # | Question | Default if unanswered |
 |---|---|---|
 | Q7 | Split one TAGGED bulk asset (100 × XLR under one tag) across two tubs? | No — whole tagged quantity in one tub; untagged bulk splits freely. |
-| Q8 | Loose (unpacked) gear on the manifest: legitimate section, or flag "3 items not packed" before printing? | Legitimate "Loose" section, plus a non-blocking warning chip on the Packing view. |
+| Q8 | Loose (unpacked) gear on the manifest: legitimate section, or flag "3 items not packed" before printing? | Legitimate "Loose" section, plus a non-blocking warning chip on the Packing tab. |
 | Q10 | Tick boxes on the manifest, or reference only? | Reference only — tags inline, no boxes; the docket is the sign-off. |
 | Q11 | Client PO / order reference printed on docket + manifest? | Not in v1; nothing on `projects` holds one. |
 | Q13 | Pull slip: keep as-is, or add a "planned container" column now that plans exist pre-prep? | Add the planned container as a muted note per row when set; no layout change otherwise. |
@@ -449,7 +460,7 @@ Numbered by the question list in the PR thread.
 2. **Warehouse UI** — rail, scan-to-activate, container headers with actions, Move to.
 3. **Manifest doc + docket rework** — `byContainer` structuring, new doc component, docket layout,
    MCP/docs/skill updates. Consumer audit (§4.4).
-4. **Packing view (planning) + labels** — labels pending Q14; return-side tracking dropped (D10).
+4. **Packing tab (planning) + labels** — labels pending Q14; return-side tracking dropped (D10).
 
 ## 8. Risks / gotchas to carry into the plan
 

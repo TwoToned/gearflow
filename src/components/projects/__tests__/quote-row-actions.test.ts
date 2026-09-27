@@ -63,10 +63,10 @@ describe("standardQuoteRowActions", () => {
     expect(keys(actions)).toEqual(["rename", "accept", "chase", "decline", "recall"]);
   });
 
-  it("offers Chase, Declined and Recall (no Mark accepted) on an EXPIRED revision", () => {
+  it("offers Mark accepted, Chase, Declined and Recall on an EXPIRED revision — expiry is advisory, not a hard stop", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "EXPIRED", sentAt: 1 });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["rename", "chase", "decline", "recall"]);
+    expect(keys(actions)).toEqual(["rename", "accept", "chase", "decline", "recall"]);
   });
 
   it("offers only Rename version on an ACCEPTED revision — no Unapprove (#1230 — unacceptNative deleted)", () => {

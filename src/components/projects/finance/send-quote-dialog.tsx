@@ -8,6 +8,7 @@ import { useQuoteWrites } from "@/hooks/use-quote-writes";
 import { useClientContacts } from "@/hooks/use-clients";
 import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { computeValidUntil } from "@/lib/quote-validity";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -172,7 +173,7 @@ export function SendQuoteDialog({
         toast.warning("The document didn't generate yet — you can retry from the revision row.");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to send quote");
+      setError(convexErrorMessage(e, "Failed to send quote"));
     } finally {
       setSending(false);
     }
@@ -184,7 +185,7 @@ export function SendQuoteDialog({
       await updateStatus(projectId, sent.offerStatusChange);
       setStatusMoved(true);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update status");
+      toast.error(convexErrorMessage(e, "Failed to update status"));
     }
   }
 

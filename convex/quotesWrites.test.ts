@@ -845,22 +845,16 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
   });
 
 
-  test("an EXPIRED revision cannot be accepted without a re-send", async () => {
+  test("an EXPIRED revision can still be accepted — expiry is advisory, not a hard stop (2026-09)", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
     await send(t, { validityDays: 1 });
 
     // Two days later the SENT row reads EXPIRED — derived, never stored.
-    await expect(accept(t, { now: NOW + 2 * DAY })).rejects.toThrow(/expired/i);
     expect((await getQuotes(t))[0]?.status).toBe("SENT"); // still SENT on disk
 
-    // Re-sending reopens the window, and acceptance then succeeds.
-    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
-      id: "q1", organizationId: ORG, reason: "Client asked for more time", actor, auditId: "a3", now: NOW + 2 * DAY,
-    });
-    await send(t, { quoteDate: NOW + 2 * DAY, auditId: "a4", now: NOW + 2 * DAY });
-    await accept(t, { auditId: "a5", now: NOW + 2 * DAY + 1 });
+    await accept(t, { now: NOW + 2 * DAY });
     expect((await getQuotes(t))[0]?.status).toBe("ACCEPTED");
   });
 

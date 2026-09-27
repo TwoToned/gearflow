@@ -429,7 +429,7 @@ standing precedent).
 | **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. Restores the row this send superseded. The attached artifact is **retained, never deleted** — moved to `recalledPdfFileIds` and unlinked from `pdfFileId`, so a resend of the same revision is forced through a real render instead of `attachQuoteArtifact`'s "already attached" guard silently keeping the pre-recall bytes (#1027). |
 | **New version** (`newVersionNative`) | Increments `projects.revision` (and `liveRevision`, #1085) and inserts a `DRAFT` at the new number, after capturing the outgoing revision as a `VERSION_SAVED` snapshot. The previous live row is untouched until the new one sends. A draft carries `snapshot: null` — its figures are the project's live totals until it is sent. |
 | **Save version** (`projectVersionsWrites.saveVersionNative`, #1085) | The same "freeze and move `liveRevision` forward" shape as New version, but reachable from ANY live-revision state, including a never-sent draft. See the `liveRevision` section above. |
-| **Accept** (`markAcceptedNative`) | `SENT → ACCEPTED` + acceptance date + optional reference (PO number, email subject). An `EXPIRED` revision cannot be accepted without an explicit re-send. Unblocks `CONFIRMED`. |
+| **Accept** (`markAcceptedNative`) | `SENT`/`EXPIRED` → `ACCEPTED` + acceptance date + optional reference (PO number, email subject). Expiry is advisory (2026-09) — an `EXPIRED` revision can still be accepted as-is; re-sending is only needed to offer a NEW price. Unblocks `CONFIRMED`. |
 | **Decline** (`markDeclinedNative`) | `SENT`/`EXPIRED` → `DECLINED` + bounded reason. Offers `CANCELLED`, never forces it. |
 
 All five (and the Delete/Protect follow-ups below) take the standard 4-guard
@@ -1598,7 +1598,8 @@ duplicated here.
   CONFIRMED, finance-locked project raising no unlock-session requirement).
   #986 added the four revision invariants,
   supersede-on-send-not-on-draft, the recall round trip (including restoring
-  the superseded predecessor), derived-`EXPIRED` blocking acceptance, and the
+  the superseded predecessor), derived-`EXPIRED` still being acceptable
+  (2026-09 — expiry is advisory, not a hard stop), and the
   manager-can-send-but-not-recall / PM-can-recall RBAC split.
 - `convex/quoteDates.test.ts` — pins the `convex/lib` ↔ `src/lib` mirror over a
   timezone × instant × validity matrix, and asserts `validUntil` lands on the

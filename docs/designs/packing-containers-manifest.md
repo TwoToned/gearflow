@@ -1,6 +1,6 @@
 # Packing, Containers & Client Manifest — research + design
 
-**Status**: DRAFT — research only, nothing implemented. Open questions in §6 need answers before this becomes a plan.
+**Status**: DRAFT — research only, nothing implemented. Core model decisions are in §6.1; two questions are restated in §6.2 and the rest have defaults in §6.3.
 **Owner**: Jayden
 **Date**: 2026-09-27
 **Branch**: `claude/sweet-noether-k2zb8t`
@@ -187,9 +187,23 @@ Rules:
 - One tagged bulk asset = one unit row = one container. Splitting a single tagged bulk asset across
   two tubs needs a unit split; out of scope unless Q7 says otherwise. Untagged bulk already has one
   unit per packed piece, so it splits freely.
-- Container membership of a **kit** is the kit parent's unit; children inherit for display. A kit
-  child packed elsewhere (spare lamp in a different case) is a per-child override — see Q8.
-- A container's own unit (the case asset) may itself have `containerId` (nesting).
+- Container membership of a **kit** defaults to the kit parent's unit; children inherit. A kit
+  child packed elsewhere (spare lamp in a different case) is a per-child override made at pack
+  time, never required up front (decision D3). Display: the kit lists under its container with a
+  `(2 members in Tub 3)` note, and each stray member lists under ITS container with a `(from Lighting
+  Kit)` note — the same unit never prints twice.
+- A container's own unit (the case asset) may itself have `containerId` (nesting, decision D1).
+  Depth is unbounded in the model; the documents indent one level per nesting and the summary
+  counts only top-level containers.
+
+**Plan vs actual (decision D9 — packing is planned by the PM AND done in the warehouse).** A PM can
+create containers and assign lines to them on the project page before any unit exists. That plan
+lives on the LINE as `projectLineItems.plannedContainerId?` (whole line → one container; splits are
+a warehouse-time act). At prep, `prepUnit` defaults the unit's `containerId` to the line's planned
+container when the operator has no container active, and the operator's active container wins when
+they do. The two fields answer different questions (intent vs reality), the same way `quantity` and
+`packedQuantity` do — not a second copy of one fact. The Packing view (§5.5) shows both: planned in
+muted text until a unit lands, then actual.
 
 Migration: backfill `containerId` from existing `prepContainer` labels (unit first, line as
 fallback), creating one `CUSTOM` container per distinct label per project, upgrading to `ASSET`
@@ -200,14 +214,17 @@ where a `isContainerLineItem` line with that label exists. Then drop both string
 
 Every container has exactly one line item (`lineItemId`), created with the container:
 
-- **ASSET** → `type: "EQUIPMENT"`, `modelId` from the asset, qty 1, priced by the normal rate lookup
-  IF the model has a rate (the `dailyRate != null || weeklyRate != null` guard, CLAUDE.md) — a
-  Pelican that is charged is a real line; one that isn't stays `"—"`, never `$0`.
-- **BULK_ASSET** → same, `bulkAssetId`, qty 1 per container (or one line with qty N for N tubs of
-  the same bulk asset — see Q5).
-- **CUSTOM** → `type: "MISC"` (or `EQUIPMENT` + `isCustomItem: true`, whichever the equipment tab
-  already renders with the `Custom` badge — `equipment-rows.tsx:1405`), description = label,
-  unpriced unless the operator prices it.
+- **ASSET** → `type: "EQUIPMENT"`, `modelId`/`assetId` from the asset, qty 1.
+- **BULK_ASSET** → same shape with `bulkAssetId`, qty 1 per container. (Kind kept in the schema
+  from day one; the picker for it is deferred — decision D2.)
+- **CUSTOM** → `type: "EQUIPMENT"` + `isCustomItem: true` (what the equipment tab already renders
+  with the `Custom` badge — `equipment-rows.tsx:1405`), description = label.
+
+**Containers are never billed lines (decision D5).** All three kinds are unpriced (`unitPrice`
+unset, the `"—"` state, never `$0`), excluded from quote/invoice/recalc/allocation/ROI, and shown
+only on the job (equipment tab, Packing view) and on warehouse + manifest documents. A case the
+client IS charged for is an ordinary priced line the PM adds, unrelated to packing — the same
+Pelican can be both, and the two rows mean different things.
 
 Keep `isContainerLineItem: true` on it so all existing exclusions (allocation, ROI, auto-status,
 stage counts, PDF top-level filters) keep working unchanged, and add `containerId` on the line for
@@ -227,8 +244,11 @@ and reads UNITS (`by_containerId` index on units), and it runs from inside the c
 mutation (one call at the end, like `maybeAutoAdvanceProjectStatus`) rather than from a
 client-side `useEffect`-style follow-up call the page has to remember to make.
 
-Open: should deploying a container deploy its contents (scan the case, everything inside goes out)?
-That is the operator's expectation and the whole point of packing — see Q4.
+**Deploy by container (decision D4)** is offered, not forced: scanning a container's tag on the
+Prepped tab (or "Deploy container" on its header) opens the same verify-then-confirm flow kits use
+today (`kitConfirm` → "Deploy verified only" / "Deploy all", FEATUREDOCS/12 "Partial Deploy") over
+the container's member units. Nested containers are members too and expand in the same dialog. No
+seal/unseal ceremony. The operator can still deploy individual units from inside a container as now.
 
 ### 3.6 What the settings surface becomes
 
@@ -245,7 +265,8 @@ being the bulk way to set it. The picker offers assets/bulk assets whose model i
 warehouse docs (it describes what is physically on site now), served by `/api/documents/[projectId]
 ?type=manifest`, `project:read`. Not a finance doc, no stored-bytes rule.
 
-Structure (one page-break per container is the likely default — see Q9):
+Structure — one continuous list (decision D8), no page break per container; nested containers
+indent one level under their parent and the summary counts top-level containers only:
 
 ```
 MANIFEST                                   PRJ-2026-0142 · Summit Conference — Main Stage AV
@@ -312,8 +333,9 @@ the itemised companion, is Q12 — the answer changes 5 and the page count mater
 
 - Pull slip is a picking worksheet; it stays category/location-sorted. Add an optional "Pack into"
   column blank for hand-writing? Only if packers plan boxes on paper — Q13.
-- Return sheet should use container order too (what came back in which case is how warehouse
-  actually unpacks) with a per-container "case returned ☐" row. Same `byContainer` mode, expand.
+- Return sheet uses container order too (the container each unit LEFT in — return-side
+  re-tracking is out, decision D10) with a per-container "case returned ☐" row. Same `byContainer`
+  mode, expand.
 
 ### 4.4 Consumer audit (CLAUDE.md PDF rule — every `DocumentLineItem` shape change)
 
@@ -371,10 +393,14 @@ Prepped tab. pdfme or react-pdf: react-pdf, since it's the pipeline with automat
 
 ### 5.5 Project → Equipment tab: a Packing view
 
-A third view toggle (next to list/cards): **Packing** — read-only tree container → category → line,
-with Loose last and a "not yet packed" count. Same `structureLineItems` `byContainer` output the
-manifest uses, so the screen and the PDF cannot disagree (R-3.1). Container line items render with
-a **Container** badge (today they render as plain gear with no marker).
+A third view toggle (next to list/cards): **Packing** — an editable tree container → category →
+line, with Loose last and a "not yet packed" count. The PM creates containers here and drags lines
+into them before the warehouse starts (decision D9: planning happens here, packing happens in the
+warehouse; §3.3 "plan vs actual"). Drag reuses the equipment tab's existing dnd-kit container map
+pattern (FEATUREDOCS/47 `buildContainerMap`) with containers as a new drop-target kind. Same
+`structureLineItems` `byContainer` output the manifest uses, so the screen and the PDF cannot
+disagree (R-3.1). Container line items render with a **Container** badge (today they render as
+plain gear with no marker).
 
 ### 5.6 Mobile
 
@@ -382,56 +408,55 @@ The rail is a horizontal scroller above the scan box; the active chip is sticky 
 field (which is already `sticky` in the dialog). Move-to is a bottom sheet. Nothing here needs new
 primitives beyond `Sheet`/`Popover` (Radix; `asChild`).
 
-## 6. Open questions (need answers before planning)
+## 6. Decisions and open questions
 
-Model
-1. **Nesting** — do you pack containers inside containers in practice (rack in a case, cases on a
-   pallet), or is one level enough for v1? Nesting is cheap in the model (`parentContainerId`) but
-   doubles the document-layout work.
-2. **Bulk tubs** — are tubs/road cases without individual tags a real case for you (a `TUB` bulk
-   asset with qty 20), or is every case you'd track already serialised? If bulk, is "Tub 3" the
-   label the operator types, or auto `TUB · 1 of 20`?
-3. **Kit members** — can a kit's members be packed in different containers, or is a kit always
-   packed as one and its case IS the container? (Today `kits.caseType/caseDimensions` suggests the
-   kit's own case is the box.)
-4. **Deploy by container** — should scanning/deploying a container deploy everything inside it?
-   And should a container be "sealable" (no more adds without unsealing) or is that ceremony?
-5. **Custom containers on the job** — you said they get added "as custom items". Should a custom
-   container be priceable (client's own case = $0, our loose hire tub = $5/day), and should it
-   appear on the quote/invoice at all, or only on warehouse + manifest docs?
-6. **Destination** — is "where it goes" a free-text field per container ("Stage left", "FOH"), a
-   pick-list you maintain per org/venue, or derived from something that exists (crew roles? nothing
-   today models rooms)? And does it belong on the manifest header per container or per item?
-7. **Splitting one tagged bulk asset** — 100 × XLR under one `XLR-5M` bulk tag packed 60/40 across
-   two tubs: needed, or edge case you'll accept as "whole tagged quantity goes in one tub"?
-8. **Loose gear** — on the manifest, is "not in a container" a legitimate section (a lectern, a
-   truss stick) or a defect you want flagged before printing ("3 items not packed")?
+### 6.1 Decided (Jayden, 2026-09-27)
 
-Documents
-9. **Manifest granularity** — one page per container (doubles as a packing slip you can drop in the
-   lid) or a continuous list? Both from one component is fine; which is the default?
-10. **Tick boxes on the manifest** — does the client tick items off, or is the manifest reference
-    only and the docket is the sign-off? (If reference only, no checkboxes, tags inline, far shorter.)
-11. **References** — do clients send POs / order numbers you'd want printed on the docket and
-    manifest? Nothing on `projects` holds one today (`projectNumber` is ours).
-12. **Docket scope** — itemised (every line, as now, in container order) or container-level
-    ("3 containers, 47 items, see manifest") with the manifest as the itemised companion? Your
-    "coherent, presentable" ask reads as the second, but it changes what "Received ☐" means.
-13. **Pull slip** — leave as-is (pick by location), or add a blank "pack into" column / a planned
-    container column once packing plans exist pre-prep?
-14. **Labels** — do you want printed container labels (QR + job + contents count) as part of this,
-    or later?
+Numbered by the question list in the PR thread; 6 and 7 are restated in §6.2.
 
-Process
-15. **When is packing decided** — only at prep in the warehouse (as today), or does the PM plan
-    boxes on the project page before the warehouse starts? The latter means containers exist before
-    any unit is packed and the Packing view is editable, not read-only.
-16. **Lock tiers** — adding a container on a `CONFIRMED`/`AWAITING_PAYMENT` job is a structural add.
-    Fine as an unpriced on-site add (like `unplanned`), or should a priced container need the unlock
-    session like any other line?
-17. **Return side** — do you want "returned in the wrong case" surfaced (unit came back in a
-    different container than it left in), or is return-side container tracking not worth the scan
-    friction?
+| # | Question | Decision | Consequence in this doc |
+|---|---|---|---|
+| D1 | Nesting | **Yes, required.** | `parentContainerId` in v1; documents indent per level; summaries count top-level containers (§3.2, §4.1). |
+| D2 | Bulk tubs (untagged cases) | **Not yet; being considered.** | `BULK_ASSET` kind stays in the schema so it is additive later; no picker built in phase 1 (§3.4). |
+| D3 | Kit members across boxes | **Can be split, but never required up front.** | Default = whole kit in its container; per-child override at pack time (§3.3). |
+| D4 | Deploy by container | **An option, with the kit-style verification.** | Scan a case / "Deploy container" → the existing verify → "Deploy verified only / Deploy all" dialog over member units (§3.5). No sealing. |
+| D5 | Custom containers on the job | **Warehouse + manifest only.** | Containers of every kind are unpriced and never on quote/invoice (§3.4). |
+| D8 | Manifest granularity | **Continuous list.** | No page break per container (§4.1). |
+| D9 | When packing is decided | **Both** — PM plans on the project page, warehouse packs. | `plannedContainerId` on the line (plan) + `containerId` on the unit (actual); editable Packing view (§3.3, §5.5). |
+| D10 | Return-side container tracking | **Not worth the effort.** | Return sheet groups by the container gear LEFT in (read-only); no "came back in the wrong case" (§4.3). |
+
+### 6.2 Restated (my wording was unclear the first time)
+
+**Q6 — "where it goes".** Your original ask said the manifest shows "what box it's in / where it
+goes". I read "where it goes" as a place ON SITE, e.g. `Road Case 12 → Stage left`, `Tub 3 → FOH`,
+`Case 4 → Green room`. Three readings:
+- (a) you meant only "which box" — there is no on-site place, drop the idea;
+- (b) a free-text note per container the packer/PM types ("Stage left"), printed on the manifest
+  header for that container so the client's crew know where to wheel it;
+- (c) a list of places you maintain (per venue or per job) and pick from, so it's consistent
+  across containers and could later drive a per-area manifest.
+Which one?
+
+**Q7 — what the customer signs on the delivery docket.** Two shapes:
+- (A) **Itemised**: the docket lists every item (as today), just ordered by container. The
+  customer signs for "47 items". Long; duplicates the manifest.
+- (B) **Container-level**: the docket lists only the containers and counts — `Road Case 12 (CASE012)
+  — 18 items`, `Tub 3 — 12 items`, `Loose — 2 items` — and the customer signs for "3 containers +
+  2 loose items, per attached manifest". One page. The manifest is the itemised companion.
+Which do you want the customer signing? (B) is what "coherent, presentable" suggests to me; it
+changes what the "Received ☐" box means (per container, not per item).
+
+### 6.3 Still open (smaller, can be defaulted)
+
+| # | Question | Default if unanswered |
+|---|---|---|
+| Q7 | Split one TAGGED bulk asset (100 × XLR under one tag) across two tubs? | No — whole tagged quantity in one tub; untagged bulk splits freely. |
+| Q8 | Loose (unpacked) gear on the manifest: legitimate section, or flag "3 items not packed" before printing? | Legitimate "Loose" section, plus a non-blocking warning chip on the Packing view. |
+| Q10 | Tick boxes on the manifest, or reference only? | Reference only — tags inline, no boxes; the docket is the sign-off. |
+| Q11 | Client PO / order reference printed on docket + manifest? | Not in v1; nothing on `projects` holds one. |
+| Q13 | Pull slip: keep as-is, or add a "planned container" column now that plans exist pre-prep? | Add the planned container as a muted note per row when set; no layout change otherwise. |
+| Q14 | Printed container labels (QR + job + count) in this program or later? | Later (phase 4). |
+| Q16 | Container added on a locked (`CONFIRMED`+) job: allowed as an unpriced structural add? | Yes — same allowance as `unplanned` lines; containers are never priced (D5) so no money gate applies. |
 
 ## 7. Phasing (tentative, pending §6)
 
@@ -442,7 +467,7 @@ Process
 2. **Warehouse UI** — rail, scan-to-activate, container headers with actions, Move to.
 3. **Manifest doc + docket rework** — `byContainer` structuring, new doc component, docket layout,
    MCP/docs/skill updates. Consumer audit (§4.4).
-4. **Packing view + labels + return-side** — per answers to Q13–Q17.
+4. **Packing view (planning) + labels** — labels pending Q14; return-side tracking dropped (D10).
 
 ## 8. Risks / gotchas to carry into the plan
 

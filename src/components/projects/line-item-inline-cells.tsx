@@ -22,6 +22,7 @@ import {
   resolveDiscountAmount,
   toDiscountMode,
 } from "@/lib/discount-mode";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { cn, focusRing } from "@/lib/utils";
 
 /** Shared numeric-input keydown: Enter commits (blurs), Escape cancels without saving. */
@@ -483,14 +484,6 @@ function convexErrorCode(e: unknown): string | undefined {
   if (!(e instanceof ConvexError) || typeof e.data !== "object" || e.data === null) return undefined;
   const code = (e.data as { code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
-}
-
-function convexErrorMessage(e: unknown, fallback: string): string {
-  if (e instanceof ConvexError && typeof e.data === "object" && e.data !== null) {
-    const message = (e.data as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  return e instanceof Error ? e.message : fallback;
 }
 
 export interface InlineEditableQuantityProps {

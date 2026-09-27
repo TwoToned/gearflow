@@ -14,6 +14,7 @@ import { useCanDo } from "@/lib/use-permissions";
 import { pushInvoiceToXero } from "@/server/xero";
 import { generateInvoiceArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -126,7 +127,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
       await invoiceWrites.create(projectId, clientId!, { kind });
       toast.success(`${kind} invoice draft created`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create invoice");
+      toast.error(convexErrorMessage(e, "Failed to create invoice"));
     }
   }
 
@@ -150,7 +151,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
       await updateStatus(projectId, "INVOICED");
       toast.success("Moved to Invoiced");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update status");
+      toast.error(convexErrorMessage(e, "Failed to update status"));
     } finally {
       setAdvanceOffer(null);
     }
@@ -164,7 +165,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
       setVoidTarget(null);
       setVoidReason("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to void invoice");
+      toast.error(convexErrorMessage(e, "Failed to void invoice"));
     }
   }
 
@@ -176,7 +177,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
       setPaymentVoidTarget(null);
       setPaymentVoidReason("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to void payment");
+      toast.error(convexErrorMessage(e, "Failed to void payment"));
     }
   }
 
@@ -216,7 +217,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
                 xeroLinked={xeroLinked}
                 onIssue={() => setIssueTarget({ id: inv.id, kind: inv.kind, total: inv.total })}
                 onDeleteDraft={() =>
-                  void invoiceWrites.deleteDraft(inv.id).then(() => toast.success("Draft deleted")).catch((e) => toast.error(e instanceof Error ? e.message : "Failed"))
+                  void invoiceWrites.deleteDraft(inv.id).then(() => toast.success("Draft deleted")).catch((e) => toast.error(convexErrorMessage(e, "Failed")))
                 }
                 onVoidRequest={() => setVoidTarget({ id: inv.id, number: inv.invoiceNumber ?? inv.id })}
                 onDeleteVoidRequest={() => setDeleteVoidTarget({ id: inv.id, label: inv.invoiceNumber ?? inv.id })}

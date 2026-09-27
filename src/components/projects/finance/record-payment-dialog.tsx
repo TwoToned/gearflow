@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { usePaymentWrites } from "@/hooks/use-payment-writes";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { formatCurrency } from "@/lib/formatters";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payment-method-labels";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,7 @@ export function RecordPaymentDialog({ open, onOpenChange, invoiceId, invoiceNumb
       onRecorded?.();
       handleOpenChange(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to record payment");
+      setError(convexErrorMessage(e, "Failed to record payment"));
     } finally {
       setRecording(false);
     }

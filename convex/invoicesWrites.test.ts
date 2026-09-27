@@ -484,10 +484,13 @@ describe("invoicesWrites.issueNative", () => {
   });
 });
 
-describe("invoicesWrites.issueNative — accepted-quote gate (2026-08)", () => {
-  // Draft creation stays completely ungated — only ISSUING checks quote state,
-  // against the specific revision stamped on the invoice at creation
-  // (`sourceRevision`, never updated afterwards).
+describe("invoicesWrites.issueNative — quote-status-independent (2026-08 gate reversed 2026-09)", () => {
+  // The 2026-08 accepted-quote gate on issueNative was removed 2026-09: an
+  // invoice always bills the project's own server-computed pricing snapshot
+  // (never the quote's), so issuing was never actually contingent on quote
+  // status — it only blocked jobs invoiced with no formal quote, or one still
+  // SENT/EXPIRED/DECLINED. Draft creation, editing and deletion were always
+  // ungated; now issuing is too.
   test("succeeds when the invoice's linked quote revision is ACCEPTED", async () => {
     const t = makeT();
     await seedMember(t);
@@ -503,7 +506,7 @@ describe("invoicesWrites.issueNative — accepted-quote gate (2026-08)", () => {
   });
 
   test.each(["DRAFT", "SENT", "DECLINED", "SUPERSEDED"] as const)(
-    "rejects with QUOTE_NOT_ACCEPTED when the linked quote is %s",
+    "succeeds when the linked quote is %s — quote status no longer gates issuing",
     async (quoteStatus) => {
       const t = makeT();
       await seedMember(t);
@@ -512,15 +515,14 @@ describe("invoicesWrites.issueNative — accepted-quote gate (2026-08)", () => {
         id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
       });
 
-      await expect(
-        t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
-          id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
-        }),
-      ).rejects.toThrow(/not accepted/i);
+      const result = await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+        id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
+      });
+      expect(result.invoiceNumber).toBe("INV-2023-0001");
     },
   );
 
-  test("rejects with QUOTE_NOT_ACCEPTED when the quote at that revision is EXPIRED", async () => {
+  test("succeeds when the quote at that revision is EXPIRED", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProjectAndClient(t, ORG, "QUOTING", null);
@@ -534,14 +536,13 @@ describe("invoicesWrites.issueNative — accepted-quote gate (2026-08)", () => {
       id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
     });
 
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
-        id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
-      }),
-    ).rejects.toThrow(/not accepted/i);
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
+    });
+    expect(result.invoiceNumber).toBe("INV-2023-0001");
   });
 
-  test("rejects with QUOTE_NOT_ACCEPTED when no quote exists at all for the project", async () => {
+  test("succeeds when no quote exists at all for the project — invoices whatever the project currently looks like", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProjectAndClient(t, ORG, "QUOTING", null);
@@ -549,17 +550,16 @@ describe("invoicesWrites.issueNative — accepted-quote gate (2026-08)", () => {
       id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
     });
 
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
-        id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
-      }),
-    ).rejects.toThrow(/no quote exists/i);
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
+    });
+    expect(result.invoiceNumber).toBe("INV-2023-0001");
   });
 
   // A pre-#1097 row (or any row a backfill hasn't reached) can lack
-  // `sourceRevision` entirely — fails closed rather than silently allowing
-  // it through.
-  test("rejects a legacy invoice with no sourceRevision at all", async () => {
+  // `sourceRevision` entirely — this is now purely a stamped-for-audit field,
+  // never a gate, so issuing still succeeds.
+  test("succeeds for a legacy invoice with no sourceRevision at all", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProjectAndClient(t, ORG, "QUOTING", "ACCEPTED");
@@ -571,11 +571,10 @@ describe("invoicesWrites.issueNative — accepted-quote gate (2026-08)", () => {
       await ctx.db.patch(inv!._id, { sourceRevision: undefined });
     });
 
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
-        id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
-      }),
-    ).rejects.toThrow(/no linked quote version/i);
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
+    });
+    expect(result.invoiceNumber).toBe("INV-2023-0001");
   });
 
   test("draft creation, editing and deletion stay ungated regardless of quote state", async () => {

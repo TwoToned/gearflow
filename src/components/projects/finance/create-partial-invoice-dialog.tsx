@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { formatCurrency } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,7 +95,7 @@ export function CreatePartialInvoiceDialog({
       onCreated?.();
       handleOpenChange(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create partial invoice");
+      setError(convexErrorMessage(e, "Failed to create partial invoice"));
     } finally {
       setCreating(false);
     }

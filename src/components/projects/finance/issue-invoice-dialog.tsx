@@ -6,6 +6,7 @@ import { Download, Eye } from "lucide-react";
 
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { computeValidUntil } from "@/lib/quote-validity";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -98,7 +99,7 @@ export function IssueInvoiceDialog({ open, onOpenChange, projectId, invoiceId, i
         toast.warning("The document didn't generate yet — you can retry from the invoice row.");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to issue invoice");
+      setError(convexErrorMessage(e, "Failed to issue invoice"));
     } finally {
       setIssuing(false);
     }

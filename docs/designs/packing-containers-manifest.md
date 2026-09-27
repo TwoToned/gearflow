@@ -1,6 +1,6 @@
 # Packing, Containers & Client Manifest — research + design
 
-**Status**: DRAFT — research only, nothing implemented. Core model decisions are in §6.1; two questions are restated in §6.2 and the rest have defaults in §6.3.
+**Status**: DRAFT — research only, nothing implemented. Decisions are in §6.1; the remaining small questions have defaults in §6.2.
 **Owner**: Jayden
 **Date**: 2026-09-27
 **Branch**: `claude/sweet-noether-k2zb8t`
@@ -164,9 +164,7 @@ projectContainers
   lineItemId          -- the container's own line item on the job (see 3.4); 1:1
   parentContainerId?  -- nesting (a rack inside a case) — see Q3
   sortOrder
-  destination?        -- free text ("Stage left", "FOH", "Truck 1") — see Q6
-  notes?
-  sealedAt?/sealedById?  -- optional "closed" marker — see Q4
+  description?        -- optional free text on the box ("Cables + power", "Client's own case"), printed on the manifest (D6)
   createdAt, updatedAt
 indexes: by_cuid, by_organizationId, by_versionId, by_versionId_lineItemId, by_assetId, by_bulkAssetId
 ```
@@ -273,13 +271,14 @@ MANIFEST                                   PRJ-2026-0142 · Summit Conference �
 Client / delivery address / site contact   Delivered 10 Sep 2026 · Return due 14 Sep 2026
 Summary: 3 containers · 47 items · 212 kg · 2 loose items
 
-■ Road Case 12  (CASE012)            destination: Stage left      contents: 18 items
+■ Road Case 12  (CASE012)            contents: 18 items
+   Cables + stage power
    Lighting
      4 × Par Can ............................ PC-0021, PC-0022, PC-0034, PC-0040
      1 × DMX Controller ..................... DMX-003
    [Kit] Lighting Kit (KIT-001) — 3 items
      ...
-■ Tub 3  (TUB · 1 of 20)             destination: FOH
+■ Tub 3  (TUB · 1 of 20)
    Audio
      12 × XLR 5m ............................ (bulk)
 ■ Client flight case (custom)
@@ -294,11 +293,12 @@ Rows: description, qty, asset tags (inline list, not per-unit sub-rows — the c
 "is there a case here with these in it", not ticking serials), no checkboxes by default (Q10),
 no prices. Section headers are containers; second-level headers are category (or kit) inside the
 container — "sorted into containers, then categories/kits" as requested. Container header carries
-tag, kind, destination, item count, and weight if every member model has one.
+tag, kind, item count, the optional description on its own line, and weight if every member model
+has one. A container is just a box: there is no on-site destination field (D6).
 
 Data shape: `structureLineItems` gets a third mode, `byContainer`, that buckets by
 `unit.containerId` FIRST and by category/kit second, emitting a container header row
-(`isContainerRow: true`, tag/kind/destination/count on it) — a new synthetic row type, so the
+(`isContainerRow: true`, tag/kind/description/count on it) — a new synthetic row type, so the
 CLAUDE.md synthetic-row rule applies: `filterAndGroupItems`'s status filter and the table renderer
 both need the special case, plus a full-pipeline integration test.
 
@@ -317,17 +317,18 @@ Keep it a **hand-over document** (what came off the truck, sign here), distinct 
    phone) | From (org contact) | Reference (client PO / order ref if we have one — Q11).
 4. **Summary line**: `3 containers · 47 items · 212 kg`.
 5. **Table** in container order (same buckets as the manifest, so the two documents agree), columns
-   `#`, Item, Qty, Asset tag(s), Received☐. One row per line, tags inline, **no per-unit sub-rows and
-   no pre-ticked boxes**. Kit prints its own row (with its case tag) and its members indented; the
-   Received box is on the kit row only. Group: one box on the parent. `#` numbers every printed
-   parent row consecutively.
+   `#`, Item, Qty, Asset tag(s). **No per-row Received column** (D7: the customer signs for the
+   delivery as a whole at the bottom, so per-item boxes are redundant, and the pre-ticked ones were
+   the confusing part). One row per line, tags inline, **no per-unit sub-rows**. Kit prints its own
+   row (with its case tag) and its members indented. Group: parent row + disclosed members. `#`
+   numbers every printed parent row consecutively.
 6. **Condition on receipt / discrepancies**: a ruled box, three lines.
 7. **Signatures**: Delivered by (name, signature, date/time) | Received by (name, company,
    signature, date/time). One rule each. Drop the duplicated "Signature" sub-line.
 8. **Footer**: existing.
 
-Whether the docket lists individual items at all, or only containers + counts with the manifest as
-the itemised companion, is Q12 — the answer changes 5 and the page count materially.
+Scope decided (D7): the docket stays **itemised**, like today, in container order, with ONE
+signature block for the whole delivery. It is not reduced to a container-count summary.
 
 ### 4.3 Pull slip and return sheet
 
@@ -363,7 +364,7 @@ the itemised companion, is Q12 — the answer changes 5 and the page count mater
   (or a `TUB` bulk tag) switches the active chip instead of erroring "not on this job". This is the
   operator's natural gesture: scan the case, scan what goes in it.
 - `+ New` opens a small sheet (Radix `Sheet`, `asChild`): pick a case/tub asset (search), or type a
-  custom label; optional destination. Adding creates the container + its line item immediately
+  custom label; optional description. Adding creates the container + its line item immediately
   (server-owned, so it appears on the equipment tab right away).
 - Each prepped row shows a small container chip (`Container` icon + label) inline, replacing
   nothing else.
@@ -371,8 +372,8 @@ the itemised companion, is Q12 — the answer changes 5 and the page count mater
 ### 5.2 Prepped (Deploy) tab: containers are the unit of work
 
 - Keep the sectioned table, but the section header becomes a **container card header**: label, tag,
-  kind badge (Case / Tub / Custom), destination, `n items`, and actions: **Deploy container**,
-  **Move…**, **Rename/destination**, **Unpack** (contents → Loose; replaces the X-clear).
+  kind badge (Case / Tub / Custom), description, `n items`, and actions: **Deploy container**,
+  **Move…**, **Rename / describe**, **Unpack** (contents → Loose; replaces the X-clear).
 - Row-level **Move to…** (single/multi-select) → picker of this job's containers + "Loose". This is
   the missing operation behind defect 7.
 - "No container" stays last and is renamed **Loose**.
@@ -380,15 +381,15 @@ the itemised companion, is Q12 — the answer changes 5 and the page count mater
 
 ### 5.3 Container sheet (detail)
 
-Opened from a header or the equipment tab: contents grouped by category, weight, destination,
-notes, seal status, print label, print packing slip (this container only). Also lists **where a unit
+Opened from a header or the equipment tab: contents grouped by category, weight, description,
+print label, print packing slip (this container only). Also lists **where a unit
 went** if it left the container (moved/returned).
 
 ### 5.4 Labels
 
 Per-container A6/thermal label: job number + name, container label + tag + QR (the existing
 `barcodeLabelTemplate` machinery on models can be reused; QR encodes the container id or asset tag —
-Q14), destination, `n items`, "1 of 3". Print from the container sheet or "Print all labels" on the
+Q14), description, `n items`, "1 of 3". Print from the container sheet or "Print all labels" on the
 Prepped tab. pdfme or react-pdf: react-pdf, since it's the pipeline with automatic layout.
 
 ### 5.5 Project → Equipment tab: a Packing view
@@ -412,7 +413,7 @@ primitives beyond `Sheet`/`Popover` (Radix; `asChild`).
 
 ### 6.1 Decided (Jayden, 2026-09-27)
 
-Numbered by the question list in the PR thread; 6 and 7 are restated in §6.2.
+Numbered by the question list in the PR thread.
 
 | # | Question | Decision | Consequence in this doc |
 |---|---|---|---|
@@ -421,32 +422,13 @@ Numbered by the question list in the PR thread; 6 and 7 are restated in §6.2.
 | D3 | Kit members across boxes | **Can be split, but never required up front.** | Default = whole kit in its container; per-child override at pack time (§3.3). |
 | D4 | Deploy by container | **An option, with the kit-style verification.** | Scan a case / "Deploy container" → the existing verify → "Deploy verified only / Deploy all" dialog over member units (§3.5). No sealing. |
 | D5 | Custom containers on the job | **Warehouse + manifest only.** | Containers of every kind are unpriced and never on quote/invoice (§3.4). |
+| D6 | "Where it goes" | **A box is just a box — no on-site destination.** Optional free-text description per container instead. | `projectContainers.description?` printed under the container header on the manifest; no destination field anywhere (§3.2, §4.1, §5). |
+| D7 | What the customer signs on the docket | **The docket as a whole, one signature at the bottom, like now.** | Itemised rows in container order, no per-row Received column, single signature block (§4.2). |
 | D8 | Manifest granularity | **Continuous list.** | No page break per container (§4.1). |
 | D9 | When packing is decided | **Both** — PM plans on the project page, warehouse packs. | `plannedContainerId` on the line (plan) + `containerId` on the unit (actual); editable Packing view (§3.3, §5.5). |
 | D10 | Return-side container tracking | **Not worth the effort.** | Return sheet groups by the container gear LEFT in (read-only); no "came back in the wrong case" (§4.3). |
 
-### 6.2 Restated (my wording was unclear the first time)
-
-**Q6 — "where it goes".** Your original ask said the manifest shows "what box it's in / where it
-goes". I read "where it goes" as a place ON SITE, e.g. `Road Case 12 → Stage left`, `Tub 3 → FOH`,
-`Case 4 → Green room`. Three readings:
-- (a) you meant only "which box" — there is no on-site place, drop the idea;
-- (b) a free-text note per container the packer/PM types ("Stage left"), printed on the manifest
-  header for that container so the client's crew know where to wheel it;
-- (c) a list of places you maintain (per venue or per job) and pick from, so it's consistent
-  across containers and could later drive a per-area manifest.
-Which one?
-
-**Q7 — what the customer signs on the delivery docket.** Two shapes:
-- (A) **Itemised**: the docket lists every item (as today), just ordered by container. The
-  customer signs for "47 items". Long; duplicates the manifest.
-- (B) **Container-level**: the docket lists only the containers and counts — `Road Case 12 (CASE012)
-  — 18 items`, `Tub 3 — 12 items`, `Loose — 2 items` — and the customer signs for "3 containers +
-  2 loose items, per attached manifest". One page. The manifest is the itemised companion.
-Which do you want the customer signing? (B) is what "coherent, presentable" suggests to me; it
-changes what the "Received ☐" box means (per container, not per item).
-
-### 6.3 Still open (smaller, can be defaulted)
+### 6.2 Still open (smaller, can be defaulted)
 
 | # | Question | Default if unanswered |
 |---|---|---|

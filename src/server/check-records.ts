@@ -87,7 +87,11 @@ export async function prepItemDirect(
   /** Accessory identities (serialised assetId / bulk bulkAssetId) to pack with
    *  this unit. Undefined = all of the asset's accessories. The prep picker
    *  passes the ticked set so an operator can leave one off this handheld. */
-  includeAccessoryIds?: string[]
+  includeAccessoryIds?: string[],
+  /** #1296 — the real container to pack into, when the caller has one
+   *  selected. Wins over `prepContainer` (a legacy label) in
+   *  `checkRecordOps.ts`'s `resolvePrepContainerId`. */
+  containerId?: string | null,
 ) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",
@@ -116,6 +120,7 @@ export async function prepItemDirect(
     ...(!assetId && lineItem.bulkAssetId ? { bulkAssetId: lineItem.bulkAssetId } : {}),
     ...(quantity != null ? { quantity } : {}),
     prepContainer: prepContainer ?? undefined,
+    containerId,
     ...(includeAccessoryIds ? { includeAccessoryIds } : {}),
     now,
     // #1160 — attributes the "Auto-advanced to Prepping" audit row this mutation
@@ -161,6 +166,8 @@ export async function prepItemsBatch(
     assetId?: string;
     quantity?: number;
     prepContainer?: string | null;
+    /** #1296 — wins over `prepContainer` per item, see `prepItemDirect`. */
+    containerId?: string | null;
     includeAccessoryIds?: string[];
   }>
 ) {

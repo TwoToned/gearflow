@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ContainerRail, type ContainerRailItem } from "@/components/warehouse/container-rail";
 import { focusRing } from "@/lib/utils";
 import {
   TabsContent,
@@ -35,8 +35,6 @@ import { ScanHistoryStrip } from "./scan-history-strip";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
-type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
-
 export interface PickPrepTabProps {
   // Scan state
   scanInputRef: React.RefObject<HTMLInputElement | null>;
@@ -47,10 +45,14 @@ export interface PickPrepTabProps {
   scanMutationIsPending: boolean;
   scanHistoryEntries: ScanHistoryRecord[];
 
-  // Container state
+  // Container state (#1296) — the rail replaces the old free-text/creatable
+  // picker; `selectedContainer` is still read for the "&rarr; Case 12" label,
+  // kept in sync by the parent's `onSelectContainer`/`onNewContainer` handlers.
   selectedContainer: string;
-  setSelectedContainer: (v: string) => void;
-  containerOptions: ContainerOption[];
+  containers: ContainerRailItem[];
+  activeContainerId: string | null;
+  onSelectContainer: (id: string | null) => void;
+  onNewContainer: () => void;
 
   // Selection
   selectedPrep: Set<string>;
@@ -100,8 +102,10 @@ export function PickPrepTab({
   scanMutationIsPending,
   scanHistoryEntries,
   selectedContainer,
-  setSelectedContainer,
-  containerOptions,
+  containers,
+  activeContainerId,
+  onSelectContainer,
+  onNewContainer,
   selectedPrep,
   setSelectedPrep,
   selectedPrepCount,
@@ -142,18 +146,13 @@ export function PickPrepTab({
                   autoFocus
                 />
               </div>
-              <div className="w-48 shrink-0">
-                <ComboboxPicker
-                  value={selectedContainer}
-                  onChange={setSelectedContainer}
-                  options={containerOptions}
-                  placeholder="No container"
-                  searchPlaceholder="Search or create..."
-                  creatable
-                  allowClear
-                />
-              </div>
             </div>
+            <ContainerRail
+              containers={containers}
+              activeContainerId={activeContainerId}
+              onSelect={onSelectContainer}
+              onNew={onNewContainer}
+            />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-ui-text text-muted">
                 Items that need to be picked and prepped.

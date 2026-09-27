@@ -85,6 +85,8 @@ import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
+import { ContainerRail } from "@/components/warehouse/container-rail";
+import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
@@ -119,7 +121,7 @@ import {
   prepKitsBatch,
   unpackItem,
 } from "@/server/check-records";
-import { useConvex, useConvexAuth } from "convex/react";
+import { useConvex, useConvexAuth, useQuery } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
@@ -358,8 +360,26 @@ function WarehouseProjectPage({
   const wConvex = useConvex();
   const { isAuthenticated: wAuthed } = useConvexAuth();
 
-  // Container state for prep grouping
+  // Container state for prep grouping. `selectedContainer` (a label string) is
+  // the legacy widen-step field, kept in sync so unmigrated readers (grouping,
+  // display) keep working; `activeContainerId` (#1296) is the real container
+  // now written through alongside it — see `handleSelectContainer`.
   const [selectedContainer, setSelectedContainer] = useState<string>("");
+  const [activeContainerId, setActiveContainerId] = useState<string | null>(null);
+  const [newContainerSheetOpen, setNewContainerSheetOpen] = useState(false);
+  const realContainers = useQuery(
+    convexApi.projectContainers.listForProject,
+    orgId ? { orgId, projectId } : "skip",
+  ) ?? [];
+  const handleSelectContainer = useCallback((id: string | null) => {
+    setActiveContainerId(id);
+    setSelectedContainer(id ? realContainers.find((c) => c.id === id)?.label ?? "" : "");
+  }, [realContainers]);
+  const handleContainerCreated = useCallback((container: { id: string; label: string }) => {
+    setActiveContainerId(container.id);
+    setSelectedContainer(container.label);
+    setNewContainerSheetOpen(false);
+  }, []);
 
   // Selection state
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
@@ -628,6 +648,7 @@ function WarehouseProjectPage({
             assetId: i.assetId || undefined,
             quantity: i.quantity,
             prepContainer: selectedContainer || null,
+            containerId: activeContainerId,
             includeAccessoryIds: i.includeAccessoryIds,
           })),
         )
@@ -801,6 +822,11 @@ function WarehouseProjectPage({
   const quickAddMutation = useServerMutation({
     mutationFn: async (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) => {
       await ensureContainerIfNeeded();
+      // #1296 — quickAddCore inserts a bare line item with no unit row (unlike
+      // prepUnit), so there's nothing to stamp a real containerId onto yet;
+      // it stays on the legacy label-only path. The very next prep step for
+      // this line (below, in onSuccess) DOES create a unit and gets the real
+      // containerId — this line just can't itself.
       return warehouseWrites.quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
     },
     onSuccess: (result) => {
@@ -830,7 +856,7 @@ function WarehouseProjectPage({
         scanInputRef.current?.focus();
       } else {
         // No checks — prep directly
-        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null)
+        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
           .then(() => {
             toast.success(`Added and prepped: ${assetName}`);
             invalidate();
@@ -1106,7 +1132,7 @@ function WarehouseProjectPage({
           scanInputRef.current?.focus();
         } else {
           // No check items — prep directly (set prepStatus=PACKED, no deploy)
-          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null)
+          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
             .then(() => {
               scanFeedback.play("success", { label: result.assetName || "Asset", outcome: "Prepped" });
               toast.success(`Prepped: ${result.assetName || "Asset"}`);
@@ -1562,7 +1588,16 @@ function WarehouseProjectPage({
     }
   };
 
-  // Fetch container assets from the configured case category
+  // #1296 — `caseAssets`/`containerOptions`/`selectedContainerAsset`/
+  // `ensureContainerIfNeeded` are the PRE-rail mechanism: the free-text
+  // ComboboxPicker matched a typed label back to an asset here, then
+  // lazily added that asset to the job the first time it was used as a
+  // container. The rail's "+ New" sheet now creates a container (and its
+  // line item) atomically via `projectContainersWrites.createNative`, so
+  // `selectedContainer` is only ever set to a REAL container's label —
+  // this lookup effectively never matches for anything created through
+  // the rail. Left in place (not dead per knip — still called) rather than
+  // removed here; phase 5 (narrow + retire) is where this goes.
   const { data: caseAssets } = useServerQuery({
     queryKey: ["containerAssets", orgId],
     queryFn: () => wConvex.query(convexApi.categories.containerAssetSearch, { orgId: orgId as string, query: "" }),
@@ -2010,12 +2045,14 @@ function WarehouseProjectPage({
         assetId?: string;
         quantity?: number;
         prepContainer?: string | null;
+        containerId?: string | null;
       }> = [];
       for (const bi of bulkNoCheckItems) {
         directPrepItems.push({
           lineItemId: bi.lineItemId,
           quantity: bi.quantity,
           prepContainer: selectedContainer || null,
+          containerId: activeContainerId,
         });
       }
 
@@ -2048,6 +2085,7 @@ function WarehouseProjectPage({
           assetId: item.assetId,
           quantity: item.quantity,
           prepContainer: selectedContainer || null,
+          containerId: activeContainerId,
         });
       }
       if (directPrepItems.length > 0) {
@@ -2499,6 +2537,7 @@ function WarehouseProjectPage({
         assetId: i.assetId,
         quantity: i.quantity,
         prepContainer: selectedContainer || null,
+        containerId: activeContainerId,
       })),
     )
       .then(() => {
@@ -2847,8 +2886,10 @@ function WarehouseProjectPage({
           scanMutationIsPending={scanMutation.isPending}
           scanHistoryEntries={scanFeedback.entries}
           selectedContainer={selectedContainer}
-          setSelectedContainer={setSelectedContainer}
-          containerOptions={containerOptions}
+          containers={realContainers}
+          activeContainerId={activeContainerId}
+          onSelectContainer={handleSelectContainer}
+          onNewContainer={() => setNewContainerSheetOpen(true)}
           selectedPrep={selectedPrep}
           setSelectedPrep={setSelectedPrep}
           selectedPrepCount={selectedPrepCount}
@@ -2867,6 +2908,13 @@ function WarehouseProjectPage({
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
+        />
+        <NewContainerSheet
+          open={newContainerSheetOpen}
+          onOpenChange={setNewContainerSheetOpen}
+          projectId={projectId}
+          existingContainers={realContainers.map((c) => ({ id: c.id, label: c.label }))}
+          onCreated={handleContainerCreated}
         />
 
         {/* Deploy Tab */}
@@ -3481,6 +3529,8 @@ function WarehouseProjectPage({
                       item.assetId || undefined,
                       item.assetId ? undefined : 1,
                       selectedContainer || null,
+                      undefined,
+                      activeContainerId,
                     );
                   } else if (item.fromDeprep) {
                     // completeCheckAndDeprep tolerates an empty checks[] (it
@@ -3522,6 +3572,7 @@ function WarehouseProjectPage({
                     assetId: item.assetId,
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
+                    containerId: activeContainerId,
                     checks,
                     includeAccessoryIds: item.includeAccessoryIds,
                   });
@@ -3594,6 +3645,7 @@ function WarehouseProjectPage({
                     assetId: checkFormData.assetId,
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
+                    containerId: activeContainerId,
                     checks,
                     includeAccessoryIds: checkFormData.includeAccessoryIds,
                   });

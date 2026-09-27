@@ -63,6 +63,7 @@ const CONVEX_DIR = "convex";
 /** The five tables this ratchet watches. */
 const WATCHED_TABLES = new Set([
   "projectCategories",
+  "projectContainers",
   "projectGroups",
   "projectLineItems",
   "projectServices",
@@ -78,6 +79,7 @@ const ALWAYS_SAFE_INDEXES = new Set(["by_cuid"]);
 const VERSION_FAMILY_INDEX = /^by_versionId(_|$)/;
 const TABLES_WITH_VERSION_INDEX = new Set([
   "projectCategories",
+  "projectContainers",
   "projectGroups",
   "projectLineItems",
   "projectServices",

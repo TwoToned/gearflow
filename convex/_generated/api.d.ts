@@ -233,6 +233,7 @@ import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
 import type * as pipeline from "../pipeline.js";
 import type * as projectCategories from "../projectCategories.js";
 import type * as projectCategoriesWrites from "../projectCategoriesWrites.js";
+import type * as projectContainers from "../projectContainers.js";
 import type * as projectCosts from "../projectCosts.js";
 import type * as projectDetail from "../projectDetail.js";
 import type * as projectEquipment from "../projectEquipment.js";
@@ -551,6 +552,7 @@ declare const fullApi: ApiFromModules<{
   pipeline: typeof pipeline;
   projectCategories: typeof projectCategories;
   projectCategoriesWrites: typeof projectCategoriesWrites;
+  projectContainers: typeof projectContainers;
   projectCosts: typeof projectCosts;
   projectDetail: typeof projectDetail;
   projectEquipment: typeof projectEquipment;

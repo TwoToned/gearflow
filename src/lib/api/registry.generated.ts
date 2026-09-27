@@ -35691,6 +35691,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectContainers.listForProject",
+    "module": "projectContainers",
+    "fn": "listForProject",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "001b41a0ac3258ca",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "List a project's packing containers, each with its current unit count.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectCosts.operationalCosts",
     "module": "projectCosts",
     "fn": "operationalCosts",
@@ -63716,10 +63758,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1239,
-  agentReachable: 608,
-  queries: 445,
+  total: 1240,
+  agentReachable: 609,
+  queries: 446,
   mutations: 794,
-  agentReachableQueries: 311,
+  agentReachableQueries: 312,
   agentReachableMutations: 297,
 } as const;

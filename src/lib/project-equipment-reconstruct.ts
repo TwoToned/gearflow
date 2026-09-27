@@ -218,6 +218,12 @@ export interface MappedLineItem {
   returnNotes: string | null;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** #1296 packing containers, D9 — the PM's planned container for this whole
+   *  line (Packing tab, phase 4). Null until a plan exists. */
+  plannedContainerId: string | null;
+  /** #1296 — set ONLY on a container's own line item (reverse lookup to the
+   *  `projectContainers` row this line IS, not one it's packed inside). */
+  containerId: string | null;
   isContainerLineItem: boolean;
   isCustomItem: boolean;
   returnStatus: string | null;
@@ -286,6 +292,8 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     returnNotes: d.returnNotes ?? null,
     prepStatus: d.prepStatus ?? null,
     prepContainer: d.prepContainer ?? null,
+    plannedContainerId: d.plannedContainerId ?? null,
+    containerId: d.containerId ?? null,
     isContainerLineItem: d.isContainerLineItem ?? false,
     isCustomItem: d.isCustomItem ?? false,
     returnStatus: d.returnStatus ?? null,
@@ -319,6 +327,9 @@ export interface MappedUnit {
   status: string;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** #1296 packing containers — the container this unit is actually packed
+   *  in (membership lives on the UNIT, never the line). Null = loose. */
+  containerId: string | null;
   checkedOutAt: Date | null;
   checkedOutById: string | null;
   returnedAt: Date | null;
@@ -345,6 +356,7 @@ export function mapUnitDoc(d: UnitDoc): MappedUnit {
     status: d.status ?? "CONFIRMED",
     prepStatus: d.prepStatus ?? null,
     prepContainer: d.prepContainer ?? null,
+    containerId: d.containerId ?? null,
     checkedOutAt: msToDate(d.checkedOutAt),
     checkedOutById: d.checkedOutById ?? null,
     returnedAt: msToDate(d.returnedAt),

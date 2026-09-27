@@ -130,12 +130,28 @@ Landed so far:
   unit's `containerId` set). The Equipment tab renders a **Container** badge
   and makes the container's own line's price cell permanently read-only (D5),
   independent of the project's lock state.
+- **Container rail** (`src/components/warehouse/container-rail.tsx`) replaces
+  `pick-prep-tab.tsx`'s free-text/creatable `ComboboxPicker` — real chips
+  driven by `projectContainers.listForProject` ("Loose" first, dashed; one
+  chip per container with its live unit count; exactly one active; "+ New").
+- **New container sheet** (`new-container-sheet.tsx`): asset search via
+  `containerAssetSearch`, a Custom tab, a "Packed inside" parent picker.
+  Bulk-tub containers render disabled ("later", D2 — deferred).
+- `page.tsx` threads a real `activeContainerId` alongside the legacy
+  `selectedContainer` label at every prep call site
+  (`prepItemsBatch`/`prepItemDirect`/`completeCheckAndPack`), so prepping
+  through the rail actually writes `projectLineItemUnits.containerId` — not
+  just the display label. `quickAddAndCheckOut` (add-and-prep-in-one-step for
+  an asset not yet on the job) is a **documented gap**: `quickAddCore` inserts
+  a bare line item with no unit row, so there's nothing to stamp a
+  `containerId` onto at that exact step — the very next prep action on that
+  same line does get the real container.
 
-Still open (see the build plan's Phase 2 checklist): the container rail
-(replacing `pick-prep-tab.tsx`'s free-text `ComboboxPicker`), scan-to-activate,
-the new-container sheet, Prepped/Return/De-prep grouping by `containerId`
-instead of the label, the Move-to… sheet, and generalizing the kit-verify
-dialog into a shared `deploy-container-dialog.tsx`.
+Still open (see the build plan's Phase 2 checklist): scan-to-activate (a
+scanned container asset switches the active chip instead of erroring),
+Prepped/Return/De-prep tabs regrouping by `containerId` instead of the label,
+the Move-to… sheet, and generalizing the kit-verify dialog into a shared
+`deploy-container-dialog.tsx`.
 
 ## Not yet started
 

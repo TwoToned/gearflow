@@ -96,7 +96,11 @@ function addSecurityHeaders(response: NextResponse) {
 
 export const config = {
   matcher: [
-    // Match all routes except static files and api/auth
-    "/((?!_next/static|_next/image|favicon.ico|public).*)",
+    // Match all routes except static files and api/auth. Next.js serves
+    // everything in `public/` at the site ROOT (public/albert/x.svg → /albert/x.svg),
+    // not under a literal "/public" prefix — that earlier segment never matched
+    // anything real, so every public/ asset (manifest.json, icons/, and now
+    // albert/ + rvlt-art/) was 307ing to /login for a logged-out visitor.
+    "/((?!_next/static|_next/image|favicon.ico|manifest.json|llms.txt|icons/|albert/|rvlt-art/|wasm/).*)",
   ],
 };

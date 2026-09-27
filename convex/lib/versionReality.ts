@@ -62,6 +62,24 @@ export async function carryRealityByLineage(
   const incomingLines = await versionRows(ctx, "projectLineItems", incomingVersionId);
   const incomingByLineage = new Map(incomingLines.map((l) => [l.lineageId ?? l.id, l]));
 
+  // #1296 — a unit's `containerId` names a `projectContainers` row, which
+  // `copyPlanGraph` clones with a FRESH id per version (same as every other
+  // plan row). Re-point it to the INCOMING version's container by lineage,
+  // the same way `lineItemId` is re-pointed below — otherwise a unit carried
+  // onto the new version would still point at a container that only exists
+  // in the outgoing one. No incoming match (a container added after this
+  // version was materialized) leaves the unit's `containerId` as-is; it
+  // still resolves via the outgoing container's own reality carry (it's an
+  // ordinary `projectLineItems` row too, handled by the loop below).
+  const outgoingContainers = await versionRows(ctx, "projectContainers", outgoingVersionId);
+  const incomingContainers = await versionRows(ctx, "projectContainers", incomingVersionId);
+  const incomingContainerIdByLineage = new Map(incomingContainers.map((c) => [c.lineageId ?? c.id, c.id]));
+  const outgoingContainerById = new Map(outgoingContainers.map((c) => [c.id, c]));
+  const incomingContainerIdFor = (outgoingContainerId: string): string | undefined => {
+    const outgoing = outgoingContainerById.get(outgoingContainerId);
+    return outgoing ? incomingContainerIdByLineage.get(outgoing.lineageId ?? outgoing.id) : undefined;
+  };
+
   const conflicts: string[] = [];
   const unplannedLineItemIds: string[] = [];
 
@@ -76,7 +94,14 @@ export async function carryRealityByLineage(
         .collect(),
     ]);
     const lineThreads = threads.filter((t) => t.targetType === "lineItem");
-    if (units.length === 0 && checks.length === 0 && maintenance.length === 0 && lineThreads.length === 0) {
+    // #1296 — a packing container's own line item reflects reality (CHECKED_OUT)
+    // through ITS CONTENTS' units, via `syncContainerStatuses`, not necessarily
+    // any unit of its own (a case that was never itself packed into an outer
+    // box has zero units on its own line). Without this, a deployed case with
+    // no incoming-version match would be silently dropped — the case
+    // physically on site vanishes from the new version's plan.
+    const isDeployedContainer = line.isContainerLineItem && line.status === CHECKED_OUT_STATUS;
+    if (units.length === 0 && checks.length === 0 && maintenance.length === 0 && lineThreads.length === 0 && !isDeployedContainer) {
       continue; // nothing real tied to this line — nothing to carry.
     }
 
@@ -114,14 +139,37 @@ export async function carryRealityByLineage(
         quantity: Math.max(units.length, 1),
         unitPrice: 0, // no price was ever agreed for this line under the new plan.
         unplanned: true,
+        // #1296 — an orphaned DEPLOYED container keeps its container flags on
+        // the fresh unplanned line, or it would look like ordinary gear to
+        // every isContainerLineItem exclusion (allocation, ROI, auto-status,
+        // PDF filters).
+        ...(isDeployedContainer ? { isContainerLineItem: true, containerId: line.containerId } : {}),
         createdAt: now,
         updatedAt: now,
       });
       unplannedLineItemIds.push(newId);
       targetLineId = newId;
+
+      // The projectContainers row itself has no lineage match either (it
+      // would have one if `copyPlanGraph` cloned it into this version) — move
+      // it onto the incoming version in place, pointed at its new line, so
+      // `projectContainers.listForProject` (version-scoped) still finds it.
+      if (isDeployedContainer && line.containerId) {
+        const container = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", line.containerId!)).first();
+        if (container && container.organizationId === organizationId) {
+          await ctx.db.patch(container._id, { versionId: incomingVersionId, lineItemId: newId, updatedAt: now });
+        }
+      }
     }
 
-    for (const u of units) await ctx.db.patch(u._id, { lineItemId: targetLineId, updatedAt: now });
+    for (const u of units) {
+      const remappedContainerId = u.containerId ? incomingContainerIdFor(u.containerId) : undefined;
+      await ctx.db.patch(u._id, {
+        lineItemId: targetLineId,
+        ...(u.containerId ? { containerId: remappedContainerId ?? u.containerId } : {}),
+        updatedAt: now,
+      });
+    }
     for (const c of checks) await ctx.db.patch(c._id, { lineItemId: targetLineId });
     for (const m of maintenance) await ctx.db.patch(m._id, { lineItemId: targetLineId, updatedAt: now });
     for (const th of lineThreads) await ctx.db.patch(th._id, { targetId: targetLineId, updatedAt: now });

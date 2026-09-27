@@ -6547,6 +6547,7 @@ export const OPENAPI_DOCUMENT = {
                       "checks": {
                         "type": "array"
                       },
+                      "containerId": {},
                       "incidentPlan": {
                         "type": "array"
                       },

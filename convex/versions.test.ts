@@ -327,6 +327,71 @@ describe("versions.makeLiveNative", () => {
     expect(unit?.lineItemId).toBe(unplanned?.id);
   });
 
+  test("#1296 — a deployed container survives make-live via reality carry when the new version has no matching line", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "case-li", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "case-li",
+        status: "CHECKED_OUT", type: "EQUIPMENT", isKitChild: false, quantity: 1,
+        isContainerLineItem: true, containerId: "c1",
+      });
+      await ctx.db.insert("projectContainers", {
+        id: "c1", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "c1",
+        kind: "ASSET", assetId: "case-asset", label: "Road Case", lineItemId: "case-li", sortOrder: 0,
+      });
+    });
+    // v2 has no line/container at all sharing "case-li"/"c1"'s lineage.
+    const v2 = await create(t, { label: "empty" });
+    await t.run(async (ctx) => {
+      const lines = await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", v2.id)).collect();
+      for (const line of lines) await ctx.db.delete(line._id);
+      const containers = await ctx.db.query("projectContainers").withIndex("by_versionId", (q) => q.eq("versionId", v2.id)).collect();
+      for (const c of containers) await ctx.db.delete(c._id);
+    });
+
+    const result = await makeLive(t, v2.id);
+    expect(result.unplannedLineItemIds).toHaveLength(1);
+
+    const unplanned = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", result.unplannedLineItemIds[0])).first());
+    expect(unplanned?.isContainerLineItem).toBe(true);
+    expect(unplanned?.containerId).toBe("c1");
+    expect(unplanned?.versionId).toBe(v2.id);
+
+    const container = await t.run((ctx) => ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first());
+    expect(container?.versionId).toBe(v2.id); // moved onto the incoming version...
+    expect(container?.lineItemId).toBe(unplanned?.id); // ...pointed at its new line
+  });
+
+  test("#1296 — a carried unit's containerId is re-pointed to the incoming version's cloned container", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "case-li", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "case-li",
+        status: "CHECKED_OUT", type: "EQUIPMENT", isKitChild: false, quantity: 1,
+        isContainerLineItem: true, containerId: "c1",
+      });
+      await ctx.db.insert("projectContainers", {
+        id: "c1", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "c1",
+        kind: "ASSET", assetId: "case-asset", label: "Road Case", lineItemId: "case-li", sortOrder: 0,
+      });
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 0, assetId: "a1", status: "CHECKED_OUT", containerId: "c1",
+      });
+    });
+    // v2 clones li1/case-li/c1 with FRESH ids (createNative -> copyPlanGraph).
+    const v2 = await create(t);
+
+    await makeLive(t, v2.id);
+
+    const [v2Container] = await t.run((ctx) => ctx.db.query("projectContainers").withIndex("by_versionId", (q) => q.eq("versionId", v2.id)).collect());
+    const unit = await t.run((ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", "u1")).first());
+    expect(unit?.containerId).toBe(v2Container.id); // NOT the outgoing version's "c1"
+  });
+
   test("a matched line planning less than what's already checked out is a listed CONFLICT, never blocked", async () => {
     const t = makeT();
     await seedMember(t);

@@ -8531,6 +8531,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "containerId",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "includeAccessoryIds",
         "optional": true,
         "type": "array"
@@ -8567,7 +8572,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "42781f7266793b99",
+    "argsSha": "1f54c9360c632f71",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -8614,7 +8619,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "ad890b4e938f51aa",
+    "argsSha": "262c0017a817af67",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -9319,6 +9324,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "containerId",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "incidentPlan",
         "optional": false,
         "type": "array"
@@ -9360,7 +9370,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f80e811b78902046",
+    "argsSha": "f42f091f5031ac31",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

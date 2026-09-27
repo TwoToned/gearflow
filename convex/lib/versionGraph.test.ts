@@ -58,6 +58,58 @@ describe("copyPlanGraph", () => {
     expect(srcLines[0].id).toBe("li1");
   });
 
+  test("#1296 — clones projectContainers, rewriting lineItemId/containerId/parentContainerId through the same map", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      // A nested pair: "outer" (an ASSET container) holds "inner" (CUSTOM).
+      await ctx.db.insert("projectLineItems", {
+        id: "outer-li", organizationId: ORG, projectId: "p1", versionId: "src", lineageId: "outer-li",
+        type: "EQUIPMENT", status: "CONFIRMED", isKitChild: false, quantity: 1,
+        isContainerLineItem: true, containerId: "outer",
+      });
+      await ctx.db.insert("projectContainers", {
+        id: "outer", organizationId: ORG, projectId: "p1", versionId: "src", lineageId: "outer",
+        kind: "ASSET", assetId: "case-asset", label: "Outer", lineItemId: "outer-li", sortOrder: 0,
+      });
+      await ctx.db.insert("projectLineItems", {
+        id: "inner-li", organizationId: ORG, projectId: "p1", versionId: "src", lineageId: "inner-li",
+        type: "EQUIPMENT", status: "CONFIRMED", isKitChild: false, quantity: 1,
+        isContainerLineItem: true, containerId: "inner", isCustomItem: true,
+      });
+      await ctx.db.insert("projectContainers", {
+        id: "inner", organizationId: ORG, projectId: "p1", versionId: "src", lineageId: "inner",
+        kind: "CUSTOM", label: "Inner", lineItemId: "inner-li", parentContainerId: "outer", sortOrder: 1,
+      });
+      // An ordinary content line planned into "inner" (D9).
+      await ctx.db.insert("projectLineItems", {
+        id: "content-li", organizationId: ORG, projectId: "p1", versionId: "src", lineageId: "content-li",
+        type: "EQUIPMENT", status: "CONFIRMED", isKitChild: false, quantity: 1, plannedContainerId: "inner",
+      });
+    });
+
+    await t.run((ctx) => copyPlanGraph(ctx, { sourceVersionId: "src", targetVersionId: "tgt" }));
+
+    const [containers, lines] = await Promise.all([
+      t.run((ctx) => ctx.db.query("projectContainers").withIndex("by_versionId", (q) => q.eq("versionId", "tgt")).collect()),
+      t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "tgt")).collect()),
+    ]);
+    expect(containers).toHaveLength(2);
+    expect(lines).toHaveLength(3);
+
+    const newOuter = containers.find((c) => c.lineageId === "outer")!;
+    const newInner = containers.find((c) => c.lineageId === "inner")!;
+    const newOuterLine = lines.find((l) => l.lineageId === "outer-li")!;
+    const newInnerLine = lines.find((l) => l.lineageId === "inner-li")!;
+    const newContentLine = lines.find((l) => l.lineageId === "content-li")!;
+
+    expect(newOuter.id).not.toBe("outer");
+    expect(newOuter.lineItemId).toBe(newOuterLine.id); // rewritten, not the source's "outer-li"
+    expect(newInner.parentContainerId).toBe(newOuter.id); // nesting FK rewritten
+    expect(newOuterLine.containerId).toBe(newOuter.id); // reverse lookup rewritten
+    expect(newInnerLine.containerId).toBe(newInner.id);
+    expect(newContentLine.plannedContainerId).toBe(newInner.id); // D9 plan field rewritten
+  });
+
   test("refuses with VERSION_TOO_LARGE when the source has more than MAX_CLONABLE_PLAN_ROWS rows", async () => {
     const t = makeT();
     const n = MAX_CLONABLE_PLAN_ROWS + 1;

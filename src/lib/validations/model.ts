@@ -35,6 +35,9 @@ export const modelSchema = z.object({
   assetType: z.enum(["SERIALIZED", "BULK"]).default("SERIALIZED"),
   barcodeLabelTemplate: z.string().optional(),
   isActive: z.boolean().default(true),
+  // #1296 packing containers — this model can be used as a packing container
+  // (case, tub, road box) regardless of which category it sits in.
+  isContainer: z.boolean().default(false),
   tags: z.array(z.string()).default([]),
   xeroRentalAccountCode: z.string().max(50).optional(),
   xeroSaleAccountCode: z.string().max(50).optional(),

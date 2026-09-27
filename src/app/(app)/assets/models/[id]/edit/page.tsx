@@ -81,6 +81,7 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
     assetType: model.assetType,
     barcodeLabelTemplate: model.barcodeLabelTemplate || "",
     isActive: model.isActive,
+    isContainer: model.isContainer ?? false,
     tags: model.tags ?? [],
     xeroRentalAccountCode: model.xeroRentalAccountCode || undefined,
     xeroSaleAccountCode: model.xeroSaleAccountCode || undefined,

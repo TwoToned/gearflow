@@ -1129,8 +1129,8 @@ async function loadContainerFlipContext(ctx: Ctx, containerId: string, organizat
 /** `null` when the container's members don't (yet) unanimously agree on a
  *  status the container line item doesn't already have. */
 function resolveContainerFlipStatus(
-  containerLI: { status: string },
-  members: Array<{ status: string }>,
+  containerLI: { status?: string },
+  members: Array<{ status?: string }>,
 ): "CHECKED_OUT" | "RETURNED" | null {
   if (members.every((u) => u.status === "CHECKED_OUT") && containerLI.status !== "CHECKED_OUT") return "CHECKED_OUT";
   if (members.every((u) => u.status === "RETURNED") && containerLI.status !== "RETURNED") return "RETURNED";

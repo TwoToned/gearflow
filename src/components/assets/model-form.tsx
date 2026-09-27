@@ -467,6 +467,17 @@ export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAss
                       onCheckedChange={(val) => form.setValue("isActive", val)}
                     />
                   </div>
+                  <div className="flex items-center justify-between rounded-[var(--r)] border border-line bg-paper-2/40 px-3.5 py-3">
+                    <div>
+                      <Label htmlFor="isContainer">Packing container</Label>
+                      <p className="t-micro text-muted">Assets of this model can be used as containers in the warehouse, regardless of category.</p>
+                    </div>
+                    <Switch
+                      id="isContainer"
+                      checked={!!v.isContainer}
+                      onCheckedChange={(val) => form.setValue("isContainer", val)}
+                    />
+                  </div>
                 </div>
               </AccordionContent>
             </AccordionItem>

@@ -605,6 +605,12 @@ export default defineSchema({
     barcodeLabelTemplate: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
+    // #1296 packing containers, build plan phase 2 — a model eligible to be
+    // used as a container (case, tub, road box) regardless of which category
+    // it sits in. OR'd with `containerCategoryIds` in `containerAssetSearch`,
+    // not a replacement for it — a container model doesn't have to move out
+    // of its normal equipment category.
+    isContainer: v.optional(v.boolean()),
     // WS1 (#940) — Xero account-coding cascade, level 2 (model default), split
     // rental vs sale sides. `xeroSaleAccountCode` pairs with the future WS11/#950
     // sales-stock flow — the field exists now, no sale workflow is built here.

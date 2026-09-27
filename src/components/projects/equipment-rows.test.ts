@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { describeRow, getDisallowedDropReason, isHiddenFromList, type LineItemData } from "./equipment-rows";
+import { describeRow, getDisallowedDropReason, isHiddenFromList, hasContainerChip, type LineItemData } from "./equipment-rows";
 
 function item(overrides: Partial<LineItemData>): LineItemData {
   return {
@@ -62,6 +62,11 @@ describe("describeRow", () => {
   it("custom item takes priority over sale source (shouldn't co-occur, but source is unambiguous)", () => {
     const d = describeRow(item({ type: "SALE", isCustomItem: true }));
     expect(d.source).toBe("custom");
+  });
+
+  it("#1296: a container's own line item → container source, takes priority over custom", () => {
+    const d = describeRow(item({ isContainerLineItem: true, isCustomItem: true }));
+    expect(d.source).toBe("container");
   });
 
   it("kit parent (kitId, not child, with children) → owned / parent / isKit", () => {
@@ -133,6 +138,28 @@ describe("describeRow", () => {
     );
     expect(d.hasChildren).toBe(false);
     expect(d.role).toBe("standalone");
+  });
+});
+
+describe("hasContainerChip (#1296)", () => {
+  it("false for a plain line with no container involvement", () => {
+    expect(hasContainerChip(item({}))).toBe(false);
+  });
+
+  it("false for a container's own line item (it gets the Container badge, not a chip)", () => {
+    expect(hasContainerChip(item({ isContainerLineItem: true, plannedContainerId: "c1" }))).toBe(false);
+  });
+
+  it("true when the line has a planned container (Packing tab intent)", () => {
+    expect(hasContainerChip(item({ plannedContainerId: "c1" }))).toBe(true);
+  });
+
+  it("true when any unit is physically packed into a container", () => {
+    expect(hasContainerChip(item({ units: [{ id: "u1", ordinal: 0, containerId: "c1" }] }))).toBe(true);
+  });
+
+  it("false when units exist but none are packed", () => {
+    expect(hasContainerChip(item({ units: [{ id: "u1", ordinal: 0 }] }))).toBe(false);
   });
 });
 

@@ -22,6 +22,7 @@ import * as React from "react";
 import { FeaturePatch } from "@/components/ui/feature-patch";
 import { FlowMascot } from "@/components/ui/flow-mascot";
 import { RvltFlowLogo } from "@/components/brand/rvlt-flow-logo";
+import { Sticker } from "@/components/brand/sticker";
 import { FadeIn } from "@/components/ui/motion";
 import { cn } from "@/lib/utils";
 import {
@@ -36,29 +37,11 @@ import {
 
 /* ------------------------------------------------------------------ *
  * GAFF tape-roll sticker — the production-industry in-joke brand mark *
- * (DESIGN.md §17). No SVG asset exists, so this is a tasteful CSS      *
- * roll: concentric rings with a torn-tape tab. Purely decorative.     *
+ * (DESIGN.md §17). Real artwork from docs/brand/rvlt-flow-stickers-pack, *
+ * replacing the earlier CSS-only stand-in. Purely decorative.        *
  * ------------------------------------------------------------------ */
 function GaffSticker({ className }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        "pointer-events-none relative flex size-[58px] items-center justify-center rounded-full",
-        "bg-gaff-tape text-ink shadow-[var(--sh-stk)] ring-2 ring-ink/15",
-        className,
-      )}
-    >
-      {/* outer ring */}
-      <div className="absolute inset-[6px] rounded-full border-2 border-ink/25" />
-      {/* inner core */}
-      <div className="flex size-[22px] items-center justify-center rounded-full bg-card ring-2 ring-ink/20">
-        <span className="t-annotation text-[9px] leading-none text-muted">GAFF</span>
-      </div>
-      {/* torn tape tab peeling off the roll */}
-      <div className="absolute -right-3 top-1/2 h-3 w-7 -translate-y-1/2 -rotate-6 rounded-r-sm bg-ink/85 [clip-path:polygon(0_0,100%_18%,92%_82%,0_100%)]" />
-    </div>
-  );
+  return <Sticker id="gaff-tape" className={cn("size-[58px]", className)} />;
 }
 
 /* ------------------------------------------------------------------ *
@@ -156,8 +139,8 @@ function DoodleSquiggle({ className }: { className?: string }) {
 }
 
 /**
- * BrandCollage — the desktop-only red/espresso panel: wordmark, the FlowMascot
- * roadie, a collage of module-hue FeaturePatch stickers, a GAFF roll, doodles
+ * BrandCollage — the desktop-only red/espresso panel: wordmark, Albert (the
+ * mascot), a collage of module-hue FeaturePatch stickers, a GAFF roll, doodles
  * and a Kalam annotation. Hidden below lg. Fully decorative.
  */
 function BrandCollage() {
@@ -215,9 +198,9 @@ function BrandCollage() {
         </FadeIn>
 
         <FadeIn delay={0.05} className="relative">
-          {/* the roadie mascot, big and friendly, with an orbiting sticker */}
+          {/* Albert, big and friendly, with an orbiting sticker */}
           <div className="relative inline-flex">
-            <FlowMascot className="size-28 text-ink-2" />
+            <FlowMascot variant="avatar" className="size-28" />
             <FeaturePatch
               hue="purple"
               size="sm"
@@ -240,7 +223,7 @@ function BrandCollage() {
             whole production company.
           </p>
           <p className="t-annotation mt-4 inline-flex items-center gap-2 text-[16px] text-red">
-            psst — the roadie&apos;s got your back
+            psst — Albert&apos;s got your back
             <DoodleArrow className="h-6 w-9 rotate-[170deg] text-red" />
           </p>
         </FadeIn>
@@ -330,7 +313,7 @@ export function AuthShell({
             {/* mobile-only mini wordmark (desktop has the collage) */}
             <div className="mb-6 flex items-center justify-between lg:hidden">
               <RvltFlowLogo className="h-6 w-auto" title="RVLT Flow" />
-              <GaffSticker className="size-9 [&_span]:text-[7px]" />
+              <GaffSticker className="size-9" />
             </div>
 
             {children}

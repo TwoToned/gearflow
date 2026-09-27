@@ -622,7 +622,7 @@ Featured pricing tier: `bg-cream text-cream-ink` card, elevated above flanking d
 Bottom of page: `bg-red` full-width rounded section, white heading text, cream `Button` CTA, GAFF sticker badge decorative element.
 
 ### GAFF brand mark
-The GAFF tape roll icon (black-and-white round sticker) is a production-industry in-joke used as a brand mark in marketing contexts. Different from the FlowMascot (the robot), which is the app-context empty-state icon. Both are decorative and never used in functional alerts.
+The GAFF tape roll icon (black-and-white round sticker, `docs/brand/rvlt-flow-stickers-pack`, rendered via `<Sticker id="gaff-tape" />`) is a production-industry in-joke used as a brand mark in marketing contexts. Different from Albert (`@/components/ui/flow-mascot`), the app-context mascot/empty-state icon. Both are decorative and never used in functional alerts.
 
 ### Auth pages
 Login / register / onboarding follow marketing aesthetics, not app UI rules:

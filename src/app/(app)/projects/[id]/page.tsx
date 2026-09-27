@@ -470,6 +470,7 @@ export default function ProjectDetailPage({
                           clicks a week apart used to produce two different
                           documents under the same name. */}
                       {([
+                        { label: "Manifest", apiType: "manifest" },
                         { label: "Pull slip", apiType: "pull-slip" },
                         { label: "Delivery docket", apiType: "delivery-docket" },
                         { label: "Return sheet", apiType: "return-sheet" },

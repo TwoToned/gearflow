@@ -19,11 +19,8 @@ export type DocumentType =
   | "packing-list"
   | "return-sheet"
   | "delivery-docket"
-  | "call-sheet";
-// "manifest" (#1296 build plan phase 3b) is added once the document
-// component + DOCUMENT_LAYOUTS entry exist — see structure-line-items-by-
-// container.ts for the phase 3a groundwork this type already carries
-// (isContainerRow etc.), landed ahead of the document itself.
+  | "call-sheet"
+  | "manifest";
 
 export type TestTagReportType =
   | "tt-register"
@@ -401,6 +398,14 @@ export interface TablePluginConfig {
   filterByStatus: string[] | null;
   /** Suppress the "/day" (or other period) price suffix — quote layout only (#790 Phase 4). */
   hidePricingPeriodSuffix: boolean;
+  /** #1296 build plan phase 3 — the rows came from `structureLineItems`'s
+   *  `byContainer` mode (container-first structuring, one section per
+   *  top-level container). When true, `LineItemsTable` skips the generic
+   *  `GroupHeaderRow` band (the top-level container's own `isContainerRow`
+   *  entry already carries the section's title, tag, and item count) and
+   *  renders every `isContainerRow` entry as a `ContainerHeaderRow` instead
+   *  of a plain item row. */
+  byContainer?: boolean;
 }
 
 /** Config for financial summary plugin */

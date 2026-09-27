@@ -35,6 +35,7 @@ import {
   type CategoryForStructuring,
   type SubHireGroupForStructuring,
 } from "./structure-line-items";
+import { loadContainersForStructuring } from "./container-data-for-documents";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 import type { OrgDocumentSettings } from "@/lib/org-settings-types";
 import { computeValidUntil, resolveQuoteValidityDays } from "@/lib/quote-validity";
@@ -251,6 +252,14 @@ export async function buildDocumentData(
      * render never sets this (there is no sent document yet to represent).
      */
     quoteId?: string;
+    /**
+     * #1296 build plan phase 3b — bucket line items by container first
+     * (`structureLineItems`'s `byContainer` mode) instead of the flat
+     * category/kit grouping. Comes from `DOCUMENT_LAYOUTS[docType].
+     * byContainer` — manifest only for now; phase 3c extends docket/
+     * return-sheet the same way.
+     */
+    byContainer?: boolean;
   }
 ): Promise<DocumentData> {
   const expandProjectGroups = options?.expandProjectGroups ?? false;
@@ -594,9 +603,27 @@ export async function buildDocumentData(
   // line(s) and nothing else.
   const usesLiveBreakdown = !invoiceContext || invoiceContext.kind === "FULL";
 
+  const byContainer = options?.byContainer ?? false;
+  const containerData = byContainer
+    ? await loadContainersForStructuring(organizationId, projectId, quoteContext?.versionId ?? undefined)
+    : null;
+
   const lineItems: DocumentLineItem[] = usesLiveBreakdown
-    ? structureLineItems(rawLineItems, categories, { expandProjectGroups, packerSort }, subHireGroups)
+    ? structureLineItems(
+        rawLineItems,
+        categories,
+        { expandProjectGroups, packerSort, byContainer, containers: containerData?.containers },
+        subHireGroups,
+      )
     : invoiceContext.lines.map(invoiceLineToDocumentLineItem);
+
+  // Sum of raw (non-container) items' quantity that never got a groupName
+  // sorted into "Loose" — the manifest summary's "N loose items". Read off
+  // the STRUCTURED result (post-byContainer) so it reflects exactly what the
+  // "Loose" section itself will show.
+  const looseItemCount = byContainer
+    ? lineItems.filter((li) => li.groupName === "Loose" && !li.isContainerRow).reduce((sum, li) => sum + (li.quantity || 0), 0)
+    : undefined;
 
   // ─── Append billable services as virtual line items ─────────────────────────
   // A service appears on quotes/invoices as its own section once it has an actual
@@ -658,8 +685,10 @@ export async function buildDocumentData(
     }
   }
 
-  // Compute totals for packing list / delivery docket
-  const topLevelItems = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem);
+  // Compute totals for packing list / delivery docket / manifest. Excludes
+  // `isContainerRow` synthetic header rows (byContainer mode) the same way
+  // it already excludes a container's own line item — neither is gear.
+  const topLevelItems = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem && !i.isContainerRow);
   const totalItems = topLevelItems.reduce((sum, i) => {
     if (i.kitId && !i.isKitChild) {
       const children = i.childLineItems || [];
@@ -1116,5 +1145,8 @@ export async function buildDocumentData(
     // Computed
     total_items: totalItems,
     total_weight: totalWeight,
+    container_count: containerData?.containerCount,
+    nested_container_count: containerData?.nestedContainerCount,
+    loose_item_count: looseItemCount,
   };
 }

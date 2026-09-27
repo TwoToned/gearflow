@@ -221,18 +221,19 @@ export const CURATED_TOOL_DEFS: readonly CuratedToolDef[] = [
     summary:
       "Fetch one of a project's PDF documents. Returns a short-lived download URL (no further auth needed) plus " +
       '`fileName`/`contentType`/`docType`/`status` — fetch the `url` to get the actual PDF bytes. `docType` is one ' +
-      'of: "delivery-docket", "packing-list" (the pick slip / pull slip), "return-sheet" — always freshly rendered ' +
-      'from TODAY\'s project state; "quote", "invoice" — the frozen document if one has been sent/issued (never ' +
-      're-rendered), otherwise "quote" falls back to a watermarked DRAFT PREVIEW live render ("invoice" has no ' +
-      "draft form and reports not-found instead). Requires `project:read` for the first three, `invoice:read` for " +
-      "quote/invoice — both already in the read_only_agent preset, so this works out of the box for a read-only key.",
+      'of: "delivery-docket", "packing-list" (the pick slip / pull slip), "return-sheet", "manifest" (client-facing — ' +
+      'everything on site, container by container, then loose) — always freshly rendered from TODAY\'s project ' +
+      'state; "quote", "invoice" — the frozen document if one has been sent/issued (never re-rendered), otherwise ' +
+      '"quote" falls back to a watermarked DRAFT PREVIEW live render ("invoice" has no draft form and reports ' +
+      "not-found instead). Requires `project:read` for the first four, `invoice:read` for quote/invoice — both " +
+      "already in the read_only_agent preset, so this works out of the box for a read-only key.",
     inputSchema: {
       type: "object",
       properties: {
         projectId: { type: "string" },
         docType: {
           type: "string",
-          enum: ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket"],
+          enum: ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket", "manifest"],
         },
       },
       required: ["projectId", "docType"],

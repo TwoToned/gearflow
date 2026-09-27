@@ -29,6 +29,7 @@ import { InvoiceDocument } from "./invoice-document";
 import { PackingListDocument } from "./packing-list-document";
 import { ReturnSheetDocument } from "./return-sheet-document";
 import { DeliveryDocketDocument } from "./delivery-docket-document";
+import { ManifestDocument } from "./manifest-document";
 import { renderPdfPages } from "./pdf-test-utils";
 import { makeSpikeData, makeLongLineItemList, makeNoTailDropFixture, makeTrailingGroupFixture, makeLongSingleGroupFixture } from "./fixture";
 
@@ -42,6 +43,7 @@ const DOC_COMPONENTS: Record<ProjectDocumentType, (data: DocumentData) => PdfEle
   "packing-list": (data) => <PackingListDocument data={data} />,
   "return-sheet": (data) => <ReturnSheetDocument data={data} />,
   "delivery-docket": (data) => <DeliveryDocketDocument data={data} />,
+  manifest: (data) => <ManifestDocument data={data} />,
 };
 
 const DOC_TITLES: Record<ProjectDocumentType, string> = {
@@ -50,6 +52,7 @@ const DOC_TITLES: Record<ProjectDocumentType, string> = {
   "packing-list": "PULL SLIP",
   "return-sheet": "RETURN SHEET",
   "delivery-docket": "DELIVERY DOCKET",
+  manifest: "MANIFEST",
 };
 
 const PAGE_OF_PATTERN = /Page \d+ of \d+/;

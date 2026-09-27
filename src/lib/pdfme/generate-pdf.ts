@@ -74,6 +74,7 @@ export async function generatePdf(
   const layout = DOCUMENT_LAYOUTS[docType];
   const data = await buildDocumentData(projectId, organizationId, docType, undefined, {
     expandProjectGroups: layout.expandProjectGroups,
+    byContainer: layout.byContainer,
     stampedDates: options?.stampedDates,
     versionSuffix: options?.versionSuffix,
     invoiceId: options?.invoiceId,

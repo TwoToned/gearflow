@@ -120,6 +120,16 @@ export function getColumnsForDocType(config: TablePluginConfig): ColumnDef[] {
         { key: "received", label: "Received", width: "11%", align: "center" },
       ];
 
+    case "manifest":
+      // Reference only (Q10 — no ticks): description, qty, asset tags inline.
+      // No checkbox column — the docket is the sign-off, not this document.
+      return [
+        { key: "description", label: "Item", width: "50%", align: "left" },
+        { key: "qty", label: "Qty", width: "10%", align: "center" },
+        { key: "assetTag", label: "Asset Tags", width: "25%", align: "left" },
+        { key: "category", label: "Category", width: "15%", align: "left" },
+      ];
+
     default:
       return [
         { key: "description", label: "Description", width: "76%", align: "left" },
@@ -476,6 +486,49 @@ function GroupHeaderRow({
       {rollupAmount != null && (
         <Text style={{ fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>
           {`${ROLLUP_SUBTOTAL_LABEL}  ${rollupAmount}`}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/** `container.label (tag) — N items` — the container header band's title
+ *  line. Split out of `ContainerHeaderRow` so the JSX stays a flat template
+ *  (R-3.6). */
+function containerHeaderTitle(item: DocumentLineItem): string {
+  const tag = item.containerTag ? ` (${item.containerTag})` : "";
+  const count = item.containerItemCount != null ? ` — ${item.containerItemCount} item${item.containerItemCount === 1 ? "" : "s"}` : "";
+  return `${item.description ?? "Container"}${tag}${count}`;
+}
+
+/** #1296 build plan phase 3b — the manifest/docket/return-sheet container
+ *  section header: a `structureLineItemsByContainer` synthetic row
+ *  (`isContainerRow: true`), one per container (top-level or nested,
+ *  indented by `containerDepth`). Replaces the generic `GroupHeaderRow` for
+ *  `byContainer`-mode tables — see `TablePluginConfig.byContainer`'s doc
+ *  comment for why the two aren't both drawn. */
+function ContainerHeaderRow({ item, docColor }: { item: DocumentLineItem; docColor: string }) {
+  const depth = item.containerDepth ?? 0;
+  return (
+    <View
+      minPresenceAhead={17}
+      wrap={false}
+      style={{
+        backgroundColor: depth === 0 ? lightenHex(docColor, 0.88) : lightenHex(docColor, 0.94),
+        borderBottomWidth: 0.5,
+        borderBottomColor: COLORS.headerBorder,
+        borderBottomStyle: "solid",
+        paddingVertical: "1.5mm",
+        paddingHorizontal: "1.5mm",
+        paddingLeft: `${1.5 + depth * 4}mm`,
+      }}
+    >
+      <Text style={{ fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>
+        {containerHeaderTitle(item)}
+      </Text>
+      {item.containerDescription && (
+        <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.muted, marginTop: "0.5mm" }}>
+          {item.containerDescription}
         </Text>
       )}
     </View>
@@ -888,17 +941,27 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
       <TableHeader columns={columns} />
       {Array.from(groups.entries()).map(([groupName, groupItems]) => (
         <View key={groupName}>
-          {groupName !== ungroupedKey && config.showGroupHeaders && (
-            <GroupHeaderRow
-              name={groupName}
-              docColor={docColor}
-              rollupAmount={(() => {
-                const amount = rollupAmountForBucket(groupItems, config);
-                return amount == null ? null : formatCurrency(amount);
-              })()}
-            />
-          )}
+          {/* A top-level (depth 0) container row already carries this
+              section's title (label/tag/count) via ContainerHeaderRow below —
+              printing the generic GroupHeaderRow too would repeat it. A
+              section with no such row (a flat category/kit bucket, or the
+              "Loose" bucket) still gets the plain header as normal. */}
+          {groupName !== ungroupedKey &&
+            config.showGroupHeaders &&
+            !groupItems.some((item) => item.isContainerRow && (item.containerDepth ?? 0) === 0) && (
+              <GroupHeaderRow
+                name={groupName}
+                docColor={docColor}
+                rollupAmount={(() => {
+                  const amount = rollupAmountForBucket(groupItems, config);
+                  return amount == null ? null : formatCurrency(amount);
+                })()}
+              />
+            )}
           {groupItems.map((item) => {
+            if (item.isContainerRow) {
+              return <ContainerHeaderRow key={item.id} item={item} docColor={docColor} />;
+            }
             globalIdx++;
             const idx = globalIdx;
             const display = deriveRowDisplay(item, config);

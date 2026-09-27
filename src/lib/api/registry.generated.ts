@@ -35733,6 +35733,378 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectContainersWrites.createNative",
+    "module": "projectContainersWrites",
+    "fn": "createNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "assetId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "bulkAssetId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "label",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "modelId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "parentContainerId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "cbea925bbc3ec5de",
+    "returnsSha": "de9361b7134540db",
+    "stability": "tracks-app",
+    "summary": "Create a packing container (case, tub, or custom box) and its own line item on the job.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainersWrites.deleteNative",
+    "module": "projectContainersWrites",
+    "fn": "deleteNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "39474d96b96cd2a8",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": "Delete an empty packing container and its line item.",
+    "danger": "high",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainersWrites.moveUnitsNative",
+    "module": "projectContainersWrites",
+    "fn": "moveUnitsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "toContainerId",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "unitIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "be45b0b4bdd91372",
+    "returnsSha": "838c9ea7cd57bf45",
+    "stability": "tracks-app",
+    "summary": "Move packed units into a different container (or to Loose).",
+    "danger": "medium",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainersWrites.setPlannedContainerNative",
+    "module": "projectContainersWrites",
+    "fn": "setPlannedContainerNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "containerId",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "lineItemIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "978d0ff21d3b571b",
+    "returnsSha": "42d138e1e179a81f",
+    "stability": "tracks-app",
+    "summary": "Set or clear the planned container for a batch of lines (Packing tab).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainersWrites.unpackNative",
+    "module": "projectContainersWrites",
+    "fn": "unpackNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "39474d96b96cd2a8",
+    "returnsSha": "05cb4c7c21077295",
+    "stability": "tracks-app",
+    "summary": "Empty a container's contents to Loose.",
+    "danger": "medium",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainersWrites.updateNative",
+    "module": "projectContainersWrites",
+    "fn": "updateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "label",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "parentContainerId",
+        "optional": true,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "80900fee727fb132",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": "Rename, re-describe, or re-nest a packing container.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectCosts.operationalCosts",
     "module": "projectCosts",
     "fn": "operationalCosts",
@@ -63758,10 +64130,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1240,
-  agentReachable: 609,
+  total: 1246,
+  agentReachable: 615,
   queries: 446,
-  mutations: 794,
+  mutations: 800,
   agentReachableQueries: 312,
-  agentReachableMutations: 297,
+  agentReachableMutations: 303,
 } as const;

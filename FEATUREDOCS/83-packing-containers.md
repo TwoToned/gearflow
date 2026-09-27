@@ -209,10 +209,35 @@ Landed so far:
   normal prep flow, which would otherwise either try to re-prep the
   container's own line item or report it as unassigned.
 
-Still open (see the build plan's Phase 2 checklist): Prepped/Return/De-prep
-tabs regrouping by `containerId` instead of the label, the Move-to… sheet,
-and generalizing the kit-verify dialog into a shared
-`deploy-container-dialog.tsx`.
+- **Deploy/Return/De-prep sectioning by real containerId**
+  (`warehouse-types.ts`'s `resolveItemContainerId`/`buildContainerGroups`,
+  wired into `page.tsx`'s `deployContainerGroups`/`returnContainerGroups`/
+  `deprepContainerGroups`): each section's identity is now the MAJORITY
+  `containerId` among an item's own units (falling back to the legacy
+  `prepContainer` string only when no unit carries one yet), resolved to the
+  container's current label via `projectContainers.listForProject`. Two
+  units in the same real container never split into two sections just
+  because their `prepContainer` strings happened to differ or one was never
+  backfilled — the display-level version of the same unit/line-split defect
+  D9's migration exists to close.
+
+  **Known narrow gap, deliberately not fixed here**: each section's "Remove
+  container" button still calls the legacy `clearPrepContainer` mutation,
+  which clears by STRING match on `prepContainer` — unchanged from before
+  this pass. If a container is renamed after some of its contents were
+  packed, the section now correctly shows them together (real containerId),
+  but "Remove container" clears by the container's CURRENT label and so
+  won't touch items still carrying the OLD label string. Non-destructive
+  (only nulls a display field; re-prep re-attaches it) and pre-existing in
+  kind — `clearPrepContainer` has never known about real containers. Fixing
+  it properly means moving it onto containerId, which touches a core shared
+  with a `requireService` mirror; left for the Move-to…/
+  `deploy-container-dialog.tsx` generalization work below, which already
+  needs to touch this same mutation family.
+
+Still open (see the build plan's Phase 2 checklist): the Move-to… sheet, and
+generalizing the kit-verify dialog into a shared `deploy-container-dialog.tsx`
+(the two candidates to also carry the `clearPrepContainer` fix above).
 
 ## Not yet started
 

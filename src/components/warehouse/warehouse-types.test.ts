@@ -7,6 +7,8 @@ import {
   isInReturnedStage,
   isInDeprepedStage,
   isInCheckedOutStage,
+  resolveItemContainerId,
+  buildContainerGroups,
   type LineItem,
 } from "./warehouse-types";
 
@@ -201,5 +203,81 @@ describe("isInCheckedOutStage", () => {
 
   test("accessory parent: hidden when neither is checked out", () => {
     expect(isInCheckedOutStage(accessoryParent({ status: "CONFIRMED" }, { status: "CONFIRMED" }))).toBe(false);
+  });
+});
+
+// #1296 phase 2 — Deploy/Return/De-prep sectioning by real containerId.
+function unit(overrides: Partial<NonNullable<LineItem["units"]>[number]>): NonNullable<LineItem["units"]>[number] {
+  return {
+    id: "u",
+    ordinal: 1,
+    assetId: null,
+    bulkAssetId: null,
+    quantity: 1,
+    status: "CONFIRMED",
+    prepStatus: null,
+    containerId: null,
+    asset: null,
+    bulkAsset: null,
+    ...overrides,
+  };
+}
+
+describe("resolveItemContainerId", () => {
+  test("returns null when the item has no units", () => {
+    expect(resolveItemContainerId(line({}))).toBeNull();
+  });
+
+  test("returns the shared containerId when every unit agrees", () => {
+    const item = line({ units: [unit({ id: "u1", containerId: "c1" }), unit({ id: "u2", containerId: "c1" })] });
+    expect(resolveItemContainerId(item)).toBe("c1");
+  });
+
+  test("returns the MAJORITY containerId when a bulk line's units split across containers", () => {
+    const item = line({
+      units: [unit({ id: "u1", containerId: "c1" }), unit({ id: "u2", containerId: "c1" }), unit({ id: "u3", containerId: "c2" })],
+    });
+    expect(resolveItemContainerId(item)).toBe("c1");
+  });
+
+  test("returns null when no unit carries a containerId yet (pre-migration / never prepped through the rail)", () => {
+    const item = line({ units: [unit({ id: "u1", containerId: null })] });
+    expect(resolveItemContainerId(item)).toBeNull();
+  });
+});
+
+describe("buildContainerGroups", () => {
+  const asEntry = (item: LineItem) => ({ kind: "single" as const, item });
+  const representativeItem = (entry: ReturnType<typeof asEntry>) => entry.item;
+
+  test("two items with the SAME real containerId land in one section, even with different (or missing) prepContainer labels", () => {
+    const a = asEntry(line({ id: "a", prepContainer: "Case 12", units: [unit({ containerId: "c1" })] }));
+    const b = asEntry(line({ id: "b", prepContainer: null, units: [unit({ containerId: "c1" })] }));
+    const groups = buildContainerGroups([a, b], representativeItem, new Map([["c1", "Road Case 12"]]));
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].container).toBe("Road Case 12");
+    expect(groups[0].entries.map((e) => e.item.id)).toEqual(["a", "b"]);
+  });
+
+  test("falls back to the legacy prepContainer label when no unit has a real containerId", () => {
+    const a = asEntry(line({ id: "a", prepContainer: "Tub 3", units: [unit({ containerId: null })] }));
+    const groups = buildContainerGroups([a], representativeItem, new Map());
+    expect(groups[0].container).toBe("Tub 3");
+  });
+
+  test("items with no container at all sort last, after named containers (alphabetical)", () => {
+    const loose = asEntry(line({ id: "loose", prepContainer: null }));
+    const zTub = asEntry(line({ id: "z", units: [unit({ containerId: "c-z" })] }));
+    const aCase = asEntry(line({ id: "a", units: [unit({ containerId: "c-a" })] }));
+    const groups = buildContainerGroups(
+      [loose, zTub, aCase],
+      representativeItem,
+      new Map([
+        ["c-z", "Z Tub"],
+        ["c-a", "A Case"],
+      ]),
+    );
+    expect(groups.map((g) => g.container)).toEqual(["A Case", "Z Tub", null]);
   });
 });

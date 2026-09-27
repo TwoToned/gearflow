@@ -110,6 +110,7 @@ import {
   isInReturnedStage,
   isInDeprepedStage,
   isInCheckedOutStage,
+  buildContainerGroups,
 } from "@/components/warehouse/warehouse-types";
 import {
   pullItem,
@@ -371,6 +372,9 @@ function WarehouseProjectPage({
     convexApi.projectContainers.listForProject,
     orgId ? { orgId, projectId } : "skip",
   ) ?? [];
+  // Deploy/Return/De-prep sectioning (buildContainerGroups) resolves a real
+  // containerId to its current label through this map.
+  const containerLabelById = useMemo(() => new Map(realContainers.map((c) => [c.id, c.label])), [realContainers]);
   const handleSelectContainer = useCallback((id: string | null) => {
     setActiveContainerId(id);
     setSelectedContainer(id ? realContainers.find((c) => c.id === id)?.label ?? "" : "");
@@ -1705,89 +1709,28 @@ function WarehouseProjectPage({
   // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
   const groupedDeprep = groupItems(returnedItems, "deploy");
 
-  // Group deploy items by container for visual sectioning
-  const deployContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedOut }> = [];
-    const containerMap = new Map<string | null, typeof groupedOut>();
-
-    for (const entry of groupedOut) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
-    }
-
-    // Sort: named containers first (alphabetically), then ungrouped
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedOut]);
+  // Group deploy items by container for visual sectioning — real containerId
+  // preferred over the legacy prepContainer label (buildContainerGroups,
+  // #1296 phase 2).
+  const representativeItem = (entry: typeof groupedOut[number]) => (entry.kind === "serialized-group" ? entry.items[0] : entry.item);
+  const deployContainerGroups = useMemo(
+    () => buildContainerGroups(groupedOut, representativeItem, containerLabelById),
+    [groupedOut, containerLabelById],
+  );
 
   // Group de-prep items by the container they came back in (visual sectioning).
-  const deprepContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedDeprep }> = [];
-    const containerMap = new Map<string | null, typeof groupedDeprep>();
-
-    for (const entry of groupedDeprep) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
-    }
-
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedDeprep]);
+  const deprepContainerGroups = useMemo(
+    () => buildContainerGroups(groupedDeprep, representativeItem, containerLabelById),
+    [groupedDeprep, containerLabelById],
+  );
 
   const groupedIn = groupCheckinItems(checkedOutItems);
 
   // Group return items by container for visual sectioning
-  const returnContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedIn }> = [];
-    const containerMap = new Map<string | null, typeof groupedIn>();
-
-    for (const entry of groupedIn) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
-    }
-
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedIn]);
+  const returnContainerGroups = useMemo(
+    () => buildContainerGroups(groupedIn, representativeItem, containerLabelById),
+    [groupedIn, containerLabelById],
+  );
 
   // Build all selectable keys for pick/prep
   const allPrepKeys = useMemo(() => {

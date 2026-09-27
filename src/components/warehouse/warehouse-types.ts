@@ -41,6 +41,10 @@ export interface LineItem {
     quantity: number;
     status: string;
     prepStatus: string | null;
+    /** #1296 — the REAL container this unit is packed into (a `projectContainers`
+     *  row id), the source of truth over the line's own `prepContainer` string
+     *  below. See `resolveItemContainerId`. */
+    containerId?: string | null;
     asset: { id: string; assetTag: string } | null;
     bulkAsset: { id: string; assetTag: string } | null;
   }>;
@@ -298,4 +302,92 @@ export function isInCheckedOutStage(item: LineItem): boolean {
   const ownCheckedOut = item.status === "CHECKED_OUT";
   if (!isAccessoryParent(item)) return ownCheckedOut;
   return ownCheckedOut || accessoryChildrenOf(item).some((c) => c.status === "CHECKED_OUT");
+}
+
+// ─── Container-based sectioning (#1296 phase 2) ─────────────────────────────
+// The Deploy/Return/De-prep tabs section their lists by "which container this
+// gear is packed into". `item.prepContainer` (a free-text string, dual-written
+// at prep time) is the legacy grouping key; the REAL identity is the majority
+// `containerId` among the item's own units (mirrors
+// `structure-line-items-by-container.ts`'s `majorityContainerId` — same
+// question, independently reimplemented here since that module lives in
+// `src/lib/pdfme` and is PDF-shape-specific, not a dependency this page
+// should take on for a client-only grouping concern). Grouping by containerId
+// rather than the label means two units in the SAME real container never
+// split into two sections just because their `prepContainer` strings drifted
+// (or one was never backfilled) — the exact class of bug D9's migration
+// (widen → migrate → narrow) exists to close.
+
+function unitMajorityContainerId(units: LineItem["units"]): string | null {
+  if (!units || units.length === 0) return null;
+  const counts = new Map<string | null, number>();
+  for (const u of units) {
+    const key = u.containerId ?? null;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestN = -1;
+  for (const [key, n] of counts) {
+    if (n > bestN) {
+      best = key;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/** The real container id an item's units are (majority) packed into, or
+ *  `null` when none of its units carry one (pre-migration data, or gear
+ *  that's never been prepped through the rail). */
+export function resolveItemContainerId(item: LineItem): string | null {
+  return unitMajorityContainerId(item.units);
+}
+
+export interface ContainerGroup<T> {
+  /** Display label for the section header — `null` renders as "no container"
+   *  UI (see deploy-tab.tsx's `.some((g) => g.container !== null)` checks). */
+  container: string | null;
+  entries: T[];
+}
+
+/**
+ * Bucket a list of (already-grouped) entries by their representative item's
+ * container, preferring the REAL `containerId` (resolved to its current
+ * label via `containerLabelById`) and falling back to the legacy
+ * `prepContainer` string when no real container is resolved. Named
+ * containers sort alphabetically by label; the ungrouped bucket sorts last.
+ */
+export function buildContainerGroups<T>(
+  entries: T[],
+  representativeItem: (entry: T) => LineItem,
+  containerLabelById: Map<string, string>,
+): ContainerGroup<T>[] {
+  const byBucketKey = new Map<string, T[]>();
+  const labelByBucketKey = new Map<string, string | null>();
+
+  for (const entry of entries) {
+    const item = representativeItem(entry);
+    const containerId = resolveItemContainerId(item);
+    const bucketKey = containerId ? `id:${containerId}` : item.prepContainer ? `label:${item.prepContainer}` : "";
+    const label = containerId ? (containerLabelById.get(containerId) ?? item.prepContainer ?? null) : item.prepContainer || null;
+    if (!byBucketKey.has(bucketKey)) {
+      byBucketKey.set(bucketKey, []);
+      labelByBucketKey.set(bucketKey, label);
+    }
+    byBucketKey.get(bucketKey)!.push(entry);
+  }
+
+  const sortedKeys = [...byBucketKey.keys()].sort((a, b) => {
+    const la = labelByBucketKey.get(a) ?? null;
+    const lb = labelByBucketKey.get(b) ?? null;
+    if (la === null && lb === null) return 0;
+    if (la === null) return 1;
+    if (lb === null) return -1;
+    return la.localeCompare(lb);
+  });
+
+  return sortedKeys.map((bucketKey) => ({
+    container: labelByBucketKey.get(bucketKey) ?? null,
+    entries: byBucketKey.get(bucketKey)!,
+  }));
 }

@@ -51,7 +51,7 @@ const DOC_TITLES: Record<ProjectDocumentType, string> = {
   invoice: "TAX INVOICE",
   "packing-list": "PULL SLIP",
   "return-sheet": "RETURN SHEET",
-  "delivery-docket": "DELIVERY DOCKET",
+  "delivery-docket": "Delivery docket",
   manifest: "MANIFEST",
 };
 

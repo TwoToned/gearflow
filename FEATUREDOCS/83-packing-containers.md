@@ -85,7 +85,7 @@ one materialising a `projectContainers` row + line item per distinct legacy
 `containerId`. Driver: `scripts/convex-backfill-project-containers.ts`. Never
 run automatically — a one-time, explicitly-invoked migration.
 
-## Documents (phase 3a + 3b landed; 3c open — #1300)
+## Documents (phase 3a, 3b, 3c landed — #1300)
 
 `src/lib/pdfme/structure-line-items-by-container.ts`'s
 `structureLineItemsByContainer` (opted into via `structureLineItems`'s
@@ -125,10 +125,40 @@ project page's Documents ▾ menu, `/api/documents/[projectId]?type=manifest`
 (`project:read`, always freshly rendered — no stored-bytes rule, matching the
 other 3 warehouse docs), and the `get_project_document` MCP tool.
 
-Still open (3c): the delivery-docket/return-sheet rework onto the same
-`byContainer` structuring (today only the manifest opts in —
-`DOCUMENT_LAYOUTS`'s `byContainer` flag is `false`/absent for every other
-doc type).
+**Return sheet and delivery docket** (`DOCUMENT_LAYOUTS`'s `byContainer: true`
+now set for all three of manifest/return-sheet/delivery-docket — every other
+doc type stays `false`/absent) both order by the same container buckets so
+all three documents agree (D7/D10). Return-sheet adds a per-top-level-
+container "Case returned ☐" (`ContainerHeaderRow`'s `showReturnCheckbox` prop,
+`TablePluginConfig.showContainerReturnCheckbox`, depth-0 only — a nested tub
+returns with its parent case, D10). Delivery-docket dropped its older
+"promote a kit's CHECKED_OUT children into their own section, drop the kit
+row" special case (`filterAndGroupItems`'s former delivery-docket branch) —
+D7 wants the client to see the kit's own case tag, so a kit is now grouped and
+rendered exactly like every other row (own row, CHECKED_OUT children indented
+below via the ordinary `showKitChildren`/`ChildrenBlock` path). D7 also drops
+the per-row "Received" checkbox column entirely (one signature covers the
+whole delivery — a pre-ticked box per line on a CHECKED_OUT-filtered doc read
+as "already received") and the per-unit checkbox sub-rows
+(`showPerUnitCheckboxes: false`); a multi-unit line's asset tags print inline
+via the existing `getAssetTag` dedupe/"+N more" text instead. The docket also
+gets a sentence-case title ("Delivery docket", a deliberate docket-scoped
+exception to the fixed-vocabulary ALL-CAPS titles every other doc type uses)
+and the same container/item/weight summary line as the manifest
+(`components/summary-line.tsx`, factored out of `manifest-document.tsx` so
+both doc types share one `buildSummaryLine`, not two copies).
+
+Still open (3c, deliberately deferred to its own pass): the docket's
+remaining cosmetic layout rework from the design doc §4.2 — a fixed
+"job strip" repeating the project number/delivered/return-due dates on every
+page, a parties row with the actual delivery address (`venue_address`) and
+client PO/order reference (Q11, itself deferred), and a ruled
+"condition on receipt / discrepancies" box above the signature block. None of
+these are behavioral (D7's itemised-with-one-signature scope is fully landed
+above); they're presentational additions layered onto the existing
+`DetailsRow`/`Header`/`Footer` primitives and were left out of this pass to
+keep it reviewable and to avoid touching those shared primitives' several
+other doc-type consumers without dedicated coverage.
 
 ## Warehouse UI (phase 2, #1299 — in progress)
 

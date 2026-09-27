@@ -11,33 +11,18 @@
  * fed by `build-document-data.ts` loading `projectContainers` and passing
  * `byContainer: true` to `structureLineItems`.
  */
-import { Document, Page, View, Text } from "@react-pdf/renderer";
+import { Document, Page, View } from "@react-pdf/renderer";
 import type { DocumentData } from "@/lib/pdfme/types";
 import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
 import { Header } from "./components/header";
 import { DetailsRow } from "./components/details-row";
 import { LineItemsTable } from "./components/line-items-table";
+import { SummaryLine } from "./components/summary-line";
 import { Footer } from "./components/footer";
 import { PAGE_MARGIN, pageSizeFor } from "./styles";
 import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
 
 const PAGE_PADDING_BOTTOM = `${MARGIN + FOOTER_HEIGHT + 8}mm`;
-const FONT_SIZE_SUMMARY = 8;
-
-/** "3 containers · 47 items · 212 kg · 2 loose items" — only the parts with
- *  something to say print, so an org that hasn't adopted containers yet (or
- *  a job with nothing packed) doesn't print a summary of zeros. */
-function buildSummaryLine(data: DocumentData): string {
-  const parts: string[] = [];
-  if (data.container_count) {
-    const nested = data.nested_container_count ? ` (+${data.nested_container_count} nested)` : "";
-    parts.push(`${data.container_count} container${data.container_count === 1 ? "" : "s"}${nested}`);
-  }
-  parts.push(`${data.total_items} item${data.total_items === 1 ? "" : "s"}`);
-  if (data.total_weight > 0) parts.push(`${Math.round(data.total_weight)} kg`);
-  if (data.loose_item_count) parts.push(`${data.loose_item_count} loose item${data.loose_item_count === 1 ? "" : "s"}`);
-  return `Summary: ${parts.join(" · ")}`;
-}
 
 export function ManifestDocument({ data }: { data: DocumentData }) {
   const docType: ProjectDocumentType = "manifest";
@@ -84,7 +69,7 @@ export function ManifestDocument({ data }: { data: DocumentData }) {
         </View>
 
         <View style={{ marginBottom: "4mm" }} wrap={false}>
-          <Text style={{ fontSize: FONT_SIZE_SUMMARY, color: "#333333" }}>{buildSummaryLine(data)}</Text>
+          <SummaryLine data={data} />
         </View>
 
         <View style={{ marginBottom: "4mm" }}>

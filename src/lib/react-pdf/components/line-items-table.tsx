@@ -64,7 +64,6 @@ type ColumnKey =
   | "assetTag"
   | "category"
   | "condition"
-  | "received"
   | "notes";
 
 export interface ColumnDef {
@@ -112,12 +111,13 @@ export function getColumnsForDocType(config: TablePluginConfig): ColumnDef[] {
       ];
 
     case "delivery-docket":
+      // #1296 phase 3c (D7) — itemised, container order, no per-row Received
+      // checkbox (one signature covers the whole delivery).
       return [
-        { key: "rowNum", label: "#", width: "5%", align: "center" },
-        { key: "description", label: "Description", width: "61%", align: "left" },
-        { key: "qty", label: "Qty", width: "8%", align: "center" },
-        { key: "assetTag", label: "Asset Tag", width: "15%", align: "left" },
-        { key: "received", label: "Received", width: "11%", align: "center" },
+        { key: "rowNum", label: "#", width: "6%", align: "center" },
+        { key: "description", label: "Item", width: "58%", align: "left" },
+        { key: "qty", label: "Qty", width: "10%", align: "center" },
+        { key: "assetTag", label: "Asset Tag", width: "26%", align: "left" },
       ];
 
     case "manifest":
@@ -163,10 +163,15 @@ export interface GroupedTable {
 }
 
 /** Filter + group the raw line-item list exactly as gearflow-table.ts's
- *  `pdfRender` does before drawing — the SALE-line/bulk/status filtering,
- *  the doc-type-specific "ungrouped" bucket name, and delivery-docket's kit
- *  parent → CHECKED_OUT-children promotion into their own section. Pure so
- *  it's independently testable without rendering anything. */
+ *  `pdfRender` does before drawing — the SALE-line/bulk/status filtering and
+ *  the doc-type-specific "ungrouped" bucket name. A kit parent is grouped
+ *  like any other row (by `groupName`/container bucket); it keeps its own
+ *  row and its CHECKED_OUT children render indented below it via
+ *  `ChildrenBlock` (D7 — delivery-docket used to promote a kit's children
+ *  into their own section and drop the kit row; #1296 phase 3c dropped that
+ *  special case so the docket agrees with the manifest/return-sheet, which
+ *  never did this). Pure so it's independently testable without rendering
+ *  anything. */
 export function filterAndGroupItems(items: DocumentLineItem[], config: TablePluginConfig): GroupedTable {
   let filtered = items.filter((i) => !i.isKitChild && !i.isContainerLineItem);
 
@@ -215,33 +220,11 @@ export function filterAndGroupItems(items: DocumentLineItem[], config: TablePlug
 
   const groups = new Map<string, DocumentLineItem[]>();
 
-  if (config.documentType === "delivery-docket") {
-    // Kit parents promote their CHECKED_OUT children to be section rows
-    // under the kit's name (client ticks each item off on receipt).
-    // Non-kit items respect `groupName` like every other doc type.
-    for (const item of filtered) {
-      if (isKitParent(item)) {
-        const kitName = item.kit?.name || item.description || "Kit";
-        const children = (item.childLineItems || []).filter((c) => c.status === "CHECKED_OUT");
-        if (children.length > 0) {
-          const arr = groups.get(kitName) || [];
-          arr.push(...children);
-          groups.set(kitName, arr);
-        }
-      } else {
-        const key = item.groupName || item.prepContainer || ungroupedKey;
-        const arr = groups.get(key) || [];
-        arr.push(item);
-        groups.set(key, arr);
-      }
-    }
-  } else {
-    for (const item of filtered) {
-      const key = item.groupName || item.prepContainer || ungroupedKey;
-      const arr = groups.get(key) || [];
-      arr.push(item);
-      groups.set(key, arr);
-    }
+  for (const item of filtered) {
+    const key = item.groupName || item.prepContainer || ungroupedKey;
+    const arr = groups.get(key) || [];
+    arr.push(item);
+    groups.set(key, arr);
   }
 
   return { ungroupedKey, groups };
@@ -655,8 +638,6 @@ function renderParentCell(col: ColumnDef, item: DocumentLineItem, config: TableP
       );
     case "condition":
       return <ConditionCell key={col.key} col={col} size={7} fontSize={7} color={COLORS.text} />;
-    case "received":
-      return renderCheckboxCell(col, 8, false);
     case "notes":
       return <Cell key={col.key} col={col}> </Cell>;
     default:
@@ -806,8 +787,6 @@ function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TableP
       );
     case "condition":
       return <ConditionCell key={col.key} col={col} size={6} fontSize={6} color={COLORS.text} />;
-    case "received":
-      return renderCheckboxCell(col, 8, false);
     default:
       return null;
   }
@@ -860,8 +839,6 @@ function renderGrandchildCell(col: ColumnDef, nested: DocumentLineItem, config: 
       );
     case "condition":
       return <ConditionCell key={col.key} col={col} size={6} fontSize={6} color={COLORS.text} />;
-    case "received":
-      return renderCheckboxCell(col, 8, false);
     case "rowNum":
     case "notes":
       return renderBlankCell(col);

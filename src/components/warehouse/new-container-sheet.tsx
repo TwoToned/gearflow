@@ -41,6 +41,41 @@ export interface NewContainerSheetProps {
 }
 
 type ContainerKindTab = (typeof CONTAINER_KINDS)[number];
+type AssetSearchResult = { assetId: string; label: string; modelId: string | null; available: boolean };
+
+/** Split out of `NewContainerSheet` (and `handleSubmit` below) to keep each
+ *  function's branching under the complexity ratchet (R-3.6) — no behavior
+ *  change, just less of it inline in the component/handler bodies. */
+function buildAssetOptions(results: AssetSearchResult[] | undefined) {
+  return (results ?? []).map((a) => ({
+    value: a.assetId,
+    label: a.label,
+    badge: a.available ? undefined : <Badge status="warn">In use</Badge>,
+  }));
+}
+
+function findAssetResult(results: AssetSearchResult[] | undefined, assetId: string): AssetSearchResult | undefined {
+  return (results ?? []).find((a) => a.assetId === assetId);
+}
+
+function resolveContainerLabel(kind: ContainerKindTab, label: string, selectedAssetLabel: string | undefined): string {
+  return kind === "CUSTOM" ? label.trim() : label.trim() || selectedAssetLabel || "Container";
+}
+
+/** Client-side check of the same bounds `projectContainersWrites.ts`'s
+ *  `assertStrLen` enforces server-side — catches an over-length label/
+ *  description before the round-trip, not a replacement for the server check. */
+function validateContainerInput(input: {
+  kind: ContainerKindTab;
+  assetId?: string;
+  label: string;
+  description?: string;
+  parentContainerId?: string;
+}): { ok: true } | { ok: false; message: string } {
+  const parsed = projectContainerSchema.safeParse(input);
+  if (parsed.success) return { ok: true };
+  return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid container details" };
+}
 
 /**
  * The "+ New" container sheet (#1296 build plan phase 2) — asset search (via
@@ -69,16 +104,11 @@ export function NewContainerSheet({
   const [parentContainerId, setParentContainerId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const assetResults = useQuery(
-    api.categories.containerAssetSearch,
-    orgId ? { orgId, query: debouncedAssetQuery } : "skip",
-  );
-  const assetOptions = (assetResults ?? []).map((a) => ({
-    value: a.assetId,
-    label: a.label,
-    badge: a.available ? undefined : <Badge status="warn">In use</Badge>,
-  }));
-  const selectedAsset = (assetResults ?? []).find((a) => a.assetId === selectedAssetId);
+  const assetSearchArgs = orgId ? { orgId, query: debouncedAssetQuery } : "skip";
+  const assetResults = useQuery(api.categories.containerAssetSearch, assetSearchArgs);
+  const assetOptions = buildAssetOptions(assetResults);
+  const selectedAsset = findAssetResult(assetResults, selectedAssetId);
+  const selectedAssetLabel = selectedAsset?.label;
 
   const reset = () => {
     setKind("ASSET");
@@ -98,19 +128,16 @@ export function NewContainerSheet({
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting) return;
-    const resolvedLabel = kind === "CUSTOM" ? label.trim() : label.trim() || selectedAsset?.label || "Container";
-    // Client-side check of the same bounds `projectContainersWrites.ts`'s
-    // `assertStrLen` enforces server-side — catches an over-length label/
-    // description before the round-trip, not a replacement for the server check.
-    const parsed = projectContainerSchema.safeParse({
+    const resolvedLabel = resolveContainerLabel(kind, label, selectedAssetLabel);
+    const validation = validateContainerInput({
       kind,
       assetId: kind === "ASSET" ? selectedAssetId : undefined,
       label: resolvedLabel,
       description: description.trim() || undefined,
       parentContainerId: parentContainerId || undefined,
     });
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Invalid container details");
+    if (!validation.ok) {
+      toast.error(validation.message);
       return;
     }
     setSubmitting(true);
@@ -160,7 +187,7 @@ export function NewContainerSheet({
                   searchPlaceholder="Search or scan a tag..."
                   onSearchChange={setAssetQuery}
                   loading={assetResults === undefined}
-                  selectedLabel={selectedAsset?.label}
+                  selectedLabel={selectedAssetLabel}
                 />
               </div>
             </TabsContent>
@@ -191,7 +218,7 @@ export function NewContainerSheet({
                 id="container-label-override"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder={selectedAsset?.label || "Auto from selected asset"}
+                placeholder={selectedAssetLabel || "Auto from selected asset"}
               />
             </div>
           )}

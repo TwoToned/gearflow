@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 /** Which project tab a check's action sends you to, or "labour"/"equipment"
  *  for the two deep links the old Readiness panel had. */
-export type WorkCardTab = "overview" | "equipment" | "labour" | "finance" | "work" | "notes" | "files";
+export type WorkCardTab = "overview" | "equipment" | "labour" | "finance" | "work" | "notes" | "files" | "packing";
 
 interface WorkCardProps {
   projectId: string;
@@ -50,6 +50,7 @@ function resolveRowAction(
   }
   if (row.checkId === "crew" || row.checkId === "services") return { kind: "tab", tab: "labour" };
   if (row.checkId === "pricing") return { kind: "tab", tab: "equipment" };
+  if (row.checkId === "packing") return { kind: "tab", tab: "packing" };
   return null;
 }
 

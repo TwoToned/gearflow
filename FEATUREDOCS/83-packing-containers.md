@@ -263,9 +263,57 @@ kit-verify dialog into a shared `deploy-container-dialog.tsx`, and the
 `clearPrepContainer` label-matching gap noted above (Move-to didn't need to
 touch it — it moves units directly, never by container label).
 
+## Packing tab (phase 4, #1301 — landed except drag)
+
+A new **Packing** project tab (D11 — its own tab, not a view inside
+Equipment; `VALID_TABS` in `src/app/(app)/projects/[id]/page.tsx`, hidden on
+template projects same as Finance) lets the PM plan which container each
+piece of gear travels in before the warehouse starts prepping.
+
+`src/lib/packing-tab.ts` (plain, React-free) flattens the Equipment tab's
+already-reconstructed tree — `collectPlannableLines` walks
+`CategoryData[]`/the top-level uncategorized lists, INCLUDING a Project
+Group's own member lines and a sub-hire group's synthetic parent's children,
+excluding kit children/container line items/cancelled/non-equipment rows. A
+kit parent is ONE plannable unit (D3's "whole kit moves together", same
+convention Move-to uses) — no per-child split at plan time. `resolvePackingStatus`
+answers "packed" (a unit's real `containerId` — physical reality) /
+"planned" (`plannedContainerId` — the PM's intent, muted) / "unplanned",
+actual always overriding a stale plan; `buildPackingBuckets` groups by that
+status the same way `warehouse-types.ts`'s `buildContainerGroups` does for
+the warehouse tabs (real container first alphabetically, "Not planned"
+bucket last).
+
+`use-packing-tab.ts` wires `useNativeEquipmentTab` (reused verbatim — no new
+model/kit/group attachment logic, no risk to the Equipment tab it already
+serves) + `projectContainers.listForProject` into that pure module.
+`packing-tab.tsx` renders one section per container plus "Not planned", a
+native `<select>` per line (disabled once actually packed — the warehouse is
+the source of truth from that point on, not this tab) calling
+`useProjectContainerWrites().setPlannedContainer`, and reuses
+`NewContainerSheet` verbatim for "+ New container".
+
+**Readiness row** (`convex/lib/projectReadiness.ts`'s
+`computeProjectPackingReadiness`, wired into `projectReadiness.forProject`'s
+`packing` section): "N of M lines not planned yet" — a WARNING, never
+blocking (Q8 — unpacked gear is a legitimate "Loose" manifest section, not a
+violation), dropped entirely when the project has no plannable equipment
+(same "nothing to carry a permanent row for" convention as the crew/services
+checks). `work-card.tsx`'s `resolveRowAction` sends its action to the new
+`packing` tab.
+
+**Deliberately deferred**: the design doc's preferred interaction is
+DRAG (reusing the Equipment tab's `use-equipment-dnd.ts` `buildContainerMap`
+pattern, containers as a new drop-target kind). That hook is a 1200+ line,
+deeply specialized system the ENTIRE Equipment tab depends on in
+production — extending it carries real regression risk to a working, heavily
+used surface, for an interaction-only difference (the underlying effect,
+`plannedContainerId`, is identical whether set by drag or by the picker
+shipped here). Left for its own dedicated pass; the plain `<select>` ships
+the feature's full underlying value now.
+
 ## Not yet started
 
-Phase 4 (Packing tab — planning UI, drag helper, readiness check, #1301) and
 Phase 5 (narrow + retire the legacy `prepContainer` string field and
 non-stable label-keyed ops, #1302). Phase 6 (container labels/printing, a
 bulk-tub picker, client PO reference) is explicitly deferred per the design

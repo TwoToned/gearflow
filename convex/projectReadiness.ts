@@ -9,6 +9,7 @@ import {
   computeProjectGearReadiness,
   computeProjectCrewReadiness,
   computeProjectPricingReadiness,
+  computeProjectPackingReadiness,
   type ReadinessGearSection,
 } from "./lib/projectReadiness";
 import { liveRows } from "./lib/versionScope";
@@ -68,13 +69,48 @@ async function readPricingReadiness(ctx: QueryCtx, orgId: string, projectId: str
 }
 
 /**
+ * #1296 build plan phase 4 — "N lines not planned" for the Packing readiness
+ * row. Live line items (same LIVE-ONLY plan the rest of this checklist
+ * reads) plus their units' `containerId` (physical reality, not a versioned
+ * table — bounded per-line lookups, same convention `warehouseDetail.ts`
+ * uses), fed into the pure `computeProjectPackingReadiness`.
+ */
+async function readPackingReadiness(ctx: QueryCtx, orgId: string, projectId: string) {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project || project.organizationId !== orgId) return computeProjectPackingReadiness(projectId, [], []);
+
+  const ownLines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
+  const unitArrays = await Promise.all(
+    ownLines.map((li) =>
+      ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", li.id)).collect(),
+    ),
+  );
+  const units = unitArrays.flat().filter((u) => u.organizationId === orgId);
+
+  return computeProjectPackingReadiness(
+    projectId,
+    ownLines.map((li) => ({
+      id: li.id,
+      projectId: li.projectId,
+      type: li.type ?? null,
+      status: li.status ?? null,
+      isKitChild: li.isKitChild ?? false,
+      isContainerLineItem: li.isContainerLineItem ?? false,
+      plannedContainerId: li.plannedContainerId ?? null,
+    })),
+    units.map((u) => ({ lineItemId: u.lineItemId, containerId: u.containerId ?? null })),
+  );
+}
+
+/**
  * "Is this project ready to go out the door?" — the read behind the project
  * Overview tab's Readiness checklist (#1061).
  *
- * Three sections in one round trip, so the checklist is one subscription
- * rather than four: gear shortage on the models THIS project books, crew that
- * hasn't confirmed plus services still under-staffed, and lines/groups a
- * lifecycle lock forced to $0 and nobody has priced since.
+ * Four sections in one round trip, so the checklist is one subscription
+ * rather than five: gear shortage on the models THIS project books, crew that
+ * hasn't confirmed plus services still under-staffed, lines/groups a
+ * lifecycle lock forced to $0 and nobody has priced since, and (#1296 build
+ * plan phase 4) equipment lines with no planned or actual container.
  *
  * Two further checks the panel renders are deliberately NOT computed here —
  * they already have exactly one home each and duplicating either would be an
@@ -139,6 +175,7 @@ export const forProject = query({
     );
 
     const pricing = await readPricingReadiness(ctx, orgId, projectId);
+    const packing = await readPackingReadiness(ctx, orgId, projectId);
 
     return {
       hasWindow: start != null && end != null,
@@ -146,6 +183,7 @@ export const forProject = query({
       gear,
       crew,
       pricing,
+      packing,
     };
   },
 });

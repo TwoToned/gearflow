@@ -24,6 +24,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
+import { PackingTab } from "@/components/projects/packing-tab";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { WorkTab } from "@/components/projects/work-tab";
@@ -171,7 +172,7 @@ export default function ProjectDetailPage({
   // stays a working `?tab=` value (never in VALID_TABS itself, so it never
   // renders a TabsTrigger for it) via `normalizeTabParam` below, so an old
   // bookmark/notification link doesn't silently fall back to Overview.
-  const VALID_TABS = ["overview", "equipment", "labour", "finance", "work", "notes", "files"] as const;
+  const VALID_TABS = ["overview", "equipment", "packing", "labour", "finance", "work", "notes", "files"] as const;
   const normalizeTabParam = (tab: string | null): string | null => (tab === "tasks" ? "work" : tab);
   const requestedTab = normalizeTabParam(searchParams.get("tab"));
   // D3 (#1107) — the "Add <model> to it" chained hand-off deep-links here as
@@ -678,6 +679,9 @@ export default function ProjectDetailPage({
                   <TabsList>
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="equipment">Equipment</TabsTrigger>
+                    {!project.isTemplate && (
+                      <TabsTrigger value="packing">Packing</TabsTrigger>
+                    )}
                     <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
                     {!project.isTemplate && (
                       <TabsTrigger value="finance">Finance</TabsTrigger>
@@ -780,6 +784,21 @@ export default function ProjectDetailPage({
                     />
                   </div>
                 </TabsContent>
+
+                {/* Packing Tab (#1296 build plan phase 4, D11) — plan which
+                    container each piece of gear travels in; the warehouse
+                    does the actual packing (see PackingTab's own doc comment). */}
+                {!project.isTemplate && (
+                  <TabsContent value="packing">
+                    <div className="pt-4">
+                      <PackingTab
+                        projectId={id}
+                        orgId={orgId}
+                        versionId={versionState.viewingVersion?.id}
+                      />
+                    </div>
+                  </TabsContent>
+                )}
 
                 {/* Labour & Logistics Tab — services (incl. per-service crew rate
                     tables) is the sole crew UI; ServicesPanel renders the project

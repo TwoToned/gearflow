@@ -7,6 +7,7 @@ import {
   Container,
   X,
   Undo2,
+  ArrowRightLeft,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,9 @@ export interface DeployTabProps {
   clearContainerMutate: (containerName: string) => void;
   clearContainerIsPending: boolean;
   checkOutIsPending: boolean;
+  /** #1296 Move-to… — open the shared MoveToContainerDialog against this
+   *  tab's current selection. */
+  onMoveSelected: () => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -123,6 +127,7 @@ export function DeployTab({
   clearContainerMutate,
   clearContainerIsPending,
   checkOutIsPending,
+  onMoveSelected,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -157,6 +162,15 @@ export function DeployTab({
                   : "Items prepped and ready to deploy."}
               </p>
               <div className="flex items-center gap-2">
+                <Button
+                  variant="line"
+                  onClick={onMoveSelected}
+                  disabled={selectedOutCount === 0}
+                  className="shrink-0"
+                >
+                  <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                  Move to…{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                </Button>
                 {isDeprep ? (
                   <>
                     {/* Move back a stage — return this gear to Deployed (un-return). */}

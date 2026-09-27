@@ -235,33 +235,33 @@ Landed so far:
   `deploy-container-dialog.tsx` generalization work below, which already
   needs to touch this same mutation family.
 
-Still open (see the build plan's Phase 2 checklist): the Move-to… sheet, and
-generalizing the kit-verify dialog into a shared `deploy-container-dialog.tsx`
-(the two candidates to also carry the `clearPrepContainer` fix above).
+- **Move-to… (`MoveToContainerDialog`, `warehouse-types.ts`'s
+  `resolveSelectionToUnitIds`)**: a "Move to…" button in the Deploy/De-prep/
+  Return tabs' action bars, next to the existing selection actions, resolves
+  the CURRENT selection (`selectedOut`/`selectedDeprep`/`selectedIn` — the
+  SAME key format `handleCheckOutSelected` already parses: a bare line-item
+  id, or a positional `bulkUnitKey(lineItemId, index)`) down to real unit
+  ids and calls the (already-existing, already-tested)
+  `useProjectContainerWrites().moveUnits(unitIds, toContainerId)`. A kit/
+  accessory parent's own key resolves to the WHOLE group — every
+  descendant's relevant units too, via `childLineItems` recursion (D3's
+  "the whole kit moves together" convention). A bulk positional key only
+  ever carries a COUNT, exactly like `handleCheckOutSelected`'s own
+  `bulkQtyMap` parsing already does (the index has no stable per-unit
+  identity anywhere else in the codebase) — N selected indices resolve to
+  the first N stage-relevant units in array order, the same order the
+  bulk-group row itself renders `units[idx]` in. Each of the 3 tabs supplies
+  its own stage predicate (`isMoveableAtDeployStage`/`isMoveableAtReturnStage`/
+  `isMoveableAtDeprepStage`) so the SAME resolver is correct for
+  PACKED-not-deployed, CHECKED_OUT, and RETURNED-not-deprepped units alike.
+  `MoveToContainerDialog` itself is a plain container picker (not
+  `ContainerRail` — the rail always mirrors live prep state with exactly one
+  chip active; this dialog starts with nothing chosen each time it opens).
 
-**Move-to… sheet — scoped, not yet built.** The WRITE layer is already
-complete and unused by any UI: `projectContainersWrites.moveUnitsNative`
-(reassign a batch of real `projectLineItemUnits` ids to a different
-container or to Loose) and `unpackNative` (empty a container to Loose) both
-exist, are both wrapped by `useProjectContainerWrites()`
-(`moveUnits(unitIds, toContainerId)` / `unpack(id)`), and both already have
-Convex-level test coverage. What's missing is purely the UI: a sheet, and —
-the genuinely hard part — resolving the Deploy/Return/De-prep tabs'
-selection keys (`selectedOut`/`selectedIn`/`selectedDeprep`, built by
-`groupItems`/`groupCheckinItems`) down to real unit ids. Those keys are
-EITHER a bare line-item id (`single`/`serialized-group`/`kit-group`/
-`accessory-group` entries — a kit/accessory selection means "move the whole
-parent + every child's units together", matching D3's "the whole kit moves
-together" convention) OR a positional `bulkUnitKey(lineItemId, index)` (a
-`bulk-group` entry — existing call sites like `handleCheckOutSelected` only
-ever use these to COUNT how many of a line's units are selected, never to
-address a specific one, so "index" has no stable per-unit meaning to
-resolve against). Getting this resolver right, for all 5 entry kinds across
-3 tabs whose "which units are relevant here" predicate differs per tab
-(PACKED-not-deployed / CHECKED_OUT / RETURNED-not-deprepped), is a real
-inventory-correctness write path, not overhead — worth its own careful,
-dedicated pass rather than rushing it in alongside this batch of read-side
-changes.
+Still open (see the build plan's Phase 2 checklist): generalizing the
+kit-verify dialog into a shared `deploy-container-dialog.tsx`, and the
+`clearPrepContainer` label-matching gap noted above (Move-to didn't need to
+touch it — it moves units directly, never by container label).
 
 ## Not yet started
 

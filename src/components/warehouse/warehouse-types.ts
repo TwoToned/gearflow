@@ -391,3 +391,80 @@ export function buildContainerGroups<T>(
     entries: byBucketKey.get(bucketKey)!,
   }));
 }
+
+// ─── Move to… (#1296 phase 2) ───────────────────────────────────────────────
+// Reassign a Deploy/Return/De-prep selection to a different container (or to
+// Loose) — the UI half of `projectContainersWrites.moveUnitsNative`, which
+// already exists and takes real unit ids.
+
+type Unit = NonNullable<LineItem["units"]>[number];
+
+function collectRelevantUnitIds(item: LineItem, isRelevant: (u: Unit) => boolean): string[] {
+  const own = (item.units ?? []).filter(isRelevant).map((u) => u.id);
+  const fromChildren = (item.childLineItems ?? []).flatMap((c) => collectRelevantUnitIds(c, isRelevant));
+  return [...own, ...fromChildren];
+}
+
+/** Deploy tab: units packed (PACKED) but not yet deployed or returned. */
+export function isMoveableAtDeployStage(u: Unit): boolean {
+  return u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.prepStatus === "PACKED";
+}
+
+/** Return tab: units currently deployed (about to be checked in). */
+export function isMoveableAtReturnStage(u: Unit): boolean {
+  return u.status === "CHECKED_OUT";
+}
+
+/** De-prep tab: units physically back but still packed. */
+export function isMoveableAtDeprepStage(u: Unit): boolean {
+  return u.status === "RETURNED" && u.prepStatus === "PACKED";
+}
+
+/**
+ * Resolve a Deploy/Return/De-prep tab's selection — the SAME key format
+ * `handleCheckOutSelected`/`handlePrepSelected` already parse: a bare
+ * line-item id for a single/serialized/kit-parent/accessory-parent
+ * selection, or a positional `bulkUnitKey(lineItemId, index)` for a bulk
+ * line's per-unit checkbox — down to the real unit ids to move together
+ * (#1296 Move-to…).
+ *
+ * A kit/accessory parent's own key means "move the whole group": every
+ * descendant's relevant units too, via `childLineItems` recursion (D3's
+ * "the whole kit moves together" convention, same one
+ * `structure-line-items-by-container.ts` uses for documents). A bulk key
+ * only ever carries a COUNT — `handleCheckOutSelected`'s own `bulkQtyMap`
+ * parsing already treats the index as a tally, never a specific unit's
+ * identity, because nothing else does either — so N selected indices
+ * resolve to the first N stage-relevant units in array order (the same
+ * order the bulk-group row itself renders `units[idx]` in).
+ */
+export function resolveSelectionToUnitIds(
+  selectedKeys: Set<string>,
+  lineItems: LineItem[],
+  isRelevant: (u: Unit) => boolean,
+): string[] {
+  const bulkCounts = new Map<string, number>();
+  const wholeIds: string[] = [];
+
+  for (const key of selectedKeys) {
+    if (key.includes(":")) {
+      const lineItemId = key.split(":")[0];
+      bulkCounts.set(lineItemId, (bulkCounts.get(lineItemId) ?? 0) + 1);
+    } else {
+      wholeIds.push(key);
+    }
+  }
+
+  const unitIds: string[] = [];
+  for (const id of wholeIds) {
+    const li = lineItems.find((l) => l.id === id);
+    if (li) unitIds.push(...collectRelevantUnitIds(li, isRelevant));
+  }
+  for (const [lineItemId, count] of bulkCounts) {
+    const li = lineItems.find((l) => l.id === lineItemId);
+    if (!li) continue;
+    const relevant = (li.units ?? []).filter(isRelevant);
+    unitIds.push(...relevant.slice(0, count).map((u) => u.id));
+  }
+  return unitIds;
+}

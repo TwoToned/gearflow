@@ -9,6 +9,10 @@ import {
   isInCheckedOutStage,
   resolveItemContainerId,
   buildContainerGroups,
+  resolveSelectionToUnitIds,
+  isMoveableAtDeployStage,
+  isMoveableAtReturnStage,
+  isMoveableAtDeprepStage,
   type LineItem,
 } from "./warehouse-types";
 
@@ -279,5 +283,75 @@ describe("buildContainerGroups", () => {
       ]),
     );
     expect(groups.map((g) => g.container)).toEqual(["A Case", "Z Tub", null]);
+  });
+});
+
+describe("stage predicates (isMoveableAt*Stage)", () => {
+  test("deploy stage: PACKED and not yet deployed/returned", () => {
+    expect(isMoveableAtDeployStage(unit({ status: "CONFIRMED", prepStatus: "PACKED" }))).toBe(true);
+    expect(isMoveableAtDeployStage(unit({ status: "CHECKED_OUT", prepStatus: "PACKED" }))).toBe(false);
+    expect(isMoveableAtDeployStage(unit({ status: "RETURNED", prepStatus: "PACKED" }))).toBe(false);
+    expect(isMoveableAtDeployStage(unit({ status: "CONFIRMED", prepStatus: "PENDING" }))).toBe(false);
+  });
+
+  test("return stage: currently deployed", () => {
+    expect(isMoveableAtReturnStage(unit({ status: "CHECKED_OUT" }))).toBe(true);
+    expect(isMoveableAtReturnStage(unit({ status: "RETURNED" }))).toBe(false);
+  });
+
+  test("de-prep stage: back but still packed", () => {
+    expect(isMoveableAtDeprepStage(unit({ status: "RETURNED", prepStatus: "PACKED" }))).toBe(true);
+    expect(isMoveableAtDeprepStage(unit({ status: "RETURNED", prepStatus: "PENDING" }))).toBe(false);
+    expect(isMoveableAtDeprepStage(unit({ status: "CHECKED_OUT", prepStatus: "PACKED" }))).toBe(false);
+  });
+});
+
+describe("resolveSelectionToUnitIds (Move to…, #1296 phase 2)", () => {
+  test("a plain line-item key resolves to that item's own relevant unit(s)", () => {
+    const li = line({ id: "a", units: [unit({ id: "u1", status: "CONFIRMED", prepStatus: "PACKED" })] });
+    const ids = resolveSelectionToUnitIds(new Set(["a"]), [li], isMoveableAtDeployStage);
+    expect(ids).toEqual(["u1"]);
+  });
+
+  test("a kit/accessory parent's key pulls in every relevant descendant's units too (whole group moves together)", () => {
+    const child = line({
+      id: "child",
+      isKitChild: true,
+      status: "CONFIRMED",
+      units: [unit({ id: "u-child", status: "CONFIRMED", prepStatus: "PACKED" })],
+    });
+    const kit = line({ id: "kit", kitId: "k1", childLineItems: [child], units: [unit({ id: "u-kit", status: "CONFIRMED", prepStatus: "PACKED" })] });
+    const ids = resolveSelectionToUnitIds(new Set(["kit"]), [kit], isMoveableAtDeployStage);
+    expect(ids.sort()).toEqual(["u-child", "u-kit"]);
+  });
+
+  test("a bulk positional key only ever carries a COUNT — N selected indices resolve to the first N relevant units in array order", () => {
+    const li = line({
+      id: "bulk",
+      quantity: 3,
+      units: [
+        unit({ id: "u1", status: "CONFIRMED", prepStatus: "PACKED" }),
+        unit({ id: "u2", status: "CONFIRMED", prepStatus: "PACKED" }),
+        unit({ id: "u3", status: "CONFIRMED", prepStatus: "PACKED" }),
+      ],
+    });
+    // Two distinct bulk keys selected (index doesn't matter — only the count).
+    const ids = resolveSelectionToUnitIds(new Set(["bulk:0", "bulk:2"]), [li], isMoveableAtDeployStage);
+    expect(ids).toEqual(["u1", "u2"]);
+  });
+
+  test("units not relevant to this stage are excluded even when their line is selected", () => {
+    const li = line({
+      id: "bulk",
+      units: [
+        unit({ id: "u1", status: "CONFIRMED", prepStatus: "PACKED" }),
+        unit({ id: "u2", status: "CHECKED_OUT", prepStatus: "PACKED" }), // already deployed — not deploy-stage relevant
+      ],
+    });
+    expect(resolveSelectionToUnitIds(new Set(["bulk:0"]), [li], isMoveableAtDeployStage)).toEqual(["u1"]);
+  });
+
+  test("a key with no matching line item is silently ignored (never throws)", () => {
+    expect(resolveSelectionToUnitIds(new Set(["missing", "missing:0"]), [], isMoveableAtDeployStage)).toEqual([]);
   });
 });

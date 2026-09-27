@@ -87,6 +87,7 @@ import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { ContainerRail } from "@/components/warehouse/container-rail";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
+import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
@@ -111,7 +112,12 @@ import {
   isInDeprepedStage,
   isInCheckedOutStage,
   buildContainerGroups,
+  resolveSelectionToUnitIds,
+  isMoveableAtDeployStage,
+  isMoveableAtReturnStage,
+  isMoveableAtDeprepStage,
 } from "@/components/warehouse/warehouse-types";
+import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
 import {
   pullItem,
   prepItemDirect,
@@ -1732,6 +1738,42 @@ function WarehouseProjectPage({
     [groupedIn, containerLabelById],
   );
 
+  // #1296 phase 2 — Move to…: reassign a Deploy/Return/De-prep selection to a
+  // different container. `moveDialogFor` names which tab's own selection Set
+  // + stage predicate the dialog resolves against (they differ — a bulk
+  // unit's `isRelevant` depends on which stage of its lifecycle this tab
+  // shows); resolving happens once, right before opening, not on every
+  // keystroke/selection change.
+  const [moveDialogFor, setMoveDialogFor] = useState<"deploy" | "deprep" | "return" | null>(null);
+  const containerWrites = useProjectContainerWrites();
+  const [moveIsPending, setMoveIsPending] = useState(false);
+
+  const moveDialogUnitIds = useMemo(() => {
+    if (moveDialogFor === "deploy") return resolveSelectionToUnitIds(selectedOut, lineItems, isMoveableAtDeployStage);
+    if (moveDialogFor === "deprep") return resolveSelectionToUnitIds(selectedDeprep, lineItems, isMoveableAtDeprepStage);
+    if (moveDialogFor === "return") return resolveSelectionToUnitIds(selectedIn, lineItems, isMoveableAtReturnStage);
+    return [];
+  }, [moveDialogFor, selectedOut, selectedDeprep, selectedIn, lineItems]);
+
+  const handleConfirmMove = async (toContainerId: string | null) => {
+    const unitIds = moveDialogUnitIds;
+    const forTab = moveDialogFor;
+    if (unitIds.length === 0 || !forTab) return;
+    setMoveIsPending(true);
+    try {
+      const { moved } = await containerWrites.moveUnits(unitIds, toContainerId);
+      toast.success(`Moved ${moved} item${moved === 1 ? "" : "s"}`);
+      if (forTab === "deploy") setSelectedOut(new Set());
+      else if (forTab === "deprep") setSelectedDeprep(new Set());
+      else setSelectedIn(new Set());
+      setMoveDialogFor(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to move");
+    } finally {
+      setMoveIsPending(false);
+    }
+  };
+
   // Build all selectable keys for pick/prep
   const allPrepKeys = useMemo(() => {
     const keys: string[] = [];
@@ -2878,6 +2920,14 @@ function WarehouseProjectPage({
           existingContainers={realContainers.map((c) => ({ id: c.id, label: c.label }))}
           onCreated={handleContainerCreated}
         />
+        <MoveToContainerDialog
+          open={moveDialogFor !== null}
+          onOpenChange={(open) => !open && setMoveDialogFor(null)}
+          unitCount={moveDialogUnitIds.length}
+          containers={realContainers}
+          onConfirm={handleConfirmMove}
+          pending={moveIsPending}
+        />
 
         {/* Deploy Tab */}
         <DeployTab
@@ -2904,6 +2954,7 @@ function WarehouseProjectPage({
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
+          onMoveSelected={() => setMoveDialogFor("deploy")}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2938,6 +2989,7 @@ function WarehouseProjectPage({
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
+          onMoveSelected={() => setMoveDialogFor("deprep")}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2972,6 +3024,7 @@ function WarehouseProjectPage({
           handleUndeploy={handleUndeploy}
           undeployIsPending={undeployMutation.isPending || undeployKitsMutation.isPending}
           onReportIssue={handleReportIssue}
+          onMoveSelected={() => setMoveDialogFor("return")}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}

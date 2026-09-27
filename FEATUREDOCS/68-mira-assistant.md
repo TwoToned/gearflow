@@ -1,8 +1,16 @@
 # 68 — Mira (in-app assistant)
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-08-02 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-09-27 (review quarterly — POLICY.md R-5.5)_
 
 ## What this is
+
+**Displayed to users as "Albert"** (his artwork lives in `docs/brand/albert-pack`,
+served from `public/albert/`; `<FlowMascot>`, `@/components/ui/flow-mascot.tsx`,
+renders his icon/avatar). Every code identifier, table, file and test in this
+feature stays named "Mira" — this is a display-name-only rebrand, not a code
+rename; don't go hunting for "Mira" in the UI copy, but do keep new
+call-sites/mutations/tests named `mira*`/`Mira*` for consistency with the rest
+of this file.
 
 Mira is RVLT Flow's in-app assistant. `MiraContextProvider`
 (`src/components/providers/mira-context-provider.tsx`) holds just the assistant's

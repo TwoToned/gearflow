@@ -101,14 +101,17 @@ export function MiraPanel() {
   return (
     <div className="fixed bottom-20 right-4 z-50 flex w-[min(420px,calc(100vw-2rem))] flex-col rounded-[var(--radius)] border-2 border-border bg-card shadow-[var(--sh-card)] md:bottom-4">
       <div className="flex items-center justify-between border-b border-border p-3">
-        <span className="t-title text-sm text-ink">Ask Mira</span>
+        <span className="flex items-center gap-2 t-title text-sm text-ink">
+          <img src="/albert/svg/albert-icon.svg" alt="" draggable={false} className="size-5" />
+          Ask Albert
+        </span>
         <div className="flex items-center gap-1">
           {messages.length > 0 && (
             <Button type="button" variant="ghost" size="icon" aria-label="Clear conversation" disabled={clear.isPending} onClick={() => clear.mutate(undefined)}>
               <Trash2 className="h-4 w-4" />
             </Button>
           )}
-          <Button type="button" variant="ghost" size="icon" aria-label="Close Mira" onClick={() => mira.setOpen(false)}>
+          <Button type="button" variant="ghost" size="icon" aria-label="Close Albert" onClick={() => mira.setOpen(false)}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -134,7 +137,7 @@ export function MiraPanel() {
             if (e.key === "Enter") submit();
           }}
           placeholder="Ask a question…"
-          aria-label="Ask Mira a question"
+          aria-label="Ask Albert a question"
           disabled={busy}
         />
         <Button type="button" size="icon" aria-label="Send" onClick={submit} disabled={busy || !question.trim()}>
@@ -174,7 +177,7 @@ function MiraMessageList({
       ))}
       {askPending && (
         <div className="flex items-center gap-1.5 text-xs text-muted">
-          <Loader2 className="h-3 w-3 animate-spin" /> Mira is thinking…
+          <Loader2 className="h-3 w-3 animate-spin" /> Albert is thinking…
         </div>
       )}
       {askError && <p className="text-xs text-t-out">{askError.message}</p>}

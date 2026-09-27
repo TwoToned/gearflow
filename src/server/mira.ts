@@ -47,7 +47,7 @@ async function getOrProvisionMiraToken(organizationId: string, userId: string, w
   await convex.mutation(api.apiKeys.create, {
     id,
     organizationId,
-    name: "Mira Assistant",
+    name: "Albert Assistant",
     prefix,
     tokenHash,
     scopes: JSON.stringify(preset.scopes),
@@ -69,8 +69,8 @@ async function getOrProvisionMiraToken(organizationId: string, userId: string, w
 }
 
 const NOT_CONFIGURED_ANSWER =
-  "Mira isn't set up for this org yet — ask an org admin to add an API key under " +
-  "Settings → Mira AI Assistant.";
+  "Albert isn't set up for this org yet — ask an org admin to add an API key under " +
+  "Settings → Albert AI Assistant.";
 
 interface MiraLlmConfig {
   apiKey: string;
@@ -283,7 +283,7 @@ export interface SendMiraMessageResult {
 export async function sendMiraMessage(question: string, pageContext: MiraPageContext | null): Promise<SendMiraMessageResult> {
   const { organizationId, userId, userName } = await getOrgContext();
   const trimmed = question?.trim();
-  if (!trimmed) throw new Error("Ask Mira something first.");
+  if (!trimmed) throw new Error("Ask Albert something first.");
 
   const config = await getMiraLlmConfig(organizationId);
   if (!config) return serialize({ conversationId: null, newMessages: [{ id: createId(), role: "assistant", content: NOT_CONFIGURED_ANSWER, createdAt: Date.now() }] });
@@ -348,7 +348,7 @@ export async function confirmMiraPendingAction(messageId: string): Promise<SendM
   const pending = message.pendingConfirmation;
 
   const conversation = await convex.query(api.miraConversations.getActiveForUser, { organizationId, userId });
-  if (!conversation) throw new Error("No active Mira conversation.");
+  if (!conversation) throw new Error("No active Albert conversation.");
 
   const config = await getMiraLlmConfig(organizationId);
   if (!config) return serialize({ conversationId: conversation.id, newMessages: [] });

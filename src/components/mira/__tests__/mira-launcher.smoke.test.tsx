@@ -52,7 +52,7 @@ describe("MiraLauncher + MiraPanel", () => {
     );
 
     await waitFor(() => expect(isMiraConfigured).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: /ask mira/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /ask albert/i })).toBeNull();
   });
 
   it("opens the panel, asks a question, and renders the answer", async () => {
@@ -63,7 +63,7 @@ describe("MiraLauncher + MiraPanel", () => {
       </MiraContextProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: /ask mira/i }));
+    await user.click(await screen.findByRole("button", { name: /ask albert/i }));
 
     const input = await screen.findByPlaceholderText(/ask a question/i);
     await user.type(input, "list assets");
@@ -81,10 +81,10 @@ describe("MiraLauncher + MiraPanel", () => {
       </MiraContextProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: /ask mira/i }));
-    await screen.findByText("Ask Mira");
+    await user.click(await screen.findByRole("button", { name: /ask albert/i }));
+    await screen.findByText("Ask Albert");
 
-    await user.click(screen.getByRole("button", { name: /close mira/i }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /ask mira/i })).toBeTruthy());
+    await user.click(screen.getByRole("button", { name: /close albert/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /ask albert/i })).toBeTruthy());
   });
 });

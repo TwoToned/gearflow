@@ -89,7 +89,7 @@ beforeEach(() => {
 
 describe("sendMiraMessage", () => {
   it("rejects an empty question without touching Convex", async () => {
-    await expect(sendMiraMessage("   ", null)).rejects.toThrow(/ask mira something/i);
+    await expect(sendMiraMessage("   ", null)).rejects.toThrow(/ask albert something/i);
     expect(convexMock.query).not.toHaveBeenCalled();
   });
 

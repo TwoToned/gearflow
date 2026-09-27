@@ -45,7 +45,7 @@ export default function MiraSettingsPage() {
   const saveMutation = useServerMutation({
     mutationFn: (data: MiraSettingsFormValues) => saveMiraSettings(data),
     onSuccess: () => {
-      toast.success("Mira settings saved");
+      toast.success("Albert settings saved");
       form.setValue("openRouterApiKey", "");
       setShowKey(false);
       void refetch();
@@ -56,7 +56,7 @@ export default function MiraSettingsPage() {
   const disconnectMutation = useServerMutation({
     mutationFn: () => disconnectMiraOpenRouter(),
     onSuccess: () => {
-      toast.success("Disconnected Mira's API key");
+      toast.success("Disconnected Albert's API key");
       void refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -68,8 +68,8 @@ export default function MiraSettingsPage() {
   return (
     <div className="space-y-8">
       <FormSection
-        title="Mira AI Assistant"
-        description="Give Mira real language-model reasoning: her own API key and model, brought by this org — OpenRouter by default, or any OpenAI-compatible backend of your own."
+        title="Albert AI Assistant"
+        description="Give Albert real language-model reasoning: his own API key and model, brought by this org — OpenRouter by default, or any OpenAI-compatible backend of your own."
       >
         <SettingsCard>
           <div className="flex items-center gap-2">
@@ -140,7 +140,7 @@ function MiraSettingsForm({
             openrouter.ai/keys
           </a>
           . Using your own backend instead? Paste whatever key it expects. This org&apos;s own key pays for its own
-          Mira usage — nothing is shared across orgs.
+          Albert usage — nothing is shared across orgs.
         </p>
       </div>
 
@@ -149,7 +149,7 @@ function MiraSettingsForm({
         <Input id="baseUrl" placeholder="https://openrouter.ai/api/v1 (default)" {...form.register("baseUrl")} />
         {form.formState.errors.baseUrl && <p className="t-micro text-destructive">{form.formState.errors.baseUrl.message}</p>}
         <p className="t-micro text-fg-3">
-          Leave blank to use OpenRouter. Or point Mira at any OpenAI-compatible chat-completions endpoint you run or
+          Leave blank to use OpenRouter. Or point Albert at any OpenAI-compatible chat-completions endpoint you run or
           pay for instead — Azure OpenAI, a self-hosted vLLM/Ollama/LM Studio server, etc. Must implement{" "}
           <code className="rounded bg-paper-2 px-1 py-0.5 t-micro">POST {"{baseUrl}"}/chat/completions</code> with the
           same request/response shape as OpenAI&apos;s API.
@@ -172,13 +172,13 @@ function MiraSettingsForm({
       <div className="flex items-start justify-between gap-4 rounded-[var(--r)] border border-border p-3">
         <div className="space-y-1">
           <Label htmlFor="writeAccessEnabled" className="flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5" /> Let Mira make changes
+            <Sparkles className="h-3.5 w-3.5" /> Let Albert make changes
           </Label>
           <p className="t-micro text-fg-3">
-            Off: Mira can only read data and answer questions. On: Mira may also create/update projects, assets, crew
+            Off: Albert can only read data and answer questions. On: Albert may also create/update projects, assets, crew
             assignments, etc. — always as the asking member, never with more access than their own role already
             grants, and every high-risk action (delete, financial void, warehouse dispatch, bulk changes) still stops
-            and asks a human to confirm before it runs. Flipping this re-provisions every member&apos;s Mira key
+            and asks a human to confirm before it runs. Flipping this re-provisions every member&apos;s Albert key
             immediately.
           </p>
         </div>

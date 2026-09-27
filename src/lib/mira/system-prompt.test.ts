@@ -42,7 +42,7 @@ describe("buildMiraSystemPrompt", () => {
   test("write-disabled org tells the model it can't act, and where to fix that", () => {
     const prompt = buildMiraSystemPrompt(BASE);
     expect(prompt).toMatch(/has not enabled write access/i);
-    expect(prompt).toContain("Settings → Mira AI Assistant");
+    expect(prompt).toContain("Settings → Albert AI Assistant");
   });
 
   test("write-enabled org explains the confirmation gate instead", () => {

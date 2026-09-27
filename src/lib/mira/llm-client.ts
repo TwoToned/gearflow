@@ -77,7 +77,7 @@ function attributionHeaders(baseUrl: string): Record<string, string> {
     // no em dash/smart quotes/etc. here, or `fetch()` throws "Cannot convert
     // argument to a ByteString" at CALL time, not build time (a prod outage
     // this shipped as, once — keep this string plain ASCII).
-    "X-Title": "RVLT Flow - Mira",
+    "X-Title": "RVLT Flow - Albert",
   };
 }
 

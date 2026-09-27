@@ -107,9 +107,9 @@ export async function saveMiraSettings(data: MiraSettingsFormValues): Promise<Mi
     action: "UPDATE",
     entityType: "miraSettings",
     entityId: organizationId,
-    entityName: "Mira AI assistant",
+    entityName: "Albert AI assistant",
     summary:
-      "Updated Mira AI assistant settings" +
+      "Updated Albert AI assistant settings" +
       (keyChanged ? " (OpenRouter key changed)" : "") +
       (accessChanged ? ` (write access ${parsed.writeAccessEnabled ? "enabled" : "disabled"})` : ""),
   });
@@ -134,8 +134,8 @@ export async function disconnectMiraOpenRouter(): Promise<MiraSettingsView> {
       action: "UPDATE",
       entityType: "miraSettings",
       entityId: organizationId,
-      entityName: "Mira AI assistant",
-      summary: "Disconnected Mira's OpenRouter API key",
+      entityName: "Albert AI assistant",
+      summary: "Disconnected Albert's OpenRouter API key",
     });
   }
   return getMiraSettings();

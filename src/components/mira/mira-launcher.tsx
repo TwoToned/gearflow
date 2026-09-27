@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Bot } from "lucide-react";
 import { useMira } from "@/components/providers/mira-context-provider";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { isMiraConfigured } from "@/server/mira-settings";
@@ -14,6 +13,9 @@ const MiraPanel = dynamic(() => import("./mira-panel").then((m) => m.MiraPanel),
 
 /** The always-mounted trigger + the lazily-loaded panel it opens. Mounted
  *  once in the (app) layout, inside MiraContextProvider.
+ *
+ * Displayed to users as "Albert" (docs/brand/albert-pack) — the internal
+ * "Mira" name lives on in code identifiers only (FEATUREDOCS/68).
  *
  * Mira is effectively DISABLED for an org until an admin connects an
  * OpenRouter key (`/settings/mira`) — no button, no panel, nothing to click.
@@ -37,11 +39,11 @@ export function MiraLauncher() {
         <Button
           type="button"
           size="icon"
-          aria-label="Ask Mira"
+          aria-label="Ask Albert"
           onClick={() => mira.setOpen(true)}
           className="fixed bottom-20 right-4 z-50 h-11 w-11 rounded-full md:bottom-4"
         >
-          <Bot className="h-5 w-5" />
+          <img src="/albert/svg/albert-icon-cream.svg" alt="" draggable={false} className="size-6" />
         </Button>
       )}
       <MiraPanel />

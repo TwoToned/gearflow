@@ -6232,7 +6232,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "db5e7ea1b467f3dc",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Search assets in the org's configured prep-kit container category for a picker.",
+    "summary": "Search assets eligible to be packing containers (configured container categories, or a model flagged isContainer) for a picker.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -31425,6 +31425,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "isContainer",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "maintenanceIntervalDays",
         "optional": true,
         "type": "number"
@@ -31511,7 +31516,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "13a52e6ca316f7c5",
+    "argsSha": "e23a12069c789425",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -31612,6 +31617,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "isContainer",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "maintenanceIntervalDays",
         "optional": true,
         "type": "number"
@@ -31698,7 +31708,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "13a52e6ca316f7c5",
+    "argsSha": "e23a12069c789425",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -31853,7 +31863,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "90acead2f85af5b6",
+    "argsSha": "26a7004b49c254a7",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -32145,6 +32155,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "isContainer",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "maintenanceIntervalDays",
         "optional": true,
         "type": "number"
@@ -32251,7 +32266,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d1e374ea17ee38da",
+    "argsSha": "55d0497897f6d4a1",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -32362,6 +32377,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "isContainer",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "maintenanceIntervalDays",
         "optional": true,
         "type": "number"
@@ -32468,7 +32488,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d1e374ea17ee38da",
+    "argsSha": "55d0497897f6d4a1",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

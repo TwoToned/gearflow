@@ -25144,6 +25144,9 @@ export const OPENAPI_DOCUMENT = {
                       "isActive": {
                         "type": "boolean"
                       },
+                      "isContainer": {
+                        "type": "boolean"
+                      },
                       "maintenanceIntervalDays": {
                         "type": "number"
                       },
@@ -25308,6 +25311,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "array"
                       },
                       "isActive": {
+                        "type": "boolean"
+                      },
+                      "isContainer": {
                         "type": "boolean"
                       },
                       "maintenanceIntervalDays": {

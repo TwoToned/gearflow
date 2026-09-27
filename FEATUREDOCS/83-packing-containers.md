@@ -85,7 +85,7 @@ one materialising a `projectContainers` row + line item per distinct legacy
 `containerId`. Driver: `scripts/convex-backfill-project-containers.ts`. Never
 run automatically — a one-time, explicitly-invoked migration.
 
-## Documents (phase 3a landed; 3b/3c open — #1300)
+## Documents (phase 3a + 3b landed; 3c open — #1300)
 
 `src/lib/pdfme/structure-line-items-by-container.ts`'s
 `structureLineItemsByContainer` (opted into via `structureLineItems`'s
@@ -103,10 +103,32 @@ into one row per container (defect 1's "6 in Tub 3, 4 in Tub 4" case).
 `filterAndGroupItems` (line-items-table.tsx) passes a container header's
 status filter iff any real row sharing its section passes.
 
-Still open: `build-document-data.ts` wiring (loading `projectContainers` +
-joining units, passing `byContainer` for the actual doc types), the
-`ContainerHeaderRow` render component, the **Manifest** document (3b, new
-`DocumentType`), and the delivery-docket/return-sheet rework (3c).
+**The Manifest** (`DocumentType: "manifest"`, `src/lib/react-pdf/
+manifest-document.tsx`) is the client-facing document this whole structuring
+mode was built for: one continuous list (D8, no page break per container),
+reference only — no checkboxes (Q10), no prices (a container is a box, never
+priced, D6). `src/lib/pdfme/container-data-for-documents.ts` loads a
+project's `projectContainers` and resolves each ASSET/BULK_ASSET container's
+own tag in two batched lookups (never a point-read per container);
+`build-document-data.ts` threads `byContainer`/`containers` through to
+`structureLineItems` and computes `container_count`/`nested_container_count`/
+`loose_item_count` for the summary line, excluding the new `isContainerRow`
+synthetic rows from `total_items`/`total_weight` the same way a container's
+own line item already was. `line-items-table.tsx`'s new `ContainerHeaderRow`
+renders each `isContainerRow` entry (indented by `containerDepth`); the
+generic `GroupHeaderRow` is suppressed for a section whose own top-level
+container row already carries the title — decided per-section from the DATA
+(does this group contain a depth-0 `isContainerRow`?), not a static per-doc
+flag, so the existing "a group header prints exactly once" regression
+invariant keeps holding for every other doc type unchanged. Reachable via the
+project page's Documents ▾ menu, `/api/documents/[projectId]?type=manifest`
+(`project:read`, always freshly rendered — no stored-bytes rule, matching the
+other 3 warehouse docs), and the `get_project_document` MCP tool.
+
+Still open (3c): the delivery-docket/return-sheet rework onto the same
+`byContainer` structuring (today only the manifest opts in —
+`DOCUMENT_LAYOUTS`'s `byContainer` flag is `false`/absent for every other
+doc type).
 
 ## Warehouse UI (phase 2, #1299 — in progress)
 

@@ -451,16 +451,13 @@ Numbered by the question list in the PR thread.
 | Q14 | Printed container labels (QR + job + count) in this program or later? | Later (phase 4). |
 | Q16 | Container added on a locked (`CONFIRMED`+) job: allowed as an unpriced structural add? | Yes — same allowance as `unplanned` lines; containers are never priced (D5) so no money gate applies. |
 
-## 7. Phasing (tentative, pending §6)
+## 7. Phasing
 
-1. **Model + migration** — `projectContainers`, `units.containerId`, backfill, drop the strings,
-   `syncContainers` on units, move/unpack/delete mutations, container line item for all kinds.
-   Fixes defects 1, 3, 4, 5, 6, 7. Registry + agentOps + xtenant coverage come for free but need
-   the `danger` classifications.
-2. **Warehouse UI** — rail, scan-to-activate, container headers with actions, Move to.
-3. **Manifest doc + docket rework** — `byContainer` structuring, new doc component, docket layout,
-   MCP/docs/skill updates. Consumer audit (§4.4).
-4. **Packing tab (planning) + labels** — labels pending Q14; return-side tracking dropped (D10).
+The execution order, per-phase checklists, acceptance criteria and gates live in the companion
+[`packing-containers-build-plan.md`](./packing-containers-build-plan.md). In one line: pin the
+defects (0) → model + backfill with the string fields still readable (1) → warehouse UI (2) and
+documents (3) in parallel → Packing tab (4) → narrow and retire the string fields (5) → labels and
+bulk tubs later (6).
 
 ## 8. Risks / gotchas to carry into the plan
 

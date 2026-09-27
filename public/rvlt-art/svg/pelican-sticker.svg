@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><title>Pelican — RVLT Flow</title><g transform="translate(2 4)"><circle cx="64" cy="64" r="57" fill="#0C0A08"/></g><circle cx="64" cy="64" r="57" fill="#3FC8BE" stroke="#FFFDF8" stroke-width="3"/><g color="#FFFDF8" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M70 35C69 24 54 24 53 36C52 45 59 50 56 57C54 63 49 63 44 63C33 63 29 76 21 83L29 86C40 93 61 93 70 83C78 73 67 64 65 54L65 49Q83 66 111 63Q114 63 111 60Z"/>
+         <path d="M68 40l40 20M44 68q-1 11-15 17M44 68q13 0 14 9M43 91v8M60 90v8"/>
+         <path d="M43 97l-6 5h13ZM60 96l-4 5h13Z" fill="currentColor" stroke="none"/>
+         <circle cx="63" cy="34" r="1.8" fill="currentColor" stroke="none"/></g></svg>

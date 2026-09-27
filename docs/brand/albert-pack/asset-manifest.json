@@ -1,0 +1,852 @@
+{
+  "schema": "rvlt.albert.static-assets.v1",
+  "title": "Albert static asset handoff",
+  "date": "2026-09-22",
+  "canonical_reference_files": [
+    "albert-sitting-v4.png",
+    "albert-on-the-case-v4.png",
+    "albert-rest-v4.png"
+  ],
+  "counts": {
+    "identity_reference": 3,
+    "pose_studies": 6,
+    "workday_illustrations": 22,
+    "static_svg": 23,
+    "svg_png_exports": 23
+  },
+  "restrictions": {
+    "no_animation_assets": true,
+    "no_retired_versions": true,
+    "no_cricket": true,
+    "no_uncoloured_body": true,
+    "sole_monochrome_exception": "svg/albert-head-line-espresso.svg",
+    "transparent_illustrations_are_not_interchangeable_rig_parts": true
+  },
+  "assets": [
+    {
+      "id": "sitting",
+      "label": "Seated hello",
+      "kind": "identity_reference",
+      "status": "locked_approved",
+      "use": "Welcome screens, friendly introduction, general large empty states",
+      "file": "illustrations/albert-sitting-v4.png",
+      "format": "png",
+      "file_sha256": "654ea35cfc2867011c2971f5caaa2b5d9827ec17338146a867233a26a2b93c8d",
+      "file_pixels": [
+        1374,
+        1145
+      ]
+    },
+    {
+      "id": "on-the-case",
+      "label": "On the roadcase",
+      "kind": "identity_reference",
+      "status": "locked_approved",
+      "use": "Project overview, equipment and load-in, operations",
+      "file": "illustrations/albert-on-the-case-v4.png",
+      "format": "png",
+      "file_sha256": "fb74db42fb2cd366067b2475ea78100c9998fdb7461820ead691c0f570049793",
+      "file_pixels": [
+        1223,
+        1286
+      ]
+    },
+    {
+      "id": "rest",
+      "label": "Resting",
+      "kind": "identity_reference",
+      "status": "locked_approved",
+      "use": "Quiet empty states, holding pages and relaxed moments",
+      "file": "illustrations/albert-rest-v4.png",
+      "format": "png",
+      "file_sha256": "fe8e5d174e3b3feb96419b24d489e525f30810fbafe453ddf83aabf099b88e8e",
+      "file_pixels": [
+        1536,
+        1024
+      ]
+    },
+    {
+      "id": "basking",
+      "label": "Basking",
+      "kind": "pose_study",
+      "status": "companion_art",
+      "use": "Waiting or downtime",
+      "file": "illustrations/albert-basking-v9.png",
+      "format": "png",
+      "file_sha256": "9ab036b09a5234a1e2f9e5423f69f33107e81c4704e523d6cdb57af2595baa1a",
+      "file_pixels": [
+        1536,
+        1024
+      ]
+    },
+    {
+      "id": "blep",
+      "label": "Seated blep",
+      "kind": "pose_study",
+      "status": "companion_art",
+      "use": "Rare playful moments",
+      "file": "illustrations/albert-blep-v8.png",
+      "format": "png",
+      "file_sha256": "2314c7c45bbc05b1116c0c7bad1e1acddd6f1412b2e5ce984e1c32b686d25899",
+      "file_pixels": [
+        1374,
+        1145
+      ]
+    },
+    {
+      "id": "content",
+      "label": "Content",
+      "kind": "pose_study",
+      "status": "companion_art",
+      "use": "Success or completed work",
+      "file": "illustrations/albert-content-v8.png",
+      "format": "png",
+      "file_sha256": "da332d6d4f76f308fd2a25a3d93c30c1cad326ce8385a421cc04bfbef98e9fe7",
+      "file_pixels": [
+        1536,
+        1024
+      ]
+    },
+    {
+      "id": "listening",
+      "label": "Listening",
+      "kind": "pose_study",
+      "status": "companion_art",
+      "use": "Help, forms, assistant listening",
+      "file": "illustrations/albert-listening-v9.png",
+      "format": "png",
+      "file_sha256": "b9b47921ce53189754e696725ff5686b101fef59e2363edcc70d24f61ae8b3bf",
+      "file_pixels": [
+        1374,
+        1145
+      ]
+    },
+    {
+      "id": "peeking",
+      "label": "Peeking",
+      "kind": "pose_study",
+      "status": "companion_art",
+      "use": "Edge of a panel or introductory hint",
+      "file": "illustrations/albert-peeking-v9.png",
+      "format": "png",
+      "file_sha256": "1d0a5f44192d41a74e6a338276fc013f9d5c47b80af9f81b4592168b9f691b03",
+      "file_pixels": [
+        1536,
+        1024
+      ]
+    },
+    {
+      "id": "tongue",
+      "label": "Tongue out",
+      "kind": "pose_study",
+      "status": "companion_art",
+      "use": "Playful interaction art; no insect or replacement cursor",
+      "file": "illustrations/albert-tongue-v9.png",
+      "format": "png",
+      "file_sha256": "5649a48fd286260a6a4f5fffccfa56b4b3d4f6409b43cba8ecec085ca69acba3",
+      "file_pixels": [
+        1536,
+        1024
+      ]
+    },
+    {
+      "id": "on-the-case",
+      "label": "Roadcase",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Equipment, inventory & load-in",
+      "file": "illustrations/albert-on-the-case-v4.png",
+      "format": "png",
+      "file_sha256": "fb74db42fb2cd366067b2475ea78100c9998fdb7461820ead691c0f570049793",
+      "file_pixels": [
+        1223,
+        1286
+      ]
+    },
+    {
+      "id": "core-clipboard",
+      "label": "Clipboard",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Tasks, checklists & job sheets",
+      "file": "illustrations/albert-core-clipboard-v10.png",
+      "format": "png",
+      "file_sha256": "6284cff5dd50a9c64ce4b57af883605644b0f03ff503ed4c1709c163a0a234fb",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-microphone",
+      "label": "Microphone",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Events, show notes & audio",
+      "file": "illustrations/albert-core-microphone-v10.png",
+      "format": "png",
+      "file_sha256": "25daad61a345a3185bf9a110f84d82156a68dcb8273bc9ca4f3c861dbe80c21a",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-calendar",
+      "label": "Calendar",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Scheduling, bookings & availability",
+      "file": "illustrations/albert-core-calendar-v10.png",
+      "format": "png",
+      "file_sha256": "28fbdcb0fb1a024b89d1805371213deff778fe94e690451c157bb37e4d68e1cd",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-hardhat",
+      "label": "Hardhat",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Site work & project setup",
+      "file": "illustrations/albert-core-hardhat-v10.png",
+      "format": "png",
+      "file_sha256": "2fe535b109bddfca04d2ac431dc7004289c4f780ddfb612970975f3ea36355d4",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-highvis",
+      "label": "High-vis",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Crew, dispatch & operations",
+      "file": "illustrations/albert-core-highvis-v10.png",
+      "format": "png",
+      "file_sha256": "966b79338f4804d5cd81af13836d46c360a1d40e62f8a677e27f980b234fb511",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-hardhat-highvis",
+      "label": "Hardhat + high-vis",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Safety, inductions & site readiness",
+      "file": "illustrations/albert-core-hardhat-highvis-v10.png",
+      "format": "png",
+      "file_sha256": "7b51ab0d8fc8a5efdc9c5e61cce383bfb99ce9775b695bb4cd047a945496d454",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-suit",
+      "label": "Suit",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Clients, quotes & the business side",
+      "file": "illustrations/albert-core-suit-v10.png",
+      "format": "png",
+      "file_sha256": "4acddb2193b4b94d90ca78763dee1ba5a3071ede9745c0a1b7ba6a59fa733718",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-coffee",
+      "label": "Coffee",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Morning dashboard & taking a break",
+      "file": "illustrations/albert-core-coffee-v10.png",
+      "format": "png",
+      "file_sha256": "53fa2c9931970c0185c3db800574324d5b8bba04b5ff6e01b2e6316db5a17cb2",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "core-energy",
+      "label": "Energy drink",
+      "kind": "core_workday",
+      "status": "companion_art",
+      "use": "Late shifts & show days",
+      "file": "illustrations/albert-core-energy-v10.png",
+      "format": "png",
+      "file_sha256": "436357fa6585dfa54e2ec45297e5e513bda95de559607998be8d4aa65d4f422f",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-headset",
+      "label": "Headset",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Support, comms & crew coordination",
+      "file": "illustrations/albert-work-headset-v11.png",
+      "format": "png",
+      "file_sha256": "4aca27d315582d6a57e9220b94f0602883abc34b5e7b7bf7f8d365f30e2df8dd",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-walkie",
+      "label": "Walkie-talkie",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Dispatch & team updates",
+      "file": "illustrations/albert-work-walkie-v11.png",
+      "format": "png",
+      "file_sha256": "0f5f298f7e495bf2fc0ae9137038be2407de705d17d8f093058131b9ecdad10f",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-lanyard",
+      "label": "Lanyard",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Profiles, permissions & crew passes",
+      "file": "illustrations/albert-work-lanyard-v11.png",
+      "format": "png",
+      "file_sha256": "7ecf1a9586753395fac81a49d16ca85ca02373ce28229fc71a2fd643145e35b8",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-cable",
+      "label": "Cable",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Technical planning & cable inventory",
+      "file": "illustrations/albert-work-cable-v11.png",
+      "format": "png",
+      "file_sha256": "3026604991e825a6386ad0ae5ffb51494ba26ea975a851534f25d70d72e322e8",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-gaff",
+      "label": "Gaff tape",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Consumables & quick fixes",
+      "file": "illustrations/albert-work-gaff-v11.png",
+      "format": "png",
+      "file_sha256": "a1c54248bbf34839a8aa05fb5bab7ae43d277e36b74f6e3049d00568679f22fd",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-laptop",
+      "label": "Laptop",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Admin, reports & integrations",
+      "file": "illustrations/albert-work-laptop-v11.png",
+      "format": "png",
+      "file_sha256": "afd91ae7d16b470fcf8588f643b8512bfe1cd2bb1bd415bd56548d4c09879702",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-invoice",
+      "label": "Invoice",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Billing & payments",
+      "file": "illustrations/albert-work-invoice-v11.png",
+      "format": "png",
+      "file_sha256": "d504f7e7a894ed18f71f5bb450260644f1678d0fb4a368c8ce32f8e5f2d7912f",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-calculator",
+      "label": "Calculator",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Budgets, estimates & totals",
+      "file": "illustrations/albert-work-calculator-v11.png",
+      "format": "png",
+      "file_sha256": "b88ce68c3bb4cf7ec69b4f8b023369760690f32c0caf945752ab549cc10e7843",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-delivery",
+      "label": "Delivery",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Receiving, orders & logistics",
+      "file": "illustrations/albert-work-delivery-v11.png",
+      "format": "png",
+      "file_sha256": "6256ce9e348523e4594ef2d5ae23bb721c9074ee9b5d6b5d0c85dee7314bce5c",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-toolbox",
+      "label": "Toolbox",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Maintenance & repairs",
+      "file": "illustrations/albert-work-toolbox-v11.png",
+      "format": "png",
+      "file_sha256": "ca0dc34d889722524db4af5a54e17f8c847b38e719ef8e6dd58002066fe8b5ed",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-run-sheet",
+      "label": "Run-sheet",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Show schedules & production cues",
+      "file": "illustrations/albert-work-run-sheet-v11.png",
+      "format": "png",
+      "file_sha256": "01f982561e4df4b9b7c0373ccd90ae0affbeae351fbfb15c126beffbe7e463eb",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "work-wrap-time",
+      "label": "Wrap-time",
+      "kind": "workday",
+      "status": "companion_art",
+      "use": "Completed jobs & end-of-day states",
+      "file": "illustrations/albert-work-wrap-time-v11.png",
+      "format": "png",
+      "file_sha256": "087b91f1161582f1b4f9b2a4971b6fbc302420d60d940020d2dc785513d28f93",
+      "file_pixels": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "id": "albert-avatar",
+      "label": "Avatar",
+      "kind": "coloured_head",
+      "status": "static_derivative",
+      "use": "Assistant icon / small UI on light backgrounds",
+      "file": "svg/albert-avatar.svg",
+      "png_fallback": "png/albert-avatar.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "bf72a9d35da007a8ed0dc9045ce6dd5cf816f8f4c3206d32d4876c7a9dd539be",
+      "png_fallback_sha256": "6e656e7ffd616c8195af01a9387721c81d47a7c6c34be4133f796dd6c15482cb",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-blep",
+      "label": "Expression Blep",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-blep.svg",
+      "png_fallback": "png/albert-expression-blep.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "97967e8562ce5da16a739fa42e96075fc3a6200ab8a28a7e680963dede30975a",
+      "png_fallback_sha256": "45cd1b0a5336b80387831737b00c38223982ce98be4edd6e5fbff41f34e60fda",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-catch",
+      "label": "Expression Catch",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-catch.svg",
+      "png_fallback": "png/albert-expression-catch.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "058dcbdafbda3a418faae307f1cf5c7a93c6a8fdce4dd01fd50b69091be0fc7b",
+      "png_fallback_sha256": "dd9478f60d3b0164cc2ca01438fd2cbe6e351d3426ff18f96aed56847f1cfa5a",
+      "png_fallback_pixels": [
+        1024,
+        840
+      ]
+    },
+    {
+      "id": "albert-expression-content",
+      "label": "Expression Content",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-content.svg",
+      "png_fallback": "png/albert-expression-content.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "a5222b3889d37a42676a367c907c2f3a470f2426a5d0b25badbc226f25b667b0",
+      "png_fallback_sha256": "56ba4712862b364cb6c977afc01799352aa478d2f2064f0337634994f673263d",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-curious",
+      "label": "Expression Curious",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-curious.svg",
+      "png_fallback": "png/albert-expression-curious.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "d1c8be7d65f58b29ed246f62af044e1fb9e0eaa784ef6b7ed010139715e47827",
+      "png_fallback_sha256": "73f1942a1ae8a80efe8204fde709f776da9fac4e5e85f0461b475fe0c6cb18fd",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-focused",
+      "label": "Expression Focused",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-focused.svg",
+      "png_fallback": "png/albert-expression-focused.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "daa363e06c284be052bc325ec9793acc6ab9e4181d58caca906c7923c4844325",
+      "png_fallback_sha256": "594ec919e4a06d96009925a814228e4765c8488b4ad55938696c3e1388b7b757",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-listening",
+      "label": "Expression Listening",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-listening.svg",
+      "png_fallback": "png/albert-expression-listening.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "eb5155cc789964fbb6f2d2437fdeaf9a625808319b660c47d68d0b9a0c8b84a9",
+      "png_fallback_sha256": "70281b8288eb5d8efb5d772d40726d04cfda8af42bbc184d1d4315d089c872cd",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-puzzled",
+      "label": "Expression Puzzled",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-puzzled.svg",
+      "png_fallback": "png/albert-expression-puzzled.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "55d7c7a8b45e7c6b626dbaaee8c9b4a7a4c84cf31179a6000661b1d2a06897f0",
+      "png_fallback_sha256": "d5057c9a78191dc57538c53f92920ac2e0593e1861fc91f62e2b8bb722264aa9",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-reassuring",
+      "label": "Expression Reassuring",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-reassuring.svg",
+      "png_fallback": "png/albert-expression-reassuring.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "307c2483253ff30c60d20a6c95cc1cbe1ad5c3836c82c9d2a8ec76a372cf6b5d",
+      "png_fallback_sha256": "51d680274ca87416f2886102973f5f7fed36ab344a9590bec3dadf4780b4b314",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-sleepy",
+      "label": "Expression Sleepy",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-sleepy.svg",
+      "png_fallback": "png/albert-expression-sleepy.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "d3d8fb7858d8712c1801eb4c80e90f9a9c8aec5c72e227a2d3e3dcc188b076fb",
+      "png_fallback_sha256": "250c0c566317a57909950078f7ab67b9a526e2faf3466f092b4d0bf47498271d",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-surprised",
+      "label": "Expression Surprised",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-surprised.svg",
+      "png_fallback": "png/albert-expression-surprised.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "4864ee7e954cad381c411d54ba24c4302d51383b93be541921e57ef7b290e6cf",
+      "png_fallback_sha256": "079003ed9df9754352aca797cb78bd897efd5fa52f70a4135c9bd0d4830c27c9",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-thinking",
+      "label": "Expression Thinking",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-thinking.svg",
+      "png_fallback": "png/albert-expression-thinking.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "ad5a7189ea19459634f2a4ea9257cd07bc4cc36c85352d472022207d43aa35bc",
+      "png_fallback_sha256": "9b1114caa86a360a5b0b882f3917fde47939fd52493815fc894dc650eca9d1f3",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-expression-wink",
+      "label": "Expression Wink",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-expression-wink.svg",
+      "png_fallback": "png/albert-expression-wink.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "b0040bedba1521276d4e68a76fbdb9953bf6659af1570a5f9e9e050bc714a2af",
+      "png_fallback_sha256": "5fe27b67080e4bad8bb1262fced51c3d6755cc75613fea407649e003dd301cd8",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-happy",
+      "label": "Happy",
+      "kind": "head_expression",
+      "status": "static_derivative",
+      "use": "Static assistant state; match the actual message or status",
+      "file": "svg/albert-happy.svg",
+      "png_fallback": "png/albert-happy.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "c76fd1797f1b2497b55081238d6138cd5954a70ae1cdd5afc8c71c45863004ef",
+      "png_fallback_sha256": "56ba4712862b364cb6c977afc01799352aa478d2f2064f0337634994f673263d",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-head-line-espresso",
+      "label": "Head Line Espresso",
+      "kind": "head_drawing",
+      "status": "static_derivative",
+      "use": "Standalone monochrome Head drawing on light surfaces; sole monochrome exception",
+      "file": "svg/albert-head-line-espresso.svg",
+      "png_fallback": "png/albert-head-line-espresso.png",
+      "min_display": "64px+",
+      "format": "svg",
+      "file_sha256": "dfe46ff935afecbe88dddf445f6b2b7426d4d8d7034c67da25fc0bda78816b4b",
+      "png_fallback_sha256": "f3fd7ed2c74d092233b879146c5f3b8b94acf935a0b808643f15c7ecd5d90f9d",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-icon-cream",
+      "label": "Icon Cream",
+      "kind": "coloured_head",
+      "status": "static_derivative",
+      "use": "Assistant icon / small UI on dark backgrounds",
+      "file": "svg/albert-icon-cream.svg",
+      "png_fallback": "png/albert-icon-cream.png",
+      "min_display": "24\u201348px",
+      "format": "svg",
+      "file_sha256": "804d8aebdab3f71fb3fbf3448008d57eb5a06a58e17a72e91f855a3f9b6e32f2",
+      "png_fallback_sha256": "0971c293968fb9755f8d8a3dc5505030d73cc2744e199d566d4ea27c3f741bb2",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-icon",
+      "label": "Icon",
+      "kind": "coloured_head",
+      "status": "static_derivative",
+      "use": "Assistant icon / small UI on light backgrounds",
+      "file": "svg/albert-icon.svg",
+      "png_fallback": "png/albert-icon.png",
+      "min_display": "24\u201348px",
+      "format": "svg",
+      "file_sha256": "e4cb5ba291d4fcb8d8ce24f8ca3d414d6ede2160082e0dc7e94be158fbc64bff",
+      "png_fallback_sha256": "90d2660a4b0aaeb61536f419cab9f287d8e9a79be74534acf4c518cc26c04505",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-master",
+      "label": "Master",
+      "kind": "fullbody_vector",
+      "status": "static_derivative",
+      "use": "Flat-colour scalable derivative; compare with the three locked PNGs for identity",
+      "file": "svg/albert-master.svg",
+      "png_fallback": "png/albert-master.png",
+      "min_display": "160px+",
+      "format": "svg",
+      "file_sha256": "e2bf664a1bf2e7c0a8a8543a94ce17285a0efabff0ecd24c540fb595a5aba4a0",
+      "png_fallback_sha256": "8efd3f17fa0d785263491d46faae5e1509cc3105528bf5a736b556c7286cc7d2",
+      "png_fallback_pixels": [
+        1024,
+        604
+      ]
+    },
+    {
+      "id": "albert-peek",
+      "label": "Peek",
+      "kind": "vector_peek",
+      "status": "static_derivative",
+      "use": "Peeking over card edge or divider",
+      "file": "svg/albert-peek.svg",
+      "png_fallback": "png/albert-peek.png",
+      "min_display": "96px+",
+      "format": "svg",
+      "file_sha256": "a4f4ac33c9c69d01648de8efd62f7e7b8baacfa33294e8878d58755835466d9e",
+      "png_fallback_sha256": "b55c99c99b4e505ad8ce578fffdb8ee8624de198c9031884653fcf2c0b1f2bde",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-seated-on-case",
+      "label": "Seated On Case",
+      "kind": "fullbody_vector",
+      "status": "static_derivative",
+      "use": "Flat-colour scalable derivative; compare with the three locked PNGs for identity",
+      "file": "svg/albert-seated-on-case.svg",
+      "png_fallback": "png/albert-seated-on-case.png",
+      "min_display": "160px+",
+      "format": "svg",
+      "file_sha256": "8e4a7de4ed6e1197aa56490feb59727a25a78beef19b70b83a7d24a1df5e72b1",
+      "png_fallback_sha256": "a5a44c233bc553ae3aaf4e0e9eddaacfe50c4b1d9cbc3c2079d49ab0a708c05b",
+      "png_fallback_pixels": [
+        1024,
+        1147
+      ]
+    },
+    {
+      "id": "albert-sitting",
+      "label": "Sitting",
+      "kind": "fullbody_vector",
+      "status": "static_derivative",
+      "use": "Flat-colour scalable derivative; compare with the three locked PNGs for identity",
+      "file": "svg/albert-sitting.svg",
+      "png_fallback": "png/albert-sitting.png",
+      "min_display": "160px+",
+      "format": "svg",
+      "file_sha256": "0b15e2fc43818ab9050bd6f0ad5e8c7e8699c3ccae4260506490cd566721b6fc",
+      "png_fallback_sha256": "cb1c91f6a298714763ab850d3e7fa85619e93b7e90171b534cbf0d5b600e17e2",
+      "png_fallback_pixels": [
+        1024,
+        839
+      ]
+    },
+    {
+      "id": "albert-sticker-amber",
+      "label": "Sticker Amber",
+      "kind": "sticker",
+      "status": "static_derivative",
+      "use": "Decoration, collateral, shareable sticker; use the coloured head",
+      "file": "svg/albert-sticker-amber.svg",
+      "png_fallback": "png/albert-sticker-amber.png",
+      "min_display": "96px+",
+      "format": "svg",
+      "file_sha256": "104c4303aea1fcead8b86b51ca884987e0f039d3d080e12547c18db956196783",
+      "png_fallback_sha256": "e90d3d06c04ac64813b12550771fcae7cfdba87f8a596613435d1de5270b9188",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "id": "albert-sticker-red",
+      "label": "Sticker Red",
+      "kind": "sticker",
+      "status": "static_derivative",
+      "use": "Decoration, collateral, shareable sticker; use the coloured head",
+      "file": "svg/albert-sticker-red.svg",
+      "png_fallback": "png/albert-sticker-red.png",
+      "min_display": "96px+",
+      "format": "svg",
+      "file_sha256": "e5139645b07652419f6678c1495d155705f8a33044491b02ab08c9c289882ea6",
+      "png_fallback_sha256": "054584fc4673eae72bc0ec7201924f03f226e81115687746fc9f29662268a7f8",
+      "png_fallback_pixels": [
+        1024,
+        1024
+      ]
+    }
+  ]
+}

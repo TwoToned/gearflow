@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><title>Microphone — RVLT Flow</title><metadata>Microphone adapted from Phosphor Icons by Helena Zhang and Tobias Fried. Source: https://github.com/phosphor-icons/core/blob/main/raw/regular/microphone-stage.svg . Adaptation: scaled and recoloured, stroke reduced, RVLT sticker background added.
+MIT License
+
+Copyright (c) 2023 Phosphor Icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</metadata><g transform="translate(2 4)"><rect x="7" y="7" width="114" height="114" rx="23" fill="#0C0A08"/></g><rect x="7" y="7" width="114" height="114" rx="23" fill="#9B82E6" stroke="#FFFDF8" stroke-width="3"/><g color="#FFFDF8" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+      <g transform="translate(24 24) scale(.31)">
+        <circle cx="168" cy="88" r="64" stroke-width="11"/>
+        <path d="M213.25 133.25L122.75 42.75M96 160l8-8M105 99.5L33.55 197a8 8 0 0 0 .79 10.38l14.3 14.3a8 8 0 0 0 10.38 .79L156.5 151" stroke-width="11"/>
+      </g>
+    </g></svg>

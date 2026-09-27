@@ -1,0 +1,23 @@
+{
+  "character": "Albert",
+  "status": "approved",
+  "approved_illustration_revision": 4,
+  "approved_on": "2026-09-17",
+  "approval": "Okay i love the design now. Lets lock that in.",
+  "identity": [
+    "broad low head",
+    "relaxed rounded eyes and sideways gaze",
+    "shallow uneven smile",
+    "cream beard",
+    "coral cheek markings",
+    "compact seated and quadruped body proportions",
+    "amber, cream, espresso, coral and RVLT red palette"
+  ],
+  "source_assets": {
+    "albert-sitting-v4.png": "654ea35cfc2867011c2971f5caaa2b5d9827ec17338146a867233a26a2b93c8d",
+    "albert-on-the-case-v4.png": "fb74db42fb2cd366067b2475ea78100c9998fdb7461820ead691c0f570049793",
+    "albert-rest-v4.png": "fe8e5d174e3b3feb96419b24d489e525f30810fbafe453ddf83aabf099b88e8e"
+  },
+  "scope_of_current_work": "An assistant launcher, expanded coloured expressions and pose studies; approved source illustrations remain unchanged.",
+  "everyday_rendering_rule": "Albert always has a solid interior fill. Use the coloured head on stickers, icons and everyday applications. Retain standalone Head drawing as the only monochrome exception; retire uncoloured full-body versions."
+}

@@ -1,0 +1,2001 @@
+{
+  "schema_version": 1,
+  "package_version": "1.0.0",
+  "name": "RVLT Flow stickers and wordmarks",
+  "packaged_on": "2026-09-22",
+  "design_count": 25,
+  "svg_count": 50,
+  "scope": "The 18 gear and companion illustrations plus 7 wordmarks developed in the sticker gallery. Albert character assets are distributed separately.",
+  "source": {
+    "repository_commit": "be0f1e413cc8d047de18da4357599dbbdabb03f6",
+    "gallery_url": "https://rvlt-gear-drafts.jayden73358.chatgpt.site",
+    "guide_collection_revision": 9,
+    "guide_sha256": "b5027d96ce5faec2fbcb0046c3d9f46d4ee4ff8182d78c8855ff68628054449e"
+  },
+  "paths": {
+    "svg_root": "assets/svg",
+    "public_base": "/rvlt-art",
+    "licences": "assets/licenses",
+    "visual_index": "preview/index.html",
+    "agent_entrypoint": "AGENTS.md"
+  },
+  "defaults": {
+    "motion": "none",
+    "maintain_aspect_ratio": true,
+    "preserve_viewbox": true,
+    "fonts_required": false,
+    "recolour_with_parent_css": false
+  },
+  "designs": [
+    {
+      "id": "road-case",
+      "name": "Road case",
+      "family": "illustration",
+      "tags": [
+        "logistics",
+        "equipment",
+        "load-in"
+      ],
+      "suggested_use": "Gear lists, warehouse introductions and logistics stories.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -5,
+      "outer_shape": "square",
+      "palette_fill": "#E0363D",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/road-case-sticker.svg",
+          "public_path": "/rvlt-art/svg/road-case-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#E0363D",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "3fe6d447ebb7db65553c1b8c4071cbdde61ccb898ca3c410103dc61a683d8892",
+          "bytes": 2653
+        },
+        "line": {
+          "path": "assets/svg/road-case-line.svg",
+          "public_path": "/rvlt-art/svg/road-case-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "643d5862c38cbf6be67073066283356e05b1c4b8995d0667e5945b834c685495",
+          "bytes": 2451
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/toolbox.svg"
+    },
+    {
+      "id": "gaff-tape",
+      "name": "Gaff tape",
+      "family": "illustration",
+      "tags": [
+        "prep",
+        "crew",
+        "consumables"
+      ],
+      "suggested_use": "Preparation, practical tips and backstage detail.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 5,
+      "outer_shape": "circle",
+      "palette_fill": "#EBA53A",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/gaff-tape-sticker.svg",
+          "public_path": "/rvlt-art/svg/gaff-tape-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#EBA53A",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "a7fea0ac8564932be9ba451627c5282279d5151c6a143312f6698068e7243625",
+          "bytes": 543
+        },
+        "line": {
+          "path": "assets/svg/gaff-tape-line.svg",
+          "public_path": "/rvlt-art/svg/gaff-tape-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "33fe9c830a184d0c9b36f65f7b78e4bd7cd162ea6a29990bd05fa66cb8ef0fe8",
+          "bytes": 381
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "microphone",
+      "name": "Microphone",
+      "family": "illustration",
+      "tags": [
+        "audio",
+        "show",
+        "performance"
+      ],
+      "suggested_use": "Audio topics, performance and show announcements.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -5,
+      "outer_shape": "square",
+      "palette_fill": "#9B82E6",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/microphone-sticker.svg",
+          "public_path": "/rvlt-art/svg/microphone-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#9B82E6",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "9910d3e219241243d11e3f33aba3ed10dc89511279b23c3f022f75c1db10d6ca",
+          "bytes": 2073
+        },
+        "line": {
+          "path": "assets/svg/microphone-line.svg",
+          "public_path": "/rvlt-art/svg/microphone-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "e1ce19fd69774698eb044fe3b05cf30e3baab08d665b31abd664f88d9816ff11",
+          "bytes": 1871
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/microphone-stage.svg"
+    },
+    {
+      "id": "monitor",
+      "name": "Monitor",
+      "family": "illustration",
+      "tags": [
+        "screens",
+        "av",
+        "production"
+      ],
+      "suggested_use": "AV and display-related supporting illustration.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 4,
+      "outer_shape": "circle",
+      "palette_fill": "#3ECF7A",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/monitor-sticker.svg",
+          "public_path": "/rvlt-art/svg/monitor-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#3ECF7A",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "ab15d5900f09b85eb615f429bebdbb9a1c35ffd5794144ba65e7f5777819b168",
+          "bytes": 2196
+        },
+        "line": {
+          "path": "assets/svg/monitor-line.svg",
+          "public_path": "/rvlt-art/svg/monitor-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "39aef74b47df247000e5eb709a0fcb9f5d85b1b45e3778872cbdc00839ea0f60",
+          "bytes": 2034
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/monitor.svg"
+    },
+    {
+      "id": "production-van",
+      "name": "Production van",
+      "family": "illustration",
+      "tags": [
+        "transport",
+        "delivery",
+        "logistics"
+      ],
+      "suggested_use": "Delivery, transport and getting equipment to a job.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -4,
+      "outer_shape": "square",
+      "palette_fill": "#5B8DEF",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/production-van-sticker.svg",
+          "public_path": "/rvlt-art/svg/production-van-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#5B8DEF",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "50b53b9a16d288881bb84e15d9385820abf6af1426a173b21cdecc800190b6ea",
+          "bytes": 2959
+        },
+        "line": {
+          "path": "assets/svg/production-van-line.svg",
+          "public_path": "/rvlt-art/svg/production-van-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "f86dc58ef50f5e9001a8628c2f3b87690b812a27b00f909d4c1c6a2ededdb939",
+          "bytes": 2757
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/van.svg"
+    },
+    {
+      "id": "wrench",
+      "name": "Wrench",
+      "family": "illustration",
+      "tags": [
+        "tools",
+        "prep",
+        "maintenance"
+      ],
+      "suggested_use": "General equipment preparation and maintenance topics.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 5,
+      "outer_shape": "circle",
+      "palette_fill": "#EF7E55",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/wrench-sticker.svg",
+          "public_path": "/rvlt-art/svg/wrench-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#EF7E55",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "18e2ef38a28c92bf9fcb53dec0ab7745cfd09e1ae15f4b8a4b1e1aeed1c68a00",
+          "bytes": 2024
+        },
+        "line": {
+          "path": "assets/svg/wrench-line.svg",
+          "public_path": "/rvlt-art/svg/wrench-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "1d359b88cc974649162504c6bb666c5cccc7e294d5ae4cddb2e83ac2ef5c0327",
+          "bytes": 1862
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/wrench.svg"
+    },
+    {
+      "id": "calendar",
+      "name": "Calendar",
+      "family": "illustration",
+      "tags": [
+        "planning",
+        "schedule"
+      ],
+      "suggested_use": "Planning introductions and empty scheduling views.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -4,
+      "outer_shape": "square",
+      "palette_fill": "#3FC8BE",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/calendar-sticker.svg",
+          "public_path": "/rvlt-art/svg/calendar-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#3FC8BE",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "cc67c89ec676cb80b859edfada57df67c92826f15b199c1e25bbd33b6ec71839",
+          "bytes": 2802
+        },
+        "line": {
+          "path": "assets/svg/calendar-line.svg",
+          "public_path": "/rvlt-art/svg/calendar-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "fb5b1139e2100ea916039fb313f51a113540364c1e009c80b135192c79942bac",
+          "bytes": 2600
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/calendar-dots.svg"
+    },
+    {
+      "id": "batteries",
+      "name": "Batteries",
+      "family": "illustration",
+      "tags": [
+        "power",
+        "prep",
+        "consumables"
+      ],
+      "suggested_use": "Preparation and consumables.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 5,
+      "outer_shape": "circle",
+      "palette_fill": "#AFC44E",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/batteries-sticker.svg",
+          "public_path": "/rvlt-art/svg/batteries-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#AFC44E",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "9d3aca507779afe9f414622dc56f074a6a75a020979a6a9a947d1a9c0a2e1eed",
+          "bytes": 616
+        },
+        "line": {
+          "path": "assets/svg/batteries-line.svg",
+          "public_path": "/rvlt-art/svg/batteries-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "d4bf6e041316bd95e56e910d5aad9823caad1e4522faf3dd5acc98258ff4d988",
+          "bytes": 454
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "aaa-pass",
+      "name": "AAA pass",
+      "family": "illustration",
+      "tags": [
+        "crew",
+        "access",
+        "backstage"
+      ],
+      "suggested_use": "Crew introductions and backstage personality; decorative access-pass art.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -5,
+      "outer_shape": "square",
+      "palette_fill": "#E875AC",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/aaa-pass-sticker.svg",
+          "public_path": "/rvlt-art/svg/aaa-pass-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#E875AC",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "f82fffdaf602b3467f94596365db65dd43aefccb7ef82b0d8dabad98c8e289da",
+          "bytes": 2412
+        },
+        "line": {
+          "path": "assets/svg/aaa-pass-line.svg",
+          "public_path": "/rvlt-art/svg/aaa-pass-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "2de084ffee6293e422a0dcb72a3deb7c4befcea367820f56ee950325f4fa472b",
+          "bytes": 2210
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/identification-badge.svg"
+    },
+    {
+      "id": "clipboard",
+      "name": "Clipboard",
+      "family": "illustration",
+      "tags": [
+        "prep",
+        "checklist",
+        "planning"
+      ],
+      "suggested_use": "Preparation and checklists outside dense operational content.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 4,
+      "outer_shape": "square",
+      "palette_fill": "#5B8DEF",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/clipboard-sticker.svg",
+          "public_path": "/rvlt-art/svg/clipboard-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#5B8DEF",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "853485633bd9cfba0a4f5b75f2e68dc3708868af742fe65f881d6aae37336eb9",
+          "bytes": 2513
+        },
+        "line": {
+          "path": "assets/svg/clipboard-line.svg",
+          "public_path": "/rvlt-art/svg/clipboard-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "c13701310922459b875bfd122b4dbcf945421517c06bab65a5d68731eadf0242",
+          "bytes": 2311
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/clipboard-text.svg"
+    },
+    {
+      "id": "speaker",
+      "name": "Speaker",
+      "family": "illustration",
+      "tags": [
+        "audio",
+        "equipment"
+      ],
+      "suggested_use": "Audio equipment and production stories.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -5,
+      "outer_shape": "circle",
+      "palette_fill": "#9B82E6",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/speaker-sticker.svg",
+          "public_path": "/rvlt-art/svg/speaker-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#9B82E6",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "fdc393e2f5f8fb42948577c19442b124d9c6b4420327c63f838aed7bc8190565",
+          "bytes": 2198
+        },
+        "line": {
+          "path": "assets/svg/speaker-line.svg",
+          "public_path": "/rvlt-art/svg/speaker-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "ee8a1bd28744b53983eeca8a78539d6febda7ba6a70faab07c6ae0cf3595ca72",
+          "bytes": 2036
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/speaker-hifi.svg"
+    },
+    {
+      "id": "moving-head",
+      "name": "Moving head",
+      "family": "illustration",
+      "tags": [
+        "lighting",
+        "equipment",
+        "show"
+      ],
+      "suggested_use": "Lighting topics; this is a gear illustration, not a character rig.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 4,
+      "outer_shape": "square",
+      "palette_fill": "#EBA53A",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/moving-head-sticker.svg",
+          "public_path": "/rvlt-art/svg/moving-head-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#EBA53A",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "c25500e4d365a8f33186e123981546f7dcf1201ef3a838e1ac1e504921d7c208",
+          "bytes": 647
+        },
+        "line": {
+          "path": "assets/svg/moving-head-line.svg",
+          "public_path": "/rvlt-art/svg/moving-head-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "9dd99b9eb5efa3015040133ab8aa1dc656d2daaa57f8e8d45fa5efa49251a97b",
+          "bytes": 445
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "mixing-console",
+      "name": "Mixing console",
+      "family": "illustration",
+      "tags": [
+        "audio",
+        "control",
+        "show"
+      ],
+      "suggested_use": "Audio control and show preparation.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -4,
+      "outer_shape": "square",
+      "palette_fill": "#EF7E55",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/mixing-console-sticker.svg",
+          "public_path": "/rvlt-art/svg/mixing-console-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#EF7E55",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "121e3d5b66b8a31ae79b54237b2e726763e5eac821c90bbf7cee3e1a8e7c8e65",
+          "bytes": 1065
+        },
+        "line": {
+          "path": "assets/svg/mixing-console-line.svg",
+          "public_path": "/rvlt-art/svg/mixing-console-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "9748827eef010ec4f09588d5ab67fec36ddc7dd5abe1a9ca183e6400dae1d869",
+          "bytes": 863
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "walkie-talkie",
+      "name": "Walkie-talkie",
+      "family": "illustration",
+      "tags": [
+        "crew",
+        "communications"
+      ],
+      "suggested_use": "Crew communication and coordination topics.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -4,
+      "outer_shape": "square",
+      "palette_fill": "#3ECF7A",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/walkie-talkie-sticker.svg",
+          "public_path": "/rvlt-art/svg/walkie-talkie-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#3ECF7A",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "74caab2bf274fbae28ffdd69e69c5449bb96402dfa9346624cc1a64432e8bfc1",
+          "bytes": 708
+        },
+        "line": {
+          "path": "assets/svg/walkie-talkie-line.svg",
+          "public_path": "/rvlt-art/svg/walkie-talkie-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "c06d86e7d0c08865bb5ab989687c5cfddd30a5a38535e1cbb35f28c2af980dfb",
+          "bytes": 506
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "coffee-mug",
+      "name": "Coffee mug",
+      "family": "illustration",
+      "tags": [
+        "crew",
+        "break",
+        "welcome"
+      ],
+      "suggested_use": "Welcoming or relaxed crew moments; current version has no bolt.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 4,
+      "outer_shape": "circle",
+      "palette_fill": "#EBA53A",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/coffee-mug-sticker.svg",
+          "public_path": "/rvlt-art/svg/coffee-mug-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#EBA53A",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "c6e3aa448c6b2bdc626d89896b25dc23e3eec8d9b4f4ef0fa8f895ba63289797",
+          "bytes": 620
+        },
+        "line": {
+          "path": "assets/svg/coffee-mug-line.svg",
+          "public_path": "/rvlt-art/svg/coffee-mug-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "9d0f275d0c34641b904827e9d889dacadbe6ead1738eb83a4ef40da0d4d2456b",
+          "bytes": 458
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "ticket-stub",
+      "name": "Ticket stub",
+      "family": "illustration",
+      "tags": [
+        "audience",
+        "event",
+        "show"
+      ],
+      "suggested_use": "Event announcements and the audience experience.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": -5,
+      "outer_shape": "square",
+      "palette_fill": "#EF7E55",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/ticket-stub-sticker.svg",
+          "public_path": "/rvlt-art/svg/ticket-stub-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#EF7E55",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "f759e4380b2fe2da21253cbe342424610cf52113d2219077e0d517e07beba21a",
+          "bytes": 2122
+        },
+        "line": {
+          "path": "assets/svg/ticket-stub-line.svg",
+          "public_path": "/rvlt-art/svg/ticket-stub-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "34189e06b7a07b565dcff3dbed8d127c3e57df94dba2aedec51f6dcb80674f2c",
+          "bytes": 1920
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "adapted_phosphor",
+      "licence_files": [
+        "assets/licenses/phosphor-MIT.txt"
+      ],
+      "source_url": "https://github.com/phosphor-icons/core/blob/main/raw/regular/ticket.svg"
+    },
+    {
+      "id": "stage-curtains",
+      "name": "Stage curtains",
+      "family": "illustration",
+      "tags": [
+        "theatre",
+        "show",
+        "frame"
+      ],
+      "suggested_use": "A theatrical frame within the sticker; keep its geometry and clip path intact.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 0,
+      "outer_shape": "square",
+      "palette_fill": "#E0363D",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/stage-curtains-sticker.svg",
+          "public_path": "/rvlt-art/svg/stage-curtains-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#141210",
+            "#E0363D",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [
+            "curtain-interior"
+          ],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "6bc1b32623c09434e2b80db9a0a05c37990e8124f3b13cdde4b48edb53266f10",
+          "bytes": 795
+        },
+        "line": {
+          "path": "assets/svg/stage-curtains-line.svg",
+          "public_path": "/rvlt-art/svg/stage-curtains-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "8291f425e3969dbe9e8fe02ad7a98ecd760391cce5ba3563ab60a8eeb91e7cf3",
+          "bytes": 474
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "pelican",
+      "name": "Pelican",
+      "family": "illustration",
+      "tags": [
+        "character",
+        "personality",
+        "welcome"
+      ],
+      "suggested_use": "A personal reference and playful accent; do not invent a mascot identity.",
+      "default_variant": "sticker",
+      "gallery_tilt_degrees": 3,
+      "outer_shape": "circle",
+      "palette_fill": "#3FC8BE",
+      "default_decorative": true,
+      "exports": {
+        "sticker": {
+          "path": "assets/svg/pelican-sticker.svg",
+          "public_path": "/rvlt-art/svg/pelican-sticker.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 160,
+          "display_height_px": 160.0,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#3FC8BE",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "fa810b21ae127076c1a0d92e2fd80b11b146abf0681e4d3e13262bee4b871c1d",
+          "bytes": 802
+        },
+        "line": {
+          "path": "assets/svg/pelican-line.svg",
+          "public_path": "/rvlt-art/svg/pelican-line.svg",
+          "view_box": "0 0 128 128",
+          "view_box_values": [
+            0.0,
+            0.0,
+            128.0,
+            128.0
+          ],
+          "aspect_ratio": 1.0,
+          "intrinsic_width_units": 128.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 96,
+          "display_height_px": 96.0,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "1d555a44042a24e8f900253f0903a672dbedde0712a5ec430fcd7092e9211098",
+          "bytes": 640
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "custom_companion",
+      "licence_files": []
+    },
+    {
+      "id": "standby",
+      "name": "Standby",
+      "family": "wordmark",
+      "tags": [
+        "cue",
+        "preparation"
+      ],
+      "suggested_use": "Decorative cue language; keep actual loading and waiting status in UI text.",
+      "default_variant": "patch",
+      "gallery_tilt_degrees": -3,
+      "outer_shape": "Ribbon label",
+      "palette_fill": "#EBA53A",
+      "default_decorative": true,
+      "exports": {
+        "patch": {
+          "path": "assets/svg/standby-patch.svg",
+          "public_path": "/rvlt-art/svg/standby-patch.svg",
+          "view_box": "11.000 29.834 302.086 128.925",
+          "view_box_values": [
+            11.0,
+            29.834,
+            302.086,
+            128.925
+          ],
+          "aspect_ratio": 2.34311421,
+          "intrinsic_width_units": 302.086,
+          "intrinsic_height_units": 128.925,
+          "display_width_px": 310,
+          "display_height_px": 132.303,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#141210",
+            "#EBA53A",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "bf1dcc095101f838995ef9aec5eb6f1682d7a9ca7cb3056bef2cbc5336500515",
+          "bytes": 12065
+        },
+        "wordmark": {
+          "path": "assets/svg/standby-wordmark.svg",
+          "public_path": "/rvlt-art/svg/standby-wordmark.svg",
+          "view_box": "63.000 65.126 217.002 58.749",
+          "view_box_values": [
+            63.0,
+            65.126,
+            217.002,
+            58.749
+          ],
+          "aspect_ratio": 3.69371394,
+          "intrinsic_width_units": 217.002,
+          "intrinsic_height_units": 58.749,
+          "display_width_px": 180,
+          "display_height_px": 48.731,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "f06be5f8d3cef265f9bfa152adffc64b60cf42b62201782de2fc05a262dd2e26",
+          "bytes": 11566
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "font_outlined_custom_layout",
+      "licence_files": [
+        "assets/licenses/Baloo2-OFL.txt"
+      ]
+    },
+    {
+      "id": "go",
+      "name": "Go!",
+      "family": "wordmark",
+      "tags": [
+        "cue",
+        "celebration"
+      ],
+      "suggested_use": "Positive moments and promotional show energy.",
+      "default_variant": "patch",
+      "gallery_tilt_degrees": 2,
+      "outer_shape": "Go patch",
+      "palette_fill": "#3ECF7A",
+      "default_decorative": true,
+      "exports": {
+        "patch": {
+          "path": "assets/svg/go-patch.svg",
+          "public_path": "/rvlt-art/svg/go-patch.svg",
+          "view_box": "61.242 0.672 199.324 172.666",
+          "view_box_values": [
+            61.242,
+            0.672,
+            199.324,
+            172.666
+          ],
+          "aspect_ratio": 1.15439056,
+          "intrinsic_width_units": 199.324,
+          "intrinsic_height_units": 172.666,
+          "display_width_px": 236,
+          "display_height_px": 204.437,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#141210",
+            "#3ECF7A",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "d16bd7be8f26362c824bb03f42b4c1fd1b18ea493c5ec9413752ef195bf6db7c",
+          "bytes": 9178
+        },
+        "wordmark": {
+          "path": "assets/svg/go-wordmark.svg",
+          "public_path": "/rvlt-art/svg/go-wordmark.svg",
+          "view_box": "100.773 49.276 120.267 70.371",
+          "view_box_values": [
+            100.773,
+            49.276,
+            120.267,
+            70.371
+          ],
+          "aspect_ratio": 1.70904208,
+          "intrinsic_width_units": 120.267,
+          "intrinsic_height_units": 70.371,
+          "display_width_px": 180,
+          "display_height_px": 105.322,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "25a081d42bf327d065acaf48fd7f315773d85c924af6fbadb065ce8bb1c771e5",
+          "bytes": 6682
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "font_outlined_custom_layout",
+      "licence_files": [
+        "assets/licenses/Archivo-OFL.txt"
+      ]
+    },
+    {
+      "id": "crew",
+      "name": "Crew",
+      "family": "wordmark",
+      "tags": [
+        "crew",
+        "belonging"
+      ],
+      "suggested_use": "Crew identity and community moments.",
+      "default_variant": "patch",
+      "gallery_tilt_degrees": -2,
+      "outer_shape": "Crew patch",
+      "palette_fill": "#9B82E6",
+      "default_decorative": true,
+      "exports": {
+        "patch": {
+          "path": "assets/svg/crew-patch.svg",
+          "public_path": "/rvlt-art/svg/crew-patch.svg",
+          "view_box": "17.826 23.523 286.429 141.965",
+          "view_box_values": [
+            17.826,
+            23.523,
+            286.429,
+            141.965
+          ],
+          "aspect_ratio": 2.01760293,
+          "intrinsic_width_units": 286.429,
+          "intrinsic_height_units": 141.965,
+          "display_width_px": 302,
+          "display_height_px": 149.683,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#141210",
+            "#9B82E6",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "541b77e13d791ebadd2d3ee0ae9ff1523ed257bd472a324957580e86eb076526",
+          "bytes": 9386
+        },
+        "wordmark": {
+          "path": "assets/svg/crew-wordmark.svg",
+          "public_path": "/rvlt-art/svg/crew-wordmark.svg",
+          "view_box": "57.000 59.189 206.000 63.622",
+          "view_box_values": [
+            57.0,
+            59.189,
+            206.0,
+            63.622
+          ],
+          "aspect_ratio": 3.23787369,
+          "intrinsic_width_units": 206.0,
+          "intrinsic_height_units": 63.622,
+          "display_width_px": 180,
+          "display_height_px": 55.592,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "973834cca30f266cc1a038814d044469fbf2cfd372a5f8eb5a05e4781e8fbfc7",
+          "bytes": 8928
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "font_outlined_custom_layout",
+      "licence_files": [
+        "assets/licenses/Baloo2-OFL.txt"
+      ]
+    },
+    {
+      "id": "load-in",
+      "name": "Load in",
+      "family": "wordmark",
+      "tags": [
+        "logistics",
+        "arrival"
+      ],
+      "suggested_use": "Load-in and transport stories.",
+      "default_variant": "patch",
+      "gallery_tilt_degrees": -3,
+      "outer_shape": "Case tag",
+      "palette_fill": "#5B8DEF",
+      "default_decorative": true,
+      "exports": {
+        "patch": {
+          "path": "assets/svg/load-in-patch.svg",
+          "public_path": "/rvlt-art/svg/load-in-patch.svg",
+          "view_box": "8.000 31.000 307.000 128.000",
+          "view_box_values": [
+            8.0,
+            31.0,
+            307.0,
+            128.0
+          ],
+          "aspect_ratio": 2.3984375,
+          "intrinsic_width_units": 307.0,
+          "intrinsic_height_units": 128.0,
+          "display_width_px": 309,
+          "display_height_px": 128.834,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#141210",
+            "#5B8DEF",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "337be27fcd38a24fe7c5d7006ad5d8752a07473f29dfa378e37dcbeffa4aa73e",
+          "bytes": 10246
+        },
+        "wordmark": {
+          "path": "assets/svg/load-in-wordmark.svg",
+          "public_path": "/rvlt-art/svg/load-in-wordmark.svg",
+          "view_box": "31.000 60.473 222.999 61.055",
+          "view_box_values": [
+            31.0,
+            60.473,
+            222.999,
+            61.055
+          ],
+          "aspect_ratio": 3.65242814,
+          "intrinsic_width_units": 222.999,
+          "intrinsic_height_units": 61.055,
+          "display_width_px": 180,
+          "display_height_px": 49.282,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "9743307661cdeba3a53bba524f423b29e4b704a15d168a39c2891aad03e4696f",
+          "bytes": 9659
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "font_outlined_custom_layout",
+      "licence_files": [
+        "assets/licenses/Baloo2-OFL.txt"
+      ]
+    },
+    {
+      "id": "on-air",
+      "name": "On air",
+      "family": "wordmark",
+      "tags": [
+        "broadcast",
+        "show"
+      ],
+      "suggested_use": "Broadcast personality; not an operational live-state indicator.",
+      "default_variant": "patch",
+      "gallery_tilt_degrees": 2,
+      "outer_shape": "Speech patch",
+      "palette_fill": "#E0363D",
+      "default_decorative": true,
+      "exports": {
+        "patch": {
+          "path": "assets/svg/on-air-patch.svg",
+          "public_path": "/rvlt-art/svg/on-air-patch.svg",
+          "view_box": "8.000 26.000 305.000 146.070",
+          "view_box_values": [
+            8.0,
+            26.0,
+            305.0,
+            146.07
+          ],
+          "aspect_ratio": 2.08803998,
+          "intrinsic_width_units": 305.0,
+          "intrinsic_height_units": 146.07,
+          "display_width_px": 307,
+          "display_height_px": 147.028,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#E0363D",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "bca9ff747c1f4de7586324cb2a0b5166f46c0140394aa0e412aa9ba5ba8f182b",
+          "bytes": 9144
+        },
+        "wordmark": {
+          "path": "assets/svg/on-air-wordmark.svg",
+          "public_path": "/rvlt-art/svg/on-air-wordmark.svg",
+          "view_box": "68.000 55.482 208.999 64.036",
+          "view_box_values": [
+            68.0,
+            55.482,
+            208.999,
+            64.036
+          ],
+          "aspect_ratio": 3.2637735,
+          "intrinsic_width_units": 208.999,
+          "intrinsic_height_units": 64.036,
+          "display_width_px": 180,
+          "display_height_px": 55.151,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "d15c1af301d79e4bb6ed67a3e5b7904e513b8f2ad0297d82f2955b02696ee8a0",
+          "bytes": 8693
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "font_outlined_custom_layout",
+      "licence_files": [
+        "assets/licenses/Baloo2-OFL.txt"
+      ]
+    },
+    {
+      "id": "show-time",
+      "name": "Show time",
+      "family": "wordmark",
+      "tags": [
+        "theatre",
+        "celebration"
+      ],
+      "suggested_use": "Show announcements and celebratory moments.",
+      "default_variant": "patch",
+      "gallery_tilt_degrees": -2,
+      "outer_shape": "Show patch",
+      "palette_fill": "#EF7E55",
+      "default_decorative": true,
+      "exports": {
+        "patch": {
+          "path": "assets/svg/show-time-patch.svg",
+          "public_path": "/rvlt-art/svg/show-time-patch.svg",
+          "view_box": "18.000 11.000 286.000 194.000",
+          "view_box_values": [
+            18.0,
+            11.0,
+            286.0,
+            194.0
+          ],
+          "aspect_ratio": 1.4742268,
+          "intrinsic_width_units": 286.0,
+          "intrinsic_height_units": 194.0,
+          "display_width_px": 276,
+          "display_height_px": 187.217,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#141210",
+            "#EF7E55",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "4365f7c5bcb671b5716b3b9790f292f8545b60e59eec186b0845578e82c2249f",
+          "bytes": 13612
+        },
+        "wordmark": {
+          "path": "assets/svg/show-time-wordmark.svg",
+          "public_path": "/rvlt-art/svg/show-time-wordmark.svg",
+          "view_box": "67.836 43.000 184.326 119.000",
+          "view_box_values": [
+            67.836,
+            43.0,
+            184.326,
+            119.0
+          ],
+          "aspect_ratio": 1.54895798,
+          "intrinsic_width_units": 184.326,
+          "intrinsic_height_units": 119.0,
+          "display_width_px": 180,
+          "display_height_px": 116.207,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "93d5a21b8f6dfff31bc8c33c92cb2af21f435864e510e138567ab64782edd01f",
+          "bytes": 13173
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "font_outlined_custom_layout",
+      "licence_files": [
+        "assets/licenses/Baloo2-OFL.txt"
+      ]
+    },
+    {
+      "id": "rvlt-flow",
+      "name": "RVLT Flow",
+      "family": "wordmark",
+      "tags": [
+        "brand",
+        "identity"
+      ],
+      "suggested_use": "Expressive brand sticker; use the approved master logo for formal identification.",
+      "default_variant": "patch",
+      "gallery_tilt_degrees": -5,
+      "outer_shape": "Brand patch",
+      "palette_fill": "#141210",
+      "default_decorative": true,
+      "exports": {
+        "patch": {
+          "path": "assets/svg/rvlt-flow-patch.svg",
+          "public_path": "/rvlt-art/svg/rvlt-flow-patch.svg",
+          "view_box": "13.840 11.000 292.468 200.000",
+          "view_box_values": [
+            13.84,
+            11.0,
+            292.468,
+            200.0
+          ],
+          "aspect_ratio": 1.46234,
+          "intrinsic_width_units": 292.468,
+          "intrinsic_height_units": 200.0,
+          "display_width_px": 272,
+          "display_height_px": 186.003,
+          "transparent_surround": true,
+          "has_backing": true,
+          "has_embedded_shadow": true,
+          "has_live_text": false,
+          "colours": [
+            "#0C0A08",
+            "#141210",
+            "#E0363D",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "dark or light surface with clear edge separation",
+          "sha256": "e24c96907f261e25607116eb2a7e9738a1b9dea7e49516d6d17f338e8974049f",
+          "bytes": 14255
+        },
+        "wordmark": {
+          "path": "assets/svg/rvlt-flow-wordmark.svg",
+          "public_path": "/rvlt-art/svg/rvlt-flow-wordmark.svg",
+          "view_box": "48.532 35.999 223.936 162.001",
+          "view_box_values": [
+            48.532,
+            35.999,
+            223.936,
+            162.001
+          ],
+          "aspect_ratio": 1.38231245,
+          "intrinsic_width_units": 223.936,
+          "intrinsic_height_units": 162.001,
+          "display_width_px": 180,
+          "display_height_px": 130.217,
+          "transparent_surround": true,
+          "has_backing": false,
+          "has_embedded_shadow": false,
+          "has_live_text": false,
+          "colours": [
+            "#E0363D",
+            "#FFFDF8"
+          ],
+          "internal_svg_ids": [],
+          "recommended_surface": "espresso or another suitably dark surface",
+          "sha256": "1ac04adc5f5292f70d9144942f8edde26deff3b34ed01f80ebc74fdba5e6c920",
+          "bytes": 13818
+        }
+      },
+      "runtime_font_dependencies": [],
+      "source_type": "font_outlined_custom_layout",
+      "licence_files": [
+        "assets/licenses/Archivo-OFL.txt",
+        "assets/licenses/Baloo2-OFL.txt"
+      ]
+    }
+  ]
+}

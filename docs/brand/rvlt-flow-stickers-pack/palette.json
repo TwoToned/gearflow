@@ -1,0 +1,19 @@
+{
+  "scope": "Artwork colours, not app semantic token replacements",
+  "space": "sRGB",
+  "colours": {
+    "espresso": "#141210",
+    "artwork_cream": "#FFFDF8",
+    "shadow": "#0C0A08",
+    "rvlt_red": "#E0363D",
+    "amber": "#EBA53A",
+    "green": "#3ECF7A",
+    "blue": "#5B8DEF",
+    "purple": "#9B82E6",
+    "coral": "#EF7E55",
+    "teal": "#3FC8BE",
+    "pink": "#E875AC",
+    "lime": "#AFC44E"
+  },
+  "app_text_reference": "#F5EFE2"
+}

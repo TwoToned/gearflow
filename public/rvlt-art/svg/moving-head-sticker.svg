@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><title>Moving head — RVLT Flow</title><g transform="translate(2 4)"><rect x="7" y="7" width="114" height="114" rx="23" fill="#0C0A08"/></g><rect x="7" y="7" width="114" height="114" rx="23" fill="#EBA53A" stroke="#FFFDF8" stroke-width="3"/><g color="#FFFDF8" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="45" y="27" width="38" height="44" rx="18"/>
+      <circle cx="64" cy="44" r="10"/>
+      <path d="M45 54h-9v17q0 4 4 6l15 7h18l15-7q4-2 4-6V54h-9M64 84v7"/>
+      <path d="M45 91h38l5 10H40Z"/>
+    </g></svg>

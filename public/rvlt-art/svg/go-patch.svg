@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="61.242 0.672 199.324 172.666"><title>Go! — RVLT Flow</title><metadata>RVLT Flow original label/patch layout. Lettering outlined from Archivo, distributed under the SIL Open Font License. Font source: https://github.com/google/fonts/tree/main/ofl/archivo. No external fonts required. Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+&quot;Font Software&quot; refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+&quot;Reserved Font Name&quot; refers to any names specified as such after the
+copyright statement(s).
+
+&quot;Original Version&quot; refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+&quot;Modified Version&quot; refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+&quot;Author&quot; refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION &amp; CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+</metadata><g transform="translate(2 4)" fill="#0C0A08" stroke="#0C0A08" stroke-width="4"><path d="M160 20C180 7 203 22 204 39C230 34 249 56 237 78C261 93 247 123 226 126C230 154 199 165 181 148C164 170 139 159 135 143C108 157 86 137 95 115C69 113 61 83 83 68C66 44 89 22 111 30C119 6 149 4 160 20Z"/></g><g fill="#3ECF7A" stroke="#FFFDF8" stroke-width="4" stroke-linejoin="round"><path d="M160 20C180 7 203 22 204 39C230 34 249 56 237 78C261 93 247 123 226 126C230 154 199 165 181 148C164 170 139 159 135 143C108 157 86 137 95 115C69 113 61 83 83 68C66 44 89 22 111 30C119 6 149 4 160 20Z"/></g><g transform="translate(3 3)"><g transform="rotate(-9 160 88)"><path fill="#FFFDF8" d="M360.213 -12Q201.896 -12 121.869 77.474Q41.842 166.947 41.842 344Q41.842 463.053 82.579 541.947Q123.317 620.842 201.317 660.421Q279.317 700 390.529 700Q459.371 700 518.45 683.605Q577.529 667.211 621.819 634.711Q666.109 602.211 690.478 553.211Q714.846 504.211 714.846 439H511.214Q511.214 460.789 502.609 478.895Q494.003 497 478.529 509.921Q463.056 522.842 442.187 529.763Q421.318 536.684 396.581 536.684Q361.581 536.684 335.37 526.71Q309.159 516.737 292.501 496.894Q275.843 477.052 267.633 449.105Q259.422 421.157 259.422 384.42V303.58Q259.422 254.843 274.08 220.921Q288.738 187 319.502 169.158Q350.265 151.316 397.002 151.316Q429.687 151.316 455.608 162.447Q481.529 173.579 496.793 193.895Q512.056 214.211 512.056 239.789V244H374.792V384H714.846V0H605.057L585.583 67.158Q558.582 42.211 525.372 24.421Q492.161 6.632 451.424 -2.684Q410.687 -12 360.213 -12ZM1080.37 -12Q995.212 -12 933.554 18.289Q871.896 48.579 838.264 109.974Q804.632 171.368 804.632 264Q804.632 357.421 838.264 418.421Q871.896 479.421 933.554 509.711Q995.212 540 1080.37 540Q1165.529 540 1227.582 509.711Q1289.635 479.421 1323.372 418.421Q1357.109 357.421 1357.109 264Q1357.109 171.368 1323.372 109.974Q1289.635 48.579 1227.582 18.289Q1165.529 -12 1080.37 -12ZM1080.37 122.579Q1110.529 122.579 1129.266 134.605Q1148.003 146.632 1156.424 170.264Q1164.845 193.895 1164.845 228.685V298.315Q1164.845 333.315 1156.424 357.236Q1148.003 381.158 1129.266 393.289Q1110.529 405.421 1080.37 405.421Q1050.423 405.421 1032.08 393.289Q1013.738 381.158 1005.317 357.236Q996.896 333.315 996.896 298.315V228.685Q996.896 193.895 1005.317 170.264Q1013.738 146.632 1032.08 134.605Q1050.423 122.579 1080.37 122.579ZM1490.79 244.316 1448.948 688H1650.738L1607.716 244.316ZM1456.737 0V183.737H1642.948V0Z" transform="translate(103.1913 108.5916) scale(0.067127 -0.067127)"/></g></g><g transform="rotate(-9 160 88)"><path fill="#141210" d="M360.213 -12Q201.896 -12 121.869 77.474Q41.842 166.947 41.842 344Q41.842 463.053 82.579 541.947Q123.317 620.842 201.317 660.421Q279.317 700 390.529 700Q459.371 700 518.45 683.605Q577.529 667.211 621.819 634.711Q666.109 602.211 690.478 553.211Q714.846 504.211 714.846 439H511.214Q511.214 460.789 502.609 478.895Q494.003 497 478.529 509.921Q463.056 522.842 442.187 529.763Q421.318 536.684 396.581 536.684Q361.581 536.684 335.37 526.71Q309.159 516.737 292.501 496.894Q275.843 477.052 267.633 449.105Q259.422 421.157 259.422 384.42V303.58Q259.422 254.843 274.08 220.921Q288.738 187 319.502 169.158Q350.265 151.316 397.002 151.316Q429.687 151.316 455.608 162.447Q481.529 173.579 496.793 193.895Q512.056 214.211 512.056 239.789V244H374.792V384H714.846V0H605.057L585.583 67.158Q558.582 42.211 525.372 24.421Q492.161 6.632 451.424 -2.684Q410.687 -12 360.213 -12ZM1080.37 -12Q995.212 -12 933.554 18.289Q871.896 48.579 838.264 109.974Q804.632 171.368 804.632 264Q804.632 357.421 838.264 418.421Q871.896 479.421 933.554 509.711Q995.212 540 1080.37 540Q1165.529 540 1227.582 509.711Q1289.635 479.421 1323.372 418.421Q1357.109 357.421 1357.109 264Q1357.109 171.368 1323.372 109.974Q1289.635 48.579 1227.582 18.289Q1165.529 -12 1080.37 -12ZM1080.37 122.579Q1110.529 122.579 1129.266 134.605Q1148.003 146.632 1156.424 170.264Q1164.845 193.895 1164.845 228.685V298.315Q1164.845 333.315 1156.424 357.236Q1148.003 381.158 1129.266 393.289Q1110.529 405.421 1080.37 405.421Q1050.423 405.421 1032.08 393.289Q1013.738 381.158 1005.317 357.236Q996.896 333.315 996.896 298.315V228.685Q996.896 193.895 1005.317 170.264Q1013.738 146.632 1032.08 134.605Q1050.423 122.579 1080.37 122.579ZM1490.79 244.316 1448.948 688H1650.738L1607.716 244.316ZM1456.737 0V183.737H1642.948V0Z" transform="translate(103.1913 108.5916) scale(0.067127 -0.067127)"/></g></svg>

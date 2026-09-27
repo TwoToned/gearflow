@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><title>Calendar — RVLT Flow</title><metadata>Calendar adapted from Phosphor Icons by Helena Zhang and Tobias Fried. Source: https://github.com/phosphor-icons/core/blob/main/raw/regular/calendar-dots.svg . Adaptation: Scaled and recoloured; stroke and date dots reduced. RVLT sticker background added.
+MIT License
+
+Copyright (c) 2023 Phosphor Icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</metadata><g transform="translate(2 4)"><rect x="7" y="7" width="114" height="114" rx="23" fill="#0C0A08"/></g><rect x="7" y="7" width="114" height="114" rx="23" fill="#3FC8BE" stroke="#FFFDF8" stroke-width="3"/><g color="#FFFDF8" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(21.7600 24.4000) scale(0.33)"><rect x="40" y="40" width="176" height="176" rx="8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="10.30303" /><line x1="176" y1="24" x2="176" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="10.30303" /><line x1="80" y1="24" x2="80" y2="56" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="10.30303" /><line x1="40" y1="88" x2="216" y2="88" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="10.30303" /><circle cx="128" cy="132" r="8.5" fill="currentColor" stroke="none" /><circle cx="172" cy="132" r="8.5" fill="currentColor" stroke="none" /><circle cx="84" cy="172" r="8.5" fill="currentColor" stroke="none" /><circle cx="128" cy="172" r="8.5" fill="currentColor" stroke="none" /><circle cx="172" cy="172" r="8.5" fill="currentColor" stroke="none" /></g></g></svg>

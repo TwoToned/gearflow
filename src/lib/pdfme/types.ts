@@ -406,6 +406,12 @@ export interface TablePluginConfig {
    *  renders every `isContainerRow` entry as a `ContainerHeaderRow` instead
    *  of a plain item row. */
   byContainer?: boolean;
+  /** #1296 build plan phase 3c (D10, read-only — "not worth the effort" to
+   *  re-track a mid-job repack) — return-sheet only. Adds an unchecked "Case
+   *  returned" box to each top-level `ContainerHeaderRow`, grouped by the
+   *  container gear physically LEFT in (today's `containerId`), never a
+   *  separate departure snapshot. */
+  showContainerReturnCheckbox?: boolean;
 }
 
 /** Config for financial summary plugin */

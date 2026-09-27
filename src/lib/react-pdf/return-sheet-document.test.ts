@@ -11,6 +11,8 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { PDFDocument as PdfLibDocument } from "@pdfme/pdf-lib";
 import { ReturnSheetDocument } from "./return-sheet-document";
 import { makeSpikeData, makeLongLineItemList, makeMixedRentalSaleLineItems } from "./fixture";
+import { structureLineItemsByContainer, type ContainerForStructuring } from "@/lib/pdfme/structure-line-items-by-container";
+import { renderPdfPages } from "./pdf-test-utils";
 
 async function pageCount(data: ReturnType<typeof makeSpikeData>) {
   const buffer = await renderToBuffer(ReturnSheetDocument({ data }));
@@ -68,5 +70,27 @@ describe("ReturnSheetDocument (react-pdf)", () => {
       });
       await expect(pageCount(data)).resolves.toBeGreaterThanOrEqual(1);
     }
+  });
+
+  describe("container structuring (#1296 build plan phase 3c, D10)", () => {
+    it("groups by the container gear left in, with a 'Case returned' box on the top-level container only", async () => {
+      const containers: ContainerForStructuring[] = [{ id: "c1", kind: "CUSTOM", label: "Case 12", sortOrder: 0 }];
+      const raw = [
+        {
+          id: "a", description: "Par Can", categoryName: "Lighting",
+          quantity: 1, checkedOutQuantity: 1, unitPrice: null, pricingType: "PER_DAY" as const, duration: 1,
+          discount: null, lineTotal: null, groupName: null, groupTitle: null,
+          isOptional: false, notes: null, status: "RETURNED" as const, model: null, asset: null, bulkAsset: null,
+          units: [{ id: "u-a", asset: { assetTag: "PC-1" }, bulkAsset: null, status: "RETURNED" as const, containerId: "c1" }],
+        },
+      ];
+      const structured = structureLineItemsByContainer(raw as never, containers);
+      const data = makeSpikeData({ line_items: structured, total_items: 1 });
+      const { fullText } = await renderPdfPages(ReturnSheetDocument({ data }));
+
+      expect(fullText).toContain("Case 12");
+      expect(fullText).toContain("Case returned");
+      expect(fullText).toContain("Par Can");
+    });
   });
 });

@@ -41,7 +41,7 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
   quote: { expandProjectGroups: false },
   invoice: { expandProjectGroups: false },
   "packing-list": { expandProjectGroups: true },
-  "return-sheet": { expandProjectGroups: true },
+  "return-sheet": { expandProjectGroups: true, byContainer: true },
   "delivery-docket": { expandProjectGroups: true },
   manifest: { expandProjectGroups: true, byContainer: true },
 };

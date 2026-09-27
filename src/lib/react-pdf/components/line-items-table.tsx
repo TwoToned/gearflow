@@ -507,7 +507,17 @@ function containerHeaderTitle(item: DocumentLineItem): string {
  *  indented by `containerDepth`). Replaces the generic `GroupHeaderRow` for
  *  `byContainer`-mode tables — see `TablePluginConfig.byContainer`'s doc
  *  comment for why the two aren't both drawn. */
-function ContainerHeaderRow({ item, docColor }: { item: DocumentLineItem; docColor: string }) {
+function ContainerHeaderRow({
+  item,
+  docColor,
+  showReturnCheckbox,
+}: {
+  item: DocumentLineItem;
+  docColor: string;
+  /** #1296 phase 3c (D10) — return-sheet's "case returned" box, top-level
+   *  containers only (a nested tub returns with its parent case). */
+  showReturnCheckbox?: boolean;
+}) {
   const depth = item.containerDepth ?? 0;
   return (
     <View
@@ -521,15 +531,26 @@ function ContainerHeaderRow({ item, docColor }: { item: DocumentLineItem; docCol
         paddingVertical: "1.5mm",
         paddingHorizontal: "1.5mm",
         paddingLeft: `${1.5 + depth * 4}mm`,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
       }}
     >
-      <Text style={{ fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>
-        {containerHeaderTitle(item)}
-      </Text>
-      {item.containerDescription && (
-        <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.muted, marginTop: "0.5mm" }}>
-          {item.containerDescription}
+      <View>
+        <Text style={{ fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>
+          {containerHeaderTitle(item)}
         </Text>
+        {item.containerDescription && (
+          <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.muted, marginTop: "0.5mm" }}>
+            {item.containerDescription}
+          </Text>
+        )}
+      </View>
+      {showReturnCheckbox && depth === 0 && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: "1.5mm" }}>
+          <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.text }}>Case returned</Text>
+          <Checkbox size={9} />
+        </View>
       )}
     </View>
   );
@@ -960,7 +981,14 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
             )}
           {groupItems.map((item) => {
             if (item.isContainerRow) {
-              return <ContainerHeaderRow key={item.id} item={item} docColor={docColor} />;
+              return (
+                <ContainerHeaderRow
+                  key={item.id}
+                  item={item}
+                  docColor={docColor}
+                  showReturnCheckbox={config.showContainerReturnCheckbox}
+                />
+              );
             }
             globalIdx++;
             const idx = globalIdx;

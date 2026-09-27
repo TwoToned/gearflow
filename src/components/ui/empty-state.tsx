@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 import { FlowMascot } from "@/components/ui/flow-mascot";
 
 /**
- * RVLT empty state (DESIGN.md §15.5) — the Flow mascot + one operator-voice line, the
- * sanctioned home for personality in the app. e.g. "Nothing booked yet — Flow's having a
+ * RVLT empty state (DESIGN.md §15.5) — Albert (the mascot) + one operator-voice line, the
+ * sanctioned home for personality in the app. e.g. "Nothing booked yet — Albert's having a
  * quiet one." / "No clashes. Suspiciously calm." Optional action (usually a line button).
  */
 const EmptyState = React.forwardRef<

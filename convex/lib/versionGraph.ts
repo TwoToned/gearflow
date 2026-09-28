@@ -35,12 +35,24 @@ import { versionRows, type VersionedTableName } from "./versionScope";
 
 export const VERSIONED_PLAN_TABLES: readonly VersionedTableName[] = [
   "projectCategories",
+  "projectContainers",
   "projectGroups",
   "projectLineItems",
   "projectServices",
 ];
 
-const IN_CLONE_SET_FK_FIELDS = ["categoryId", "groupId", "parentLineItemId"] as const;
+// #1296 — `lineItemId`/`containerId` cross-reference projectContainers <->
+// projectLineItems (the container's own 1:1 line, and that line's reverse
+// lookup back to it); `parentContainerId`/`plannedContainerId` reference
+// another projectContainers row (nesting, and D9's plan field). All four
+// name a row INSIDE this same clone set, so — like categoryId/groupId/
+// parentLineItemId — they need rewriting through the old-id -> new-id map or
+// a cloned container/line would point at a row that only exists in the
+// SOURCE version.
+const IN_CLONE_SET_FK_FIELDS = [
+  "categoryId", "groupId", "parentLineItemId",
+  "lineItemId", "containerId", "parentContainerId", "plannedContainerId",
+] as const;
 
 /**
  * Headroom under Convex's 8,192-doc/16MiB-per-transaction ceiling (#1229's

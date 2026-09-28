@@ -41,6 +41,10 @@ export interface LineItem {
     quantity: number;
     status: string;
     prepStatus: string | null;
+    /** #1296 — the REAL container this unit is packed into (a `projectContainers`
+     *  row id), the source of truth over the line's own `prepContainer` string
+     *  below. See `resolveItemContainerId`. */
+    containerId?: string | null;
     asset: { id: string; assetTag: string } | null;
     bulkAsset: { id: string; assetTag: string } | null;
   }>;
@@ -67,6 +71,24 @@ export type GroupEntry =
   | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number }
   | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] }
   | { kind: "accessory-group"; groupKey: string; item: LineItem; children: LineItem[] };
+
+/** Every selection key a list of `GroupEntry` would expose — the same
+ *  per-kind derivation `page.tsx`'s `allOutKeys`/`allPrepKeys`/etc. use
+ *  (a bare line-item id for single/serialized/kit/accessory entries, a
+ *  positional `bulkUnitKey` for each unit of a bulk entry). Used by "Deploy
+ *  container" (#1296 D4) to select an entire container's contents in one
+ *  click — reuses the EXISTING selection state and Deploy button rather
+ *  than adding a second deploy code path. */
+export function keysForGroupEntries(entries: GroupEntry[]): string[] {
+  const keys: string[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "single") keys.push(entry.item.id);
+    else if (entry.kind === "serialized-group") entry.items.forEach((i) => keys.push(i.id));
+    else if (entry.kind === "kit-group" || entry.kind === "accessory-group") keys.push(entry.item.id);
+    else for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
+  }
+  return keys;
+}
 
 // "Bulk" means: a multi-unit line item without individual serialized assets.
 export function isBulkItem(item: LineItem) {
@@ -298,4 +320,169 @@ export function isInCheckedOutStage(item: LineItem): boolean {
   const ownCheckedOut = item.status === "CHECKED_OUT";
   if (!isAccessoryParent(item)) return ownCheckedOut;
   return ownCheckedOut || accessoryChildrenOf(item).some((c) => c.status === "CHECKED_OUT");
+}
+
+// ─── Container-based sectioning (#1296 phase 2) ─────────────────────────────
+// The Deploy/Return/De-prep tabs section their lists by "which container this
+// gear is packed into". `item.prepContainer` (a free-text string, dual-written
+// at prep time) is the legacy grouping key; the REAL identity is the majority
+// `containerId` among the item's own units (mirrors
+// `structure-line-items-by-container.ts`'s `majorityContainerId` — same
+// question, independently reimplemented here since that module lives in
+// `src/lib/pdfme` and is PDF-shape-specific, not a dependency this page
+// should take on for a client-only grouping concern). Grouping by containerId
+// rather than the label means two units in the SAME real container never
+// split into two sections just because their `prepContainer` strings drifted
+// (or one was never backfilled) — the exact class of bug D9's migration
+// (widen → migrate → narrow) exists to close.
+
+function unitMajorityContainerId(units: LineItem["units"]): string | null {
+  if (!units || units.length === 0) return null;
+  const counts = new Map<string | null, number>();
+  for (const u of units) {
+    const key = u.containerId ?? null;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestN = -1;
+  for (const [key, n] of counts) {
+    if (n > bestN) {
+      best = key;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/** The real container id an item's units are (majority) packed into, or
+ *  `null` when none of its units carry one (pre-migration data, or gear
+ *  that's never been prepped through the rail). */
+export function resolveItemContainerId(item: LineItem): string | null {
+  return unitMajorityContainerId(item.units);
+}
+
+export interface ContainerGroup<T> {
+  /** Display label for the section header — `null` renders as "no container"
+   *  UI (see deploy-tab.tsx's `.some((g) => g.container !== null)` checks). */
+  container: string | null;
+  entries: T[];
+}
+
+/**
+ * Bucket a list of (already-grouped) entries by their representative item's
+ * container, preferring the REAL `containerId` (resolved to its current
+ * label via `containerLabelById`) and falling back to the legacy
+ * `prepContainer` string when no real container is resolved. Named
+ * containers sort alphabetically by label; the ungrouped bucket sorts last.
+ */
+export function buildContainerGroups<T>(
+  entries: T[],
+  representativeItem: (entry: T) => LineItem,
+  containerLabelById: Map<string, string>,
+): ContainerGroup<T>[] {
+  const byBucketKey = new Map<string, T[]>();
+  const labelByBucketKey = new Map<string, string | null>();
+
+  for (const entry of entries) {
+    const item = representativeItem(entry);
+    const containerId = resolveItemContainerId(item);
+    const bucketKey = containerId ? `id:${containerId}` : item.prepContainer ? `label:${item.prepContainer}` : "";
+    const label = containerId ? (containerLabelById.get(containerId) ?? item.prepContainer ?? null) : item.prepContainer || null;
+    if (!byBucketKey.has(bucketKey)) {
+      byBucketKey.set(bucketKey, []);
+      labelByBucketKey.set(bucketKey, label);
+    }
+    byBucketKey.get(bucketKey)!.push(entry);
+  }
+
+  const sortedKeys = [...byBucketKey.keys()].sort((a, b) => {
+    const la = labelByBucketKey.get(a) ?? null;
+    const lb = labelByBucketKey.get(b) ?? null;
+    if (la === null && lb === null) return 0;
+    if (la === null) return 1;
+    if (lb === null) return -1;
+    return la.localeCompare(lb);
+  });
+
+  return sortedKeys.map((bucketKey) => ({
+    container: labelByBucketKey.get(bucketKey) ?? null,
+    entries: byBucketKey.get(bucketKey)!,
+  }));
+}
+
+// ─── Move to… (#1296 phase 2) ───────────────────────────────────────────────
+// Reassign a Deploy/Return/De-prep selection to a different container (or to
+// Loose) — the UI half of `projectContainersWrites.moveUnitsNative`, which
+// already exists and takes real unit ids.
+
+type Unit = NonNullable<LineItem["units"]>[number];
+
+function collectRelevantUnitIds(item: LineItem, isRelevant: (u: Unit) => boolean): string[] {
+  const own = (item.units ?? []).filter(isRelevant).map((u) => u.id);
+  const fromChildren = (item.childLineItems ?? []).flatMap((c) => collectRelevantUnitIds(c, isRelevant));
+  return [...own, ...fromChildren];
+}
+
+/** Deploy tab: units packed (PACKED) but not yet deployed or returned. */
+export function isMoveableAtDeployStage(u: Unit): boolean {
+  return u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.prepStatus === "PACKED";
+}
+
+/** Return tab: units currently deployed (about to be checked in). */
+export function isMoveableAtReturnStage(u: Unit): boolean {
+  return u.status === "CHECKED_OUT";
+}
+
+/** De-prep tab: units physically back but still packed. */
+export function isMoveableAtDeprepStage(u: Unit): boolean {
+  return u.status === "RETURNED" && u.prepStatus === "PACKED";
+}
+
+/**
+ * Resolve a Deploy/Return/De-prep tab's selection — the SAME key format
+ * `handleCheckOutSelected`/`handlePrepSelected` already parse: a bare
+ * line-item id for a single/serialized/kit-parent/accessory-parent
+ * selection, or a positional `bulkUnitKey(lineItemId, index)` for a bulk
+ * line's per-unit checkbox — down to the real unit ids to move together
+ * (#1296 Move-to…).
+ *
+ * A kit/accessory parent's own key means "move the whole group": every
+ * descendant's relevant units too, via `childLineItems` recursion (D3's
+ * "the whole kit moves together" convention, same one
+ * `structure-line-items-by-container.ts` uses for documents). A bulk key
+ * only ever carries a COUNT — `handleCheckOutSelected`'s own `bulkQtyMap`
+ * parsing already treats the index as a tally, never a specific unit's
+ * identity, because nothing else does either — so N selected indices
+ * resolve to the first N stage-relevant units in array order (the same
+ * order the bulk-group row itself renders `units[idx]` in).
+ */
+export function resolveSelectionToUnitIds(
+  selectedKeys: Set<string>,
+  lineItems: LineItem[],
+  isRelevant: (u: Unit) => boolean,
+): string[] {
+  const bulkCounts = new Map<string, number>();
+  const wholeIds: string[] = [];
+
+  for (const key of selectedKeys) {
+    if (key.includes(":")) {
+      const lineItemId = key.split(":")[0];
+      bulkCounts.set(lineItemId, (bulkCounts.get(lineItemId) ?? 0) + 1);
+    } else {
+      wholeIds.push(key);
+    }
+  }
+
+  const unitIds: string[] = [];
+  for (const id of wholeIds) {
+    const li = lineItems.find((l) => l.id === id);
+    if (li) unitIds.push(...collectRelevantUnitIds(li, isRelevant));
+  }
+  for (const [lineItemId, count] of bulkCounts) {
+    const li = lineItems.find((l) => l.id === lineItemId);
+    if (!li) continue;
+    const relevant = (li.units ?? []).filter(isRelevant);
+    unitIds.push(...relevant.slice(0, count).map((u) => u.id));
+  }
+  return unitIds;
 }

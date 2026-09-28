@@ -14,6 +14,7 @@ import {
   syncLineItemRollup,
   returnLineUnits,
   checkinAccessoryChildren,
+  syncContainerStatuses,
 } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
@@ -45,6 +46,40 @@ async function unitByCuid(ctx: Ctx, id: string) {
 }
 function scanLog(ctx: Ctx, doc: Record<string, unknown>) {
   return ctx.db.insert("assetScanLogs", { id: createId(), ...doc } as never);
+}
+
+/**
+ * #1296 — the ONE call site for the container status roll-up on the
+ * checkout/return path (build plan phase 1c: "called ONCE at the end of
+ * checkOutItems/checkInItems/checkOutKit/checkInKit cores"). Collects every
+ * distinct `containerId` carried by the given lines' units (a line touched by
+ * this batch is enough — accessory children inherit the SAME containerId
+ * onto their own units, so scanning the parent lines already covers them),
+ * then asks `syncContainerStatuses` (fulfillment.ts) to flip each container's
+ * OWN line item; a flip on an ASSET-kind container also flips its asset here
+ * (setAssetsStatus lives in this file, so fulfillment.ts can't call it itself
+ * without a circular import).
+ */
+async function syncContainersForLines(
+  ctx: Ctx,
+  organizationId: string,
+  userId: string,
+  now: number,
+  lineIds: Iterable<string>,
+): Promise<void> {
+  const containerIds = new Set<string>();
+  for (const lineId of lineIds) {
+    for (const u of await lineUnits(ctx, lineId)) {
+      if (u.containerId) containerIds.add(u.containerId);
+    }
+  }
+  if (containerIds.size === 0) return;
+  const flips = await syncContainerStatuses(ctx, containerIds, { organizationId, userId, now });
+  for (const flip of flips) {
+    if (flip.assetId) {
+      await setAssetsStatus(ctx, [flip.assetId], flip.status === "CHECKED_OUT" ? "CHECKED_OUT" : "AVAILABLE", null, false, now);
+    }
+  }
 }
 
 // ── Checkout helpers ─────────────────────────────────────────────────────────
@@ -354,6 +389,7 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
       });
       updated.add(lineItem.id);
     }
+    await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, updated);
     return { updatedLineIds: [...updated] };
 }
 
@@ -653,6 +689,9 @@ export async function checkoutKitFull(ctx: Ctx, a: KitOpArgs): Promise<{ kitId: 
   const loc = project?.locationId ?? null;
   await checkoutKitPreflight(ctx, a, kitLine);
   const affectedKitIds = await checkoutKitCore(ctx, a, kitLine, loc);
+  // #1296 — the kit case's own line item may itself be packed inside another
+  // container (nesting, §3.5); its unit (if any) carries that containerId.
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, [kitLine.id]);
   return { kitId: a.kitId, affectedKitIds };
 }
 
@@ -764,6 +803,7 @@ export async function checkinKitFull(ctx: Ctx, a: KitCheckinArgs): Promise<{ kit
   const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect(); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
   const defaultLoc = locs.find((l) => l.isDefault)?.id ?? null;
   const affectedKitIds = await checkinKitCore(ctx, a, kitLine, defaultLoc);
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, [kitLine.id]);
   return { kitId: a.kitId, affectedKitIds };
 }
 
@@ -864,6 +904,7 @@ export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{
     }
     updated.add(item.lineItemId);
   }
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, updated);
   return { updatedLineIds: [...updated] };
 }
 
@@ -1504,10 +1545,22 @@ export async function ensureContainerOnProjectCore(ctx: Ctx, a: EnsureContainerA
     .filter((l) => l.organizationId === a.organizationId);
   const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
   const id = createId();
+  // #1296 — pair a real projectContainers row (kind ASSET) with the line item,
+  // the same "any container added also gets added onto the job" invariant
+  // `projectContainersWrites.createNative` gives a browser-direct create.
+  // A pre-#1296 line with no matching container (prod, before the backfill
+  // runs) is expected and fine — phase 1d's backfill closes that gap.
+  const containerId = createId();
   await ctx.db.insert("projectLineItems", {
     id, organizationId: a.organizationId, projectId: a.projectId, versionId: containerVersionId, lineageId: id, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
     quantity: 1, sortOrder, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED", prepContainer: a.containerName,
-    isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
+    containerId, isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
+  });
+  const containers = (await versionRows(ctx, "projectContainers", containerVersionId)).filter((c) => c.organizationId === a.organizationId);
+  const containerSort = containers.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
+  await ctx.db.insert("projectContainers", {
+    id: containerId, organizationId: a.organizationId, projectId: a.projectId, versionId: containerVersionId, lineageId: containerId,
+    kind: "ASSET", assetId: a.assetId, label: a.containerName, lineItemId: id, sortOrder: containerSort, createdAt: a.now, updatedAt: a.now,
   });
   return { id, created: true };
 }

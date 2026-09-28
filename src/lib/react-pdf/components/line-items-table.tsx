@@ -64,7 +64,6 @@ type ColumnKey =
   | "assetTag"
   | "category"
   | "condition"
-  | "received"
   | "notes";
 
 export interface ColumnDef {
@@ -112,12 +111,23 @@ export function getColumnsForDocType(config: TablePluginConfig): ColumnDef[] {
       ];
 
     case "delivery-docket":
+      // #1296 phase 3c (D7) — itemised, container order, no per-row Received
+      // checkbox (one signature covers the whole delivery).
       return [
-        { key: "rowNum", label: "#", width: "5%", align: "center" },
-        { key: "description", label: "Description", width: "61%", align: "left" },
-        { key: "qty", label: "Qty", width: "8%", align: "center" },
-        { key: "assetTag", label: "Asset Tag", width: "15%", align: "left" },
-        { key: "received", label: "Received", width: "11%", align: "center" },
+        { key: "rowNum", label: "#", width: "6%", align: "center" },
+        { key: "description", label: "Item", width: "58%", align: "left" },
+        { key: "qty", label: "Qty", width: "10%", align: "center" },
+        { key: "assetTag", label: "Asset Tag", width: "26%", align: "left" },
+      ];
+
+    case "manifest":
+      // Reference only (Q10 — no ticks): description, qty, asset tags inline.
+      // No checkbox column — the docket is the sign-off, not this document.
+      return [
+        { key: "description", label: "Item", width: "50%", align: "left" },
+        { key: "qty", label: "Qty", width: "10%", align: "center" },
+        { key: "assetTag", label: "Asset Tags", width: "25%", align: "left" },
+        { key: "category", label: "Category", width: "15%", align: "left" },
       ];
 
     default:
@@ -153,10 +163,15 @@ export interface GroupedTable {
 }
 
 /** Filter + group the raw line-item list exactly as gearflow-table.ts's
- *  `pdfRender` does before drawing — the SALE-line/bulk/status filtering,
- *  the doc-type-specific "ungrouped" bucket name, and delivery-docket's kit
- *  parent → CHECKED_OUT-children promotion into their own section. Pure so
- *  it's independently testable without rendering anything. */
+ *  `pdfRender` does before drawing — the SALE-line/bulk/status filtering and
+ *  the doc-type-specific "ungrouped" bucket name. A kit parent is grouped
+ *  like any other row (by `groupName`/container bucket); it keeps its own
+ *  row and its CHECKED_OUT children render indented below it via
+ *  `ChildrenBlock` (D7 — delivery-docket used to promote a kit's children
+ *  into their own section and drop the kit row; #1296 phase 3c dropped that
+ *  special case so the docket agrees with the manifest/return-sheet, which
+ *  never did this). Pure so it's independently testable without rendering
+ *  anything. */
 export function filterAndGroupItems(items: DocumentLineItem[], config: TablePluginConfig): GroupedTable {
   let filtered = items.filter((i) => !i.isKitChild && !i.isContainerLineItem);
 
@@ -170,9 +185,22 @@ export function filterAndGroupItems(items: DocumentLineItem[], config: TablePlug
     // excluded entirely from the return sheet (regardless of status), and
     // bypass the status filter everywhere else `filterByStatus` applies.
     const isReturnSheet = config.documentType === "return-sheet";
-    filtered = filtered.filter((i) => {
+    const passesStatus = (i: DocumentLineItem): boolean => {
       if (i.type === "SALE") return !isReturnSheet;
       if (isBulk(i)) return i.checkedOutQuantity > 0;
+      return statuses.includes(i.status);
+    };
+    // #1296 — a container header row's own `status` is a best-effort derived
+    // summary (structure-line-items-by-container.ts), not authoritative for
+    // filtering — same "meaningless own status" shape isGroupRow gets below.
+    // It passes iff ANY real row sharing its section (groupName) passes.
+    const passingContainerSections = new Set(
+      items
+        .filter((i) => !i.isContainerRow && !i.isKitChild && !i.isContainerLineItem && i.groupName && passesStatus(i))
+        .map((i) => i.groupName as string),
+    );
+    filtered = filtered.filter((i) => {
+      if (i.isContainerRow) return !!i.groupName && passingContainerSections.has(i.groupName);
       // Synthetic Project Group row: its own status is meaningless (a
       // label, not a real line item) — pass through if ANY attached child
       // passes the filter, or the parent + all members silently drop.
@@ -183,7 +211,7 @@ export function filterAndGroupItems(items: DocumentLineItem[], config: TablePlug
           return statuses.includes(c.status);
         });
       }
-      return statuses.includes(i.status);
+      return passesStatus(i);
     });
   }
 
@@ -192,33 +220,11 @@ export function filterAndGroupItems(items: DocumentLineItem[], config: TablePlug
 
   const groups = new Map<string, DocumentLineItem[]>();
 
-  if (config.documentType === "delivery-docket") {
-    // Kit parents promote their CHECKED_OUT children to be section rows
-    // under the kit's name (client ticks each item off on receipt).
-    // Non-kit items respect `groupName` like every other doc type.
-    for (const item of filtered) {
-      if (isKitParent(item)) {
-        const kitName = item.kit?.name || item.description || "Kit";
-        const children = (item.childLineItems || []).filter((c) => c.status === "CHECKED_OUT");
-        if (children.length > 0) {
-          const arr = groups.get(kitName) || [];
-          arr.push(...children);
-          groups.set(kitName, arr);
-        }
-      } else {
-        const key = item.groupName || item.prepContainer || ungroupedKey;
-        const arr = groups.get(key) || [];
-        arr.push(item);
-        groups.set(key, arr);
-      }
-    }
-  } else {
-    for (const item of filtered) {
-      const key = item.groupName || item.prepContainer || ungroupedKey;
-      const arr = groups.get(key) || [];
-      arr.push(item);
-      groups.set(key, arr);
-    }
+  for (const item of filtered) {
+    const key = item.groupName || item.prepContainer || ungroupedKey;
+    const arr = groups.get(key) || [];
+    arr.push(item);
+    groups.set(key, arr);
   }
 
   return { ungroupedKey, groups };
@@ -469,6 +475,70 @@ function GroupHeaderRow({
   );
 }
 
+/** `container.label (tag) — N items` — the container header band's title
+ *  line. Split out of `ContainerHeaderRow` so the JSX stays a flat template
+ *  (R-3.6). */
+function containerHeaderTitle(item: DocumentLineItem): string {
+  const tag = item.containerTag ? ` (${item.containerTag})` : "";
+  const count = item.containerItemCount != null ? ` — ${item.containerItemCount} item${item.containerItemCount === 1 ? "" : "s"}` : "";
+  return `${item.description ?? "Container"}${tag}${count}`;
+}
+
+/** #1296 build plan phase 3b — the manifest/docket/return-sheet container
+ *  section header: a `structureLineItemsByContainer` synthetic row
+ *  (`isContainerRow: true`), one per container (top-level or nested,
+ *  indented by `containerDepth`). Replaces the generic `GroupHeaderRow` for
+ *  `byContainer`-mode tables — see `TablePluginConfig.byContainer`'s doc
+ *  comment for why the two aren't both drawn. */
+function ContainerHeaderRow({
+  item,
+  docColor,
+  showReturnCheckbox,
+}: {
+  item: DocumentLineItem;
+  docColor: string;
+  /** #1296 phase 3c (D10) — return-sheet's "case returned" box, top-level
+   *  containers only (a nested tub returns with its parent case). */
+  showReturnCheckbox?: boolean;
+}) {
+  const depth = item.containerDepth ?? 0;
+  return (
+    <View
+      minPresenceAhead={17}
+      wrap={false}
+      style={{
+        backgroundColor: depth === 0 ? lightenHex(docColor, 0.88) : lightenHex(docColor, 0.94),
+        borderBottomWidth: 0.5,
+        borderBottomColor: COLORS.headerBorder,
+        borderBottomStyle: "solid",
+        paddingVertical: "1.5mm",
+        paddingHorizontal: "1.5mm",
+        paddingLeft: `${1.5 + depth * 4}mm`,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+    >
+      <View>
+        <Text style={{ fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>
+          {containerHeaderTitle(item)}
+        </Text>
+        {item.containerDescription && (
+          <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.muted, marginTop: "0.5mm" }}>
+            {item.containerDescription}
+          </Text>
+        )}
+      </View>
+      {showReturnCheckbox && depth === 0 && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: "1.5mm" }}>
+          <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.text }}>Case returned</Text>
+          <Checkbox size={9} />
+        </View>
+      )}
+    </View>
+  );
+}
+
 function PerUnitRow({
   unit,
   index,
@@ -568,8 +638,6 @@ function renderParentCell(col: ColumnDef, item: DocumentLineItem, config: TableP
       );
     case "condition":
       return <ConditionCell key={col.key} col={col} size={7} fontSize={7} color={COLORS.text} />;
-    case "received":
-      return renderCheckboxCell(col, 8, false);
     case "notes":
       return <Cell key={col.key} col={col}> </Cell>;
     default:
@@ -719,8 +787,6 @@ function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TableP
       );
     case "condition":
       return <ConditionCell key={col.key} col={col} size={6} fontSize={6} color={COLORS.text} />;
-    case "received":
-      return renderCheckboxCell(col, 8, false);
     default:
       return null;
   }
@@ -773,8 +839,6 @@ function renderGrandchildCell(col: ColumnDef, nested: DocumentLineItem, config: 
       );
     case "condition":
       return <ConditionCell key={col.key} col={col} size={6} fontSize={6} color={COLORS.text} />;
-    case "received":
-      return renderCheckboxCell(col, 8, false);
     case "rowNum":
     case "notes":
       return renderBlankCell(col);
@@ -875,17 +939,34 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
       <TableHeader columns={columns} />
       {Array.from(groups.entries()).map(([groupName, groupItems]) => (
         <View key={groupName}>
-          {groupName !== ungroupedKey && config.showGroupHeaders && (
-            <GroupHeaderRow
-              name={groupName}
-              docColor={docColor}
-              rollupAmount={(() => {
-                const amount = rollupAmountForBucket(groupItems, config);
-                return amount == null ? null : formatCurrency(amount);
-              })()}
-            />
-          )}
+          {/* A top-level (depth 0) container row already carries this
+              section's title (label/tag/count) via ContainerHeaderRow below —
+              printing the generic GroupHeaderRow too would repeat it. A
+              section with no such row (a flat category/kit bucket, or the
+              "Loose" bucket) still gets the plain header as normal. */}
+          {groupName !== ungroupedKey &&
+            config.showGroupHeaders &&
+            !groupItems.some((item) => item.isContainerRow && (item.containerDepth ?? 0) === 0) && (
+              <GroupHeaderRow
+                name={groupName}
+                docColor={docColor}
+                rollupAmount={(() => {
+                  const amount = rollupAmountForBucket(groupItems, config);
+                  return amount == null ? null : formatCurrency(amount);
+                })()}
+              />
+            )}
           {groupItems.map((item) => {
+            if (item.isContainerRow) {
+              return (
+                <ContainerHeaderRow
+                  key={item.id}
+                  item={item}
+                  docColor={docColor}
+                  showReturnCheckbox={config.showContainerReturnCheckbox}
+                />
+              );
+            }
             globalIdx++;
             const idx = globalIdx;
             const display = deriveRowDisplay(item, config);

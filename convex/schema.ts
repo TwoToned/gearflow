@@ -605,6 +605,12 @@ export default defineSchema({
     barcodeLabelTemplate: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
+    // #1296 packing containers, build plan phase 2 — a model eligible to be
+    // used as a container (case, tub, road box) regardless of which category
+    // it sits in. OR'd with `containerCategoryIds` in `containerAssetSearch`,
+    // not a replacement for it — a container model doesn't have to move out
+    // of its normal equipment category.
+    isContainer: v.optional(v.boolean()),
     // WS1 (#940) — Xero account-coding cascade, level 2 (model default), split
     // rental vs sale sides. `xeroSaleAccountCode` pairs with the future WS11/#950
     // sales-stock flow — the field exists now, no sale workflow is built here.
@@ -1646,7 +1652,20 @@ export default defineSchema({
     returnCondition: v.optional(enums.ReturnCondition),
     returnNotes: v.optional(v.string()),
     prepStatus: v.optional(enums.PrepStatus),
+    // #1296 packing containers — widen step, same as the unit-level field
+    // above; stays readable until phase 5.
     prepContainer: v.optional(v.string()),
+    // Plan vs actual (D9): the PM's intended container for this WHOLE line,
+    // set on the Packing tab (phase 4) before any unit exists. `prepUnit`
+    // defaults a unit's `containerId` to this when the operator has no
+    // container active. A split line (some units in one box, some in
+    // another) is a warehouse-time act — this never disagrees with reality,
+    // it just isn't consulted once units disagree with each other.
+    plannedContainerId: v.optional(v.string()),
+    // Reverse lookup, set ONLY on a container's own line item (the line
+    // `projectContainers.lineItemId` points at) — this line's containerId is
+    // NOT the container it's packed inside; it's the container it IS.
+    containerId: v.optional(v.string()),
     isContainerLineItem: v.optional(v.boolean()),
     isCustomItem: v.optional(v.boolean()),
     returnStatus: v.optional(enums.ReturnStatus),
@@ -1739,7 +1758,13 @@ export default defineSchema({
     returnedQuantity: v.optional(v.number()),
     status: v.optional(enums.LineItemStatus),
     prepStatus: v.optional(enums.PrepStatus),
+    // #1296 packing containers — the widen step: `prepContainer` (a free-text
+    // label, never read reliably — see the phase-0 repro) stays readable
+    // until phase 5's narrow; `containerId` (a real projectContainers row) is
+    // the new source of truth. Membership lives HERE, per unit, never on the
+    // line — see projectContainers' schema comment.
     prepContainer: v.optional(v.string()),
+    containerId: v.optional(v.string()),
     checkedOutAt: v.optional(v.number()),
     checkedOutById: v.optional(v.string()),
     returnedAt: v.optional(v.number()),
@@ -1759,7 +1784,51 @@ export default defineSchema({
     .index("by_lineItemId_ordinal", ["lineItemId", "ordinal"])
     .index("by_organizationId_assetId_status", ["organizationId", "assetId", "status"])
     .index("by_organizationId_bulkAssetId_status", ["organizationId", "bulkAssetId", "status"])
-    .index("by_lineItemId_status", ["lineItemId", "status"]),
+    .index("by_lineItemId_status", ["lineItemId", "status"])
+    .index("by_containerId", ["containerId"]),
+
+  // ProjectContainer (#1296 — packing containers). A first-class per-project
+  // entity a unit is packed INTO: a road case, a tub, a pallet, a free-text
+  // box. Plan row like the four versioned tables — see versionScope.ts's
+  // `VersionedTableName` — so it carries versionId/lineageId and is read
+  // through `versionRows`/`liveRows`, never a `by_projectId` (there isn't one;
+  // scripts/version-scope-ratchet.mjs forbids it). `by_assetId`/`by_cuid` are
+  // GLOBAL indexes — every reader must org-check (scripts/xtenant-bycuid-ratchet.mjs).
+  projectContainers: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
+    kind: enums.ContainerKind,
+    assetId: v.optional(v.string()),
+    bulkAssetId: v.optional(v.string()),
+    // Display name; for ASSET defaults to the asset's customName || model
+    // name, editable thereafter. Identity is always the id, never this.
+    label: v.string(),
+    // Optional free text on the box ("Cables + power", "Client's own case"),
+    // printed under the container header on the manifest (D6). A container
+    // is just a box — there is no on-site destination field.
+    description: v.optional(v.string()),
+    // The container's own line item on the job (1:1) — created together, so
+    // "any container added in the warehouse also gets added onto the job" is
+    // uniform across all three kinds. See convex/projectContainersWrites.ts.
+    lineItemId: v.string(),
+    // Nesting (D1 — required from day one). Unbounded depth in the model;
+    // documents indent one level per nesting and summaries count top-level
+    // containers only.
+    parentContainerId: v.optional(v.string()),
+    sortOrder: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_versionId", ["versionId"])
+    .index("by_lineItemId", ["lineItemId"])
+    .index("by_assetId", ["assetId"])
+    .index("by_bulkAssetId", ["bulkAssetId"])
+    .index("by_parentContainerId", ["parentContainerId"]),
 
   // LineItemMergeMap
   lineItemMergeMaps: defineTable({

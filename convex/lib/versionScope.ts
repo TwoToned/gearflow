@@ -71,6 +71,7 @@ export async function resolveWriteVersionId(
  *  `versionId` index of its own; see its schema.ts comment. */
 export type VersionedTableName =
   | "projectCategories"
+  | "projectContainers"
   | "projectGroups"
   | "projectLineItems"
   | "projectServices";

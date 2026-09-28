@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (608 agent-reachable)
+## Operations (615 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -414,6 +414,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectCategoriesWrites.deleteCategoryNative` (mutation, scope: project:manage_line_items)
 - `projectCategoriesWrites.reorderCategoriesNative` (mutation, scope: project:manage_line_items)
 - `projectCategoriesWrites.updateCategoryNative` (mutation, scope: project:manage_line_items)
+- `projectContainersWrites.createNative` (mutation, scope: project:manage_line_items)
+- `projectContainersWrites.deleteNative` (mutation, scope: project:manage_line_items)
+- `projectContainersWrites.setPlannedContainerNative` (mutation, scope: project:manage_line_items)
+- `projectContainersWrites.updateNative` (mutation, scope: project:manage_line_items)
 - `projectCosts.operationalCosts` (query, scope: project:read)
 - `projectDetail.bundle` (query, scope: project:read)
 - `projectEquipment.browserBundle` (query, scope: project:read)
@@ -617,6 +621,9 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `checkRecordWrites.completeCheckAndPack` (mutation, scope: warehouse:check_out)
 - `checkRecordWrites.completeCheckAndStore` (mutation, scope: warehouse:check_in)
 - `checkRecordWrites.saveAdHocCheck` (mutation, scope: warehouse:scan)
+- `projectContainers.listForProject` (query, scope: warehouse:read)
+- `projectContainersWrites.moveUnitsNative` (mutation, scope: warehouse:check_out)
+- `projectContainersWrites.unpackNative` (mutation, scope: warehouse:check_out)
 - `returnsLookup.resolve` (query, scope: warehouse:read)
 - `returnsWrites.correctReturnConditionNative` (mutation, scope: warehouse:check_in)
 - `returnsWrites.returnBatchNative` (mutation, scope: warehouse:check_in)

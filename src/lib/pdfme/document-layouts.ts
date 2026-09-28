@@ -30,12 +30,19 @@ export interface DocumentLayout {
    * docs). Packer sort order piggy-backs on this same flag.
    */
   expandProjectGroups: boolean;
+  /** #1296 build plan phase 3 — bucket by container first (structureLineItems's
+   *  `byContainer` mode, structure-line-items-by-container.ts) instead of the
+   *  flat category/kit grouping. Phase 3c (D7/D10) extended this from
+   *  manifest-only to return-sheet and delivery-docket too, so all three agree
+   *  on container order. Absent/false = unchanged flat grouping. */
+  byContainer?: boolean;
 }
 
 export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
   quote: { expandProjectGroups: false },
   invoice: { expandProjectGroups: false },
   "packing-list": { expandProjectGroups: true },
-  "return-sheet": { expandProjectGroups: true },
-  "delivery-docket": { expandProjectGroups: true },
+  "return-sheet": { expandProjectGroups: true, byContainer: true },
+  "delivery-docket": { expandProjectGroups: true, byContainer: true },
+  manifest: { expandProjectGroups: true, byContainer: true },
 };

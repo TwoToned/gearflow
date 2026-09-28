@@ -25,6 +25,7 @@ const typeMap: Record<string, ProjectDocumentType> = {
   "pull-slip": "packing-list",
   "return-sheet": "return-sheet",
   "delivery-docket": "delivery-docket",
+  manifest: "manifest",
 };
 
 /** Client-facing finance docs — reachable here ONLY as a watermarked preview. */

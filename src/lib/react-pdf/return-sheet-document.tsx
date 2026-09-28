@@ -48,6 +48,12 @@ export function ReturnSheetDocument({ data }: { data: DocumentData }) {
     filterOptional: false,
     filterByStatus: ["CHECKED_OUT", "RETURNED"],
     hidePricingPeriodSuffix: false,
+    // #1296 build plan phase 3c (D10) — grouped by the container gear LEFT
+    // in (read-only, today's containerId — no separate departure snapshot,
+    // "not worth the effort" per the design doc), with a per-case "returned"
+    // box the warehouse ticks off as each one comes back.
+    byContainer: true,
+    showContainerReturnCheckbox: true,
   };
 
   return (

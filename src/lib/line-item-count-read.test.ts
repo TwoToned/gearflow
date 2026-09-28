@@ -76,6 +76,8 @@ function li(over: Partial<MappedLineItem>): MappedLineItem {
     returnNotes: null,
     prepStatus: null,
     prepContainer: null,
+    plannedContainerId: null,
+    containerId: null,
     isContainerLineItem: false,
     isCustomItem: false,
     returnStatus: null,

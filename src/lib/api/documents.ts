@@ -36,7 +36,7 @@ import { api } from "../../../convex/_generated/api";
  *   analogue and reports `NOT_FOUND` instead.
  */
 
-export const AGENT_DOCUMENT_TYPES = ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket"] as const;
+export const AGENT_DOCUMENT_TYPES = ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket", "manifest"] as const;
 export type AgentDocumentType = (typeof AGENT_DOCUMENT_TYPES)[number];
 
 export function isAgentDocumentType(value: string): value is AgentDocumentType {
@@ -66,7 +66,7 @@ function apiError(code: string, message: string): Error {
   return Object.assign(new Error(message), { code });
 }
 
-const LIVE_RENDER_TYPES = new Set<AgentDocumentType>(["packing-list", "return-sheet", "delivery-docket"]);
+const LIVE_RENDER_TYPES = new Set<AgentDocumentType>(["packing-list", "return-sheet", "delivery-docket", "manifest"]);
 
 async function resolveQuote(actor: ActorContext, projectId: string): Promise<AgentDocumentOutcome> {
   const { organizationId } = await requirePermission("invoice", "read", actor);
@@ -146,7 +146,7 @@ async function resolveInvoice(actor: ActorContext, projectId: string): Promise<A
 async function resolveLiveWarehouseDoc(
   actor: ActorContext,
   projectId: string,
-  docType: "packing-list" | "return-sheet" | "delivery-docket",
+  docType: "packing-list" | "return-sheet" | "delivery-docket" | "manifest",
 ): Promise<AgentDocumentOutcome> {
   const { organizationId } = await requirePermission("project", "read", actor);
   const bytes = await generatePdf(projectId, organizationId, docType);

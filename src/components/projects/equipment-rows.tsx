@@ -200,6 +200,7 @@ export {
   taggedUnitCount,
   describeRow,
   unitFulfillmentBadge,
+  hasContainerChip,
   type RowSource,
   type RowRole,
   type RowDescriptor,
@@ -1215,6 +1216,9 @@ export function LineItemRow({
   // sub-hire-item-edit-payload.ts and equipment-tab.tsx's
   // handleInlineLineItemUpdate.
   const isSubHireGroupChild = item.subHireGroupId != null;
+  // #1296 (D5) — a container's own line item is never priced; its price cell
+  // is always read-only regardless of lock/permission state.
+  const priceEditable = !!onInlineUpdate && desc.source !== "container";
 
   /** Category price rollup, per-item reveal — only offered inside a rolled-up
    *  category AND on a row that prints its own row on a client-facing document.
@@ -1403,6 +1407,7 @@ export function LineItemRow({
         <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
       )}
       {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+      {desc.source === "container" && <Badge status="neutral">Container</Badge>}
       {desc.isSale && item.saleMode === "NEW_STOCK" && (
         <Badge status="ok">Sale · New stock</Badge>
       )}
@@ -1778,6 +1783,11 @@ export function LineItemRow({
               Custom
             </Badge>
           )}
+          {desc.source === "container" && (
+            <Badge status="neutral" className="ml-1.5">
+              Container
+            </Badge>
+          )}
           {desc.isSale && item.saleMode === "NEW_STOCK" && (
             <Badge status="ok" className="ml-1.5">
               Sale · New stock
@@ -1857,7 +1867,7 @@ export function LineItemRow({
         )}
       </TableCell>
       <TableCell className="text-right whitespace-nowrap t-data">
-        {onInlineUpdate && isSubHireGroupChild ? (
+        {priceEditable && isSubHireGroupChild ? (
           // Sub-hire GROUP CHILDREN route through updateSubHireItemNative
           // (equipment-tab.tsx's handleInlineLineItemUpdate), not patchNative
           // — that mutation isn't lock-gated (same as SubHireOrderDialog's
@@ -1880,7 +1890,7 @@ export function LineItemRow({
               />
             </div>
           </>
-        ) : onInlineUpdate ? (
+        ) : priceEditable ? (
           <LockedField
             locked={!!moneyLocked}
             reason={lockReason ?? "This project's financials are locked."}
@@ -1890,7 +1900,7 @@ export function LineItemRow({
             <div className="flex items-center justify-end gap-1">
               <InlineEditablePrice
                 value={item.unitPrice != null ? Number(item.unitPrice) : null}
-                onSave={(next) => onInlineUpdate(item, { field: "unitPrice", value: next })}
+                onSave={(next) => onInlineUpdate!(item, { field: "unitPrice", value: next })}
               />
               {item.priceOverridden && (
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-warn shrink-0" title="Manually set price" />
@@ -1905,7 +1915,7 @@ export function LineItemRow({
                   quantity: item.quantity,
                   duration: item.duration,
                 })}
-                onSave={(amount, mode) => onInlineUpdate(item, { field: "discount", value: amount, discountMode: mode })}
+                onSave={(amount, mode) => onInlineUpdate!(item, { field: "discount", value: amount, discountMode: mode })}
               />
             </div>
           </LockedField>

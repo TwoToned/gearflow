@@ -31,6 +31,7 @@ import type * as backfillInvoiceSourceRevision from "../backfillInvoiceSourceRev
 import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as backfillMaintenanceSchedules from "../backfillMaintenanceSchedules.js";
 import type * as backfillOrphanedLineItemComments from "../backfillOrphanedLineItemComments.js";
+import type * as backfillProjectContainers from "../backfillProjectContainers.js";
 import type * as backfillProjectLiveRevision from "../backfillProjectLiveRevision.js";
 import type * as backfillProjectPricingLock from "../backfillProjectPricingLock.js";
 import type * as backfillProjectVersions from "../backfillProjectVersions.js";
@@ -233,6 +234,8 @@ import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
 import type * as pipeline from "../pipeline.js";
 import type * as projectCategories from "../projectCategories.js";
 import type * as projectCategoriesWrites from "../projectCategoriesWrites.js";
+import type * as projectContainers from "../projectContainers.js";
+import type * as projectContainersWrites from "../projectContainersWrites.js";
 import type * as projectCosts from "../projectCosts.js";
 import type * as projectDetail from "../projectDetail.js";
 import type * as projectEquipment from "../projectEquipment.js";
@@ -349,6 +352,7 @@ declare const fullApi: ApiFromModules<{
   backfillKitUnits: typeof backfillKitUnits;
   backfillMaintenanceSchedules: typeof backfillMaintenanceSchedules;
   backfillOrphanedLineItemComments: typeof backfillOrphanedLineItemComments;
+  backfillProjectContainers: typeof backfillProjectContainers;
   backfillProjectLiveRevision: typeof backfillProjectLiveRevision;
   backfillProjectPricingLock: typeof backfillProjectPricingLock;
   backfillProjectVersions: typeof backfillProjectVersions;
@@ -551,6 +555,8 @@ declare const fullApi: ApiFromModules<{
   pipeline: typeof pipeline;
   projectCategories: typeof projectCategories;
   projectCategoriesWrites: typeof projectCategoriesWrites;
+  projectContainers: typeof projectContainers;
+  projectContainersWrites: typeof projectContainersWrites;
   projectCosts: typeof projectCosts;
   projectDetail: typeof projectDetail;
   projectEquipment: typeof projectEquipment;

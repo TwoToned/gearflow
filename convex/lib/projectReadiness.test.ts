@@ -5,8 +5,11 @@ import {
   computeProjectGearReadiness,
   computeProjectCrewReadiness,
   computeProjectPricingReadiness,
+  computeProjectPackingReadiness,
   type PricingLineInput,
   type PricingGroupInput,
+  type PackingLineInput,
+  type PackingUnitInput,
 } from "./projectReadiness";
 import type {
   BoardProject,
@@ -211,6 +214,49 @@ describe("computeProjectPricingReadiness", () => {
       [pgroup({ id: "g1", projectId: "p2", title: "Elsewhere" })],
     );
     expect(r.unpricedCount).toBe(0);
+  });
+});
+
+describe("computeProjectPackingReadiness (#1296 build plan phase 4)", () => {
+  function pkline(l: Partial<PackingLineInput> & { id: string }): PackingLineInput {
+    return { projectId: "p1", type: "EQUIPMENT", status: "CONFIRMED", isKitChild: false, isContainerLineItem: false, ...l };
+  }
+  function punit(u: Partial<PackingUnitInput> & { lineItemId: string }): PackingUnitInput {
+    return { containerId: null, ...u };
+  }
+
+  test("a line with neither a planned container nor a packed unit counts as not planned", () => {
+    const r = computeProjectPackingReadiness("p1", [pkline({ id: "l1" })], []);
+    expect(r).toEqual({ totalCount: 1, notPlannedCount: 1 });
+  });
+
+  test("a planned container (PM's intent) counts as planned even before anything is packed", () => {
+    const r = computeProjectPackingReadiness("p1", [pkline({ id: "l1", plannedContainerId: "c1" })], []);
+    expect(r).toEqual({ totalCount: 1, notPlannedCount: 0 });
+  });
+
+  test("an actually-packed unit counts as planned even with no plan set (actual overrides plan)", () => {
+    const r = computeProjectPackingReadiness("p1", [pkline({ id: "l1" })], [punit({ lineItemId: "l1", containerId: "c1" })]);
+    expect(r).toEqual({ totalCount: 1, notPlannedCount: 0 });
+  });
+
+  test("excludes kit children, container line items, cancelled lines, and non-equipment lines", () => {
+    const r = computeProjectPackingReadiness(
+      "p1",
+      [
+        pkline({ id: "l1", isKitChild: true }),
+        pkline({ id: "l2", isContainerLineItem: true }),
+        pkline({ id: "l3", status: "CANCELLED" }),
+        pkline({ id: "l4", type: "SALE" }),
+      ],
+      [],
+    );
+    expect(r).toEqual({ totalCount: 0, notPlannedCount: 0 });
+  });
+
+  test("another project's rows never leak in", () => {
+    const r = computeProjectPackingReadiness("p1", [pkline({ id: "l1", projectId: "p2" })], []);
+    expect(r).toEqual({ totalCount: 0, notPlannedCount: 0 });
   });
 });
 

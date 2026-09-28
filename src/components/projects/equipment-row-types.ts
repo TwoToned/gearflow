@@ -62,6 +62,12 @@ export interface LineItemData {
   /** A container row (road case, trolley). `isNonGear` in the allocator, so it
    *  takes no share of any pool — see canExcludeFromRoi (src/lib/roi.ts). */
   isContainerLineItem?: boolean;
+  /** #1296 — this whole line has been packed (or planned to pack) into a
+   *  container. `plannedContainerId` is the PM's Packing-tab intent (phase 4);
+   *  `containerId` is set only on units in the reconstructed read, never here —
+   *  a line-level chip shows planned OR any-unit-packed, read-only on this tab
+   *  (edited on Packing). */
+  plannedContainerId?: string | null;
   isKitChild?: boolean;
   subHireId?: string | null;
   /** Client-document sub-hire visibility toggle ("Show as sub-hired").
@@ -102,6 +108,8 @@ export interface LineItemData {
     returnCondition?: string | null;
     asset?: { id: string; assetTag: string } | null;
     bulkAsset?: { id: string; assetTag: string } | null;
+    /** #1296 — the container this unit is physically packed inside, if any. */
+    containerId?: string | null;
   }>;
   kit?: { name?: string } | null;
   childLineItems?: LineItemData[];

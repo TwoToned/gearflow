@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 445 | 311 | 132 | 1 | 1 |
-| Mutations | 794 | 297 | 490 | 0 | 7 |
-| **Total** | **1239** | **608** | **622** | **1** | **8** |
+| Queries | 447 | 312 | 133 | 1 | 1 |
+| Mutations | 802 | 303 | 492 | 0 | 7 |
+| **Total** | **1249** | **615** | **625** | **1** | **8** |
 
-<!-- reachability-floor: 608 -->
+<!-- reachability-floor: 615 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,9 +42,9 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 90 |
-| `medium` | 146 |
-| `low` | 61 |
+| `high` | 91 |
+| `medium` | 148 |
+| `low` | 64 |
 
 ## Modules with no agent-reachable operation
 
@@ -65,6 +65,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
 | `backfillOrphanedLineItemComments` | 4 |
+| `backfillProjectContainers` | 3 |
 | `backfillProjectLiveRevision` | 2 |
 | `backfillProjectPricingLock` | 2 |
 | `backfillProjectVersions` | 2 |

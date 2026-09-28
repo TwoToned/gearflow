@@ -107,6 +107,8 @@ export function useCheckRecordWrites() {
       assetId?: string;
       bulkAssetId?: string | null;
       prepContainer?: string | null;
+      /** #1296 — wins over `prepContainer` server-side, see `checkRecordOps.ts`'s `resolvePrepContainerId`. */
+      containerId?: string | null;
       includeAccessoryIds?: string[];
       checks: Check[];
     }): Promise<{ success: true; autoStatus: string | null }> => {
@@ -119,6 +121,7 @@ export function useCheckRecordWrites() {
         ...(data.assetId ? { assetId: data.assetId } : {}),
         ...(data.bulkAssetId ? { bulkAssetId: data.bulkAssetId } : {}),
         prepContainer: data.prepContainer ?? undefined,
+        containerId: data.containerId,
         ...(data.includeAccessoryIds ? { includeAccessoryIds: data.includeAccessoryIds } : {}),
         checks: buildChecks(data.checks),
         maintenancePlan: buildPlan(data.checks),

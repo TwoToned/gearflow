@@ -21,6 +21,7 @@ import { InvoiceDocument } from "./invoice-document";
 import { PackingListDocument } from "./packing-list-document";
 import { ReturnSheetDocument } from "./return-sheet-document";
 import { DeliveryDocketDocument } from "./delivery-docket-document";
+import { ManifestDocument } from "./manifest-document";
 
 export interface RenderReactPdfOptions {
   /** Stamp the "DRAFT PREVIEW — NOT SENT" banner on every page. Quote/invoice
@@ -46,5 +47,7 @@ export async function renderReactPdfTemplate(
       return renderToBuffer(<ReturnSheetDocument data={data} />);
     case "delivery-docket":
       return renderToBuffer(<DeliveryDocketDocument data={data} />);
+    case "manifest":
+      return renderToBuffer(<ManifestDocument data={data} />);
   }
 }

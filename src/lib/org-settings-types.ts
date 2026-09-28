@@ -146,7 +146,14 @@ export interface OrgSettings {
   testTag?: TestTagSettings;
   icalToken?: string;
   icalEnabled?: boolean;
+  /** DEPRECATED (#1296 build plan phase 2) — superseded by `containerCategoryIds`
+   *  (several categories). Read as a fallback until phase 5's narrow step; new
+   *  writes go through `containerCategoryIds` only. */
   prepKitCategoryId?: string;
+  /** #1296 packing containers — every category whose assets can be used as
+   *  packing containers (cases, tubs, road boxes) in the warehouse. Absent/empty
+   *  falls back to `prepKitCategoryId` (single-category, pre-#1296 orgs). */
+  containerCategoryIds?: string[];
   sso?: OrgSSOSettings;
   /** B2 (#1094) — governs whether a non-member can self-serve request to join
    *  via verified-domain match. Absent = `INVITE_ONLY` (see

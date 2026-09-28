@@ -24,6 +24,7 @@ import {
   type UnitLike,
 } from "./lineItemUnits";
 import { bumpAssetCounters } from "./counters";
+import { resolveLiveVersionIdForProject, versionRows } from "./versionScope";
 
 type Ctx = MutationCtx;
 
@@ -892,6 +893,37 @@ export async function reconcileLineAccessoryChildren(ctx: Ctx, parentLine: Recon
   await insertMissingAccessoryChildren(ctx, parentLine, existing, wanted, now);
 }
 
+/** Look up a container's label (widen-step fallback for `prepContainer` —
+ *  #1296). `null`/missing/cross-org → `undefined` (no label to stamp). */
+async function containerLabelById(ctx: Ctx, organizationId: string, containerId: string | null | undefined): Promise<string | undefined> {
+  if (!containerId) return undefined;
+  const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
+  return c && c.organizationId === organizationId ? c.label : undefined;
+}
+
+/**
+ * Resolves what a NEWLY-created unit's `containerId` should be (#1296, D9):
+ * the caller's explicit value if one was given (a real id, or `null` for
+ * "Loose" — the operator has an active rail selection), else the line's
+ * `plannedContainerId` (the PM's plan; may itself be absent → loose). An
+ * EXISTING unit being re-patched (a repeat prep call for the same
+ * asset/bulk row) never falls back to the plan — only an explicit value
+ * touches it, so a checklist-only re-prep can't silently move gear.
+ */
+async function resolveContainerForWrite(
+  ctx: Ctx,
+  args: { organizationId: string; lineItemId: string; containerId?: string | null },
+  isNewUnit: boolean,
+): Promise<{ containerId: string | undefined; label: string | undefined } | null> {
+  if (args.containerId !== undefined) {
+    return { containerId: args.containerId ?? undefined, label: await containerLabelById(ctx, args.organizationId, args.containerId) };
+  }
+  if (!isNewUnit) return null; // nothing explicit, existing row — leave untouched
+  const line = await lineDocByCuid(ctx, args.lineItemId);
+  const planned = line?.plannedContainerId ?? undefined;
+  return { containerId: planned, label: await containerLabelById(ctx, args.organizationId, planned) };
+}
+
 /** Mark a unit prepped/packed (pick-and-pack before checkout). Rolls the line up. */
 export async function prepUnit(
   ctx: Ctx,
@@ -901,19 +933,25 @@ export async function prepUnit(
     assetId?: string | null;
     bulkAssetId?: string | null;
     quantity?: number;
-    prepContainer?: string | null;
+    /** #1296 — the container to pack this prep into. `undefined` = caller
+     *  gave no signal (defaults to the line's plan on a NEW unit only);
+     *  `null` = explicitly Loose. Superset of the old `prepContainer`
+     *  string, which callers may still pass instead (resolved to a real
+     *  container one layer up, in checkRecordOps.ts). */
+    containerId?: string | null;
     includeAccessoryIds?: Set<string> | null;
   },
 ): Promise<void> {
   const now = Date.now();
   if (args.assetId) {
-    const { id } = await ensureSerialisedUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, assetId: args.assetId });
+    const { id, created } = await ensureSerialisedUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, assetId: args.assetId });
+    const resolved = await resolveContainerForWrite(ctx, args, created);
     const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (u) {
       await ctx.db.patch(u._id, {
         status: "CONFIRMED",
         prepStatus: "PACKED",
-        ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+        ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
         updatedAt: now,
       });
     }
@@ -923,7 +961,9 @@ export async function prepUnit(
       assetId: args.assetId,
       includeAccessoryIds: args.includeAccessoryIds ?? null,
     });
-    // Pack the accessory units tied to this parent unit.
+    // Pack the accessory units tied to this parent unit — they inherit the
+    // SAME resolution as the parent asset just prepped (existing shape,
+    // now keyed on containerId).
     const accChildren = await accessoryChildrenOf(ctx, args.organizationId, args.lineItemId);
     for (const child of accChildren) {
       const units = (await lineUnits(ctx, child.id)).filter(
@@ -933,7 +973,7 @@ export async function prepUnit(
         await ctx.db.patch(un._id, {
           status: "CONFIRMED",
           prepStatus: "PACKED",
-          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
           updatedAt: now,
         });
       }
@@ -951,21 +991,23 @@ export async function prepUnit(
     const ordered = line?.quantity ?? addQty;
     const existing = (await lineUnits(ctx, args.lineItemId)).find((un) => un.bulkAssetId === args.bulkAssetId);
     if (existing) {
+      const resolved = await resolveContainerForWrite(ctx, args, false);
       await ctx.db.patch(existing._id, {
         status: "CONFIRMED",
         prepStatus: "PACKED",
         quantity: Math.min(ordered, (existing.quantity ?? 0) + addQty),
-        ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+        ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
         updatedAt: now,
       });
     } else {
       const { id } = await ensureBulkUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, bulkAssetId: args.bulkAssetId, quantity: Math.min(ordered, addQty) });
+      const resolved = await resolveContainerForWrite(ctx, args, true);
       const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
       if (u) {
         await ctx.db.patch(u._id, {
           status: "CONFIRMED",
           prepStatus: "PACKED",
-          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
           updatedAt: now,
         });
       }
@@ -984,6 +1026,7 @@ export async function prepUnit(
         const room = Math.max(0, ordered - assigned);
         const toCreate = Math.min(Math.max(1, args.quantity ?? 1), room);
         let ordinal = nextOrdinal(existing);
+        const resolved = await resolveContainerForWrite(ctx, args, true);
         for (let i = 0; i < toCreate; i++) {
           await ctx.db.insert("projectLineItemUnits", {
             id: createId(),
@@ -994,21 +1037,153 @@ export async function prepUnit(
             returnedQuantity: 0,
             status: "CONFIRMED",
             prepStatus: "PACKED",
-            ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+            ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
             createdAt: now,
             updatedAt: now,
           });
         }
       } else {
         // Single-unit / legacy generic line — whole-line prep (unchanged).
+        // There is no unit row here to carry `containerId` (membership is
+        // per-unit, never on the line — §3.3), and `projectLineItems.containerId`
+        // is reserved for a CONTAINER's own reverse lookup, so this branch
+        // stamps only the widen-step label, same as before #1296.
+        const resolved = args.containerId !== undefined
+          ? { label: await containerLabelById(ctx, args.organizationId, args.containerId) }
+          : null;
         await ctx.db.patch(line._id, {
           status: "CONFIRMED",
           prepStatus: "PACKED",
-          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          ...(resolved ? { prepContainer: resolved.label } : {}),
           updatedAt: now,
         });
       }
     }
   }
   await syncLineItemRollup(ctx, args.lineItemId);
+}
+
+/**
+ * #1296 widen-step legacy path: resolve a free-text container label (the OLD
+ * `prepContainer` API arg) to a real `projectContainers` row, minting a new
+ * CUSTOM one if this project's live version has no container with that exact
+ * label yet — so an old client that still sends a label keeps working
+ * end-to-end (create-on-first-use, same idempotent shape
+ * `ensureContainerOnProjectCore` uses for an ASSET container). Retired along
+ * with the legacy arg itself in phase 5 (build plan phase 1c note).
+ */
+export async function resolveOrCreateContainerByLabel(
+  ctx: Ctx,
+  args: { organizationId: string; projectId: string; label: string; now: number },
+): Promise<string> {
+  const versionId = await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId);
+  const containers = (await versionRows(ctx, "projectContainers", versionId)).filter((c) => c.organizationId === args.organizationId);
+  const existing = containers.find((c) => c.label === args.label);
+  if (existing) return existing.id;
+
+  const containerId = createId();
+  const lineItemId = createId();
+  const lines = (await versionRows(ctx, "projectLineItems", versionId)).filter((l) => l.organizationId === args.organizationId);
+  const lineSort = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
+  await ctx.db.insert("projectLineItems", {
+    id: lineItemId, organizationId: args.organizationId, projectId: args.projectId, versionId, lineageId: lineItemId,
+    type: "EQUIPMENT", isCustomItem: true, description: args.label,
+    quantity: 1, sortOrder: lineSort, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED",
+    prepContainer: args.label, containerId, isContainerLineItem: true, createdAt: args.now, updatedAt: args.now,
+  });
+  const containerSort = containers.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
+  await ctx.db.insert("projectContainers", {
+    id: containerId, organizationId: args.organizationId, projectId: args.projectId, versionId, lineageId: containerId,
+    kind: "CUSTOM", label: args.label, lineItemId, sortOrder: containerSort, createdAt: args.now, updatedAt: args.now,
+  });
+  return containerId;
+}
+
+/** A container flip `syncContainerStatuses` applied — the caller (warehouseOps.ts,
+ *  which owns `setAssetsStatus`) uses this to flip the underlying asset too when
+ *  the container is an ASSET kind, keeping fulfillment.ts one-directional
+ *  (warehouseOps.ts imports FROM here, never the reverse). */
+export interface ContainerStatusFlip {
+  containerId: string;
+  lineItemId: string;
+  assetId?: string;
+  status: "CHECKED_OUT" | "RETURNED";
+}
+
+/** Loads a container's own line item + its live (non-CANCELLED) member units,
+ *  org-checked at every hop — `null` when there's nothing to roll up. Split
+ *  out of `syncContainerStatuses` to keep each helper's branching under the
+ *  complexity ratchet (R-3.6). */
+async function loadContainerFlipContext(ctx: Ctx, containerId: string, organizationId: string) {
+  const container = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
+  if (!container || container.organizationId !== organizationId) return null;
+  const containerLI = await lineDocByCuid(ctx, container.lineItemId);
+  if (!containerLI || containerLI.organizationId !== organizationId) return null;
+
+  const members = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", containerId)).collect())
+    .filter((u) => u.organizationId === organizationId && u.status !== "CANCELLED");
+  if (members.length === 0) return null;
+  return { containerLI, members };
+}
+
+/** `null` when the container's members don't (yet) unanimously agree on a
+ *  status the container line item doesn't already have. */
+function resolveContainerFlipStatus(
+  containerLI: { status?: string },
+  members: Array<{ status?: string }>,
+): "CHECKED_OUT" | "RETURNED" | null {
+  if (members.every((u) => u.status === "CHECKED_OUT") && containerLI.status !== "CHECKED_OUT") return "CHECKED_OUT";
+  if (members.every((u) => u.status === "RETURNED") && containerLI.status !== "RETURNED") return "RETURNED";
+  return null;
+}
+
+async function flipForContainer(
+  ctx: Ctx,
+  containerId: string,
+  args: { organizationId: string; userId: string; now: number },
+): Promise<ContainerStatusFlip | null> {
+  const context = await loadContainerFlipContext(ctx, containerId, args.organizationId);
+  if (!context) return null;
+  const { containerLI, members } = context;
+  const status = resolveContainerFlipStatus(containerLI, members);
+  if (!status) return null;
+
+  if (status === "CHECKED_OUT") {
+    await ctx.db.patch(containerLI._id, {
+      status: "CHECKED_OUT", checkedOutQuantity: containerLI.quantity ?? 1,
+      checkedOutAt: args.now, checkedOutById: args.userId, updatedAt: args.now,
+    });
+  } else {
+    await ctx.db.patch(containerLI._id, {
+      status: "RETURNED", returnedQuantity: 1,
+      returnedAt: args.now, returnedById: args.userId, returnCondition: "GOOD", updatedAt: args.now,
+    });
+  }
+  return { containerId, lineItemId: containerLI.id, assetId: containerLI.assetId ?? undefined, status };
+}
+
+/**
+ * #1296 — the container status roll-up, moved server-side and keyed by
+ * `containerId` (replaces `syncContainersBatchCore`'s label bucketing).
+ * "Contents" is every unit with `containerId === X` — nesting needs no
+ * separate traversal: a container packed inside another is itself just a
+ * line item, and if IT gets physically packed via `prepUnit`, that write
+ * lands a unit with `containerId` pointing at the OUTER box, so the outer
+ * box's own by_containerId read already sees it (§3.5). CANCELLED units
+ * (tombstones) never block an "all deployed/returned" verdict.
+ */
+export async function syncContainerStatuses(
+  ctx: Ctx,
+  containerIds: Iterable<string>,
+  args: { organizationId: string; userId: string; now: number },
+): Promise<ContainerStatusFlip[]> {
+  const flips: ContainerStatusFlip[] = [];
+  const seen = new Set<string>();
+  for (const containerId of containerIds) {
+    if (seen.has(containerId)) continue;
+    seen.add(containerId);
+    const flip = await flipForContainer(ctx, containerId, args);
+    if (flip) flips.push(flip);
+  }
+  return flips;
 }

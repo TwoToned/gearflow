@@ -85,6 +85,9 @@ import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
+import { ContainerRail } from "@/components/warehouse/container-rail";
+import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
+import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
@@ -108,7 +111,14 @@ import {
   isInReturnedStage,
   isInDeprepedStage,
   isInCheckedOutStage,
+  buildContainerGroups,
+  resolveSelectionToUnitIds,
+  isMoveableAtDeployStage,
+  isMoveableAtReturnStage,
+  isMoveableAtDeprepStage,
+  keysForGroupEntries,
 } from "@/components/warehouse/warehouse-types";
+import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
 import {
   pullItem,
   prepItemDirect,
@@ -119,7 +129,7 @@ import {
   prepKitsBatch,
   unpackItem,
 } from "@/server/check-records";
-import { useConvex, useConvexAuth } from "convex/react";
+import { useConvex, useConvexAuth, useQuery } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
@@ -358,8 +368,38 @@ function WarehouseProjectPage({
   const wConvex = useConvex();
   const { isAuthenticated: wAuthed } = useConvexAuth();
 
-  // Container state for prep grouping
+  // Container state for prep grouping. `selectedContainer` (a label string) is
+  // the legacy widen-step field, kept in sync so unmigrated readers (grouping,
+  // display) keep working; `activeContainerId` (#1296) is the real container
+  // now written through alongside it — see `handleSelectContainer`.
   const [selectedContainer, setSelectedContainer] = useState<string>("");
+  const [activeContainerId, setActiveContainerId] = useState<string | null>(null);
+  const [newContainerSheetOpen, setNewContainerSheetOpen] = useState(false);
+  const realContainers = useQuery(
+    convexApi.projectContainers.listForProject,
+    orgId ? { orgId, projectId } : "skip",
+  ) ?? [];
+  // Deploy/Return/De-prep sectioning (buildContainerGroups) resolves a real
+  // containerId to its current label through this map.
+  const containerLabelById = useMemo(() => new Map(realContainers.map((c) => [c.id, c.label])), [realContainers]);
+  const handleSelectContainer = useCallback((id: string | null) => {
+    setActiveContainerId(id);
+    setSelectedContainer(id ? realContainers.find((c) => c.id === id)?.label ?? "" : "");
+  }, [realContainers]);
+  const handleContainerCreated = useCallback((container: { id: string; label: string }) => {
+    setActiveContainerId(container.id);
+    setSelectedContainer(container.label);
+    setNewContainerSheetOpen(false);
+  }, []);
+  // #1296 phase 2 — scan-to-activate: scanning a container's OWN asset tag
+  // (the case/tub itself, not its contents) on the pick/prep scan bar
+  // switches the active rail chip instead of running the normal
+  // lookupAssetForScan prep flow, which would otherwise either try to
+  // (re-)prep the container's own line item or report it as unassigned.
+  const matchContainerByTag = useCallback(
+    (scannedTag: string) => realContainers.find((c) => c.tag && c.tag === scannedTag) ?? null,
+    [realContainers],
+  );
 
   // Selection state
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
@@ -628,6 +668,7 @@ function WarehouseProjectPage({
             assetId: i.assetId || undefined,
             quantity: i.quantity,
             prepContainer: selectedContainer || null,
+            containerId: activeContainerId,
             includeAccessoryIds: i.includeAccessoryIds,
           })),
         )
@@ -801,6 +842,11 @@ function WarehouseProjectPage({
   const quickAddMutation = useServerMutation({
     mutationFn: async (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) => {
       await ensureContainerIfNeeded();
+      // #1296 — quickAddCore inserts a bare line item with no unit row (unlike
+      // prepUnit), so there's nothing to stamp a real containerId onto yet;
+      // it stays on the legacy label-only path. The very next prep step for
+      // this line (below, in onSuccess) DOES create a unit and gets the real
+      // containerId — this line just can't itself.
       return warehouseWrites.quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
     },
     onSuccess: (result) => {
@@ -830,7 +876,7 @@ function WarehouseProjectPage({
         scanInputRef.current?.focus();
       } else {
         // No checks — prep directly
-        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null)
+        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
           .then(() => {
             toast.success(`Added and prepped: ${assetName}`);
             invalidate();
@@ -1106,7 +1152,7 @@ function WarehouseProjectPage({
           scanInputRef.current?.focus();
         } else {
           // No check items — prep directly (set prepStatus=PACKED, no deploy)
-          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null)
+          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
             .then(() => {
               scanFeedback.play("success", { label: result.assetName || "Asset", outcome: "Prepped" });
               toast.success(`Prepped: ${result.assetName || "Asset"}`);
@@ -1474,10 +1520,20 @@ function WarehouseProjectPage({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && scanValue.trim()) {
         e.preventDefault();
-        scanMutation.mutate(scanValue.trim());
+        const trimmed = scanValue.trim();
+        const container = matchContainerByTag(trimmed);
+        if (container) {
+          handleSelectContainer(container.id);
+          scanFeedback.play("info", { label: container.label, outcome: "Active container" });
+          toast.info(`Active container: ${container.label}`);
+          setScanValue("");
+          scanInputRef.current?.focus();
+          return;
+        }
+        scanMutation.mutate(trimmed);
       }
     },
-    [scanValue, scanMutation]
+    [scanValue, scanMutation, matchContainerByTag, handleSelectContainer, scanFeedback]
   );
 
   const handleDeployScanKeyDown = useCallback(
@@ -1562,7 +1618,16 @@ function WarehouseProjectPage({
     }
   };
 
-  // Fetch container assets from the configured case category
+  // #1296 — `caseAssets`/`containerOptions`/`selectedContainerAsset`/
+  // `ensureContainerIfNeeded` are the PRE-rail mechanism: the free-text
+  // ComboboxPicker matched a typed label back to an asset here, then
+  // lazily added that asset to the job the first time it was used as a
+  // container. The rail's "+ New" sheet now creates a container (and its
+  // line item) atomically via `projectContainersWrites.createNative`, so
+  // `selectedContainer` is only ever set to a REAL container's label —
+  // this lookup effectively never matches for anything created through
+  // the rail. Left in place (not dead per knip — still called) rather than
+  // removed here; phase 5 (narrow + retire) is where this goes.
   const { data: caseAssets } = useServerQuery({
     queryKey: ["containerAssets", orgId],
     queryFn: () => wConvex.query(convexApi.categories.containerAssetSearch, { orgId: orgId as string, query: "" }),
@@ -1651,89 +1716,64 @@ function WarehouseProjectPage({
   // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
   const groupedDeprep = groupItems(returnedItems, "deploy");
 
-  // Group deploy items by container for visual sectioning
-  const deployContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedOut }> = [];
-    const containerMap = new Map<string | null, typeof groupedOut>();
-
-    for (const entry of groupedOut) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
-    }
-
-    // Sort: named containers first (alphabetically), then ungrouped
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedOut]);
+  // Group deploy items by container for visual sectioning — real containerId
+  // preferred over the legacy prepContainer label (buildContainerGroups,
+  // #1296 phase 2).
+  const representativeItem = (entry: typeof groupedOut[number]) => (entry.kind === "serialized-group" ? entry.items[0] : entry.item);
+  const deployContainerGroups = useMemo(
+    () => buildContainerGroups(groupedOut, representativeItem, containerLabelById),
+    [groupedOut, containerLabelById],
+  );
 
   // Group de-prep items by the container they came back in (visual sectioning).
-  const deprepContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedDeprep }> = [];
-    const containerMap = new Map<string | null, typeof groupedDeprep>();
-
-    for (const entry of groupedDeprep) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
-    }
-
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedDeprep]);
+  const deprepContainerGroups = useMemo(
+    () => buildContainerGroups(groupedDeprep, representativeItem, containerLabelById),
+    [groupedDeprep, containerLabelById],
+  );
 
   const groupedIn = groupCheckinItems(checkedOutItems);
 
   // Group return items by container for visual sectioning
-  const returnContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedIn }> = [];
-    const containerMap = new Map<string | null, typeof groupedIn>();
+  const returnContainerGroups = useMemo(
+    () => buildContainerGroups(groupedIn, representativeItem, containerLabelById),
+    [groupedIn, containerLabelById],
+  );
 
-    for (const entry of groupedIn) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
+  // #1296 phase 2 — Move to…: reassign a Deploy/Return/De-prep selection to a
+  // different container. `moveDialogFor` names which tab's own selection Set
+  // + stage predicate the dialog resolves against (they differ — a bulk
+  // unit's `isRelevant` depends on which stage of its lifecycle this tab
+  // shows); resolving happens once, right before opening, not on every
+  // keystroke/selection change.
+  const [moveDialogFor, setMoveDialogFor] = useState<"deploy" | "deprep" | "return" | null>(null);
+  const containerWrites = useProjectContainerWrites();
+  const [moveIsPending, setMoveIsPending] = useState(false);
+
+  const moveDialogUnitIds = useMemo(() => {
+    if (moveDialogFor === "deploy") return resolveSelectionToUnitIds(selectedOut, lineItems, isMoveableAtDeployStage);
+    if (moveDialogFor === "deprep") return resolveSelectionToUnitIds(selectedDeprep, lineItems, isMoveableAtDeprepStage);
+    if (moveDialogFor === "return") return resolveSelectionToUnitIds(selectedIn, lineItems, isMoveableAtReturnStage);
+    return [];
+  }, [moveDialogFor, selectedOut, selectedDeprep, selectedIn, lineItems]);
+
+  const handleConfirmMove = async (toContainerId: string | null) => {
+    const unitIds = moveDialogUnitIds;
+    const forTab = moveDialogFor;
+    if (unitIds.length === 0 || !forTab) return;
+    setMoveIsPending(true);
+    try {
+      const { moved } = await containerWrites.moveUnits(unitIds, toContainerId);
+      toast.success(`Moved ${moved} item${moved === 1 ? "" : "s"}`);
+      if (forTab === "deploy") setSelectedOut(new Set());
+      else if (forTab === "deprep") setSelectedDeprep(new Set());
+      else setSelectedIn(new Set());
+      setMoveDialogFor(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to move");
+    } finally {
+      setMoveIsPending(false);
     }
-
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedIn]);
+  };
 
   // Build all selectable keys for pick/prep
   const allPrepKeys = useMemo(() => {
@@ -2010,12 +2050,14 @@ function WarehouseProjectPage({
         assetId?: string;
         quantity?: number;
         prepContainer?: string | null;
+        containerId?: string | null;
       }> = [];
       for (const bi of bulkNoCheckItems) {
         directPrepItems.push({
           lineItemId: bi.lineItemId,
           quantity: bi.quantity,
           prepContainer: selectedContainer || null,
+          containerId: activeContainerId,
         });
       }
 
@@ -2048,6 +2090,7 @@ function WarehouseProjectPage({
           assetId: item.assetId,
           quantity: item.quantity,
           prepContainer: selectedContainer || null,
+          containerId: activeContainerId,
         });
       }
       if (directPrepItems.length > 0) {
@@ -2144,6 +2187,15 @@ function WarehouseProjectPage({
     }
     return null;
   }
+
+  // #1296 D4 — "Deploy container": select every one of the container's
+  // entries so the EXISTING Deploy button (already wired, already tested)
+  // becomes the trigger — never a second deploy code path alongside
+  // handleCheckOutSelected's own accessory-gate/kit-batch/partial-verify
+  // branching below.
+  const handleDeployContainer = (entries: GroupEntry[]) => {
+    setSelectedOut(new Set(keysForGroupEntries(entries)));
+  };
 
   const handleCheckOutSelected = async () => {
     const bulkQtyMap = new Map<string, number>();
@@ -2499,6 +2551,7 @@ function WarehouseProjectPage({
         assetId: i.assetId,
         quantity: i.quantity,
         prepContainer: selectedContainer || null,
+        containerId: activeContainerId,
       })),
     )
       .then(() => {
@@ -2847,8 +2900,10 @@ function WarehouseProjectPage({
           scanMutationIsPending={scanMutation.isPending}
           scanHistoryEntries={scanFeedback.entries}
           selectedContainer={selectedContainer}
-          setSelectedContainer={setSelectedContainer}
-          containerOptions={containerOptions}
+          containers={realContainers}
+          activeContainerId={activeContainerId}
+          onSelectContainer={handleSelectContainer}
+          onNewContainer={() => setNewContainerSheetOpen(true)}
           selectedPrep={selectedPrep}
           setSelectedPrep={setSelectedPrep}
           selectedPrepCount={selectedPrepCount}
@@ -2867,6 +2922,21 @@ function WarehouseProjectPage({
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
+        />
+        <NewContainerSheet
+          open={newContainerSheetOpen}
+          onOpenChange={setNewContainerSheetOpen}
+          projectId={projectId}
+          existingContainers={realContainers.map((c) => ({ id: c.id, label: c.label }))}
+          onCreated={handleContainerCreated}
+        />
+        <MoveToContainerDialog
+          open={moveDialogFor !== null}
+          onOpenChange={(open) => !open && setMoveDialogFor(null)}
+          unitCount={moveDialogUnitIds.length}
+          containers={realContainers}
+          onConfirm={handleConfirmMove}
+          pending={moveIsPending}
         />
 
         {/* Deploy Tab */}
@@ -2894,6 +2964,8 @@ function WarehouseProjectPage({
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
+          onMoveSelected={() => setMoveDialogFor("deploy")}
+          onDeployContainer={handleDeployContainer}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2928,6 +3000,8 @@ function WarehouseProjectPage({
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
+          onMoveSelected={() => setMoveDialogFor("deprep")}
+          onDeployContainer={() => {}}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2962,6 +3036,7 @@ function WarehouseProjectPage({
           handleUndeploy={handleUndeploy}
           undeployIsPending={undeployMutation.isPending || undeployKitsMutation.isPending}
           onReportIssue={handleReportIssue}
+          onMoveSelected={() => setMoveDialogFor("return")}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -3481,6 +3556,8 @@ function WarehouseProjectPage({
                       item.assetId || undefined,
                       item.assetId ? undefined : 1,
                       selectedContainer || null,
+                      undefined,
+                      activeContainerId,
                     );
                   } else if (item.fromDeprep) {
                     // completeCheckAndDeprep tolerates an empty checks[] (it
@@ -3522,6 +3599,7 @@ function WarehouseProjectPage({
                     assetId: item.assetId,
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
+                    containerId: activeContainerId,
                     checks,
                     includeAccessoryIds: item.includeAccessoryIds,
                   });
@@ -3594,6 +3672,7 @@ function WarehouseProjectPage({
                     assetId: checkFormData.assetId,
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
+                    containerId: activeContainerId,
                     checks,
                     includeAccessoryIds: checkFormData.includeAccessoryIds,
                   });

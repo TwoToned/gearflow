@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
-import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup } from "./lib/fulfillment";
+import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup, resolveOrCreateContainerByLabel } from "./lib/fulfillment";
 import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 
 /**
@@ -69,6 +69,26 @@ async function assetByCuid(ctx: Ctx, id: string) {
 }
 
 /**
+ * #1296 — resolve the caller's prep-container signal to a `containerId`.
+ * The new `containerId` arg wins when given (including an explicit `null`
+ * for Loose). Else a legacy `prepContainer` label resolves to a real
+ * container, minting a CUSTOM one on first use — so an old client that
+ * still sends a label keeps packing gear end to end. Neither given →
+ * `undefined` (prepUnit then defaults from the line's plan on a brand new
+ * unit, D9). Retired with the legacy arg itself in phase 5.
+ */
+async function resolvePrepContainerId(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; containerId?: string | null; prepContainer?: string | null },
+): Promise<string | null | undefined> {
+  if (a.containerId !== undefined) return a.containerId;
+  if (!a.prepContainer) return a.prepContainer; // undefined, or an explicit "" / null clear
+  return resolveOrCreateContainerByLabel(ctx, {
+    organizationId: a.organizationId, projectId: a.projectId, label: a.prepContainer, now: Date.now(),
+  });
+}
+
+/**
  * Core prep (pick-and-pack) of a unit — extracted so both the requireService
  * `prepItem` mutation AND the browser-direct `checkRecordWrites.completeCheckAndPack`
  * fold run byte-identical logic. Validates the line (org + project), then wraps the
@@ -81,16 +101,17 @@ export async function prepItemCore(
   a: {
     organizationId: string; projectId: string; lineItemId: string;
     assetId?: string; bulkAssetId?: string;
-    quantity?: number; prepContainer?: string | null;
+    quantity?: number; containerId?: string | null; prepContainer?: string | null;
     includeAccessoryIds?: string[];
   },
 ): Promise<{ id: string }> {
   const line = await lineByCuid(ctx, a.lineItemId);
   if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
+  const containerId = await resolvePrepContainerId(ctx, a);
   await prepUnit(ctx, {
     organizationId: a.organizationId, lineItemId: a.lineItemId,
     assetId: a.assetId ?? null, bulkAssetId: a.assetId ? null : (a.bulkAssetId ?? line.bulkAssetId ?? null),
-    quantity: a.quantity, prepContainer: a.prepContainer ?? undefined,
+    quantity: a.quantity, containerId,
     includeAccessoryIds: a.includeAccessoryIds ? new Set(a.includeAccessoryIds) : null,
   });
   return { id: a.lineItemId };
@@ -101,7 +122,9 @@ export const prepItem = mutation({
   args: {
     organizationId: v.string(), projectId: v.string(), lineItemId: v.string(),
     assetId: v.optional(v.string()), bulkAssetId: v.optional(v.string()),
-    quantity: v.optional(v.number()), prepContainer: v.optional(v.union(v.string(), v.null())),
+    quantity: v.optional(v.number()),
+    containerId: v.optional(v.union(v.string(), v.null())),
+    prepContainer: v.optional(v.union(v.string(), v.null())),
     includeAccessoryIds: v.optional(v.array(v.string())), now: v.number(),
     actor: serviceActorValidator,
   },
@@ -110,7 +133,7 @@ export const prepItem = mutation({
     const res = await prepItemCore(ctx, {
       organizationId: a.organizationId, projectId: a.projectId, lineItemId: a.lineItemId,
       assetId: a.assetId, bulkAssetId: a.bulkAssetId,
-      quantity: a.quantity, prepContainer: a.prepContainer ?? undefined,
+      quantity: a.quantity, containerId: a.containerId, prepContainer: a.prepContainer ?? undefined,
       includeAccessoryIds: a.includeAccessoryIds,
     });
     await autoAdvanceOnPrep(ctx, a);
@@ -134,6 +157,7 @@ export const prepItems = mutation({
         lineItemId: v.string(),
         assetId: v.optional(v.string()),
         quantity: v.optional(v.number()),
+        containerId: v.optional(v.union(v.string(), v.null())),
         prepContainer: v.optional(v.union(v.string(), v.null())),
         includeAccessoryIds: v.optional(v.array(v.string())),
       }),
@@ -149,6 +173,10 @@ export const prepItems = mutation({
       if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) {
         throw new ConvexError("Line item not found in project");
       }
+      const containerId = await resolvePrepContainerId(ctx, {
+        organizationId: a.organizationId, projectId: a.projectId,
+        containerId: item.containerId, prepContainer: item.prepContainer,
+      });
       await prepUnit(ctx, {
         organizationId: a.organizationId,
         lineItemId: item.lineItemId,
@@ -158,7 +186,7 @@ export const prepItems = mutation({
         // matching prepItemDirect, which likewise passes only line.bulkAssetId.
         bulkAssetId: item.assetId ? null : (line.bulkAssetId ?? null),
         quantity: item.quantity,
-        prepContainer: item.prepContainer ?? undefined,
+        containerId,
         includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
       });
       touched.add(item.lineItemId);

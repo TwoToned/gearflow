@@ -71,6 +71,7 @@ export const modelFields = {
   barcodeLabelTemplate: v.optional(v.string()),
   tags: v.optional(v.array(v.string())),
   isActive: v.optional(v.boolean()),
+  isContainer: v.optional(v.boolean()),
   xeroRentalAccountCode: v.optional(v.string()),
   xeroSaleAccountCode: v.optional(v.string()),
 };
@@ -86,7 +87,7 @@ type ModelArgs = {
   requiresTestAndTag?: boolean; testAndTagIntervalDays?: number;
   defaultEquipmentClass?: string; defaultApplianceType?: string; defaultTestProfileId?: string;
   maintenanceIntervalDays?: number; assetType?: string; barcodeLabelTemplate?: string;
-  tags?: string[]; isActive?: boolean;
+  tags?: string[]; isActive?: boolean; isContainer?: boolean;
   xeroRentalAccountCode?: string; xeroSaleAccountCode?: string;
 };
 
@@ -163,6 +164,7 @@ function toDoc(a: ModelArgs) {
     assetType: (a.assetType as "SERIALIZED") ?? "SERIALIZED",
     barcodeLabelTemplate: a.barcodeLabelTemplate ?? undefined,
     isActive: a.isActive ?? true,
+    isContainer: a.isContainer ?? false,
     tags: a.tags ?? [],
     xeroRentalAccountCode: a.xeroRentalAccountCode || undefined,
     xeroSaleAccountCode: a.xeroSaleAccountCode || undefined,

@@ -267,6 +267,7 @@ export const completeCheckAndPack = mutation({
     lineItemId: v.string(),
     assetId: v.optional(v.string()),
     bulkAssetId: v.optional(v.string()),
+    containerId: v.optional(v.union(v.string(), v.null())),
     prepContainer: v.optional(v.union(v.string(), v.null())),
     includeAccessoryIds: v.optional(v.array(v.string())),
     checks: v.array(checkArg),
@@ -309,6 +310,7 @@ export const completeCheckAndPack = mutation({
     await prepItemCore(ctx, {
       organizationId: a.orgId, projectId: a.projectId, lineItemId: a.lineItemId,
       ...(a.assetId ? { assetId: a.assetId } : {}),
+      containerId: a.containerId,
       prepContainer: a.prepContainer ?? undefined,
       ...(a.includeAccessoryIds ? { includeAccessoryIds: a.includeAccessoryIds } : {}),
     });

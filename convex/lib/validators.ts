@@ -241,6 +241,15 @@ export const LineItemChildKind = v.union(
   v.literal("KIT"),
   v.literal("ACCESSORY"),
 );
+/** `projectContainers.kind` (packing containers, #1296) — ASSET is a
+ *  serialised case/tub with its own tag; BULK_ASSET draws one unit from a
+ *  tagged bulk asset (kept in the schema from day one, D2 — no picker built
+ *  yet); CUSTOM is free-text, no underlying asset. */
+export const ContainerKind = v.union(
+  v.literal("ASSET"),
+  v.literal("BULK_ASSET"),
+  v.literal("CUSTOM"),
+);
 /** Model-level accessory tier (issue #794): DEFAULT auto-attaches when the model
  *  is added to a project (PM may deselect per line via accessoryPlan.excluded);
  *  OPTIONAL never auto-attaches — offered in the add-time picker, opted in via

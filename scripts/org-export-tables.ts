@@ -27,7 +27,7 @@
 
 export const SCHEMA_VERSION = "1";
 
-/** 78 tables, each with a `by_organizationId` index. */
+/** 79 tables, each with a `by_organizationId` index. */
 export const DIRECT_TABLES = [
   "activityLogs",
   "apiKeys",
@@ -87,6 +87,7 @@ export const DIRECT_TABLES = [
   "pendingOrgJoinRequests",
   "pendingSSOApprovals",
   "projectCategories",
+  "projectContainers",
   "projectGroups",
   "projectLineItems",
   "projectLineItemUnits",
@@ -279,7 +280,7 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // Customizable dashboard: +1 — dashboardLayouts (DIRECT — per-user
 // saved widget-board arrangement, has its own by_organizationId index
 // alongside the read path's by_organizationId_userId).
-export const EXPECTED_TABLE_COUNT = 125;
+export const EXPECTED_TABLE_COUNT = 126;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

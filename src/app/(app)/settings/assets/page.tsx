@@ -8,13 +8,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { MultiComboboxPicker } from "@/components/ui/combobox-picker";
 import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
@@ -55,7 +49,7 @@ export default function AssetsSettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const updateSetting = (key: keyof OrgSettings, value: string | number | null) => {
+  const updateSetting = (key: keyof OrgSettings, value: string | number | string[] | null) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -107,30 +101,21 @@ export default function AssetsSettingsPage() {
             </div>
           </FormSection>
 
-          <FormSection title="Prep Containers" description="Select which category contains your cases and containers. Assets in this category can be selected as prep containers in the warehouse.">
+          <FormSection title="Containers" description="Select which categories contain your cases, tubs, and road boxes. Assets in these categories — and any model flagged as a container — can be packed into and scanned as containers in the warehouse.">
             <div className="space-y-2">
-              <Label htmlFor="prepKitCategory">Case Category</Label>
-              <Select
-                value={settings.prepKitCategoryId || "none"}
-                onValueChange={(value) => updateSetting("prepKitCategoryId", value === "none" ? "" : value)}
+              <Label htmlFor="containerCategories">Container Categories</Label>
+              <MultiComboboxPicker
+                values={settings.containerCategoryIds ?? (settings.prepKitCategoryId ? [settings.prepKitCategoryId] : [])}
+                onChange={(values) => updateSetting("containerCategoryIds", values)}
+                options={allCategories.map((cat) => ({
+                  value: cat.id,
+                  label: cat.parent ? `${cat.parent.name} / ${cat.name}` : cat.name,
+                }))}
+                placeholder="None (custom names only)"
+                searchPlaceholder="Search categories..."
                 disabled={!canEdit}
-              >
-                <SelectTrigger id="prepKitCategory" className="w-full sm:w-64">
-                  <SelectValue>
-                    {settings.prepKitCategoryId
-                      ? allCategories.find((c) => c.id === settings.prepKitCategoryId)?.name || "Select category"
-                      : "None (custom names only)"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None (custom names only)</SelectItem>
-                  {allCategories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.parent ? `${cat.parent.name} / ${cat.name}` : cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                className="w-full sm:w-96"
+              />
             </div>
           </FormSection>
         </div>

@@ -116,7 +116,7 @@ describe("filterAndGroupItems", () => {
     expect(filterAndGroupItems([groupRow], config).groups.get("G")?.map((i) => i.id)).toEqual(["group"]);
   });
 
-  it("delivery-docket promotes a kit parent's CHECKED_OUT children into a section named after the kit", () => {
+  it("delivery-docket (D7) keeps a kit parent as its own row — no more promoting its children into a section named after the kit", () => {
     const kit = makeItem({
       id: "kit",
       kitId: "kit-1",
@@ -128,7 +128,11 @@ describe("filterAndGroupItems", () => {
     });
     const { groups, ungroupedKey } = filterAndGroupItems([kit], makeConfig({ documentType: "delivery-docket" }));
     expect(ungroupedKey).toBe("General");
-    expect(groups.get("Lighting Kit")?.map((i) => i.id)).toEqual(["child-out"]);
+    // No groupName on the kit row itself → falls into the doc-type's
+    // ungrouped bucket, same as any other row would; its children stay
+    // attached (rendered indented by ChildrenBlock, not flattened here).
+    expect(groups.get("General")?.map((i) => i.id)).toEqual(["kit"]);
+    expect(groups.get("Lighting Kit")).toBeUndefined();
   });
 
   it("falls back to prepContainer then the doc-type ungrouped bucket when groupName is absent", () => {
@@ -269,9 +273,17 @@ describe("getColumnsForDocType", () => {
     }
   });
 
-  it("return-sheet and delivery-docket carry the columns their doc-specific features need", () => {
+  it("return-sheet and packing-list carry the columns their doc-specific features need", () => {
     expect(getColumnsForDocType(makeConfig({ documentType: "return-sheet" })).map((c) => c.key)).toContain("condition");
-    expect(getColumnsForDocType(makeConfig({ documentType: "delivery-docket" })).map((c) => c.key)).toContain("received");
     expect(getColumnsForDocType(makeConfig({ documentType: "packing-list" })).map((c) => c.key)).toContain("category");
+  });
+
+  it("delivery-docket (D7) has no per-row Received column — one signature covers the whole delivery", () => {
+    expect(getColumnsForDocType(makeConfig({ documentType: "delivery-docket" })).map((c) => c.key)).toEqual([
+      "rowNum",
+      "description",
+      "qty",
+      "assetTag",
+    ]);
   });
 });

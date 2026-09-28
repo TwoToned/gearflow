@@ -8,6 +8,7 @@ import {
   Package,
   Undo2,
   Container,
+  ArrowRightLeft,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,9 @@ export interface ReturnTabProps {
   undeployIsPending: boolean;
   /** Opens the "Report issue" dialog (GitHub #898) for a single CHECKED_OUT line item. */
   onReportIssue: (item: LineItem) => void;
+  /** #1296 Move-to… — open the shared MoveToContainerDialog against this
+   *  tab's current selection. */
+  onMoveSelected: () => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -121,6 +125,7 @@ export function ReturnTab({
   handleUndeploy,
   undeployIsPending,
   onReportIssue,
+  onMoveSelected,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -149,6 +154,17 @@ export function ReturnTab({
                   className="h-11"
                 />
               </div>
+              <Button
+                variant="line"
+                onClick={onMoveSelected}
+                disabled={selectedInCount === 0}
+                className="shrink-0"
+              >
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                <span className="hidden sm:inline">Move to…</span>
+                <span className="sm:hidden">Move</span>
+                {selectedInCount > 0 ? ` (${selectedInCount})` : ""}
+              </Button>
               {/* Move back a stage — return this gear to Prepped (un-deploy). */}
               <Button
                 variant="line"

@@ -29,7 +29,7 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import { isHardOverbooked } from "@/lib/overbooking-core";
 import { getFileAsDataUri } from "@/lib/storage";
 import { getProjectWindow, getProjectWindowDates } from "@/lib/project-window";
-import { formatDate } from "./plugins/helpers";
+import { formatDate, formatDateInTimezone } from "./plugins/helpers";
 import {
   structureLineItems,
   type CategoryForStructuring,
@@ -1109,7 +1109,7 @@ export async function buildDocumentData(
     // Metadata
     // The date PRINTED on the document — a frozen finance row's own date when
     // this render represents one, `now` otherwise (#987).
-    document_date: formatDate(documentDate),
+    document_date: formatDateInTimezone(documentDate, orgTimezone),
     invoice_number: invoiceNumber || "",
     document_footer_text: documentSettings?.footerText || "",
     document_footer_second_line: documentSettings?.footerSecondLine || "",
@@ -1120,8 +1120,8 @@ export async function buildDocumentData(
       docType === "invoice" && !documentSettings?.showTermsAndConditionsOnInvoice
         ? ""
         : documentSettings?.termsAndConditions || "",
-    quote_valid_until: formatDate(quoteValidUntil),
-    invoice_due_date: formatDate(invoiceDueDate),
+    quote_valid_until: formatDateInTimezone(quoteValidUntil, orgTimezone),
+    invoice_due_date: formatDateInTimezone(invoiceDueDate, orgTimezone),
     payment_details: docType === "invoice" ? documentSettings?.paymentDetails || "" : "",
 
     // PM

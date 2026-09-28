@@ -69,7 +69,7 @@ export async function getHelveticaFonts(
 }
 
 /** Shared formatting — delegates to canonical formatters so PDF and UI numbers match. */
-export { formatCurrency, formatDate } from "@/lib/formatters";
+export { formatCurrency, formatDate, formatDateInTimezone } from "@/lib/formatters";
 
 /** Truncate text to fit within a given width, adding ellipsis */
 export function truncateText(

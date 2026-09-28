@@ -44,6 +44,21 @@ interface IssuedState {
   artifactReady: boolean;
 }
 
+/** Preview must reflect the dates currently in the form, not the invoice's
+ *  stored (pre-issue) row — otherwise "preview" always shows the default
+ *  Net-N due date and ignores whatever the user just typed (#989 follow-up). */
+function buildInvoicePreviewHref(
+  projectId: string,
+  invoiceId: string,
+  invoiceDateMs: number,
+  previewDueDate: number | null,
+): string {
+  const params = new URLSearchParams({ type: "invoice", preview: "1", invoiceId });
+  if (Number.isFinite(invoiceDateMs)) params.set("invoiceDate", String(invoiceDateMs));
+  if (previewDueDate != null) params.set("dueDate", String(previewDueDate));
+  return `/api/documents/${projectId}?${params.toString()}`;
+}
+
 /**
  * The invoice half of #989's issue-time parity with the quote send dialog.
  * Invoice date + due date (defaulting to invoice date + the org's
@@ -71,13 +86,7 @@ export function IssueInvoiceDialog({ open, onOpenChange, projectId, invoiceId, i
         ? computeValidUntil(invoiceDateMs, dates.paymentTermsDays, dates.timezone)
         : null;
 
-  // Preview must reflect the dates currently in the form, not the invoice's
-  // stored (pre-issue) row — otherwise "preview" always shows the default
-  // Net-N due date and ignores whatever the user just typed (#989 follow-up).
-  const previewParams = new URLSearchParams({ type: "invoice", preview: "1", invoiceId });
-  if (Number.isFinite(invoiceDateMs)) previewParams.set("invoiceDate", String(invoiceDateMs));
-  if (previewDueDate != null) previewParams.set("dueDate", String(previewDueDate));
-  const previewHref = `/api/documents/${projectId}?${previewParams.toString()}`;
+  const previewHref = buildInvoicePreviewHref(projectId, invoiceId, invoiceDateMs, previewDueDate);
 
   function reset() {
     setInvoiceDateStr(todayStr());

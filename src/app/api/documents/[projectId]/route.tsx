@@ -31,6 +31,28 @@ const typeMap: Record<string, ProjectDocumentType> = {
 /** Client-facing finance docs — reachable here ONLY as a watermarked preview. */
 const PREVIEW_ONLY_TYPES = new Set<ProjectDocumentType>(["quote", "invoice"]);
 
+/**
+ * Preview-only date overrides (issue dialog bugfix): a preview of an unissued
+ * invoice otherwise falls back to `now` + the org's default payment terms,
+ * ignoring whatever invoice/due date is currently typed in the dialog. Only
+ * meaningful for `preview` + `type=invoice` — `buildDocumentData` only reads
+ * `stampedDates` there, so this is a no-op (returns `undefined`) elsewhere.
+ */
+function resolveInvoicePreviewStampedDates(
+  preview: boolean,
+  docType: ProjectDocumentType,
+  invoiceDateParam: string | null,
+  dueDateParam: string | null,
+): { documentDate?: number; invoiceDueDate?: number } | undefined {
+  if (!preview || docType !== "invoice") return undefined;
+  const invoiceDate = invoiceDateParam ? Number(invoiceDateParam) : undefined;
+  const dueDate = dueDateParam ? Number(dueDateParam) : undefined;
+  const documentDate = Number.isFinite(invoiceDate) ? invoiceDate : undefined;
+  const invoiceDueDate = Number.isFinite(dueDate) ? dueDate : undefined;
+  if (documentDate == null && invoiceDueDate == null) return undefined;
+  return { documentDate, invoiceDueDate };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
@@ -46,11 +68,6 @@ export async function GET(
   // below — `buildDocumentData` only reads it for `docType: "invoice"`, so
   // it's a harmless no-op on any other type, not worth its own branch here.
   const invoiceId = url.searchParams.get("invoiceId") || undefined;
-  // Preview-only date overrides (issue dialog bugfix): a preview of an
-  // unissued invoice otherwise falls back to `now` + the org's default
-  // payment terms, ignoring whatever invoice/due date is currently typed in
-  // the dialog. Only meaningful for `preview` + `type=invoice` — harmless
-  // elsewhere since `buildDocumentData` only reads `stampedDates` there.
   const previewInvoiceDateParam = url.searchParams.get("invoiceDate");
   const previewDueDateParam = url.searchParams.get("dueDate");
 
@@ -86,14 +103,7 @@ export async function GET(
     }
   }
 
-  const previewInvoiceDate = previewInvoiceDateParam ? Number(previewInvoiceDateParam) : undefined;
-  const previewDueDate = previewDueDateParam ? Number(previewDueDateParam) : undefined;
-  const documentDateOverride = Number.isFinite(previewInvoiceDate) ? previewInvoiceDate : undefined;
-  const dueDateOverride = Number.isFinite(previewDueDate) ? previewDueDate : undefined;
-  const stampedDates =
-    preview && docType === "invoice" && (documentDateOverride != null || dueDateOverride != null)
-      ? { documentDate: documentDateOverride, invoiceDueDate: dueDateOverride }
-      : undefined;
+  const stampedDates = resolveInvoicePreviewStampedDates(preview, docType, previewInvoiceDateParam, previewDueDateParam);
 
   try {
     // `draftPreview` is set for the finance types only — a warehouse doc is not

@@ -18,6 +18,7 @@
  * warns about.
  */
 import { z } from "zod";
+import { roundCurrency } from "./formatters";
 
 const IDENTITY_BASE = "https://identity.xero.com";
 const API_BASE = "https://api.xero.com";
@@ -393,14 +394,76 @@ export interface XeroInvoiceLineInput {
   /**
    * The authoritative net line amount (tax-exclusive), already discount- and
    * duration-adjusted — Flow's own `invoiceLines.lineTotal`, not re-derived.
-   * Passed through as Xero's `LineAmount` override so Xero's own
-   * `Quantity × UnitAmount` calc (which knows nothing about Flow's discount)
-   * never silently overrides a discounted total. Optional only so
-   * lower-level tests can omit it and fall back to Xero's default calc.
+   * `buildXeroLineItem` below reconciles this against `quantity × unitAmount`
+   * before it ever reaches Xero. Optional only so lower-level tests can omit
+   * it and fall back to Xero's default calc.
    */
   lineAmount?: number;
   accountCode?: string | null;
   taxType?: string | null;
+}
+
+/**
+ * Xero validates `LineAmount` against `Quantity × UnitAmount` whenever all
+ * three are present, and rejects the whole invoice with a 400
+ * ("The line total X does not match the expected line total Y") if they
+ * disagree — it does NOT treat a supplied `LineAmount` as an override the way
+ * the naive "just pass lineAmount through" approach assumed. Flow's
+ * `lineTotal` routinely disagrees with `quantity × unitPrice`: duration
+ * multiplies it up (a multi-day rental), a per-line discount nets it down
+ * (`computeLineTotal`, convex/lib/lineTotal.ts) — either one trips this.
+ *
+ * Reconcile at the boundary instead of hoping the two already agree:
+ *  - They already match (the common single-day, undiscounted case) → send
+ *    Quantity/UnitAmount/LineAmount as-is, nothing to reconcile.
+ *  - `lineTotal` is LOWER (a discount) → keep Quantity/UnitAmount as the
+ *    gross rate and express the gap as Xero's own `DiscountAmount`, so
+ *    Xero's internal check (`Quantity × UnitAmount − DiscountAmount`) lands
+ *    on the same figure we're asserting via `LineAmount`.
+ *  - `lineTotal` is HIGHER (duration-multiplied) → Xero has no "negative
+ *    discount" field, so collapse to a single unit at the resolved amount;
+ *    `Quantity × UnitAmount` then already equals `LineAmount` with nothing
+ *    left to reconcile. This changes what the Quantity column shows in
+ *    Xero's own ledger view, but Xero is bookkeeping-only here — the
+ *    client-facing document is Flow's own PDF (see the finance-document
+ *    rules in CLAUDE.md), which is unaffected.
+ */
+function buildXeroLineItem(li: XeroInvoiceLineInput) {
+  const rawAmount = roundCurrency(li.quantity * li.unitAmount);
+  const lineAmount = li.lineAmount ?? rawAmount;
+  const diff = roundCurrency(rawAmount - lineAmount);
+
+  if (Math.abs(diff) < 0.005) {
+    return {
+      Description: li.description,
+      Quantity: li.quantity,
+      UnitAmount: li.unitAmount,
+      LineAmount: lineAmount,
+      AccountCode: li.accountCode || undefined,
+      TaxType: li.taxType || undefined,
+    };
+  }
+
+  if (diff > 0) {
+    return {
+      Description: li.description,
+      Quantity: li.quantity,
+      UnitAmount: li.unitAmount,
+      LineAmount: lineAmount,
+      DiscountAmount: diff,
+      AccountCode: li.accountCode || undefined,
+      TaxType: li.taxType || undefined,
+    };
+  }
+
+  return {
+    Description: li.description,
+    Quantity: 1,
+    UnitAmount: lineAmount,
+    LineAmount: lineAmount,
+    AccountCode: li.accountCode || undefined,
+    TaxType: li.taxType || undefined,
+  };
 }
 
 const xeroInvoiceSchema = z.object({
@@ -457,14 +520,7 @@ export async function upsertXeroDraftInvoice(
         // $330.00 invoice). An explicit declaration is the only thing that
         // makes the two sides' agreement visible at the boundary.
         LineAmountTypes: "Exclusive",
-        LineItems: input.lineItems.map((li) => ({
-          Description: li.description,
-          Quantity: li.quantity,
-          UnitAmount: li.unitAmount,
-          LineAmount: li.lineAmount,
-          AccountCode: li.accountCode || undefined,
-          TaxType: li.taxType || undefined,
-        })),
+        LineItems: input.lineItems.map((li) => buildXeroLineItem(li)),
       },
     ],
   };

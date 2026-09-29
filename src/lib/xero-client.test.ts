@@ -291,9 +291,16 @@ describe("upsertXeroDraftInvoice", () => {
   // Regression: a discount netted into Flow's lineTotal used to be dropped on
   // push — this file only ever sent Quantity/UnitAmount, so Xero recomputed
   // LineAmount itself (Quantity × UnitAmount) with no knowledge of the
-  // discount. `lineAmount` is the explicit override that keeps Xero's total
-  // matching Flow's already-discounted figure.
-  it("passes a supplied lineAmount through as an explicit LineAmount override", async () => {
+  // discount, overstating the client's charge.
+  //
+  // The fix that followed (sending LineAmount alongside an unreconciled
+  // Quantity/UnitAmount) was ITSELF broken: Xero validates
+  // `LineAmount == Quantity × UnitAmount` whenever all three are present and
+  // rejects the push outright ("The line total X does not match the expected
+  // line total Y") rather than treating LineAmount as an override. The gap
+  // must be expressed as Xero's own DiscountAmount so its internal check
+  // reconciles.
+  it("expresses a discounted lineTotal as Xero's DiscountAmount, not a bare LineAmount override", async () => {
     const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
     const { impl, calls } = mockFetch(fixture);
     await upsertXeroDraftInvoice(
@@ -311,6 +318,35 @@ describe("upsertXeroDraftInvoice", () => {
     expect(body.Invoices[0].LineItems[0].Quantity).toBe(2);
     expect(body.Invoices[0].LineItems[0].UnitAmount).toBe(100);
     expect(body.Invoices[0].LineItems[0].LineAmount).toBe(170);
+    expect(body.Invoices[0].LineItems[0].DiscountAmount).toBe(30);
+  });
+
+  // A multi-day rental's lineTotal is duration-multiplied ABOVE
+  // quantity × unitPrice (convex/lib/lineTotal.ts's computeLineTotal), the
+  // mirror image of a discount. Xero has no "negative discount" field, so
+  // this must collapse to a single unit at the resolved amount rather than
+  // send a Quantity/UnitAmount pair Xero would reject.
+  it("collapses a duration-multiplied lineTotal to Quantity 1 rather than send an unreconcilable Quantity/UnitAmount", async () => {
+    const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
+    const { impl, calls } = mockFetch(fixture);
+    await upsertXeroDraftInvoice(
+      {
+        contactId: "c1",
+        invoiceNumber: "INV-2026-0001",
+        date: "2026-07-26",
+        // 1 × $500/day over a 3-day hire nets to $1,500 — well above
+        // quantity × unitAmount ($500).
+        lineItems: [
+          { description: "PA System hire (3 days)", quantity: 1, unitAmount: 500, lineAmount: 1500, accountCode: "4200", taxType: "OUTPUT2" },
+        ],
+      },
+      { ...authOpts, fetchImpl: impl },
+    );
+    const body = JSON.parse(calls[0]!.init!.body as string);
+    expect(body.Invoices[0].LineItems[0].Quantity).toBe(1);
+    expect(body.Invoices[0].LineItems[0].UnitAmount).toBe(1500);
+    expect(body.Invoices[0].LineItems[0].LineAmount).toBe(1500);
+    expect(body.Invoices[0].LineItems[0].DiscountAmount).toBeUndefined();
   });
 
   // GST regression (INV-260901): LineAmountTypes was never sent, so Xero fell

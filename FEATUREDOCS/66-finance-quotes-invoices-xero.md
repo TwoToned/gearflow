@@ -1210,9 +1210,9 @@ line-item workflow; `resolveEquipmentLineCode` now branches `lineKind` on
 is unaffected either way (kits aren't sellable — see FEATUREDOCS/67 — so
 `isKitParent` and `type === "SALE"` never coincide).
 
-### Line amounts push `LineAmount`, never re-derived from Quantity × UnitAmount
+### Line amounts reconcile against Quantity × UnitAmount at the Xero boundary
 
-**Live bug fixed:** a discounted line's discount never reached Xero.
+**Live bug #1 (fixed):** a discounted line's discount never reached Xero.
 `pushInvoiceToXero` (`src/server/xero.ts`) used to send only `Quantity`/
 `UnitAmount` per line — the Xero `/Invoices` endpoint computes `LineAmount`
 itself as `Quantity × UnitAmount` when it isn't supplied, which knows nothing
@@ -1220,18 +1220,45 @@ about `projectLineItems.discount`/`projectGroups.discount` already netted
 into `invoiceLines.lineTotal` (`convex/lib/lineTotal.ts` `computeLineTotal` —
 `unitPrice · quantity · duration − discount`). A discounted (or multi-day
 `duration`-rated) line therefore posted to Xero at its pre-discount gross,
-overstating the client's actual charge.
+overstating the client's actual charge. The first fix populated
+`XeroInvoiceLineInput.lineAmount` from `lineTotal` and sent it as Xero's
+`LineAmount` alongside the unchanged `Quantity`/`UnitAmount` — on the
+(wrong) assumption that a supplied `LineAmount` overrides Xero's own calc.
 
-`XeroInvoiceLineInput.lineAmount` (`src/lib/xero-client.ts`) is now populated
-from the invoice line's own `lineTotal` and sent as Xero's `LineAmount` — an
-explicit override Xero accepts alongside `Quantity`/`UnitAmount`, so the
-posted total always matches Flow's already-resolved figure instead of being
-re-derived. `Quantity`/`UnitAmount` are still sent for Xero's own line
-display; `lineTotal` is the one number both a Flow document and the pushed
-Xero invoice now agree on (R-3.1 — no second, divergent total-calculation
-path). No schema change: `invoiceLines.lineTotal` already carried the correct
-net figure — the fix is purely "stop letting Xero recompute a number Flow
-already resolved," matching "Money is never hand-typed" project-wide.
+**Live bug #2 (fixed):** Xero does NOT treat a supplied `LineAmount` as an
+override. When `Quantity`, `UnitAmount`, and `LineAmount` are all present in
+one `POST /Invoices` line, Xero validates `LineAmount == Quantity ×
+UnitAmount` and rejects the whole push with a 400 ("The line total X does not
+match the expected line total Y") the moment they disagree — which they
+routinely do, since `lineTotal` is discount- and duration-adjusted while
+`quantity`/`unitPrice` on `invoiceLines` are the raw per-unit figures. This
+surfaced in production on the first duration- or discount-bearing line pushed
+after bug #1's fix shipped.
+
+`buildXeroLineItem` (`src/lib/xero-client.ts`, inside
+`upsertXeroDraftInvoice`) now reconciles the two at the wire-format boundary
+instead of hoping they already agree:
+
+- **`Quantity × UnitAmount == lineTotal`** (the common single-day,
+  undiscounted case) — send all three as-is, nothing to reconcile.
+- **`lineTotal` is LOWER** (a discount) — keep `Quantity`/`UnitAmount` as the
+  gross rate and send the gap as Xero's own `DiscountAmount`, so Xero's
+  internal check (`Quantity × UnitAmount − DiscountAmount`) lands on the same
+  figure Flow is asserting via `LineAmount`.
+- **`lineTotal` is HIGHER** (duration-multiplied, e.g. a 3-day hire) — Xero
+  has no "negative discount" field, so the line collapses to `Quantity: 1`,
+  `UnitAmount: lineTotal`; `Quantity × UnitAmount` then already equals
+  `LineAmount` with nothing left to reconcile. This changes what the
+  Quantity column shows in Xero's own ledger view, but Xero is
+  bookkeeping-only here — the client-facing document is Flow's own PDF (see
+  "A client-facing finance document is STORED BYTES" in CLAUDE.md), which is
+  unaffected.
+
+`lineTotal` is still the one number both a Flow document and the pushed Xero
+invoice agree on (R-3.1 — no second, divergent total-calculation path); the
+reconciliation only decides HOW that agreement is expressed in Xero's own
+line-item shape. No schema change: `invoiceLines.lineTotal` already carried
+the correct net figure.
 
 ### Per-entity coding override UI
 

@@ -3,6 +3,7 @@ import {
   formatCurrency,
   formatDate,
   formatDateDayMonth,
+  formatDateInTimezone,
   formatDateLong,
   formatDateWithTime,
   formatMonthYear,
@@ -108,6 +109,31 @@ describe("formatDate", () => {
 
   it("returns em dash for empty string", () => {
     expect(formatDate("")).toBe("\u2014");
+  });
+});
+
+describe("formatDateInTimezone \u2014 org-timezone-pinned dates (#989 follow-up)", () => {
+  it("prints the org-local calendar day, not the render host's own day", () => {
+    // An invoice due date stamped as midnight in an AEST org (UTC+10) \u2014 the
+    // exact shape `startOfDayInTimezone` produces in convex/invoicesWrites.ts.
+    // In absolute time this is the previous day in UTC.
+    const dueDateMs = Date.UTC(2026, 9, 2, 14, 0, 0); // 2026-10-02T14:00Z == 2026-10-03T00:00 AEST
+    expect(formatDateInTimezone(new Date(dueDateMs), "Australia/Sydney")).toBe("3 Oct 2026");
+    // The bug this replaces: formatting the same instant with no timezone
+    // pins it to the render host's own clock \u2014 a UTC host prints the wrong,
+    // earlier day for exactly this instant.
+    expect(formatDateInTimezone(new Date(dueDateMs), "UTC")).toBe("2 Oct 2026");
+  });
+
+  it("falls back to formatDate's exact behaviour when no timezone is given", () => {
+    const d = new Date("2024-07-15T00:00:00Z");
+    expect(formatDateInTimezone(d, undefined)).toBe(formatDate(d));
+  });
+
+  it("still returns the em dash for null/undefined/empty", () => {
+    expect(formatDateInTimezone(null, "Australia/Sydney")).toBe("\u2014");
+    expect(formatDateInTimezone(undefined, "Australia/Sydney")).toBe("\u2014");
+    expect(formatDateInTimezone("", "Australia/Sydney")).toBe("\u2014");
   });
 });
 

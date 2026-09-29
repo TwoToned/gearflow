@@ -31,6 +31,28 @@ const typeMap: Record<string, ProjectDocumentType> = {
 /** Client-facing finance docs — reachable here ONLY as a watermarked preview. */
 const PREVIEW_ONLY_TYPES = new Set<ProjectDocumentType>(["quote", "invoice"]);
 
+/**
+ * Preview-only date overrides (issue dialog bugfix): a preview of an unissued
+ * invoice otherwise falls back to `now` + the org's default payment terms,
+ * ignoring whatever invoice/due date is currently typed in the dialog. Only
+ * meaningful for `preview` + `type=invoice` — `buildDocumentData` only reads
+ * `stampedDates` there, so this is a no-op (returns `undefined`) elsewhere.
+ */
+function resolveInvoicePreviewStampedDates(
+  preview: boolean,
+  docType: ProjectDocumentType,
+  invoiceDateParam: string | null,
+  dueDateParam: string | null,
+): { documentDate?: number; invoiceDueDate?: number } | undefined {
+  if (!preview || docType !== "invoice") return undefined;
+  const invoiceDate = invoiceDateParam ? Number(invoiceDateParam) : undefined;
+  const dueDate = dueDateParam ? Number(dueDateParam) : undefined;
+  const documentDate = Number.isFinite(invoiceDate) ? invoiceDate : undefined;
+  const invoiceDueDate = Number.isFinite(dueDate) ? dueDate : undefined;
+  if (documentDate == null && invoiceDueDate == null) return undefined;
+  return { documentDate, invoiceDueDate };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
@@ -46,6 +68,8 @@ export async function GET(
   // below — `buildDocumentData` only reads it for `docType: "invoice"`, so
   // it's a harmless no-op on any other type, not worth its own branch here.
   const invoiceId = url.searchParams.get("invoiceId") || undefined;
+  const previewInvoiceDateParam = url.searchParams.get("invoiceDate");
+  const previewDueDateParam = url.searchParams.get("dueDate");
 
   let session;
   try {
@@ -79,12 +103,15 @@ export async function GET(
     }
   }
 
+  const stampedDates = resolveInvoicePreviewStampedDates(preview, docType, previewInvoiceDateParam, previewDueDateParam);
+
   try {
     // `draftPreview` is set for the finance types only — a warehouse doc is not
     // a draft of anything, so it never carries the banner.
     const pdf = await generatePdf(projectId, organizationId, docType, {
       draftPreview: preview && PREVIEW_ONLY_TYPES.has(docType),
       invoiceId,
+      stampedDates,
     });
     const filename = `${docType}-${projectId}.pdf`;
     return new NextResponse(Buffer.from(pdf), {

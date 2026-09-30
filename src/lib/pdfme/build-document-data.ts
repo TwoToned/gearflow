@@ -29,7 +29,7 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import { isHardOverbooked } from "@/lib/overbooking-core";
 import { getFileAsDataUri } from "@/lib/storage";
 import { getProjectWindow, getProjectWindowDates } from "@/lib/project-window";
-import { formatDate, formatDateInTimezone } from "./plugins/helpers";
+import { formatDateInTimezone, documentDueDateText } from "./plugins/helpers";
 import {
   structureLineItems,
   type CategoryForStructuring,
@@ -1052,16 +1052,16 @@ export async function buildDocumentData(
     project_type: serialized.type || "",
 
     // Dates
-    rental_start: formatDate(serialized.rentalStartDate),
-    rental_end: formatDate(serialized.rentalEndDate),
+    rental_start: formatDateInTimezone(serialized.rentalStartDate, orgTimezone),
+    rental_end: formatDateInTimezone(serialized.rentalEndDate, orgTimezone),
     // event_start/event_end/load_in_date/load_out_date are DEPRECATED aliases
     // (WS2 #941) — kept so a saved custom template referencing them still
     // resolves, now to the PROJECT window instead of the removed/deprecated
     // source fields.
-    event_start: formatDate(windowStartDate),
-    event_end: formatDate(windowEndDate),
-    load_in_date: formatDate(windowStartDate),
-    load_out_date: formatDate(windowEndDate),
+    event_start: formatDateInTimezone(windowStartDate, orgTimezone),
+    event_end: formatDateInTimezone(windowEndDate, orgTimezone),
+    load_in_date: formatDateInTimezone(windowStartDate, orgTimezone),
+    load_out_date: formatDateInTimezone(windowEndDate, orgTimezone),
 
     // Client
     client_name: serialized.client?.name || "",
@@ -1121,7 +1121,8 @@ export async function buildDocumentData(
         ? ""
         : documentSettings?.termsAndConditions || "",
     quote_valid_until: formatDateInTimezone(quoteValidUntil, orgTimezone),
-    invoice_due_date: formatDateInTimezone(invoiceDueDate, orgTimezone),
+    // Invoice-only: a quote has an expiry (quote_valid_until), never a due date.
+    invoice_due_date: documentDueDateText(docType, invoiceDueDate, orgTimezone),
     payment_details: docType === "invoice" ? documentSettings?.paymentDetails || "" : "",
 
     // PM

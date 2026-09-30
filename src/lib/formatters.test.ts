@@ -4,6 +4,7 @@ import {
   formatDate,
   formatDateDayMonth,
   formatDateInTimezone,
+  documentDueDateText,
   formatDateLong,
   formatDateWithTime,
   formatMonthYear,
@@ -283,5 +284,15 @@ describe("roundCurrency", () => {
 
   it("handles floating point edge case (0.1 + 0.2)", () => {
     expect(roundCurrency(0.1 + 0.2)).toBe(0.3);
+  });
+});
+
+describe("documentDueDateText \u2014 invoice-only due date", () => {
+  const due = new Date("2026-10-02T14:00:00.000Z");
+  it("prints the org-timezone day for an invoice", () => {
+    expect(documentDueDateText("invoice", due, "Australia/Sydney")).toBe("3 Oct 2026");
+  });
+  it("prints nothing for a quote (it has an expiry, not a due date)", () => {
+    expect(documentDueDateText("quote", due, "Australia/Sydney")).toBe("");
   });
 });

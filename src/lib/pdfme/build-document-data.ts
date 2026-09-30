@@ -29,7 +29,7 @@ import { computeOverbookedStatus } from "@/lib/availability";
 import { isHardOverbooked } from "@/lib/overbooking-core";
 import { getFileAsDataUri } from "@/lib/storage";
 import { getProjectWindow, getProjectWindowDates } from "@/lib/project-window";
-import { formatDateInTimezone } from "./plugins/helpers";
+import { formatDateInTimezone, documentDueDateText } from "./plugins/helpers";
 import {
   structureLineItems,
   type CategoryForStructuring,
@@ -1122,7 +1122,7 @@ export async function buildDocumentData(
         : documentSettings?.termsAndConditions || "",
     quote_valid_until: formatDateInTimezone(quoteValidUntil, orgTimezone),
     // Invoice-only: a quote has an expiry (quote_valid_until), never a due date.
-    invoice_due_date: docType === "invoice" ? formatDateInTimezone(invoiceDueDate, orgTimezone) : "",
+    invoice_due_date: documentDueDateText(docType, invoiceDueDate, orgTimezone),
     payment_details: docType === "invoice" ? documentSettings?.paymentDetails || "" : "",
 
     // PM

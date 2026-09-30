@@ -107,6 +107,19 @@ export function formatDateInTimezone(
 }
 
 /**
+ * The printed "Due Date" for a finance document. Invoice-only: a quote carries
+ * an expiry (`quote_valid_until`), never a due date, so every other doc type
+ * gets `""` (which the renderers treat as "print nothing").
+ */
+export function documentDueDateText(
+  docType: string,
+  dueDate: string | Date | null | undefined,
+  timezone: string | undefined,
+): string {
+  return docType === "invoice" ? formatDateInTimezone(dueDate, timezone) : "";
+}
+
+/**
  * I3 (#1082) \u2014 named date-format ROLES, built on the one shared
  * `formatDateWithOptions` implementation, so a display date is one of a
  * small closed set of locale-correct shapes instead of an ad-hoc inline

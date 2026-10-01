@@ -1018,6 +1018,20 @@ The workflow (`build-image.yml`) does, in order:
 ### ⚠️ Coolify deploy is ASYNC
 A green workflow run only means the image was pushed and the Coolify webhook **fired** — the "Trigger Coolify deploy" step succeeding does NOT mean the new container is live. Coolify pulls the image + restarts asynchronously (and runs migrations on boot). **Confirm a deploy by polling `https://flow.rvlt.app` for 200/307**, not by the workflow status alone. A failed container start leaves the previous image serving.
 
+### Dev environment (static, `:dev` image)
+`.github/workflows/build-image-dev.yml` builds `ghcr.io/twotoned/gearflow:dev` on every push to
+`main` (and on manual `workflow_dispatch` from any branch), pushes Convex functions to the **dev**
+deployment and fires the dev Coolify webhook. It exists because `NEXT_PUBLIC_*` are inlined at
+build time — `:latest` carries the prod Convex URL, so a client on it talks to prod Convex with a
+dev-issued token (`No auth provider found matching the given token`). Never point the dev
+Coolify app at `:latest`.
+- Repo **variables:** `DEV_NEXT_PUBLIC_APP_URL`, `DEV_NEXT_PUBLIC_CONVEX_URL`.
+- Repo **secrets:** `CONVEX_DEPLOY_KEY_DEV` (a dev key — cannot reach prod), `COOLIFY_DEV_DEPLOY_WEBHOOK`
+  (`COOLIFY_TOKEN` is shared with prod).
+- The dev Convex deployment needs `CONVEX_AUTH_ISSUER` / `CONVEX_AUTH_JWKS_URL` set to the dev app
+  origin, and Coolify's `BETTER_AUTH_URL` must equal that origin exactly.
+- PostHog is deliberately unset (analytics inert) and sourcemap upload is off.
+
 ### Custom deploy hooks
 - **Pre-merge:** none (CI — `ci.yml` — handles lint + typecheck + tests on the PR).
 - **Deploy trigger:** automatic on push to `main`.

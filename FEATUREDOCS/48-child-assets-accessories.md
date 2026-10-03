@@ -594,10 +594,17 @@ accessory units; deprep resets emptied accessory lines to `PENDING` (the rollup 
 back to the line's current value when no units remain). Deploy skips (leaves behind)
 an accessory whose asset is LOST/RETIRED/IN_MAINTENANCE/SOLD rather than erasing that
 state. `forceReturnAsset` re-syncs lines whose asset lives on the unit. An accessory
-line never counts toward `ALL_CHECKED_OUT` (it rides with its parent). Known gaps,
-tracked as follow-ups: a parent with no serialised asset (bulk/generic) never gets
-accessory units; the scan-deploy path bypasses the missing-accessory gate; a
-left-behind accessory can't be deployed after its parent is already out.
+line never counts toward `ALL_CHECKED_OUT` (it rides with its parent). A bulk/untagged parent's accessory lines are packed once the whole parent
+line is packed (`packParentlessAccessories`, no `parentUnitAssetId`, cascaded unscoped
+at deploy/return). A repeat deploy of an already-out parent still carries any
+left-behind accessory, and returning an already-returned parent brings a stranded one
+home. Re-prep never un-deploys a CHECKED_OUT unit and honours `includeAccessoryIds`;
+kit prep leaves accessory lines to the parent-scoped deploy path (no duplicate unit);
+undeploy after a partial bulk return releases only the quantity still out; partial
+bulk returns keep the worst condition; `correctReturnCondition` skips an asset that has
+since gone out again. Not done (design decisions): per-accessory return condition at
+the returns station (accessories inherit the parent's), and the returns board still
+only lists CHECKED_OUT parents.
 
 ## Warehouse UI: quantity>1 accessory parents, shared gate (follow-up)
 

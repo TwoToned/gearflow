@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  buildTrackTuning,
   buildVideoConstraints,
   classifyCameraError,
   computeRoi,
   detectCameraBlocker,
+  pickBackCamera,
   stopStream,
   summariseTrackCapabilities,
   type CameraError,
@@ -303,6 +305,50 @@ export function useCameraScanner({ onResult, continuous = false }: UseCameraScan
   }, []);
 
   /**
+   * Post-permission tuning: prefer the rear MAIN lens, then ask for continuous
+   * focus and a modest zoom. Everything here is best-effort — any failure keeps
+   * the stream we already have. Labels are blank before permission, so lens
+   * selection can only happen now (never pass a `deviceId` up front).
+   */
+  const refineStream = useCallback(async (initial: MediaStream): Promise<MediaStream> => {
+    let stream = initial;
+    try {
+      const currentId = stream.getVideoTracks()[0]?.getSettings().deviceId;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const pick = pickBackCamera(devices);
+      if (pick && pick !== currentId) {
+        // One live capture at a time on iOS: release before re-opening.
+        stopStream(stream);
+        const base = buildVideoConstraints();
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            ...base,
+            video: { ...(base.video as MediaTrackConstraints), deviceId: { exact: pick } },
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia(base);
+        }
+      }
+    } catch {
+      // enumerateDevices unsupported or re-open failed: fall through with what we have.
+    }
+    // A failed re-open above can leave us holding the stopped original; open a
+    // fresh default stream (a rejection here is the real error for acquireStream).
+    if (stream.getVideoTracks()[0]?.readyState === "ended") {
+      stream = await navigator.mediaDevices.getUserMedia(buildVideoConstraints());
+    }
+    const track = stream.getVideoTracks()[0];
+    try {
+      const caps = typeof track?.getCapabilities === "function" ? track.getCapabilities() : null;
+      const tuning = buildTrackTuning(caps);
+      if (track && tuning) await track.applyConstraints({ advanced: [tuning] });
+    } catch {
+      // Constraint refused (some Android drivers advertise then reject): keep defaults.
+    }
+    return stream;
+  }, []);
+
+  /**
    * Open the camera, or report why it could not open.
    *
    * Split out of `start` because a rejection here is the single most common
@@ -313,14 +359,15 @@ export function useCameraScanner({ onResult, continuous = false }: UseCameraScan
    */
   const acquireStream = useCallback(async (isStale: () => boolean): Promise<MediaStream | null> => {
     try {
-      return await navigator.mediaDevices.getUserMedia(buildVideoConstraints());
+      const stream = await navigator.mediaDevices.getUserMedia(buildVideoConstraints());
+      return await refineStream(stream);
     } catch (cause) {
       if (isStale()) return null;
       setError(classifyCameraError(cause));
       setStatus("error");
       return null;
     }
-  }, []);
+  }, [refineStream]);
 
   const start = useCallback(async () => {
     wantsCameraRef.current = true;

@@ -5,7 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
 import { assertTestTagAllowsCheckout } from "./lib/testtag";
-import { adjustBulkAvailability, coalesceAdjustments, type BulkAdjustment } from "./lib/inventory";
+import { adjustBulkAvailability } from "./lib/inventory";
 import { type CheckInItem, type CheckInItemType, itemGroupKey, distributeReturn } from "./lib/bulkCheckin";
 import {
   ensureSerialisedUnit,
@@ -129,8 +129,8 @@ async function checkOutBulkItem(
     await ctx.db.patch(unit._id, { status: "CHECKED_OUT", quantity: p.checkoutQty, checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
   }
   // Standalone (non-kit-child) bulk lines consume the shared shelf pool directly
-  // (issue #801 #2) — kit members instead go through the kit's own
-  // collectKitBulkAdjustments off `kitBulkItems`, and accessory children are
+  // (issue #801 #2) — kit members were already taken out of the pool
+  // when added to the kit (kitWrites.addBulkItemNative), and accessory children are
   // out of scope here (see FEATUREDOCS/48's SHIPS_WITH/DEDICATED split); both
   // set isKitChild, so this single flag is the right gate. Deduct only the
   // DELTA over what this line already had checked out, so a repeat/idempotent
@@ -476,10 +476,6 @@ async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: st
     });
   }
 }
-async function collectKitBulkAdjustments(ctx: Ctx, kitId: string, organizationId: string, sign: -1 | 1): Promise<BulkAdjustment[]> {
-  const bulks = await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
-  return bulks.filter((b) => b.organizationId === organizationId).map((b) => ({ bulkAssetId: b.bulkAssetId, delta: sign * b.quantity }));
-}
 export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
   for (const id of assetIds) {
     const a = await assetByCuid(ctx, id);
@@ -631,12 +627,17 @@ async function checkoutKitPreflight(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLi
     ttBulk.push(...(await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", nk)).collect()).map((b) => b.bulkAssetId));
   }
   await assertTestTagAllowsCheckout(ctx, a.organizationId, { assetIds: ttAssets, bulkAssetIds: ttBulk });
+
+  // Already deployed: a repeat deploy would re-stamp the lines and scan log.
+  if (kitLine.status === "CHECKED_OUT") throw new ConvexError("Kit is already deployed");
 }
 
 /** Write phase of checkoutKit for ONE already-validated kit (preflight passed).
  *  `loc` (the project location) is passed so a batch resolves it once. Returns
- *  [kitId, ...nestedKitIds]. CONSUMES bulk availability — `adjustBulkAvailability`
- *  can throw on a short bulk (all-or-nothing per the singular). */
+ *  [kitId, ...nestedKitIds]. Does NOT touch bulk availability: a kit's bulk members
+ *  were already taken out of the shared pool when they were added to the kit
+ *  (`kitWrites.addBulkItemNative`), so deploy / return / un-deploy / un-return
+ *  must not consume or restore it again. */
 async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, loc: string | null): Promise<string[]> {
     const children = await childLines(ctx, kitLine.id, a.organizationId);
     const nestedKitChildren = children.filter((c) => c.kitId);
@@ -665,9 +666,6 @@ async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, l
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
 
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: flip member units CONFIRMED → CHECKED_OUT (unit rows only;
     // the belt above owns asset status this phase), then deploy each member's
@@ -781,9 +779,6 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
 
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: flip member units CHECKED_OUT → RETURNED (unit rows only),
     // then return each member's accessories with the kit. Bulk members return
@@ -1141,10 +1136,6 @@ async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, d
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
 
-    // Restore bulk availability the checkout consumed (+1, opposite of checkout's -1).
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: member units CHECKED_OUT → CONFIRMED (re-packed), and reverse
     // the members' accessories with them.
@@ -1233,10 +1224,6 @@ async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, p
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
 
-    // Re-consume bulk availability the return restored (-1, opposite of checkin's +1).
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: member units RETURNED → CHECKED_OUT. Clear the return stamps
     // so a re-deployed unit doesn't carry contradictory returned* history.
@@ -1433,9 +1420,6 @@ export async function forceReturnKitCore(
   if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
   else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
 
-  const adjustments: BulkAdjustment[] = [];
-  for (const kid of kitsToRestore) adjustments.push(...(await collectKitBulkAdjustments(ctx, kid, organizationId, 1)));
-  if (adjustments.length > 0) await adjustBulkAvailability(ctx, organizationId, coalesceAdjustments(adjustments));
   return [...kitsToRestore];
 }
 

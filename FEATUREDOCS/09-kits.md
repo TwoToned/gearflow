@@ -90,6 +90,9 @@ other line-item discount.
 - Dialog shows "X/Y items verified" with option to proceed or cancel
 - "Deploy Verified" automatically includes nested kit parent line items when grandchildren are verified
 
+## Bulk stock accounting
+A kit's bulk members leave `bulkAssets.availableQuantity` **when they are added to the kit** (`kitWrites.addBulkItemNative`) and return to it when removed or the kit is archived. Deploy, return, un-deploy, un-return and force-return **never** adjust bulk availability — the stock is already out of the pool. Consuming it again at deploy double-counted it and failed with "Insufficient stock" whenever the kit held all of a bulk asset. `checkoutKitPreflight` also rejects a kit that is already `CHECKED_OUT`.
+
 ## Force Return
 - `forceReturnKit()` (`convex/warehouseWrites.ts`, called via `src/hooks/use-warehouse-writes.ts`) resets kit + all children (including nested kits and grandchildren) to AVAILABLE, sets line items to RETURNED, always resets location (even to null if no default)
 - Bulk force return available from kit list page selection bar

@@ -181,6 +181,40 @@ describe("kit per-unit — reverse + force", () => {
     expect(serialUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
   });
 
+  const bulkAvail = (t: T) => t.run(async (ctx) => (await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).unique())?.availableQuantity);
+
+  test("checkoutKitsBatch: a kit's bulk member is already out of the pool, so deploy works at 0 available and leaves it untouched", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    await t.run(async (ctx) => {
+      const b = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).unique();
+      await ctx.db.patch(b!._id, { availableQuantity: 0 });
+    });
+    const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1"], now: NOW });
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors).toEqual([]);
+    expect(await bulkAvail(t)).toBe(0);
+  });
+
+  test("kit deploy then return does not move bulk availability", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    await co(t);
+    expect(await bulkAvail(t)).toBe(10);
+    await ci(t);
+    expect(await bulkAvail(t)).toBe(10);
+  });
+
+  test("checkoutKitsBatch: re-deploying an already-deployed kit is rejected per kit", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    const run = () => t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1"], now: NOW });
+    expect((await run()).succeeded).toEqual(["k1"]);
+    const second = await run();
+    expect(second.succeeded).toEqual([]);
+    expect(second.errors[0].message).toBe("Kit is already deployed");
+  });
+
   test("checkinKitsBatch: checks in the kit in one call", async () => {
     const t = makeT();
     await seedKit(t);

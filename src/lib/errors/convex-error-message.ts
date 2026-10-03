@@ -41,6 +41,6 @@ export function convexErrorMessage(e: unknown, fallback: string): string {
 }
 
 /** The raw wrapper Convex builds around any server-side failure. */
-export function isMaskedServerError(message: string): boolean {
+function isMaskedServerError(message: string): boolean {
   return /^\s*\[CONVEX [MQA]\(/.test(message) || /\bServer Error\b/.test(message);
 }

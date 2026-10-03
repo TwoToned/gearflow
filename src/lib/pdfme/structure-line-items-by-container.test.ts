@@ -177,4 +177,16 @@ describe("structureLineItemsByContainer", () => {
     const structured = structureLineItemsByContainer(raw, [makeContainer({})]);
     expect(structured.find((r) => r.id === "case-li")).toBeUndefined();
   });
+
+  it("drops an EMPTY case that shares its label with a populated one when filtering by status", () => {
+    const raw = [makeLineItem({ id: "a", description: "Diversity Fin", units: [unit("u-a", "c1")] })];
+    const structured = structureLineItemsByContainer(raw, [
+      makeContainer({ id: "c1", label: "Pelican 1450", sortOrder: 0 }),
+      makeContainer({ id: "c2", label: "Pelican 1450", tag: "TTP00114", sortOrder: 1 }),
+    ]);
+    const { groups } = filterAndGroupItems(structured, makeConfig({ filterByStatus: ["CHECKED_OUT"] }));
+    const headers = [...groups.values()].flat().filter((r) => r.isContainerRow);
+    expect(headers).toHaveLength(1);
+    expect(headers[0].containerTag ?? null).toBeNull();
+  });
 });

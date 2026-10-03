@@ -138,7 +138,7 @@ describe("DeliveryDocketDocument (react-pdf)", () => {
       expect(fullText).not.toContain("Received");
     });
 
-    it("prints a multi-unit line's asset tags inline instead of exploding per-unit sub-rows", async () => {
+    it("lists every unit's asset tag on its own sub-row (no +N truncation)", async () => {
       const raw = [
         {
           id: "bulk",
@@ -169,8 +169,10 @@ describe("DeliveryDocketDocument (react-pdf)", () => {
       const data = makeSpikeData({ line_items: structured, total_items: 1 });
       const { fullText } = await renderPdfPages(DeliveryDocketDocument({ data }));
 
-      expect(fullText).toContain("PC-1, PC-2");
-      expect(fullText).not.toContain("Unit 1 —");
+      // every unit's tag is listed on its own sub-row (no "+N" summary)
+      expect(fullText).toContain("PC-1");
+      expect(fullText).toContain("PC-2");
+      expect(fullText).not.toContain("PC-1, PC-2");
     });
   });
 });

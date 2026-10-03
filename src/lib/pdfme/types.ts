@@ -391,6 +391,8 @@ export interface TablePluginConfig {
   showBadges: boolean;
   showNotes: boolean;
   showPerUnitCheckboxes: boolean;
+  /** List every unit's asset tag as its own sub-row WITHOUT a checkbox (delivery docket). */
+  showPerUnitTags?: boolean;
   showAssetTags: boolean;
   showCategories: boolean;
   showRowNumbers: boolean;

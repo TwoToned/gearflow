@@ -977,6 +977,10 @@ export async function prepUnit(
           updatedAt: now,
         });
       }
+      // The warehouse reads packed state off the child LINE, not its units —
+      // roll it up here exactly as checkoutAccessoryChildren does, or the
+      // accessory stays "unprepped" and Deploy flags it as missing.
+      await syncLineItemRollup(ctx, child.id);
     }
   } else if (args.bulkAssetId) {
     // A bulk line keeps ONE unit per (line, bulkAsset) carrying the packed quantity.

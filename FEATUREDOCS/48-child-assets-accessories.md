@@ -273,6 +273,10 @@ what every existing query keys off.
    same model again increments an existing line) does not re-scale the accessory
    child; and changing a line's quantity later doesn't retroactively rescale.
    Add the full quantity in one go for an exact accessory count.
+   `prepUnit` packs each accessory child's units for the prepped parent asset AND
+   re-syncs the child LINE's rollup (`syncLineItemRollup`) — the warehouse tabs
+   read `prepStatus` off the child line, so skipping that left accessories
+   permanently "unprepped" and Deploy flagging them as missing.
    No units created at expansion — units stay lazy-at-prep. `removeLineItem`
    cascade-deletes children (transactional) and blocks direct child removal.
 3. **Warehouse** (`src/server/warehouse.ts`) — `lookupAssetForScan` returns

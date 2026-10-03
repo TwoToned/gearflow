@@ -273,6 +273,10 @@ what every existing query keys off.
    same model again increments an existing line) does not re-scale the accessory
    child; and changing a line's quantity later doesn't retroactively rescale.
    Add the full quantity in one go for an exact accessory count.
+   `prepUnit` packs each accessory child's units for the prepped parent asset AND
+   re-syncs the child LINE's rollup (`syncLineItemRollup`) — the warehouse tabs
+   read `prepStatus` off the child line, so skipping that left accessories
+   permanently "unprepped" and Deploy flagging them as missing.
    No units created at expansion — units stay lazy-at-prep. `removeLineItem`
    cascade-deletes children (transactional) and blocks direct child removal.
 3. **Warehouse** (`src/server/warehouse.ts`) — `lookupAssetForScan` returns
@@ -580,3 +584,41 @@ Both are tracked in TODOS.md.
 **Perf note:** bulk demand recompute resolves each distinct parent-unit asset once
 per expansion call (O(units) per call, O(units²) over a full multi-unit deploy).
 Fine for typical rental line sizes; revisit if very large lines appear.
+
+**Cascade scoping & guards (warehouse audit):** every accessory cascade is scoped to
+the parent unit(s) that actually moved — partial return without an `assetId`,
+`undeployItems`/`unreturnItems` (which now honour the requested `assetId`) and the
+deprep path no longer touch another parent's accessories. Un-returning clears the
+return record (`returnCondition`/`returnedAt`/`returnedQuantity`) on parent and
+accessory units; deprep resets emptied accessory lines to `PENDING` (the rollup falls
+back to the line's current value when no units remain). Deploy skips (leaves behind)
+an accessory whose asset is LOST/RETIRED/IN_MAINTENANCE/SOLD rather than erasing that
+state. `forceReturnAsset` re-syncs lines whose asset lives on the unit. An accessory
+line never counts toward `ALL_CHECKED_OUT` (it rides with its parent). A bulk/untagged parent's accessory lines are packed once the whole parent
+line is packed (`packParentlessAccessories`, no `parentUnitAssetId`, cascaded unscoped
+at deploy/return). A repeat deploy of an already-out parent still carries any
+left-behind accessory, and returning an already-returned parent brings a stranded one
+home. Re-prep never un-deploys a CHECKED_OUT unit and honours `includeAccessoryIds`;
+kit prep leaves accessory lines to the parent-scoped deploy path (no duplicate unit);
+undeploy after a partial bulk return releases only the quantity still out; partial
+bulk returns keep the worst condition; `correctReturnCondition` skips an asset that has
+since gone out again. Not done (design decisions): per-accessory return condition at
+the returns station (accessories inherit the parent's), and the returns board still
+only lists CHECKED_OUT parents.
+
+## Warehouse UI: quantity>1 accessory parents, shared gate (follow-up)
+
+- **Per-unit selection is kept for bulk accessory parents.** `groupItems`/`groupCheckinItems`
+  (now pure, in `warehouse-types.ts`) emit a `bulk-group` carrying `accessoryChildren` for a
+  quantity>1 accessory parent, so `selectionKeysForEntries` yields `bulkUnitKey` per unit and a
+  subset of units can be picked/prepped/deployed/returned while the accessories still render
+  (`BulkAccessoryRows` / `MobileBulkAccessoryCards`). If no unit is actionable in the stage but an
+  accessory is, it falls back to the line-id `accessory-group`.
+- **One deploy gate.** `openAccessoryGateIfNeeded` (page.tsx) runs the missing-accessory and
+  partial-verify checks for the Deploy button AND scan-deploy, over every line id (bulk keys too).
+- **`accessoryAssetIds`** is the single source for `includeAccessoryIds` (line ids plus
+  `units[].assetId/bulkAssetId`).
+- The accessory-group "Partial" badge comes from `isAccessoryParentPartiallyDeployed(item)`;
+  the Qty column shows the parent quantity on every tab/viewport.
+- Pick hides already-packed accessories (`accessoryChildrenForStage`), and a successful prep clears
+  that line's accessory ids from the shared `verifiedKitItems`, so Deploy verification starts fresh.

@@ -27,7 +27,7 @@ import {
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
-import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
+import { KitChildRows, MobileKitChildCards, BulkAccessoryRows, MobileBulkAccessoryCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
@@ -297,6 +297,14 @@ export function PickPrepTab({
                             </TableRow>
                           );
                         })}
+                        <BulkAccessoryRows
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="deploy"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </Fragment>
                     );
                   }
@@ -567,6 +575,14 @@ export function PickPrepTab({
                         />
                       );
                     })}
+                    <MobileBulkAccessoryCards
+                      accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                      mode="deploy"
+                      verifiedKitItems={verifiedKitItems}
+                      setVerifiedKitItems={setVerifiedKitItems}
+                      expandedGroups={expandedGroups}
+                      toggleExpanded={toggleExpanded}
+                    />
                   </ScanGroupCard>
                 );
               }
@@ -642,7 +658,7 @@ export function PickPrepTab({
                       </>
                     }
                     assetTag={entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
-                    qtyLabel={entry.children.length}
+                    qtyLabel={entry.item.quantity}
                     status={<PrepStatusBadge item={entry.item} />}
                   >
                     <MobileKitChildCards

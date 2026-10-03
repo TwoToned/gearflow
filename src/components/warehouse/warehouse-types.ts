@@ -68,26 +68,40 @@ export interface AvailableAsset {
 export type GroupEntry =
   | { kind: "single"; item: LineItem }
   | { kind: "serialized-group"; groupKey: string; modelName: string; items: LineItem[] }
-  | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number }
+  | {
+      kind: "bulk-group";
+      groupKey: string;
+      item: LineItem;
+      unitCount: number;
+      /** Set only for a quantity>1 ACCESSORY parent: the per-unit selection
+       *  keys stay (so a subset of units can be picked/prepped/deployed/
+       *  returned) AND its accessories still render under the row. */
+      accessoryChildren?: LineItem[];
+    }
   | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] }
   | { kind: "accessory-group"; groupKey: string; item: LineItem; children: LineItem[] };
 
-/** Every selection key a list of `GroupEntry` would expose — the same
- *  per-kind derivation `page.tsx`'s `allOutKeys`/`allPrepKeys`/etc. use
- *  (a bare line-item id for single/serialized/kit/accessory entries, a
- *  positional `bulkUnitKey` for each unit of a bulk entry). Used by "Deploy
+/** The selection keys ONE `GroupEntry` exposes: a bare line-item id for
+ *  single/kit/accessory entries (each serialized item for a serialized group),
+ *  a positional `bulkUnitKey` per unit for a bulk entry (including a bulk
+ *  ACCESSORY parent, which keeps per-unit selection). Single source of truth
+ *  for page.tsx's `all*Keys` and "Deploy container" (#1296 D4). */
+function selectionKeysForEntry(entry: GroupEntry): string[] {
+  if (entry.kind === "single") return [entry.item.id];
+  if (entry.kind === "serialized-group") return entry.items.map((i) => i.id);
+  if (entry.kind === "kit-group" || entry.kind === "accessory-group") return [entry.item.id];
+  return Array.from({ length: entry.unitCount }, (_, u) => bulkUnitKey(entry.item.id, u));
+}
+
+export function selectionKeysForEntries(entries: GroupEntry[]): string[] {
+  return entries.flatMap(selectionKeysForEntry);
+}
+
+/** Every selection key a list of `GroupEntry` would expose. Used by "Deploy
  *  container" (#1296 D4) to select an entire container's contents in one
- *  click — reuses the EXISTING selection state and Deploy button rather
- *  than adding a second deploy code path. */
+ *  click — reuses the EXISTING selection state and Deploy button. */
 export function keysForGroupEntries(entries: GroupEntry[]): string[] {
-  const keys: string[] = [];
-  for (const entry of entries) {
-    if (entry.kind === "single") keys.push(entry.item.id);
-    else if (entry.kind === "serialized-group") entry.items.forEach((i) => keys.push(i.id));
-    else if (entry.kind === "kit-group" || entry.kind === "accessory-group") keys.push(entry.item.id);
-    else for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-  }
-  return keys;
+  return selectionKeysForEntries(entries);
 }
 
 // "Bulk" means: a multi-unit line item without individual serialized assets.
@@ -215,9 +229,23 @@ function accessoryParentNeedsPrep(item: LineItem): boolean {
   if (item.quantity <= 0) return false; // exhausted originals post prep-split
   const ownNeedsPrep = item.status !== "CHECKED_OUT" && item.status !== "RETURNED" && item.prepStatus !== "PACKED";
   if (ownNeedsPrep) return true;
+  return accessoryChildrenNeedPrep(item);
+}
+
+function accessoryChildrenNeedPrep(item: LineItem): boolean {
   return accessoryChildrenOf(item).some(
     (c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED" && c.prepStatus !== "PACKED",
   );
+}
+
+/** A bulk line stays in Pick/Prep while any unit is unpacked OR any of its accessories still needs prep. */
+function bulkLineNeedsPrep(item: LineItem): boolean {
+  return bulkUnpackedRemaining(item) > 0 || (isAccessoryParent(item) && accessoryChildrenNeedPrep(item));
+}
+
+/** Deploy-side twin of bulkLineNeedsPrep. */
+function bulkLinePreppedNotDeployed(item: LineItem): boolean {
+  return bulkPackedWaiting(item) > 0 || (isAccessoryParent(item) && accessoryParentPreppedNotDeployed(item));
 }
 
 /** Pick/Prep tab: items that still need to be picked and/or prepped. */
@@ -226,7 +254,9 @@ export function isInPickPrepStage(item: LineItem): boolean {
   // Bulk lines are quantity-aware: show while any ordered unit is still
   // unpacked, even once some units are prepped/deployed (kit parents are
   // handled by their child rollup below, never as a bulk line).
-  if (isBulkItem(item) && !isKitParent(item)) return bulkUnpackedRemaining(item) > 0;
+  // An accessory parent also stays while any of its accessories still needs
+  // prep, even if every parent unit is already packed.
+  if (isBulkItem(item) && !isKitParent(item)) return bulkLineNeedsPrep(item);
   // Accessory parents are checked BEFORE the blanket CHECKED_OUT/RETURNED
   // early-return (see accessoryParentNeedsPrep) — everyone else still exits
   // early on it.
@@ -263,7 +293,7 @@ function accessoryParentPreppedNotDeployed(item: LineItem): boolean {
 /** Deploy tab: items prepped (PACKED) but not yet deployed. */
 export function isInPreppedStage(item: LineItem): boolean {
   if (item.status === "CANCELLED") return false;
-  if (isBulkItem(item) && !isKitParent(item)) return bulkPackedWaiting(item) > 0;
+  if (isBulkItem(item) && !isKitParent(item)) return bulkLinePreppedNotDeployed(item);
   if (isAccessoryParent(item)) return accessoryParentPreppedNotDeployed(item);
   if (item.status === "CHECKED_OUT" || item.status === "RETURNED") return false;
   if (isKitParent(item)) return (item.childLineItems ?? []).some(kitPreppedNotDeployed);
@@ -485,4 +515,210 @@ export function resolveSelectionToUnitIds(
     unitIds.push(...relevant.slice(0, count).map((u) => u.id));
   }
   return unitIds;
+}
+
+// ─── Grouping (pure; page.tsx renders the result) ───────────────────────────
+
+/** Per-unit count of a bulk line that is actionable in a stage: units still to
+ *  pick (`prep`), packed-and-waiting (`prepped`), else the whole quantity. */
+function bulkStageUnitCount(item: LineItem, countStage?: "prep" | "prepped"): number {
+  if (countStage === "prep") return bulkUnpackedRemaining(item);
+  if (countStage === "prepped") return bulkPackedWaiting(item);
+  return item.quantity;
+}
+
+/** Accessory children listed under a parent in Pick/Deploy/De-prep. Never
+ *  cancelled or already-deployed ones; in Pick (`prep`) also never ones already
+ *  packed — they have nothing left to verify there (a packed accessory showing
+ *  "0/N verified" in Pick was the symptom). */
+export function accessoryChildrenForStage(item: LineItem, countStage?: "prep" | "prepped"): LineItem[] {
+  return accessoryChildrenOf(item).filter(
+    (c) =>
+      c.status !== "CANCELLED" &&
+      c.status !== "CHECKED_OUT" &&
+      !(countStage === "prep" && c.prepStatus === "PACKED"),
+  );
+}
+
+/** The ids the checkout mutation's `includeAccessoryIds` narrows by: an
+ *  accessory's asset / bulk-asset id, read from the child LINE and from its
+ *  per-unit rows (an accessory whose assets live only on `units` has none on
+ *  the line itself). Deduped; single source of truth for every call site. */
+export function accessoryAssetIds(children: LineItem[]): string[] {
+  const ids = new Set<string>();
+  for (const c of children) {
+    if (c.assetId) ids.add(c.assetId);
+    if (c.bulkAssetId) ids.add(c.bulkAssetId);
+    for (const u of c.units ?? []) {
+      if (u.assetId) ids.add(u.assetId);
+      if (u.bulkAssetId) ids.add(u.bulkAssetId);
+    }
+  }
+  return [...ids];
+}
+
+/** Accessory parent's "Partial" badge: some accessories already deployed
+ *  while others are still waiting (grouped entries strip deployed children, so
+ *  this reads the item's own, unfiltered accessories). */
+export function isAccessoryParentPartiallyDeployed(item: LineItem): boolean {
+  const acc = accessoryChildrenOf(item).filter((c) => c.status !== "CANCELLED");
+  return acc.some((c) => c.status === "CHECKED_OUT") && acc.some((c) => c.status !== "CHECKED_OUT");
+}
+
+// `countStage` picks how a bulk line's per-unit count is derived so a partially
+// prepped line shows the right number of units in each tab: the units still to
+// pick in Pick, and the units packed-and-waiting in Prepped. Omitted (De-prep /
+// legacy) keeps the whole ordered quantity.
+export function groupItems(
+  items: LineItem[],
+  mode: "prep" | "deploy" = "prep",
+  countStage?: "prep" | "prepped",
+): GroupEntry[] {
+  const serializedByModel = new Map<string, LineItem[]>();
+  const result: GroupEntry[] = [];
+
+  for (const item of items) {
+    if (isKitParent(item)) {
+      // Deploy tab: show children that aren't checked out, or nested kits with undeployed grandchildren
+      const allChildren = (item.childLineItems || []) as LineItem[];
+      const deployChildren = allChildren.filter((c) => {
+        if (c.status === "CANCELLED") return false;
+        if (c.status !== "CHECKED_OUT") return true;
+        // Nested kit that's checked out: still include if any grandchildren need deploying
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some(
+            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED"
+          );
+        }
+        return false;
+      });
+      result.push({
+        kind: "kit-group",
+        groupKey: `kit-${item.id}`,
+        item,
+        children: deployChildren,
+      });
+    } else if (isAccessoryParent(item)) {
+      // Deploy tab: accessories render like a kit's children — always visible,
+      // not gated behind the prep asset-picker (issue #794 follow-up).
+      const accessoryChildren = accessoryChildrenForStage(item, countStage);
+      const unitCount = bulkStageUnitCount(item, countStage);
+      if (isBulkItem(item) && unitCount > 0) {
+        // quantity>1 parent: keep per-unit selection AND the accessories.
+        result.push({ kind: "bulk-group", groupKey: `bulk-${item.id}`, item, unitCount, accessoryChildren });
+      } else {
+        result.push({ kind: "accessory-group", groupKey: `acc-${item.id}`, item, children: accessoryChildren });
+      }
+    } else if (isBulkItem(item)) {
+      // Bulk items (qty > 1) show as expandable groups with per-unit rows
+      // just like serialized groups. unitCount reflects the units actionable in
+      // this stage (still-to-pick vs packed-and-waiting) so a partially prepped
+      // line shows the right count in each tab.
+      const unitCount = bulkStageUnitCount(item, countStage);
+      result.push({
+        kind: "bulk-group",
+        groupKey: `bulk-${item.id}`,
+        item,
+        unitCount,
+      });
+    } else if (item.model) {
+      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
+      // In deploy mode, items in different containers must be in separate groups
+      // so each group's container is unambiguous for the container section headers
+      const containerSuffix = mode === "deploy" ? `\0${item.prepContainer || ""}` : "";
+      const key = modelKey + containerSuffix;
+      const existing = serializedByModel.get(key);
+      if (existing) {
+        existing.push(item);
+      } else {
+        const arr = [item];
+        serializedByModel.set(key, arr);
+        result.push({ kind: "serialized-group", groupKey: `ser-${key}`, modelName: modelKey, items: arr });
+      }
+    } else {
+      result.push({ kind: "single", item });
+    }
+  }
+
+  // Flatten serialized groups with only 1 item
+  return result.map((e) => {
+    if (e.kind === "serialized-group" && e.items.length === 1) {
+      return { kind: "single" as const, item: e.items[0] };
+    }
+    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
+      return { kind: "single" as const, item: e.item };
+    }
+    return e;
+  });
+}
+
+/** Return-tab entry for an accessory parent: per-unit (bulk) when it has units out, else one row. */
+function returnAccessoryEntry(item: LineItem): GroupEntry {
+  const returnChildren = accessoryChildrenOf(item).filter((c) => c.status === "CHECKED_OUT");
+  const unitCount = Math.max(item.checkedOutQuantity - item.returnedQuantity, 0);
+  if (isBulkItem(item) && unitCount > 0) {
+    return { kind: "bulk-group", groupKey: `bulk-in-${item.id}`, item, unitCount, accessoryChildren: returnChildren };
+  }
+  return { kind: "accessory-group", groupKey: `acc-in-${item.id}`, item, children: returnChildren };
+}
+
+export function groupCheckinItems(items: LineItem[]): GroupEntry[] {
+  const serializedByModel = new Map<string, LineItem[]>();
+  const result: GroupEntry[] = [];
+
+  for (const item of items) {
+    if (isKitParent(item)) {
+      // Return tab: show children that are checked out, or nested kits with deployed grandchildren
+      const allChildren = (item.childLineItems || []) as LineItem[];
+      const returnChildren = allChildren.filter((c) => {
+        if (c.status === "CHECKED_OUT") return true;
+        // Nested kit not checked out: still include if any grandchildren are deployed
+        if (c.kitId && c.childLineItems?.length) {
+          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
+        }
+        return false;
+      });
+      result.push({
+        kind: "kit-group",
+        groupKey: `kit-in-${item.id}`,
+        item,
+        children: returnChildren,
+      });
+    } else if (isAccessoryParent(item)) {
+      result.push(returnAccessoryEntry(item));
+    } else if (isBulkItem(item)) {
+      const remaining = item.checkedOutQuantity - item.returnedQuantity;
+      result.push({
+        kind: "bulk-group",
+        groupKey: `bulk-in-${item.id}`,
+        item,
+        unitCount: Math.max(remaining, 0),
+      });
+    } else if (item.model) {
+      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
+      // Items in different containers must be in separate groups
+      const containerSuffix = `\0${item.prepContainer || ""}`;
+      const key = modelKey + containerSuffix;
+      const existing = serializedByModel.get(key);
+      if (existing) {
+        existing.push(item);
+      } else {
+        const arr = [item];
+        serializedByModel.set(key, arr);
+        result.push({ kind: "serialized-group", groupKey: `ser-in-${key}`, modelName: modelKey, items: arr });
+      }
+    } else {
+      result.push({ kind: "single", item });
+    }
+  }
+
+  return result.map((e) => {
+    if (e.kind === "serialized-group" && e.items.length === 1) {
+      return { kind: "single" as const, item: e.items[0] };
+    }
+    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
+      return { kind: "single" as const, item: e.item };
+    }
+    return e;
+  });
 }

@@ -233,7 +233,15 @@ async function deprepItemInner(
           .filter((u) => u.status !== "CHECKED_OUT" && u.parentUnitAssetId && removedParentAssetIds.includes(u.parentUnitAssetId));
         for (const u of accUnits) await ctx.db.delete(u._id);
       }
-      for (const child of accChildren) await syncLineItemRollup(ctx, child.id);
+      for (const child of accChildren) {
+        // With no units left the rollup falls back to the line's CURRENT values,
+        // so an emptied child would stay PACKED — reset it like the parent.
+        const left = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect();
+        if (left.length === 0 && child.status !== "CHECKED_OUT" && child.status !== "RETURNED" && child.status !== "CANCELLED") {
+          await ctx.db.patch(child._id, { prepStatus: "PENDING", status: "CONFIRMED", updatedAt: a.now });
+        }
+        await syncLineItemRollup(ctx, child.id);
+      }
     }
   }
 
@@ -344,7 +352,10 @@ async function setKitTreePrep(ctx: Ctx, parentLineItemId: string, organizationId
       if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
       if (mode === "PREP") await ctx.db.patch(gc._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
       else await ctx.db.patch(gc._id, { prepStatus: "PENDING", updatedAt: now });
-      if (!gc.kitId) await setKitMemberUnitPrep(ctx, gc, now, mode);
+      // An accessory's unit is created PARENT-scoped (parentUnitAssetId) by
+      // expandAccessoriesForAsset at deploy — a plain unit made here would sit
+      // beside it as a duplicate that is never deployed or returned.
+      if (!gc.kitId && gc.childKind !== "ACCESSORY") await setKitMemberUnitPrep(ctx, gc, now, mode);
     }
   }
   const parent = await lineByCuid(ctx, parentLineItemId);

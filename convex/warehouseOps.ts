@@ -84,6 +84,8 @@ async function syncContainersForLines(
 
 // ── Checkout helpers ─────────────────────────────────────────────────────────
 
+const NON_DEPLOYABLE_ASSET_STATUSES = new Set(["RETIRED", "IN_MAINTENANCE", "LOST", "SOLD"]);
+
 /** Returns "continue" when the asset is already on its own unit (skip finalize). */
 async function checkOutSerializedItem(
   ctx: Ctx,
@@ -103,7 +105,7 @@ async function checkOutSerializedItem(
     if (ownUnit && ownUnit.status === "CHECKED_OUT") return "continue";
     throw new ConvexError(`Asset ${asset.assetTag} is already deployed`);
   }
-  if (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST" || asset.status === "SOLD") {
+  if (NON_DEPLOYABLE_ASSET_STATUSES.has(asset.status as string)) {
     throw new ConvexError(`Asset ${asset.assetTag} is ${(asset.status as string).replace("_", " ").toLowerCase()} and cannot be deployed`);
   }
   const { id: unitId } = await ensureSerialisedUnit(ctx, { organizationId: p.organizationId, lineItemId: p.lineItemId, assetId: p.targetAssetId });
@@ -205,9 +207,14 @@ async function checkoutAccessoryChildren(
 
   const assetsTouched: string[] = [];
   for (const u of units) {
+    // A lost / retired / in-maintenance accessory must not be silently flipped
+    // to CHECKED_OUT (that would erase its state). Leave it behind — it stays
+    // unprepped on the line and the operator sees it; the parent still deploys.
+    const accAsset = u.assetId ? await assetByCuid(ctx, u.assetId) : null;
+    if (accAsset && NON_DEPLOYABLE_ASSET_STATUSES.has(accAsset.status as string)) continue;
     await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
     if (u.assetId) {
-      const asset = await assetByCuid(ctx, u.assetId);
+      const asset = accAsset;
       if (asset) {
         await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
         await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
@@ -359,7 +366,21 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
           organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, userId: a.userId,
           projectLocationId, projectId: a.projectId, notes: item.notes, now: a.now,
         });
-        if (res === "continue") continue;
+        if (res === "continue") {
+          // The parent unit is already out. A "Deploy Verified Only" / logged override
+          // can leave an accessory behind, so a repeat deploy must still carry any
+          // not-yet-deployed accessory out (idempotent: only flips what is still in).
+          if (a.includeAccessories) {
+            await finalizeCheckoutItem(ctx, {
+              organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, projectId: a.projectId,
+              userId: a.userId, projectLocationId, includeAccessories: true,
+              includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
+              now: a.now,
+            });
+            updated.add(lineItem.id);
+          }
+          continue;
+        }
       } else if (lineItem.bulkAssetId) {
         await checkOutBulkItem(ctx, {
           organizationId: a.organizationId, lineItemId: lineItem.id, lineItemQuantity: lineItem.quantity ?? 0,
@@ -891,11 +912,20 @@ export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{
       await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: item.notes || `Returned ${unitsFlipped} unit(s)` });
     }
     await syncLineItemRollup(ctx, item.lineItemId);
-    if (unitsFlipped > 0) {
-      await checkinAccessoryChildren(ctx, {
-        organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
-        returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId: item.assetId ?? null,
-      });
+    // A parent that is ALREADY returned can still have an accessory stranded out
+    // (left behind by an earlier partial deploy/return); returning it again must
+    // bring that accessory home instead of silently doing nothing.
+    const strandedParent = unitsFlipped === 0 && (await lineByCuid(ctx, item.lineItemId))?.status === "RETURNED";
+    if (unitsFlipped > 0 || strandedParent) {
+      // Scope the cascade to the parent assets that actually came back — a
+      // partial return with no assetId must not return every parent's accessories.
+      const scopes: Array<string | null> = item.assetId ? [item.assetId] : assetsTouched.length > 0 ? assetsTouched : [null];
+      for (const returnedAssetId of scopes) {
+        await checkinAccessoryChildren(ctx, {
+          organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
+          returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId,
+        });
+      }
     }
     updated.add(item.lineItemId);
   }
@@ -936,6 +966,36 @@ export const checkinItems = mutation({
  *  effect here; callers that own a top-level (non-kit-child) line decide
  *  whether to apply it via `adjustBulkAvailability` (issue #801 #2 move-back
  *  parity — see undeployItemsCore / unreturnItemsCore). */
+/** Does a unit qualify for this flip (status, specific parent asset, accessory parent scope)? */
+function unitMatchesFlip(
+  u: { status?: string; assetId?: string; parentUnitAssetId?: string },
+  p: { fromStatus: string; onlyAssetId?: string; parentAssetIds?: string[] },
+): boolean {
+  if (u.status !== p.fromStatus) return false;
+  if (p.onlyAssetId && u.assetId !== p.onlyAssetId) return false;
+  return !p.parentAssetIds || (u.parentUnitAssetId != null && p.parentAssetIds.includes(u.parentUnitAssetId));
+}
+
+/** The unit patch for a flip. Un-returning / undeploying also wipes the return
+ *  record, or the unit keeps a stale condition / returnedQuantity. */
+function flipPatch(p: { toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; resetReturnedQty?: boolean; now: number }) {
+  const wipeReturn = p.resetReturnedQty || p.toStatus === "CONFIRMED";
+  return {
+    status: p.toStatus,
+    ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
+    ...(wipeReturn ? { returnedQuantity: 0, returnCondition: undefined, returnedAt: undefined, returnedById: undefined, returnNotes: undefined } : {}),
+    updatedAt: p.now,
+  };
+}
+
+/** Bulk quantity a flip puts back on the shelf. Undeploy releases only what is
+ *  still OUT — a partial return already released its share, so the full quantity
+ *  would double-count. */
+function flippedBulkQuantity(u: { quantity?: number; returnedQuantity?: number }, toStatus: "CONFIRMED" | "CHECKED_OUT"): number {
+  const qty = u.quantity ?? 0;
+  return toStatus === "CONFIRMED" ? Math.max(0, qty - (u.returnedQuantity ?? 0)) : qty;
+}
+
 async function flipLineUnits(
   ctx: Ctx,
   p: {
@@ -944,23 +1004,22 @@ async function flipLineUnits(
     toPrepStatus?: "PACKED"; resetReturnedQty?: boolean;
     assetStatus: string; locationId: string | null; clearLoc: boolean;
     want?: number; now: number;
+    /** Only flip the unit for this serialised parent asset (undeploy/unreturn of a specific asset). */
+    onlyAssetId?: string;
+    /** Accessory scope: only flip units whose parent unit is one of these assets. */
+    parentAssetIds?: string[];
   },
 ): Promise<{ flipped: number; assetIds: string[]; bulkFlips: Array<{ bulkAssetId: string; quantity: number }> }> {
   const units = (await lineUnits(ctx, p.lineItemId))
-    .filter((u) => u.status === p.fromStatus)
+    .filter((u) => unitMatchesFlip(u, p))
     .sort((a, b) => a.ordinal - b.ordinal);
   const toFlip = p.want != null ? units.slice(0, Math.max(0, Math.min(p.want, units.length))) : units;
   const assetIds: string[] = [];
   const bulkFlips: Array<{ bulkAssetId: string; quantity: number }> = [];
   for (const u of toFlip) {
-    await ctx.db.patch(u._id, {
-      status: p.toStatus,
-      ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
-      ...(p.resetReturnedQty ? { returnedQuantity: 0 } : {}),
-      updatedAt: p.now,
-    });
+    await ctx.db.patch(u._id, flipPatch(p));
     if (u.assetId) assetIds.push(u.assetId);
-    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: u.quantity ?? 0 });
+    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: flippedBulkQuantity(u, p.toStatus) });
   }
   if (assetIds.length > 0) await setAssetsStatus(ctx, assetIds, p.assetStatus, p.locationId, p.clearLoc, p.now);
   return { flipped: toFlip.length, assetIds, bulkFlips };
@@ -987,13 +1046,14 @@ async function applyBulkFlipAvailability(
 /** Cascade a line's ACCESSORY children back with their parent (whole units). */
 async function reverseAccessoryChildren(
   ctx: Ctx,
-  p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
+  p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; resetReturnedQty?: boolean; parentAssetIds?: string[]; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
 ): Promise<void> {
   const children = (await childLines(ctx, p.parentLineItemId, p.organizationId)).filter((c) => c.childKind === "ACCESSORY");
   for (const child of children) {
     await flipLineUnits(ctx, {
       organizationId: p.organizationId, lineItemId: child.id,
       fromStatus: p.fromStatus, toStatus: p.toStatus, toPrepStatus: p.toPrepStatus,
+      resetReturnedQty: p.resetReturnedQty, parentAssetIds: p.parentAssetIds,
       assetStatus: p.assetStatus, locationId: p.locationId, clearLoc: p.clearLoc, now: p.now,
     });
     await syncLineItemRollup(ctx, child.id);
@@ -1019,10 +1079,10 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
+    const { flipped, assetIds, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "CHECKED_OUT",
       toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE",
-      locationId: defLoc, clearLoc: true, want: item.quantity, now: a.now,
+      locationId: defLoc, clearLoc: true, want: item.quantity, onlyAssetId: item.assetId, now: a.now,
     });
     const wholeLine = flipped === 0 && line.status === "CHECKED_OUT";
     if (wholeLine) {
@@ -1030,7 +1090,7 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       await ctx.db.patch(line._id, { status: "CONFIRMED", prepStatus: "PACKED", checkedOutQuantity: 0, updatedAt: a.now });
     }
     await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, 1);
-    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, parentAssetIds: assetIds.length > 0 ? assetIds : undefined, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Prepped (un-deploy)" });
     updated.add(line.id);
@@ -1056,10 +1116,10 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
+    const { flipped, assetIds, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "RETURNED",
       toStatus: "CHECKED_OUT", resetReturnedQty: true, assetStatus: "CHECKED_OUT",
-      locationId: projLoc, clearLoc: false, want: item.quantity, now: a.now,
+      locationId: projLoc, clearLoc: false, want: item.quantity, onlyAssetId: item.assetId, now: a.now,
     });
     const wholeLine = flipped === 0 && line.status === "RETURNED";
     if (wholeLine) {
@@ -1068,7 +1128,7 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       await ctx.db.patch(line._id, { status: "CHECKED_OUT", returnedQuantity: 0, checkedOutQuantity: line.quantity ?? 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
     }
     await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, -1);
-    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, parentAssetIds: assetIds.length > 0 ? assetIds : undefined, resetReturnedQty: true, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Deployed (un-return)" });
     updated.add(line.id);
@@ -1294,14 +1354,17 @@ const FORCE_RET = (now: number) => ({ status: "RETURNED" as const, returnedQuant
 /** Kit per-unit: force-return the CHECKED_OUT unit(s) bound to one asset, wherever
  *  they live (loose line or kit member). Mirrors FORCE_RET onto the unit row so
  *  force-return doesn't leave a member unit stuck CHECKED_OUT (split-brain). */
-async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number) {
+async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number): Promise<Set<string>> {
   const units = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", organizationId).eq("assetId", assetId).eq("status", "CHECKED_OUT"))
     .collect();
+  const lineIds = new Set<string>();
   for (const u of units) {
     await ctx.db.patch(u._id, { status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: now, returnedById: userId, returnCondition: "GOOD", updatedAt: now });
+    lineIds.add(u.lineItemId);
   }
+  return lineIds;
 }
 
 /**
@@ -1316,7 +1379,11 @@ export async function forceReturnAssetCore(ctx: Ctx, organizationId: string, ass
   for (const li of await linesByAsset(ctx, assetId, organizationId)) {
     if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(now));
   }
-  await forceReturnAssetUnits(ctx, organizationId, assetId, userId, now);
+  // Lines prepped per-unit carry the asset on the UNIT (not line.assetId), so the
+  // line loop above never saw them — roll each one up or it stays CHECKED_OUT.
+  for (const lineItemId of await forceReturnAssetUnits(ctx, organizationId, assetId, userId, now)) {
+    await syncLineItemRollup(ctx, lineItemId);
+  }
   await setAssetsStatus(ctx, [assetId], "AVAILABLE", loc, true, now);
 }
 

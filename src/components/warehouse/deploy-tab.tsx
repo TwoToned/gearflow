@@ -29,8 +29,8 @@ import {
 } from "@/components/ui/table";
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
-import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
-import { KitChildRows } from "./kit-child-rows";
+import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey, isAccessoryParentPartiallyDeployed } from "./warehouse-types";
+import { KitChildRows, BulkAccessoryRows, MobileBulkAccessoryCards } from "./kit-child-rows";
 import { MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
@@ -397,6 +397,14 @@ export function DeployTab({
                             </TableRow>
                           );
                         })}
+                        <BulkAccessoryRows
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="deploy"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </Fragment>
                     );
                   }
@@ -490,7 +498,7 @@ export function DeployTab({
                     const allIds = collectAllVerifiableIds(entry.children, "deploy");
                     const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
                     const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                    const isPartiallyDeployed = entry.item.status === "CHECKED_OUT" && entry.children.some((c) => c.status === "CHECKED_OUT");
+                    const isPartiallyDeployed = isAccessoryParentPartiallyDeployed(entry.item);
                     return (
                       <Fragment key={entry.groupKey}>
                         <TableRow
@@ -532,7 +540,7 @@ export function DeployTab({
                           <TableCell className="t-mono text-muted">
                             {entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
                           </TableCell>
-                          <TableCell className="text-center tabular-nums">{entry.children.length}</TableCell>
+                          <TableCell className="text-center tabular-nums">{entry.item.quantity}</TableCell>
                           <TableCell>
                             {isPartiallyDeployed ? (
                               <Badge status="warn">
@@ -714,6 +722,14 @@ export function DeployTab({
                             />
                           );
                         })}
+                        <MobileBulkAccessoryCards
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="deploy"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </ScanGroupCard>
                     );
                   }
@@ -772,7 +788,7 @@ export function DeployTab({
                     const allIds = collectAllVerifiableIds(entry.children, "deploy");
                     const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
                     const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                    const isPartiallyDeployed = entry.item.status === "CHECKED_OUT" && entry.children.some((c) => c.status === "CHECKED_OUT");
+                    const isPartiallyDeployed = isAccessoryParentPartiallyDeployed(entry.item);
                     return (
                       <ScanGroupCard
                         key={entry.groupKey}
@@ -792,7 +808,7 @@ export function DeployTab({
                           </>
                         }
                         assetTag={entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
-                        qtyLabel={entry.children.length}
+                        qtyLabel={entry.item.quantity}
                         status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <PrepStatusBadge item={entry.item} />}
                       >
                         <MobileKitChildCards

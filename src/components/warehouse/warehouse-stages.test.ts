@@ -137,3 +137,21 @@ describe("activeWarehouseStage", () => {
     expect(activeWarehouseStage({ to_prep: 0, prepped: 0, deployed: 0, returned: 0, deprepped: 6 })).toBe("deprepped");
   });
 });
+
+describe("summarizeWarehouseStages — accessory parents", () => {
+  const acc = (o: Partial<LineItem>) =>
+    ({ id: "c", type: "EQUIPMENT", status: "CONFIRMED", quantity: 1, isKitChild: true, childKind: "ACCESSORY", prepStatus: null, ...o }) as LineItem;
+  const parent = (o: Partial<LineItem>, children: LineItem[]) =>
+    ({ id: "p", type: "EQUIPMENT", status: "CONFIRMED", quantity: 1, isKitChild: false, prepStatus: null, childLineItems: children, ...o }) as LineItem;
+
+  it("counts the parent AND each accessory (parent is a real asset, not a wrapper)", () => {
+    const c = summarizeWarehouseStages([parent({ prepStatus: "PACKED" }, [acc({ id: "a", prepStatus: "PACKED" }), acc({ id: "b", prepStatus: "PACKED" })])]);
+    expect(c.prepped).toBe(3);
+  });
+
+  it("unprepped parent with a packed accessory still shows a to_prep item", () => {
+    const c = summarizeWarehouseStages([parent({}, [acc({ prepStatus: "PACKED" })])]);
+    expect(c.to_prep).toBe(1);
+    expect(c.prepped).toBe(1);
+  });
+});

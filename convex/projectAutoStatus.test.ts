@@ -80,6 +80,7 @@ async function seedLine(
     isContainerLineItem?: boolean;
     subHireId?: string;
     parentLineItemId?: string;
+    childKind?: "ACCESSORY";
   } = {},
 ) {
   await t.run(async (ctx) => {
@@ -97,6 +98,7 @@ async function seedLine(
       ...(extra.isContainerLineItem ? { isContainerLineItem: true } : {}),
       ...(extra.subHireId ? { subHireId: extra.subHireId } : {}),
       ...(extra.parentLineItemId ? { parentLineItemId: extra.parentLineItemId, isKitChild: true } : {}),
+      ...(extra.childKind ? { childKind: extra.childKind } : {}),
       ...(prepStatus ? { prepStatus: prepStatus as never } : {}),
     });
   });
@@ -418,6 +420,17 @@ describe("ALL_CHECKED_OUT", () => {
     const t = makeT();
     await seedProject(t, "PREPPING");
     await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
+  });
+
+  // An accessory rides with its parent and is hidden by the warehouse page. One
+  // left behind (declined OPTIONAL / narrowed deploy / logged override) used to
+  // pin the job at PREPPING with nothing in the UI to fix it.
+  test("an accessory left behind does not hold the job at PREPPING", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "parent", "CHECKED_OUT", "PACKED");
+    await seedLine(t, "acc", "CONFIRMED", undefined, { parentLineItemId: "parent", childKind: "ACCESSORY" });
     expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
   });
 

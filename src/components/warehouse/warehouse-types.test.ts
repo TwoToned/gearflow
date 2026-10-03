@@ -375,3 +375,31 @@ describe("keysForGroupEntries (Deploy container, #1296 D4)", () => {
     expect(keysForGroupEntries(entries)).toEqual([bulkUnitKey("bulk1", 0), bulkUnitKey("bulk1", 1), bulkUnitKey("bulk1", 2)]);
   });
 });
+
+describe("bulk accessory parent — accessory state must not be hidden by the bulk branch", () => {
+  const bulkParent = (overrides: Partial<LineItem>, child: Partial<LineItem>) =>
+    line({
+      id: "p1",
+      quantity: 3,
+      bulkAssetId: "ba1",
+      units: [{ id: "u1", quantity: 3, status: "CONFIRMED", prepStatus: "PACKED" }] as LineItem["units"],
+      childLineItems: [line({ id: "c1", isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "p1", ...child })],
+      ...overrides,
+    });
+
+  test("all parent units packed but an accessory unprepped → still in Pick/Prep", () => {
+    expect(isInPickPrepStage(bulkParent({}, { prepStatus: "PENDING" }))).toBe(true);
+  });
+
+  test("all parent units packed and accessory packed → left Pick/Prep", () => {
+    expect(isInPickPrepStage(bulkParent({}, { prepStatus: "PACKED" }))).toBe(false);
+  });
+
+  test("all parent units deployed but accessory left packed → still in Deploy", () => {
+    const item = bulkParent(
+      { status: "CHECKED_OUT", units: [{ id: "u1", quantity: 3, status: "CHECKED_OUT", prepStatus: "PACKED" }] as LineItem["units"] },
+      { prepStatus: "PACKED" },
+    );
+    expect(isInPreppedStage(item)).toBe(true);
+  });
+});

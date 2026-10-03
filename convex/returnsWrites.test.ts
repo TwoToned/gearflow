@@ -226,6 +226,19 @@ describe("correctReturnConditionNative", () => {
     expect((await assetById(t, "a1"))?.status).toBe("IN_MAINTENANCE");
   });
 
+  test("does not touch an asset that has since gone out on another job", async () => {
+    const t = makeT();
+    await seedReturned(t);
+    await t.run(async (ctx) => {
+      const a1 = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).unique();
+      await ctx.db.patch(a1!._id, { status: "CHECKED_OUT" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.returnsWrites.correctReturnConditionNative, {
+      orgId: ORG, lineItemId: "li1", assetId: "a1", returnCondition: "GOOD", auditId: "log1", now: NOW, actor: SPOOF,
+    });
+    expect((await assetById(t, "a1"))?.status).toBe("CHECKED_OUT");
+  });
+
   test("rejects correcting an item that hasn't been returned yet", async () => {
     const t = makeT();
     await member(t, "member");

@@ -219,6 +219,10 @@ async function isStillInBuilding(
 ): Promise<boolean> {
   if ((line.type ?? "EQUIPMENT") !== "EQUIPMENT") return false;
   if (line.isContainerLineItem) return false;
+  // An accessory is never deployed on its own — it rides with its parent, and
+  // the warehouse page hides it. One left behind (declined OPTIONAL, narrowed
+  // deploy, logged override) must not pin the job at PREPPING forever.
+  if (line.childKind === "ACCESSORY") return false;
   if (!hasQuantityLeftToDeploy(line)) return false;
   return !(await isSubHireWrapper(ctx, line, orgId));
 }

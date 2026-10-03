@@ -971,6 +971,36 @@ export const checkinItems = mutation({
  *  effect here; callers that own a top-level (non-kit-child) line decide
  *  whether to apply it via `adjustBulkAvailability` (issue #801 #2 move-back
  *  parity — see undeployItemsCore / unreturnItemsCore). */
+/** Does a unit qualify for this flip (status, specific parent asset, accessory parent scope)? */
+function unitMatchesFlip(
+  u: { status?: string; assetId?: string; parentUnitAssetId?: string },
+  p: { fromStatus: string; onlyAssetId?: string; parentAssetIds?: string[] },
+): boolean {
+  if (u.status !== p.fromStatus) return false;
+  if (p.onlyAssetId && u.assetId !== p.onlyAssetId) return false;
+  return !p.parentAssetIds || (u.parentUnitAssetId != null && p.parentAssetIds.includes(u.parentUnitAssetId));
+}
+
+/** The unit patch for a flip. Un-returning / undeploying also wipes the return
+ *  record, or the unit keeps a stale condition / returnedQuantity. */
+function flipPatch(p: { toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; resetReturnedQty?: boolean; now: number }) {
+  const wipeReturn = p.resetReturnedQty || p.toStatus === "CONFIRMED";
+  return {
+    status: p.toStatus,
+    ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
+    ...(wipeReturn ? { returnedQuantity: 0, returnCondition: undefined, returnedAt: undefined, returnedById: undefined, returnNotes: undefined } : {}),
+    updatedAt: p.now,
+  };
+}
+
+/** Bulk quantity a flip puts back on the shelf. Undeploy releases only what is
+ *  still OUT — a partial return already released its share, so the full quantity
+ *  would double-count. */
+function flippedBulkQuantity(u: { quantity?: number; returnedQuantity?: number }, toStatus: "CONFIRMED" | "CHECKED_OUT"): number {
+  const qty = u.quantity ?? 0;
+  return toStatus === "CONFIRMED" ? Math.max(0, qty - (u.returnedQuantity ?? 0)) : qty;
+}
+
 async function flipLineUnits(
   ctx: Ctx,
   p: {
@@ -986,28 +1016,15 @@ async function flipLineUnits(
   },
 ): Promise<{ flipped: number; assetIds: string[]; bulkFlips: Array<{ bulkAssetId: string; quantity: number }> }> {
   const units = (await lineUnits(ctx, p.lineItemId))
-    .filter((u) => u.status === p.fromStatus)
-    .filter((u) => !p.onlyAssetId || u.assetId === p.onlyAssetId)
-    .filter((u) => !p.parentAssetIds || (u.parentUnitAssetId != null && p.parentAssetIds.includes(u.parentUnitAssetId)))
+    .filter((u) => unitMatchesFlip(u, p))
     .sort((a, b) => a.ordinal - b.ordinal);
   const toFlip = p.want != null ? units.slice(0, Math.max(0, Math.min(p.want, units.length))) : units;
   const assetIds: string[] = [];
   const bulkFlips: Array<{ bulkAssetId: string; quantity: number }> = [];
   for (const u of toFlip) {
-    await ctx.db.patch(u._id, {
-      status: p.toStatus,
-      ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
-      // Un-returning also wipes the return record, or the unit keeps a stale
-      // condition / returnedQuantity while it is out again.
-      ...(p.resetReturnedQty || p.toStatus === "CONFIRMED"
-        ? { returnedQuantity: 0, returnCondition: undefined, returnedAt: undefined, returnedById: undefined, returnNotes: undefined }
-        : {}),
-      updatedAt: p.now,
-    });
+    await ctx.db.patch(u._id, flipPatch(p));
     if (u.assetId) assetIds.push(u.assetId);
-    // Undeploy releases only what is still OUT: a partial return already put its
-    // share back on the shelf, so releasing the full quantity would double-count.
-    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: p.toStatus === "CONFIRMED" ? Math.max(0, (u.quantity ?? 0) - (u.returnedQuantity ?? 0)) : (u.quantity ?? 0) });
+    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: flippedBulkQuantity(u, p.toStatus) });
   }
   if (assetIds.length > 0) await setAssetsStatus(ctx, assetIds, p.assetStatus, p.locationId, p.clearLoc, p.now);
   return { flipped: toFlip.length, assetIds, bulkFlips };

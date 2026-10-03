@@ -1095,20 +1095,27 @@ async function packParentlessAccessories(ctx: Ctx, organizationId: string, paren
   if (assigned < (parent.quantity ?? 0)) return; // wait for the whole line
   const now = Date.now();
   for (const child of await accessoryChildrenOf(ctx, organizationId, parentLineItemId)) {
-    let unitId: string;
-    if (child.bulkAssetId) {
-      unitId = (await ensureBulkUnit(ctx, { organizationId, lineItemId: child.id, bulkAssetId: child.bulkAssetId, quantity: child.quantity ?? 1 })).id;
-    } else if (child.assetId) {
-      unitId = (await ensureSerialisedUnit(ctx, { organizationId, lineItemId: child.id, assetId: child.assetId })).id;
-    } else {
-      continue;
-    }
+    const unitId = await ensureParentlessAccessoryUnit(ctx, organizationId, child);
+    if (!unitId) continue;
     const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).unique();
     if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
       await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
     }
     await syncLineItemRollup(ctx, child.id);
   }
+}
+
+/** The unit id backing a parent-less accessory child line, or null if it has no asset. */
+async function ensureParentlessAccessoryUnit(
+  ctx: Ctx,
+  organizationId: string,
+  child: { id: string; bulkAssetId?: string; assetId?: string; quantity?: number },
+): Promise<string | null> {
+  if (child.bulkAssetId) {
+    return (await ensureBulkUnit(ctx, { organizationId, lineItemId: child.id, bulkAssetId: child.bulkAssetId, quantity: child.quantity ?? 1 })).id;
+  }
+  if (child.assetId) return (await ensureSerialisedUnit(ctx, { organizationId, lineItemId: child.id, assetId: child.assetId })).id;
+  return null;
 }
 
 /**

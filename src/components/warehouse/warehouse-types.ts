@@ -238,6 +238,16 @@ function accessoryChildrenNeedPrep(item: LineItem): boolean {
   );
 }
 
+/** A bulk line stays in Pick/Prep while any unit is unpacked OR any of its accessories still needs prep. */
+function bulkLineNeedsPrep(item: LineItem): boolean {
+  return bulkUnpackedRemaining(item) > 0 || (isAccessoryParent(item) && accessoryChildrenNeedPrep(item));
+}
+
+/** Deploy-side twin of bulkLineNeedsPrep. */
+function bulkLinePreppedNotDeployed(item: LineItem): boolean {
+  return bulkPackedWaiting(item) > 0 || (isAccessoryParent(item) && accessoryParentPreppedNotDeployed(item));
+}
+
 /** Pick/Prep tab: items that still need to be picked and/or prepped. */
 export function isInPickPrepStage(item: LineItem): boolean {
   if (item.status === "CANCELLED") return false;
@@ -246,9 +256,7 @@ export function isInPickPrepStage(item: LineItem): boolean {
   // handled by their child rollup below, never as a bulk line).
   // An accessory parent also stays while any of its accessories still needs
   // prep, even if every parent unit is already packed.
-  if (isBulkItem(item) && !isKitParent(item)) {
-    return bulkUnpackedRemaining(item) > 0 || (isAccessoryParent(item) && accessoryChildrenNeedPrep(item));
-  }
+  if (isBulkItem(item) && !isKitParent(item)) return bulkLineNeedsPrep(item);
   // Accessory parents are checked BEFORE the blanket CHECKED_OUT/RETURNED
   // early-return (see accessoryParentNeedsPrep) — everyone else still exits
   // early on it.
@@ -285,9 +293,7 @@ function accessoryParentPreppedNotDeployed(item: LineItem): boolean {
 /** Deploy tab: items prepped (PACKED) but not yet deployed. */
 export function isInPreppedStage(item: LineItem): boolean {
   if (item.status === "CANCELLED") return false;
-  if (isBulkItem(item) && !isKitParent(item)) {
-    return bulkPackedWaiting(item) > 0 || (isAccessoryParent(item) && accessoryParentPreppedNotDeployed(item));
-  }
+  if (isBulkItem(item) && !isKitParent(item)) return bulkLinePreppedNotDeployed(item);
   if (isAccessoryParent(item)) return accessoryParentPreppedNotDeployed(item);
   if (item.status === "CHECKED_OUT" || item.status === "RETURNED") return false;
   if (isKitParent(item)) return (item.childLineItems ?? []).some(kitPreppedNotDeployed);
@@ -646,6 +652,16 @@ export function groupItems(
   });
 }
 
+/** Return-tab entry for an accessory parent: per-unit (bulk) when it has units out, else one row. */
+function returnAccessoryEntry(item: LineItem): GroupEntry {
+  const returnChildren = accessoryChildrenOf(item).filter((c) => c.status === "CHECKED_OUT");
+  const unitCount = Math.max(item.checkedOutQuantity - item.returnedQuantity, 0);
+  if (isBulkItem(item) && unitCount > 0) {
+    return { kind: "bulk-group", groupKey: `bulk-in-${item.id}`, item, unitCount, accessoryChildren: returnChildren };
+  }
+  return { kind: "accessory-group", groupKey: `acc-in-${item.id}`, item, children: returnChildren };
+}
+
 export function groupCheckinItems(items: LineItem[]): GroupEntry[] {
   const serializedByModel = new Map<string, LineItem[]>();
   const result: GroupEntry[] = [];
@@ -669,13 +685,7 @@ export function groupCheckinItems(items: LineItem[]): GroupEntry[] {
         children: returnChildren,
       });
     } else if (isAccessoryParent(item)) {
-      const returnChildren = accessoryChildrenOf(item).filter((c) => c.status === "CHECKED_OUT");
-      const unitCount = Math.max(item.checkedOutQuantity - item.returnedQuantity, 0);
-      if (isBulkItem(item) && unitCount > 0) {
-        result.push({ kind: "bulk-group", groupKey: `bulk-in-${item.id}`, item, unitCount, accessoryChildren: returnChildren });
-      } else {
-        result.push({ kind: "accessory-group", groupKey: `acc-in-${item.id}`, item, children: returnChildren });
-      }
+      result.push(returnAccessoryEntry(item));
     } else if (isBulkItem(item)) {
       const remaining = item.checkedOutQuantity - item.returnedQuantity;
       result.push({

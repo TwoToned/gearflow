@@ -87,7 +87,11 @@ export async function prepItemDirect(
   /** Accessory identities (serialised assetId / bulk bulkAssetId) to pack with
    *  this unit. Undefined = all of the asset's accessories. The prep picker
    *  passes the ticked set so an operator can leave one off this handheld. */
-  includeAccessoryIds?: string[]
+  includeAccessoryIds?: string[],
+  /** #1296 — the real container to pack into, when the caller has one
+   *  selected. Wins over `prepContainer` (a legacy label) in
+   *  `checkRecordOps.ts`'s `resolvePrepContainerId`. */
+  containerId?: string | null,
 ) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",
@@ -116,8 +120,12 @@ export async function prepItemDirect(
     ...(!assetId && lineItem.bulkAssetId ? { bulkAssetId: lineItem.bulkAssetId } : {}),
     ...(quantity != null ? { quantity } : {}),
     prepContainer: prepContainer ?? undefined,
+    containerId,
     ...(includeAccessoryIds ? { includeAccessoryIds } : {}),
     now,
+    // #1160 — attributes the "Auto-advanced to Prepping" audit row this mutation
+    // may write to the operator who actually prepped, not to the platform.
+    actor: { userId, userName },
   });
   const result = await convex.query(api.projectLineItems.getById, { id: lineItemId });
 
@@ -158,6 +166,8 @@ export async function prepItemsBatch(
     assetId?: string;
     quantity?: number;
     prepContainer?: string | null;
+    /** #1296 — wins over `prepContainer` per item, see `prepItemDirect`. */
+    containerId?: string | null;
     includeAccessoryIds?: string[];
   }>
 ) {
@@ -195,6 +205,7 @@ export async function prepItemsBatch(
     projectId,
     items,
     now,
+    actor: { userId, userName },
   });
 
   // Re-read the touched lines once and log one activity entry per prepped item
@@ -455,6 +466,7 @@ export async function prepKitChildren(
   });
 
   await convex.mutation(api.checkRecordOps.prepKitChildren, {
+    actor: { userId, userName },
     organizationId,
     projectId,
     parentLineItemId,
@@ -527,6 +539,7 @@ export async function prepKitsBatch(
 
   // ONE atomic array mutation preps every kit tree (partial-success on org/project).
   const { succeeded, errors } = await convex.mutation(api.checkRecordOps.prepKitsBatch, {
+    actor: { userId, userName },
     organizationId,
     projectId,
     parentLineItemIds: unique,

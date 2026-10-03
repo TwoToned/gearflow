@@ -7,7 +7,16 @@ import {
   isInReturnedStage,
   isInDeprepedStage,
   isInCheckedOutStage,
+  resolveItemContainerId,
+  buildContainerGroups,
+  resolveSelectionToUnitIds,
+  isMoveableAtDeployStage,
+  isMoveableAtReturnStage,
+  isMoveableAtDeprepStage,
+  keysForGroupEntries,
+  bulkUnitKey,
   type LineItem,
+  type GroupEntry,
 } from "./warehouse-types";
 
 // Issue #794 follow-up — warehouse must render accessories like a kit's
@@ -201,5 +210,196 @@ describe("isInCheckedOutStage", () => {
 
   test("accessory parent: hidden when neither is checked out", () => {
     expect(isInCheckedOutStage(accessoryParent({ status: "CONFIRMED" }, { status: "CONFIRMED" }))).toBe(false);
+  });
+});
+
+// #1296 phase 2 — Deploy/Return/De-prep sectioning by real containerId.
+function unit(overrides: Partial<NonNullable<LineItem["units"]>[number]>): NonNullable<LineItem["units"]>[number] {
+  return {
+    id: "u",
+    ordinal: 1,
+    assetId: null,
+    bulkAssetId: null,
+    quantity: 1,
+    status: "CONFIRMED",
+    prepStatus: null,
+    containerId: null,
+    asset: null,
+    bulkAsset: null,
+    ...overrides,
+  };
+}
+
+describe("resolveItemContainerId", () => {
+  test("returns null when the item has no units", () => {
+    expect(resolveItemContainerId(line({}))).toBeNull();
+  });
+
+  test("returns the shared containerId when every unit agrees", () => {
+    const item = line({ units: [unit({ id: "u1", containerId: "c1" }), unit({ id: "u2", containerId: "c1" })] });
+    expect(resolveItemContainerId(item)).toBe("c1");
+  });
+
+  test("returns the MAJORITY containerId when a bulk line's units split across containers", () => {
+    const item = line({
+      units: [unit({ id: "u1", containerId: "c1" }), unit({ id: "u2", containerId: "c1" }), unit({ id: "u3", containerId: "c2" })],
+    });
+    expect(resolveItemContainerId(item)).toBe("c1");
+  });
+
+  test("returns null when no unit carries a containerId yet (pre-migration / never prepped through the rail)", () => {
+    const item = line({ units: [unit({ id: "u1", containerId: null })] });
+    expect(resolveItemContainerId(item)).toBeNull();
+  });
+});
+
+describe("buildContainerGroups", () => {
+  const asEntry = (item: LineItem) => ({ kind: "single" as const, item });
+  const representativeItem = (entry: ReturnType<typeof asEntry>) => entry.item;
+
+  test("two items with the SAME real containerId land in one section, even with different (or missing) prepContainer labels", () => {
+    const a = asEntry(line({ id: "a", prepContainer: "Case 12", units: [unit({ containerId: "c1" })] }));
+    const b = asEntry(line({ id: "b", prepContainer: null, units: [unit({ containerId: "c1" })] }));
+    const groups = buildContainerGroups([a, b], representativeItem, new Map([["c1", "Road Case 12"]]));
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].container).toBe("Road Case 12");
+    expect(groups[0].entries.map((e) => e.item.id)).toEqual(["a", "b"]);
+  });
+
+  test("falls back to the legacy prepContainer label when no unit has a real containerId", () => {
+    const a = asEntry(line({ id: "a", prepContainer: "Tub 3", units: [unit({ containerId: null })] }));
+    const groups = buildContainerGroups([a], representativeItem, new Map());
+    expect(groups[0].container).toBe("Tub 3");
+  });
+
+  test("items with no container at all sort last, after named containers (alphabetical)", () => {
+    const loose = asEntry(line({ id: "loose", prepContainer: null }));
+    const zTub = asEntry(line({ id: "z", units: [unit({ containerId: "c-z" })] }));
+    const aCase = asEntry(line({ id: "a", units: [unit({ containerId: "c-a" })] }));
+    const groups = buildContainerGroups(
+      [loose, zTub, aCase],
+      representativeItem,
+      new Map([
+        ["c-z", "Z Tub"],
+        ["c-a", "A Case"],
+      ]),
+    );
+    expect(groups.map((g) => g.container)).toEqual(["A Case", "Z Tub", null]);
+  });
+});
+
+describe("stage predicates (isMoveableAt*Stage)", () => {
+  test("deploy stage: PACKED and not yet deployed/returned", () => {
+    expect(isMoveableAtDeployStage(unit({ status: "CONFIRMED", prepStatus: "PACKED" }))).toBe(true);
+    expect(isMoveableAtDeployStage(unit({ status: "CHECKED_OUT", prepStatus: "PACKED" }))).toBe(false);
+    expect(isMoveableAtDeployStage(unit({ status: "RETURNED", prepStatus: "PACKED" }))).toBe(false);
+    expect(isMoveableAtDeployStage(unit({ status: "CONFIRMED", prepStatus: "PENDING" }))).toBe(false);
+  });
+
+  test("return stage: currently deployed", () => {
+    expect(isMoveableAtReturnStage(unit({ status: "CHECKED_OUT" }))).toBe(true);
+    expect(isMoveableAtReturnStage(unit({ status: "RETURNED" }))).toBe(false);
+  });
+
+  test("de-prep stage: back but still packed", () => {
+    expect(isMoveableAtDeprepStage(unit({ status: "RETURNED", prepStatus: "PACKED" }))).toBe(true);
+    expect(isMoveableAtDeprepStage(unit({ status: "RETURNED", prepStatus: "PENDING" }))).toBe(false);
+    expect(isMoveableAtDeprepStage(unit({ status: "CHECKED_OUT", prepStatus: "PACKED" }))).toBe(false);
+  });
+});
+
+describe("resolveSelectionToUnitIds (Move to…, #1296 phase 2)", () => {
+  test("a plain line-item key resolves to that item's own relevant unit(s)", () => {
+    const li = line({ id: "a", units: [unit({ id: "u1", status: "CONFIRMED", prepStatus: "PACKED" })] });
+    const ids = resolveSelectionToUnitIds(new Set(["a"]), [li], isMoveableAtDeployStage);
+    expect(ids).toEqual(["u1"]);
+  });
+
+  test("a kit/accessory parent's key pulls in every relevant descendant's units too (whole group moves together)", () => {
+    const child = line({
+      id: "child",
+      isKitChild: true,
+      status: "CONFIRMED",
+      units: [unit({ id: "u-child", status: "CONFIRMED", prepStatus: "PACKED" })],
+    });
+    const kit = line({ id: "kit", kitId: "k1", childLineItems: [child], units: [unit({ id: "u-kit", status: "CONFIRMED", prepStatus: "PACKED" })] });
+    const ids = resolveSelectionToUnitIds(new Set(["kit"]), [kit], isMoveableAtDeployStage);
+    expect(ids.sort()).toEqual(["u-child", "u-kit"]);
+  });
+
+  test("a bulk positional key only ever carries a COUNT — N selected indices resolve to the first N relevant units in array order", () => {
+    const li = line({
+      id: "bulk",
+      quantity: 3,
+      units: [
+        unit({ id: "u1", status: "CONFIRMED", prepStatus: "PACKED" }),
+        unit({ id: "u2", status: "CONFIRMED", prepStatus: "PACKED" }),
+        unit({ id: "u3", status: "CONFIRMED", prepStatus: "PACKED" }),
+      ],
+    });
+    // Two distinct bulk keys selected (index doesn't matter — only the count).
+    const ids = resolveSelectionToUnitIds(new Set(["bulk:0", "bulk:2"]), [li], isMoveableAtDeployStage);
+    expect(ids).toEqual(["u1", "u2"]);
+  });
+
+  test("units not relevant to this stage are excluded even when their line is selected", () => {
+    const li = line({
+      id: "bulk",
+      units: [
+        unit({ id: "u1", status: "CONFIRMED", prepStatus: "PACKED" }),
+        unit({ id: "u2", status: "CHECKED_OUT", prepStatus: "PACKED" }), // already deployed — not deploy-stage relevant
+      ],
+    });
+    expect(resolveSelectionToUnitIds(new Set(["bulk:0"]), [li], isMoveableAtDeployStage)).toEqual(["u1"]);
+  });
+
+  test("a key with no matching line item is silently ignored (never throws)", () => {
+    expect(resolveSelectionToUnitIds(new Set(["missing", "missing:0"]), [], isMoveableAtDeployStage)).toEqual([]);
+  });
+});
+
+describe("keysForGroupEntries (Deploy container, #1296 D4)", () => {
+  test("single/serialized-group/kit-group/accessory-group each contribute their line-item id(s)", () => {
+    const entries: GroupEntry[] = [
+      { kind: "single", item: line({ id: "a" }) },
+      { kind: "serialized-group", groupKey: "s", modelName: "M", items: [line({ id: "b" }), line({ id: "c" })] },
+      { kind: "kit-group", groupKey: "k", item: line({ id: "kit1" }), children: [line({ id: "child" })] },
+      { kind: "accessory-group", groupKey: "acc", item: line({ id: "acc1" }), children: [] },
+    ];
+    expect(keysForGroupEntries(entries)).toEqual(["a", "b", "c", "kit1", "acc1"]);
+  });
+
+  test("a bulk-group contributes one positional key per unit", () => {
+    const entries: GroupEntry[] = [{ kind: "bulk-group", groupKey: "bulk", item: line({ id: "bulk1" }), unitCount: 3 }];
+    expect(keysForGroupEntries(entries)).toEqual([bulkUnitKey("bulk1", 0), bulkUnitKey("bulk1", 1), bulkUnitKey("bulk1", 2)]);
+  });
+});
+
+describe("bulk accessory parent — accessory state must not be hidden by the bulk branch", () => {
+  const bulkParent = (overrides: Partial<LineItem>, child: Partial<LineItem>) =>
+    line({
+      id: "p1",
+      quantity: 3,
+      bulkAssetId: "ba1",
+      units: [{ id: "u1", quantity: 3, status: "CONFIRMED", prepStatus: "PACKED" }] as LineItem["units"],
+      childLineItems: [line({ id: "c1", isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "p1", ...child })],
+      ...overrides,
+    });
+
+  test("all parent units packed but an accessory unprepped → still in Pick/Prep", () => {
+    expect(isInPickPrepStage(bulkParent({}, { prepStatus: "PENDING" }))).toBe(true);
+  });
+
+  test("all parent units packed and accessory packed → left Pick/Prep", () => {
+    expect(isInPickPrepStage(bulkParent({}, { prepStatus: "PACKED" }))).toBe(false);
+  });
+
+  test("all parent units deployed but accessory left packed → still in Deploy", () => {
+    const item = bulkParent(
+      { status: "CHECKED_OUT", units: [{ id: "u1", quantity: 3, status: "CHECKED_OUT", prepStatus: "PACKED" }] as LineItem["units"] },
+      { prepStatus: "PACKED" },
+    );
+    expect(isInPreppedStage(item)).toBe(true);
   });
 });

@@ -60,20 +60,14 @@ describe("the bare-string guards are translated, not lost", () => {
 });
 
 describe("gate codes map to the recovery an agent can actually act on", () => {
-  test("FINANCIALS_LOCKED points at the unlock session and is NOT retryable", () => {
+  test("PRICING_LOCKED points at unlock_pricing and IS retryable (once cleared)", () => {
     const envelope = toErrorEnvelope(
-      new ConvexError({ code: "FINANCIALS_LOCKED", message: "…", projectId: "p1", tier: "JUSTIFY" }),
+      new ConvexError({ code: "PRICING_LOCKED", message: "…", projectId: "p1" }),
     );
     expect(envelope.error.category).toBe("gate");
-    expect(envelope.error.retryable).toBe(false);
-    expect(envelope.error.recovery?.action).toBe("open_unlock_session");
-    expect(envelope.error.details).toEqual({ projectId: "p1", tier: "JUSTIFY" });
-  });
-
-  test("JUSTIFICATION_REQUIRED IS retryable — the retry differs by one argument", () => {
-    const envelope = toErrorEnvelope(new ConvexError({ code: "JUSTIFICATION_REQUIRED", message: "…" }));
     expect(envelope.error.retryable).toBe(true);
-    expect(envelope.error.recovery?.action).toBe("retry_with_justification");
+    expect(envelope.error.recovery?.action).toBe("unlock_pricing");
+    expect(envelope.error.details).toEqual({ projectId: "p1" });
   });
 
   test("BULK_TOO_LARGE tells the agent to split rather than to wait", () => {
@@ -157,7 +151,11 @@ describe("envelope shape", () => {
   test("the published code vocabulary is stable and sorted", () => {
     // `stable` operations promise an additive-only error vocabulary within /v1
     // (decision 12). This pins the current set so a REMOVAL shows up as a diff.
-    expect(KNOWN_ERROR_CODES).toContain("FINANCIALS_LOCKED");
+    // #1230 — FINANCIALS_LOCKED/PROJECT_LOCKED/JUSTIFICATION_REQUIRED were
+    // deliberately removed (the 4-tier lock system they belonged to no longer
+    // exists) and replaced by PRICING_LOCKED — a genuine, spec-directed break
+    // in the /v1 vocabulary for this one gate, not an oversight.
+    expect(KNOWN_ERROR_CODES).toContain("PRICING_LOCKED");
     expect(KNOWN_ERROR_CODES).toContain("MISSING_SCOPE");
     expect(KNOWN_ERROR_CODES).toContain("FORBIDDEN");
     expect([...KNOWN_ERROR_CODES]).toEqual([...KNOWN_ERROR_CODES].sort());

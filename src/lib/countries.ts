@@ -61,6 +61,15 @@ export interface CountryDefinition {
    *  against repeating). */
   defaultTaxRate: number | null;
   businessNumberLabel: string;
+  /** IANA zone name — a REPRESENTATIVE default for the wizard's country step
+   *  (C2, #1099) to pre-fill, not an authoritative "this country = this
+   *  zone" claim. Multi-zone countries (the US spans six; AU spans three,
+   *  two with DST) only get one entry here — same "auto-fill, editable, and
+   *  say so" posture already governing currency/tax-label/tax-rate covers
+   *  the imprecision: the wizard shows this filled-but-dimmed, never locked,
+   *  so a Perth or Denver org corrects it in one edit. NZ/GB/IE are
+   *  genuinely single-zone, so this is exact for those three. */
+  timezone: string;
   /** I4 (#1083) — the invoice document's printed heading. "TAX INVOICE" is
    *  a legal requirement specific to AU/NZ's GST system, not a global term —
    *  every other market gets the generic "INVOICE" (M1: no i18n framework,
@@ -88,6 +97,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "GST",
     defaultTaxRate: 10,
     businessNumberLabel: "ABN",
+    timezone: "Australia/Sydney",
     invoiceHeading: "TAX INVOICE",
     enabled: true,
   },
@@ -105,6 +115,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "GST",
     defaultTaxRate: 15,
     businessNumberLabel: "NZBN",
+    timezone: "Pacific/Auckland",
     invoiceHeading: "TAX INVOICE",
     enabled: true,
   },
@@ -122,6 +133,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "VAT",
     defaultTaxRate: 20,
     businessNumberLabel: "VAT number",
+    timezone: "Europe/London",
     invoiceHeading: "INVOICE",
     enabled: true,
   },
@@ -139,6 +151,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "Sales tax",
     defaultTaxRate: null,
     businessNumberLabel: "EIN",
+    timezone: "America/New_York",
     invoiceHeading: "INVOICE",
     enabled: true,
   },
@@ -156,6 +169,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "VAT",
     defaultTaxRate: 23,
     businessNumberLabel: "VAT number",
+    timezone: "Europe/Dublin",
     invoiceHeading: "INVOICE",
     enabled: true,
   },
@@ -173,6 +187,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "BTW",
     defaultTaxRate: 21,
     businessNumberLabel: "BTW-nummer",
+    timezone: "Europe/Amsterdam",
     invoiceHeading: "INVOICE",
     enabled: false,
   },
@@ -190,6 +205,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "MwSt",
     defaultTaxRate: 19,
     businessNumberLabel: "USt-IdNr",
+    timezone: "Europe/Berlin",
     invoiceHeading: "INVOICE",
     enabled: false,
   },

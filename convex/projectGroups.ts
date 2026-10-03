@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { resolveLiveVersionIdForProject, resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for ProjectGroup (Convex table "projectGroups"). GENERATED — Phase 2/5.
@@ -22,13 +23,13 @@ export const getById = query({
 });
 
 export const listByProject = query({
-  args: { projectId: v.string(), orgId: v.string() },
-  handler: async (ctx, { projectId, orgId }) => {
+  // #1228: optional versionId, defaulting to the project's live version.
+  args: { projectId: v.string(), orgId: v.string(), versionId: v.optional(v.string()) },
+  handler: async (ctx, { projectId, orgId, versionId }) => {
     await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
-    const rows = await ctx.db
-      .query("projectGroups")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) return [];
+    const rows = await versionRows(ctx, "projectGroups", resolveVersionId(project, versionId));
     // See projectLineItems.listByProject: `requireOrgRead` validates the caller's
     // org, not the project's, and is a no-op for the service token. Filter rows.
     return rows.filter((r) => r.organizationId === orgId);
@@ -40,6 +41,7 @@ export const listByCategoryId = query({
   handler: async (ctx, { categoryId }) => {
     await requireService(ctx);
     return await ctx.db
+      // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
       .query("projectGroups")
       .withIndex("by_categoryId", (q) => q.eq("categoryId", categoryId))
       .collect();
@@ -161,14 +163,12 @@ export const createAtEnd = mutation({
     await requireService(ctx);
     const { now, ...fields } = args;
     const bucket = fields.categoryId ?? null;
-    const existing = await ctx.db
-      .query("projectGroups")
-      .withIndex("by_projectId", (q) => q.eq("projectId", fields.projectId))
-      .collect();
+    const versionId = await resolveLiveVersionIdForProject(ctx, fields.projectId, fields.organizationId);
+    const existing = await versionRows(ctx, "projectGroups", versionId);
     const inBucket = existing.filter((g) => (g.categoryId ?? null) === bucket);
     const maxSort = inBucket.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1);
     const sortOrder = maxSort + 1;
-    await ctx.db.insert("projectGroups", { ...fields, sortOrder, createdAt: now, updatedAt: now });
+    await ctx.db.insert("projectGroups", { ...fields, versionId, lineageId: fields.id, sortOrder, createdAt: now, updatedAt: now });
     return { id: fields.id, sortOrder };
   },
 });
@@ -199,6 +199,7 @@ export const deleteCascade = mutation({
   handler: async (ctx, { groupId }) => {
     await requireService(ctx);
     const slots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", groupId))
       .collect();

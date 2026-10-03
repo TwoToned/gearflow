@@ -1,3 +1,4 @@
+import type { ProjectStatusAutomationSettings } from "@/lib/project-status-automation";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 import type { IncrementReset } from "@/lib/project-number";
 import type { OrgJoinPolicy } from "@/lib/org-join-policy";
@@ -44,6 +45,51 @@ export interface OrgDocumentSettings {
   /** Default payment terms for an issued invoice — the due date defaults to
    *  invoiceDate + this many days (#989). Default 14. */
   paymentTermsDays?: number;
+}
+
+/** Work-layer Phase 4 (#1246) — the crew planner's confirmation layer. See
+ *  `src/lib/crew-time-settings.ts` for bounds/defaults. */
+export interface CrewTimeSettings {
+  /** Hours an OFFERED assignment sits unanswered before it's a Triage signal
+   *  for the PM (design doc §8.5/§9). Absent = the documented default (48). */
+  unansweredOfferHours?: number;
+  /** Email the day before a confirmed shift with call time, location and PM
+   *  phone. Off by default — absent or `false` = disabled. */
+  callReminderEnabled?: boolean;
+}
+
+/** Work-layer Phase 3 (#1245, design §8.4) — per-org "rotting" thresholds for
+ *  the client pipeline. Absent (or an individual key absent) falls back to
+ *  the design doc's defaults (7 / 14 days) via
+ *  `convex/lib/rottingDates.ts`'s `resolveRottingDays` — every pre-Phase-3
+ *  org gets the default with no backfill, same posture as
+ *  `projectStatusAutomation`. No settings UI ships in this phase (same
+ *  posture as `workTemplates` — the table/field exists for a later admin
+ *  screen to write); edit via the raw settings JSON until then.
+ */
+interface OrgWorkSettings {
+  /** Days since a client's last timeline touch before its pipeline card
+   *  shades amber. Default 7. */
+  rottingAmberDays?: number;
+  /** Days before the card shades with the error tint. Default 14. */
+  rottingErrorDays?: number;
+}
+
+/** Follow-up automation (docs/designs/follow-up-automation.md §8.4). Absent
+ *  (and every absent key inside it) means the defaults in
+ *  `convex/lib/followUpRules.ts` — quote follow-ups ON, 2 / 5 business days,
+ *  decided 14 days before the event, cut-over at the phase-1 ship date. The
+ *  blob only ever records an opt-out or a tuned offset. Edited in Settings →
+ *  Follow-ups (`FollowUpSettingsPanel`), validated by `followUpSettingsSchema`. */
+export interface OrgFollowUpSettings {
+  quotesEnabled?: boolean;
+  /** Invoice chasing + "invoice not raised" (phase 2). */
+  invoicesEnabled?: boolean;
+  firstFollowUpBusinessDays?: number;
+  nextFollowUpBusinessDays?: number;
+  decisionLeadDays?: number;
+  /** Epoch ms; nothing sent before it is ever chased. */
+  cutoverAt?: number;
 }
 
 export interface TestTagSettings {
@@ -100,10 +146,26 @@ export interface OrgSettings {
   testTag?: TestTagSettings;
   icalToken?: string;
   icalEnabled?: boolean;
+  /** DEPRECATED (#1296 build plan phase 2) — superseded by `containerCategoryIds`
+   *  (several categories). Read as a fallback until phase 5's narrow step; new
+   *  writes go through `containerCategoryIds` only. */
   prepKitCategoryId?: string;
+  /** #1296 packing containers — every category whose assets can be used as
+   *  packing containers (cases, tubs, road boxes) in the warehouse. Absent/empty
+   *  falls back to `prepKitCategoryId` (single-category, pre-#1296 orgs). */
+  containerCategoryIds?: string[];
   sso?: OrgSSOSettings;
   /** B2 (#1094) — governs whether a non-member can self-serve request to join
    *  via verified-domain match. Absent = `INVITE_ONLY` (see
    *  `src/lib/org-join-policy.ts` for the full policy + default). */
   joinPolicy?: OrgJoinPolicy;
+  /** #1160 — per-org opt-OUT switches for project status automation. Absent (and
+   *  every absent key inside it) means ON; see `src/lib/project-status-automation.ts`. */
+  projectStatusAutomation?: ProjectStatusAutomationSettings;
+  /** #1245 — client-pipeline rotting thresholds. See `OrgWorkSettings`. */
+  work?: OrgWorkSettings;
+  /** Work-layer Phase 4 (#1246) — crew planner confirmation-layer settings. */
+  crewTime?: CrewTimeSettings;
+  /** Follow-up automation — see `OrgFollowUpSettings`. */
+  followUps?: OrgFollowUpSettings;
 }

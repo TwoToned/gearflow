@@ -90,6 +90,9 @@ other line-item discount.
 - Dialog shows "X/Y items verified" with option to proceed or cancel
 - "Deploy Verified" automatically includes nested kit parent line items when grandchildren are verified
 
+## Bulk stock accounting
+A kit's bulk members leave `bulkAssets.availableQuantity` **when they are added to the kit** (`kitWrites.addBulkItemNative`) and return to it when removed or the kit is archived. Deploy, return, un-deploy, un-return and force-return **never** adjust bulk availability — the stock is already out of the pool. Consuming it again at deploy double-counted it and failed with "Insufficient stock" whenever the kit held all of a bulk asset. `checkoutKitPreflight` also rejects a kit that is already `CHECKED_OUT`.
+
 ## Force Return
 - `forceReturnKit()` (`convex/warehouseWrites.ts`, called via `src/hooks/use-warehouse-writes.ts`) resets kit + all children (including nested kits and grandchildren) to AVAILABLE, sets line items to RETURNED, always resets location (even to null if no default)
 - Bulk force return available from kit list page selection bar
@@ -111,3 +114,48 @@ other line-item discount.
   - Kit availability is a non-throwing pre-check per kit: an unavailable/double-booked kit is skipped (with a warning collected in `kitWarnings[]`) rather than aborting the whole apply, so warehouse staff still get the model items
 - Project totals are recalculated inline (org tax rate) as part of the same mutation when any kit items were expanded
 - Activity log summary includes skipped kit warnings
+
+## Catalog changes after a kit is already on a project — resynced on demand, not automatically
+
+A kit's member list is snapshotted onto the project as concrete child
+`ProjectLineItem` rows at `createKitLineItemCore` time (see "Data Model" above) —
+there is no live join back to `KitSerializedItem`/`KitBulkItem`. Editing a kit's
+membership after it's already on an open (not-yet-checked-out) project does
+**not** retroactively add/remove the project's child rows on its own.
+
+`resyncProjectKitsNative` (`convex/lineItemWrites.ts`, reconcile core in
+`convex/lib/kits.ts`'s `reconcileKitLineChildren`) closes that gap the same way
+`resyncProjectAccessoriesNative` (FEATUREDOCS/48) does for accessories: an
+explicit, PM-initiated, per-project action — never a trigger on the catalog
+write itself, since editing one kit can affect many open jobs at once and an
+already-quoted job's composition shouldn't change out from under the PM without
+them asking for it. Surfaced as the "Sync kits" toolbar action next to "Sync
+accessories" in the Equipment tab (`src/components/projects/equipment-tab.tsx`).
+
+For every kit parent line (`kitId` set, not itself a child) with no deployed
+unit anywhere on the line — parent or member child, since kit fulfillment can
+deploy members one at a time (`kitLineHasDeployedUnit`) — it diffs the line's
+current children against the kit's CURRENT membership:
+
+- A member no longer on the kit: its child line (+ units) is deleted.
+- A member the kit doesn't have a child for yet: a new child line is inserted,
+  same shape `createKitLineItemCore` would create for it.
+- A kept bulk member whose kit-configured `quantity` changed: the child's
+  `quantity` (and, in `ITEMIZED` mode, its price) is rescaled to match.
+
+**Pricing a newly-added member** mirrors `createKitLineItemCore` exactly, which
+is what answers the "needs its own design pass" question this section used to
+raise: `ITEMIZED` pulls the member's model `defaultRentalPrice`, same as at
+add-time; `KIT_PRICE` leaves it unpriced, because the bundle price is a
+hand-set number on the PARENT row and a new member can't assign itself a share
+of it — resync never touches the parent's own price. The mutation returns
+`unpricedChildrenAdded` for exactly this case (a `KIT_PRICE` addition, or an
+`ITEMIZED` member whose model has no rate configured) so the toolbar can flag
+"N added — review pricing" instead of implying every resync leaves the job
+fully priced.
+
+Never touched: an existing kept child's price when the kit member's own model
+rate changes after the fact — the same "office decides" boundary
+`resyncProjectAccessoriesNative` draws around a kept accessory. Repricing an
+already-quoted child from a catalog-rate change is a distinct, un-designed
+feature, not part of membership resync.

@@ -5,6 +5,7 @@ import {
   upsertXeroDraftInvoice,
   exchangeXeroAuthCode,
   fetchXeroAccounts,
+  fetchXeroInvoiceStates,
   fetchXeroTaxRates,
   findXeroContactByEmail,
   listXeroConnections,
@@ -290,9 +291,16 @@ describe("upsertXeroDraftInvoice", () => {
   // Regression: a discount netted into Flow's lineTotal used to be dropped on
   // push — this file only ever sent Quantity/UnitAmount, so Xero recomputed
   // LineAmount itself (Quantity × UnitAmount) with no knowledge of the
-  // discount. `lineAmount` is the explicit override that keeps Xero's total
-  // matching Flow's already-discounted figure.
-  it("passes a supplied lineAmount through as an explicit LineAmount override", async () => {
+  // discount, overstating the client's charge.
+  //
+  // The fix that followed (sending LineAmount alongside an unreconciled
+  // Quantity/UnitAmount) was ITSELF broken: Xero validates
+  // `LineAmount == Quantity × UnitAmount` whenever all three are present and
+  // rejects the push outright ("The line total X does not match the expected
+  // line total Y") rather than treating LineAmount as an override. The gap
+  // must be expressed as Xero's own DiscountAmount so its internal check
+  // reconciles.
+  it("expresses a discounted lineTotal as Xero's DiscountAmount, not a bare LineAmount override", async () => {
     const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
     const { impl, calls } = mockFetch(fixture);
     await upsertXeroDraftInvoice(
@@ -310,6 +318,61 @@ describe("upsertXeroDraftInvoice", () => {
     expect(body.Invoices[0].LineItems[0].Quantity).toBe(2);
     expect(body.Invoices[0].LineItems[0].UnitAmount).toBe(100);
     expect(body.Invoices[0].LineItems[0].LineAmount).toBe(170);
+    expect(body.Invoices[0].LineItems[0].DiscountAmount).toBe(30);
+  });
+
+  // A multi-day rental's lineTotal is duration-multiplied ABOVE
+  // quantity × unitPrice (convex/lib/lineTotal.ts's computeLineTotal), the
+  // mirror image of a discount. Xero has no "negative discount" field, so
+  // this must collapse to a single unit at the resolved amount rather than
+  // send a Quantity/UnitAmount pair Xero would reject.
+  it("collapses a duration-multiplied lineTotal to Quantity 1 rather than send an unreconcilable Quantity/UnitAmount", async () => {
+    const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
+    const { impl, calls } = mockFetch(fixture);
+    await upsertXeroDraftInvoice(
+      {
+        contactId: "c1",
+        invoiceNumber: "INV-2026-0001",
+        date: "2026-07-26",
+        // 1 × $500/day over a 3-day hire nets to $1,500 — well above
+        // quantity × unitAmount ($500).
+        lineItems: [
+          { description: "PA System hire (3 days)", quantity: 1, unitAmount: 500, lineAmount: 1500, accountCode: "4200", taxType: "OUTPUT2" },
+        ],
+      },
+      { ...authOpts, fetchImpl: impl },
+    );
+    const body = JSON.parse(calls[0]!.init!.body as string);
+    expect(body.Invoices[0].LineItems[0].Quantity).toBe(1);
+    expect(body.Invoices[0].LineItems[0].UnitAmount).toBe(1500);
+    expect(body.Invoices[0].LineItems[0].LineAmount).toBe(1500);
+    expect(body.Invoices[0].LineItems[0].DiscountAmount).toBeUndefined();
+  });
+
+  // GST regression (INV-260901): LineAmountTypes was never sent, so Xero fell
+  // back to its own default and interpreted every LineAmount as tax-EXCLUSIVE.
+  // That happens to be the right reading of Flow's data — but relying on a
+  // vendor default for it is exactly how a $330.00 invoice went out of Xero at
+  // $363.00 once a line was written GST-inclusive upstream. Declaring it makes
+  // the two sides' agreement explicit at the boundary, and asserting it here
+  // means a silent change to that declaration can't ship unnoticed.
+  it("declares LineAmountTypes: Exclusive so Xero never adds GST on top of Flow's amounts", async () => {
+    const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
+    const { impl, calls } = mockFetch(fixture);
+    await upsertXeroDraftInvoice(
+      {
+        contactId: "c1",
+        invoiceNumber: "INV-2026-0001",
+        date: "2026-07-26",
+        lineItems: [{ description: "Deposit (25% of project total)", quantity: 1, unitAmount: 300, lineAmount: 300 }],
+      },
+      { ...authOpts, fetchImpl: impl },
+    );
+    const body = JSON.parse(calls[0]!.init!.body as string);
+    expect(body.Invoices[0].LineAmountTypes).toBe("Exclusive");
+    // The ex-GST figure goes up, and Xero derives the $30 GST from it — never
+    // the other way round.
+    expect(body.Invoices[0].LineItems[0].LineAmount).toBe(300);
   });
 
   // The "make Push to Xero also update" feature: a re-push threads the prior
@@ -376,5 +439,23 @@ describe("upsertXeroDraftInvoice", () => {
         { ...authOpts, fetchImpl: impl },
       ),
     ).rejects.toThrow(/Account code '9999' is not a valid code for this document/);
+  });
+});
+
+describe("fetchXeroInvoiceStates", () => {
+  it("batches IDs 40 per request with summaryOnly, and parses invoice-level state", async () => {
+    const ids = Array.from({ length: 41 }, (_, i) => `x${i}`);
+    const { impl, calls } = mockFetch({ Invoices: [{ InvoiceID: "x0", Status: "PAID", AmountPaid: 100, AmountCredited: 0, AmountDue: 0 }] });
+    const result = await fetchXeroInvoiceStates(ids, { ...authOpts, fetchImpl: impl });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.url).toContain("summaryOnly=true");
+    expect(calls[0]!.url.split("IDs=")[1]!.split("&")[0]!.split(",")).toHaveLength(40);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ InvoiceID: "x0", Status: "PAID", AmountPaid: 100 });
+  });
+
+  it("throws on a response that fails schema validation", async () => {
+    const { impl } = mockFetch({ Invoices: [{ Status: "PAID" }] });
+    await expect(fetchXeroInvoiceStates(["x0"], { ...authOpts, fetchImpl: impl })).rejects.toThrow(XeroApiError);
   });
 });

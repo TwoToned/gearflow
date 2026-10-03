@@ -9,6 +9,7 @@ import {
 import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { getProjectById } from "@/lib/projects-read";
+import { getProjectWindow } from "@/lib/project-window";
 import { getCrewRoleMap } from "@/lib/crew-read";
 import { getShiftsByAssignmentIds } from "@/lib/crew-scheduling-read";
 
@@ -50,9 +51,17 @@ export async function GET(
 
   const organizationId = memberDoc.organizationId;
 
-  // The member's CONFIRMED/ACCEPTED assignments come from Convex (org list
-  // filtered to this member). crewRole + project resolve from Convex maps;
-  // shifts (non-CANCELLED, date asc) come from the by-assignment Convex query.
+  // Per-member opt-in (Calendar tab toggle): also emit PENDING/OFFERED
+  // assignments as STATUS:TENTATIVE, not just CONFIRMED/ACCEPTED. Absent
+  // means "confirmed only" (pre-existing behaviour, every row before this).
+  const includeTentative = memberDoc.icalIncludeTentative ?? false;
+  const CONFIRMED_STATUSES = new Set(["CONFIRMED", "ACCEPTED"]);
+  const TENTATIVE_STATUSES = new Set(["PENDING", "OFFERED"]);
+
+  // The member's CONFIRMED/ACCEPTED assignments (plus PENDING/OFFERED when
+  // opted in) come from Convex (org list filtered to this member). crewRole +
+  // project resolve from Convex maps; shifts (non-CANCELLED, date asc) come
+  // from the by-assignment Convex query.
   const [orgAssignments, roleMap] = await Promise.all([
     convex.query(api.crewAssignments.list, { orgId: organizationId }),
     getCrewRoleMap(organizationId),
@@ -60,7 +69,9 @@ export async function GET(
   const myRawAssignments = orgAssignments.filter(
     (a) =>
       a.crewMemberId === memberDoc.id &&
-      (a.status === "CONFIRMED" || a.status === "ACCEPTED"),
+      a.status != null &&
+      (CONFIRMED_STATUSES.has(a.status) ||
+        (includeTentative && TENTATIVE_STATUSES.has(a.status))),
   );
   const shiftsAll = await getShiftsByAssignmentIds(myRawAssignments.map((a) => a.id));
   const shiftsByAssignment = new Map<string, typeof shiftsAll>();
@@ -81,6 +92,31 @@ export async function GET(
   );
   const projectById = new Map(projectEntries);
 
+  // Project-manager projects: a crew member linked to a platform user who is
+  // a project manager on a project (`projectManagers` table — added via the
+  // Project Managers panel, independent of crew assignments) sees the whole
+  // project on their calendar as one all-day event spanning the full project
+  // window, even when they have no crew assignment on it at all.
+  const pmProjectIds = memberDoc.userId
+    ? [
+        ...new Set(
+          (
+            await convex.query(api.projectManagers.listByUserId, {
+              userId: memberDoc.userId,
+              orgId: organizationId,
+            })
+          ).map((pm) => pm.projectId),
+        ),
+      ]
+    : [];
+  const missingPmProjectIds = pmProjectIds.filter((id) => !projectById.has(id));
+  const pmProjectEntries = await Promise.all(
+    missingPmProjectIds.map(async (pid) => [pid, await getProjectById(pid)] as const),
+  );
+  for (const [pid, p] of pmProjectEntries) {
+    if (p) projectById.set(pid, p);
+  }
+
   const member = {
     id: memberDoc.id,
     firstName: memberDoc.firstName,
@@ -92,6 +128,7 @@ export async function GET(
       return [
         {
           id: a.id,
+          tentative: a.status != null && TENTATIVE_STATUSES.has(a.status),
           phase: a.phase ?? null,
           notes: a.notes ?? null,
           startDate: a.startDate != null ? new Date(a.startDate) : null,
@@ -142,6 +179,12 @@ export async function GET(
       );
     }
     if (a.notes) descLines.push(`\nNotes: ${a.notes}`);
+    if (a.tentative) descLines.push("\n(Not yet confirmed)");
+
+    const summary = a.tentative
+      ? `(Tentative) ${project.name} - ${roleName}`
+      : `${project.name} - ${roleName}`;
+    const icsStatus = a.tentative ? "TENTATIVE" : "CONFIRMED";
 
     // If there are shifts, create one event per shift
     if (a.shifts.length > 0) {
@@ -153,12 +196,12 @@ export async function GET(
 
         events.push({
           uid: `shift-${shift.id}@gearflow`,
-          summary: `${project.name} - ${roleName}`,
+          summary,
           description: descLines.join("\n"),
           location: shift.location || location,
           dtstart,
           dtend,
-          status: "CONFIRMED",
+          status: icsStatus,
           categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
         });
       }
@@ -177,15 +220,58 @@ export async function GET(
 
       events.push({
         uid: `assignment-${a.id}@gearflow`,
-        summary: `${project.name} - ${roleName}`,
+        summary,
         description: descLines.join("\n"),
         location,
         dtstart,
         dtend,
-        status: "CONFIRMED",
+        status: icsStatus,
         categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
       });
     }
+  }
+
+  // One all-day event per PM project, spanning the full project window
+  // (getProjectWindow — the same "gear committed" window used for
+  // availability), regardless of whether this member has a crew assignment
+  // on it.
+  for (const pid of pmProjectIds) {
+    const project = projectById.get(pid);
+    if (!project) continue;
+
+    const window = getProjectWindow(project);
+    if (window.start == null) continue; // no dates set — nothing to show
+
+    const dtstart = buildDateTime(new Date(window.start), null, tzid);
+    const dtend = buildDateTime(new Date(window.end ?? window.start), null, tzid);
+
+    const projLocation = project.locationId ? locationMap.get(project.locationId) ?? null : null;
+    const location = [projLocation?.name, projLocation?.address]
+      .filter(Boolean)
+      .join(", ");
+
+    const descLines = [
+      `Project: ${project.projectNumber} - ${project.name}`,
+      "Role: Project Manager",
+    ];
+    if (location) descLines.push(`Location: ${location}`);
+    if (project.siteContactName) {
+      descLines.push(
+        `Site Contact: ${project.siteContactName}${project.siteContactPhone ? ` (${project.siteContactPhone})` : ""}`
+      );
+    }
+
+    events.push({
+      uid: `pm-project-${project.id}@gearflow`,
+      summary: `${project.name} (Project Manager)`,
+      description: descLines.join("\n"),
+      location,
+      dtstart,
+      dtend,
+      allDay: true,
+      status: "CONFIRMED",
+      categories: ["RVLT Flow", "Project Manager"],
+    });
   }
 
   const icsContent = generateVCalendar(calName, events, tzid);

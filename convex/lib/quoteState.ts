@@ -127,6 +127,45 @@ export async function findQuoteAtRevision(
     .first();
 }
 
+/**
+ * #1233 (Phase 6) — the per-`projectVersions`-row addressing key: the quote
+ * row (any status) currently targeting `versionId`, org-checked. A row
+ * created before this phase has no `versionId` stamped — callers that mean
+ * "the LIVE version's quote" should fall back to `findQuoteAtRevision`
+ * (`quotesWrites.ts`'s `prepareSend` does exactly this) rather than treating
+ * an old row as invisible here.
+ */
+export async function findQuoteForVersion(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  projectId: string,
+  versionId: string,
+): Promise<Doc<"quotes"> | null> {
+  return await ctx.db
+    .query("quotes")
+    .withIndex("by_projectId_versionId", (q) => q.eq("projectId", projectId).eq("versionId", versionId))
+    .filter((q) => q.eq(q.field("organizationId"), orgId))
+    .first();
+}
+
+/**
+ * #1233 — whether `quote` targets the project's CURRENT live version. A row
+ * with no `versionId` stamped (every pre-#1233 row) falls back to the OLDER
+ * revision-number check (`version === projectLiveRevision(project)`) — NOT a
+ * blind "no versionId means live": a pre-#1233 row can be an OLDER, no-longer-
+ * live revision that `newVersionNative` has since moved past (the exact case
+ * D56 exists to get right — recalling that older revision must never unlock
+ * a job whose CURRENT live revision is a newer, still-SENT one), and it never
+ * got a `versionId` stamped because it predates this field entirely.
+ */
+export function quoteTargetsLiveVersion(
+  quote: Pick<Doc<"quotes">, "versionId" | "version">,
+  project: Pick<Doc<"projects">, "liveVersionId" | "revision" | "liveRevision">,
+): boolean {
+  if (quote.versionId != null) return quote.versionId === project.liveVersionId;
+  return quote.version === projectLiveRevision(project);
+}
+
 /** The revision the client is currently holding — the one `SENT`/`ACCEPTED` (or
  *  since-expired) row. Null when nothing has been sent yet. */
 export async function findLiveQuote(
@@ -185,26 +224,6 @@ export async function requireProjectInOrg(
   return project;
 }
 
-/**
- * The quote at the project's CURRENT revision, normalised, with NO time-based
- * `EXPIRED` resolution — #988 (Phase C)'s `resolveLockTier` treats `SENT` and
- * `EXPIRED` identically (both are "sent and not yet superseded by a new
- * version"), so distinguishing them isn't needed to gate a write. That in turn
- * means `assertLifecycleGuard` doesn't need a `now` argument threaded through
- * the ~25 existing gate sites that call it — none of them pass one today.
- * Null when no row exists at this revision yet (a project that has never
- * quoted, or a fresh `DRAFT` created by `newVersionNative`) — reads exactly
- * like a `DRAFT` for lock purposes.
- */
-export async function currentRevisionQuoteStatus(
-  ctx: QueryCtx | MutationCtx,
-  orgId: string,
-  projectId: string,
-  revision: number,
-): Promise<EffectiveQuoteStatus | null> {
-  const quote = await findQuoteAtRevision(ctx, orgId, projectId, revision);
-  return quote ? normalizeStoredQuoteStatus(quote.status) : null;
-}
 
 /** Human label for a revision — `<projectNumber> v<version>`. There is
  *  deliberately no quote number (decision 5): the project number is already the
@@ -215,15 +234,15 @@ export function quoteLabel(projectNumber: string, version: number): string {
 }
 
 /**
- * Strictly org OWNER — one tier above `isHardLockOverrideAllowed`
- * (`projectLocks.ts`, which also admits admins and the project's assigned
- * PM(s)). Reserved for the handful of quote actions where "a document a client
- * may already hold" is being permanently erased or protected from further
- * tampering (#1029/#1030): mutating something the client can no longer be
- * shown a corrected copy of deserves a strictly narrower audience than undoing
- * a lock. `hasPermission`'s "owner always passes" safety net (`permissionsCore.ts`)
- * makes a resource/action check unusable here — admins/managers can hold the
- * same `invoice:publish` grant, so only a direct role check is actually owner-only.
+ * Strictly org OWNER — one tier above `canUnlockPricing` (`projectLocks.ts`,
+ * which also admits admins/managers and the project's assigned PM(s)).
+ * Reserved for the handful of quote actions where "a document a client may
+ * already hold" is being permanently erased (#1029): mutating something the
+ * client can no longer be shown a corrected copy of deserves a strictly
+ * narrower audience than clearing a lock. `hasPermission`'s "owner always
+ * passes" safety net (`permissionsCore.ts`) makes a resource/action check
+ * unusable here — admins/managers can hold the same `invoice:publish` grant,
+ * so only a direct role check is actually owner-only.
  */
 export async function requireQuoteOwnerOnly(
   ctx: MutationCtx,

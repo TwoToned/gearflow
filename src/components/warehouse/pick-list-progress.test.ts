@@ -22,6 +22,16 @@ describe("getAccessoryChildren (pick list)", () => {
     expect(getAccessoryChildren(item).map((c) => c.id)).toEqual(["a"]);
   });
 
+  it("skips CANCELLED accessories (not pickable, must not inflate progress)", () => {
+    const item: Row = {
+      childLineItems: [
+        { id: "a", childKind: "ACCESSORY", status: "CONFIRMED" },
+        { id: "x", childKind: "ACCESSORY", status: "CANCELLED" },
+      ],
+    };
+    expect(getAccessoryChildren(item).map((c) => c.id)).toEqual(["a"]);
+  });
+
   it("returns [] when there are no children", () => {
     expect(getAccessoryChildren({})).toEqual([]);
   });

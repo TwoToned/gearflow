@@ -26,7 +26,8 @@ export async function assertRefInOrg(
     | "projectServices"
     | "fileUploads"
     | "projects"
-    | "invoices",
+    | "invoices"
+    | "projectTasks",
   id: string,
   orgId: string,
 ): Promise<void> {

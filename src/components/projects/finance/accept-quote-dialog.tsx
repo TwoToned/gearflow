@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useQuoteWrites } from "@/hooks/use-quote-writes";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,10 @@ interface AcceptQuoteDialogProps {
   onOpenChange: (open: boolean) => void;
   quoteId: string;
   version: number;
+  /** Whether this revision's `validUntil` has passed. Purely informational —
+   *  expiry is an operator's out to re-quote, never a hard stop on the
+   *  client's yes (2026-09), so this never disables the confirm button. */
+  isExpired?: boolean;
   onAccepted?: (offerStatusChange: string | null) => void;
 }
 
@@ -33,7 +38,7 @@ interface AcceptQuoteDialogProps {
  * would silently drop the acceptance date + reference (PO number, email
  * subject) an accountant will later need.
  */
-export function AcceptQuoteDialog({ open, onOpenChange, quoteId, version, onAccepted }: AcceptQuoteDialogProps) {
+export function AcceptQuoteDialog({ open, onOpenChange, quoteId, version, isExpired, onAccepted }: AcceptQuoteDialogProps) {
   const quoteWrites = useQuoteWrites();
   const [acceptedAtStr, setAcceptedAtStr] = useState(todayStr());
   const [acceptanceRef, setAcceptanceRef] = useState("");
@@ -58,7 +63,7 @@ export function AcceptQuoteDialog({ open, onOpenChange, quoteId, version, onAcce
       onAccepted?.(result.offerStatusChange);
       handleOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to mark accepted");
+      toast.error(convexErrorMessage(e, "Failed to mark accepted"));
     } finally {
       setPending(false);
     }
@@ -73,6 +78,12 @@ export function AcceptQuoteDialog({ open, onOpenChange, quoteId, version, onAcce
         </DialogHeader>
 
         <div className="space-y-3">
+          {isExpired && (
+            <p className="rounded-[var(--radius)] border-l-[3px] border-l-warn bg-warn-soft px-3 py-2 text-sm text-warn">
+              This revision&rsquo;s validity date has passed. That&rsquo;s just an out to re-quote at a new
+              price — you can still mark it accepted at the price the client was sent.
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="accepted-at">Accepted on</Label>
             <Input id="accepted-at" type="date" value={acceptedAtStr} onChange={(e) => setAcceptedAtStr(e.target.value)} />

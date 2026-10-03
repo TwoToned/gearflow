@@ -20,6 +20,9 @@ import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
 import { InvoiceNumberingSettings } from "@/components/settings/invoice-numbering-settings";
+import { StatusAutomationSettings } from "@/components/settings/status-automation-settings";
+import { FollowUpSettingsPanel } from "@/components/settings/follow-up-settings";
+import { CrewTimeSettingsPanel } from "@/components/settings/crew-time-settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -346,6 +349,63 @@ export default function GeneralSettingsPage() {
                 }
               />
             </div>
+          </SettingsSection>
+        </div>
+
+        {/* Status automation (#1160) — its own section, not a "Project defaults"
+            field: these change what the app DOES on its own, which is a different
+            kind of setting from a value new projects inherit. */}
+        <div className="border-t border-line">
+          <SettingsSection
+            title="Status automation"
+            description="Let jobs move themselves as the work actually happens, instead of someone remembering to."
+          >
+            <StatusAutomationSettings
+              value={settings.projectStatusAutomation}
+              disabled={!canEdit}
+              onChange={(next) => setSettings((prev) => ({ ...prev, projectStatusAutomation: next }))}
+            />
+            <p className="t-micro text-muted">
+              Jobs only ever move FORWARD, and never into Confirmed, Completed or Invoiced — those
+              commit stock, money or a lock, so they stay a deliberate click. Every automatic move is
+              recorded in the job&rsquo;s activity log.
+            </p>
+          </SettingsSection>
+        </div>
+
+        {/* Follow-ups (FEATUREDOCS/82) — tasks the app writes on its own when a
+            quote or invoice goes quiet. Sits beside status automation: both
+            change what the app does unprompted. */}
+        <div className="border-t border-line">
+          <SettingsSection
+            title="Follow-ups"
+            description="Put the next chase on someone's list when a quote or invoice goes quiet — so nothing depends on remembering."
+          >
+            <FollowUpSettingsPanel
+              value={settings.followUps}
+              disabled={!canEdit}
+              onChange={(next) => setSettings((prev) => ({ ...prev, followUps: next }))}
+            />
+            <p className="t-micro text-muted">
+              Follow-ups are internal tasks — Flow never emails your clients. Only quotes and invoices
+              sent after follow-ups were switched on are ever chased.
+            </p>
+          </SettingsSection>
+        </div>
+
+        {/* Crew & time (work-layer Phase 4, #1246) — the crew planner's
+            confirmation layer. Its own section: unlike status automation this
+            governs Triage visibility and an email opt-in, not the job lifecycle. */}
+        <div className="border-t border-line">
+          <SettingsSection
+            title="Crew & time"
+            description="Tune the crew planner's confirmation layer — when an unanswered offer surfaces to you, and whether crew get a reminder before call time."
+          >
+            <CrewTimeSettingsPanel
+              value={settings.crewTime}
+              disabled={!canEdit}
+              onChange={(next) => setSettings((prev) => ({ ...prev, crewTime: next }))}
+            />
           </SettingsSection>
         </div>
       </div>

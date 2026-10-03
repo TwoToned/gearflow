@@ -212,6 +212,52 @@ export function flaggedAssetEmail(data: FlaggedAssetEmailData) {
   };
 }
 
+export interface QuoteExpiringEmailData extends BaseEmailData {
+  projectNumber: string;
+  clientName: string | null;
+  version: number;
+  total: number | null;
+  daysLeft: number;
+  /** Already past `validUntil` — words the copy differently from "expiring soon". */
+  expired: boolean;
+}
+
+function quoteExpiringPluralDays(n: number): string {
+  return n === 1 ? "" : "s";
+}
+
+function quoteExpiringSubject(data: QuoteExpiringEmailData): string {
+  const clientSuffix = data.clientName ? ` — ${data.clientName}` : "";
+  return data.expired ? `Expired: quote ${data.projectNumber}${clientSuffix}` : `Expiring soon: quote ${data.projectNumber}${clientSuffix}`;
+}
+
+function quoteExpiringStatusLine(data: QuoteExpiringEmailData): string {
+  if (data.expired) {
+    const overdue = Math.abs(data.daysLeft);
+    return `expired ${overdue} day${quoteExpiringPluralDays(overdue)} ago`;
+  }
+  return `is valid for ${data.daysLeft} more day${quoteExpiringPluralDays(data.daysLeft)}`;
+}
+
+export function quoteExpiringEmail(data: QuoteExpiringEmailData) {
+  const link = absolute(data.appBaseUrl, data.href);
+  const totalStr = data.total != null ? `$${data.total.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null;
+  const clientStr = data.clientName ? ` for ${escapeHtml(data.clientName)}` : "";
+  const totalSuffix = totalStr ? `, worth <strong>${totalStr}</strong>` : "";
+  return {
+    subject: quoteExpiringSubject(data),
+    html: emailWrapper(
+      `
+        <h2>${data.expired ? "A sent quote has expired" : "A sent quote is expiring soon"}</h2>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p><strong>${escapeHtml(data.projectNumber)} v${data.version}</strong>${clientStr} ${quoteExpiringStatusLine(data)}${totalSuffix}, with no response yet.</p>
+        ${ctaButton(link, "Open project finance")}
+      `,
+      data,
+    ),
+  };
+}
+
 export interface IncidentReportEmailData extends BaseEmailData {
   assetLabel: string;
   description: string;
@@ -227,6 +273,58 @@ export function incidentReportEmail(data: IncidentReportEmailData) {
         <p>Hi ${escapeHtml(data.recipientName)},</p>
         <p>An issue was reported on <strong>${escapeHtml(data.assetLabel)}</strong>: ${escapeHtml(data.description)}</p>
         ${ctaButton(link, "View report")}
+      `,
+      data,
+    ),
+  };
+}
+
+// ─── Follow-up automation: the morning brief (FEATUREDOCS/82) ────────────────
+
+export interface FollowUpBriefItem {
+  title: string;
+  why: string;
+  href: string;
+  urgent: boolean;
+  overdue: boolean;
+}
+
+export interface FollowUpBriefEmailData extends BaseEmailData {
+  /** Chasing rungs due today or overdue. */
+  chase: FollowUpBriefItem[];
+  /** Decision / housekeeping rungs — "won, lost, extend or park?". */
+  decide: FollowUpBriefItem[];
+}
+
+const BRIEF_SECTION_CAP = 5;
+
+function briefSection(heading: string, items: FollowUpBriefItem[], appBaseUrl: string): string {
+  if (!items.length) return "";
+  const shown = items.slice(0, BRIEF_SECTION_CAP);
+  const more = items.length - shown.length;
+  const rows = shown
+    .map((i) => {
+      const flag = i.urgent ? " <strong style=\"color:#b45309;\">· event soon</strong>" : i.overdue ? " <span style=\"color:#b91c1c;\">· overdue</span>" : "";
+      return `<li style="margin:0 0 10px;"><a href="${absolute(appBaseUrl, i.href)}" style="color:#111;font-weight:600;">${escapeHtml(i.title)}</a>${flag}<br/><span style="color:#666;font-size:13px;">${escapeHtml(i.why)}</span></li>`;
+    })
+    .join("");
+  const moreLine = more > 0 ? `<p style="color:#666;font-size:13px;">and ${more} more in Flow.</p>` : "";
+  return `<h3 style="margin:20px 0 8px;">${heading}</h3><ul style="padding-left:18px;margin:0;">${rows}</ul>${moreLine}`;
+}
+
+/** One email per person per business day, only when something is due — plain
+ *  sections, no counts in the subject beyond what's due (design §8.6). */
+export function followUpBriefEmail(data: FollowUpBriefEmailData) {
+  const total = data.chase.length + data.decide.length;
+  return {
+    subject: `${total} follow-up${total === 1 ? "" : "s"} due today`,
+    html: emailWrapper(
+      `
+        <h2>Your follow-ups for today</h2>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        ${briefSection("Chase today", data.chase, data.appBaseUrl)}
+        ${briefSection("Decisions needed", data.decide, data.appBaseUrl)}
+        ${ctaButton(absolute(data.appBaseUrl, data.href), "Open your work list")}
       `,
       data,
     ),

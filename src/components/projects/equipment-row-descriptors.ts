@@ -19,7 +19,7 @@ import type { LineItemData } from "./equipment-row-types";
 // from the item alone. Each field preserves the EXACT boolean expression the row
 // previously used inline, so rendering is unchanged.
 
-export type RowSource = "owned" | "subhire" | "custom" | "sale";
+export type RowSource = "owned" | "subhire" | "custom" | "sale" | "container";
 export type RowRole = "parent" | "child" | "standalone";
 
 export interface RowDescriptor {
@@ -67,15 +67,27 @@ export function describeRow(item: LineItemData): RowDescriptor {
   // single tagged unit stays inline (rendered next to the name). Kit children
   // themselves never expand their units.
   const hasExpandableUnits = !hasChildren && !item.isKitChild && taggedUnitCount(item) > 1;
-  const source: RowSource = item.isCustomItem
-    ? "custom"
-    : isSubhire
-      ? "subhire"
-      : isSale
-        ? "sale"
-        : "owned";
+  const source: RowSource = item.isContainerLineItem
+    ? "container"
+    : item.isCustomItem
+      ? "custom"
+      : isSubhire
+        ? "subhire"
+        : isSale
+          ? "sale"
+          : "owned";
   const role: RowRole = item.isKitChild ? "child" : hasChildren ? "parent" : "standalone";
   return { source, role, isKit, isSubhire, isSale, hasChildren, hasExpandableUnits };
+}
+
+/** #1296 — true when an ordinary (non-container) line has any container
+ *  involvement worth a small read-only chip: a Packing-tab plan, or any of
+ *  its own units physically packed. Edited on the Packing tab (phase 4),
+ *  never here. */
+export function hasContainerChip(item: LineItemData): boolean {
+  if (item.isContainerLineItem) return false;
+  if (item.plannedContainerId) return true;
+  return (item.units ?? []).some((u) => !!u.containerId);
 }
 
 /**

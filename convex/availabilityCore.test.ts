@@ -96,7 +96,7 @@ describe("availabilityCore pencil-rule constants == overbooking-core (byte-for-b
 
 // ─── (b) computeModelAvailability fixtures ────────────────────────────────────
 
-type L = { projectId: string; quantity?: number; status?: string; subHireId?: string | null };
+type L = { projectId: string; quantity?: number; status?: string; subHireId?: string | null; type?: string };
 type P = {
   id: string;
   rentalStartDate?: number | null;
@@ -241,6 +241,19 @@ describe("computeModelAvailability", () => {
         { projectId: "thisP", quantity: 5, status: "CANCELLED" },
         { projectId: "thisP", quantity: 3, subHireId: "sh1" },
         { projectId: "thisP", quantity: 2, status: "CONFIRMED" },
+      ],
+      projects: [{ id: "thisP", rentalStartDate: START, rentalEndDate: END, status: "CONFIRMED" }],
+    });
+    const r = computeModelAvailability(b, { rentalStart: START, rentalEnd: END, excludeProjectId: "thisP" });
+    expect(r).toMatchObject({ booked: 2, available: 1 });
+  });
+
+  test("WS11 (#950): a SALE line is excluded from booked, even alongside a rental line on the same project", () => {
+    const b = mkBundle({
+      assets: [{ status: "AVAILABLE" }, { status: "AVAILABLE" }, { status: "AVAILABLE" }],
+      lines: [
+        { projectId: "thisP", quantity: 2, status: "CONFIRMED" },
+        { projectId: "thisP", quantity: 10, status: "CONFIRMED", type: "SALE" },
       ],
       projects: [{ id: "thisP", rentalStartDate: START, rentalEndDate: END, status: "CONFIRMED" }],
     });

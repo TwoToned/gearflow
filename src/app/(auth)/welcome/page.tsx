@@ -9,6 +9,7 @@ import { getOrgCreationPolicy } from "@/server/site-admin";
 import { checkInviteCode, getJoinableOrgs, requestToJoinOrg, type JoinableOrg } from "@/server/org-join";
 import { AuthShell } from "../auth-playful";
 import { cn } from "@/lib/utils";
+import { capture, AnalyticsEvent, type OnboardingForkChoice } from "@/lib/analytics";
 import { toast } from "sonner";
 import { Loader2, Building2, Users2, ArrowLeft, KeyRound, Globe2, MailWarning } from "lucide-react";
 
@@ -17,7 +18,8 @@ import { Loader2, Building2, Users2, ArrowLeft, KeyRound, Globe2, MailWarning } 
  * user with zero live org memberships and no pending invite (invite signups
  * skip this entirely — register/page.tsx routes them straight to
  * /invite/[id]). `/no-organization` and every 0-org redirect in the app now
- * land here instead of the old dead-end `/onboarding` bounce.
+ * land here instead of the old dead-end `/onboarding` bounce (now `/setup`,
+ * C1 #1098).
  */
 export default function WelcomePage() {
   const router = useRouter();
@@ -67,7 +69,10 @@ export default function WelcomePage() {
     <ForkView
       session={session}
       policy={policy}
-      onCreateCompany={() => router.push("/onboarding")}
+      onCreateCompany={() => {
+        capture(AnalyticsEvent.OnboardingForkChosen, { choice: "create" satisfies OnboardingForkChoice });
+        router.push("/setup");
+      }}
       onJoinTeam={() => setView("join")}
       onNotYou={handleNotYou}
     />
@@ -189,6 +194,7 @@ function InviteCodeEntry() {
         setError("We couldn't find that invite. Check the code or link and try again.");
         return;
       }
+      capture(AnalyticsEvent.OnboardingForkChosen, { choice: "join_invite" satisfies OnboardingForkChoice });
       router.push(`/invite/${found.id}`);
     } catch {
       setError("Something went wrong. Please try again.");
@@ -251,6 +257,7 @@ function DomainJoinRequest() {
     try {
       await requestToJoinOrg(orgId);
       setRequestedIds((prev) => new Set(prev).add(orgId));
+      capture(AnalyticsEvent.OnboardingForkChosen, { choice: "join_domain" satisfies OnboardingForkChoice });
       toast.success("Request sent — you'll hear back once an admin reviews it.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't send that request.");

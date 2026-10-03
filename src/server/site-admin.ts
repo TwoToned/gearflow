@@ -22,7 +22,7 @@ import { env } from "@/env";
 import { logActivity } from "@/lib/activity-log";
 import { runWithConcurrency } from "@/lib/concurrency";
 import { requireSiteAdmin, isSiteAdmin as checkIsSiteAdmin } from "@/lib/admin-auth";
-import { seedOrgDefaultTaxRate } from "@/server/public-org";
+import { seedOrgDefaults } from "@/server/public-org";
 import { getAnyOrgForAudit } from "@/lib/audit-org";
 import { getOrgCreationGateSettings, generateOrgCreationCode } from "@/lib/org-creation-gate";
 
@@ -196,10 +196,10 @@ export async function adminCreateOrganization(data: {
 
   // Additive (org + owner created): mirror best-effort after the transaction.
   await upsertMemberMirrorByOrgUser(org.id, ownerId);
-  // Seed the new org's tax rate from the platform's current default (#1077, A7)
-  // — copied once, at creation, never a live read — same as the self-serve
-  // onboarding path.
-  await seedOrgDefaultTaxRate(org.id);
+  // Seed the new org's tax rate + currency from the platform's current
+  // defaults (#1077, A7; C1, #1098) — copied once, at creation, never a live
+  // read — same as the self-serve /setup path.
+  await seedOrgDefaults(org.id, normalizedSlug);
 
   await logActivity({
     organizationId: org.id,

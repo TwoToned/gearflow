@@ -15,8 +15,10 @@ import { getKitById } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
 
 /** Model-accessory detail for the add-form picker (issue #794) — resolved bulk-asset
- *  tag + model name, not just the bare bulkAssetId. */
-type ModelAccessoryDetail = {
+ *  tag + model name, not just the bare bulkAssetId. Exported so `AccessorySelectionFields`
+ *  (shared by the add-form and the existing-line "Edit accessories" dialog) can type its
+ *  `accessories` prop against this shape without redeclaring it. */
+export type ModelAccessoryDetail = {
   id: string;
   bulkAssetId: string;
   quantity: number;
@@ -82,6 +84,12 @@ export async function checkAvailability(
       if (li.modelId !== modelId) continue;
       if (li.status === "CANCELLED") continue;
       if (li.subHireId != null) continue;
+      // WS11 (#950) — SALE lines never count as rental demand: NEW_STOCK draws
+      // from Model.saleStockQuantity (a separate pool), and FROM_RENTAL_STOCK
+      // already removed the unit from the rental pool at sale time, which
+      // effectiveStock already reflects. Counting it here too double-subtracts
+      // it and pencils a phantom overbooking. See convex/lib/availabilityCore.ts.
+      if (li.type === "SALE") continue;
       const p = projectById.get(li.projectId);
       if (!p) continue;
       if (p.isTemplate) continue;
@@ -101,6 +109,7 @@ export async function checkAvailability(
       if (li.modelId !== modelId) continue;
       if (li.status === "CANCELLED") continue;
       if (li.subHireId != null) continue;
+      if (li.type === "SALE") continue;
       if (li.projectId !== excludeProjectId) continue;
       const p = projectById.get(li.projectId);
       overlappingLineItems.push({
@@ -194,16 +203,16 @@ export async function lookupAssetByTag(
 
     const lookupAllProjects = await getProjectsByOrg(organizationId);
     const lookupConflictProjectIds = lookupAllProjects
-      .filter(
-        (p) =>
-          !p.isTemplate &&
-          !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-          p.rentalStartDate != null &&
-          p.rentalEndDate != null &&
-          (p.rentalStartDate as number) <= endDate.getTime() &&
-          (p.rentalEndDate as number) >= startDate.getTime() &&
-          (excludeProjectId ? p.id !== excludeProjectId : true),
-      )
+      .filter((p) => {
+        if (p.isTemplate) return false;
+        if (["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "")) return false;
+        if (excludeProjectId && p.id === excludeProjectId) return false;
+        // WS2 (#941) — availability reads the PROJECT window (falls back to rental
+        // when unset), not the rental window directly.
+        const { start: pStart, end: pEnd } = getProjectWindow(p);
+        if (pStart == null || pEnd == null) return false;
+        return pStart <= endDate.getTime() && pEnd >= startDate.getTime();
+      })
       .map((p) => p.id);
     const lookupProjectMap = new Map(lookupAllProjects.map((p) => [p.id, p]));
     const lookupConflictSet = new Set(lookupConflictProjectIds);
@@ -294,16 +303,16 @@ export async function checkKitAvailability(
 
   const kitAvailAllProjects = await getProjectsByOrg(organizationId);
   const kitAvailConflictProjectIds = kitAvailAllProjects
-    .filter(
-      (p) =>
-        !p.isTemplate &&
-        !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-        p.rentalStartDate != null &&
-        p.rentalEndDate != null &&
-        (p.rentalStartDate as number) <= endDate.getTime() &&
-        (p.rentalEndDate as number) >= startDate.getTime() &&
-        (excludeProjectId ? p.id !== excludeProjectId : true),
-    )
+    .filter((p) => {
+      if (p.isTemplate) return false;
+      if (["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "")) return false;
+      if (excludeProjectId && p.id === excludeProjectId) return false;
+      // WS2 (#941) — availability reads the PROJECT window (falls back to rental
+      // when unset), not the rental window directly.
+      const { start: pStart, end: pEnd } = getProjectWindow(p);
+      if (pStart == null || pEnd == null) return false;
+      return pStart <= endDate.getTime() && pEnd >= startDate.getTime();
+    })
     .map((p) => p.id);
   const kitAvailProjectMap = new Map(kitAvailAllProjects.map((p) => [p.id, p]));
   const kitAvailConflictSet = new Set(kitAvailConflictProjectIds);

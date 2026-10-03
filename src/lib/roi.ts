@@ -28,6 +28,11 @@ export const NEVER_COUNTED_STATUSES = [
   "ENQUIRY",
   "QUOTING",
   "QUOTED",
+  // #1236 — agreed but unpaid is still pipeline. An invoice has been raised, but
+  // the org's own model says the job isn't on until the money lands, so counting
+  // it as booked earnings would inflate the fleet's numbers with jobs that may
+  // never pay. It joins BOOKED_STATUSES the moment payment confirms it.
+  "AWAITING_PAYMENT",
   "CANCELLED",
 ] as const;
 
@@ -112,4 +117,43 @@ export function computeRoi(
 export function formatPayback(payback: number | null): string {
   if (payback == null) return "—";
   return `${payback.toFixed(payback < 10 ? 2 : 1)}×`;
+}
+
+/**
+ * May this line item be excluded from revenue allocation by hand (#1249)?
+ *
+ * Only a line the allocator would otherwise CREDIT is worth offering the toggle
+ * on. Everything ruled out here is already excluded by a structural rule in
+ * `convex/lib/allocation.ts`, so a toggle there would be a switch that does
+ * nothing:
+ *
+ *  - no `modelId` — a custom/labour/transport/container line has nothing to
+ *    attribute revenue TO (`EXCLUDED_NON_GEAR`);
+ *  - a `SALE` line — a disposal, never rental ROI (`EXCLUDED_SALE`);
+ *  - a sub-hire line — it was never our capital (`EXCLUDED_SUBHIRE`);
+ *  - a container row (road case, trolley) — `isNonGear`, and it carries a
+ *    `modelId` and renders in the equipment tab, so `modelId != null` alone
+ *    would offer it a toggle that persists and flips its own label while
+ *    changing nothing.
+ *
+ * The mirror of `canRevealPriceInRollup` / `canDiscloseGroupChild`: the menu
+ * can't offer a toggle the engine then ignores. This is the MENU's copy of the
+ * rule; `isRoiExcluded` in convex/lib/allocation.ts enforces the same
+ * exclusions server-side, because the field is patchable and the UI is not a
+ * trust boundary.
+ */
+export function canExcludeFromRoi(item: {
+  modelId?: string | null;
+  type?: string | null;
+  isCustomItem?: boolean | null;
+  isContainerLineItem?: boolean | null;
+  subHireId?: string | null;
+}): boolean {
+  return (
+    item.modelId != null &&
+    item.type !== "SALE" &&
+    item.isCustomItem !== true &&
+    item.isContainerLineItem !== true &&
+    item.subHireId == null
+  );
 }

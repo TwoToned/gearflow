@@ -213,6 +213,12 @@ describe("buildAssetBookings", () => {
     ];
     expect(buildAssetBookings("asset1", items, units, idx, WINDOW)).toEqual([]);
   });
+
+  it("ignores a RETURNED unit — a returned asset no longer occupies the booking (parity with findAssetConflict)", () => {
+    const items = [li({ id: "ok", projectId: "p1", assetId: null })];
+    const units = [unit({ lineItemId: "ok", assetId: "asset1", status: "RETURNED" })];
+    expect(buildAssetBookings("asset1", items, units, idx, WINDOW)).toEqual([]);
+  });
 });
 
 describe("countLineItemsByProject", () => {

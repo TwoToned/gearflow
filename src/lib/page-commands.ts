@@ -32,19 +32,15 @@ export interface PageCommand {
 
 export const PAGE_COMMANDS: PageCommand[] = [
   {
+    // Dashboard is the landing page again (D10C, reversing work-layer phase
+    // 0.5/#1242) — this entry absorbs Today's old aliases (including the
+    // "My tasks" command's, since /my-tasks and /today both just redirect
+    // here now).
     label: "Dashboard",
     href: "/dashboard",
-    aliases: ["dashboard", "home", "main", "overview", "dash"],
+    aliases: ["dashboard", "overview", "dash", "home", "main", "today", "mytasks", "tasks", "todo", "mytodo"],
     icon: "LayoutDashboard",
     description: "Overview and recent activity",
-  },
-  {
-    label: "My tasks",
-    href: "/my-tasks",
-    aliases: ["mytasks", "tasks", "todo", "mytodo"],
-    icon: "ListTodo",
-    description: "Open tasks assigned to you, across every project",
-    searchable: false,
   },
   {
     label: "Assets",
@@ -118,7 +114,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
     searchable: true,
     searchType: "project",
     searchHrefPrefix: "/warehouse",
-    searchStatusFilter: ["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
+    searchStatusFilter: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
     children: [
       {
         label: "Deploy",
@@ -130,7 +126,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
         searchType: "project",
         searchHrefPrefix: "/warehouse",
         searchHrefSuffix: "?tab=check-out",
-        searchStatusFilter: ["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
+        searchStatusFilter: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
       },
       {
         label: "Return",
@@ -142,7 +138,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
         searchType: "project",
         searchHrefPrefix: "/warehouse",
         searchHrefSuffix: "?tab=check-in",
-        searchStatusFilter: ["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
+        searchStatusFilter: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"],
       },
     ],
   },

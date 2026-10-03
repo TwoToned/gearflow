@@ -6,6 +6,7 @@ import { Download, Eye } from "lucide-react";
 
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { useDocumentDatesConfig } from "@/hooks/use-document-dates-config";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { computeValidUntil } from "@/lib/quote-validity";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,21 @@ interface IssuedState {
   artifactReady: boolean;
 }
 
+/** Preview must reflect the dates currently in the form, not the invoice's
+ *  stored (pre-issue) row — otherwise "preview" always shows the default
+ *  Net-N due date and ignores whatever the user just typed (#989 follow-up). */
+function buildInvoicePreviewHref(
+  projectId: string,
+  invoiceId: string,
+  invoiceDateMs: number,
+  previewDueDate: number | null,
+): string {
+  const params = new URLSearchParams({ type: "invoice", preview: "1", invoiceId });
+  if (Number.isFinite(invoiceDateMs)) params.set("invoiceDate", String(invoiceDateMs));
+  if (previewDueDate != null) params.set("dueDate", String(previewDueDate));
+  return `/api/documents/${projectId}?${params.toString()}`;
+}
+
 /**
  * The invoice half of #989's issue-time parity with the quote send dialog.
  * Invoice date + due date (defaulting to invoice date + the org's
@@ -70,6 +86,8 @@ export function IssueInvoiceDialog({ open, onOpenChange, projectId, invoiceId, i
         ? computeValidUntil(invoiceDateMs, dates.paymentTermsDays, dates.timezone)
         : null;
 
+  const previewHref = buildInvoicePreviewHref(projectId, invoiceId, invoiceDateMs, previewDueDate);
+
   function reset() {
     setInvoiceDateStr(todayStr());
     setDueDateStr(null);
@@ -88,8 +106,13 @@ export function IssueInvoiceDialog({ open, onOpenChange, projectId, invoiceId, i
     setError(null);
     try {
       const result = await invoiceWrites.issue(invoiceId, {
-        invoiceDate: new Date(invoiceDateStr),
-        dueDate: dueDateStr ? new Date(dueDateStr) : undefined,
+        // Parsed as LOCAL midnight (matches `invoiceDateMs`/`previewDueDate`
+        // above) — a bare `new Date(dueDateStr)` parses a date-only string as
+        // UTC midnight, which `startOfDayInTimezone` (convex/invoicesWrites.ts)
+        // then re-floors to the org's timezone, silently rolling the date back
+        // a day (the "entered 3rd, invoice printed 2nd" bug).
+        invoiceDate: new Date(`${invoiceDateStr}T00:00:00`),
+        dueDate: dueDateStr ? new Date(`${dueDateStr}T00:00:00`) : undefined,
         notes: notes || undefined,
       });
       setIssued({ invoiceNumber: result.invoiceNumber, artifactReady: result.artifactReady });
@@ -98,7 +121,7 @@ export function IssueInvoiceDialog({ open, onOpenChange, projectId, invoiceId, i
         toast.warning("The document didn't generate yet — you can retry from the invoice row.");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to issue invoice");
+      setError(convexErrorMessage(e, "Failed to issue invoice"));
     } finally {
       setIssuing(false);
     }
@@ -157,7 +180,7 @@ export function IssueInvoiceDialog({ open, onOpenChange, projectId, invoiceId, i
                 Cancel
               </Button>
               <Button type="button" asChild variant="line">
-                <a href={`/api/documents/${projectId}?type=invoice&preview=1&invoiceId=${invoiceId}`} target="_blank" rel="noopener noreferrer">
+                <a href={previewHref} target="_blank" rel="noopener noreferrer">
                   <Eye className="h-3.5 w-3.5" /> Preview
                 </a>
               </Button>

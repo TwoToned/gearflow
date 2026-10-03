@@ -1,9 +1,35 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isMemberAuth } from "./lib/auth";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+// Work-or-project RBAC transition (#1243): task reads were gated on `project:read`
+// before the `work` resource existed. Any already-issued API key/OAuth scope still
+// carries only `project:*` — accept EITHER scope so old keys keep working while new
+// grants can be issued against `work` going forward. Same-file, literal-argument
+// helpers so scripts/generate-api-registry.mts's local-helper inlining picks up both
+// scopePairs (it collects every requireOrgReadFor match, not just the first).
+async function requireWorkOrProjectOrgRead(ctx: QueryCtx, orgId: string): Promise<void> {
+  try {
+    await requireOrgReadFor(ctx, orgId, "work");
+  } catch {
+    await requireOrgReadFor(ctx, orgId, "project");
+  }
+}
+
+async function requireWorkOrProjectOrgReadDoc(
+  ctx: QueryCtx,
+  doc: { organizationId?: string | null } | null,
+): Promise<void> {
+  try {
+    await requireOrgReadDocFor(ctx, doc, "work");
+  } catch {
+    await requireOrgReadDocFor(ctx, doc, "project");
+  }
+}
 
 /**
  * Thin CRUD for ProjectTask (Convex table "projectTasks"). GENERATED — Phase 2/5.
@@ -19,7 +45,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDocFor(ctx, doc, "project");
+    await requireWorkOrProjectOrgReadDoc(ctx, doc);
     return doc;
   },
 });
@@ -27,12 +53,37 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    // Subtasks (parentId set) are excluded — this is a flat top-level list; a subtask
+    // only ever renders nested under its parent (Phase 1, #1243).
     return (await ctx.db
       .query("projectTasks")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect()).filter((r) => r.organizationId === orgId);
+      .collect()).filter((r) => r.organizationId === orgId && !r.parentId);
+  },
+});
+
+/**
+ * A task's subtasks (Phase 1, #1243) — the one level `parentId` enables. Sorted
+ * sortOrder→createdAt, same convention as `listByProjectWithRelations`. Org-checked
+ * against the PARENT (by_parentId is global — a subtask always inherits its
+ * parent's organizationId, so checking the parent's org is equivalent to checking
+ * each child's, and avoids re-fetching the parent doc for every caller).
+ */
+export const listSubtasks = query({
+  args: { parentId: v.string(), orgId: v.string() },
+  handler: async (ctx, { parentId, orgId }) => {
+    await requireWorkOrProjectOrgRead(ctx, orgId);
+    const rows = (await ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", parentId)).collect())
+      .filter((t) => t.organizationId === orgId); // by_parentId is global → org re-check
+    rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
+    return rows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status ?? "TODO",
+      completedAt: t.completedAt ?? null,
+    }));
   },
 });
 
@@ -44,7 +95,7 @@ export const listByProject = query({
 export const assignees = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     const members = await ctx.db
       .query("members")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
@@ -75,10 +126,10 @@ export const assignees = query({
 export const listByProjectWithRelations = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     const rows = (
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-    ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
+    ).filter((t) => t.organizationId === orgId && !t.parentId); // by_projectId is global → org re-check; subtasks render nested, never as flat siblings
     rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
 
     const out = [];
@@ -110,11 +161,20 @@ export const listByProjectWithRelations = query({
         status: t.status ?? "TODO",
         priority: t.priority ?? "NORMAL",
         dueDate: t.dueDate != null ? new Date(t.dueDate).toISOString() : null,
+        // #tae40e — the span's opening end, same ISO shape as dueDate so the
+        // consumer slices both to YYYY-MM-DD the same way.
+        startDate: t.startDate != null ? new Date(t.startDate).toISOString() : null,
         checklist: t.checklist ?? null,
         assigneeUserId: t.assigneeUserId ?? null,
         assigneeCrewId: t.assigneeCrewId ?? null,
         assigneeUser,
         assigneeCrew,
+        // #1244 — the Work tab's stage columns/grouping and recurrence badge.
+        stage: t.stage ?? null,
+        followUp: followUpView(t),
+        recurrence: t.recurrence ?? null,
+        watcherUserIds: t.watcherUserIds ?? [],
+        sortOrder: t.sortOrder ?? 0,
       });
     }
     return out;
@@ -137,14 +197,27 @@ const MY_OPEN_TASKS_LIMIT = 100;
 type MyOpenTaskDoc = {
   id: string;
   organizationId: string;
-  projectId: string;
+  // Absent for a personal task (Phase 1, #1243 quick-add with no project).
+  projectId?: string;
   title: string;
   status?: string;
   priority?: string;
   dueDate?: number;
   assigneeUserId?: string;
   assigneeCrewId?: string;
+  parentId?: string;
+  stage?: string;
+  automation?: Doc<"projectTasks">["automation"];
 };
+
+/** The slice of an automated follow-up the UI shows (design §8.7): why the row
+ *  exists, which rung, whether it's urgent, and the quote it chases. Null for
+ *  every human-created row. */
+function followUpView(t: { automation?: Doc<"projectTasks">["automation"] }) {
+  const a = t.automation;
+  if (!a) return null;
+  return { ruleKey: a.ruleKey, rung: a.rung, why: a.why, urgent: a.urgent, subjectId: a.subjectId };
+}
 
 async function resolveCrewIdsForUser(ctx: QueryCtx, userId: string, orgId: string): Promise<string[]> {
   // by_userId is global — a person can hold crew records in more than one org
@@ -170,6 +243,7 @@ async function collectMyOpenTasks(
   const byId = new Map<string, MyOpenTaskDoc>();
   const keep = (r: MyOpenTaskDoc) => {
     if (r.organizationId !== orgId) return; // global index — org re-check
+    if (r.parentId) return; // subtasks render nested under their parent, never as a standalone Today row
     byId.set(r.id, r);
   };
   for (const status of OPEN_TASK_STATUSES) {
@@ -212,7 +286,7 @@ async function resolveProjectsFor(
   ctx: QueryCtx,
   tasks: MyOpenTaskDoc[],
 ): Promise<Map<string, { name: string; projectNumber: string }>> {
-  const projectIds = [...new Set(tasks.map((t) => t.projectId))];
+  const projectIds = [...new Set(tasks.map((t) => t.projectId).filter((id): id is string => id != null))];
   const projects = new Map<string, { name: string; projectNumber: string }>();
   await Promise.all(
     projectIds.map(async (pid) => {
@@ -223,12 +297,18 @@ async function resolveProjectsFor(
   return projects;
 }
 
+/** Split out of serializeMyOpenTask (R-3.6) purely to keep that function's complexity down. */
+function projectFieldsFor(t: MyOpenTaskDoc, projects: Map<string, { name: string; projectNumber: string }>) {
+  const found = t.projectId ? projects.get(t.projectId) : undefined;
+  return found ?? { name: "", projectNumber: "" };
+}
+
 function serializeMyOpenTask(
   t: MyOpenTaskDoc,
   projects: Map<string, { name: string; projectNumber: string }>,
   now: number,
 ) {
-  const project = projects.get(t.projectId) ?? { name: "", projectNumber: "" };
+  const project = projectFieldsFor(t, projects);
   return {
     id: t.id,
     title: t.title,
@@ -236,18 +316,20 @@ function serializeMyOpenTask(
     priority: t.priority ?? "NORMAL",
     dueDate: t.dueDate ?? null,
     overdue: t.dueDate != null && t.dueDate < now,
-    projectId: t.projectId,
+    projectId: t.projectId ?? null,
     projectName: project.name,
     projectNumber: project.projectNumber,
     assigneeUserId: t.assigneeUserId ?? null,
     assigneeCrewId: t.assigneeCrewId ?? null,
+    stage: t.stage ?? null,
+    followUp: followUpView(t),
   };
 }
 
 export const myOpenTasks = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
+    await requireWorkOrProjectOrgRead(ctx, orgId);
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
@@ -381,7 +463,7 @@ export const updateMany = mutation({
         applied.completedAt = p.status === "DONE" ? now : null;
       }
       await ctx.db.patch(doc._id, applied);
-      projectIds.add(doc.projectId);
+      if (doc.projectId) projectIds.add(doc.projectId);
       updated++;
     }
     return { updated, skipped, projectIds: [...projectIds] };
@@ -400,7 +482,7 @@ export const removeMany = mutation({
       const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
       if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
       await ctx.db.delete(doc._id);
-      projectIds.add(doc.projectId);
+      if (doc.projectId) projectIds.add(doc.projectId);
       deleted++;
     }
     return { deleted, skipped, projectIds: [...projectIds] };
@@ -424,6 +506,51 @@ export const reorderMany = mutation({
   },
 });
 
+const WORK_COUNTS_MAX_PROJECTS = 300;
+
+/**
+ * Per-project work counts for the revived project board (#1244, design §8.3:
+ * "Cards show '9/14 work · 1 overdue'"). ONE batched query over N project
+ * ids — same shape `collaboration.listBlockingForProjects` already
+ * established for the board's blocking-comment badge — NOT an org-wide
+ * `projectTasks` collect: each project's tasks are fetched via
+ * `by_organizationId_projectId`, so every read is bounded by ONE project's
+ * own task count (which is what makes this a "bounded-by-domain" read per
+ * collect-ratchet.mjs's own carve-out, not the org-wide/no-index hazard
+ * shape the R-9.8 ratchet tracks) rather than the whole org's `projectTasks`
+ * table, which is a genuinely growing, transaction-scale table (unlike
+ * `projects`/`clients`, which the board's existing R-8.3.3 exception already
+ * covers as catalog-scale).
+ */
+export const workCountsForProjects = query({
+  args: { orgId: v.string(), projectIds: v.array(v.string()), now: v.number() },
+  handler: async (ctx, { orgId, projectIds, now }) => {
+    await requireWorkOrProjectOrgRead(ctx, orgId);
+    const ids = [...new Set(projectIds)].slice(0, WORK_COUNTS_MAX_PROJECTS);
+    const out: Record<string, { done: number; total: number; overdue: number }> = {};
+    await Promise.all(
+      ids.map(async (projectId) => {
+        const rows = await ctx.db
+          .query("projectTasks")
+          .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+          .collect();
+        let done = 0;
+        let total = 0;
+        let overdue = 0;
+        for (const t of rows) {
+          if (t.parentId) continue; // subtasks don't count toward the card's own total
+          if (t.status === "CANCELLED") continue;
+          total++;
+          if (t.status === "DONE") done++;
+          else if (t.dueDate != null && t.dueDate < now) overdue++;
+        }
+        out[projectId] = { done, total, overdue };
+      }),
+    );
+    return out;
+  },
+});
+
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
   getById: { summary: "Get one project task by id.", danger: "low", mcpTier: 1 },
@@ -431,4 +558,6 @@ export const agentOps: AgentOpsAnnotations = {
   assignees: { summary: "List people (org members + crew) a task can be assigned to.", danger: "low", mcpTier: 2 },
   listByProjectWithRelations: { summary: "List a project's tasks with assignee joins, sorted for the task board.", danger: "low", mcpTier: 1 },
   myOpenTasks: { summary: "List the caller's own open (TODO/IN_PROGRESS) tasks across all projects in an org.", danger: "low", mcpTier: 2 },
+  listSubtasks: { summary: "List a task's subtasks (one level).", danger: "low", mcpTier: 2 },
+  workCountsForProjects: { summary: "Batched done/total/overdue task counts for a set of projects (project board cards).", danger: "low", mcpTier: 3 },
 };

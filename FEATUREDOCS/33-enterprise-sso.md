@@ -82,7 +82,7 @@ Priority order (in `resolveRoleFromGroups`):
 5. Social login and passkey buttons also available
 
 ### Post-Login
-- `handlePostLogin` calls `getMyOrganizations()` to resolve the user's memberships: 0 → `/onboarding`, 1 → activate it, 2+ → `/select-organization` (never guess)
+- `handlePostLogin` calls `getMyOrganizations()` to resolve the user's memberships: 0 → `/welcome` (the create-vs-join fork, #1092), 1 → activate it, 2+ → `/select-organization` (never guess)
 - Calls `organization.setActive()` for Better Auth compatibility
 - Redirects to `/dashboard` (or the picker's `callbackUrl`)
 

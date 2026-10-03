@@ -1,6 +1,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { inclusiveCalendarDays, computeBlendedCharge } from "./billingDerivation";
+import { resolveLiveVersionIdForProject, versionRows } from "./versionScope";
 
 /**
  * Shared native port of the project-group suggested-price calculation (#943 —
@@ -40,12 +41,10 @@ export async function computeGroupSuggestedPrice(
 ): Promise<number> {
   const chargeableDays = inclusiveCalendarDays(args.rentalStartDate, args.rentalEndDate);
 
-  const lines = (
-    await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
-      .collect()
-  ).filter(
+  // LIVE-ONLY (#1228) — a project group's suggested price is derived from its
+  // own live-plan members.
+  const liveVersionId = await resolveLiveVersionIdForProject(ctx, args.projectId, args.orgId);
+  const lines = (await versionRows(ctx, "projectLineItems", liveVersionId)).filter(
     (li) => li.organizationId === args.orgId && li.groupId === args.groupId && !li.isKitChild,
   );
 

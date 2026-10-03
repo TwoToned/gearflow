@@ -2,6 +2,14 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
+> **#1160** — deploying and checking in now advance the PROJECT's status too:
+> the last packed line leaving the dock moves the job to `CHECKED_OUT`, the last
+> outstanding line coming back moves it to `RETURNED` (the returns station's old
+> private auto-advance, generalised and extended to the project-scoped check-in).
+> Org-configurable, on by default. See
+> [76 — Project Status Automation](./76-project-status-automation.md).
+
+
 ## UI Terminology
 - "Check Out" is displayed as **"Deploy"** in the UI
 - "Check In" is displayed as **"Return"** in the UI
@@ -66,6 +74,27 @@ rest to the item reverse. **Reverses flip whole units** — they do not sub-spli
 pool's quantity (matches how bulk deploy/return create whole unit rows). Legacy unit-less
 lines (deployed via `checkOutDeployWholeLine`) restore their line counters directly and skip
 the unit rollup (which would otherwise zero them).
+
+#### Undo (#1222) — a second, faster path to the same reverses
+The Move-back buttons above are a deliberate, menu-driven correction. **Undo** is
+the same reverses (`undeployItems`/`undeployKitsBatch` for a deploy,
+`unreturnItems`/`unreturnKitsBatch` for a return), offered from the toast the
+moment a deploy/return happens — no menu, no navigating to find the row. Added
+once in `src/hooks/use-warehouse-writes.ts` (D2 of
+`docs/designs/qol-sweep-2026-09.md`: reversibility is a property of the
+mutation, not of the button), so every one of the six browser-direct warehouse
+writes (`checkOutItems`, `checkOutKit`, `checkOutKitsBatch`, `checkInItems`,
+`checkInKit`, `checkInKitsBatch`) now shows a `toast.success("Deployed 12
+items", { action: { label: "Undo", … } })`-style toast, 10 seconds, with the
+action **omitted** (not disabled) when the operator lacks the REVERSE
+permission — a `check_out`-only role can deploy but is never offered Undo on
+it, since undoing a deploy needs `check_in` (and the mirror for returns).
+
+The one behavioural difference from a plain Move-back click: **Undo also
+reverts the auto-advance** (#1160) the forward call made, via
+`revertAutoAdvanceAuditId` — see
+[76 — Project Status Automation](./76-project-status-automation.md#reverting).
+A manual Move-back click still never touches status.
 
 **Footgun (fixed, gearflow#797): a RETURNED unit's `prepStatus` is stale history, never
 "live" state.** Returning a unit (`returnLineUnits`) flips its `status` to `RETURNED` but
@@ -227,16 +256,83 @@ See [Bulk Check-In Totals](./52-bulk-checkin.md) for the full engine writeup.
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
 - `lookupAssetForScan()` treats scanned serialized assets as serialized (not bulk) even if the matching line item has qty > 1
 
-#### Scan Feedback (Audio)
+#### Scan-to-assign in the "Assign assets" dialog
+
+Prepping a multi-quantity serialised line opens a dialog with one dropdown per
+unit — eleven headsets means eleven dropdowns. A packer holding the gear already
+knows which unit they picked up, so the dialog carries its own scan field
+(`AssetTagInput`, `continuous`) that fills the next slot the tag can go in.
+
+Resolution is a pure function, `resolvePickerScan`
+(`src/lib/asset-picker-scan.ts`), with four outcomes — the component only
+applies the result and plays the matching `useScanFeedback` tone:
+
+| Outcome | When | Feedback |
+|---|---|---|
+| `assigned` | first empty slot whose pool contains the tag | `success` |
+| `already-assigned` | the tag is already sitting in a slot | `exception` + which slot |
+| `no-slot` | the tag's model is in the dialog but every slot is full | `exception` |
+| `unknown` | not an available asset for anything here | `error` |
+
+Two ordering rules that look arbitrary and aren't:
+
+1. **`already-assigned` is checked BEFORE searching for an empty slot.** Without
+   it, re-scanning a unit you already logged would duplicate it into the next
+   empty slot. Head-down through eleven identical headsets, "did that one
+   register?" is the question actually being asked, so it answers with the slot
+   number instead of silently doing nothing.
+2. **`no-slot` is distinct from `unknown`.** "You've already got enough of
+   those" and "that tag is wrong" send the operator to different places.
+
+Matching is case-insensitive (printed labels and HID wedges disagree about case
+often enough that a case-sensitive miss reads as a broken scanner), and the tag
+passes `normaliseScannedValue` first, so a decode outside the tag grammar is
+dropped rather than reported as an unknown asset.
+
+**The scan field is `sticky`** — `DialogContent` is the scroll container, and
+eleven slots would scroll it out of view exactly when it's being used every few
+seconds.
+
+**⚠️ Scan resolution reads `assetPickerItemsRef`, never the `assetPickerItems`
+state directly.** Continuous scanning delivers hits from a decode callback, so
+the handler React invokes is the one captured at the last COMMITTED render. Two
+units scanned before that commit lands would both resolve against the same rows,
+pick the same empty slot, and the second would silently overwrite the first —
+eleven headsets scanned, ten assigned, no error anywhere. The ref is written
+synchronously *before* the `setState`, so each scan sees the previous one
+regardless of render timing.
+
+Every picker write (dialog open, scan, dropdown) goes through
+`applyAssetPickerItems`, which updates the ref and the state together;
+`setAssetPickerItems` is called in exactly one place. Don't add a second write
+site, and don't "simplify" the resolver's input back to the state value — a
+test in `asset-picker-scan.test.ts` deliberately asserts that resolving two
+scans against stale rows DOES collide, so the reason for the ref stays visible.
+
+**⚠️ This nests a Radix modal Dialog (the camera) inside a Radix modal Dialog
+(the picker).** That is supported and covered by
+`src/components/scanner/__tests__/nested-in-dialog.smoke.test.tsx`, which pins
+the behaviour that matters: the host stays mounted, the host is inert while the
+camera is on top, the host is INTERACTIVE again once the camera closes (the
+`pointer-events: none` leak CLAUDE.md warns about), and the camera is released
+both on scanner close and on host teardown. Don't swap the camera for a Base UI
+popup here — see the composition rule in CLAUDE.md.
+
+#### Scan Feedback (Audio + Haptics)
 The three scan mutations on `warehouse/[projectId]/page.tsx` — `scanMutation` (Pick/Prep),
 `deployScanMutation` (Deploy tab), `returnScanMutation` (Return tab) — play an audio tone
-on every resolve result via the shared **`useScanFeedback`** hook (`@/hooks/use-scan-feedback`,
-backed by `src/lib/scan-feedback.ts`; see FEATUREDOCS/14 §"Audio / Scan Feedback" for the
-underlying implementation and the legacy `playBeep` defects it replaced). A
-`<ScanAudioToggle>` icon button (`@/components/scan-audio-toggle`) sits in the page header,
-next to the Documents/pick-list actions, controlling all three scanners at once.
+**and** a vibration pattern on every resolve result via the shared **`useScanFeedback`**
+hook (`@/hooks/use-scan-feedback`, backed by `src/lib/scan-feedback.ts`; see FEATUREDOCS/14
+§"Audio / Scan Feedback" for the underlying implementation and the legacy `playBeep` defects
+it replaced). A `<ScanFeedbackToggle>` icon button (`@/components/scan-feedback-toggle`) sits
+in the page header, next to the Documents/pick-list actions, controlling audio and haptics
+for all three scanners at once — one toggle, not two (#1220, D5 of
+`docs/designs/qol-sweep-2026-09.md`).
 
-Each resolve branch maps to one of the 4 tone kinds:
+Each resolve branch maps to one of the 4 tone kinds (`SCAN_FEEDBACK_TONES`), each mirrored
+one-for-one by a vibration pattern (`SCAN_FEEDBACK_HAPTICS`, `navigator.vibrate` shape — a
+single short tick for `success`, two firm buzzes for `error`, a double tick for `exception`,
+barely-there for `info`; a table test pins the two maps to the same key set):
 - **`success`** — every `toast.success(...)` branch: kit/item prepped, deployed, returned,
   or a kit-member scan verified.
 - **`error`** — hard failures that block the scan outright: not on project, already
@@ -258,6 +354,49 @@ Each resolve branch maps to one of the 4 tone kinds:
 
 A mutation's own `onError` (the server call itself failing — network, permission, etc.,
 distinct from a resolved-but-rejected scan result) always plays `error`.
+
+**iOS Safari does not implement `navigator.vibrate`** — `playScanHaptic` feature-detects and
+silently no-ops there (accepted outcome, not a bug; see `src/lib/scan-feedback.ts`). Android
+handhelds buzz distinctly per verdict; the toggle silences both audio and haptics together.
+
+#### Scan History Strip (#1223)
+
+`useScanFeedback().play(kind, entry?)` takes an optional second argument —
+
+```ts
+interface ScanHistoryEntry {
+  label: string;   // what was scanned, as the operator would say it — "SM58 · A-1042"
+  outcome: string;  // the verdict in words — "Prepped", "Already deployed"
+  undo?: { label: string; run: () => void | Promise<void> };
+}
+```
+
+— and the hook keeps the last **five** `{ ...entry, kind, at }` records in memory, newest
+first (`entries`), rendered by `<ScanHistoryStrip>`
+(`src/components/warehouse/scan-history-strip.tsx`) above the scan input on every scan
+surface: the Pick/Prep, Deploy and Return tabs here, `/warehouse/returns`,
+`/test-and-tag/quick-test`, and `/check/[assetTag]`. An un-migrated `play(kind)` call (no
+second argument) still beeps and buzzes exactly as before — the widening is additive, call
+sites adopt it one at a time.
+
+State is **in-memory and per-mount, deliberately not persisted** (D6 of
+`docs/designs/qol-sweep-2026-09.md`) — a strip that survived a refresh would read as a log,
+and it isn't one (the activity log is the log). It collapses to nothing when empty, and
+caps its mobile footprint at two visible rows plus a "Show all" expander (five rows would
+push the scan input itself off a phone's fold).
+
+**Undo, when present, is always someone else's guarded trigger — never a second one.** A
+`ScanHistoryEntry.undo` on the six-write family is literally `AnnouncedWrite.scanUndo`
+(`src/lib/warehouse-undo-toast.ts`) — the exact double-tap-guarded closure the write's own
+toast Undo button calls — so the strip and the toast can never fire two independent
+reverses for the same write, or disagree about whether one already fired. Of the ~44 scan
+verdict call sites, only the small handful that resolve through `checkOutItems` /
+`checkOutKit` / `checkInItems` / `checkInKit` carry an `undo`; every validation/lookup/error
+verdict (the large majority) omits it — there is nothing to reverse. Only the single
+**newest** entry that carries an `undo` ever renders the button, and only inside a 10-second
+window matching the toast's own duration (`exposeNewestUndoOnly` in
+`src/hooks/use-scan-feedback.ts`) — a strip full of Undo buttons invites undoing the wrong
+one.
 
 ### Kit/Prep-Kit Flows
 - Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren
@@ -294,6 +433,12 @@ job(s) it belongs to as you go."
   ordered **overdue-first** (a server-side port of `getProjectUrgency` from
   `src/app/(app)/warehouse/page.tsx`'s "The floor" landing page — kept in
   lockstep deliberately, not imported, since that file is a client component).
+  Both copies (and the landing page's own list query, `convex/warehouseList.ts`)
+  read the **gear-committed window** (`getProjectWindow` — `projectStartDate`/
+  `projectEndDate`, falling back to rental when unset), never raw
+  `rentalStartDate`/`rentalEndDate` — "is this gear physically overdue" is
+  exactly what the committed window means (2026-09 fix; see FEATUREDOCS/11
+  invariant #4).
 - **One-shot fetch, not a live subscription.** The `/warehouse/*` route group's
   LCP budget is already over its registered threshold
   (`docs/exceptions.md` R-8.9.3) — a whole-org reactive subscription here would

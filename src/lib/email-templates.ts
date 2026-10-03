@@ -306,3 +306,99 @@ export function testTagDigestEmail({
 
   return { subject, html };
 }
+
+// ─── B4 (#1096) — the "never activated" email ladder ───────────────────────
+// Four distinct tones, matching the design doc's own table: days 1/3/7 are
+// encouraging nudges, day 23/29 are plain warnings, day 30 is reassuring
+// (archive is reversible) rather than a goodbye. Sent to the org's owner —
+// the only member of a never-activated org by definition (R-8.12.4: no
+// other org data is safe to reference in these, since the whole point is
+// that none exists).
+
+/** Day 1/3/7 — deep-links to the resumable dashboard checklist (#1104). */
+export function dormancyNudgeEmail({
+  orgName,
+  checklistUrl,
+  platformName = "RVLT Flow",
+}: {
+  orgName: string;
+  checklistUrl: string;
+  platformName?: string;
+}): EmailContent {
+  const safeOrgName = escapeHtml(orgName);
+  return {
+    subject: `Finish setting up ${orgName}`,
+    html: emailShell(
+      `<h2>Pick up where you left off</h2>` +
+        `<p><strong>${safeOrgName}</strong> is set up on ${platformName}, but there's nothing in it yet — ` +
+        `no gear, no jobs. The checklist below picks up exactly where you left off.</p>` +
+        emailButton({ href: checklistUrl, label: "Continue setup" }),
+    ),
+  };
+}
+
+/** Day 23 — "we'll archive in 7 days, add anything at all and we won't." */
+export function dormancyArchiveWarningEmail({
+  orgName,
+  checklistUrl,
+  platformName = "RVLT Flow",
+}: {
+  orgName: string;
+  checklistUrl: string;
+  platformName?: string;
+}): EmailContent {
+  const safeOrgName = escapeHtml(orgName);
+  return {
+    subject: `We'll archive ${orgName} in 7 days`,
+    html: emailShell(
+      `<h2>Still there?</h2>` +
+        `<p><strong>${safeOrgName}</strong> has had no activity since it was created on ${platformName}. ` +
+        `We'll archive it in 7 days. Add a piece of gear, or anything else at all, and we won't.</p>` +
+        emailButton({ href: checklistUrl, label: "Continue setup" }),
+    ),
+  };
+}
+
+/** Day 29 — the final warning, 24 hours out. */
+export function dormancyFinalWarningEmail({
+  orgName,
+  checklistUrl,
+  platformName = "RVLT Flow",
+}: {
+  orgName: string;
+  checklistUrl: string;
+  platformName?: string;
+}): EmailContent {
+  const safeOrgName = escapeHtml(orgName);
+  return {
+    subject: `Last chance — ${orgName} will be archived tomorrow`,
+    html: emailShell(
+      `<h2>One day left</h2>` +
+        `<p><strong>${safeOrgName}</strong> will be archived on ${platformName} in 24 hours. ` +
+        `Add anything at all before then and it stays active.</p>` +
+        emailButton({ href: checklistUrl, label: "Continue setup" }),
+    ),
+  };
+}
+
+/** Day 30 — archived. Reassuring, not a goodbye: it's reversible, one click. */
+export function dormancyArchivedEmail({
+  orgName,
+  reactivateUrl,
+  platformName = "RVLT Flow",
+}: {
+  orgName: string;
+  reactivateUrl: string;
+  platformName?: string;
+}): EmailContent {
+  const safeOrgName = escapeHtml(orgName);
+  return {
+    subject: `${orgName} has been archived`,
+    html: emailShell(
+      `<h2>${safeOrgName} is archived</h2>` +
+        `<p>It had no activity for 30 days, so we've archived it on ${platformName}. ` +
+        `This isn't permanent — everything is still there, and one click brings it straight back.</p>` +
+        emailButton({ href: reactivateUrl, label: "Reactivate this organisation" }),
+    ),
+  };
+}

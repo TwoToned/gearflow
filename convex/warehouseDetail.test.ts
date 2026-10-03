@@ -25,8 +25,14 @@ function assertNoKeyDeep(value: unknown, forbidden: string[], path = "$") {
 async function seed(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "viewer" });
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "P1", status: "CONFIRMED", isTemplate: false });
-    await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", quantity: 1 });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "P1", status: "CONFIRMED", isTemplate: false,
+      liveVersionId: "v-p1",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1" });
+    await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", quantity: 1,
+      versionId: "v-p1",
+      lineageId: "li1",
+    });
   });
 }
 

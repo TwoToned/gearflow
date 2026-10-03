@@ -22,7 +22,7 @@ import {
   DEFAULT_INVOICE_NUMBER_INCREMENT_RESET,
   DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
 } from "@/lib/invoice-number";
-import { orgDocumentSettingsSchema } from "@/lib/validations/org-settings";
+import { orgDocumentSettingsSchema, projectStatusAutomationSchema, crewTimeSettingsSchema, followUpSettingsSchema } from "@/lib/validations/org-settings";
 import { DEFAULT_QUOTE_VALIDITY_DAYS } from "@/lib/quote-validity";
 import { DEFAULT_PAYMENT_TERMS_DAYS } from "@/lib/invoice-terms";
 import type { OrgSettings, TestTagSettings } from "@/lib/org-settings-types";
@@ -83,6 +83,33 @@ export async function updateOrganization(data: {
     const parsed = orgDocumentSettingsSchema.safeParse(data.settings.documents);
     if (!parsed.success) {
       throw new Error(`Document settings: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+    }
+  }
+
+  // #1160 — reject an unknown/mistyped automation switch rather than persisting a
+  // blob the Convex side will silently read as "enabled" (`.strict()` in the schema).
+  if (data.settings.projectStatusAutomation) {
+    const parsed = projectStatusAutomationSchema.safeParse(data.settings.projectStatusAutomation);
+    if (!parsed.success) {
+      throw new Error(`Status automation: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+    }
+  }
+
+  // Work-layer Phase 4 (#1246) — reject a bad crew-time setting before
+  // persisting (same posture as the two blocks above).
+  if (data.settings.crewTime) {
+    const parsed = crewTimeSettingsSchema.safeParse(data.settings.crewTime);
+    if (!parsed.success) {
+      throw new Error(`Crew & time settings: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+    }
+  }
+
+  // Follow-up automation (FEATUREDOCS/82) — same posture: a bad offset is a
+  // save-time error, not a value the engine silently clamps.
+  if (data.settings.followUps) {
+    const parsed = followUpSettingsSchema.safeParse(data.settings.followUps);
+    if (!parsed.success) {
+      throw new Error(`Follow-up settings: ${parsed.error.issues[0]?.message ?? "invalid"}`);
     }
   }
 

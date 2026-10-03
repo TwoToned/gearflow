@@ -58,6 +58,9 @@ type QuoteRow = {
   quoteDate: number | null;
   validUntil: number | null;
   effectiveStatus?: string;
+  /** #1233 (Phase 6) — present on `quoteArtifactContext`'s real response;
+   *  optional here since most tests in this file don't care about it. */
+  versionId?: string | null;
 };
 
 /** The Convex row, mutated by the attach mutation exactly as the real one is. */
@@ -168,6 +171,32 @@ describe("a sent quote's PDF is byte-identical on repeat download while the live
     expect(generatePdf).toHaveBeenCalledTimes(1);
     expect(Array.from(storedBytes.get(first.pdfFileId)!)).toEqual([5, 6, 7]);
   });
+
+  // #1233 (Phase 6) — the SAME never-re-render guarantee for a quote sent
+  // from a NON-live version: `quoteId` now reaches `generatePdf` (threading
+  // that version's content into the render), but the render-once/attach-once
+  // structure is completely unchanged — a "download" is still just serving
+  // whatever storage id is already on the row.
+  test("a quote sent from a NON-live version is ALSO frozen — repeat generateQuoteArtifact calls never re-render", async () => {
+    quoteRow.versionId = "v-non-live";
+    generatePdf.mockResolvedValueOnce(new Uint8Array([4, 2, 0]));
+    const first = await generateQuoteArtifact("q1");
+    expect(first.generated).toBe(true);
+    expect(generatePdf).toHaveBeenCalledWith(
+      "p1", "org_1", "quote",
+      expect.objectContaining({ quoteId: "q1" }),
+    );
+
+    // Even if the version's own content changed underneath (a new render
+    // would now produce different bytes), a second call must never re-render.
+    generatePdf.mockResolvedValue(new Uint8Array([9, 9, 9]));
+    const second = await generateQuoteArtifact("q1");
+
+    expect(second.pdfFileId).toBe(first.pdfFileId);
+    expect(second.generated).toBe(false);
+    expect(generatePdf).toHaveBeenCalledTimes(1);
+    expect(Array.from(storedBytes.get(first.pdfFileId)!)).toEqual([4, 2, 0]);
+  });
 });
 
 describe("generateQuoteArtifact — stamped dates (the silent-validity-extension bug)", () => {
@@ -178,6 +207,7 @@ describe("generateQuoteArtifact — stamped dates (the silent-validity-extension
     expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "quote", {
       stampedDates: { documentDate: QUOTE_DATE, quoteValidUntil: VALID_UNTIL },
       versionSuffix: "v2",
+      quoteId: "q1",
     });
   });
 
@@ -191,6 +221,7 @@ describe("generateQuoteArtifact — stamped dates (the silent-validity-extension
     expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "quote", {
       stampedDates: { documentDate: SENT_AT, quoteValidUntil: undefined },
       versionSuffix: "v2",
+      quoteId: "q1",
     });
   });
 

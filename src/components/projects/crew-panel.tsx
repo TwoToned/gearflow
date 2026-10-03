@@ -37,6 +37,7 @@ import {
   sendCrewOffer,
   sendCrewOfferAll,
   sendBulkMessage,
+  requestCrewAvailability,
 } from "@/server/crew-communication";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useProjectServices, refreshProjectServices } from "@/hooks/use-project-services";
@@ -53,10 +54,8 @@ import {
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
-import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
-import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
-import { JustificationDialog } from "./justification-dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CategoryCardHeading } from "./equipment-cards";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -101,6 +100,10 @@ import {
 } from "@/components/ui/select";
 
 
+// "Any role" sentinel for RequestAvailabilityDialog's role Select (work-layer
+// Phase 4, #1246) — not one of the real crewRoleId values.
+const ALL = "__all_roles__";
+
 const allStatuses = [
   "PENDING",
   "OFFERED",
@@ -135,18 +138,17 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   // a crew booking on this project.
   useProjectCrewLiveSync(projectId, orgId);
 
-  // #990 — rate/rateType/estimatedHours are LOCKED_CREW_ASSIGNMENT_FIELDS
-  // (convex/lib/projectLocks.ts); locked whenever the tier is anything but
-  // OPEN and no unlock session is open (the same `defaultToZero` condition).
-  const [lockNow] = useState(() => Date.now());
-  const lockStatus = useProjectLockStatus(projectId, orgId, lockNow);
-  const rateLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
-  const rateLockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
+  // #1230 — rate/rateType/estimatedHours are LOCKED_CREW_FIELDS
+  // (convex/lib/projectLocks.ts); locked whenever `pricingLocked` is set.
+  const lockStatus = useProjectPricingLock(projectId, orgId);
+  const rateLocked = lockStatus.pricingLocked;
+  const rateLockReason = resolveLockCopy(lockStatus).oneLiner;
 
   const [editId, setEditId] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
   const [offerAllOpen, setOfferAllOpen] = useState(false);
+  const [requestAvailabilityOpen, setRequestAvailabilityOpen] = useState(false);
   const [removeAssignmentId, setRemoveAssignmentId] = useState<string | null>(null);
 
   const asgWrites = useCrewAssignmentWrites();
@@ -177,18 +179,11 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     enabled: !!orgId && cpTopAuthed && conflictRangeStartMs != null && conflictRangeEndMs != null,
   });
 
-  // #990 — prompts for a reason at ON_SITE+ with no open unlock session.
-  const justifiedRemoveAssignment = useJustifiedMutation(
-    (args: { id: string; justification?: string }) => asgWrites.remove(args.id, args.justification),
-    lockStatus,
-  );
-  const justifiedBulkRemoveAssignments = useJustifiedMutation(
-    (args: { ids: string[]; justification?: string }) => asgWrites.bulkDelete(args.ids, args.justification),
-    lockStatus,
-  );
+  // #1230: removing a crew assignment is structural — never gated by the
+  // pricing lock, so no justification wrapper is needed.
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => justifiedRemoveAssignment.run({ id }),
+    mutationFn: (id: string) => asgWrites.remove(id),
     onSuccess: () => {
       toast.success("Crew member removed");
       refreshProjectCrew(projectId);
@@ -234,7 +229,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     allAssignmentIds.length > 0 && selectedAssignmentIds.length === allAssignmentIds.length;
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => justifiedBulkRemoveAssignments.run({ ids }),
+    mutationFn: (ids: string[]) => asgWrites.bulkDelete(ids),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       toast.success(`Removed ${r.deleted} assignment${r.deleted === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -333,6 +328,14 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
               <MessageSquare className="h-4 w-4" />
               Message
             </Button>
+            <Button
+              variant="line"
+              size="sm"
+              onClick={() => setRequestAvailabilityOpen(true)}
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Request availability…
+            </Button>
           </CanDo>
           <Button
             variant="line"
@@ -346,6 +349,11 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
             projectId={projectId}
             open={callSheetOpen}
             onOpenChange={setCallSheetOpen}
+          />
+          <RequestAvailabilityDialog
+            projectId={projectId}
+            open={requestAvailabilityOpen}
+            onOpenChange={setRequestAvailabilityOpen}
           />
         </div>
       </div>
@@ -405,10 +413,6 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         pending={bulkDeleteMut.isPending}
         onConfirm={() => bulkDeleteMut.mutate(selectedAssignmentIds)}
       />
-
-      {/* #990 — justification prompts backing deleteMutation/bulkDeleteMut above. */}
-      <JustificationDialog {...justifiedRemoveAssignment.dialogProps} />
-      <JustificationDialog {...justifiedBulkRemoveAssignments.dialogProps} />
 
       {/* Assignments table */}
       {(!assignments || assignments.length === 0) ? (
@@ -1502,6 +1506,153 @@ function BulkMessageDialog({
               )}
               <Send className="mr-2 h-4 w-4" />
               Send message
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Request Availability (work-layer Phase 4, #1246, design §8.5) ──────────
+// Bulk: pick a service (crewCountRequired lives there), a role and a date
+// range; sends the EXISTING offer email to every eligible crew member
+// (`requestCrewAvailability`, `src/server/crew-communication.ts`) — first-come
+// fill up to the service's required headcount, auto-nudge unanswered after
+// 24h (existing notification cron), no SMS.
+
+/** Extracted so the label ternary/`??` chains don't add to the dialog
+ *  component's own complexity count (R-3.6). */
+function serviceSelectLabel(services: { id: string; title: string }[], serviceId: string): string {
+  return services.find((s) => s.id === serviceId)?.title ?? "Select a service…";
+}
+function roleSelectLabel(roles: { id: string; name: string }[], crewRoleId: string): string {
+  if (crewRoleId === ALL) return "Any role";
+  return roles.find((r) => r.id === crewRoleId)?.name ?? "Any role";
+}
+function hasNoCrewCountSet(service: { crewCountRequired: number | null } | undefined): boolean {
+  return !!service && !service.crewCountRequired;
+}
+
+function RequestAvailabilityDialog({
+  projectId,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+  const roleDocs = useCrewRoles(open ? orgId : undefined);
+  const { data: projectServices = [] } = useProjectServices(open ? projectId : undefined);
+
+  const roles = useMemo(
+    () => [...(roleDocs ?? [])].filter((r) => r.isActive === true).sort((a, b) => a.name.localeCompare(b.name)),
+    [roleDocs],
+  );
+  const services = (projectServices as { id: string; title: string; status?: string; crewCountRequired: number | null; crewAssignments: unknown[] }[])
+    .filter((s) => s.status !== "CANCELLED");
+
+  const [serviceId, setServiceId] = useState<string>("");
+  const [crewRoleId, setCrewRoleId] = useState<string>(ALL);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const selectedService = services.find((s) => s.id === serviceId);
+
+  const mutation = useServerMutation({
+    mutationFn: () =>
+      requestCrewAvailability({
+        projectId,
+        serviceId,
+        ...(crewRoleId !== ALL ? { crewRoleId } : {}),
+        startDate: new Date(startDate).getTime(),
+        endDate: new Date(endDate || startDate).getTime(),
+      }),
+    onSuccess: (result) => {
+      if (result.eligible === 0) {
+        toast.error("No eligible crew found for that role and date range");
+      } else {
+        toast.success(`Availability requested from ${result.offered} of ${result.eligible} eligible crew`);
+      }
+      if (result.errors?.length) toast.error(`${result.errors.length} offer(s) failed to send`);
+      onOpenChange(false);
+      refreshProjectCrew(projectId);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const canSubmit = !!serviceId && !!startDate;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Request availability</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-ui-text text-muted">
+            Sends the crew offer email to every eligible, available crew member for the role and
+            dates below — first come, first filled, up to the service&apos;s required headcount.
+          </p>
+          <div className="space-y-1.5">
+            <Label>Service</Label>
+            <Select value={serviceId} onValueChange={setServiceId}>
+              <SelectTrigger aria-label="Service">
+                <SelectValue>{serviceSelectLabel(services, serviceId)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {services.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.title}
+                    {s.crewCountRequired ? ` (needs ${s.crewCountRequired})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {hasNoCrewCountSet(selectedService) && (
+              <p className="text-caption text-muted">
+                This service has no crew count set — offers still send, but there&apos;s nothing to
+                auto-fill against.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Role</Label>
+            <Select value={crewRoleId} onValueChange={setCrewRoleId}>
+              <SelectTrigger aria-label="Role">
+                <SelectValue>{roleSelectLabel(roles, crewRoleId)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Any role</SelectItem>
+                {roles.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>From</Label>
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>To</Label>
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} min={startDate || undefined} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="line" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !canSubmit}>
+              {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Send className="mr-2 h-4 w-4" />
+              Request availability
             </Button>
           </DialogFooter>
         </div>

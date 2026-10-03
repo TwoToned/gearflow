@@ -14,7 +14,7 @@
 // must NEVER be re-derived as "needs prepping" just because its prepStatus is no
 // longer PACKED. status === RETURNED always wins.
 
-import type { LineItem } from "./warehouse-types";
+import { accessoryChildrenOf, isAccessoryParent, type LineItem } from "./warehouse-types";
 
 export type WarehouseStageKey =
   | "to_prep"
@@ -105,6 +105,14 @@ export function summarizeWarehouseStages(items: LineItem[]): WarehouseStageCount
 
   const visit = (li: LineItem) => {
     if (li.isContainerLineItem) return;
+    if (isAccessoryParent(li)) {
+      // An accessory parent is a real, independently fulfilled asset (not a
+      // wrapper like a kit) — count it AND its accessories.
+      const stage = deriveItemStage(li);
+      if (stage) counts[stage] += 1;
+      for (const child of accessoryChildrenOf(li)) visit(child);
+      return;
+    }
     if (isParentLine(li)) {
       for (const child of li.childLineItems ?? []) visit(child);
       return;

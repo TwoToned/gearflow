@@ -129,3 +129,42 @@ export function DiscountField({ label = "Discount", hint, ...inputProps }: Disco
     </Field>
   );
 }
+
+export interface TaxRateFieldProps {
+  id?: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  disabled?: boolean;
+  label?: string;
+  hint?: string;
+}
+
+/**
+ * T3 (#1091, docs/designs/tax-model.md §3) — per-line tax rate override.
+ * Blank (the common case) inherits the project's rate, then the org
+ * default, then zero — same precedence `recalc.ts` resolves server-side.
+ * No $/% toggle (unlike `DiscountField`): a tax rate is always a plain
+ * percentage, never a dollar amount.
+ */
+export function TaxRateField({ id, value, onValueChange, disabled, label = "Tax rate override", hint }: TaxRateFieldProps) {
+  return (
+    <Field label={label} htmlFor={id}>
+      <div className="relative">
+        <Input
+          id={id}
+          type="number"
+          step="0.01"
+          min={0}
+          max={100}
+          placeholder="Inherit"
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          disabled={disabled}
+          className="pr-8"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ui-text text-muted">%</span>
+      </div>
+      <p className="t-micro text-muted">{hint ?? "Leave blank to use the project's rate."}</p>
+    </Field>
+  );
+}

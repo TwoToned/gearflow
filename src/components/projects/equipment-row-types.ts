@@ -7,9 +7,17 @@
  * circular-dependency cluster (POLICY.md R-3.5).
  */
 
+import type { CategoryPricingDisplay } from "@/lib/category-pricing-display";
+
 export interface LineItemData {
   id: string;
   modelId?: string | null;
+  /** Widened for the "Edit accessories" menu entry's eligibility check
+   *  (src/lib/accessory-plan-eligibility.ts) — already present on the runtime
+   *  object (MappedLineItem carries both; equipment-tab-reconstruct's attach
+   *  helpers spread the full row), just not previously declared here. */
+  assetId?: string | null;
+  checkedOutQuantity?: number;
   description: string | null;
   quantity: number;
   unitPrice: unknown;
@@ -19,6 +27,22 @@ export interface LineItemData {
   discount?: unknown;
   /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
   discountMode?: string | null;
+  /** T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3. */
+  taxRate?: unknown;
+  /** Category price rollup, per-item reveal — this row prints its own price on
+   *  client-facing documents even though its category rolled up. Meaningless
+   *  (and never offered) outside a `pricingDisplay: "ROLLUP"` category.
+   *  See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup?: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on client-facing documents (description +
+   *  quantity, never a price). See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs?: boolean;
+  /** #1249 — the operator has excluded this line from revenue allocation, so it
+   *  takes no share of its group/kit bundle price and never counts toward model
+   *  ROI. Internal only: nothing on a client-facing document changes.
+   *  See convex/lib/allocation.ts. */
+  excludeFromRoi?: boolean;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
@@ -35,6 +59,15 @@ export interface LineItemData {
   pricedUnderLock?: boolean;
   // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
   isCustomItem?: boolean;
+  /** A container row (road case, trolley). `isNonGear` in the allocator, so it
+   *  takes no share of any pool — see canExcludeFromRoi (src/lib/roi.ts). */
+  isContainerLineItem?: boolean;
+  /** #1296 — this whole line has been packed (or planned to pack) into a
+   *  container. `plannedContainerId` is the PM's Packing-tab intent (phase 4);
+   *  `containerId` is set only on units in the reconstructed read, never here —
+   *  a line-level chip shows planned OR any-unit-packed, read-only on this tab
+   *  (edited on Packing). */
+  plannedContainerId?: string | null;
   isKitChild?: boolean;
   subHireId?: string | null;
   /** Client-document sub-hire visibility toggle ("Show as sub-hired").
@@ -75,6 +108,8 @@ export interface LineItemData {
     returnCondition?: string | null;
     asset?: { id: string; assetTag: string } | null;
     bulkAsset?: { id: string; assetTag: string } | null;
+    /** #1296 — the container this unit is physically packed inside, if any. */
+    containerId?: string | null;
   }>;
   kit?: { name?: string } | null;
   childLineItems?: LineItemData[];
@@ -96,6 +131,11 @@ export interface GroupData {
   discount: unknown;
   /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
   discountMode?: string | null;
+  /** Category price rollup, per-item reveal — this row prints its own price on
+   *  client-facing documents even though its category rolled up. Meaningless
+   *  (and never offered) outside a `pricingDisplay: "ROLLUP"` category.
+   *  See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup?: boolean;
   suggestedPrice: unknown;
   sortOrder: number;
   /** Mirrors `LineItemData.pricedUnderLock` — see that field's comment. */
@@ -170,6 +210,11 @@ export type MixedGroupSlot =
 export interface CategoryData {
   id: string;
   name: string;
+  /** Category price rollup — `ROLLUP` prints this category's lines with their
+   *  money columns blank and one derived subtotal on the section header of a
+   *  quote/invoice. Optional so fixtures predating the feature stay valid;
+   *  absent reads as `ITEMISED`. See src/lib/category-pricing-display.ts. */
+  pricingDisplay?: CategoryPricingDisplay;
   sortOrder: number;
   groups: GroupData[];
   subHireGroupTargets?: SubHireGroupData[];

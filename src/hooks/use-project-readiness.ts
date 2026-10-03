@@ -61,6 +61,7 @@ export function useProjectReadiness(
       crew: readiness.crew,
       pricing: readiness.pricing,
       conflicts: conflicts ?? [],
+      packing: readiness.packing,
     });
     return { checks, summary: summariseReadiness(checks), isLoading: false };
   }, [readiness, conflicts]);

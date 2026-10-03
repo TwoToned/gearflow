@@ -23,12 +23,14 @@ describe("RESOURCES", () => {
       "orgSettings", "orgMembers", "supplier", "subHire", "crew", "reports", "checkItem",
       // WS1 (#940) — quotes/invoices/Xero.
       "invoice",
+      // Work-layer phase 1 (#1243) — added additively.
+      "work",
     ];
     expect(RESOURCES).toEqual(expected);
   });
 
-  it("has 19 resources", () => {
-    expect(RESOURCES).toHaveLength(19);
+  it("has 20 resources (19 + work, added additively for work-layer phase 1, #1243)", () => {
+    expect(RESOURCES).toHaveLength(20);
   });
 });
 

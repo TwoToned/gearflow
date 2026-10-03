@@ -20,6 +20,7 @@ import type {
   LineItemData,
 } from "@/components/projects/equipment-rows";
 import type { OverbookedInfo } from "@/lib/overbooking-core";
+import { getProjectWindow } from "@/lib/project-window";
 import {
   applyOptimisticEdits,
   applyOrderOverlay,
@@ -68,11 +69,17 @@ export function useNativeEquipmentTab(
   /** Categories' sibling of `orderOverlay`/`groupOrderOverlay` (use-equipment-dnd.ts's
    *  `resolveCategoryDragAction`) — see `CategoryOrderEdit`'s doc comment. */
   categoryOrderOverlay?: ReadonlyMap<string, CategoryOrderEdit>,
+  /** Project Versioning v2, Phase 5 (#1231) — the version being VIEWED
+   *  (`?v=`'s resolved id), or undefined to read the project's live version.
+   *  Threads straight through to `equipmentTab.bundle`'s own optional
+   *  `versionId` arg (Phase 2, #1228 — already version-aware; this is the
+   *  first UI caller to actually pass it). */
+  versionId?: string,
 ): NativeEquipmentTab {
   const enabled = !!projectId && !!orgId;
   const rawBundle = useAuthedQuery(
     api.equipmentTab.bundle,
-    enabled ? { projectId: projectId!, orgId: orgId! } : "skip",
+    enabled ? { projectId: projectId!, orgId: orgId!, versionId } : "skip",
   );
 
   // Overlay optimistic line-item edits (Phase 5d), the line-item drag-and-drop
@@ -118,8 +125,14 @@ export function useNativeEquipmentTab(
     return { ...rawBundle, lineItems, groups, subHireGroups, categorySlots, categories };
   }, [rawBundle, optimisticEdits, orderOverlay, groupOrderOverlay, categoryOrderOverlay]);
 
-  // The project doc supplies the rental window the overbooked computation needs.
+  // The project doc supplies the availability window the overbooked computation
+  // needs — resolved via getProjectWindow (gear-committed window, falling back to
+  // rental), never the raw rental dates directly. See project-window.ts.
   const project = useProject(enabled ? projectId : undefined);
+  const availabilityWindow = useMemo(
+    () => (project ? getProjectWindow(project) : { start: null, end: null }),
+    [project],
+  );
 
   // Overbooked: referenced models from the FLAT non-cancelled line items (mirrors
   // getProjectOverbookedStatus's modelIds AND relevantOverbookModelIds). Skip the
@@ -144,8 +157,8 @@ export function useNativeEquipmentTab(
           orgId: orgId!,
           modelIds,
           thisProjectId: projectId!,
-          rentalStartDate: project?.rentalStartDate ?? undefined,
-          rentalEndDate: project?.rentalEndDate ?? undefined,
+          rentalStartDate: availabilityWindow.start ?? undefined,
+          rentalEndDate: availabilityWindow.end ?? undefined,
         }
       : "skip",
   );
@@ -176,12 +189,12 @@ export function useNativeEquipmentTab(
         ? reconstructOverbookedRecord(
             bundle,
             overbooking ?? undefined,
-            toDate(project?.rentalStartDate),
-            toDate(project?.rentalEndDate),
+            toDate(availabilityWindow.start),
+            toDate(availabilityWindow.end),
             projectId,
           )
         : {},
-    [bundle, overbooking, project?.rentalStartDate, project?.rentalEndDate, projectId],
+    [bundle, overbooking, availabilityWindow, projectId],
   );
 
   return {

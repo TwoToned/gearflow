@@ -17,6 +17,7 @@ import { useOrgCountry } from "@/lib/use-org-country";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -59,6 +60,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
       shippingLatitude: null,
       shippingLongitude: null,
       taxId: "",
+      taxExempt: false,
+      taxExemptReason: "",
       paymentTerms: "",
       defaultDiscount: undefined,
       paymentProfile: "FULL_UPFRONT",
@@ -264,6 +267,27 @@ export function ClientForm({ initialData }: ClientFormProps) {
                         placeholder="0"
                       />
                     </SmartFormField>
+                  </div>
+                  {/* T3 (#1091, docs/designs/tax-model.md §2) — a hard
+                      short-circuit read by recalc: exempt = zero tax on every
+                      one of this client's projects, regardless of any
+                      project/line rate. */}
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 text-ui-text">
+                      <Controller
+                        control={form.control}
+                        name="taxExempt"
+                        render={({ field }) => (
+                          <Checkbox checked={!!field.value} onCheckedChange={(checked) => field.onChange(checked === true)} />
+                        )}
+                      />
+                      Tax exempt
+                    </label>
+                    {v.taxExempt && (
+                      <SmartFormField label="Exemption reason" hint="Printed on documents instead of a tax line, e.g. a government PO or resale certificate.">
+                        <Input {...form.register("taxExemptReason")} placeholder="e.g. Government purchase order #4471" />
+                      </SmartFormField>
+                    )}
                   </div>
                   {/* WS1 (#940), loosened when the rigid deposit-then-balance
                       sequencing was dropped in favour of an invoice menu

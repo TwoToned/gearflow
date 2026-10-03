@@ -36,6 +36,7 @@ export const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
   QUOTING: "Quoting",
   QUOTED: "Quoted",
+  AWAITING_PAYMENT: "Awaiting payment",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
@@ -81,6 +82,12 @@ export const maintenanceResultLabels: Record<string, string> = {
   PASS: "Pass",
   FAIL: "Fail",
   CONDITIONAL: "Conditional",
+};
+
+export const assetDispositionLabels: Record<string, string> = {
+  RETURN_TO_SERVICE: "Return to service",
+  KEEP_OUT_OF_SERVICE: "Keep out of service",
+  RETIRE: "Retire asset",
 };
 
 // --- Supplier Order Status ---

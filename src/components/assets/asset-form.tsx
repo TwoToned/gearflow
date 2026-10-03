@@ -39,6 +39,9 @@ import { QuickCreateLocation } from "./quick-create-location";
 import { QuickCreateSupplier } from "./quick-create-supplier";
 import { QuickCreateSupplierOrder } from "./quick-create-supplier-order";
 import { CustomFieldsInput } from "@/components/custom-fields/custom-fields-input";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActivationMilestones } from "@/hooks/use-activation-milestones";
+import { activeMilestoneKey } from "@/lib/activation-milestones";
 
 interface AssetFormProps {
   initialData?: AssetFormValues & { id: string };
@@ -60,6 +63,16 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   const [extraAssets, setExtraAssets] = useState<{ tag: string; serialNumber: string }[]>([]);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  // D3 (#1107) — see the identical note in model-form.tsx. Reads the FULL
+  // milestone state (not just the active key) because the "asset" milestone
+  // is specifically about the org's FIRST model (convex/activationMilestones.ts's
+  // hasAssetForModel is scoped to firstModelId, not "any model") — an org
+  // with two models whose first asset lands on the SECOND one hasn't
+  // actually completed the milestone, so the hand-off must check that too,
+  // not just "is asset the next milestone in the abstract".
+  const activationState = useActivationMilestones(orgId);
+  const isActiveAssetMilestone =
+    activationState != null && activeMilestoneKey(activationState) === "asset";
 
   // Reactive models (Convex). Org-scoped list returns all models; re-apply
   // getModels's default filter (active, serialized) and name sort client-side.
@@ -162,13 +175,25 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
       if (isEditing) {
         toast.success("Asset updated");
         router.push(`/assets/registry/${(result as { id: string }).id}`);
-      } else if (extraAssets.length > 0) {
-        toast.success(`${extraAssets.length + 1} assets created`);
-        router.push("/assets/registry");
-      } else {
-        toast.success("Asset created");
-        router.push(`/assets/registry/${(result as { id: string }).id}`);
+        return;
       }
+      // D3 (#1107) — offered, never forced: the navigation below is
+      // unchanged either way, this only adds an optional action button.
+      // Also requires THIS asset to be on the org's first model — the
+      // milestone (convex/activationMilestones.ts's hasAssetForModel) is
+      // scoped to firstModelId specifically, so an org with two models
+      // whose first-ever asset lands on the SECOND one hasn't actually
+      // completed it.
+      const createdToast = extraAssets.length > 0 ? `${extraAssets.length + 1} assets created` : "Asset created";
+      const isOnFirstModel = !!v.modelId && v.modelId === activationState?.firstModelId;
+      if (isActiveAssetMilestone && isOnFirstModel) {
+        toast.success(createdToast, {
+          action: { label: "Create your first job", onClick: () => router.push("/projects/new") },
+        });
+      } else {
+        toast.success(createdToast);
+      }
+      router.push(extraAssets.length > 0 ? "/assets/registry" : `/assets/registry/${(result as { id: string }).id}`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -199,24 +224,26 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
           {/* Identity */}
           <section className="space-y-5">
             <SectionTitle title="Identity" hint="What it is and how you'll find it." />
-            <Field label="Equipment model" required error={form.formState.errors.modelId?.message}>
-              <Controller control={form.control} name="modelId" render={({ field }) => (
-                <ComboboxPicker
-                  value={field.value || ""}
-                  onChange={(val) => field.onChange(val)}
-                  options={models.map((m) => ({
-                    value: m.id,
-                    label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`,
-                    description: m.modelNumber || undefined,
-                  }))}
-                  placeholder="Select a model…"
-                  searchPlaceholder="Search models…"
-                  emptyMessage="No models found."
-                  onCreateNew={() => router.push("/assets/models/new")}
-                  createNewLabel="New model"
-                />
-              )} />
-            </Field>
+            <div data-tour-anchor="tour-asset-model-field">
+              <Field label="Equipment model" required error={form.formState.errors.modelId?.message}>
+                <Controller control={form.control} name="modelId" render={({ field }) => (
+                  <ComboboxPicker
+                    value={field.value || ""}
+                    onChange={(val) => field.onChange(val)}
+                    options={models.map((m) => ({
+                      value: m.id,
+                      label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`,
+                      description: m.modelNumber || undefined,
+                    }))}
+                    placeholder="Select a model…"
+                    searchPlaceholder="Search models…"
+                    emptyMessage="No models found."
+                    onCreateNew={() => router.push("/assets/models/new")}
+                    createNewLabel="New model"
+                  />
+                )} />
+              </Field>
+            </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
@@ -468,10 +495,12 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
       {/* ─── Helper rail ──────────────────────────────────────── */}
       <aside className="hidden lg:block">
         <div className="sticky top-4 space-y-4 rounded-[var(--r-lg)] border border-line bg-paper-2/50 p-4">
-          <div>
-            <p className="t-overline text-faint">{isEditing ? "Editing" : "New asset"}</p>
-            <p className="mt-1 font-hand text-[15px] text-t-out">{helperTip}</p>
-          </div>
+          <CoachingTip
+            orgId={orgId}
+            milestoneKey="asset"
+            fallbackEyebrow={isEditing ? "Editing" : "New asset"}
+            fallbackTip={helperTip}
+          />
 
           {/* Live preview — a mini gear card that fills in as you type */}
           <div className="space-y-2 border-t border-line pt-3">

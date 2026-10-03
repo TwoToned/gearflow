@@ -28,6 +28,7 @@ import {
   maintenanceTypeLabels,
   maintenanceStatusLabels,
   maintenanceResultLabels,
+  assetDispositionLabels,
 } from "@/lib/status-labels";
 import {
   Select,
@@ -67,6 +68,8 @@ const STATUS_ORDER = [
   "CANCELLED",
 ] as const;
 const RESULT_ORDER = ["PASS", "FAIL", "CONDITIONAL"] as const;
+const DISPOSITION_ORDER = ["RETURN_TO_SERVICE", "KEEP_OUT_OF_SERVICE", "RETIRE"] as const;
+type AssetDispositionValue = (typeof DISPOSITION_ORDER)[number];
 
 export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
   const router = useRouter();
@@ -93,6 +96,13 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
       : initialData?.assetId
         ? [initialData.assetId]
         : []
+  );
+  // Per-asset outcome when closing the record out to COMPLETED — assetId not
+  // present here falls back to a default derived from the overall `result`
+  // (FAIL -> keep out of service, otherwise -> return to service), so an
+  // untouched row still submits a sensible choice.
+  const [dispositions, setDispositions] = useState<Record<string, AssetDispositionValue>>(
+    (initialData?.assetDispositions as Record<string, AssetDispositionValue> | undefined) ?? {}
   );
 
   const form = useForm<MaintenanceFormValues>({
@@ -161,10 +171,34 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
     const next = selectedAssetIds.filter((id) => id !== assetId);
     setSelectedAssetIds(next);
     form.setValue("assetIds", next);
+    setDispositions((prev) => {
+      if (!(assetId in prev)) return prev;
+      const next = { ...prev };
+      delete next[assetId];
+      return next;
+    });
+  }
+
+  const defaultDisposition: AssetDispositionValue =
+    v.result === "FAIL" ? "KEEP_OUT_OF_SERVICE" : "RETURN_TO_SERVICE";
+
+  function setDisposition(assetId: string, disposition: AssetDispositionValue) {
+    setDispositions((prev) => ({ ...prev, [assetId]: disposition }));
+  }
+
+  function setAllDispositions(disposition: AssetDispositionValue) {
+    setDispositions((prev) => {
+      const next = { ...prev };
+      for (const id of selectedAssetIds) next[id] = disposition;
+      return next;
+    });
   }
 
   function handleSubmit(data: MaintenanceFormValues) {
-    mutation.mutate({ ...data, assetIds: selectedAssetIds });
+    const resolvedDispositions = Object.fromEntries(
+      selectedAssetIds.map((id) => [id, dispositions[id] ?? defaultDisposition])
+    );
+    mutation.mutate({ ...data, assetIds: selectedAssetIds, assetDispositions: resolvedDispositions });
   }
 
   // ─── Live-preview derivations ──────────────────────────────────
@@ -379,6 +413,54 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
                   <Input type="date" {...form.register("nextDueDate")} />
                 </SmartFormField>
               </div>
+            )}
+            {statusValue === "COMPLETED" && selectedAssetIds.length > 0 && (
+              <SmartFormField
+                label="Asset disposition"
+                hint="What happens to each asset now the work is done — defaults to the result above, but each asset can be set individually."
+              >
+                <div className="space-y-2">
+                  {selectedAssetIds.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-caption text-faint">Apply to all:</span>
+                      <Select value="" onValueChange={(val) => setAllDispositions(val as AssetDispositionValue)}>
+                        <SelectTrigger className="h-8 w-auto min-w-[180px]">
+                          <SelectValue placeholder="Choose…">Choose…</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DISPOSITION_ORDER.map((d) => (
+                            <SelectItem key={d} value={d}>{assetDispositionLabels[d]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-1.5">
+                    {selectedAssetIds.map((id) => {
+                      const opt = assetOptions.find((o: { value: string; label: string }) => o.value === id);
+                      const current = dispositions[id] ?? defaultDisposition;
+                      return (
+                        <div
+                          key={id}
+                          className="flex items-center justify-between gap-2 rounded-[var(--r)] border border-line bg-paper-2 py-1 pl-2.5 pr-1.5"
+                        >
+                          <span className="min-w-0 truncate text-ui-text text-ink">{opt?.label || id}</span>
+                          <Select value={current} onValueChange={(val) => setDisposition(id, val as AssetDispositionValue)}>
+                            <SelectTrigger className="h-8 w-[190px] shrink-0">
+                              <SelectValue>{assetDispositionLabels[current]}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {DISPOSITION_ORDER.map((d) => (
+                                <SelectItem key={d} value={d}>{assetDispositionLabels[d]}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </SmartFormField>
             )}
           </div>
         </SmartFormSection>

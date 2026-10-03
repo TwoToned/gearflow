@@ -127,7 +127,7 @@ export const auth = betterAuth({
   plugins: [
     organization({
       // Phase B (#1067), B3 (#1095, D6): the one-time bootstrap (no
-      // organization exists anywhere yet, src/app/(auth)/onboarding/page.tsx)
+      // organization exists anywhere yet, src/app/(auth)/setup/page.tsx)
       // is always allowed with no code — nobody could know a signup code
       // before the first admin exists to set one. After bootstrap, creation
       // follows the site-admin `allowOrgCreation` toggle; the signup code
@@ -156,9 +156,10 @@ export const auth = betterAuth({
       },
       organizationHooks: {
         // Verifies the signup code submitted as `metadata.orgCreationCode` on
-        // the `organization.create()` call — src/app/(auth)/onboarding/page.tsx,
-        // reached via the "Set up a new company" card on /welcome (Phase B's
-        // B1 fork screen, #1092). Strips the code out of `metadata` before
+        // the `organization.create()` call — src/app/(auth)/setup/page.tsx
+        // (C1, #1098), reached via the "Set up a new company" card on
+        // /welcome (Phase B's B1 fork screen, #1092). Strips the code out of
+        // `metadata` before
         // it's persisted on the org row either way: it's a one-time proof of
         // authorization, not org data.
         beforeCreateOrganization: async ({ organization, user }) => {

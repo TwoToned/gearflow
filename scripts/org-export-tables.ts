@@ -27,7 +27,7 @@
 
 export const SCHEMA_VERSION = "1";
 
-/** 78 tables, each with a `by_organizationId` index. */
+/** 79 tables, each with a `by_organizationId` index. */
 export const DIRECT_TABLES = [
   "activityLogs",
   "apiKeys",
@@ -50,6 +50,9 @@ export const DIRECT_TABLES = [
   "crewTimeEntries",
   "customFieldDefinitions",
   "dashboardCounters",
+  // the widget board — has its own `by_organizationId` index (alongside the read
+  // path's `by_organizationId_userId`) precisely so it can export DIRECT.
+  "dashboardLayouts",
   "fileUploads",
   "groupTemplateItems",
   "groupTemplates",
@@ -77,11 +80,14 @@ export const DIRECT_TABLES = [
   "models",
   "notificationDismissals",
   "notificationEmailLogs",
+  "orgActivationDismissals",
   "orgSettings",
+  "orgSetupDismissals",
   "payments",
   "pendingOrgJoinRequests",
   "pendingSSOApprovals",
   "projectCategories",
+  "projectContainers",
   "projectGroups",
   "projectLineItems",
   "projectLineItemUnits",
@@ -94,7 +100,15 @@ export const DIRECT_TABLES = [
   "projectSnapshotEntries",
   "projectSnapshots",
   "projectTasks",
-  "projectUnlockSessions",
+  // #1230 Phase 4 ("Project versioning v2", parent #1221) deleted
+  // `projectUnlockSessions` along with the rest of the 4-tier lock system —
+  // no replacement table (the whole rule is now `projects.pricingLocked`).
+  // #1226 Phase 1 ("Project versioning v2", parent #1221) — has its own
+  // `by_organizationId` index, same as every other project child table above.
+  "projectVersions",
+  // Work-layer phase 2 (#1244) — has its own by_organizationId index (plus a
+  // composite by_organizationId_userId for the per-user read).
+  "pushSubscriptions",
   "quotes",
   "savedTableViews",
   "serviceSchedules",
@@ -115,6 +129,11 @@ export const DIRECT_TABLES = [
   "webhooks",
   "wooCommerceIntegrations",
   "wooCommerceOrderLogs",
+  // Work-layer phase 1 (#1243) — has its own by_organizationId index.
+  "workTemplates",
+  // Work-layer phase 3 (#1245) — has its own by_organizationId index
+  // (denormalised at link time, not a pure FK-only join).
+  "workItemLinks",
   // WS1 (#940) — Xero integration config + audit log.
   "xeroIntegrations",
   "xeroSyncLogs",
@@ -126,6 +145,12 @@ export const FILTER_TABLES = [
   { table: "commentThreads", orgField: "orgId" },
   { table: "comments", orgField: "orgId" },
   { table: "reviewMarkers", orgField: "orgId" },
+  // Work-layer phase 0 (#1241) — org-prefixed composite indexes only, no plain
+  // by_organizationId index (work-layer.md §10.2), so this is a filtered scan.
+  { table: "notifications", orgField: "organizationId" },
+  // Work-layer phase 1 (#1243) — same posture as notifications above: only
+  // composite org-prefixed indexes exist (work-layer.md §10.3).
+  { table: "workSignalStates", orgField: "organizationId" },
 ] as const;
 
 /**
@@ -238,7 +263,24 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // ephemeral, live chat transcript).
 // #1094 (B2): +1 — pendingOrgJoinRequests (DIRECT, org-scoped join requests,
 // same shape as pendingSSOApprovals above).
-export const EXPECTED_TABLE_COUNT = 117;
+// #1104 (C6): +1 — orgSetupDismissals (DIRECT, per-user "Finish setup" card
+// dismissal — same export posture as notificationDismissals above).
+// #1105 (D1): +1 — orgActivationDismissals (DIRECT, per-user "Get started"
+// activation-checklist dismissal — same export posture as orgSetupDismissals).
+// #1230 (Phase 4): -1 — projectUnlockSessions deleted, no replacement table.
+// #1243 (Phase 1, work-layer): +2 — workSignalStates (FILTER, composite-indexed
+// only, per-user signal decisions) and workTemplates (DIRECT, org-scoped work
+// item templates seeded on a project lifecycle transition).
+// #1244 (Phase 2, work-layer): +1 — pushSubscriptions (DIRECT, org-scoped Web
+// Push subscription per device; see the table's own schema comment for the
+// documented push-send follow-up this phase does NOT wire up).
+// #1245 (Phase 3, work-layer): +1 — workItemLinks (DIRECT — join table between
+// a work item and any other entity, has its own by_organizationId index).
+// #1246 (Phase 4, work-layer): +0 — no new table.
+// Customizable dashboard: +1 — dashboardLayouts (DIRECT — per-user
+// saved widget-board arrangement, has its own by_organizationId index
+// alongside the read path's by_organizationId_userId).
+export const EXPECTED_TABLE_COUNT = 126;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

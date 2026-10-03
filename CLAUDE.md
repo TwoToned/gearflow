@@ -108,35 +108,78 @@ pnpm exec prisma generate
 
 After this, `pnpm dev`, `pnpm test`, and `pnpm build` will all work.
 
-### Convex Dev in Worktrees
+### Convex in Worktrees & agent sessions
 
 **Always use `pnpm exec convex` — never `npx convex`**, which runs a global CLI
 copy that can't resolve `convex/server` from local `node_modules`, causing an
 esbuild failure. `pnpm exec convex` uses the locally installed version.
 
-**When Claude Code edits `convex/*.ts` files**, push the changes immediately after:
+**Default: do NOT push. Editing `convex/*.ts` needs no deployment.** The test
+suite runs Convex functions in-memory (`convex-test`, 164 files) and
+`convex/_generated/` is committed, so lint, typecheck, `pnpm build` and
+`pnpm test` all pass with no Convex credentials at all — which is exactly what
+`ci.yml` does (`NEXT_PUBLIC_CONVEX_URL: https://dummy-e2e.convex.cloud`).
+Verify a Convex change with `pnpm test`, not by pushing it somewhere.
+
+`pnpm build` is the one that's picky, and about Postgres rather than Convex:
+page-data collection reaches the database, so a `DATABASE_URL` pointing at a
+remote it can't reach fails the build with a bare `Failed to collect page data
+for /_not-found` that names Prisma but not the cause. A dummy
+(`postgresql://dummy:dummy@localhost:5432/dummy`, what `ci.yml` uses) builds
+clean; a live remote URL from a sandbox often doesn't.
+
+This matters most when several agent sessions / worktrees run at once: a push is
+shared mutable state. `convex dev --once` targets the **shared dev deployment**
+that the PR previews run against, so two branches pushing divergent schemas
+race, last write wins, and one session's half-finished schema breaks the
+previews and every other session. Never wire a Convex push into an automatic
+post-edit step.
+
+**Adding a new `convex/*.ts` module** is the one case that touches `_generated/`,
+and `convex codegen` refuses to run without a configured deployment
+(`✖ No CONVEX_DEPLOYMENT set`). Hand-edit `convex/_generated/api.d.ts` instead —
+a new module is exactly two mechanical lines (`import type * as x from "../x.js";`
+and `x: typeof x;` in the `fullApi` map). Editing functions *inside* an existing
+module changes nothing generated.
+
+**When you genuinely need a live backend** (running the app, clicking through a
+flow), take your own preview deployment — never the shared dev one:
+
 ```bash
-pnpm exec convex dev --once
+pnpm exec convex deploy --preview-name "$(git rev-parse --abbrev-ref HEAD)"
 ```
-This is a one-shot push to the shared dev deployment — no watcher, no URL rewriting.
-Run it automatically after any Convex function change. `CONVEX_DEPLOY_KEY` must be
-in `.env`.
 
-**When a human dev wants a live watcher**, use a named preview deployment to avoid
-conflicting with other worktrees or the shared dev deployment:
+Branch names are unique per worktree, so each session gets its own isolated
+deployment; re-running reuses it rather than recreating it. To build against it
+in one shot:
 
 ```bash
-# Start Convex watcher for this branch (creates/reuses a preview deployment)
-pnpm exec convex dev --preview-run $(git rev-parse --abbrev-ref HEAD)
+pnpm exec convex deploy --preview-name "$(git rev-parse --abbrev-ref HEAD)" \
+  --cmd-url-env-var-name NEXT_PUBLIC_CONVEX_URL --cmd 'pnpm build'
 ```
 
-This writes the preview deployment URL to `.env.local` as `NEXT_PUBLIC_CONVEX_URL`,
-which the dev server picks up automatically. Run it in a separate terminal alongside
-`pnpm dev`. The preview deployment name must not contain `/` — for worktree branches
-like `feature/my-thing`, the branch name works fine as-is (Convex URL-encodes it).
+`CONVEX_DEPLOY_KEY` must be a **preview** deploy key (Convex dashboard → Project
+Settings → Deploy keys → Preview). By Convex's key scoping, a preview key reaches
+only preview deployments, never prod or the shared dev one — that scoping, not
+anyone's discipline, is what makes it safe for unattended sessions to share one
+credential. Never hand a session a prod key, and never run a bare
+`pnpm exec convex deploy` (no `--preview-name`): with a prod key in the
+environment that deploys to production. Do **not** set
+`CONVEX_DEPLOYMENT`: it pins every session to a single deployment and re-creates
+the collision a preview key exists to prevent.
 
-`CONVEX_DEPLOY_KEY` must be set in `.env` or `.env.local` pointing to your Convex
-Cloud project deploy key.
+Three things that are easy to get wrong:
+- `convex dev` has **no** preview flags. `--preview-run` is a *seed function
+  name* on `convex deploy`, not a deployment name; the name flags are
+  `--preview-name` / `--preview-create`.
+- Preview deployments do **not** inherit the prod or dev deployment's environment
+  variables; they get the project-level defaults. `CONVEX_AUTH_ISSUER` /
+  `CONVEX_AUTH_JWKS_URL` are set as project defaults (verified 2026-09-16: a
+  fresh preview came up carrying both), which is what keeps auth alive on a
+  preview — `convex/auth.config.ts` reads them at push time. Clear those defaults
+  and every new preview is born with auth dead.
+- Previews auto-delete 5 days after creation (14 on paid plans) and count toward
+  the team's deployment limit — relevant if you keep many worktrees alive.
 
 ### DB Setup (first time)
 ```bash
@@ -197,6 +240,19 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
   gating app boot (no org may ever connect Xero — a valid steady state).
 - `XERO_REDIRECT_URI` — OAuth2 callback URL registered with the Xero app. Defaults
   to `${NEXT_PUBLIC_APP_URL}/api/integrations/xero/callback` when unset.
+
+**Web push (subscriptions #1244, FEATUREDOCS/50; first sender = follow-up automation's
+urgent-only push, FEATUREDOCS/82):**
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — public half of the VAPID key pair, inlined into the
+  browser bundle (not a secret — it's how a push service identifies the sending
+  application). Unset = the account notifications page's push toggle stays hidden
+  (`usePushSubscription`'s `support` never becomes actionable without it).
+- `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — server-only; read by `src/lib/web-push.ts`
+  (`node:crypto` RFC 8291/8292 sender — no `web-push` dependency). All three unset = no
+  push is ever sent.
+- Generate a pair with `pnpm run vapid:generate` (`scripts/generate-vapid-keys.mts` —
+  plain Node `crypto`, no new dependency). Rotating invalidates every existing
+  browser subscription; do it rarely.
 
 **DB connection hardening (optional, safe defaults):** layered onto the runtime
 `DATABASE_URL` in `src/lib/db-url.ts` (NOT onto `prisma migrate`, so backfills
@@ -399,6 +455,29 @@ always stops and asks a human to click Confirm in the chat UI
 can explain what it's about to do, but cannot approve it itself. See FEATUREDOCS/68
 before wiring a new Mira tool or changing the confirmation flow.
 
+### ⚠️ $0 is a PRICE, not a flag — ROI exclusion is its own field
+`projectLineItems.excludeFromRoi` (#1249, FEATUREDOCS/57) is the ONE way a line is
+kept out of revenue allocation by hand. A `lineTotal` of `0` means only "this costs
+nothing" — it weighs exactly like an unpriced `"—"` line, falling through to the
+rate → cost legs of `weightOf`. **Never reintroduce "$0 means excluded."** That rule
+read a deliberate free line and an empty price box as the same thing, and empty is
+the common case: inside a Project Group the BUNDLE price is the charge, so members
+are routinely left blank, and all that gear silently reported $0 ROI.
+
+The other half of that bug: a blank `<input type="number">` submits `""`, and
+`z.coerce.number()` turns `""` into a real `0`. `blankableNumber`
+(`src/lib/validations/line-item.ts`) is what keeps blank meaning blank — use it for
+any new optional money field rather than a bare `z.coerce.number().optional()`,
+which cannot express "left empty". (`taxRateField` is knowingly still on the old
+shape; its comment says why.)
+
+Same rule server-side: a mutation that auto-prices must guard on the model actually
+having a rate (`dailyRate != null || weeklyRate != null`) before calling
+`computeBlendedCharge` — with both null it returns `0`, which would write a
+price-looking $0 plus a `priceBreakdown` that makes it look auto-priced. See
+`addLineItemSmartNative` and `groupTemplatesWrites.applyNative`.
+
+
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved
 flat dollar amount** — recalc, allocation, invoicing and `lineTotal` read that
@@ -407,10 +486,10 @@ records only how the operator *entered* it, so documents can print `-15%`
 instead of `-$150.00`. Absent = `"$"` (every pre-#1012 row; no backfill).
 
 The percentage itself is **never stored** — `discountCellText`
-(`gearflow-table.ts`) / `discountEntryValue` recompute it from the stored dollar
-amount against the row's own gross. Storing the typed `15` would let a document
-contradict itself once the unit price changed (the dollar amount is frozen at
-save). Don't "fix" that by adding a `discountValue` column.
+(`src/lib/pdfme/line-item-format.ts`) / `discountEntryValue` recompute it from
+the stored dollar amount against the row's own gross. Storing the typed `15`
+would let a document contradict itself once the unit price changed (the dollar
+amount is frozen at save). Don't "fix" that by adding a `discountValue` column.
 
 `discountMode` must never outlive the amount it describes: every write path that
 clears/zeroes `discount` clears the mode too (patchNative, patchManyNative,
@@ -419,6 +498,137 @@ mode union + both conversions live in `src/lib/discount-mode.ts` — a plain
 module, so Convex mutations, Zod schemas, the seven add/edit forms and the PDF
 renderer share one definition. `line-item-form-fields.tsx` re-exports them for
 the forms; don't re-declare `"$" | "%"` anywhere else.
+
+### Category price rollup: the SECTION subtotal is derived, the per-line prices are hidden
+`projectCategories.pricingDisplay` (`"ITEMISED" | "ROLLUP"`, absent = `ITEMISED`,
+no backfill) decides whether a category prints a price per line or one price for
+the whole section with every line still listed (quantities intact, money columns
+blank). It is **not** a priced Project Group: a group HIDES its contents behind a
+typed bundle price; a rolled-up category SHOWS all its contents and DERIVES the
+one price as `sum(lineTotal)` over its members. Never store that subtotal — it is
+not a `PROJECT_MONEY_ANCHOR`, which is exactly why recalc/allocation/revenue need
+no changes (rollup regroups, it never reprices). Same reasoning as `discountMode`
+above: a second copy of a total the line items already determine would
+contradict the document the moment a price changed.
+
+`revealPriceInRollup` (on `projectLineItems` AND `projectGroups`) opts ONE row
+back into printing its own price. A revealed row is still **counted in the
+section subtotal** — the header is the category's total, not the remainder,
+which is why it prints with a label. The flag is consulted ONLY inside a rollup,
+so a stale `true` after switching back to `ITEMISED` changes nothing; `false` is
+stored as an absent field so "hidden" has one representation.
+
+The union, the per-row hidden/revealed decision and the subtotal arithmetic live
+in `src/lib/category-pricing-display.ts` — a plain module shared by the Zod
+schemas, the document pipeline, the equipment tab and the finance snapshot.
+Renderers read the DERIVED `priceHidden`/`rollupCategory` that
+`structureLineItems` stamps, never the stored fields, and those are stamped only
+in collapse mode (a warehouse doc expands groups, so summing a bucket would
+double-count). `buildFinanceLines` folds a rolled-up category into one
+`sourceType: "CATEGORY"` invoice line. See FEATUREDOCS/74.
+
+Its sibling, `projectLineItems.showInGroupOnDocs` ("group child disclosure"),
+lets a Project Group — which otherwise collapses to ONE row and drops
+everything inside it — list selected members under that row with description +
+quantity. Collapse mode attaches `disclosedGroupChildren(members)`
+(`src/lib/group-child-disclosure.ts`), each stamped the SAME derived
+`priceHidden` (one flag for "this row prints no money", not two), and
+`undefined` when none are disclosed so an untouched group keeps its exact
+pre-feature shape. A disclosed member **never** prints a price and gets no
+per-member override: the group's bundle price IS the charge, so printing a
+member's own figure too would put two contradictory numbers for the same gear
+on one document — which is also why `buildFinanceLines` needs no counterpart
+(the group still bills as one line). Kit parents are excluded, and expand
+(warehouse) mode ignores the flag entirely — packers need the full list.
+
+### Project status advances itself — add a TRIGGER, never a second patch site
+`convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
+effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item
+packed → `PREPPING`, last packed item off the dock → `CHECKED_OUT`, last item back
+→ `RETURNED`. The returns station's old private `maybeAutoAdvanceProject` is gone —
+it calls in here. Three rules when you touch this:
+
+1. **Never hand-roll another "patch `projects.status` as a side effect".** Add a
+   row to `AUTO_STATUS_RULES` and call `maybeAutoAdvanceProjectStatus` ONCE at the
+   end of the mutation that did the real work — never inside a per-item loop, and
+   never before the writes it inspects have landed.
+2. **Never automate a move INTO `COMPLETED`/`INVOICED`.** Closing a job out is a
+   human's call. `CONFIRMED` has exactly ONE sanctioned rule — `PAYMENT_SETTLED`
+   (#1236): in this business payment IS the confirmation. It is safe only because
+   it re-checks the accepted-quote gate (failing CLOSED — it has nobody to collect
+   a justification from) and takes the same whole-project snapshot
+   `updateStatusNative` does. A table-level test pins it as the only rule that may
+   reach `CONFIRMED`, so a second can't inherit the exception by accident.
+3. **A new switch key goes on BOTH sides.** The rule table's `settingKey` lives in
+   `convex/lib/projectAutoStatus.ts`; `AUTO_STATUS_KEYS` + labels + toast copy live
+   in `src/lib/project-status-automation.ts` (convex can't import from `src/`).
+   `convex/projectAutoStatus.test.ts` asserts parity — absent = ON, so the stored
+   blob only ever records an opt-OUT.
+
+"Everything deployed" is a POSITIVE test — **no deployable row still has ordered
+quantity in the warehouse** (`stillInBuilding`), not "nothing is still `PACKED`".
+The absence-of-a-PACKED-marker version was wrong twice: a partially deployed bulk
+line rolls up to `{ status: CHECKED_OUT, prepStatus: PACKED }` on its FIRST unit
+out (`deriveOrderLineStatus` is a `some`), and never-prepped gear has no
+`prepStatus` at all — so one deployed item flipped a job with everything else
+still on the shelf, permanently (the `from` set stops matching, so it can't
+self-correct).
+
+Deployable mirrors the warehouse page's own `equipmentItems` filter: `type ??
+"EQUIPMENT"` is `EQUIPMENT`, not a container row, not a sub-hire GROUP wrapper.
+Scoping by type is what keeps services / labour / transport / MISC / sale lines —
+which sit at `CONFIRMED` for the life of the job — from pinning it at `PREPPING`.
+
+Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical work
+is the second way out of the money phase, for orgs that reconcile payments in Xero
+and never write a `payments` row. See FEATUREDOCS/76.
+
+### Follow-ups are ONE engine — add a RULE, never a second task writer
+`convex/lib/followUpRules.ts` (pure `planQuoteLoop`), `convex/lib/followUpInvoiceRules.ts`
+(pure `planInvoiceLoop` / `planUnraisedLoop`) + `convex/lib/followUpReconcile.ts`
+(`reconcileFollowUps`) own every automated follow-up task (FEATUREDOCS/82). Three rules:
+
+1. **A new automated follow-up is a rule, not a call site.** Add it to the rule module and
+   `reconcileFollowUps`; call `reconcileFollowUps` ONCE at the end of any mutation that
+   changes the facts (quote send/recall/accept/decline, project status, invoice
+   issue/void/credit/delete, payment record/void — via `settleInvoicePaymentState`) — never
+   in a loop.
+2. **A row with `automation` set is the engine's.** Human edits of it must go through
+   `automationForHumanChange` (locks edited fields; DONE records `no_reply`/`decided`) and
+   then the reconciler; deleting one is a SOFT close (`CANCELLED` + `resolution: "deleted"`),
+   or the next reconcile recreates it. Won/lost stay on the quote's own accept/decline.
+3. **Never chase what Flow can't verify** — nothing before the org's `followUps.cutoverAt`,
+   nothing on a `CANCELLED` project. "Paid" is `invoices.paymentStatus`, which folds in
+   the Xero payment sync (`xeroAmountPaid`/`xeroAmountCredited`, max with Flow payments —
+   never a sum) — don't read `payments` rows directly to decide a chase. The hourly tick
+   runs on its OWN flag (`ENABLE_FOLLOW_UP_CRON`), not `ENABLE_CONVEX_CRONS`. Push is
+   rationed in `followUpPush.claimPush` (urgent only, one per rung, 2/person/day) — a new
+   push caller goes through it, never straight to `sendWebPush`.
+
+### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
+The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
+the client has agreed and/or an invoice is out, but the money hasn't landed.
+**Never add "deposit invoice sent" or "deposit paid" as statuses.** Both are
+already facts on rows that own them — an `invoices` row at `ISSUED`, and
+`invoices.paymentStatus`, itself derived from `payments` — so a copy on the
+project would be a second source of truth for whether the client's money landed
+(R-3.1), and the two WILL disagree the first time a payment is voided.
+`src/lib/project-payment-progress.ts` computes the three sub-steps on read;
+`<PaymentProgressStrip>` renders them under the stepper, only at
+`AWAITING_PAYMENT`.
+
+Two things about it that look wrong and aren't:
+- **Its lock tier is `OPEN`, not `FINANCE_LOCKED`.** #988's quote-sent input
+  already locks the pricing of anything that came through a quote, and a
+  status-driven lock here makes `newVersionNative`'s `bypassQuoteLock` (which
+  resolves from STATUS alone) unable to reach its own exit — a client asking for
+  a change after approving could never be re-quoted. The residual gap (an invoice
+  issued with no quote behind it locks nothing) is PRE-EXISTING and belongs in
+  `resolveLockTier` as a third input with its own void-and-reissue exit.
+- **It IS in `HARD_PROJECT_STATUSES`.** The gear is held from the moment the job
+  is agreed. So the two same-named `isConfirmedOrLater` helpers now disagree for
+  this one status: `availabilityCore.ts`'s (stock) says true,
+  `projectLocks.ts`'s (money) says false. They ask different questions.
 
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
@@ -434,14 +644,16 @@ org check has to happen in the loader, not at the call site.
 (project v2 == quote v2 == the snapshot taken at v2). `projects.liveRevision`
 (#1080/#1085) is the separate pointer at the version currently projected onto the
 live tables — absent ⇒ `revision`, via `projectLiveRevision()`. Both are
-server-owned — written only by `createNative`, `quotesWrites.newVersionNative` and
-`projectVersionsWrites.saveVersionNative` (Phase 1 never decouples them; only a
-future promote can point `liveRevision` at an older number than `revision`), and
-stripped from client patches the same way `PROJECT_MONEY_ANCHORS` are. The
-invariant is now "at most one **live** DRAFT, always at `liveRevision`" — a
-non-live DRAFT (one Save Version left behind) is a legitimate saved-but-never-sent
-version, not a bug; scan for "the draft" via `liveRevision`, never a bare `DRAFT`
-status match. See FEATUREDOCS/66.
+server-owned — written only by `createNative` and `quotesWrites.newVersionNative`
+(the older `projectVersionsWrites.saveVersionNative`/`promoteRevisionNative`,
+which used to also write them, were deleted in #1229 Phase 3 — superseded by
+`convex/versions.ts`'s `createNative`/`makeLiveNative` on the real,
+Phase-1/2-introduced `projectVersions` table, FEATUREDOCS/78 — do not confuse the
+two "createNative"s or the two version programs), and stripped from client
+patches the same way `PROJECT_MONEY_ANCHORS` are. The invariant is "at most one
+**live** DRAFT, always at `liveRevision`" — a non-live DRAFT is a legitimate
+saved-but-never-sent version, not a bug; scan for "the draft" via `liveRevision`,
+never a bare `DRAFT` status match. See FEATUREDOCS/66.
 
 ### ⚠️ A client-facing finance document is STORED BYTES — never a fresh render
 A sent quote / issued invoice PDF is rendered **once** (`src/server/finance-documents.ts`)
@@ -544,6 +756,65 @@ A readiness check that can't run reports `unknown`, never a pass — a dateless
 project's gear check says "not checked" rather than a false all-clear, and
 `unknown` never counts toward "all clear".
 
+### ⚠️ A Convex query's args are its SUBSCRIPTION KEY — never pass a fresh `Date.now()`
+`convex-helpers`' `createQueryKey` JSON-stringifies the args into the cache key, and
+`useQueries` tears the subscription down and restarts it whenever that key changes. So
+a timestamp evaluated **inside** the query call re-keys on every render, the result
+drops back to `undefined` the moment data arrives, and the query never settles:
+
+```tsx
+// BROKEN — stuck on "Loading…" forever (a `return null` loading branch never renders at all)
+const cards = useAuthedQuery(api.pipeline.forOrg, { orgId, now: Date.now() });
+
+// CORRECT
+const now = useStableNow();            // @/hooks/use-stable-now — mount-time snapshot
+const cards = useAuthedQuery(api.pipeline.forOrg, { orgId, now });
+```
+
+This shipped twice in #1245 (`/clients/pipeline`, the client next-step banner). It is
+now a `no-restricted-syntax` **error** (`eslint.config.mjs`) on any `Date.now()` inside a
+`use*Query*` call — `react-hooks/purity` only warned, which is how it got through. Any
+other per-render-fresh value (`createId()`, `new Date()`) in query args is the same bug.
+A surface that must genuinely tick needs its own interval and must keep that value OUT
+of the args.
+
+### The camera scanner is ONE WASM engine — never the platform `BarcodeDetector`
+The in-app barcode scanner (`src/lib/barcode/`, `src/hooks/use-camera-scanner.ts`,
+`src/components/scanner/`) reads QR, **Micro QR**, **rMQR**, Data Matrix, Aztec,
+PDF417 and the common linear codes through ZXing-C++ WASM on **both** platforms.
+Adding a "use the native `BarcodeDetector` where available" fast path is the one
+change that is always wrong here: `micro_qr_code`/`rm_qr_code` aren't in the Shape
+Detection API spec (so Chrome/Android's ML Kit backend can't read them either), and
+WebKit has never shipped the API at all, so every browser on iOS needs WASM anyway.
+Two decoders behind one button is exactly how the previous scanner came to behave
+differently on the platform nobody tested — it was removed for "never working on
+iPhone". See FEATUREDOCS/19 and `docs/designs/barcode-scanner-2d.md`.
+
+Five things that look removable and aren't (all iOS; every browser there is WKWebView):
+1. **`getUserMedia` only inside a user gesture** — from the dialog's open handler,
+   never a mount effect. A non-gesture prompt rejects indistinguishably from a denial.
+2. **`playsInline` + `muted` + an awaited `play()`**, set in JSX *and* imperatively on
+   each start. Miss one → live track, black picture.
+3. **`facingMode: { ideal: "environment" }`, no `deviceId`.** `exact` throws on any
+   device without a rear camera; pre-permission `enumerateDevices()` returns blanks
+   on iOS, so label-matching picks nothing.
+4. **`stopStream` on EVERY teardown path** (close, unmount, visibilitychange, each
+   early return in `start()`). One live capture at a time on iOS — a leaked track
+   blocks the next `getUserMedia` app-wide.
+5. **Release on hide, re-acquire on show.** iOS suspends capture when backgrounded
+   and never resumes; a held track means a permanently black viewport.
+
+Torch/zoom are feature-detected and **absent** on iOS rather than dead. The decoded
+region is a native-resolution centre crop sized from the same `ROI_FRACTION` the
+reticle uses — don't hand-tune one of the two. The `.wasm` is self-hosted in
+`public/wasm/` (committed; `pnpm run wasm:sync:check` gates it), never the jsDelivr
+default, or the scanner silently stops decoding on warehouse wifi.
+
+**Any change to formats or reader options needs a round-trip test** in
+`src/lib/barcode/decoder.test.ts` — encode a real symbol, render it to `ImageData`
+the way the pump does, decode it back. The absence of exactly that test is how
+"it doesn't work on iOS" shipped.
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees
@@ -560,48 +831,85 @@ the human-readable label even when the selected `SelectItem` isn't currently mou
 <SelectValue placeholder="Select...">{selected ? labelMap[selected] : "Select..."}</SelectValue>
 ```
 
+### Non-blocking preview gates — one shape, reused (`useConfirmStatusGate` / `useDateMoveGate`)
+"Would this write strand someone else's stuff?" is answered by a **one-shot
+query before the write, never a blocking check inside it.** `useConfirmStatusGate`
+(confirming a job) and `useDateMoveGate` (#1227, moving a confirmed job's dates)
+share one shape: `request*(payload)` runs the preview; if it finds nothing, it
+calls `onProceed(payload)` immediately with zero UI change; if it finds
+something, it stashes `payload` on `pending` and shows a warn+confirm dialog
+whose confirm button calls the ONE `onProceed(payload)` — never a second
+mutation path. **Fails OPEN on any query error** — an advisory preview must
+never block a real write. Copy this shape for the next one rather than
+inventing a new one; the two dialogs (`ConfirmStatusImpactDialog`,
+`DateMoveImpactDialog`) deliberately share the same warn-icon/copy grammar too
+("this is a heads-up, not a block") so a user learns the pattern once.
+
+### A second UI surface reuses the exact reverse trigger — never derives a new one
+When a write's toast already offers Undo (`announceWarehouseWrite` →
+`AnnouncedWrite.scanUndo`, `src/lib/warehouse-undo-toast.ts`), a second surface
+that also wants to offer undo (the scan history strip, #1223) must be handed
+that SAME closure, not re-implement "call the reverse mutation" itself. Two
+independent reverse implementations for one write is how a double-undo or a
+"did that already fire?" bug gets in — one guarded closure, shared, is the
+only way the two surfaces can't disagree about whether the write was undone.
+
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 
-### PDF generation — one pipeline, data-shape changes still need cross-cutting audits
-**#790 redesign (2026-07-26):** ripped out the PDF customization engine (dual
-render pipelines, stored per-org templates, section/block model, `{token}`
-resolution, visibility conditions, brand templates, Convex `documentTemplates`/
-`brandTemplates`/`sectionPresets`) — ~8,300 LOC deleted. There is now **one**
-pipeline for the 5 project doc types: `document-layouts.ts` (fixed layout per
-doc type, plain TS, no persistence) → `document-composer.ts` (net-new,
-purpose-built pagination engine, a few hundred LOC) → `pdf-render.ts`. No
-template designer of any kind exists or is planned. See
+### PDF generation — two vendor pipelines, one per doc family
+**#790 redesign (2026-07-26)** ripped out the old PDF customization engine
+(dual render pipelines, stored per-org templates, section/block model,
+`{token}` resolution, visibility conditions, brand templates, Convex
+`documentTemplates`/`brandTemplates`/`sectionPresets`) — ~8,300 LOC deleted.
+No template designer of any kind exists or is planned. See
 `docs/designs/pdf-system-redesign.md` and FEATUREDOCS/13 for the full
-architecture. This also fixed a live truncation bug: the legacy fallback
-builders were single-page only, so any default document longer than one page
-silently dropped its tail — the new composer paginates every doc type by
-default.
+architecture and migration history.
 
-The PDF pipeline still has **independent consumers** of the `DocumentLineItem`
-shape (down from 5 across 2 files pre-redesign to 3 across 2 files). Any
-change to the shape (new field, new synthetic row type, new relationship
-between parent and children) must be verified against ALL of them — fixing
-one and shipping leaves silent bugs in the others:
+**The react-pdf migration (#1150-#1157, 2026-09-14)** then moved the 5
+project document types (quote, invoice, packing-list, return-sheet,
+delivery-docket) off the #790 redesign's own hand-rolled two-pass
+estimate/draw pagination engine (`document-layouts.ts` →
+`document-composer.ts` → `pdf-render.ts`, deleted) onto
+**`@react-pdf/renderer`** (Yoga/flexbox automatic layout — no separate height
+estimate to keep in sync with the render, structurally closing the tail-drop
+bug class described below for good): `generatePdf()`
+(`src/lib/pdfme/generate-pdf.ts`) now calls `renderReactPdfTemplate()`
+(`src/lib/react-pdf/render.tsx`), the single call site for
+`@react-pdf/renderer`'s render-producing exports (`no-restricted-imports` in
+`eslint.config.mjs` enforces it, mirroring the pdfme rule below). Each doc
+type is its own component tree under `src/lib/react-pdf/` (e.g.
+`quote-document.tsx`) composing shared pieces from
+`src/lib/react-pdf/components/`; `document-layouts.ts` still exists but only
+as a minimal `ProjectDocumentType`/`expandProjectGroups` registry, not a
+layout schema. **Call sheets and T&T reports were never part of this
+migration** — they still render through **pdfme** (`@pdfme/generator`, single
+call site `src/lib/pdfme/pdf-render.ts`) with their own plugins
+(`src/lib/pdfme/plugins/`) and builders (`src/lib/pdfme/templates/*.ts`).
 
-1. **`gearflow-table.ts` rendering** — what gets drawn (bold, indented, etc.)
-2. **`document-composer.ts`'s `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
-3. **`document-composer.ts`'s `getFilteredParentItems`** — top-level status filter (miss this → items disappear from docket / return-sheet). `gearflow-table.ts`'s own top-level filter mirrors this and must stay in sync (documented cross-reference in both files).
+The 5-doc-type pipeline still has **independent consumers** of the
+`DocumentLineItem` shape. Any change to the shape (new field, new synthetic
+row type, new relationship between parent and children) must be verified
+against ALL of them — fixing one and shipping leaves silent bugs in the
+others:
 
-A new **`LayoutBlock` kind** (`draftWatermark` was the first, #987) is a smaller but
-equally silent audit: `estimateBlockHeight` must reserve its height (miss it → it draws
-over the block below, or the tail drops) and `buildEntryFields` must emit its schema
-(miss it → nothing renders). Both are exhaustive switches, so a missing arm fails the
-build — keep the union closed. A block that belongs on EVERY page is page furniture
-(`isPageFurniture`/`measurePageFurniture`), not a body block.
+1. **`src/lib/react-pdf/components/line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), plus the pure formatting helpers it imports from `src/lib/pdfme/line-item-format.ts` (`discountCellText`/`breakdownLabel`/`isSubhireIndicatorVisible`/`getAssetTag`).
+2. **`filterAndGroupItems`'s status filter** (same file) — miss this → items disappear from docket / return-sheet.
+
+That's down from 4 consumers across 2 files (pre-#1157: `gearflow-table.ts`'s
+render + its own top-level filter, plus `document-composer.ts`'s
+`calculateItemHeight` + `getFilteredParentItems`) — react-pdf's automatic
+pagination eliminates the height-reservation consumer entirely; there is no
+`calculateItemHeight` equivalent because nothing pre-computes how much
+vertical space a row needs.
 
 **Synthetic rows (e.g. `isGroupRow: true`) are footguns.** Their hard-coded fields (`status: "CONFIRMED"`, etc.) silently fail any filter that compares against them. Every status/filter site must special-case the synthetic row type, or compute the field dynamically from children.
 
-**Parent/child kinds.** A line is a child when `isKitChild: true` (covers kit members, sub-hire group children, AND accessory children) — that flag is the structural "is a child" test the ~40 `isKitChild: false` DB filters depend on. `childKind` (`KIT | ACCESSORY`) is the *behaviour* discriminator. An **accessory parent** is NOT a kit (no `kitId`); detect it as "top-level line, no `kitId`, has `ACCESSORY` children" and treat it like a kit parent for child rendering (gearflow-table) AND height reservation (document-composer) — kit children, Project Group members, and accessories are all gated by the single `showKitChildren` flag (2026-07-27). Warehouse docs (packing-list/return-sheet/delivery-docket) leave it `true`, so accessories still always render there (inseparable, packers need every component); client-facing docs (quote/invoice) set it `false` (`clientFacingTable` in `document-layouts.ts`) so the client sees top-level line items only, not exploded kit/accessory sub-rows. See [FEATUREDOCS/48](./FEATUREDOCS/48-child-assets-accessories.md).
+**Parent/child kinds.** A line is a child when `isKitChild: true` (covers kit members, sub-hire group children, AND accessory children) — that flag is the structural "is a child" test the ~40 `isKitChild: false` DB filters depend on. `childKind` (`KIT | ACCESSORY`) is the *behaviour* discriminator. An **accessory parent** is NOT a kit (no `kitId`); detect it as "top-level line, no `kitId`, has `ACCESSORY` children" and treat it like a kit parent for child rendering — kit children, Project Group members, and accessories are all gated by the single `showKitChildren` flag (2026-07-27, carried into each react-pdf doc component's own `tableConfig`). Warehouse docs (packing-list/return-sheet/delivery-docket) leave it `true`, so accessories still always render there (inseparable, packers need every component); client-facing docs (quote/invoice) set it `false` so the client sees top-level line items only, not exploded kit/accessory sub-rows. See [FEATUREDOCS/48](./FEATUREDOCS/48-child-assets-accessories.md).
 
-**Test coverage rule:** unit tests at the plugin layer alone are NOT enough. For any data-shape change, write at least one integration test that exercises the full pipeline (structureLineItems → calculateItemHeight → filter → plugin render) against a realistic fixture. The plugin-only harness in `src/lib/pdfme/plugins/test-utils.ts` is great for rendering assertions but misses the pipeline bugs. `document-composer.test.ts` is the standing regression harness — a 120+ item fixture per doc type asserting full parent-item index coverage across pages.
+**Test coverage rule:** unit tests at the plugin/component layer alone are NOT enough. For any data-shape change, write at least one integration test that exercises the full pipeline (Convex-doc reconstruction → `structureLineItems` → filter → render) against a realistic fixture — see `src/lib/pdfme/document-data-reconstruction.test.tsx` / `line-item-tree-attach.test.tsx` / `plugins/accessories-render.test.tsx`, which render through a real doc component and extract text via `renderPdfPages` (`src/lib/react-pdf/pdf-test-utils.ts`). `src/lib/react-pdf/regression.test.tsx` is the standing regression harness — pagination invariants (no tail-drop, group-header-once, header/footer page furniture, draft watermark) across all 5 doc types via `pdf-parse` text extraction.
 
-History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed the height-calc miss (tail items dropped). v0.8.1.2 fixed the status-filter miss (groups invisible on dockets). Each was a separate user-impacting deploy that an upfront cross-cutting audit would have caught — the #790 redesign collapsed the dual-pipeline root cause of these into one.
+History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed a pdfme-era height-calc miss (tail items dropped). v0.8.1.2 fixed a pdfme-era status-filter miss (groups invisible on dockets). #1149 (2026-08-03) was a real-world recurrence of the same estimate/draw-divergence class on the #790 pipeline — the react-pdf migration (#1150-#1157) removed the two-pass architecture that made that bug class possible for the 5 project doc types; the same discipline (keep render and filter in sync — see the consumer list above) still applies to call sheets/T&T reports, which remain on pdfme.
 
 ### Convex Mutation Rules
 
@@ -629,6 +937,19 @@ This applies everywhere a Prisma row is first written to Convex: `src/lib/*-mirr
 - Kit join tables use `addedAt` (not `createdAt`)
 - Safe areas: use inline `style` with `env()`, not Tailwind arbitrary values
 - Project queries must add `isTemplate: false` to exclude templates
+
+## Business-operations skill (`/rvlt-flow`)
+
+`.claude/skills/rvlt-flow/` is the **operator-facing** counterpart to this file:
+domain knowledge for *running* the hire business on Flow (job lifecycle,
+availability math, job prep, money rules, the MCP tool surface), not for building
+the product. Invoke it when a session is about jobs/gear/crew/invoices rather
+than code — or when you need the authoritative operator-side reading of a domain
+rule. It cites this repo's own sources (`convex/lib/projectAutoStatus.ts`,
+`availabilityCore.ts`, `recalc.ts`, `src/lib/api/errors.ts`,
+`src/lib/api/mcp/curated-tool-defs.ts`, the FEATUREDOCS), so a behaviour change
+in any of those is a change to the skill in the same PR — same rule as a
+FEATUREDOC (R-5.2/R-5.3).
 
 ## gstack
 
@@ -696,6 +1017,20 @@ The workflow (`build-image.yml`) does, in order:
 
 ### ⚠️ Coolify deploy is ASYNC
 A green workflow run only means the image was pushed and the Coolify webhook **fired** — the "Trigger Coolify deploy" step succeeding does NOT mean the new container is live. Coolify pulls the image + restarts asynchronously (and runs migrations on boot). **Confirm a deploy by polling `https://flow.rvlt.app` for 200/307**, not by the workflow status alone. A failed container start leaves the previous image serving.
+
+### Dev environment (static, `:dev` image)
+`.github/workflows/build-image-dev.yml` builds `ghcr.io/twotoned/gearflow:dev` on every push to
+`main` (and on manual `workflow_dispatch` from any branch), pushes Convex functions to the **dev**
+deployment and fires the dev Coolify webhook. It exists because `NEXT_PUBLIC_*` are inlined at
+build time — `:latest` carries the prod Convex URL, so a client on it talks to prod Convex with a
+dev-issued token (`No auth provider found matching the given token`). Never point the dev
+Coolify app at `:latest`.
+- Repo **variables:** `DEV_NEXT_PUBLIC_APP_URL`, `DEV_NEXT_PUBLIC_CONVEX_URL`.
+- Repo **secrets:** `CONVEX_DEPLOY_KEY_DEV` (a dev key — cannot reach prod), `COOLIFY_DEV_DEPLOY_WEBHOOK`
+  (`COOLIFY_TOKEN` is shared with prod).
+- The dev Convex deployment needs `CONVEX_AUTH_ISSUER` / `CONVEX_AUTH_JWKS_URL` set to the dev app
+  origin, and Coolify's `BETTER_AUTH_URL` must equal that origin exactly.
+- PostHog is deliberately unset (analytics inert) and sourcemap upload is off.
 
 ### Custom deploy hooks
 - **Pre-merge:** none (CI — `ci.yml` — handles lint + typecheck + tests on the PR).

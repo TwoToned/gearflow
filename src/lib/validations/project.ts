@@ -12,6 +12,7 @@ export const projectSchema = z.object({
       "ENQUIRY",
       "QUOTING",
       "QUOTED",
+      "AWAITING_PAYMENT",
       "CONFIRMED",
       "PREPPING",
       "CHECKED_OUT",

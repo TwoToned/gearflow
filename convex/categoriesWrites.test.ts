@@ -171,4 +171,34 @@ describe("categories.containerAssetSearch", () => {
     const t = makeT(); await seedMember(t);
     expect(await t.withIdentity(asUser).query(api.categories.containerAssetSearch, { orgId: ORG, query: "" })).toEqual([]);
   });
+
+  test("#1296: reads plural containerCategoryIds over several category trees", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ containerCategoryIds: ["cases", "tubs"] }) });
+      await ctx.db.insert("categories", { id: "cases", organizationId: ORG, name: "Cases", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "tubs", organizationId: ORG, name: "Tubs", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Roadcase", categoryId: "cases" });
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Tub", categoryId: "tubs" });
+      await ctx.db.insert("models", { id: "m3", organizationId: ORG, name: "Mixer", categoryId: "other" });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "CASE-1", isActive: true });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m2", assetTag: "TUB-1", isActive: true });
+      await ctx.db.insert("assets", { id: "a3", organizationId: ORG, modelId: "m3", assetTag: "MIX-1", isActive: true });
+    });
+    const res = await t.withIdentity(asUser).query(api.categories.containerAssetSearch, { orgId: ORG, query: "" });
+    expect(res.map((r) => r.assetId).sort()).toEqual(["a1", "a2"]);
+  });
+
+  test("#1296: a model flagged isContainer surfaces regardless of category, with availability", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Pelican 1510", categoryId: "other", isContainer: true });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "PEL-1", isActive: true, status: "AVAILABLE" });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "PEL-2", isActive: true, status: "CHECKED_OUT" });
+    });
+    const res = await t.withIdentity(asUser).query(api.categories.containerAssetSearch, { orgId: ORG, query: "" });
+    expect(res.map((r) => r.assetId).sort()).toEqual(["a1", "a2"]);
+    expect(res.find((r) => r.assetId === "a1")?.available).toBe(true);
+    expect(res.find((r) => r.assetId === "a2")?.available).toBe(false);
+  });
 });

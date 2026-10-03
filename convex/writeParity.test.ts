@@ -100,7 +100,8 @@ describe("write-parity: line-items", () => {
     // Project row — addNative now resolves the project's lock tier (#957).
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await t.withIdentity(SERVICE).mutation(api.projectLineItems.createLineItem, { id: "svc", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, now: NOW });
     await t.withIdentity(SERVICE).mutation(api.lineItemWrites.addNative, { id: "nat", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, allowOverbook: true, actor: ACTOR, auditId: "log1", now: NOW });
@@ -109,6 +110,10 @@ describe("write-parity: line-items", () => {
     // sortOrder differs (svc got 0, nat got 1) — normalize it.
     delete (svc as Record<string, unknown>).sortOrder;
     delete (nat as Record<string, unknown>).sortOrder;
+    // lineageId defaults to the row's own new id ("svc"/"nat", #1228) — same
+    // per-row-identity divergence as `id` itself, which normalize() already strips.
+    delete (svc as Record<string, unknown>).lineageId;
+    delete (nat as Record<string, unknown>).lineageId;
     // lineTotal is a DELIBERATE divergence (security hardening, not a parity bug):
     // createLineItem is a raw insert with no legitimate callers (grep-confirmed dead —
     // trusts whatever `fields` it's handed verbatim); addNative now ALWAYS recomputes
@@ -134,9 +139,10 @@ describe("write-parity: line-items", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       // Project row — removeNative now resolves the project's lock tier (#957).
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "svc", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
-      await ctx.db.insert("projectLineItems", { id: "nat", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "svc", id: "svc", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "nat", id: "nat", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
     });
     await t.withIdentity(SERVICE).mutation(api.projectLineItems.removeLineItemCascade, { id: "svc" });
     await t.withIdentity(SERVICE).mutation(api.lineItemWrites.removeNative, { id: "nat", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW });
@@ -156,6 +162,14 @@ describe("write-parity: projects", () => {
     const nat = normalize(await readByCuid(t, "projects", "nat"));
     delete (svc as Record<string, unknown>).projectNumber;
     delete (nat as Record<string, unknown>).projectNumber;
+    // liveVersionId is a random cuid minted per-call by createLiveVersionForProject
+    // (#1228) — never equal across two independent creates, same class of
+    // divergence as projectNumber above. Assert it's PRESENT (both paths bootstrap
+    // a live version) rather than comparing the value itself.
+    expect(typeof (svc as Record<string, unknown>).liveVersionId).toBe("string");
+    expect(typeof (nat as Record<string, unknown>).liveVersionId).toBe("string");
+    delete (svc as Record<string, unknown>).liveVersionId;
+    delete (nat as Record<string, unknown>).liveVersionId;
     expect(nat).toEqual(svc);
   });
 });

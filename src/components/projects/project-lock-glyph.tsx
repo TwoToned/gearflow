@@ -3,32 +3,25 @@
 import { Lock } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { lockTierForStatus } from "../../../convex/lib/projectLocks";
+import { isConfirmedOrLater } from "../../../convex/lib/projectLocks";
 
-const TIER_LABEL: Record<string, string> = {
-  FINANCE_LOCKED: "Pricing locked — this job is confirmed.",
-  JUSTIFY: "Changes need a reason — this job is on site.",
-  HARD_LOCKED: "Locked — this job is completed.",
-};
+const LABEL = "Pricing locked — this job is confirmed.";
 
 /**
- * #990 (Phase E) surface 6 — the list/board/card lock glyph. Derived from
- * `status` alone via the SAME `lockTierForStatus` the server's
- * `assertLifecycleGuard` resolves from (`convex/lib/projectLocks.ts`,
- * POLICY.md R-3.1) — no second row query, and no re-derived boundary.
+ * #1230 (successor to #990's Phase E surface 6) — the list/board/card lock
+ * glyph. Derived from `status` alone via `isConfirmedOrLater`
+ * (`convex/lib/projectLocks.ts`, POLICY.md R-3.1) — no second row query.
  *
- * Deliberately status-only: the quote-send lock (`resolveLockTier`'s
- * `QUOTE_SENT` case, #988) needs each row's current-revision quote state,
+ * Deliberately status-only, same documented coverage gap the original #990
+ * glyph carried: a quote-sent lock on an otherwise-OPEN-status project
+ * (`quotesWrites.sendNative`'s own D55 lock) needs each row's quote state,
  * which `projects.listPage`/`listBoard` don't carry today and a per-row
- * lookup would reintroduce the exact per-project-loop cost #942 flagged.
- * An OPEN-status project with a sent quote won't show a glyph here — it
- * still shows correctly everywhere it's actually opened (header chip, lock
- * strip), so this is a coverage gap, not a wrong answer.
+ * lookup would reintroduce the exact per-project-loop cost #942 flagged. Not
+ * shown here doesn't mean not locked — the header chip and lock strip both
+ * resolve the real `projects.pricingLocked` field correctly once opened.
  */
 export function ProjectLockGlyph({ status, className }: { status: string | null | undefined; className?: string }) {
-  const tier = lockTierForStatus(status);
-  if (tier === "OPEN") return null;
-  const label = TIER_LABEL[tier] ?? "Locked";
+  if (!isConfirmedOrLater(status)) return null;
 
   return (
     <TooltipProvider>
@@ -38,10 +31,10 @@ export function ProjectLockGlyph({ status, className }: { status: string | null 
             tabIndex={0}
             className={cn("inline-flex shrink-0 rounded-sm text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red", className)}
           >
-            <Lock className="h-3 w-3" aria-label={label} />
+            <Lock className="h-3 w-3" aria-label={LABEL} />
           </span>
         </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
+        <TooltipContent>{LABEL}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

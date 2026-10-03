@@ -22,9 +22,11 @@ import { cn, focusRing } from "@/lib/utils";
 const PENDING_NAV_TIMEOUT_MS = 1500;
 
 // DESIGN.md §16 — mobile bottom nav is the 5 daily-operator workflows:
-// Dashboard / Jobs / Warehouse / Crew / Assets. Settings lives in the
-// avatar menu; everything else (Test & Tag, Maintenance, Clients, Suppliers,
-// Locations, Activity) is sidebar-only on larger screens.
+// Dashboard / Jobs / Warehouse / Crew / Assets. Settings lives in the avatar
+// menu. Dashboard reclaims slot 1 (D10C) now that Today is hidden — the
+// customizable board carries Today's old widgets for anyone who wants them
+// back. Everything else (Test & Tag, Maintenance, Clients, Suppliers,
+// Locations, Activity) is sidebar-only.
 interface MobileNavItem {
   href: string;
   icon: LucideIcon;

@@ -6,7 +6,7 @@ import { emailShell, escapeHtml } from "@/lib/email-layout";
 import { phaseLabels } from "@/lib/status-labels";
 import { formatDate } from "@/lib/formatters";
 
-interface AssignmentEmailData {
+export interface AssignmentEmailData {
   crewFirstName: string;
   projectName: string;
   projectNumber: string;
@@ -111,6 +111,71 @@ export function crewCancellationEmail(data: AssignmentEmailData) {
       <p>Your assignment for <strong>${escapeHtml(data.projectName)}</strong> has been <strong>cancelled</strong>.</p>
       ${buildDetailsHtml(data)}
       <p style="color:#888;font-size:13px;margin-top:16px;">If you have any questions, please contact us.</p>
+      `,
+      data.orgName
+    ),
+  };
+}
+
+/** Work-layer Phase 4 (#1246, design §8.5) — the 24h auto-nudge to a CREW
+ *  MEMBER whose offer is still unanswered. Reuses the SAME accept/decline
+ *  links as the original offer (the assignment's token is still live), so
+ *  this is a reminder, never a second offer. */
+export function crewOfferReminderEmail(
+  data: AssignmentEmailData,
+  acceptUrl: string,
+  declineUrl: string
+) {
+  return {
+    subject: `Reminder — Crew Offer: ${data.projectName} — ${data.roleName || "Crew"}`,
+    html: emailWrapper(
+      `
+      <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
+      <p>Just a reminder — you have an open crew position waiting on your response.</p>
+      ${buildDetailsHtml(data)}
+      <div style="margin-top:24px;">
+        <a href="${acceptUrl}" style="${buttonStyle("#0d9488")}">Accept</a>
+        <a href="${declineUrl}" style="${buttonStyle("#dc2626")}">Decline</a>
+      </div>
+      <p style="color:#888;font-size:13px;margin-top:16px;">Or reply to this email to discuss availability.</p>
+      `,
+      data.orgName
+    ),
+  };
+}
+
+/** Work-layer Phase 4 (#1246, design §8.5) — sent to crew whose offer is
+ *  auto-withdrawn once "Request availability…"'s first-come fill reaches the
+ *  service's required headcount. Distinct copy from `crewCancellationEmail`
+ *  (a PM-initiated cancellation) — nobody did anything wrong here, the slot
+ *  was simply filled by someone else first. */
+export function crewPositionFilledEmail(data: AssignmentEmailData) {
+  return {
+    subject: `Position filled: ${data.projectName} — ${data.roleName || "Crew"}`,
+    html: emailWrapper(
+      `
+      <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
+      <p>Thanks for your response — this position has now been filled by other crew who responded first.</p>
+      ${buildDetailsHtml(data)}
+      <p style="color:#888;font-size:13px;margin-top:16px;">We'll keep you in mind for the next one.</p>
+      `,
+      data.orgName
+    ),
+  };
+}
+
+/** Work-layer Phase 4 (#1246, design §8.5) — the day-before call-time
+ *  reminder for a CONFIRMED shift. Off by default per org; PM phone reuses
+ *  the same site-contact fields the offer/confirmation emails already show. */
+export function crewCallTimeReminderEmail(data: AssignmentEmailData) {
+  return {
+    subject: `Tomorrow: ${data.projectName} — ${data.roleName || "Crew"}`,
+    html: emailWrapper(
+      `
+      <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
+      <p>Quick reminder — you're on for <strong>${escapeHtml(data.projectName)}</strong> tomorrow.</p>
+      ${buildDetailsHtml(data)}
+      <p style="color:#888;font-size:13px;margin-top:16px;">See you there.</p>
       `,
       data.orgName
     ),

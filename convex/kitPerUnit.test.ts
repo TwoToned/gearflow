@@ -29,6 +29,9 @@ type T = ReturnType<typeof makeT>;
  *  its project line items + member units via the real createKitLineItem path. */
 async function seedKit(t: T, opts?: { bulk?: boolean }) {
   await t.run(async (ctx) => {
+    // #1228 — createKitLineItemCore now resolves the project's live version.
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, liveVersionId: "v-p1", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
     await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW });
     await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
@@ -178,6 +181,40 @@ describe("kit per-unit — reverse + force", () => {
     expect(serialUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
   });
 
+  const bulkAvail = (t: T) => t.run(async (ctx) => (await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).unique())?.availableQuantity);
+
+  test("checkoutKitsBatch: a kit's bulk member is already out of the pool, so deploy works at 0 available and leaves it untouched", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    await t.run(async (ctx) => {
+      const b = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).unique();
+      await ctx.db.patch(b!._id, { availableQuantity: 0 });
+    });
+    const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1"], now: NOW });
+    expect(res.succeeded).toEqual(["k1"]);
+    expect(res.errors).toEqual([]);
+    expect(await bulkAvail(t)).toBe(0);
+  });
+
+  test("kit deploy then return does not move bulk availability", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    await co(t);
+    expect(await bulkAvail(t)).toBe(10);
+    await ci(t);
+    expect(await bulkAvail(t)).toBe(10);
+  });
+
+  test("checkoutKitsBatch: re-deploying an already-deployed kit is rejected per kit", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    const run = () => t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1"], now: NOW });
+    expect((await run()).succeeded).toEqual(["k1"]);
+    const second = await run();
+    expect(second.succeeded).toEqual([]);
+    expect(second.errors[0].message).toBe("Kit is already deployed");
+  });
+
   test("checkinKitsBatch: checks in the kit in one call", async () => {
     const t = makeT();
     await seedKit(t);
@@ -247,6 +284,25 @@ describe("kit per-unit — accessories on a member", () => {
     });
   }
   const accAssetStatus = (t: T) => t.run(async (ctx) => (await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "acc1")).unique())?.status);
+
+  test("prepping the kit then deploying creates ONE accessory unit (no parent-less duplicate)", async () => {
+    const t = makeT();
+    await seedKitWithAccessory(t);
+    await t.run(async (ctx) => {
+      const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "kl1")).collect();
+      const member = kids.find((k) => k.assetId === "a1")!;
+      await ctx.db.insert("projectLineItems", {
+        id: "accL", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", isKitChild: true, childKind: "ACCESSORY",
+        parentLineItemId: member.id, assetId: "acc1", quantity: 1, status: "CONFIRMED", accessoryInclusion: "DEFAULT", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    await t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepKitChildren, { organizationId: ORG, projectId: "p1", parentLineItemId: "kl1", now: NOW });
+    await co(t);
+    const us = await accessoryUnits(t);
+    expect(us.length).toBe(1);
+    expect(us[0].parentUnitAssetId).toBe("a1");
+    expect(us[0].status).toBe("CHECKED_OUT");
+  });
 
   test("checkout deploys the member's accessory unit + asset", async () => {
     const t = makeT();

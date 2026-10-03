@@ -346,10 +346,6 @@ individually-checkable rows (closes the un-completable pick-progress bug);
 `KitChildRows` has an "Accessory" badge. Full design: `docs/designs/accessories-v2.md`.
 
 **Left open, tracked here (not silently dropped):**
-- **Row-menu "Edit accessories" entry point.** `updateAccessoryPlanNative` is
-  implemented and tested but nothing in `equipment-rows.tsx` calls it yet —
-  reopening the picker against an existing line's plan from the project
-  equipment tab needs a UI hook. P2.
 - **Main warehouse page kit-parity for accessory parents.** `groupItems`/
   `groupCheckinItems` (`warehouse/[projectId]/page.tsx`) still only
   special-case `isKitParent` — an accessory parent doesn't get its own
@@ -366,6 +362,34 @@ individually-checkable rows (closes the un-completable pick-progress bug);
   (the quantity-merge path in `addLineItemSmartNative`) increments the
   existing line without re-running `reconcileLineAccessoryChildren` — a
   pre-existing limitation (FEATUREDOCS/48) this issue didn't fix. P3.
+
+### ~~Resync accessories from catalog defaults onto open jobs~~ ✅ SHIPPED (v0.30.0)
+`resyncProjectAccessoriesNative` (`convex/lineItemWrites.ts`), surfaced as a
+"Sync accessories" button in the project Equipment tab toolbar. Re-runs
+`reconcileLineAccessoryChildren` against every not-yet-deployed line's own
+`accessoryPlan`, so a model/asset accessory added to the catalog after the
+line was created reaches the job without reopening the picker per line — also
+closes the "quantity-merge path never rescales" item above for any line it
+touches. Deliberately opt-in per project, never triggered by the catalog
+write itself. See FEATUREDOCS/48.
+
+**Left open, tracked here (not silently dropped):**
+- **Kit membership has no equivalent resync.** Editing a kit's member list
+  after the kit is already on a project does not retroactively update that
+  project's child line items — unlike accessories, a kit member is priced
+  (`ITEMIZED` per-child or `KIT_PRICE` bundle), so a resync needs its own
+  pricing-assignment design rather than reusing this mechanism as-is. See
+  FEATUREDOCS/09's "Catalog changes after a kit is already on a project" note.
+  P3.
+
+### ~~Row-menu "Edit accessories" entry point~~ ✅ SHIPPED
+`updateAccessoryPlanNative` had no UI trigger since issue #794 shipped it —
+`equipment-rows.tsx`'s per-line "…" kebab now offers an "Edit accessories"
+item (gated by `canEditAccessoryPlan`,
+`src/lib/accessory-plan-eligibility.ts`), opening `EditAccessoryPlanDialog`
+which reseeds the SAME checkbox picker the add-form uses — extracted to a
+shared `AccessorySelectionFields` component so the two can't drift. See
+FEATUREDOCS/48.
 
 ## Warehouse Documents
 
@@ -500,6 +524,26 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 **Estimate:** human ~5-6 weeks / CC ~1-2 days
 **Priority:** P3 (re-evaluate on trigger)
 
+## Project Versioning
+
+### Compare as a Client-Facing Variation PDF
+**What:** Export a Compare-mode comparison (#1232) as a client-facing "variation" document
+— the money bridge + changed rows, formatted for a client to read, not just an internal
+diff view.
+**Why:** The obvious next ask once Compare ships — a PM who's just built the bridge showing
+"why v3 costs $2,880 more" naturally wants to hand that explanation to the client instead of
+re-explaining it over email/phone.
+**Why deferred (not an oversight):** This is a NEW finance document type, so CLAUDE.md's
+stored-bytes rule (#987) applies in full — rendered once, attached to a row, no
+regeneration path, no overwrite, same as quote/invoice PDFs. That's real, separate design
+work (a new `financeArtifacts`-style attach point, a new react-pdf template, a decision on
+whether a variation is versioned itself), explicitly out of scope for #1232's Phase 5b.
+**Context:** `convex/lib/versionCompare.ts`'s row classification + money bridge already
+compute everything a variation PDF's content would need — this would be a rendering/
+storage layer on top, not new diff logic.
+**Depends on:** Compare mode (#1232, shipped this phase).
+**Priority:** P2
+
 ## Project Management
 
 ### ~~Configurable Auto-Incrementing Project Codes~~ ✅ SHIPPED
@@ -528,6 +572,67 @@ notifications, drag-and-drop reorder UI, task comments.
 Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.getHours()` (server-local time) and emitted unanchored "floating time" DATE-TIMEs with no TZID, VTIMEZONE block, or `Z` suffix. On Vercel (UTC server) a Sydney 9am event became `DTSTART:...T230000` floating — Google Calendar rendered it at 11pm in the viewer's local zone, shifted by ~10–11h. Fix: TZID-anchored DTSTART/DTEND with hardcoded VTIMEZONE blocks for AU + common intl zones (DST-aware via RRULE), UTC DTSTAMP per RFC 5545, `Intl.DateTimeFormat`-based tz conversion (no new deps), org timezone read from `OrgSettings.timezone` (default Australia/Sydney). 16-test regression suite in `src/lib/ical.test.ts`.
 
 ## Platform Integrations
+
+### Xero Tax Type Ignores taxExempt Clients and Per-Line Tax Rates
+**What:** `resolveTaxType` (`convex/lib/xeroAccountCascade.ts`) resolves a pushed line's Xero
+`TaxType` as `lineOverride ?? orgDefaultTaxType`. It is unaware of two things the rest of the
+system models properly: `clients.taxExempt` (recalc short-circuits an exempt client to
+`taxAmount: 0` / `taxStatus: "EXEMPT"` and the PDF prints "GST: Exempt") and T3's per-line
+`taxRate` overrides (#1091). So an exempt client's invoice is pushed with the org's default
+`OUTPUT2` and **Xero adds 10% GST to an invoice Flow issued tax-free**, and a 15%-override
+line pushes as the org's single default rate.
+**Why:** Same defect class as INV-260901 (Flow and Xero disagreeing about tax) but on the RATE
+rather than the BASE. `assertLinesReconcileWithTaxableBase` (`src/server/xero.ts`) does not
+catch it — the lines DO sum to the taxable base; it is the tax Xero derives from them that is
+wrong. `convex/xeroPush.ts`'s `varianceNote` only emits prose when a line's tax type differs
+from the org default; it never compares a numeric rate and never blocks.
+**Context:** Found by adversarial review of the INV-260901 fix (finding 7). Deliberately out of
+scope there: the reconcile guard's remit was the line BASE, and fixing the rate needs a real
+mapping from Flow's tax model (exempt / per-line rate / T3 breakdown) onto Xero tax types,
+plus a UI for orgs to declare their exempt-sales tax type.
+**Priority:** P1
+
+### Xero LineAmount Disagrees With Quantity × UnitAmount
+**What:** `buildFinanceLines` emits `quantity`, `unitPrice` and `lineTotal` where
+`lineTotal = unitPrice × quantity × duration − discount`, so a 5-day 2-unit hire pushes as
+Quantity 2 / UnitAmount 100 / LineAmount 1000. Services are worse: `calculateServiceLineTotal`
+(`convex/projectServicesWrites.ts`) never multiplies by quantity, yet the snapshot still emits
+`quantity: s.quantity ?? 1` — Quantity 3 / UnitAmount 100 / LineAmount 100.
+**Why:** Flow relies on Xero honouring an explicit `LineAmount` over its own
+`Quantity × UnitAmount`. That is the documented behaviour but it is not verified against a real
+tenant, and the numbers as displayed in Xero are nonsense to a human reading the invoice even
+when the total is right. Either send duration-aware `quantity`/`unitPrice` that multiply out
+correctly, or send `quantity: 1` with the resolved amount.
+**Context:** Adversarial review finding 8 on the INV-260901 fix. The reconcile guard sums
+`LineAmount` only and cannot see this.
+**Priority:** P2
+
+### A Pre-Fix DRAFT Invoice Can Still Issue a Contradictory PDF
+**What:** `issueNative` does not check that an invoice's lines reconcile with its taxable base.
+A DEPOSIT/BALANCE/CREDIT invoice drafted before the tax-exclusive line fix still carries the
+GST-inclusive line; issuing it freezes a permanently contradictory stored PDF (a $330.00 line
+above a $300.00 Subtotal), and only the Xero push later refuses it.
+**Why:** Issue is the point of no return — `attachInvoiceArtifact` never overwrites. The same
+`sum(lines) === total - taxAmount` check, applied in `issueNative`, would close the window at
+the moment it becomes irreversible instead of after.
+**Context:** Adversarial review finding 10 on the INV-260901 fix. Needs the check in Convex
+(the current one lives in `src/server/xero.ts`), so the arithmetic wants extracting into a
+shared module first.
+**Priority:** P1
+
+### FULL Invoice After a Partial Does Not Net Off the Partials
+**What:** `createNative`'s FULL branch keeps the project's full totals and never consults
+`priorPartialTotal()`, and there is no server-side refusal when partials already exist. The UI
+won't offer FULL in that state (`deriveRemainingStep` returns FULL only when no live invoices
+exist), but `createNative` is agent-reachable (`agentOps.createNative: { danger: "medium" }`),
+so an API/MCP caller can raise a FULL invoice on a project that already has an issued deposit —
+billing the deposit a second time.
+**Why:** Server is the authority (R-9.3); a UI-only guard on a money-creating mutation is not a
+guard. Either refuse FULL when `priorPartialTotal() > 0`, or net it the way BALANCE does.
+**Context:** Adversarial review finding 4 on the INV-260901 fix. Related: `resolveInvoiceAmountDue`
+suppresses the deposit row for every specific invoice on the stated grounds that every kind is
+netted at creation time — true for DEPOSIT/BALANCE/CREDIT, not for FULL.
+**Priority:** P1
 
 ### Public REST/GraphQL API
 **What:** Build a public API for integrating with external tools. Read endpoints for projects, assets, availability; write endpoints for creating projects, line items, checkouts. Auth via API keys scoped per organisation. Rate limiting, audit logging, OpenAPI spec.
@@ -696,3 +801,50 @@ cross-org isolation, validation). Full doc in [FEATUREDOCS/25](./FEATUREDOCS/25-
 **Depends on:** Nothing; large blast radius.
 **Estimate:** human ~2-3 weeks / CC ~2-3 hours
 **Priority:** P3
+
+## Observability & Performance (from the work-layer eng review, 2026-09-16)
+
+### Fill the empty "Before" column in the Convex measurement baseline
+**What:** `docs/designs/perf-convex-measurement-baseline.md` defines per-flow metrics (function
+calls, documents and bytes read, p50/p95, reactive re-runs after one mutation) and targets
+(kit-detail edit ≤1 refetch, docs read down ≥80%, asset list O(page) not O(org)) — but the
+"Before" column was never populated. Run the measurement pass and fill it in.
+**Why:** No claim about read-cost improvement in this codebase can currently be verified. During
+the work-layer engineering review, the choice between a scheduled sweep and live subscriptions
+had to be settled by reasoning about mechanism rather than by numbers, precisely because there is
+no baseline to compare against. The one hard figure available (6.05 GB/month, 77% from
+`overbooking.bundle`, `perf-convex-efficiency-2026-06.md:634`) came from a billing dashboard, not
+from this harness.
+**Pros:** Every future performance decision becomes evidence-based; the already-shipped Finding #0
+narrowing finally gets its re-measurement; the work-layer phase-1 exit criteria become checkable.
+**Cons:** Needs a measurement pass against a real deployment with representative data, and
+somebody has to decide what "representative" means for a two-user production org.
+**Context:** The baseline doc exists and is well-specified; only the numbers are missing. Start by
+running the listed flows against the dev deployment, then decide whether prod-scale numbers need a
+seeded org. Related open findings: #1 (asset/project list pages still whole-org collect) and #4
+(subscription fan-out) in `docs/designs/perf-convex-efficiency-2026-06.md:805-859`.
+**Depends on:** Nothing. Blocks confident verification of the work-layer read-cost claims.
+**Estimate:** human ~1 day / CC ~2 hours
+**Priority:** P2
+
+### Move the notification bell off whole-org reads
+**What:** `src/server/notifications.ts` `getNotifications` builds all nine derived notification
+types by reading the whole org on every render: `getProjectsByOrg`, `getAssetsByOrg`,
+`getMaintenanceRecordsByOrg`, `getCrewAssignmentsByOrg`, plus a model map. Replace each branch with
+a narrow indexed read.
+**Why:** It runs on every page that shows the bell, which is every page. The same whole-org pattern
+from scheduled code is already documented as the second-largest database consumer
+(`perf-convex-efficiency-2026-06.md:706-717`, Finding #0b, 371 MB/month). The work-layer phase 0
+moves mentions onto a stored `notifications` table with an org-prefixed index, which is the right
+shape, but the other eight types keep the old reads.
+**Pros:** Removes a whole-org read from a component present on every page; each of the nine types
+already has an indexed alternative (`by_organizationId_status` exists on assignments, invoices and
+quotes; maintenance has `by_organizationId_status_scheduledDate`).
+**Cons:** Nine separate branches, each needing its own narrower read and its own test. The
+`pending_invitation` branch reads Better-Auth tables in Postgres and cannot move to Convex.
+**Context:** Do this after work-layer phase 0, which establishes the stored-notification pattern
+and the org-prefixed index convention to copy. The dashboard "Needs attention" chip tray is a
+separate derived surface that deliberately stays derived — do not merge the two.
+**Depends on:** Work-layer phase 0 (for the pattern). Not blocking.
+**Estimate:** human ~2 days / CC ~1 hour
+**Priority:** P2

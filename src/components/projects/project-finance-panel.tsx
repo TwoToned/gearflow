@@ -3,8 +3,9 @@
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
-import { ProjectQuoteRail, ASSIGN_CLIENT_FOR_QUOTES_MESSAGE } from "@/components/projects/project-quote-rail";
+import { ProjectQuoteRail, ASSIGN_CLIENT_FOR_QUOTES_MESSAGE, type QuoteRailVersionContext } from "@/components/projects/project-quote-rail";
 import { ProjectInvoiceLedger } from "@/components/projects/finance/project-invoice-ledger";
+import { useProjectVersion } from "@/components/projects/project-version-context";
 
 interface ProjectFinancePanelProps {
   projectId: string;
@@ -31,12 +32,28 @@ interface ProjectFinancePanelProps {
  * its own R-3.1 comment) — `ProjectInvoiceLedger` queries it again itself,
  * which is cheap and idiomatic: Convex dedupes reactive queries with
  * identical args across components.
+ *
+ * #1233 (Phase 6) UI follow-up — this is the ONE `ProjectQuoteRail` embed
+ * site that opts into `versionContext` (`useProjectVersion()`, the same
+ * subscription `VersionStrip`/the header pill already read — R-3.1, no new
+ * query). It's always rendered under `ProjectVersionProvider` (mounted once
+ * above the tabs on `/projects/[id]`, `FinanceTabSlot`), which is what makes
+ * this safe to call unconditionally. The Overview tab's `QuoteCard`/
+ * `QuoteManagerDialog` deliberately do NOT — Overview stays live-only
+ * (FEATUREDOCS/78), so they never pass this prop and keep exactly their
+ * pre-follow-up behaviour.
  */
 export function ProjectFinancePanel({ projectId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total }: ProjectFinancePanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 
   const invoices = useAuthedQuery(api.invoices.listForProject, orgId ? { orgId, projectId } : "skip");
+
+  const { versions, isViewingVersion, viewingVersion } = useProjectVersion();
+  const versionContext: QuoteRailVersionContext = {
+    versions: versions.map((v) => ({ id: v.id, number: v.number, label: v.label })),
+    viewing: isViewingVersion && viewingVersion ? { id: viewingVersion.id, number: viewingVersion.number, label: viewingVersion.label } : null,
+  };
 
   return (
     <div className="space-y-6">
@@ -51,6 +68,7 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
           taxAmount={taxAmount}
           total={total}
           invoices={invoices}
+          versionContext={versionContext}
         />
       ) : (
         <p className="t-micro text-fg-4">{ASSIGN_CLIENT_FOR_QUOTES_MESSAGE}</p>

@@ -26,7 +26,7 @@
  */
 export type ReadinessSeverity = "blocking" | "warning" | "pass" | "unknown";
 
-export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "services" | "pricing";
+export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "services" | "pricing" | "packing";
 
 export interface ReadinessCheck {
   id: ReadinessCheckId;
@@ -58,6 +58,12 @@ export interface ReadinessPricingInput {
   unpricedCount: number;
 }
 
+/** #1296 build plan phase 4 — see `computeProjectPackingReadiness`. */
+export interface ReadinessPackingInput {
+  totalCount: number;
+  notPlannedCount: number;
+}
+
 export interface ReadinessConflictInput {
   assetTag: string;
   modelName: string;
@@ -72,6 +78,7 @@ export interface BuildChecksInput {
   crew: ReadinessCrewInput;
   pricing: ReadinessPricingInput;
   conflicts: ReadinessConflictInput[];
+  packing: ReadinessPackingInput;
 }
 
 const plural = (n: number, one: string, many = one + "s") => (n === 1 ? one : many);
@@ -209,15 +216,36 @@ function pricingCheck(pricing: ReadinessPricingInput): ReadinessCheck {
 }
 
 /**
+ * #1296 build plan phase 4 (Q8 — a non-blocking warning, never a violation
+ * that would stop a job going out; return-side unpacked gear is a legitimate
+ * "Loose" section on the manifest, not an error). Returns `null` when the
+ * project has no plannable equipment at all — same "nothing to carry a
+ * permanent row for" reasoning as `crewCheck`/`servicesCheck`.
+ */
+function packingCheck(packing: ReadinessPackingInput): ReadinessCheck | null {
+  if (packing.totalCount === 0) return null;
+  if (packing.notPlannedCount === 0) return { id: "packing", severity: "pass", title: "Every line has a container" };
+  return {
+    id: "packing",
+    severity: "warning",
+    title: `${packing.notPlannedCount} of ${packing.totalCount} ${plural(packing.totalCount, "line")} not planned`,
+    detail: "No container assigned yet — plan it on the Packing tab before the warehouse starts prepping.",
+    actionLabel: "Open Packing",
+  };
+}
+
+/**
  * Fixed order, worst-first within it: gear and conflicts can stop a job going
- * out, services and crew are the people side, pricing costs money but not the
- * load-out. The order is stable regardless of severity so the panel doesn't
- * reshuffle under the user as problems resolve — only the marks change.
+ * out, services and crew are the people side, pricing and packing cost money/
+ * time but not the load-out itself. The order is stable regardless of
+ * severity so the panel doesn't reshuffle under the user as problems
+ * resolve — only the marks change.
  *
  * `services` and `crew` can each come back `null` (nothing scheduled /
- * nobody assigned) — those rows are dropped rather than rendered as a
- * permanent pass, so a job that doesn't need crew or services doesn't carry
- * checks for facts that were never true.
+ * nobody assigned), same as `packing` (nothing to plan) — those rows are
+ * dropped rather than rendered as a permanent pass, so a job that doesn't
+ * need crew, services, or gear planning doesn't carry checks for facts that
+ * were never true.
  */
 export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] {
   return [
@@ -226,6 +254,7 @@ export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] 
     servicesCheck(input.crew),
     crewCheck(input.crew),
     pricingCheck(input.pricing),
+    packingCheck(input.packing),
   ].filter((c): c is ReadinessCheck => c !== null);
 }
 

@@ -26,17 +26,33 @@ import {
   Handshake,
   ArrowRightLeft,
   Sparkles,
+  Layers,
+  ListOrdered,
+  Eye,
+  EyeOff,
+  Puzzle,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  type CategoryPricingDisplay,
+  canRevealPriceInRollup,
+  isRollupCategory,
+} from "@/lib/category-pricing-display";
+import { canDiscloseGroupChild } from "@/lib/group-child-disclosure";
+import { canExcludeFromRoi } from "@/lib/roi";
+import type { OverbookedInfo } from "@/lib/overbooking-core";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -184,6 +200,7 @@ export {
   taggedUnitCount,
   describeRow,
   unitFulfillmentBadge,
+  hasContainerChip,
   type RowSource,
   type RowRole,
   type RowDescriptor,
@@ -196,80 +213,48 @@ import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
-export type OverbookedInfo = {
-  overBy: number;
-  totalStock: number;
-  effectiveStock?: number;
-  totalBooked: number;
-  inherited?: boolean;
-  unavailableAssets?: number;
-  reducedOnly?: boolean;
-  hasOverbookedChildren?: boolean;
-  hasReducedChildren?: boolean;
-};
+// Re-exported for back-compat: consumers (equipment-tab.tsx) import this type
+// from here. The canonical shape lives in overbooking-core.ts — the single
+// source both the server (computeOverbookedStatus) and the native read layer
+// (reconstructOverbookedStatus) build, so it stays one definition (R-3.1).
+export type { OverbookedInfo };
 
 function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
   if (!info) return null;
 
   const effective = info.effectiveStock ?? info.totalStock;
   const unavail = info.unavailableAssets || 0;
+  const reducedNote = unavail > 0 ? `, ${unavail} in maintenance or lost` : "";
 
-  // Kit parents with BOTH overbooked and reduced children show two badges
-  if (info.inherited && info.hasOverbookedChildren && info.hasReducedChildren) {
-    return (
-      <>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge status="overbooked" className="ml-1.5 cursor-help">
-                Overbooked
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>Contains items that are over capacity</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* Reduced stock = info (blue). Badge has no info status, so this is
-                  a blue-soft override on a neutral pill (warehouse precedent). */}
-              <Badge status="neutral" className="ml-1.5 cursor-help bg-blue-soft text-blue">
-                Reduced stock
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              Contains items with {unavail} asset{unavail !== 1 ? "s" : ""} in maintenance or lost
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </>
-    );
-  }
-
-  const isReduced = info.reducedOnly;
-  // Reduced = info (blue override on neutral); inherited-overbook = warn;
-  // direct overbook = error (t-out). Status §3 / §1.
-  const badgeStatus = isReduced ? "neutral" : info.inherited ? "warn" : "overbooked";
-  const colorClass = isReduced ? "bg-blue-soft text-blue" : "";
-  const label = isReduced ? "Reduced stock" : "Overbooked";
+  // Pencil-only: the overage is caused ENTIRELY by still-quoted/optional demand
+  // elsewhere in the org — nothing has hard-held this project's stock yet. Shown
+  // as a softer "warn" pill (same visual language as the Overbookings & Gaps
+  // board's amber "pencilled collisions" section) instead of the hard-error
+  // "overbooked" pill, so a genuine hard conflict still reads as more urgent.
+  //
+  // Maintenance/lost-reduced stock is NOT a reason to soften this any further:
+  // demand exceeding today's USABLE stock is a real overbooking whether the
+  // missing units are on another job or sitting in a service bay.
+  // `unavailableAssets` only adds context to the tooltip below.
+  const isPencilledOnly = !info.inherited && (info.hardOverBy ?? info.overBy) === 0;
+  const badgeStatus = info.inherited || isPencilledOnly ? "warn" : "overbooked";
+  const label = isPencilledOnly ? "Pencilled overbook" : "Overbooked";
 
   function getTooltip() {
     if (info!.inherited) {
-      return isReduced
-        ? `Contains items with ${unavail} asset${unavail !== 1 ? "s" : ""} in maintenance or lost`
-        : `Contains items that are ${info!.overBy} over capacity`;
+      return `Contains items that are ${info!.overBy} over capacity${reducedNote}`;
     }
-    if (isReduced) {
-      return `${info!.overBy} over usable stock — ${unavail} of ${info!.totalStock} in maintenance or lost (${effective} usable, ${info!.totalBooked} booked)`;
+    if (isPencilledOnly) {
+      return `${info!.overBy} over capacity if every pencilled (not-yet-confirmed) booking for this gear goes ahead — nothing is hard-booked over capacity yet (${info!.totalBooked} booked / ${effective} usable${reducedNote})`;
     }
-    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${unavail > 0 ? `, ${unavail} unavailable` : ""})`;
+    return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${reducedNote})`;
   }
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge status={badgeStatus} className={cn("ml-1.5 cursor-help", colorClass)}>
+          <Badge status={badgeStatus} className="ml-1.5 cursor-help">
             {label}
           </Badge>
         </TooltipTrigger>
@@ -305,6 +290,8 @@ export function GroupRow({
   onAddKit,
   onMove,
   onSaveAsTemplate,
+  inRollupCategory,
+  onTogglePriceReveal,
   orgId,
   projectId,
   commentBadge,
@@ -338,6 +325,13 @@ export function GroupRow({
   onEditPrice?: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
+  /** Category price rollup — true when this group sits in a `ROLLUP` category,
+   *  so its collapsed bundle row prints without a price on client-facing
+   *  documents unless revealed. Gates the reveal entry below.
+   *  See src/lib/category-pricing-display.ts. */
+  inRollupCategory?: boolean;
+  /** Flip this group's `revealPriceInRollup`. The menu entry hides without it. */
+  onTogglePriceReveal?: () => void;
   /** Open the move-to-category dialog. Optional so callers that don't
    *  want the affordance (e.g. read-only views) can omit it. */
   onMove?: () => void;
@@ -356,6 +350,35 @@ export function GroupRow({
   const groupTotal = priceVal != null ? Math.max(0, priceVal * group.quantity - discountVal) : null;
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete }, "equipment");
   const isMobile = useIsMobile();
+
+  /** Category price rollup, per-item reveal — a priced group collapses to ONE
+   *  row on a client-facing document, so it needs the same control every other
+   *  row in the section has. Defined once, rendered in both kebabs.
+   *
+   *  It sits under a "Client documents" heading rather than spelling the
+   *  context out in each label: every toggle in that section answers the one
+   *  question "what does the client see on the quote?", so the heading carries
+   *  it and the labels stay short and parallel across category, group and item
+   *  rows. The section closes with its own separator because the destructive
+   *  Delete follows it — without one, Delete reads as part of the section. */
+  const clientDocsSection =
+    inRollupCategory && onTogglePriceReveal ? (
+      <>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Client documents</DropdownMenuLabel>
+          <DropdownMenuItem onClick={onTogglePriceReveal}>
+            {group.revealPriceInRollup ? (
+              <EyeOff className="mr-2 h-3.5 w-3.5" />
+            ) : (
+              <Eye className="mr-2 h-3.5 w-3.5" />
+            )}
+            {group.revealPriceInRollup ? "Hide this price" : "Show this price"}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+      </>
+    ) : null;
 
   // ── Mobile: group header card (children render as sibling cards below). ──
   const groupMenu = (
@@ -398,14 +421,15 @@ export function GroupRow({
               Move to category
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem
-            onClick={onDelete}
-            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Delete
-          </DropdownMenuItem>
         </DropdownMenuGroup>
+        {clientDocsSection}
+        <DropdownMenuItem
+          onClick={onDelete}
+          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -612,14 +636,15 @@ export function GroupRow({
                       Move to category
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem
-                    onClick={onDelete}
-                    className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                  >
-                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                    Delete
-                  </DropdownMenuItem>
                 </DropdownMenuGroup>
+                {clientDocsSection}
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -861,6 +886,7 @@ export function CategoryRow({
   columnCount,
   onRename,
   onDelete,
+  onSetPricingDisplay,
   onAddEquipment,
   onAddKit,
   onAddCustom,
@@ -878,6 +904,11 @@ export function CategoryRow({
   columnCount: number;
   onRename: () => void;
   onDelete: () => void;
+  /** Category price rollup — switch this category between per-line pricing and
+   *  one derived subtotal on client-facing documents. Optional so a read-only
+   *  caller can omit it; the menu entry hides when it isn't supplied.
+   *  See src/lib/category-pricing-display.ts. */
+  onSetPricingDisplay?: (next: CategoryPricingDisplay) => void;
   /** Open the unified add dialog scoped to this category (no group).
    *  All three are optional so callers can opt in. The kebab section
    *  hides entirely when none are supplied. Sub-hire is intentionally
@@ -890,6 +921,39 @@ export function CategoryRow({
 } & DragHandleControls) {
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
   const isMobile = useIsMobile();
+  const isRollup = isRollupCategory(cat.pricingDisplay);
+
+  /** The pricing-display toggle, shared by the mobile kebab and the desktop
+   *  one so the two menus can't drift.
+   *
+   *  Under the same "Client documents" heading the per-row price and
+   *  group-member toggles use — that shared heading is what makes the four
+   *  controls read as one system instead of four unrelated switches. The
+   *  wording matches ROLLUP_SUBTOTAL_LABEL ("Combined price"), so the phrase
+   *  the operator picks is the phrase the client reads on the document. */
+  const clientDocsSection = onSetPricingDisplay ? (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Client documents</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => onSetPricingDisplay(isRollup ? "ITEMISED" : "ROLLUP")}>
+          {isRollup ? <ListOrdered className="mr-2 h-3.5 w-3.5" /> : <Layers className="mr-2 h-3.5 w-3.5" />}
+          {isRollup ? "Show individual prices" : "Show combined price"}
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+    </>
+  ) : null;
+
+  /** Shown next to the name so the operator can see, without opening a menu,
+   *  that this category's documents won't carry per-item prices. Labelled, not
+   *  colour-only (DESIGN.md §3.3), and worded exactly like the toggle that set
+   *  it. */
+  const rollupBadge = isRollup ? (
+    <Badge status="info" className="font-normal">
+      Combined price
+    </Badge>
+  ) : null;
 
   const categoryMenu = (
     <DropdownMenu>
@@ -927,14 +991,15 @@ export function CategoryRow({
             <Pencil className="mr-2 h-3.5 w-3.5" />
             Rename
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onDelete}
-            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Delete
-          </DropdownMenuItem>
         </DropdownMenuGroup>
+        {clientDocsSection}
+        <DropdownMenuItem
+          onClick={onDelete}
+          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -944,6 +1009,7 @@ export function CategoryRow({
     return (
       <CategoryCardHeading
         name={cat.name}
+        badge={rollupBadge}
         dragHandleRef={dragHandleRef}
         dragAttributes={dragAttributes}
         dragListeners={dragListeners}
@@ -977,6 +1043,7 @@ export function CategoryRow({
       <TableCell colSpan={columnCount} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
           <h3 className="t-overline text-muted">{cat.name}</h3>
+          {rollupBadge}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="size-8 opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/cat:opacity-100 focus-visible:opacity-100">
@@ -1012,14 +1079,15 @@ export function CategoryRow({
                   <Pencil className="mr-2 h-3.5 w-3.5" />
                   Rename
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={onDelete}
-                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Delete
-                </DropdownMenuItem>
               </DropdownMenuGroup>
+              {clientDocsSection}
+              <DropdownMenuItem
+                onClick={onDelete}
+                className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1048,8 +1116,14 @@ export function LineItemRow({
   onEdit,
   onMoveToCategory,
   onMoveToGroup,
+  onEditAccessories,
   onRemove,
   onClick,
+  inRollupCategory,
+  onTogglePriceReveal,
+  inProjectGroup,
+  onToggleGroupDisclosure,
+  onToggleRoiExclusion,
   dragHandleRef,
   dragAttributes,
   dragListeners,
@@ -1092,7 +1166,30 @@ export function LineItemRow({
   /** Opens the "Move to group" dialog. The item lands inside a
    *  specific group and adopts its category. */
   onMoveToGroup: () => void;
+  /** Opens the "Edit accessories" picker, reseeded from the line's own stored
+   *  `accessoryPlan`. Omitted (menu entry hides) for a line `canEditAccessoryPlan`
+   *  (src/lib/accessory-plan-eligibility.ts) rules out — a kit/accessory child, a
+   *  sub-hire line, a line with no model/asset, or one that's already deployed. */
+  onEditAccessories?: () => void;
   onRemove: () => void;
+  /** Category price rollup — true when this row sits in a `ROLLUP` category, so
+   *  its price is hidden on client-facing documents unless revealed. Gates the
+   *  reveal menu entry: offering it in an ITEMISED category would suggest the
+   *  flag does something there, and it does not.
+   *  See src/lib/category-pricing-display.ts. */
+  inRollupCategory?: boolean;
+  /** Flip this row's `revealPriceInRollup`. Omitted for rows the caller can't
+   *  patch (or won't) — the menu entry hides with it. */
+  onTogglePriceReveal?: () => void;
+  /** Group child disclosure — true when this row is a member of a Project
+   *  Group, which collapses to ONE row on a client-facing document. Gates the
+   *  disclosure entry: a row that isn't in a group has nothing to be listed
+   *  under. See src/lib/group-child-disclosure.ts. */
+  inProjectGroup?: boolean;
+  /** Flip this row's `showInGroupOnDocs`. The menu entry hides without it. */
+  onToggleGroupDisclosure?: () => void;
+  /** #1249 — flip this row's `excludeFromRoi`. The menu entry hides without it. */
+  onToggleRoiExclusion?: () => void;
   /** Multi-select: row click handler (not firing for grip handle clicks) */
   onClick?: (e: React.MouseEvent) => void;
   /** Inline (click-to-edit, save-on-blur) price/discount/description/notes —
@@ -1119,6 +1216,115 @@ export function LineItemRow({
   // sub-hire-item-edit-payload.ts and equipment-tab.tsx's
   // handleInlineLineItemUpdate.
   const isSubHireGroupChild = item.subHireGroupId != null;
+  // #1296 (D5) — a container's own line item is never priced; its price cell
+  // is always read-only regardless of lock/permission state.
+  const priceEditable = !!onInlineUpdate && desc.source !== "container";
+
+  /** Category price rollup, per-item reveal — only offered inside a rolled-up
+   *  category AND on a row that prints its own row on a client-facing document.
+   *  A group member, a sub-hire group child and a kit child are all dropped by
+   *  `structureLineItems` in collapse mode, so revealing "this row's price"
+   *  reveals a price on a row the client never sees. `canRevealPriceInRollup`
+   *  is the shared rule — see src/lib/category-pricing-display.ts. */
+  const priceRevealItem =
+    inRollupCategory &&
+    canRevealPriceInRollup({ inProjectGroup, isSubHireGroupChild, isKitChild: item.isKitChild }) &&
+    onTogglePriceReveal ? (
+      <DropdownMenuItem onClick={onTogglePriceReveal}>
+        {item.revealPriceInRollup ? (
+          <EyeOff className="mr-2 h-3.5 w-3.5" />
+        ) : (
+          <Eye className="mr-2 h-3.5 w-3.5" />
+        )}
+        {item.revealPriceInRollup ? "Hide this price" : "Show this price"}
+      </DropdownMenuItem>
+    ) : null;
+
+  /** Group child disclosure — list this member under its group's collapsed row
+   *  on quotes/invoices. Offered only for a row that's actually in a group
+   *  (elsewhere there is no collapsed row to appear under) and that the
+   *  renderer will actually list: `canDiscloseGroupChild` is the same rule
+   *  `disclosedGroupChildren` filters by, so the menu can't offer a toggle the
+   *  document then ignores.
+   *
+   *  "Show this item", not "show this price": a disclosed member never prints a
+   *  price (the group's bundle price is the charge), so the pair reads as the
+   *  price toggle's sibling — same verb, different noun — rather than a second
+   *  way of saying the same thing. */
+  const groupDisclosureItem =
+    inProjectGroup && canDiscloseGroupChild(item) && onToggleGroupDisclosure ? (
+      <DropdownMenuItem onClick={onToggleGroupDisclosure}>
+        {item.showInGroupOnDocs ? (
+          <EyeOff className="mr-2 h-3.5 w-3.5" />
+        ) : (
+          <Eye className="mr-2 h-3.5 w-3.5" />
+        )}
+        {item.showInGroupOnDocs ? "Hide this item" : "Show this item"}
+      </DropdownMenuItem>
+    ) : null;
+
+  /** Revenue allocation, per-item opt-out (#1249) — "this gear earned nothing".
+   *  The line takes no share of its group/kit bundle price and never counts
+   *  toward model ROI. Offered only where the allocator would otherwise credit
+   *  the row: `canExcludeFromRoi` (src/lib/roi.ts) drops the lines every
+   *  structural rule already excludes (no model, SALE, sub-hire), so the menu
+   *  can't offer a switch the engine ignores.
+   *
+   *  This exists because an explicit $0 USED to mean "exclude me" implicitly —
+   *  which silently swallowed every group member left unpriced, the normal case
+   *  when the bundle price is the charge. A $0 line now allocates by its
+   *  rate/cost like an unpriced "—" one, and THIS is the only way to say the
+   *  gear earned nothing. */
+  const roiExclusionItem =
+    canExcludeFromRoi(item) && onToggleRoiExclusion ? (
+      <DropdownMenuItem onClick={onToggleRoiExclusion}>
+        {item.excludeFromRoi ? (
+          <TrendingUp className="mr-2 h-3.5 w-3.5" />
+        ) : (
+          <TrendingDown className="mr-2 h-3.5 w-3.5" />
+        )}
+        {item.excludeFromRoi ? "Include in ROI" : "Exclude from ROI"}
+      </DropdownMenuItem>
+    ) : null;
+
+  /** The row's toggle sections, each under its own heading, defined once and
+   *  rendered in both the desktop and mobile kebabs so they can't drift.
+   *
+   *  Two headings, not one, because they answer different questions. "Client
+   *  documents" is the same heading the category and group kebabs carry — every
+   *  toggle in it answers "what does the client see on the quote?", so the
+   *  heading carries the context and the labels stay short and parallel across
+   *  category, group and item rows. Its two entries are mutually exclusive on a
+   *  line item by construction (the price reveal needs a row the document
+   *  draws, which a group member never is), so it holds exactly one; it stays
+   *  generic so neither rule has to know that. "Reporting" is internal and
+   *  changes nothing a client ever sees — filing it under the same heading
+   *  would say the opposite.
+   *
+   *  The block opens and closes with its own separator because the destructive
+   *  Delete follows it — without one, Delete reads as part of the last section.
+   *  The separator BETWEEN the two groups only renders when both are present. */
+  const clientDocsSection =
+    priceRevealItem || groupDisclosureItem || roiExclusionItem ? (
+      <>
+        <DropdownMenuSeparator />
+        {(priceRevealItem || groupDisclosureItem) && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Client documents</DropdownMenuLabel>
+            {priceRevealItem}
+            {groupDisclosureItem}
+          </DropdownMenuGroup>
+        )}
+        {(priceRevealItem || groupDisclosureItem) && roiExclusionItem && <DropdownMenuSeparator />}
+        {roiExclusionItem && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Reporting</DropdownMenuLabel>
+            {roiExclusionItem}
+          </DropdownMenuGroup>
+        )}
+        <DropdownMenuSeparator />
+      </>
+    ) : null;
 
   // Captures the shift key on checkbox click so the row-level handler can extend
   // a range — Radix's onCheckedChange doesn't forward the originating event.
@@ -1201,6 +1407,7 @@ export function LineItemRow({
         <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
       )}
       {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+      {desc.source === "container" && <Badge status="neutral">Container</Badge>}
       {desc.isSale && item.saleMode === "NEW_STOCK" && (
         <Badge status="ok">Sale · New stock</Badge>
       )}
@@ -1252,6 +1459,12 @@ export function LineItemRow({
             <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
             Move to group
           </DropdownMenuItem>
+          {onEditAccessories && (
+            <DropdownMenuItem onClick={onEditAccessories}>
+              <Puzzle className="mr-2 h-3.5 w-3.5" />
+              Edit accessories
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
             <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
             Needs review
@@ -1275,14 +1488,15 @@ export function LineItemRow({
               Report issue
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem
-            onClick={onRemove}
-            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Delete
-          </DropdownMenuItem>
         </DropdownMenuGroup>
+        {clientDocsSection}
+        <DropdownMenuItem
+          onClick={onRemove}
+          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1569,6 +1783,11 @@ export function LineItemRow({
               Custom
             </Badge>
           )}
+          {desc.source === "container" && (
+            <Badge status="neutral" className="ml-1.5">
+              Container
+            </Badge>
+          )}
           {desc.isSale && item.saleMode === "NEW_STOCK" && (
             <Badge status="ok" className="ml-1.5">
               Sale · New stock
@@ -1648,7 +1867,7 @@ export function LineItemRow({
         )}
       </TableCell>
       <TableCell className="text-right whitespace-nowrap t-data">
-        {onInlineUpdate && isSubHireGroupChild ? (
+        {priceEditable && isSubHireGroupChild ? (
           // Sub-hire GROUP CHILDREN route through updateSubHireItemNative
           // (equipment-tab.tsx's handleInlineLineItemUpdate), not patchNative
           // — that mutation isn't lock-gated (same as SubHireOrderDialog's
@@ -1671,7 +1890,7 @@ export function LineItemRow({
               />
             </div>
           </>
-        ) : onInlineUpdate ? (
+        ) : priceEditable ? (
           <LockedField
             locked={!!moneyLocked}
             reason={lockReason ?? "This project's financials are locked."}
@@ -1681,7 +1900,7 @@ export function LineItemRow({
             <div className="flex items-center justify-end gap-1">
               <InlineEditablePrice
                 value={item.unitPrice != null ? Number(item.unitPrice) : null}
-                onSave={(next) => onInlineUpdate(item, { field: "unitPrice", value: next })}
+                onSave={(next) => onInlineUpdate!(item, { field: "unitPrice", value: next })}
               />
               {item.priceOverridden && (
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-warn shrink-0" title="Manually set price" />
@@ -1696,7 +1915,7 @@ export function LineItemRow({
                   quantity: item.quantity,
                   duration: item.duration,
                 })}
-                onSave={(amount, mode) => onInlineUpdate(item, { field: "discount", value: amount, discountMode: mode })}
+                onSave={(amount, mode) => onInlineUpdate!(item, { field: "discount", value: amount, discountMode: mode })}
               />
             </div>
           </LockedField>
@@ -1802,6 +2021,12 @@ export function LineItemRow({
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to group
                 </DropdownMenuItem>
+                {onEditAccessories && (
+                  <DropdownMenuItem onClick={onEditAccessories}>
+                    <Puzzle className="mr-2 h-3.5 w-3.5" />
+                    Edit accessories
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
                   <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
                   Needs review
@@ -1825,14 +2050,15 @@ export function LineItemRow({
                     Report issue
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem
-                  onClick={onRemove}
-                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Delete
-                </DropdownMenuItem>
               </DropdownMenuGroup>
+              {clientDocsSection}
+              <DropdownMenuItem
+                onClick={onRemove}
+                className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

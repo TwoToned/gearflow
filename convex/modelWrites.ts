@@ -9,6 +9,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { collectCapped } from "./lib/pagination";
 import { adjustModelSaleStock } from "./lib/saleStock";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -70,6 +71,7 @@ export const modelFields = {
   barcodeLabelTemplate: v.optional(v.string()),
   tags: v.optional(v.array(v.string())),
   isActive: v.optional(v.boolean()),
+  isContainer: v.optional(v.boolean()),
   xeroRentalAccountCode: v.optional(v.string()),
   xeroSaleAccountCode: v.optional(v.string()),
 };
@@ -85,7 +87,7 @@ type ModelArgs = {
   requiresTestAndTag?: boolean; testAndTagIntervalDays?: number;
   defaultEquipmentClass?: string; defaultApplianceType?: string; defaultTestProfileId?: string;
   maintenanceIntervalDays?: number; assetType?: string; barcodeLabelTemplate?: string;
-  tags?: string[]; isActive?: boolean;
+  tags?: string[]; isActive?: boolean; isContainer?: boolean;
   xeroRentalAccountCode?: string; xeroSaleAccountCode?: string;
 };
 
@@ -162,6 +164,7 @@ function toDoc(a: ModelArgs) {
     assetType: (a.assetType as "SERIALIZED") ?? "SERIALIZED",
     barcodeLabelTemplate: a.barcodeLabelTemplate ?? undefined,
     isActive: a.isActive ?? true,
+    isContainer: a.isContainer ?? false,
     tags: a.tags ?? [],
     xeroRentalAccountCode: a.xeroRentalAccountCode || undefined,
     xeroSaleAccountCode: a.xeroSaleAccountCode || undefined,
@@ -220,6 +223,30 @@ export const updateNative = mutation({
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
     if (a.categoryId) await assertRefInOrg(ctx, "categories", a.categoryId, a.orgId);
     if (a.defaultTestProfileId) await assertRefInOrg(ctx, "testProfiles", a.defaultTestProfileId, a.orgId);
+
+    // A model's assetType gates which of its own inventory the model detail
+    // tab, the bulk-asset model picker, and the equipment-add pickers show
+    // (they branch/filter on this field, never both at once) — flipping it
+    // while the OTHER kind's records still exist doesn't delete those rows,
+    // it just makes them unreachable through any of those surfaces. Block the
+    // flip instead of silently orphaning existing stock (R-9.3).
+    const newAssetType = (a.assetType as "SERIALIZED" | "BULK" | undefined) ?? "SERIALIZED";
+    const oldAssetType = (doc.assetType as "SERIALIZED" | "BULK" | undefined) ?? "SERIALIZED";
+    if (newAssetType !== oldAssetType) {
+      if (newAssetType === "BULK") {
+        const { rows: assetRows } = await collectCapped(ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)));
+        const activeAssets = assetRows.filter((x) => x.organizationId === a.orgId && x.isActive !== false);
+        if (activeAssets.length > 0) {
+          throw new ConvexError(`Cannot change to Bulk — ${activeAssets.length} serialized asset(s) still exist under this model. Archive or move them first.`);
+        }
+      } else {
+        const { rows: bulkRows } = await collectCapped(ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)));
+        const activeBulk = bulkRows.filter((x) => x.organizationId === a.orgId && x.isActive !== false);
+        if (activeBulk.length > 0) {
+          throw new ConvexError(`Cannot change to Serialized — ${activeBulk.length} bulk asset record(s) still exist under this model. Archive or move them first.`);
+        }
+      }
+    }
 
     await ctx.db.patch(doc._id, { ...toDoc(a), updatedAt: a.now });
 

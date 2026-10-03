@@ -7,7 +7,553 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A quote's expiry date no longer blocks accepting it.** `validUntil` is an
+  operator's "out" to re-quote at a new price once a quote goes stale, not a
+  hard deadline the client's yes stops counting after — an operator can now
+  mark an EXPIRED revision accepted exactly as they would a still-live SENT
+  one, with no re-send required first.
+- **Issuing an invoice no longer requires an accepted quote.** The 2026-08
+  gate that blocked `DRAFT → ISSUED` unless the invoice's linked quote
+  revision was ACCEPTED is removed — an invoice already bills whatever the
+  project's own pricing looks like right now (server-computed at creation,
+  never the quote's figures), so there was never a money reason to also
+  require the quote to have been formally accepted. This unblocks invoicing a
+  job the client agreed to verbally, or before a quote was ever sent.
+
+### Fixed
+
+- **Convex write failures (quote accept/send/recall/decline, invoice
+  create/issue/void, payments) no longer show a raw Convex exception.** These
+  flows caught errors with a bare `e.message`, which for a `ConvexError` is
+  the client's internal `"[CONVEX M(module:fn)] Server Error\nUncaught
+  ConvexError: ..."` wrapper, not the message the mutation actually wrote.
+  They now unwrap the structured `{ message }` payload every Convex mutation
+  throws, the same way asset/kit writes already did — a shared
+  `convexErrorMessage` helper closes the gap instead of a third copy of the
+  same logic.
+- **Gear added to a group no longer reports $0 in the ROI reports.** Leaving the
+  price box empty wrote a real **$0.00** rather than a blank "—", because an
+  untouched number input submits an empty string and the form coerced that to
+  zero. Two things went wrong from there: the server skipped its auto-pricing
+  (it saw a price already set), and revenue allocation read "$0" as *this item
+  was deliberately free* and dropped the gear from the split entirely — so
+  inside a Project Group, where the bundle price is the charge and members are
+  normally left blank, every piece of gear earned nothing. Blank now means blank
+  everywhere: the line stays unpriced, auto-pricing runs, and a **$0** line
+  earns its share exactly like an unpriced one. Typing a real `0` is still a
+  real choice and still reads as free. Two related cases went with it — re-adding
+  the same model into a group used to overwrite the existing line's price with
+  $0, and "Apply group template" wrote $0 members for any model with no daily or
+  weekly rate.
+- **Clearing a line's tax-rate override now actually clears it.** The same defect
+  fixed above for price and discount also applied to the per-line tax-rate
+  override: leaving the box empty submitted an explicit **0%** override rather
+  than clearing back to inheriting the project/org rate, so a line edited with
+  an empty tax box was silently taxed at 0% instead of whatever it should have
+  inherited. Blank now clears the override; typing a real `0` still stays a
+  deliberate zero-rated line. Existing rows are untouched — a stored 0% could
+  be a genuine zero-rated line, so there is no way to backfill it safely; only
+  how a newly-emptied box behaves has changed.
+- **A % discount on an unpriced line no longer vanishes.** A percentage is worked
+  out against the price on screen, so leaving the price blank — which now means
+  "price this from the model's rate" — turned "10%" into no discount at all, on
+  a line that then landed fully priced. The form now says so and asks for either
+  a price or a $ amount, instead of quietly dropping the entry.
+- **The scanner no longer gives two contradictory answers to one scan.** Reading
+  a code played a "success" chime, and then whatever you scanned into played its
+  own verdict — so an unrecognised tag beeped success and then error. The camera
+  now plays a short, high tick the moment it reads a code (the "got it" beep a
+  handheld scanner makes), and the verdict chime follows once the tag is
+  actually resolved. The tick comes with a vibration on phones that support it,
+  which is the feedback that matters when you're looking at the gear rather than
+  the screen.
+- **The scanner window looked wrong on desktop.** The aiming frame was sized
+  from the window's width, so on a wide, short desktop window it came out taller
+  than the video and spilled past the top and bottom edges. The frame is now
+  sized from the shorter side, matching the area actually being scanned, and the
+  desktop window gets a proper 4:3 video frame instead of inheriting whatever
+  height it happened to get.
+
 ### Added
+
+- **Exclude from ROI, per item.** Now that a $0 price no longer quietly means
+  "don't count this", the item kebab has a **Reporting → Exclude from ROI**
+  toggle that says it outright. An excluded line takes no share of its group or
+  kit's price — the gear beside it keeps the whole thing — and never counts
+  toward a model's return. It changes nothing the client sees, so it stays
+  available even when the job's pricing is locked, and it's only offered on
+  lines that could otherwise earn (not on labour, sales or sub-hired gear, which
+  are already excluded). Reports show these as their own "excluded by hand"
+  reason rather than lumping them in with lines that simply earned nothing.
+  Past jobs are untouched: allocation is a snapshot, so existing figures only
+  change when a job is next edited.
+- **Scan to assign in the "Assign assets" dialog.** Prepping a line with eleven
+  headsets used to mean picking each one from eleven identical dropdowns. The
+  dialog now has its own scan field at the top: scan a unit as you pick it up
+  and it drops into the next slot. The camera stays open between units, so it's
+  one pass down the shelf rather than a tap per item. Typing and USB/Bluetooth
+  scanners work the same way. Re-scanning something you already logged tells you
+  which slot it went into instead of doing nothing, and a tag that isn't
+  available for this job says so rather than failing silently. A running
+  "N of M assigned" count sits under the field, which stays pinned as the list
+  scrolls. Scanning several units in quick succession assigns each to its own
+  slot — an early version could drop one when two scans landed close together.
+
+### Added
+
+- **The camera scanner is back, and it reads the small codes.** Scan a tag with your
+  phone's camera from any tag field — the warehouse prep, deploy and return tabs, the
+  returns desk, the warehouse search, and the asset/kit/test-tag forms. It reads
+  ordinary QR codes plus **Micro QR** and **rMQR** — the compact formats that fit on
+  cable labels and small-instrument plates where a full QR won't — along with Data
+  Matrix, Aztec, PDF417 and the usual barcodes off manufacturer plates. The three
+  warehouse tabs and the returns desk keep the camera open between tags, so you can
+  work a trolley without reaching for the screen after every item.
+- Warehouse and returns search bars get their own camera button beside the field.
+
+### Fixed
+
+- **Camera scanning works on iPhone.** The previous scanner was removed because it
+  never did. The causes were platform-level, not incidental: Safari has no built-in
+  barcode reader (so the old library silently fell back to a different decoder than
+  the one everyone tested on Android), the camera needs three specific video settings
+  or it grants permission and shows a black screen, iOS drops the camera permission
+  for home-screen-installed apps, and iOS suspends the camera when you switch apps
+  and never resumes it. Each is now handled explicitly, and a denied camera gets real
+  instructions and a Try again button instead of a black rectangle.
+- A camera that can't start now says why — blocked permission, no camera, another app
+  using it, or a non-HTTPS address — instead of failing silently.
+
+### Changed
+
+- Barcode decoding uses one engine on both Android and iPhone, so the two behave the
+  same. The decoder is served from the app itself rather than a public CDN, so
+  scanning keeps working on warehouse wifi and behind restrictive networks.
+
+## [0.34.0] - 2026-09-20
+
+### Added
+
+- **Accessories are editable from the Edit Item window.** Choosing what ships with a line on
+  a job — the cables, clamps and adaptors a model carries — was only reachable from the
+  equipment row's "…" menu, a second place to go that you had to know about. The Edit Item
+  dialog now has its own **Accessories** section, so what travels with a line is set in the
+  same window as its quantity, price and placement. Defaults come pre-ticked (removing one
+  still asks why), optionals are opt-in, and the counts scale to the quantity you're typing,
+  so "3× XLR Cable" follows the quantity field as you change it. The section only appears for
+  a line that can actually have accessories: not a kit or accessory child, not a sub-hire, and
+  not already out the door. The row menu's "Edit accessories" stays as the direct route.
+
+### Changed
+
+- The accessory picker now has one implementation behind both entry points, so the row menu
+  and the Edit Item window can't drift apart. The accessory plan saves only when the
+  selection actually changed — editing a price no longer touches an untouched line's
+  accessory rows — and it saves after the line itself, so changing quantity and accessories
+  in one go scales the accessories to the new quantity.
+
+## [0.33.0] - 2026-09-20
+
+### Added
+
+- **Everything about a task is set before you add it.** The work composer — the one box behind
+  Today, the project sidebar, the Overview card and the Work tab — now carries owner, stage,
+  **due date**, **start date**, **priority** and **notes**. Previously a job's composer offered
+  no date control at all, so dating a task meant creating the row and immediately reopening it
+  to finish the job. The Work tab's list view had its own title-only box and now uses the same
+  composer as everywhere else.
+- **Work can run over a stretch of days, not just land on one.** Give a task a start date as
+  well as a due date and it becomes a span: it stays visible for the whole run and appears on
+  the Work tab's calendar under every day it covers, marked start/middle/end with a "day 2 of
+  3" caption. A span can never end before it begins — the server checks the resulting row, so
+  moving one end still has to hold against the end already stored.
+
+### Fixed
+
+- **The work composer's chips did nothing when clicked.** Owner, Stage and Due rendered
+  correctly and silently ignored every click. The chip button dropped the props Radix passes
+  through `asChild`, so the dropdown's own handlers and ref never reached the element.
+  Typecheck, lint and `next build` all passed on the broken form; only a test that clicks a
+  chip and looks for the menu catches it, and there is now one.
+- **You could not read what you were typing when adding work.** The composer laid its title
+  input, four chips and the Add button out on a single flex line, which in the 340px project
+  sidebar squeezed the field to roughly forty pixels. The title input now has its own row and
+  the chips wrap beneath it.
+
+## [0.32.1] - 2026-09-19
+
+### Fixed
+
+- **The Pipeline page (Clients → Pipeline) loaded forever.** It sat on "Loading…" and never
+  showed a single deal. The page passed a freshly-evaluated timestamp into its Convex query on
+  every render, and because a query's arguments are part of its subscription key, the
+  subscription restarted each render and the data never settled. Same fix for the client page's
+  **Next step banner**, which had the identical bug with a quieter symptom — it renders nothing
+  while loading, so it simply never appeared.
+- A lint rule now fails the build on a `Date.now()` evaluated inside a Convex query call, so
+  neither surface can regress this way again.
+
+## [0.32.0] - 2026-09-19
+
+### Added
+
+- **You can now edit a line's accessory selection after it's already on a project.** The project Equipment tab's per-line "…" menu has a new "Edit accessories" item — reopens the same DEFAULT/OPTIONAL accessory picker used when adding equipment, pre-filled with that line's current selection, instead of requiring the line to be re-added to change it. Hidden for lines it doesn't apply to (kit/accessory/sub-hire children, lines with no model or asset, or ones that have already deployed to the job).
+
+### Changed
+
+- **The Equipment tab toolbar is tidier.** "Sync accessories", "Sync kits", and the margin toggle — infrequent, secondary actions — are now behind a "More" (⋯) menu next to "Add ▾" instead of sitting inline in the toolbar at all times.
+
+## [0.31.1] - 2026-09-19
+
+### Fixed
+
+- **The Overbookings & Gaps board no longer flags two genuinely non-overlapping projects as colliding just because both fall inside a wide admin-chosen query range.** Gear shortages used to pool ALL demand across the entire selected range into one bucket, so e.g. a job running Oct 1–15 and another running Oct 18–24 were falsely reported as competing for the same units when the query range spanned all of October. The board now day-slices each model's demand into its actual overlapping sub-windows before checking for a shortage, so a shortage row's dates bound the real conflict period, not the query range.
+- **Two places showed a full-severity "Overbooked" (red) badge for a collision that was only pencilled** (i.e. would only happen if every not-yet-confirmed booking for that gear also went ahead — nothing is actually unavailable today): the project list/board's "Overbooked items" flag, and the warehouse pull sheet's line-item badge. Both now match the equipment tab's existing behavior and show the softer amber "Pencilled overbook" pill instead, reserving the red badge for a genuine hard shortage.
+
+## [0.31.0] - 2026-09-19
+
+### Added
+
+- **Kits can now be re-synced to their current catalog membership from an open job.** If a kit's contents change after it's already on a project (a member added or removed), the Equipment tab's new "Sync kits" button pulls the project's kit lines up to date — adding new members, removing dropped ones, and rescaling a kept bulk member's quantity — without re-adding the whole kit. A newly-added member is priced the same way adding the kit fresh would price it (its own rate in itemized-pricing kits; unpriced in fixed-bundle-price kits, since the bundle price doesn't change), and the toolbar flags when something needs a pricing review. Kit lines that have already deployed to a job are left alone. Companion to the existing "Sync accessories" action.
+
+## [0.30.1] - 2026-09-19
+
+### Changed
+
+- **Overbooking alarms now attribute the conflict to whichever job actually can't get the gear, first-come-first-served, instead of flagging every job competing for the same units.** If Job A's gear was booked first and Job B's booking is what pushes a model over capacity, only Job B is flagged — Job A, which already has its stock, stays clean. This applies everywhere an overbooking is shown: the equipment tab, kit rollups, the warehouse pull sheet, the project list/board alerts, and the Overbookings & Gaps board. A CONFIRMED job's hard-held stock always takes priority over a QUOTED job's pencilled demand, regardless of booking order.
+
+## [0.30.0] - 2026-09-19
+
+### Added
+
+- **"Sync accessories" action on the project Equipment tab.** A model or asset's DEFAULT
+  accessory config edited in the catalog after a line was already added to a job no longer
+  requires reopening the picker line-by-line — a PM can now pull the current catalog
+  defaults onto every not-yet-deployed line on that job with one click. Deliberately
+  opt-in and per-project: a catalog edit never pushes itself onto open jobs automatically,
+  and any line that's already deployed is skipped.
+
+## [0.29.2] - 2026-09-17
+
+### Fixed
+
+- **The Overbookings & Gaps board's "Pencilled collisions" section no longer drops the CONFIRMED job holding the gear.** When a confirmed job holds most of a model's stock (not enough on its own to trip an alarm) and a quoted job's demand is what pushes the total over capacity, both jobs now show as affected — not just the quoted one.
+
+## [0.29.1] - 2026-09-17
+
+### Fixed
+
+- **Overbooking alarms no longer soften into an "info" pill when the shortage is caused by assets in maintenance.** A booking that genuinely exceeds today's usable stock (e.g. 19 booked against 17 usable after some units are in maintenance or retired) now shows the same red "Overbooked" / amber "Pencilled overbook" alarm as any other overbooking, on the equipment tab, the warehouse pull sheet, and the project list/board — instead of a soft blue "Reduced stock" badge that easy to miss. The reason ("N in maintenance or lost") still shows in the tooltip.
+
+## [0.29.0] - 2026-09-16
+
+### Added
+
+- **A project can now hold more than one version of its plan at once — and quote
+  more than one of them.** Save an alternate ("High End PA" vs. "Budget PA"),
+  switch between them, keep editing whichever one is open, and send a quote from
+  either without the other's document being touched. The client can hold two
+  live quotes on the same job; accepting one makes that version the live plan
+  and supersedes the rest. Switching versions never changes what you can do on
+  the page — every tab, every add, every edit works the same on a saved
+  alternative as it does on the live plan, with warehouse actions greyed out
+  (not hidden) until that version is made live.
+- **Compare mode.** Pick two versions and see one money bridge: what was added,
+  removed, repriced, or moved between them, walking from one total to the
+  other, each step traceable back to the rows behind it. A version's status
+  strip flags when its sent quote has drifted from what's currently priced, and
+  clicking it opens the same comparison.
+- **Pricing lock is now one switch.** A job's price freezes the moment a quote
+  goes out or it's confirmed, and clears with one click from whoever's allowed
+  to reopen it — replacing four overlapping lock states and a separate
+  "unlock session" flow with a single, always-visible rule. A declined quote no
+  longer freezes pricing on an enquiry that's still open.
+
+### Changed
+
+- Make-live (switching which version is the active plan) is now an instant,
+  reversible pointer flip instead of a destructive restore — nothing is
+  overwritten, so there's no more "auto-saved before switching" clutter, and a
+  version can be made live even while an invoice is already out.
+- Recalling a quote, editing an unsent job, and adding equipment mid-project no
+  longer route through a 4-tier lock or a separate unlock-session dialog.
+
+### Removed
+
+- The old "restore a snapshot" version switcher, its read-only projected views,
+  and the separate unlock-session mechanism are gone, replaced by the above.
+
+## [0.28.0] - 2026-09-15
+
+### Added
+
+- **Jobs now move themselves through the lifecycle as the work happens.** Send a
+  quote and the job goes to Quoted; the client approves it and the job goes to
+  Awaiting payment; pack the first item and it goes to Prepping; once nothing is
+  gear is left in the building it goes to Deployed; when the last outstanding item
+  is checked back in it goes to Returned. Status stops being a field someone has to
+  remember to change, so the board reflects reality instead of the last person
+  who thought about it. Moves are forward-only, and Completed and Invoiced are
+  never automatic — closing a job out stays a deliberate click. Every automatic
+  move is announced where you are (a line in the send dialog, a toast in the
+  warehouse) and recorded in the job's activity log, and every rule can be
+  switched off per organization under Settings → General → Status automation.
+
+- **The lifecycle now has the money phase in it.** Jobs used to jump straight
+  from Quoted to Confirmed, skipping the part where most of the waiting actually
+  happens. A new **Awaiting payment** stage sits between them: accepting a quote
+  or issuing an invoice moves a job into it, and recording a payment that settles
+  an invoice in full confirms it. Underneath the stage, the job shows exactly
+  what it is waiting on — quote accepted, invoice sent, paid — read live from the
+  quote and invoice themselves, so it can never disagree with the ledger. The
+  board gets a column for it, and gear is held from the moment the client says
+  yes, so nobody can book the same stock out from under an agreed job while a
+  transfer clears.
+
+  Confirming still needs an accepted quote. If a payment lands on a job that was
+  never formally approved, the job waits for a human rather than confirming
+  itself. Voiding the payment that confirmed a job walks it back to Awaiting
+  payment, so a mis-keyed payment can simply be corrected.
+
+  You don't have to record payments in Flow for this to work. If you reconcile
+  in Xero instead, an agreed job still appears in the warehouse and still moves
+  itself forward as you prep and deploy it — and Awaiting payment is a status you
+  can set by hand anywhere you'd set any other.
+
+### Changed
+
+- **Accepting a quote now moves the job to Awaiting payment**, rather than
+  offering to move it to Confirmed. Organizations that turn the rule off keep the
+  old prompt.
+
+### Fixed
+
+- **Checking gear in from the project page now closes the job out too.** Only
+  the org-wide returns station advanced a project to Returned, so the same
+  physical act — the last case coming back — closed the job or didn't, depending
+  purely on which screen the operator happened to use.
+
+- **An open finance unlock session no longer straddles a status change.** The
+  returns station's own auto-advance skipped the auto-commit that every other
+  status change performs, leaving a session open across the Deployed → Returned
+  lock-tier boundary.
+
+## [0.27.2] - 2026-09-15
+
+### Fixed
+
+- **A deposit invoice no longer reads as though the deposit has already been
+  paid.** Issuing one made the project record the deposit as invoiced, and the
+  invoice's own PDF then read that figure back and subtracted it from itself —
+  printing "Deposit Paid -$330.00" and a "Balance Due" taken from the whole
+  project, directly beneath its own "Total $330.00". An invoice's document now
+  states what is owed **on that invoice**: its own total, with no deduction.
+  The project's deposit position still appears on the internal draft preview,
+  where it now reads **Deposit invoiced** — the figure counts deposits
+  invoiced, not payments received, which is what the rest of the app has
+  always called it.
+- **Xero no longer adds GST on top of an amount that already included it.**
+  Deposit, remaining-balance and credit invoices wrote their line at the
+  GST-inclusive amount, but Xero reads a line amount as GST-exclusive and adds
+  tax to it — so a $330.00 invoice with $30.00 GST arrived in Xero as $363.00
+  with $33.00 GST, and the client was billed 10% too much. The same mismatch
+  is why those invoices printed a line that didn't add up to the subtotal
+  beneath it. Lines are now written GST-exclusive for every invoice type, Flow
+  states that explicitly when it pushes, and a push is refused outright if an
+  invoice's lines don't add up to the amount Xero will charge tax on. Invoices
+  raised before this fix keep their figures — void and reissue to correct one,
+  and fix any already-pushed copy in Xero.
+- **A project discount now reaches Xero.** A percentage discount on a project
+  was applied to the invoice's total but never appeared on any line, so the
+  push billed the full pre-discount amount plus tax on it — a $1,000 job at 10%
+  off, invoiced by Flow at $990, arrived in Xero at $1,100. The discount now
+  rides along as its own line. Credit notes had the matching fault and credited
+  the pre-discount figure, refunding a discount that was never charged.
+- **Sub-hired gear inside a priced group is no longer left off the Xero
+  invoice.** A sub-hire carries its own charge even when it sits in a group
+  with a fixed bundle price — the project total counted it, but the invoice
+  pushed to Xero didn't, so those jobs were under-billed by the sub-hire
+  amount.
+- Overbooked badges (project list, equipment tab) no longer go missing, and
+  the "this will overbook this model — proceed anyway?" checkbox in the
+  add/edit-line-item dialogs now shows up reliably, on a project whose rental
+  dates aren't set yet but which has an explicit gear-committed window
+  (load-in/load-out dates that diverge from the rental dates). `getProject`,
+  `getProjectIssueFlags`, the native equipment-tab subscription, and the
+  project detail page's equipment tab were all reading
+  `rentalStartDate`/`rentalEndDate` raw instead of resolving the project's
+  actual availability window, which silently dropped into single-project-only
+  checking and missed overlapping demand from other jobs.
+- Full follow-up sweep of every booking/overbooking/stock-control code path
+  for the same class of bug, this time in the actual server-side enforcement
+  (not just badge display): adding, editing, or reassigning an asset on a
+  line item (`patchNative`/`addNative`/`addLineItemSmartNative`/kit-add),
+  swapping an asset (`swapLineItemAsset`), the org-wide conflicts banner and
+  swap-candidate list, the post-promote overbooking re-check, the warehouse
+  pull sheet and Online Pick List, all 5 project PDFs, and the "add by asset
+  tag" / "add kit" availability lookups could all silently under-enforce or
+  fully skip a genuine double-booking on a project whose committed gear
+  window diverged from its rental dates. All now resolve the correct window
+  first.
+- `patchNative` (editing an existing line item) now validates a reassigned
+  `modelId`/`assetId`/`bulkAssetId`/`groupId`/`categoryId`/`supplierId`
+  belongs to the caller's own organization, and running the same
+  kit-membership/status/double-booking checks the dedicated asset-swap
+  mutation already ran — it previously had neither, so a client could point
+  a line at another organization's row, or silently double-book/revive a
+  retired asset, with no validation at all.
+- A returned asset unit no longer keeps showing as "booked" on that asset's
+  own availability calendar for the rest of the project window.
+- The warehouse landing page's urgency badges (Overdue/Today/Out/Upcoming)
+  and the org-wide Returns board's overdue-first ordering now read the
+  project's gear-committed window (falling back to rental when unset)
+  instead of raw rental dates — "is this gear physically due back" is what
+  that window means, so a project with an earlier/later committed
+  load-in/load-out than its chargeable dates now shows the correct urgency.
+
+### Changed
+
+- The overbooked badge (equipment tab, project list/board, warehouse pull
+  sheet) now shows for a purely PENCILLED collision too — a still-quoted or
+  optional booking elsewhere in the org that would push a model over capacity
+  if it were confirmed — not just a hard (confirmed-project) overage. It
+  previously stayed hidden in that case, which didn't match the "this will
+  overbook this model — proceed anyway?" warning shown at add/edit time (that
+  warning has never distinguished hard from pencilled). A pencil-only overage
+  now shows a softer amber "Pencilled overbook" pill instead of the red
+  "Overbooked" one. Client-facing/exported PDFs (quote, invoice,
+  packing-list, return-sheet, delivery-docket) are the deliberate exception —
+  they keep showing ONLY genuine hard overbooking, since a rendered document
+  is a point-in-time artifact and a pencilled collision can resolve before
+  anyone reads it.
+
+## [0.27.1] - 2026-09-15
+
+### Fixed
+
+- **Client-document toggles no longer appear where they do nothing.** "Show
+  this price" was offered on items inside a group, on sub-hire group contents,
+  and on kit contents — none of which print their own line on a quote or
+  invoice, so flipping it changed nothing and never said why. It is now offered
+  only on rows the client actually sees: a category's own items, and a group's
+  single collapsed line. An item in a group keeps the control that does apply
+  to it, "Show this item", which lists it under the group. Same fix for a kit
+  sitting inside a group, where "Show this item" was offered but the document
+  ignored it.
+
+### Changed
+
+- **Client-document toggles now read as one set of controls.** The four
+  switches that decide what a quote or invoice shows — a category's combined
+  price, a revealed price on a line or a group, and listing a group's member —
+  were each worded differently and scattered through their ⋯ menus. They now
+  sit together under a **Client documents** heading in every ⋯ menu, with
+  matching labels: "Show combined price" / "Show individual prices" on a
+  category, "Show this price" / "Hide this price" on a row, and "Show this
+  item" / "Hide this item" on a group's member. The category pill and the
+  label printed beside a rolled-up section's figure both say **Combined
+  price** too, so the phrase you pick is the phrase the client reads. Nothing
+  about what prints, or what anything costs, has changed.
+
+## [0.27.0] - 2026-09-14
+
+### Added
+
+- **Category price rollup** — a category on a quote or invoice can now show
+  every item it contains, with quantities, while printing just one price for
+  the whole category instead of a price per line. Flip it from the category's
+  ⋯ menu in the Equipment tab ("Show one price for the category"); a **One
+  price** pill marks it. This is different from a priced group, which hides
+  what's inside it — here the client sees the full list, just not what each
+  line costs. The category's price is always the exact sum of its items, so
+  the totals never change; rolling up only changes how they're presented, and
+  the invoice bills the category as one matching line (coded for Xero from the
+  category, falling back to your org default). Need one item broken out? "Show
+  this price on documents" on that row reveals just that price — and it still
+  counts toward the category total, which is why the category's figure prints
+  labelled.
+
+- **Group child disclosure** — a group on a quote or invoice normally shows as
+  a single line with one price, hiding what's inside it. You can now pick
+  individual items in a group and have them listed underneath it, showing what
+  they are and how many — but never a price, because the group's price already
+  covers them. "List on client documents" on the item's ⋯ menu. Everything
+  else in the group stays hidden, the group's own price is unchanged, and
+  nothing about invoicing changes: the group still bills as one line. Packing
+  lists and other warehouse paperwork are unaffected — they keep listing
+  everything, as the crew needs.
+
+- **#1098** — The org setup wizard has a real first screen: creating a new
+  company now happens at `/setup` (replacing the old bare `/onboarding`
+  form) on the same split-panel look as login/register/`/welcome`, with a
+  five-step progress rail and a live "is this slug taken?" check as you
+  type. Naming and creating the company is still the only required step —
+  everything else in the wizard remains to come.
+
+- **#1099** — The setup wizard's second screen, "where you operate": pick a
+  country and it fills your currency, time zone, tax label and tax rate —
+  shown editable, never hidden, so you can correct any of them on the spot —
+  plus what your business-number field is even called (ABN in Australia,
+  NZBN in New Zealand, VAT number in the UK/Ireland, EIN in the US). Country
+  is permanent once saved; everything else on the screen, including "Skip
+  for now", stays changeable later in Settings. Business address now
+  suggests as you type, biased to your country.
+
+- **#1101** — The setup wizard's third screen, "your brand": upload a logo and
+  icon, pick your primary/accent/document colours, and choose how they show
+  up on your documents (icon inline, logo above the header, or plain text) —
+  with a live preview of your actual quote header right next to the fields,
+  so it's never a guess. Skippable, like every screen after the company name;
+  everything here can be changed later in Settings too.
+
+- **#1102** — The setup wizard's fourth screen, "how you work": project and
+  invoice numbering formats (with a live next-number preview), your asset
+  tag scheme, and document terms — quote validity, payment terms, footer
+  text, T&Cs, and payment details. Every field has a working default, so
+  it's the easiest screen to skip — and if you do, and don't have a
+  location yet, we set up a "Main warehouse" for you automatically so your
+  first serialized asset has somewhere to go.
+
+- **#1103** — The setup wizard's fifth and final screen, "your team & your
+  gear": invite colleagues by email and role (with a plain-English
+  explainer for each), and seed your inventory — import a spreadsheet of
+  models or add your first one by hand. Both sections write live as you
+  use them, nothing to save at the end. The invite role picker (here and
+  in Settings) now correctly offers Warehouse alongside the other roles.
+
+- **#1104** — A dismissible "Finish setup" card on the dashboard, for anyone
+  who skipped part of the setup wizard: it lists exactly what's still
+  unset (currency/tax, logo, a location, a second teammate) and links
+  straight to the right settings page for each — no need to redo the
+  wizard. Disappears for good once you dismiss it or finish everything.
+
+- **#1105** — A "Get started" card beside it, walking through the first real
+  use of the app: add a model, add a unit of it, create a job, put that gear
+  on the job. Each step is checked off the moment it's actually true — do it
+  by hand without ever touching the card and it's already ticked when you
+  come back. Dismissible; disappears for good once dismissed or finished.
+
+- **#1106** — The "add a model" / "add an asset" / "create a job" / "add gear
+  to a job" screens now carry a short coaching tip in their existing sidebar
+  while you're on that exact step of getting started — gone the moment
+  you're past it, and back to the screen's normal hint for anyone who isn't
+  new. A "Hide tips" link turns it off (just the coaching, not the "Get
+  started" card).
+
+- **#1107** — Finishing one of the "get started" steps now offers the next
+  one right in the confirmation toast — add a model and it offers to add an
+  asset to it; add that asset and it offers to create your first job; create
+  the job and it offers to add that gear to it, straight into the equipment
+  tab with the model already picked. Purely offered, never forced — your
+  normal navigation after saving is unchanged, and it only ever shows up for
+  the one save that's actually completing that step.
+
+- Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
+  pending/offered assignments as tentative events, alongside the usual
+  confirmed/accepted ones — off by default, so nothing changes unless you turn
+  it on.
 
 - **#1094** — `/welcome`'s "Join my team" card is now a real join flow instead
   of a placeholder: paste an invite link or code to go straight to it, or —
@@ -19,10 +565,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **#1151** — Spike: proved `@react-pdf/renderer` can replace the pdfme
   two-pass pagination pipeline for project documents (#1150), starting with
   the `quote` doc type. A standalone, non-production component tree lives at
-  `src/lib/react-pdf-spike/` (not wired into `generate-pdf.ts`) alongside a
+  `src/lib/react-pdf/` (not wired into `generate-pdf.ts`) alongside a
   written findings doc (`docs/designs/react-pdf-migration-spike-findings.md`)
   covering what maps cleanly, what needs a different approach, and an
   effort estimate for the remaining migration issues.
+
+- **#1152** — Shared react-pdf component library: every remaining
+  composer-pipeline plugin (`gearflowTable`'s full 3-level kit/group/
+  accessory hierarchy with badges/checkboxes/condition columns/per-unit
+  rows, plus the page header, financial summary, rich text, signature
+  line, draft watermark, and page footer) now has a react-pdf port under
+  `src/lib/react-pdf/components/`, covering all 5 project doc types — not
+  just the `quote`-only shape the #1151 spike proved. Still standalone and
+  not wired into `generate-pdf.ts`/`pdf-render.ts`; no user-facing change
+  yet.
+
+- **#1153** — `invoice` doc type ported to react-pdf
+  (`src/lib/react-pdf/invoice-document.tsx`), reusing #1152's shared
+  components: the country-derived "TAX INVOICE"/"INVOICE" heading (I4,
+  #1083), client tax id / payment terms / issued invoice number in the
+  details row, deposit paid / balance due / due date in the totals block,
+  the bold due-date header highlight, and a new payment-details block (bank
+  details) that shares terms & conditions' free-text convention without
+  forcing its own page. Still standalone and not wired into
+  `generate-pdf.ts`/`pdf-render.ts`; no user-facing change yet.
 
 - **#1092** — A brand-new account with no organisation and no pending invite
   now lands on `/welcome`, a fork between "Set up a new company" and "Join my

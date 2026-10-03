@@ -27,6 +27,7 @@ On `projectLineItems`:
 |---|---|
 | `allocatedRevenue` | This line's share of the revenue it helped generate, in dollars. |
 | `allocationBasis` | How that share was decided. Audit trail **and** a correctness primitive. |
+| `excludeFromRoi` | #1249 — the operator's explicit "this line earned nothing" opt-out. Absent = included. |
 
 `allocationBasis` gates ROI. A row counts iff `modelId != null` and the basis is one of
 `DIRECT`, `KIT_PERCENT`, `WEIGHTED`, `EQUAL_SPLIT`. The excluded bases:
@@ -42,6 +43,10 @@ On `projectLineItems`:
   never counted toward ROI. A **priced** custom item inside a group is a special case: it is part
   of the group's flat price, so it **consumes its own `lineTotal` off the pool** (owned gear splits
   the rest) and is NOT billed on top. An unpriced group's customs still bill on their own line.
+- `EXCLUDED_MANUAL` (#1249) — the operator ticked "Exclude from ROI" on this line. Takes **no**
+  weight in any split (unlike sub-hire, it doesn't dilute the pool either) and never enters
+  `projectModelRevenues`. Its own label rather than `NO_REVENUE` so a report can tell a deliberate
+  exclusion from "the pool happened to be $0".
 - `NO_REVENUE` — the pool was $0, or the line is cancelled / optional.
 
 ## How it runs
@@ -91,8 +96,40 @@ weightOf(item):
   else 0                                    -- equal split when nothing has a signal
 ```
 
-An **explicit $0** line is a freebie: excluded from the split and from ROI. An unpriced "—" line is
-not — it still earns via its rate or cost.
+A **$0** line and an unpriced **"—"** line are treated the SAME: both fall through to the rate/cost
+legs above and earn their share. Only `excludeFromRoi` (below) excludes.
+
+### `excludeFromRoi` — the one way to say "this gear earned nothing" (#1249)
+
+`projectLineItems.excludeFromRoi` is a per-line boolean, set from the item's kebab → **Reporting →
+Exclude from ROI**. An excluded line takes **no** share of any pool (the paying gear beside it splits
+the whole thing), is stamped `EXCLUDED_MANUAL`, and never reaches `projectModelRevenues`. Absent =
+included, so there is no backfill and one representation of "off" (the patch clears the field rather
+than storing `false`).
+
+The flag may only ever REMOVE a line the allocator would otherwise credit, so `isRoiExcluded`
+(`convex/lib/allocation.ts`) requires a `modelId` and no `subHireId`, and skips anything `isNonGear`
+already covers. A sub-hire is the case that matters: `EXCLUDED_SUBHIRE` earns nothing but still
+**consumes pool weight**, so the owned gear beside it isn't over-credited — honouring the flag there
+would hand that weight over and inflate real ROI. `canExcludeFromRoi` (`src/lib/roi.ts`) is the
+MENU's copy of the same rule (it also drops container rows, which carry a `modelId` and render in the
+equipment tab), so the menu never offers a switch the engine ignores. The engine is the enforcement
+point, not the menu: `patchNative` takes `set: v.any()` and the field is patchable.
+
+It is **not** a money edit: it changes `allocatedRevenue` (internal attribution) and nothing the
+client sees, so it is absent from `LOCKED_LINE_ITEM_FIELDS` and stays available on a price-locked
+project.
+
+**Why it replaced "$0 means freebie".** That rule read a deliberate free line and "the price box was
+left empty" as the same thing — and empty was the far more common case, because inside a Project
+Group the BUNDLE price is the charge, so members are routinely left blank. Worse, a blank
+`<input type="number">` submits `""`, which `z.coerce.number()` turned into a real `0`
+(`src/lib/validations/line-item.ts`), so gear added to a group was silently dropped from allocation
+and reported $0 ROI. #1249 fixed both halves: blank now parses to `undefined` ("—"), and $0 no longer
+carries a hidden meaning.
+
+Allocation is a snapshot — nothing recomputes a past project — so existing $0 lines keep the
+`allocatedRevenue` they already have until that project is next edited.
 
 `rateFactor` is the fleet's median rate ÷ cost (across models with both), or ~1.5%/day of value as a
 fallback. It converts a cost-only item into a rate-equivalent so it doesn't dwarf a rated item, and

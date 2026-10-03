@@ -10,6 +10,7 @@ import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { runPredictiveMaintenance, type PmPlanEntry } from "./lib/checkPredictiveMaintenanceCore";
 import { runFailIncidentReport, type IncidentPlanEntry } from "./lib/checkIncidentReportCore";
 import { completeCheckAndDeprepLineCore, prepItemCore } from "./checkRecordOps";
+import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
 import { checkinItemsCore } from "./warehouseOps";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
@@ -266,6 +267,7 @@ export const completeCheckAndPack = mutation({
     lineItemId: v.string(),
     assetId: v.optional(v.string()),
     bulkAssetId: v.optional(v.string()),
+    containerId: v.optional(v.union(v.string(), v.null())),
     prepContainer: v.optional(v.union(v.string(), v.null())),
     includeAccessoryIds: v.optional(v.array(v.string())),
     checks: v.array(checkArg),
@@ -308,6 +310,7 @@ export const completeCheckAndPack = mutation({
     await prepItemCore(ctx, {
       organizationId: a.orgId, projectId: a.projectId, lineItemId: a.lineItemId,
       ...(a.assetId ? { assetId: a.assetId } : {}),
+      containerId: a.containerId,
       prepContainer: a.prepContainer ?? undefined,
       ...(a.includeAccessoryIds ? { includeAccessoryIds: a.includeAccessoryIds } : {}),
     });
@@ -325,7 +328,15 @@ export const completeCheckAndPack = mutation({
       projectId: a.projectId, ...(resolvedAssetId ? { assetId: resolvedAssetId } : {}), createdAt: a.now,
     });
 
-    return { success: true as const };
+    // #1160 — first pack on a CONFIRMED job moves it to PREPPING. Returned so the
+    // warehouse screen can say so instead of the status silently changing under it.
+    const autoStatus = autoAdvanceStatus(
+      await maybeAutoAdvanceProjectStatus(ctx, {
+        orgId: a.orgId, projectId: a.projectId, trigger: "PREP_STARTED", actor, now: a.now,
+      }),
+    );
+
+    return { success: true as const, autoStatus };
   },
 });
 

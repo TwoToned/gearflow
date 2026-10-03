@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { getProjectWindow } from "./lib/projectWindow";
 
 /**
  * Org-wide returns station board (issue #944 WS5) — "everything out", no project
@@ -44,10 +45,20 @@ const MAX_ROWS = 2000;
 type UrgencyGroup = "overdue" | "today" | "out" | "returned" | "upcoming";
 const URGENCY_ORDER: readonly UrgencyGroup[] = ["overdue", "today", "out", "returned", "upcoming"];
 
-type ProjectLike = { status?: string; rentalStartDate?: number; rentalEndDate?: number };
+type ProjectLike = {
+  status?: string;
+  rentalStartDate?: number;
+  rentalEndDate?: number;
+  projectStartDate?: number;
+  projectEndDate?: number;
+};
 
 /** Port of getProjectUrgency (src/app/(app)/warehouse/page.tsx) — kept in lockstep
- *  deliberately rather than imported (that file is a client component). */
+ *  deliberately rather than imported (that file is a client component). Reads the
+ *  gear-committed window (falls back to rental when unset) — when gear is
+ *  physically due back is exactly what projectStartDate/projectEndDate mean, so
+ *  this must never read rentalStartDate/rentalEndDate directly. See
+ *  project-window.ts / FEATUREDOCS/11 invariant #4. */
 function projectUrgency(p: ProjectLike): UrgencyGroup {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -59,14 +70,16 @@ function projectUrgency(p: ProjectLike): UrgencyGroup {
 
   if (p.status === "RETURNED") return "returned";
 
+  const { start, end } = getProjectWindow(p);
+
   const isOut = p.status === "CHECKED_OUT" || p.status === "ON_SITE";
   if (isOut) {
-    if (p.rentalEndDate != null && dayOf(p.rentalEndDate) < today) return "overdue";
+    if (end != null && dayOf(end) < today) return "overdue";
     return "out";
   }
 
-  if (p.rentalStartDate == null) return "upcoming";
-  return dayOf(p.rentalStartDate) < dayAfterTomorrow ? "today" : "upcoming";
+  if (start == null) return "upcoming";
+  return dayOf(start) < dayAfterTomorrow ? "today" : "upcoming";
 }
 
 type LineKind = "serialized" | "bulk" | "kit" | "subhire" | "custom" | "generic";
@@ -124,7 +137,17 @@ export const bundle = query({
     const modelIds = [...new Set([...topLevel, ...accessoryChildren].map((r) => r.modelId).filter((m): m is string => !!m))];
     const kitIds = [...new Set(topLevel.map((r) => r.kitId).filter((k): k is string => !!k))];
 
-    type ProjectDoc = { id: string; name: string; projectNumber: string; status?: string; rentalStartDate?: number; rentalEndDate?: number; isTemplate?: boolean };
+    type ProjectDoc = {
+      id: string;
+      name: string;
+      projectNumber: string;
+      status?: string;
+      rentalStartDate?: number;
+      rentalEndDate?: number;
+      projectStartDate?: number;
+      projectEndDate?: number;
+      isTemplate?: boolean;
+    };
     type ModelDoc = { id: string; name: string };
     type KitDoc = { id: string; assetTag: string; name: string };
 
@@ -196,7 +219,10 @@ export const bundle = query({
       projectName: g.project.name,
       projectNumber: g.project.projectNumber,
       status: g.project.status ?? null,
-      rentalEndDate: g.project.rentalEndDate ?? null,
+      // Gear-committed window, not raw rental — kept as `rentalEndDate` on the
+      // wire (no other consumer reads this field name as literally "rental")
+      // since it's only ever used for the overdue-first sort below.
+      rentalEndDate: getProjectWindow(g.project).end,
       urgency: projectUrgency(g.project),
       lines: g.lines.sort((a, b) => a.description.localeCompare(b.description)),
     }));

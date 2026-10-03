@@ -19,7 +19,8 @@ export type DocumentType =
   | "packing-list"
   | "return-sheet"
   | "delivery-docket"
-  | "call-sheet";
+  | "call-sheet"
+  | "manifest";
 
 export type TestTagReportType =
   | "tt-register"
@@ -52,6 +53,40 @@ export interface DocumentLineItem {
    * — see `src/lib/discount-mode.ts` for why it isn't stored.
    */
   discountMode?: "$" | "%" | null;
+  /**
+   * Category price rollup, per-item reveal — the RAW stored flag off the line
+   * item / project group, carried in so `structureLineItems` can resolve it
+   * against the owning category's `pricingDisplay`. Renderers should read the
+   * derived `priceHidden` below, never this.
+   */
+  revealPriceInRollup?: boolean | null;
+  /**
+   * Group child disclosure — the RAW stored flag off a Project Group MEMBER:
+   * list this row under the group's collapsed row on a client-facing document,
+   * showing description + quantity and never a price.
+   * `structureLineItems` consumes it when deciding which members to attach;
+   * renderers see the result as an ordinary child row carrying `priceHidden`.
+   * See `src/lib/group-child-disclosure.ts`.
+   */
+  showInGroupOnDocs?: boolean | null;
+  /**
+   * DERIVED by `structureLineItems`: this row prints its description and
+   * quantity but leaves its unit price / discount / line total cells blank,
+   * because its category rolled up and this row wasn't explicitly revealed.
+   * Absent/false = price prints as normal (every itemised row, and every row
+   * on a document that isn't priced at all).
+   * See `src/lib/category-pricing-display.ts`.
+   */
+  priceHidden?: boolean;
+  /**
+   * DERIVED by `structureLineItems`: this row belongs to a rolled-up category,
+   * so its section header carries ONE subtotal for the whole section. Stamped
+   * on every row in the section — including revealed ones, which are still
+   * counted in that subtotal — so the renderer can identify a rolled-up bucket
+   * from any row in it. Only ever set in collapse (client-facing) mode; a
+   * warehouse doc expands groups and prints no money at all.
+   */
+  rollupCategory?: boolean;
   lineTotal: number | null;
   priceBreakdown?: string | null;
   priceOverridden?: boolean;
@@ -115,9 +150,34 @@ export interface DocumentLineItem {
   subHireGroupId?: string | null;
   showSubhireOnDocs?: boolean;
   supplierName?: string | null;
-  // Container
+  // Container (#1296)
   prepContainer?: string | null;
   isContainerLineItem?: boolean;
+  /** The container THIS row's units are packed in, when `byContainer`
+   *  structuring split a multi-container line into one row per container
+   *  (structure-line-items.ts). Absent = Loose, or not a byContainer read. */
+  containerId?: string | null;
+  containerLabel?: string | null;
+  /** Synthetic container header row (`byContainer` mode only) — one per
+   *  `projectContainers` row, emitted by `structureLineItems`. Status is
+   *  DERIVED from its members (CLAUDE.md's synthetic-row rule), never
+   *  hard-coded. */
+  isContainerRow?: boolean;
+  containerKind?: "ASSET" | "BULK_ASSET" | "CUSTOM";
+  /** The container's own asset/bulk-asset tag, or its custom label restated —
+   *  whichever the row wants printed next to "kind". */
+  containerTag?: string | null;
+  containerDescription?: string | null;
+  /** Nesting depth (0 = top-level container, 1 = packed inside another, …) —
+   *  documents indent one level per depth (D1, §4.1). */
+  containerDepth?: number;
+  /** Count of DIRECT member rows under this container header (top-level
+   *  items and nested container headers alike — not a recursive total). */
+  containerItemCount?: number;
+  /** A kit member packed in a DIFFERENT container than its kit parent
+   *  prints once, under its actual container, with a note back to the kit
+   *  (D3) — this is that kit's name. */
+  fromKitName?: string | null;
   // Relations
   model: {
     name: string;
@@ -142,6 +202,9 @@ export interface DocumentLineItem {
     /** For an ACCESSORY-line unit: the parent unit's asset it travels with —
      *  lets the docket nest each accessory under its specific parent unit. */
     parentUnitAssetId?: string | null;
+    /** #1296 — the container this specific unit is packed in. Null/absent =
+     *  Loose. Drives `byContainer` structuring's per-unit bucketing. */
+    containerId?: string | null;
   }>;
   childLineItems?: DocumentLineItem[];
 }
@@ -240,6 +303,17 @@ export interface DocumentData {
   discount_amount: number;
   tax_label: string;
   tax_amount: number;
+  // T3 (#1091, docs/designs/tax-model.md §2/§5) — tax_status disambiguates WHY
+  // tax_amount is zero: "EXEMPT" (the client's flag applied — never a bare
+  // "$0.00", which reads as a determination), "UNSET" (nothing was ever
+  // configured anywhere in the cascade — same reasoning), or "COMPUTED" (a
+  // real resolved rate, including a deliberate 0% line). tax_breakdown is one
+  // entry per DISTINCT non-zero-taxable-base rate present (Article
+  // 226-shaped, not EU-specific) — a single-rate project has exactly one
+  // entry and renders identically to the pre-T3 single tax_amount row.
+  tax_status: "EXEMPT" | "UNSET" | "COMPUTED";
+  tax_breakdown: { rate: number; amount: number }[];
+  tax_exempt_reason: string;
   total: number;
   deposit_paid: number;
   balance_due: number;
@@ -293,6 +367,16 @@ export interface DocumentData {
   // Computed
   total_items: number;
   total_weight: number;
+  /** #1296 build plan phase 3b — top-level containers only (a nested one is
+   *  counted under `nested_container_count`, never double-counted in this
+   *  total). Printed in the manifest/docket summary line. Optional until
+   *  `build-document-data.ts` loads `projectContainers` and populates these
+   *  (phase 3a landed the structuring these feed off; not yet wired here). */
+  container_count?: number;
+  nested_container_count?: number;
+  /** Units with no `containerId` at all — the manifest's "Loose" section
+   *  count, printed alongside `container_count` in the summary line. */
+  loose_item_count?: number;
 }
 
 /** Config for the gearflowTable plugin */
@@ -307,6 +391,8 @@ export interface TablePluginConfig {
   showBadges: boolean;
   showNotes: boolean;
   showPerUnitCheckboxes: boolean;
+  /** List every unit's asset tag as its own sub-row WITHOUT a checkbox (delivery docket). */
+  showPerUnitTags?: boolean;
   showAssetTags: boolean;
   showCategories: boolean;
   showRowNumbers: boolean;
@@ -314,6 +400,20 @@ export interface TablePluginConfig {
   filterByStatus: string[] | null;
   /** Suppress the "/day" (or other period) price suffix — quote layout only (#790 Phase 4). */
   hidePricingPeriodSuffix: boolean;
+  /** #1296 build plan phase 3 — the rows came from `structureLineItems`'s
+   *  `byContainer` mode (container-first structuring, one section per
+   *  top-level container). When true, `LineItemsTable` skips the generic
+   *  `GroupHeaderRow` band (the top-level container's own `isContainerRow`
+   *  entry already carries the section's title, tag, and item count) and
+   *  renders every `isContainerRow` entry as a `ContainerHeaderRow` instead
+   *  of a plain item row. */
+  byContainer?: boolean;
+  /** #1296 build plan phase 3c (D10, read-only — "not worth the effort" to
+   *  re-track a mid-job repack) — return-sheet only. Adds an unchecked "Case
+   *  returned" box to each top-level `ContainerHeaderRow`, grouped by the
+   *  container gear physically LEFT in (today's `containerId`), never a
+   *  separate departure snapshot. */
+  showContainerReturnCheckbox?: boolean;
 }
 
 /** Config for financial summary plugin */

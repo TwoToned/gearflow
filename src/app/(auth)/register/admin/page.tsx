@@ -81,7 +81,7 @@ function AdminRegisterForm() {
       });
 
       toast.success("Account created as Site Admin");
-      router.push("/onboarding");
+      router.push("/setup");
     } catch {
       toast.error("Something went wrong");
     } finally {

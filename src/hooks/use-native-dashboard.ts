@@ -101,7 +101,24 @@ export function useNativeHome(orgId: string | undefined) {
 
 export function useNativeBlocking(orgId: string | undefined) {
   const enabled = !!orgId;
-  return useAuthedQuery(api.dashboardLists.blocking, enabled ? { orgId: orgId! } : "skip");
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  return useAuthedQuery(api.dashboardLists.blocking, enabled ? { orgId: orgId!, now: nowBucket } : "skip");
+}
+
+/**
+ * dashboardLists.pendingCrewOffers: pending crew offers scoped to current/future
+ * gigs only — the "needs attention" chip's count. Distinct from
+ * `stats.pendingCrewOffers` (the raw org-wide counter, still used elsewhere as a
+ * general activity stat): a job that's closed out, cancelled, or already past
+ * shouldn't keep nagging the dashboard for an offer nobody will act on.
+ */
+export function useNativePendingCrewOffers(orgId: string | undefined): number | undefined {
+  const enabled = !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  return useAuthedQuery(
+    api.dashboardLists.pendingCrewOffers,
+    enabled ? { orgId: orgId!, now: nowBucket } : "skip",
+  ) as number | undefined;
 }
 
 export function useNativeActivity(orgId: string | undefined) {
@@ -116,19 +133,25 @@ export interface NativeMyOpenTask {
   priority: "LOW" | "NORMAL" | "HIGH";
   dueDate: number | null;
   overdue: boolean;
-  projectId: string;
+  // null for a personal task (Phase 1, #1243 quick-add with no project); projectName/
+  // projectNumber are "" in that case.
+  projectId: string | null;
   projectName: string;
   projectNumber: string;
   assigneeUserId: string | null;
   assigneeCrewId: string | null;
+  stage: string | null;
+  /** Set only on rows the follow-up engine owns (follow-up automation §8.7). */
+  followUp: { ruleKey: string; rung: number; why: string; urgent: boolean; subjectId: string } | null;
 }
 
 /**
- * projectTasks.myOpenTasks: this user's open tasks across every project
- * (direct + crew assignment), sorted overdue → due asc → undated last →
- * priority, bounded to 100. Backs both the `/my-tasks` page and the
- * dashboard's My work tasks-due block. Minute-bucketed `now`, same
- * convention as the rest of this file (queries can't read the clock).
+ * projectTasks.myOpenTasks: this user's open tasks across every project (direct +
+ * crew assignment) plus personal tasks with no project, sorted overdue → due asc →
+ * undated last → priority, bounded to 100. Backs `TodayWorkListWidget`
+ * (`/today` and `/my-tasks` both now just redirect to `/dashboard` — D10C).
+ * Minute-bucketed `now`, same convention as the rest of this file (queries
+ * can't read the clock).
  */
 export function useNativeMyOpenTasks(orgId: string | undefined) {
   const enabled = !!orgId;

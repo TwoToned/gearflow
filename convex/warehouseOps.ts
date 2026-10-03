@@ -5,7 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
 import { assertTestTagAllowsCheckout } from "./lib/testtag";
-import { adjustBulkAvailability, coalesceAdjustments, type BulkAdjustment } from "./lib/inventory";
+import { adjustBulkAvailability } from "./lib/inventory";
 import { type CheckInItem, type CheckInItemType, itemGroupKey, distributeReturn } from "./lib/bulkCheckin";
 import {
   ensureSerialisedUnit,
@@ -14,9 +14,11 @@ import {
   syncLineItemRollup,
   returnLineUnits,
   checkinAccessoryChildren,
+  syncContainerStatuses,
 } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
  * Warehouse checkout / check-in — Convex port of warehouse.ts checkOutItems /
@@ -46,7 +48,43 @@ function scanLog(ctx: Ctx, doc: Record<string, unknown>) {
   return ctx.db.insert("assetScanLogs", { id: createId(), ...doc } as never);
 }
 
+/**
+ * #1296 — the ONE call site for the container status roll-up on the
+ * checkout/return path (build plan phase 1c: "called ONCE at the end of
+ * checkOutItems/checkInItems/checkOutKit/checkInKit cores"). Collects every
+ * distinct `containerId` carried by the given lines' units (a line touched by
+ * this batch is enough — accessory children inherit the SAME containerId
+ * onto their own units, so scanning the parent lines already covers them),
+ * then asks `syncContainerStatuses` (fulfillment.ts) to flip each container's
+ * OWN line item; a flip on an ASSET-kind container also flips its asset here
+ * (setAssetsStatus lives in this file, so fulfillment.ts can't call it itself
+ * without a circular import).
+ */
+async function syncContainersForLines(
+  ctx: Ctx,
+  organizationId: string,
+  userId: string,
+  now: number,
+  lineIds: Iterable<string>,
+): Promise<void> {
+  const containerIds = new Set<string>();
+  for (const lineId of lineIds) {
+    for (const u of await lineUnits(ctx, lineId)) {
+      if (u.containerId) containerIds.add(u.containerId);
+    }
+  }
+  if (containerIds.size === 0) return;
+  const flips = await syncContainerStatuses(ctx, containerIds, { organizationId, userId, now });
+  for (const flip of flips) {
+    if (flip.assetId) {
+      await setAssetsStatus(ctx, [flip.assetId], flip.status === "CHECKED_OUT" ? "CHECKED_OUT" : "AVAILABLE", null, false, now);
+    }
+  }
+}
+
 // ── Checkout helpers ─────────────────────────────────────────────────────────
+
+const NON_DEPLOYABLE_ASSET_STATUSES = new Set(["RETIRED", "IN_MAINTENANCE", "LOST", "SOLD"]);
 
 /** Returns "continue" when the asset is already on its own unit (skip finalize). */
 async function checkOutSerializedItem(
@@ -56,14 +94,18 @@ async function checkOutSerializedItem(
   const asset = await assetByCuid(ctx, p.targetAssetId);
   if (!asset || asset.organizationId !== p.organizationId) throw new ConvexError("Asset not found in this organization");
   if (asset.status === "CHECKED_OUT") {
-    const ownUnit = await ctx.db
+    // `.collect()` + take-first, not `.unique()`: a stray duplicate row on this
+    // (lineItemId, assetId) pair must degrade gracefully, not turn this into a
+    // masked Convex system error (see fulfillment.ts's ensureSerialisedUnit).
+    const ownUnits = await ctx.db
       .query("projectLineItemUnits")
       .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", p.lineItemId).eq("assetId", p.targetAssetId))
-      .unique();
+      .collect();
+    const ownUnit = ownUnits.find((u) => u.status === "CHECKED_OUT") ?? ownUnits[0];
     if (ownUnit && ownUnit.status === "CHECKED_OUT") return "continue";
     throw new ConvexError(`Asset ${asset.assetTag} is already deployed`);
   }
-  if (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST" || asset.status === "SOLD") {
+  if (NON_DEPLOYABLE_ASSET_STATUSES.has(asset.status as string)) {
     throw new ConvexError(`Asset ${asset.assetTag} is ${(asset.status as string).replace("_", " ").toLowerCase()} and cannot be deployed`);
   }
   const { id: unitId } = await ensureSerialisedUnit(ctx, { organizationId: p.organizationId, lineItemId: p.lineItemId, assetId: p.targetAssetId });
@@ -89,8 +131,8 @@ async function checkOutBulkItem(
     await ctx.db.patch(unit._id, { status: "CHECKED_OUT", quantity: p.checkoutQty, checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
   }
   // Standalone (non-kit-child) bulk lines consume the shared shelf pool directly
-  // (issue #801 #2) — kit members instead go through the kit's own
-  // collectKitBulkAdjustments off `kitBulkItems`, and accessory children are
+  // (issue #801 #2) — kit members were already taken out of the pool
+  // when added to the kit (kitWrites.addBulkItemNative), and accessory children are
   // out of scope here (see FEATUREDOCS/48's SHIPS_WITH/DEDICATED split); both
   // set isKitChild, so this single flag is the right gate. Deduct only the
   // DELTA over what this line already had checked out, so a repeat/idempotent
@@ -143,6 +185,7 @@ async function checkoutAccessoryChildren(
   p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; includeAccessoryIds?: Set<string> | null; now: number },
 ): Promise<{ assetsTouched: string[] }> {
   const children = (
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
     await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", p.parentLineItemId)).collect()
   ).filter((c) => c.organizationId === p.organizationId && c.childKind === "ACCESSORY");
   if (children.length === 0) return { assetsTouched: [] };
@@ -164,9 +207,14 @@ async function checkoutAccessoryChildren(
 
   const assetsTouched: string[] = [];
   for (const u of units) {
+    // A lost / retired / in-maintenance accessory must not be silently flipped
+    // to CHECKED_OUT (that would erase its state). Leave it behind — it stays
+    // unprepped on the line and the operator sees it; the parent still deploys.
+    const accAsset = u.assetId ? await assetByCuid(ctx, u.assetId) : null;
+    if (accAsset && NON_DEPLOYABLE_ASSET_STATUSES.has(accAsset.status as string)) continue;
     await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
     if (u.assetId) {
-      const asset = await assetByCuid(ctx, u.assetId);
+      const asset = accAsset;
       if (asset) {
         await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
         await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
@@ -318,7 +366,21 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
           organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, userId: a.userId,
           projectLocationId, projectId: a.projectId, notes: item.notes, now: a.now,
         });
-        if (res === "continue") continue;
+        if (res === "continue") {
+          // The parent unit is already out. A "Deploy Verified Only" / logged override
+          // can leave an accessory behind, so a repeat deploy must still carry any
+          // not-yet-deployed accessory out (idempotent: only flips what is still in).
+          if (a.includeAccessories) {
+            await finalizeCheckoutItem(ctx, {
+              organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, projectId: a.projectId,
+              userId: a.userId, projectLocationId, includeAccessories: true,
+              includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
+              now: a.now,
+            });
+            updated.add(lineItem.id);
+          }
+          continue;
+        }
       } else if (lineItem.bulkAssetId) {
         await checkOutBulkItem(ctx, {
           organizationId: a.organizationId, lineItemId: lineItem.id, lineItemQuantity: lineItem.quantity ?? 0,
@@ -348,6 +410,7 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
       });
       updated.add(lineItem.id);
     }
+    await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, updated);
     return { updatedLineIds: [...updated] };
 }
 
@@ -382,6 +445,7 @@ async function kitParentLine(ctx: Ctx, projectId: string, organizationId: string
   return rows.find((r) => r.projectId === projectId && r.organizationId === organizationId && !r.isKitChild) ?? null;
 }
 async function childLines(ctx: Ctx, parentId: string, organizationId: string) {
+  // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
   return (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", parentId)).collect())
     .filter((c) => c.organizationId === organizationId);
 }
@@ -432,10 +496,6 @@ async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: st
       driftModels,
     });
   }
-}
-async function collectKitBulkAdjustments(ctx: Ctx, kitId: string, organizationId: string, sign: -1 | 1): Promise<BulkAdjustment[]> {
-  const bulks = await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
-  return bulks.filter((b) => b.organizationId === organizationId).map((b) => ({ bulkAssetId: b.bulkAssetId, delta: sign * b.quantity }));
 }
 export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
   for (const id of assetIds) {
@@ -588,12 +648,17 @@ async function checkoutKitPreflight(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLi
     ttBulk.push(...(await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", nk)).collect()).map((b) => b.bulkAssetId));
   }
   await assertTestTagAllowsCheckout(ctx, a.organizationId, { assetIds: ttAssets, bulkAssetIds: ttBulk });
+
+  // Already deployed: a repeat deploy would re-stamp the lines and scan log.
+  if (kitLine.status === "CHECKED_OUT") throw new ConvexError("Kit is already deployed");
 }
 
 /** Write phase of checkoutKit for ONE already-validated kit (preflight passed).
  *  `loc` (the project location) is passed so a batch resolves it once. Returns
- *  [kitId, ...nestedKitIds]. CONSUMES bulk availability — `adjustBulkAvailability`
- *  can throw on a short bulk (all-or-nothing per the singular). */
+ *  [kitId, ...nestedKitIds]. Does NOT touch bulk availability: a kit's bulk members
+ *  were already taken out of the shared pool when they were added to the kit
+ *  (`kitWrites.addBulkItemNative`), so deploy / return / un-deploy / un-return
+ *  must not consume or restore it again. */
 async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, loc: string | null): Promise<string[]> {
     const children = await childLines(ctx, kitLine.id, a.organizationId);
     const nestedKitChildren = children.filter((c) => c.kitId);
@@ -622,9 +687,6 @@ async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, l
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
 
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: flip member units CONFIRMED → CHECKED_OUT (unit rows only;
     // the belt above owns asset status this phase), then deploy each member's
@@ -646,6 +708,9 @@ export async function checkoutKitFull(ctx: Ctx, a: KitOpArgs): Promise<{ kitId: 
   const loc = project?.locationId ?? null;
   await checkoutKitPreflight(ctx, a, kitLine);
   const affectedKitIds = await checkoutKitCore(ctx, a, kitLine, loc);
+  // #1296 — the kit case's own line item may itself be packed inside another
+  // container (nesting, §3.5); its unit (if any) carries that containerId.
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, [kitLine.id]);
   return { kitId: a.kitId, affectedKitIds };
 }
 
@@ -735,9 +800,6 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
 
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: flip member units CHECKED_OUT → RETURNED (unit rows only),
     // then return each member's accessories with the kit. Bulk members return
@@ -757,6 +819,7 @@ export async function checkinKitFull(ctx: Ctx, a: KitCheckinArgs): Promise<{ kit
   const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.organizationId)).collect(); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
   const defaultLoc = locs.find((l) => l.isDefault)?.id ?? null;
   const affectedKitIds = await checkinKitCore(ctx, a, kitLine, defaultLoc);
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, [kitLine.id]);
   return { kitId: a.kitId, affectedKitIds };
 }
 
@@ -849,14 +912,24 @@ export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{
       await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: item.notes || `Returned ${unitsFlipped} unit(s)` });
     }
     await syncLineItemRollup(ctx, item.lineItemId);
-    if (unitsFlipped > 0) {
-      await checkinAccessoryChildren(ctx, {
-        organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
-        returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId: item.assetId ?? null,
-      });
+    // A parent that is ALREADY returned can still have an accessory stranded out
+    // (left behind by an earlier partial deploy/return); returning it again must
+    // bring that accessory home instead of silently doing nothing.
+    const strandedParent = unitsFlipped === 0 && (await lineByCuid(ctx, item.lineItemId))?.status === "RETURNED";
+    if (unitsFlipped > 0 || strandedParent) {
+      // Scope the cascade to the parent assets that actually came back — a
+      // partial return with no assetId must not return every parent's accessories.
+      const scopes: Array<string | null> = item.assetId ? [item.assetId] : assetsTouched.length > 0 ? assetsTouched : [null];
+      for (const returnedAssetId of scopes) {
+        await checkinAccessoryChildren(ctx, {
+          organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
+          returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId,
+        });
+      }
     }
     updated.add(item.lineItemId);
   }
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, updated);
   return { updatedLineIds: [...updated] };
 }
 
@@ -893,6 +966,36 @@ export const checkinItems = mutation({
  *  effect here; callers that own a top-level (non-kit-child) line decide
  *  whether to apply it via `adjustBulkAvailability` (issue #801 #2 move-back
  *  parity — see undeployItemsCore / unreturnItemsCore). */
+/** Does a unit qualify for this flip (status, specific parent asset, accessory parent scope)? */
+function unitMatchesFlip(
+  u: { status?: string; assetId?: string; parentUnitAssetId?: string },
+  p: { fromStatus: string; onlyAssetId?: string; parentAssetIds?: string[] },
+): boolean {
+  if (u.status !== p.fromStatus) return false;
+  if (p.onlyAssetId && u.assetId !== p.onlyAssetId) return false;
+  return !p.parentAssetIds || (u.parentUnitAssetId != null && p.parentAssetIds.includes(u.parentUnitAssetId));
+}
+
+/** The unit patch for a flip. Un-returning / undeploying also wipes the return
+ *  record, or the unit keeps a stale condition / returnedQuantity. */
+function flipPatch(p: { toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; resetReturnedQty?: boolean; now: number }) {
+  const wipeReturn = p.resetReturnedQty || p.toStatus === "CONFIRMED";
+  return {
+    status: p.toStatus,
+    ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
+    ...(wipeReturn ? { returnedQuantity: 0, returnCondition: undefined, returnedAt: undefined, returnedById: undefined, returnNotes: undefined } : {}),
+    updatedAt: p.now,
+  };
+}
+
+/** Bulk quantity a flip puts back on the shelf. Undeploy releases only what is
+ *  still OUT — a partial return already released its share, so the full quantity
+ *  would double-count. */
+function flippedBulkQuantity(u: { quantity?: number; returnedQuantity?: number }, toStatus: "CONFIRMED" | "CHECKED_OUT"): number {
+  const qty = u.quantity ?? 0;
+  return toStatus === "CONFIRMED" ? Math.max(0, qty - (u.returnedQuantity ?? 0)) : qty;
+}
+
 async function flipLineUnits(
   ctx: Ctx,
   p: {
@@ -901,23 +1004,22 @@ async function flipLineUnits(
     toPrepStatus?: "PACKED"; resetReturnedQty?: boolean;
     assetStatus: string; locationId: string | null; clearLoc: boolean;
     want?: number; now: number;
+    /** Only flip the unit for this serialised parent asset (undeploy/unreturn of a specific asset). */
+    onlyAssetId?: string;
+    /** Accessory scope: only flip units whose parent unit is one of these assets. */
+    parentAssetIds?: string[];
   },
 ): Promise<{ flipped: number; assetIds: string[]; bulkFlips: Array<{ bulkAssetId: string; quantity: number }> }> {
   const units = (await lineUnits(ctx, p.lineItemId))
-    .filter((u) => u.status === p.fromStatus)
+    .filter((u) => unitMatchesFlip(u, p))
     .sort((a, b) => a.ordinal - b.ordinal);
   const toFlip = p.want != null ? units.slice(0, Math.max(0, Math.min(p.want, units.length))) : units;
   const assetIds: string[] = [];
   const bulkFlips: Array<{ bulkAssetId: string; quantity: number }> = [];
   for (const u of toFlip) {
-    await ctx.db.patch(u._id, {
-      status: p.toStatus,
-      ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
-      ...(p.resetReturnedQty ? { returnedQuantity: 0 } : {}),
-      updatedAt: p.now,
-    });
+    await ctx.db.patch(u._id, flipPatch(p));
     if (u.assetId) assetIds.push(u.assetId);
-    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: u.quantity ?? 0 });
+    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: flippedBulkQuantity(u, p.toStatus) });
   }
   if (assetIds.length > 0) await setAssetsStatus(ctx, assetIds, p.assetStatus, p.locationId, p.clearLoc, p.now);
   return { flipped: toFlip.length, assetIds, bulkFlips };
@@ -944,13 +1046,14 @@ async function applyBulkFlipAvailability(
 /** Cascade a line's ACCESSORY children back with their parent (whole units). */
 async function reverseAccessoryChildren(
   ctx: Ctx,
-  p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
+  p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; resetReturnedQty?: boolean; parentAssetIds?: string[]; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
 ): Promise<void> {
   const children = (await childLines(ctx, p.parentLineItemId, p.organizationId)).filter((c) => c.childKind === "ACCESSORY");
   for (const child of children) {
     await flipLineUnits(ctx, {
       organizationId: p.organizationId, lineItemId: child.id,
       fromStatus: p.fromStatus, toStatus: p.toStatus, toPrepStatus: p.toPrepStatus,
+      resetReturnedQty: p.resetReturnedQty, parentAssetIds: p.parentAssetIds,
       assetStatus: p.assetStatus, locationId: p.locationId, clearLoc: p.clearLoc, now: p.now,
     });
     await syncLineItemRollup(ctx, child.id);
@@ -976,10 +1079,10 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
+    const { flipped, assetIds, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "CHECKED_OUT",
       toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE",
-      locationId: defLoc, clearLoc: true, want: item.quantity, now: a.now,
+      locationId: defLoc, clearLoc: true, want: item.quantity, onlyAssetId: item.assetId, now: a.now,
     });
     const wholeLine = flipped === 0 && line.status === "CHECKED_OUT";
     if (wholeLine) {
@@ -987,7 +1090,7 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       await ctx.db.patch(line._id, { status: "CONFIRMED", prepStatus: "PACKED", checkedOutQuantity: 0, updatedAt: a.now });
     }
     await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, 1);
-    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, parentAssetIds: assetIds.length > 0 ? assetIds : undefined, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Prepped (un-deploy)" });
     updated.add(line.id);
@@ -1013,10 +1116,10 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
+    const { flipped, assetIds, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "RETURNED",
       toStatus: "CHECKED_OUT", resetReturnedQty: true, assetStatus: "CHECKED_OUT",
-      locationId: projLoc, clearLoc: false, want: item.quantity, now: a.now,
+      locationId: projLoc, clearLoc: false, want: item.quantity, onlyAssetId: item.assetId, now: a.now,
     });
     const wholeLine = flipped === 0 && line.status === "RETURNED";
     if (wholeLine) {
@@ -1025,7 +1128,7 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       await ctx.db.patch(line._id, { status: "CHECKED_OUT", returnedQuantity: 0, checkedOutQuantity: line.quantity ?? 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
     }
     await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, -1);
-    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, parentAssetIds: assetIds.length > 0 ? assetIds : undefined, resetReturnedQty: true, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Deployed (un-return)" });
     updated.add(line.id);
@@ -1093,10 +1196,6 @@ async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, d
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
 
-    // Restore bulk availability the checkout consumed (+1, opposite of checkout's -1).
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, 1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, 1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: member units CHECKED_OUT → CONFIRMED (re-packed), and reverse
     // the members' accessories with them.
@@ -1185,10 +1284,6 @@ async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, p
     const kit = await kitByCuid(ctx, a.kitId);
     if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
 
-    // Re-consume bulk availability the return restored (-1, opposite of checkin's +1).
-    const adjustments: BulkAdjustment[] = [...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1))];
-    for (const nk of nestedKitIds) adjustments.push(...(await collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)));
-    if (adjustments.length > 0) await adjustBulkAvailability(ctx, a.organizationId, coalesceAdjustments(adjustments));
 
     // Kit per-unit: member units RETURNED → CHECKED_OUT. Clear the return stamps
     // so a re-deployed unit doesn't carry contradictory returned* history.
@@ -1259,14 +1354,17 @@ const FORCE_RET = (now: number) => ({ status: "RETURNED" as const, returnedQuant
 /** Kit per-unit: force-return the CHECKED_OUT unit(s) bound to one asset, wherever
  *  they live (loose line or kit member). Mirrors FORCE_RET onto the unit row so
  *  force-return doesn't leave a member unit stuck CHECKED_OUT (split-brain). */
-async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number) {
+async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number): Promise<Set<string>> {
   const units = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", organizationId).eq("assetId", assetId).eq("status", "CHECKED_OUT"))
     .collect();
+  const lineIds = new Set<string>();
   for (const u of units) {
     await ctx.db.patch(u._id, { status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: now, returnedById: userId, returnCondition: "GOOD", updatedAt: now });
+    lineIds.add(u.lineItemId);
   }
+  return lineIds;
 }
 
 /**
@@ -1281,7 +1379,11 @@ export async function forceReturnAssetCore(ctx: Ctx, organizationId: string, ass
   for (const li of await linesByAsset(ctx, assetId, organizationId)) {
     if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(now));
   }
-  await forceReturnAssetUnits(ctx, organizationId, assetId, userId, now);
+  // Lines prepped per-unit carry the asset on the UNIT (not line.assetId), so the
+  // line loop above never saw them — roll each one up or it stays CHECKED_OUT.
+  for (const lineItemId of await forceReturnAssetUnits(ctx, organizationId, assetId, userId, now)) {
+    await syncLineItemRollup(ctx, lineItemId);
+  }
   await setAssetsStatus(ctx, [assetId], "AVAILABLE", loc, true, now);
 }
 
@@ -1385,9 +1487,6 @@ export async function forceReturnKitCore(
   if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
   else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
 
-  const adjustments: BulkAdjustment[] = [];
-  for (const kid of kitsToRestore) adjustments.push(...(await collectKitBulkAdjustments(ctx, kid, organizationId, 1)));
-  if (adjustments.length > 0) await adjustBulkAvailability(ctx, organizationId, coalesceAdjustments(adjustments));
   return [...kitsToRestore];
 }
 
@@ -1456,12 +1555,14 @@ export async function quickAddCore(ctx: Ctx, a: QuickAddArgs): Promise<{ id: str
     await assertTestTagAllowsCheckout(ctx, a.organizationId, {
       assetIds: a.assetId ? [a.assetId] : [], bulkAssetIds: a.bulkAssetId ? [a.bulkAssetId] : [],
     });
-    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+    // LIVE-ONLY (#1228) — warehouse always operates on the live plan.
+    const quickAddVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+    const lines = (await versionRows(ctx, "projectLineItems", quickAddVersionId))
       .filter((l) => l.organizationId === a.organizationId);
     const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
     const id = createId();
     await ctx.db.insert("projectLineItems", {
-      id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId,
+      id, organizationId: a.organizationId, projectId: a.projectId, versionId: quickAddVersionId, lineageId: id, type: "EQUIPMENT", modelId: a.modelId,
       assetId: a.assetId, bulkAssetId: a.bulkAssetId, quantity: a.quantity ?? 1, sortOrder, status: "CONFIRMED",
       checkedOutQuantity: 0, prepStatus: "PENDING", prepContainer: a.prepContainer, createdAt: a.now, updatedAt: a.now,
     });
@@ -1489,14 +1590,28 @@ export async function ensureContainerOnProjectCore(ctx: Ctx, a: EnsureContainerA
   const existing = (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", a.assetId)).collect())
     .find((l) => l.projectId === a.projectId && l.organizationId === a.organizationId && l.isContainerLineItem);
   if (existing) return { id: existing.id, created: false };
-  const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+  // LIVE-ONLY (#1228).
+  const containerVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+  const lines = (await versionRows(ctx, "projectLineItems", containerVersionId))
     .filter((l) => l.organizationId === a.organizationId);
   const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
   const id = createId();
+  // #1296 — pair a real projectContainers row (kind ASSET) with the line item,
+  // the same "any container added also gets added onto the job" invariant
+  // `projectContainersWrites.createNative` gives a browser-direct create.
+  // A pre-#1296 line with no matching container (prod, before the backfill
+  // runs) is expected and fine — phase 1d's backfill closes that gap.
+  const containerId = createId();
   await ctx.db.insert("projectLineItems", {
-    id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
+    id, organizationId: a.organizationId, projectId: a.projectId, versionId: containerVersionId, lineageId: id, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
     quantity: 1, sortOrder, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED", prepContainer: a.containerName,
-    isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
+    containerId, isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
+  });
+  const containers = (await versionRows(ctx, "projectContainers", containerVersionId)).filter((c) => c.organizationId === a.organizationId);
+  const containerSort = containers.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
+  await ctx.db.insert("projectContainers", {
+    id: containerId, organizationId: a.organizationId, projectId: a.projectId, versionId: containerVersionId, lineageId: containerId,
+    kind: "ASSET", assetId: a.assetId, label: a.containerName, lineItemId: id, sortOrder: containerSort, createdAt: a.now, updatedAt: a.now,
   });
   return { id, created: true };
 }
@@ -1513,7 +1628,9 @@ export type ClearPrepContainerArgs = { organizationId: string; projectId: string
 
 /** Core clear-prep-container (strip prepContainer off every line in the container). Shared. */
 export async function clearPrepContainerCore(ctx: Ctx, a: ClearPrepContainerArgs): Promise<{ success: true }> {
-  const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+  // LIVE-ONLY (#1228).
+  const clearVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+  const lines = (await versionRows(ctx, "projectLineItems", clearVersionId))
     .filter((l) => l.organizationId === a.organizationId && l.prepContainer === a.containerName);
   for (const l of lines) {
     const { _id, _creationTime, prepContainer: _p, ...rest } = l;
@@ -1566,7 +1683,9 @@ export type SyncContainersBatchArgs = { organizationId: string; projectId: strin
 /** Core batch container roll-up (read lines once, bucket by prepContainer, flip each
  *  container line + asset when contents are uniformly deployed/returned). Shared. */
 export async function syncContainersBatchCore(ctx: Ctx, a: SyncContainersBatchArgs): Promise<{ results: Array<{ containerName: string; updated: boolean; status?: string }> }> {
-  const allLines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+  // LIVE-ONLY (#1228).
+  const syncVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+  const allLines = (await versionRows(ctx, "projectLineItems", syncVersionId))
     .filter((l) => l.organizationId === a.organizationId);
   const results: Array<{ containerName: string; updated: boolean; status?: string }> = [];
   for (const containerName of a.containerNames) {
@@ -1615,12 +1734,14 @@ export const checkInBulkTotals = mutation({
     if (wanted.length === 0) return { returned: [] as Array<{ key: string; quantity: number; condition: string }> };
 
     const defaultLoc = await defaultLocationId(ctx, a.organizationId);
-    // Range-scan only CHECKED_OUT lines for this project via the composite index
-    // (was: collect ALL of the project's lines then JS-filter on status). The
-    // remaining predicate (org / not-subhire-group / accessory-or-not-kit-child)
-    // stays a JS post-filter over the now-smaller candidate set.
+    // Range-scan only CHECKED_OUT lines for this project's LIVE version via the
+    // composite index (was: collect ALL of the project's lines then JS-filter
+    // on status). LIVE-ONLY (#1228). The remaining predicate (org /
+    // not-subhire-group / accessory-or-not-kit-child) stays a JS post-filter
+    // over the now-smaller candidate set.
+    const checkInVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
     const rows = (await ctx.db.query("projectLineItems")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", a.projectId).eq("status", "CHECKED_OUT"))
+      .withIndex("by_versionId_status", (q) => q.eq("versionId", checkInVersionId).eq("status", "CHECKED_OUT"))
       .collect())
       .filter((r) => r.organizationId === a.organizationId && !r.subHireGroupId && (!r.isKitChild || r.childKind === "ACCESSORY"))
       .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));

@@ -1,8 +1,8 @@
 /**
- * Pure, client-only audio feedback for scan verdicts — barcode/tag scanning
- * across Warehouse prep/deploy/return, the T&T quick-test wizard, and the
- * `/check/[assetTag]` ad-hoc station. See FEATUREDOCS/12 (Scan Feedback) and
- * FEATUREDOCS/14 (Audio note).
+ * Pure, client-only audio + haptic feedback for scan verdicts —
+ * barcode/tag scanning across Warehouse prep/deploy/return, the T&T
+ * quick-test wizard, and the `/check/[assetTag]` ad-hoc station. See
+ * FEATUREDOCS/12 (Scan Feedback) and FEATUREDOCS/14 (Audio note).
  *
  * Replaces the old per-call-site `playBeep` (T&T quick-test) which created a
  * brand-new `AudioContext` on every beep and never closed it — Chrome caps
@@ -13,7 +13,7 @@
  * silently dropped), and ramps gain out instead of hard-stopping (no click).
  */
 
-export type ScanFeedbackKind = "success" | "error" | "exception" | "info";
+export type ScanFeedbackKind = "capture" | "success" | "error" | "exception" | "info";
 
 interface TonePlan {
   /** Oscillator frequency in Hz. */
@@ -34,8 +34,15 @@ interface TonePlan {
  *                 error (e.g. already-returned asset, unknown tag, disambiguation
  *                 needed — "scan the parent instead"). 500 Hz double-blip.
  * - `info`      — neutral heads-up, e.g. a quantity prompt opening (600 Hz / 80 ms).
+ * - `capture`   — the CAMERA read a code. Not a verdict: the decoder has no idea
+ *                 whether the tag means anything here, so this is the handheld
+ *                 scanner's "gun beep" and the caller still plays one of the four
+ *                 verdicts above once it has resolved the value. Deliberately the
+ *                 shortest and highest of the set so the pair reads as tick-then-
+ *                 answer rather than as two competing opinions.
  */
 export const SCAN_FEEDBACK_TONES: Record<ScanFeedbackKind, TonePlan> = {
+  capture: { frequency: 1200, durationMs: 35 },
   success: { frequency: 800, durationMs: 150 },
   error: { frequency: 300, durationMs: 400 },
   exception: { frequency: 500, durationMs: 120, secondBlipGapMs: 90 },
@@ -118,5 +125,33 @@ export function playScanFeedback(kind: ScanFeedbackKind): void {
     }
   } catch {
     // Audio is a non-critical enhancement — never let it break a scan flow.
+  }
+}
+
+/**
+ * Vibration pattern per verdict, in the `navigator.vibrate` shape. Mirrors
+ * `SCAN_FEEDBACK_TONES` one-for-one — a kind with a tone and no pattern would
+ * be a silent half-verdict on a muted phone.
+ */
+export const SCAN_FEEDBACK_HAPTICS: Record<ScanFeedbackKind, number | number[]> = {
+  capture: 25, // crisp single tick — "the camera has it", felt without looking up
+  success: 30, // one short tick
+  error: [60, 40, 60], // two firm buzzes — distinguishable through a glove
+  exception: [30, 60, 30], // double tick, mirrors the double-blip tone
+  info: 15, // barely-there
+};
+
+/**
+ * Play a scan feedback vibration. Same posture as `playScanFeedback`: feature-
+ * detected and fully swallowed — haptics are a non-critical enhancement and
+ * must never break a scan flow. `navigator.vibrate` is unimplemented on iOS
+ * Safari; there this is a silent no-op, not a bug to route around.
+ */
+export function playScanHaptic(kind: ScanFeedbackKind): void {
+  try {
+    if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+    navigator.vibrate(SCAN_FEEDBACK_HAPTICS[kind]);
+  } catch {
+    // Haptics are a non-critical enhancement — never let it break a scan flow.
   }
 }

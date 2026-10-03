@@ -129,3 +129,18 @@ export const runTestTagReminders = internalAction({
   }),
   handler: async () => invokeCronRoute("/api/cron/test-tag-reminders"),
 });
+
+/**
+ * Daily: B4 (#1096) "never activated" abandonment-guard sweep. Advances the
+ * day 1/3/7/23/29 email ladder and archives orgs that hit day 30 with zero
+ * activity. See src/server/org-dormancy.ts for the full design rationale.
+ */
+export const runOrgDormancySweep = internalAction({
+  args: {},
+  returns: v.object({
+    skipped: v.optional(v.boolean()),
+    status: v.optional(v.number()),
+    body: v.optional(v.string()),
+  }),
+  handler: async () => invokeCronRoute("/api/cron/org-dormancy"),
+});

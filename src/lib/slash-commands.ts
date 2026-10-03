@@ -108,10 +108,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     action: { type: "navigate", path: "/settings" },
   },
   {
+    // Dashboard is the landing page again (D10C) — absorbs Today's "home"
+    // alias.
     id: "global-dashboard",
     label: "Dashboard",
     command: "dashboard",
-    aliases: ["home", "overview"],
+    aliases: ["overview", "home"],
     description: "Go to dashboard",
     icon: "LayoutDashboard",
     pages: ["*"],

@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
+import type { CategoryPricingDisplay } from "@/lib/category-pricing-display";
 
 /**
  * Browser-direct PROJECT-CATEGORY writes (Phase 3 — replaces the create/update/
@@ -33,12 +34,15 @@ export function useProjectCategoryWrites() {
   };
 
   return {
-    create: async (projectId: string, name: string): Promise<void> => {
+    // #1221 follow-up — `versionId` (optional) is the version this new
+    // category lands on, defaulting to live (server-side) when omitted.
+    create: async (projectId: string, name: string, versionId?: string): Promise<void> => {
       await createM({
         id: createId(),
         orgId: requireOrg(),
         projectId,
         name,
+        versionId,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
@@ -54,6 +58,23 @@ export function useProjectCategoryWrites() {
         auditId: createId(),
       });
     },
+    /** Flip a category between per-line pricing and one derived section
+     *  subtotal on client-facing documents (src/lib/category-pricing-display.ts).
+     *  Sent as its own call rather than folded into `update` so the audit entry
+     *  records the display change instead of a phantom rename. */
+    setPricingDisplay: async (
+      categoryId: string,
+      pricingDisplay: CategoryPricingDisplay,
+    ): Promise<void> => {
+      await updateM({
+        id: categoryId,
+        orgId: requireOrg(),
+        pricingDisplay,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+    },
     remove: async (categoryId: string): Promise<void> => {
       await deleteM({
         id: categoryId,
@@ -63,16 +84,13 @@ export function useProjectCategoryWrites() {
         auditId: createId(),
       });
     },
-    /** `justification` — required once a touched project is JUSTIFY+ with no
-     *  open unlock session (drag-and-drop reorder routes this through
-     *  useJustifiedMutation). */
-    reorder: async (args: { orderedIds: string[]; justification?: string }): Promise<void> => {
+    /** Structural — never gated by pricingLocked (#1230). */
+    reorder: async (args: { orderedIds: string[] }): Promise<void> => {
       await reorderM({
         orgId: requireOrg(),
         orderedIds: args.orderedIds,
         now: Date.now(),
         actor: actor(),
-        justification: args.justification,
       });
     },
   };

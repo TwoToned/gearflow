@@ -28,11 +28,21 @@ async function member(t: ReturnType<typeof convexTest>, role: string) {
 }
 
 /** A minimal project so recalcProjectTotals has a row to sweep + patch. */
+/** #1228 — deterministic per-(project,org) version id so every fixture that
+ *  independently re-seeds "p1" in the same org resolves the SAME version. */
+function versionIdFor(id: string, orgId: string): string {
+  return `v-${id}-${orgId}`;
+}
+
 async function seedProject(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) {
+  const versionId = versionIdFor(id, orgId);
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "QUOTED",
-      total: 999, taxRate: 10,
+      total: 999, taxRate: 10, liveVersionId: versionId,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -40,9 +50,10 @@ async function seedProject(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) 
 /** Seed the target project + category rows the move/create org-validation now requires. */
 async function seedProjectAndCategories(t: ReturnType<typeof makeT>, cats: string[] = ["cat1", "cat2"], projectId = "p1", orgId = ORG) {
   await seedProject(t, projectId, orgId);
+  const versionId = versionIdFor(projectId, orgId);
   await t.run(async (ctx) => {
     for (const c of cats) {
-      await ctx.db.insert("projectCategories", { id: c, organizationId: orgId, projectId, name: c, sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { id: c, organizationId: orgId, projectId, versionId, lineageId: c, name: c, sortOrder: 0 });
     }
   });
 }
@@ -57,8 +68,8 @@ describe("projectGroupsWrites.createGroupNative", () => {
     await seedProjectAndCategories(t);
     await t.run(async (ctx) => {
       // Same (project,category) bucket → contributes to max; other-category ignored.
-      await ctx.db.insert("projectGroups", { id: "existing", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Lights", sortOrder: 3 });
-      await ctx.db.insert("projectGroups", { id: "otherCat", organizationId: ORG, projectId: "p1", categoryId: "cat2", title: "X", sortOrder: 9 });
+      await ctx.db.insert("projectGroups", { id: "existing", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Lights", sortOrder: 3, versionId: "v-p1-org_1", lineageId: "existing",});
+      await ctx.db.insert("projectGroups", { id: "otherCat", organizationId: ORG, projectId: "p1", categoryId: "cat2", title: "X", sortOrder: 9, versionId: "v-p1-org_1", lineageId: "otherCat",});
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, args);
     expect(res.sortOrder).toBe(4); // max(3)+1 within cat1
@@ -121,9 +132,9 @@ describe("projectGroupsWrites.updateGroupNative", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0, suggestedPrice: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0, suggestedPrice: 0, versionId: "v-p1-org_1", lineageId: "g1",});
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", dailyRate: 100, weeklyRate: 500 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", modelId: "m1", quantity: 2, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", modelId: "m1", quantity: 2, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: "v-p1-org_1", lineageId: "li1",});
     });
   }
 
@@ -249,7 +260,7 @@ describe("projectGroupsWrites.updateGroupPriceNative", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", quantity: 2, sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", quantity: 2, sortOrder: 0, versionId: "v-p1-org_1", lineageId: "g1",});
     });
   }
 
@@ -377,11 +388,11 @@ describe("projectGroupsWrites.deleteGroupNative", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0, versionId: "v-p1-org_1", lineageId: "g1",});
       await ctx.db.insert("categorySlots", { id: "slGrp", projectCategoryId: "cat1", projectGroupId: "g1", sortOrder: 0 });
       // Two grouped lines — both move to standalone (groupId cleared, categoryId kept).
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", quantity: 1, lineTotal: 20, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT" });
-      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", quantity: 1, lineTotal: 30, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", quantity: 1, lineTotal: 20, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: "v-p1-org_1", lineageId: "li1",});
+      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", quantity: 1, lineTotal: 30, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: "v-p1-org_1", lineageId: "li2",});
     });
   }
 
@@ -432,8 +443,8 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0, versionId: "v-p1-org_1", lineageId: "g1",});
+      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1, versionId: "v-p1-org_1", lineageId: "g2",});
       await ctx.db.insert("projectGroups", { id: "gOther", organizationId: "org_other", projectId: "p9", title: "X", sortOrder: 5 });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
@@ -462,22 +473,25 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
   // Gap fix: reorderGroupsNative previously never called assertLifecycleGuard,
   // so a locked project's groups could be silently reordered. Mirrors the
   // equivalent lineItemWrites.reorderNative coverage.
-  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+  test("succeeds on an ON_SITE project — structural, never gated (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "ON_SITE", isTemplate: false, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1 });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "ON_SITE", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-org_1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1-org_1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0,
+        versionId: "v-p1-org_1",
+        lineageId: "g1",
+      });
+      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1,
+        versionId: "v-p1-org_1",
+        lineageId: "g2",
+      });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
-        orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR,
-      }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
-      orgId: ORG, orderedIds: ["g2", "g1"], now: NOW + 1, actor: ACTOR,
-      justification: "Client requested a change while on site today.",
+      orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR,
     });
     await t.run(async (ctx) => {
       const g2 = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g2")).first();
@@ -485,19 +499,26 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
     });
   });
 
-  test("rejects on a HARD_LOCKED (COMPLETED) project with no open FULL unlock session", async () => {
+  test("succeeds on a COMPLETED project — HARD_LOCKED is deleted (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "COMPLETED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1 });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "COMPLETED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-org_1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1-org_1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0,
+        versionId: "v-p1-org_1",
+        lineageId: "g1",
+      });
+      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1,
+        versionId: "v-p1-org_1",
+        lineageId: "g2",
+      });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
-        orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR, justification: "Doesn't matter — HARD_LOCKED needs a session, not a reason.",
-      }),
-    ).rejects.toThrow(/PROJECT_LOCKED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
+      orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR,
+    });
   });
 });
 
@@ -510,12 +531,21 @@ describe("projectGroupsWrites.moveLineItemNative", () => {
     await t.run(async (ctx) => {
       // Model dailyRate 100. Source group g1 holds the sub-hire line (qty 2), target g2 empty.
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", dailyRate: 100 });
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Src", sortOrder: 0, suggestedPrice: 200 });
-      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", categoryId: "cat2", title: "Dst", sortOrder: 0, suggestedPrice: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Src", sortOrder: 0, suggestedPrice: 200,
+        versionId: "v-p1-org_1",
+        lineageId: "g1",
+      });
+      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", categoryId: "cat2", title: "Dst", sortOrder: 0, suggestedPrice: 0,
+        versionId: "v-p1-org_1",
+        lineageId: "g2",
+      });
       // Sub-hire chain: subHire → subHireGroup → line derived from it.
       await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "sup1", createdById: USER, projectId: "p1", orderNumber: "SO-1" });
       await ctx.db.insert("subHireGroups", { id: "shg1", subHireId: "sh1", title: "SubGrp", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", modelId: "m1", quantity: 2, subHireId: "sh1", subHireGroupId: "shg1", isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", modelId: "m1", quantity: 2, subHireId: "sh1", subHireGroupId: "shg1", isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li1",
+      });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
       lineItemId: "li1", orgId: ORG, targetGroupId: "g2", targetCategoryId: "cat2", now: NOW, actor: ACTOR, auditId: "log1",
@@ -543,8 +573,14 @@ describe("projectGroupsWrites.moveLineItemNative", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Src", sortOrder: 0, suggestedPrice: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Src", sortOrder: 0, suggestedPrice: 0,
+        versionId: "v-p1-org_1",
+        lineageId: "g1",
+      });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li1",
+      });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
       lineItemId: "li1", orgId: ORG, targetGroupId: null, targetCategoryId: null, now: NOW, actor: ACTOR, auditId: "log1",
@@ -563,7 +599,10 @@ describe("projectGroupsWrites.moveLineItemNative", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li1",
+      });
       // A group in ANOTHER org — must not be assignable as a target.
       await ctx.db.insert("projectGroups", { id: "gForeign", organizationId: "org_other", projectId: "p9", title: "Theirs", sortOrder: 0 });
     });
@@ -604,7 +643,10 @@ describe("projectGroupsWrites.moveLineItemNative", () => {
     await member(t, "member");
     await seedProjectAndCategories(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li1",
+      });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
       lineItemId: "li1", orgId: ORG, targetGroupId: null, targetCategoryId: "cat1", now: NOW, actor: ACTOR, auditId: "log1",
@@ -620,8 +662,14 @@ describe("projectGroupsWrites.moveLineItemNative", () => {
     await member(t, "member");
     await seedProjectAndCategories(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Dst", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Dst", sortOrder: 0,
+        versionId: "v-p1-org_1",
+        lineageId: "g1",
+      });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li1",
+      });
       await ctx.db.insert("categorySlots", { id: "slLi", projectCategoryId: "cat1", lineItemId: "li1", sortOrder: 0 });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
@@ -638,7 +686,10 @@ describe("projectGroupsWrites.moveLineItemNative", () => {
     await member(t, "member");
     await seedProjectAndCategories(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li1",
+      });
       await ctx.db.insert("categorySlots", { id: "slLi", projectCategoryId: "cat1", lineItemId: "li1", sortOrder: 0 });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
@@ -661,13 +712,31 @@ describe("projectGroupsWrites.moveLineItemsNative", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", dailyRate: 100 });
       // Two source groups (g1 with li1, g2 with li2), destination g3.
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "S1", sortOrder: 0, suggestedPrice: 100 });
-      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "S2", sortOrder: 1, suggestedPrice: 100 });
-      await ctx.db.insert("projectGroups", { id: "g3", organizationId: ORG, projectId: "p1", categoryId: "cat2", title: "Dst", sortOrder: 0, suggestedPrice: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", modelId: "m1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
-      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", groupId: "g2", categoryId: "cat1", modelId: "m1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "S1", sortOrder: 0, suggestedPrice: 100,
+        versionId: "v-p1-org_1",
+        lineageId: "g1",
+      });
+      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "S2", sortOrder: 1, suggestedPrice: 100,
+        versionId: "v-p1-org_1",
+        lineageId: "g2",
+      });
+      await ctx.db.insert("projectGroups", { id: "g3", organizationId: ORG, projectId: "p1", categoryId: "cat2", title: "Dst", sortOrder: 0, suggestedPrice: 0,
+        versionId: "v-p1-org_1",
+        lineageId: "g3",
+      });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1", modelId: "m1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li1",
+      });
+      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", groupId: "g2", categoryId: "cat1", modelId: "m1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "li2",
+      });
       // Kit child — must be skipped, never moved.
-      await ctx.db.insert("projectLineItems", { id: "liChild", organizationId: ORG, projectId: "p1", groupId: "g1", modelId: "m1", quantity: 1, isKitChild: true, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "liChild", organizationId: ORG, projectId: "p1", groupId: "g1", modelId: "m1", quantity: 1, isKitChild: true, status: "CONFIRMED", type: "EQUIPMENT",
+        versionId: "v-p1-org_1",
+        lineageId: "liChild",
+      });
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemsNative, {
       lineItemIds: ["li1", "li2", "liChild"], orgId: ORG, targetGroupId: "g3", targetCategoryId: "cat2", now: NOW, actor: ACTOR, auditId: "log1",
@@ -699,5 +768,83 @@ describe("projectGroupsWrites.moveLineItemsNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemsNative, { lineItemIds: ["li1"], orgId: ORG, targetGroupId: null, targetCategoryId: null, now: NOW, actor: ACTOR, auditId: "log1" }),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1221 follow-up — createGroupNative now takes an optional `versionId`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectGroupsWrites — #1221 versionId follow-up", () => {
+  const args = { id: "g1", orgId: ORG, projectId: "p1", title: "Mics", now: NOW, actor: ACTOR, auditId: "log1" };
+
+  async function seedSecondVersion(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: `${versionIdFor(id, orgId)}-b`, organizationId: orgId, projectId: id, number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+  }
+
+  test("defaults to the live version when versionId is absent", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, args);
+    const g = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first());
+    expect(g?.versionId).toBe(versionIdFor("p1", ORG));
+    expect(res.sortOrder).toBe(0);
+  });
+
+  test("targets the named non-live version, sortOrder scoped to it", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedSecondVersion(t);
+    const nonLive = `${versionIdFor("p1", ORG)}-b`;
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, versionId: nonLive });
+    expect(res.sortOrder).toBe(0);
+    const g = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first());
+    expect(g?.versionId).toBe(nonLive);
+  });
+
+  test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedProject(t, "pOther", "org_2");
+    const foreignVersion = versionIdFor("pOther", "org_2");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, versionId: foreignVersion }),
+    ).rejects.toThrow();
+  });
+
+  test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedProject(t, "p2", ORG);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, versionId: versionIdFor("p2", ORG) }),
+    ).rejects.toThrow();
+  });
+
+  test("lock interaction: live + locked defaults price to unset; non-live + locked keeps the real price", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedSecondVersion(t);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { pricingLocked: true, pricingLockedAt: NOW, pricingLockedById: USER });
+    });
+    const nonLive = `${versionIdFor("p1", ORG)}-b`;
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, id: "g-live", price: 500 });
+    const gLive = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g-live")).first());
+    expect(gLive?.price).toBeUndefined();
+    expect(gLive?.pricedUnderLock).toBe(true);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, id: "g-nonlive", price: 500, versionId: nonLive });
+    const gNonLive = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g-nonlive")).first());
+    expect(gNonLive?.price).toBe(500);
+    expect(gNonLive?.pricedUnderLock).toBeUndefined();
   });
 });

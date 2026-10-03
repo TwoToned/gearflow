@@ -8,9 +8,10 @@ import { gearflowPlugins, rvltFlowPlugins } from "./plugins";
  * rendering. Guards the plugin registry (rendering lookup) sync point.
  */
 
+// #1157 (cleanup) — Table, FinancialSummary, RichText and DraftWatermark
+// were removed here: #1156 cut the 5 project doc types they served over to
+// react-pdf, and #1157 deleted the now-unused plugin files + registrations.
 const PLUGIN_SUFFIXES = [
-  "Table",
-  "FinancialSummary",
   "PageHeader",
   "PageFooter",
   "Checkbox",
@@ -18,8 +19,6 @@ const PLUGIN_SUFFIXES = [
   "CrewTable",
   "CallSheetInfo",
   "DayHeader",
-  "RichText",
-  "DraftWatermark",
   "DataTable",
   "SummaryBox",
   "TextBlock",

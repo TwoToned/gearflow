@@ -170,6 +170,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       { value: "ENQUIRY", label: "Enquiry", color: getStatusColor("project", "ENQUIRY").dot },
       { value: "QUOTING", label: "Quoting", color: getStatusColor("project", "QUOTING").dot },
       { value: "QUOTED", label: "Quoted", color: getStatusColor("project", "QUOTED").dot },
+      { value: "AWAITING_PAYMENT", label: "Awaiting payment", color: getStatusColor("project", "AWAITING_PAYMENT").dot },
       { value: "CONFIRMED", label: "Confirmed", color: getStatusColor("project", "CONFIRMED").dot },
       { value: "PREPPING", label: "Prepping", color: getStatusColor("project", "PREPPING").dot },
       { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("project", "CHECKED_OUT").dot },

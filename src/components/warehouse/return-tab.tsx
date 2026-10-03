@@ -8,6 +8,7 @@ import {
   Package,
   Undo2,
   Container,
+  ArrowRightLeft,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,9 +33,11 @@ import {
 } from "@/components/ui/table";
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
-import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
-import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
+import { modelDisplayName, isBulkItem, collectAllVerifiableIds, bulkUnitKey, isAccessoryParentPartiallyDeployed } from "./warehouse-types";
+import { KitChildRows, MobileKitChildCards, BulkAccessoryRows, MobileBulkAccessoryCards } from "./kit-child-rows";
 import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
+import { ScanHistoryStrip } from "./scan-history-strip";
+import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
 export interface ReturnTabProps {
   // Scan state
@@ -44,6 +47,7 @@ export interface ReturnTabProps {
   handleReturnScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   returnScanMutationMutate: (value: string) => void;
   returnScanMutationIsPending: boolean;
+  scanHistoryEntries: ScanHistoryRecord[];
 
   // Condition & notes
   returnCondition: string;
@@ -77,6 +81,9 @@ export interface ReturnTabProps {
   undeployIsPending: boolean;
   /** Opens the "Report issue" dialog (GitHub #898) for a single CHECKED_OUT line item. */
   onReportIssue: (item: LineItem) => void;
+  /** #1296 Move-to… — open the shared MoveToContainerDialog against this
+   *  tab's current selection. */
+  onMoveSelected: () => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -98,6 +105,7 @@ export function ReturnTab({
   handleReturnScanKeyDown,
   returnScanMutationMutate,
   returnScanMutationIsPending,
+  scanHistoryEntries,
   returnCondition,
   setReturnCondition,
   returnNotes,
@@ -117,6 +125,7 @@ export function ReturnTab({
   handleUndeploy,
   undeployIsPending,
   onReportIssue,
+  onMoveSelected,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -126,6 +135,7 @@ export function ReturnTab({
     <TabsContent value="check-in">
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
+            <ScanHistoryStrip entries={scanHistoryEntries} />
             <div className="flex items-center gap-3">
               <ScanBarcode className="h-5 w-5 text-muted shrink-0 hidden sm:block" />
               <div className="flex-1">
@@ -134,6 +144,8 @@ export function ReturnTab({
                   ref={returnScanInputRef}
                   id="scan-checkin"
                   placeholder="Scan or enter asset tag to return..."
+                  scannerTitle="Scan gear to return"
+                  continuous
                   value={returnScanValue}
                   onChange={(e) => setReturnScanValue(e.target.value)}
                   onKeyDown={handleReturnScanKeyDown}
@@ -142,6 +154,17 @@ export function ReturnTab({
                   className="h-11"
                 />
               </div>
+              <Button
+                variant="line"
+                onClick={onMoveSelected}
+                disabled={selectedInCount === 0}
+                className="shrink-0"
+              >
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                <span className="hidden sm:inline">Move to…</span>
+                <span className="sm:hidden">Move</span>
+                {selectedInCount > 0 ? ` (${selectedInCount})` : ""}
+              </Button>
               {/* Move back a stage — return this gear to Prepped (un-deploy). */}
               <Button
                 variant="line"
@@ -351,6 +374,14 @@ export function ReturnTab({
                             </TableRow>
                           );
                         })}
+                        <BulkAccessoryRows
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="return"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </Fragment>
                     );
                   }
@@ -444,7 +475,7 @@ export function ReturnTab({
                     const allIds = collectAllVerifiableIds(entry.children, "return");
                     const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
                     const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                    const isPartiallyDeployed = entry.children.some((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
+                    const isPartiallyDeployed = isAccessoryParentPartiallyDeployed(entry.item);
                     return (
                       <Fragment key={entry.groupKey}>
                         <TableRow
@@ -486,7 +517,7 @@ export function ReturnTab({
                           <TableCell className="t-mono text-muted">
                             {entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
                           </TableCell>
-                          <TableCell className="text-center tabular-nums">{entry.children.length}</TableCell>
+                          <TableCell className="text-center tabular-nums">{entry.item.quantity}</TableCell>
                           <TableCell>
                             {isPartiallyDeployed ? (
                               <Badge status="warn">
@@ -671,6 +702,14 @@ export function ReturnTab({
                             />
                           );
                         })}
+                        <MobileBulkAccessoryCards
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="return"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </ScanGroupCard>
                     );
                   }
@@ -729,7 +768,7 @@ export function ReturnTab({
                     const allIds = collectAllVerifiableIds(entry.children, "return");
                     const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
                     const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                    const isPartiallyDeployed = entry.children.some((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
+                    const isPartiallyDeployed = isAccessoryParentPartiallyDeployed(entry.item);
                     return (
                       <ScanGroupCard
                         key={entry.groupKey}
@@ -749,7 +788,7 @@ export function ReturnTab({
                           </>
                         }
                         assetTag={entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
-                        qtyLabel={entry.children.length}
+                        qtyLabel={entry.item.quantity}
                         status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
                       >
                         <MobileKitChildCards

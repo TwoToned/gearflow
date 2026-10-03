@@ -65,6 +65,17 @@ export function useMaintenanceWrites() {
     return assetIds.map((assetId) => ({ id: createId(), assetId }));
   };
 
+  // Only meaningful (and only sent) when closing the record out to COMPLETED —
+  // convex/maintenanceWrites.ts falls back to the legacy record-wide release when
+  // this is omitted, so a non-COMPLETED save never needs it.
+  const resolveAssetDispositions = (parsed: ReturnType<typeof maintenanceSchema.parse>) => {
+    if (parsed.status !== "COMPLETED" || !parsed.assetDispositions) return undefined;
+    const entries = Object.entries(parsed.assetDispositions);
+    return entries.length > 0
+      ? entries.map(([assetId, disposition]) => ({ assetId, disposition }))
+      : undefined;
+  };
+
   return {
     create: async (data: MaintenanceFormValues): Promise<{ id: string }> => {
       const org = requireOrg();
@@ -88,6 +99,7 @@ export function useMaintenanceWrites() {
         id,
         ...commonFields(parsed),
         assetLinks: resolveAssetLinks(parsed),
+        assetDispositions: resolveAssetDispositions(parsed),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

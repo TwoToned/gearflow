@@ -21,9 +21,14 @@ const makeT = () => convexTest(schema, modules);
 type Ctx = MutationCtx;
 
 async function seedProject(ctx: Ctx, id = "p1") {
+  // #1228 — every project needs a live projectVersions row + liveVersionId.
+  const versionId = `v-${id}`;
   await ctx.db.insert("projects", {
     id, organizationId: ORG, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-    isTemplate: false, createdAt: NOW, updatedAt: NOW,
+    isTemplate: false, liveVersionId: versionId, createdAt: NOW, updatedAt: NOW,
+  });
+  await ctx.db.insert("projectVersions", {
+    id: versionId, organizationId: ORG, projectId: id, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
   });
 }
 
@@ -46,7 +51,7 @@ async function seedRealisticSubHire(ctx: Ctx) {
 
 async function linesForProject(t: ReturnType<typeof makeT>, projectId = "p1") {
   return await t.run(async (ctx) =>
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", `v-${projectId}`)).collect(),
   );
 }
 
@@ -113,10 +118,10 @@ describe("regenerateSubHireLines — full pipeline", () => {
     await t.run(async (ctx) => {
       await seedRealisticSubHire(ctx);
       // Pre-existing sub-hire lines (a stale parent + child) — must be deleted.
-      await ctx.db.insert("projectLineItems", { id: "old1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", subHireId: "sh1", isKitChild: false, sortOrder: 5, lineTotal: 111 });
-      await ctx.db.insert("projectLineItems", { id: "oldchild1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", subHireId: "sh1", isKitChild: true, parentLineItemId: "old1", sortOrder: 6, lineTotal: 22 });
+      await ctx.db.insert("projectLineItems", { id: "old1", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "old1", type: "EQUIPMENT", subHireId: "sh1", isKitChild: false, sortOrder: 5, lineTotal: 111 });
+      await ctx.db.insert("projectLineItems", { id: "oldchild1", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "oldchild1", type: "EQUIPMENT", subHireId: "sh1", isKitChild: true, parentLineItemId: "old1", sortOrder: 6, lineTotal: 22 });
       // An unrelated (non-sub-hire) line — must remain + set the nextSort baseline (max 10 → 11).
-      await ctx.db.insert("projectLineItems", { id: "keep1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", isKitChild: false, sortOrder: 10, lineTotal: 77 });
+      await ctx.db.insert("projectLineItems", { id: "keep1", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "keep1", type: "EQUIPMENT", isKitChild: false, sortOrder: 10, lineTotal: 77 });
       await regenerateSubHireLines(ctx, "sh1", ORG, NOW + 1);
     });
 

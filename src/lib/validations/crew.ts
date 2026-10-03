@@ -128,6 +128,11 @@ export const crewTimeEntrySchema = z.object({
   breakMinutes: z.union([z.literal(""), z.coerce.number().int().min(0)]).optional()
     .transform(v => v === "" ? undefined : v),
   notes: z.string().max(2000).optional(),
+  // Work-layer Phase 4 (#1246) — optional link to a crew-assigned work item.
+  // No form writes this yet (Phase 2's Work tab will); present here only so
+  // this schema and the Convex `entryFields` validator stay in parity
+  // (R-8.6.1, convex/validationDrift.test.ts).
+  workItemId: z.string().optional(),
 });
 
 export type CrewTimeEntryFormValues = z.input<typeof crewTimeEntrySchema>;

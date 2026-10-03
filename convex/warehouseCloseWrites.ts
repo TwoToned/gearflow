@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Native WAREHOUSE-CLOSE write mutations (Phase 3 browser-direct — replaces the
@@ -63,13 +64,8 @@ async function closeOutCore(
     throw new ConvexError("Project not found");
   }
 
-  // 2. Top-level EQUIPMENT lines only (by_projectId is global — org-filter).
-  const lines = (
-    await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect()
-  ).filter(
+  // 2. Top-level EQUIPMENT lines only. LIVE-ONLY (#1228).
+  const lines = (await liveRows(ctx, project, "projectLineItems")).filter(
     (li) => li.organizationId === orgId && li.type === "EQUIPMENT" && li.isKitChild !== true,
   );
 

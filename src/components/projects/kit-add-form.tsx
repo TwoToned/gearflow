@@ -25,7 +25,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field, DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
+import { SectionTitle, Field, DiscountField, TaxRateField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useKitSearch, useKit } from "@/hooks/use-kits";
@@ -50,6 +53,9 @@ export interface KitAddFormProps {
   onInvalidate: () => void;
   /** Close the surrounding dialog. */
   onClose: () => void;
+  /** #1221 follow-up — the version this new kit lands on (the version
+   *  currently being viewed on the Equipment tab). Absent = live. */
+  versionId?: string;
 }
 
 export function KitAddForm({
@@ -62,6 +68,7 @@ export function KitAddForm({
   targetLabel,
   onInvalidate,
   onClose,
+  versionId,
 }: KitAddFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -72,6 +79,10 @@ export function KitAddForm({
   const [kitUnitPrice, setKitUnitPrice] = useState("");
   const [kitDiscount, setKitDiscount] = useState("");
   const [kitDiscountMode, setKitDiscountMode] = useState<DiscountMode>("$");
+  // T3 (#1091) — per-line tax rate override on the kit's PARENT line only,
+  // same KIT_PRICE-only scope as discount above (an ITEMIZED kit's parent
+  // row carries no price/revenue, so a rate on it would do nothing).
+  const [kitTaxRate, setKitTaxRate] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId ?? "");
   const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? "");
 
@@ -117,6 +128,8 @@ export function KitAddForm({
     kitPricingMode === "KIT_PRICE" && kitUnitPriceResolved != null
       ? resolveDiscountAmount(kitDiscountMode, kitDiscount, kitUnitPriceResolved)
       : undefined;
+  const kitTaxRateResolved =
+    kitPricingMode === "KIT_PRICE" && kitTaxRate !== "" ? parseFloat(kitTaxRate) : undefined;
   const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
   const effectiveGroupId = (groupId || selectedGroupId) || undefined;
   // kitLabel = "<assetTag> - <name>" (what the server derives from the fetched kit if
@@ -135,10 +148,12 @@ export function KitAddForm({
         discount: kitDiscountResolved,
         // #1012 — persist the entry shape alongside the resolved amount.
         discountMode: kitDiscountMode,
+        taxRate: kitTaxRateResolved,
         groupName: undefined,
         categoryId: effectiveCategoryId,
         groupId: effectiveGroupId,
         kitLabel: resolvedKitLabel,
+        versionId,
       }),
     onSuccess: () => {
       onInvalidate();
@@ -224,6 +239,18 @@ export function KitAddForm({
                 onModeChange={setKitDiscountMode}
               />
             </div>
+          )}
+          {kitPricingMode === "KIT_PRICE" && (
+            <Accordion type="single" collapsible>
+              <AccordionItem value="tax-rate" className="border-line">
+                <AccordionTrigger>Advanced: tax rate</AccordionTrigger>
+                <AccordionContent>
+                  <div className="pt-1">
+                    <TaxRateField value={kitTaxRate} onValueChange={setKitTaxRate} />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           )}
         </section>
 

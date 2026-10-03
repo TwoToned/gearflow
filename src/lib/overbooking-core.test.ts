@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   reconstructOverbookedStatus,
   resolveModelAssetType,
+  isHardOverbooked,
   type OverbookingBundleData,
   type OverbookLineItem,
 } from "./overbooking-core";
@@ -22,6 +23,11 @@ function bundleLineItem(p: {
   status?: string;
   subHireId?: string | null;
   isOptional?: boolean;
+  type?: string;
+  /** FCFS ordering key — mirrors Convex's own `_creationTime` system field.
+   *  Defaults to 0 so fixtures that don't care about order all tie (stable,
+   *  sorted by `projectId` as the fallback tiebreak in `allocateFifo`). */
+  _creationTime?: number;
 }) {
   return {
     id: p.id,
@@ -32,6 +38,8 @@ function bundleLineItem(p: {
     status: p.status ?? "QUOTED",
     subHireId: p.subHireId ?? null,
     isOptional: p.isOptional ?? false,
+    type: p.type ?? "EQUIPMENT",
+    _creationTime: p._creationTime ?? 0,
   };
 }
 
@@ -105,6 +113,29 @@ describe("reconstructOverbookedStatus", () => {
     ];
     const map = reconstructOverbookedStatus(makeBundle({}), items, WINDOW_START, WINDOW_END, THIS_PROJECT);
     expect(map.size).toBe(0);
+  });
+
+  it("a SALE (NEW_STOCK) line never counts as rental demand (WS11 #950)", () => {
+    // 2 serialized assets, this project has 1 rental line (1 unit — no overage
+    // on its own) PLUS a SALE/NEW_STOCK line for the same model. The sale line
+    // draws from Model.saleStockQuantity, not the rental pool, so it must not
+    // inflate demand against the rental assets and produce a phantom overbook.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 1, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+      { id: "li2", modelId: "m1", quantity: 5, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED", type: "SALE" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime() })],
+      lineItems: [
+        bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 1 }),
+        bundleLineItem({ id: "li2", projectId: THIS_PROJECT, modelId: "m1", quantity: 5, type: "SALE" }),
+      ],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.size).toBe(0);
+    expect(map.get("li2")).toBeUndefined();
   });
 
   it("flags a model overbooked when this project books more than effective stock", () => {
@@ -226,6 +257,33 @@ describe("reconstructOverbookedStatus", () => {
     expect(map.get("kp")).toMatchObject({ overBy: 1, inherited: true, hasOverbookedChildren: true });
   });
 
+  it("a kit parent whose only overbooked child is reducedOnly still counts as hasOverbookedChildren (not softened)", () => {
+    // kit child's overage is caused SOLELY by a maintenance asset (reducedOnly:
+    // true at the child level), but the parent rollup must not treat that as
+    // "not really overbooked" — the badge layer keys off hasOverbookedChildren,
+    // and demand exceeding today's usable stock is real regardless of why the
+    // stock is short.
+    const items: OverbookLineItem[] = [
+      { id: "kp", modelId: null, quantity: 1, isKitChild: false, parentLineItemId: null, kitId: "kit1", status: "QUOTED" },
+      { id: "kc", modelId: "m1", quantity: 2, isKitChild: true, parentLineItemId: "kp", kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1", status: "IN_MAINTENANCE" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime() })],
+      lineItems: [bundleLineItem({ id: "kc", projectId: THIS_PROJECT, modelId: "m1", quantity: 2 })],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.get("kc")).toMatchObject({ overBy: 1, reducedOnly: true });
+    expect(map.get("kp")).toMatchObject({
+      overBy: 1,
+      inherited: true,
+      hasOverbookedChildren: true,
+      hasReducedChildren: true,
+      reducedOnly: false,
+    });
+  });
+
   it("counts bulk stock for a BULK model whose assetType mirror field is absent", () => {
     // Regression: older/backfilled Convex model docs read back assetType === undefined.
     // Defaulting to SERIALIZED made totalStock = assets.length = 0 → every bulk line
@@ -250,9 +308,10 @@ describe("reconstructOverbookedStatus", () => {
 // ─── WS3 (#942) two-layer hard/pencilled split ────────────────────────────────
 
 describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", () => {
-  it("an isOptional line stays pencilled even on a CONFIRMED project — no hard flag", () => {
-    // stock 1; this CONFIRMED project's line is isOptional and books 2 → would
-    // have been flagged pre-WS3, but optional demand never counts toward hard.
+  it("an isOptional line stays pencilled (no hard flag) but still raises the badge as pencil-only", () => {
+    // stock 1; this CONFIRMED project's line is isOptional and books 2 — never
+    // counts toward hard demand, but a purely-pencilled overage now still flags
+    // the badge (per explicit product request), distinguishable via hardOverBy=0.
     const items: OverbookLineItem[] = [
       { id: "li1", modelId: "m1", quantity: 2, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED", isOptional: true },
     ];
@@ -262,13 +321,14 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
       projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" })],
       lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 2, isOptional: true })],
     });
-    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
-    expect(map.has("li1")).toBe(false);
+    const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 0, pencilledOverBy: 1 });
   });
 
-  it("a QUOTED project's own (non-optional) demand stays entirely pencilled — no hard flag", () => {
+  it("a QUOTED project's own (non-optional) demand stays entirely pencilled (no hard flag) but still raises the badge", () => {
     // stock 1; this QUOTED project alone books 2 — the gig isn't locked in yet,
-    // so none of its demand counts toward the hard sum.
+    // so none of its demand counts toward the hard sum, but the badge still
+    // fires since the combined view is over capacity.
     const items: OverbookLineItem[] = [
       { id: "li1", modelId: "m1", quantity: 2, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
     ];
@@ -278,15 +338,33 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
       projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "QUOTED" })],
       lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 2 })],
     });
+    const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 0, pencilledOverBy: 1 });
+  });
+
+  it("no overage at all (combined within stock) still raises no flag", () => {
+    // stock 2; this QUOTED project's own demand is only 1 — nothing over,
+    // hard or pencilled, so the badge correctly stays off.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 1, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "QUOTED" })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 1 })],
+    });
     const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
     expect(map.has("li1")).toBe(false);
   });
 
-  it("computes pencilledOverBy as the extra collision from a separate not-yet-confirmed project's demand", () => {
-    // stock 2 (2 assets). THIS_PROJECT (CONFIRMED) books 3 → hard overBy 1.
-    // A SEPARATE project (QUOTED) books 2 more of the same model — pencilled
-    // demand that would push the overage to 3 if it were also confirmed, i.e.
-    // pencilledOverBy = 3 - 1 = 2.
+  it("a project's own pencilledOverBy is 0 when it already secured stock via hard demand (FCFS, 2026-09)", () => {
+    // stock 2 (2 assets). THIS_PROJECT (CONFIRMED) books 3 → hard overBy 1 —
+    // its own badge reflects only that. A SEPARATE project (QUOTED) books 2
+    // more of the same model: that collision belongs to THAT project (it's
+    // the one that can't get the gear), not to THIS_PROJECT, which already
+    // has its hard claim resolved. See the FCFS test below for the QUOTED
+    // project's own (nonzero) pencilledOverBy.
     const items: OverbookLineItem[] = [
       { id: "li1", modelId: "m1", quantity: 3, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
     ];
@@ -303,7 +381,37 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
       ],
     });
     const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
-    expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 2 });
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 0 });
+  });
+
+  it("FCFS: only the LATER project is flagged when an earlier one already claimed the stock", () => {
+    // Model has 16 usable stock. Job A's line was created first, Job B's
+    // second, both CONFIRMED, both booking 10 — combined (20) exceeds stock
+    // by 4. Job A claimed its 10 units first and fits; Job B is the one that
+    // doesn't. Only Job B's line should carry an OverbookedInfo entry.
+    const modelId = "m1";
+    const jobAItems: OverbookLineItem[] = [
+      { id: "liA", modelId, quantity: 10, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const jobBItems: OverbookLineItem[] = [
+      { id: "liB", modelId, quantity: 10, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model(modelId, "SERIALIZED")],
+      assets: Array.from({ length: 16 }, (_, i) => asset({ id: `a${i}`, modelId })),
+      projects: [
+        project({ id: "jobA", start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" }),
+        project({ id: "jobB", start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" }),
+      ],
+      lineItems: [
+        bundleLineItem({ id: "liA", projectId: "jobA", modelId, quantity: 10, _creationTime: 1000 }),
+        bundleLineItem({ id: "liB", projectId: "jobB", modelId, quantity: 10, _creationTime: 2000 }),
+      ],
+    });
+    const mapForA = reconstructOverbookedStatus(bundle, jobAItems, WINDOW_START, WINDOW_END, "jobA");
+    const mapForB = reconstructOverbookedStatus(bundle, jobBItems, WINDOW_START, WINDOW_END, "jobB");
+    expect(mapForA.has("liA")).toBe(false);
+    expect(mapForB.get("liB")).toMatchObject({ overBy: 4, hardOverBy: 4 });
   });
 
   it("pencilledOverBy is 0 when there is no pencilled demand at all (pure hard case, unchanged)", () => {
@@ -318,6 +426,26 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
     });
     const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
     expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 0 });
+  });
+});
+
+describe("isHardOverbooked", () => {
+  it("is false for no info at all", () => {
+    expect(isHardOverbooked(undefined)).toBe(false);
+    expect(isHardOverbooked(null)).toBe(false);
+  });
+
+  it("is false for a pencil-only entry (hardOverBy 0) — what a document must filter out", () => {
+    expect(isHardOverbooked({ overBy: 2, totalStock: 1, effectiveStock: 1, totalBooked: 2, hardOverBy: 0, pencilledOverBy: 2 })).toBe(false);
+  });
+
+  it("is true for a genuine hard overage", () => {
+    expect(isHardOverbooked({ overBy: 3, totalStock: 1, effectiveStock: 1, totalBooked: 3, hardOverBy: 1, pencilledOverBy: 2 })).toBe(true);
+  });
+
+  it("falls back to overBy when hardOverBy is absent (pre-WS3 shape, back-compat)", () => {
+    expect(isHardOverbooked({ overBy: 1, totalStock: 1, effectiveStock: 1, totalBooked: 2 })).toBe(true);
+    expect(isHardOverbooked({ overBy: 0, totalStock: 2, effectiveStock: 2, totalBooked: 2 })).toBe(false);
   });
 });
 

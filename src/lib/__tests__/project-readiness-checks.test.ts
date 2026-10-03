@@ -15,6 +15,7 @@ function input(over: Partial<BuildChecksInput> = {}): BuildChecksInput {
     crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
     pricing: { unpriced: [], unpricedCount: 0 },
     conflicts: [],
+    packing: { totalCount: 0, notPlannedCount: 0 },
     ...over,
   };
 }
@@ -225,6 +226,31 @@ describe("pricing check", () => {
   test("passes on a clean project", () => {
     const checks = buildReadinessChecks(input());
     expect(byId(checks, "pricing").severity).toBe("pass");
+  });
+});
+
+describe("packing check (#1296 build plan phase 4)", () => {
+  test("dropped entirely when there's nothing plannable — no permanent row for a fact that was never true", () => {
+    const checks = buildReadinessChecks(input({ packing: { totalCount: 0, notPlannedCount: 0 } }));
+    expect(checks.some((c) => c.id === "packing")).toBe(false);
+  });
+
+  test("warns (never blocks — Q8: unpacked gear is a legitimate Loose section, not a violation) when some lines aren't planned", () => {
+    const c = byId(
+      buildReadinessChecks(input({ packing: { totalCount: 5, notPlannedCount: 2 } })),
+      "packing",
+    );
+    expect(c.severity).toBe("warning");
+    expect(c.title).toBe("2 of 5 lines not planned");
+    expect(c.actionLabel).toBe("Open Packing");
+  });
+
+  test("passes once every plannable line has a container", () => {
+    const c = byId(
+      buildReadinessChecks(input({ packing: { totalCount: 3, notPlannedCount: 0 } })),
+      "packing",
+    );
+    expect(c.severity).toBe("pass");
   });
 });
 

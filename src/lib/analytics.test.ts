@@ -34,6 +34,19 @@ describe("analytics.capture", () => {
     expect(AnalyticsEvent.PageView).toBe("$pageview");
     expect(AnalyticsEvent.WebVital).toBe("web_vital");
   });
+
+  // D4 (#1108) — the onboarding/activation funnel vocabulary. Locks the
+  // exact wire names down: a rename here would silently fork a PostHog
+  // insight/funnel step from the event stream it was built against.
+  it("exposes the D4 onboarding-funnel event names verbatim", () => {
+    expect(AnalyticsEvent.OnboardingForkChosen).toBe("onboarding_fork_chosen");
+    expect(AnalyticsEvent.SetupStepViewed).toBe("setup_step_viewed");
+    expect(AnalyticsEvent.SetupStepCompleted).toBe("setup_step_completed");
+    expect(AnalyticsEvent.SetupStepSkipped).toBe("setup_step_skipped");
+    expect(AnalyticsEvent.SetupCompleted).toBe("setup_completed");
+    expect(AnalyticsEvent.ActivationMilestone).toBe("activation_milestone");
+    expect(AnalyticsEvent.ActivationChecklistDismissed).toBe("activation_checklist_dismissed");
+  });
 });
 
 describe("analytics.identify / resetAnalyticsIdentity (R-8.9.4)", () => {

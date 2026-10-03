@@ -4,6 +4,8 @@ import * as enums from "./lib/validators";
 import { bumpCountersForTable } from "./lib/counters";
 import { recalcProjectTotals } from "./lib/recalc";
 import { projectWriteFields } from "./projects";
+import { createLiveVersionForProject } from "./lib/projectVersionState";
+import { resolveLiveVersionIdForProject } from "./lib/versionScope";
 
 /**
  * UNGUARDED internal wrappers for the WooCommerce webhook ingress + order
@@ -303,7 +305,13 @@ export const createProjectWithUniqueNumber = internalMutation({
     if (clash) return { created: false, id: clash.id };
     // #986 — a real project starts at revision 1 (its first quote is v1), same as
     // projectWrites.createNative. Templates carry no revision at all.
-    await ctx.db.insert("projects", args.isTemplate ? args : { ...args, revision: 1 });
+    const newDocId = await ctx.db.insert("projects", args.isTemplate ? args : { ...args, revision: 1 });
+    // #1228 — bootstrap version 1 + liveVersionId (mandatory on every
+    // project-creating write path; see createLiveVersionForProject's comment).
+    await createLiveVersionForProject(ctx, {
+      orgId: args.organizationId, projectId: args.id, projectDocId: newDocId,
+      now: args.createdAt ?? Date.now(), createdById: "system",
+    });
     await bumpCountersForTable(ctx, "projects", null, args);
     return { created: true, id: args.id };
   },
@@ -367,11 +375,15 @@ export const createLineItem = internalMutation({
     subHireId: v.optional(v.string()),
     subHireItemId: v.optional(v.string()),
     subHireGroupId: v.optional(v.string()),
+    // #1228 — optional, defaults to the project's live version (additive-only).
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("projectLineItems", args);
+    const versionId = args.versionId ?? (await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId));
+    return await ctx.db.insert("projectLineItems", { ...args, versionId, lineageId: args.lineageId ?? args.id });
   },
 });
 

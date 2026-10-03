@@ -118,7 +118,41 @@ export async function getIcalSettings(crewMemberId: string) {
   return serialize({
     icalEnabled: member.icalEnabled ?? false,
     icalToken: member.icalToken ?? null,
+    icalIncludeTentative: member.icalIncludeTentative ?? false,
   });
+}
+
+/**
+ * Per-member opt-in: also emit PENDING/OFFERED assignments on this member's
+ * iCal feed (as STATUS:TENTATIVE), not just CONFIRMED/ACCEPTED. See
+ * `/api/crew/calendar/[token]` for the read side.
+ */
+export async function setIcalIncludeTentative(crewMemberId: string, includeTentative: boolean) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "crew",
+    "update"
+  );
+
+  const member = await getCrewMemberById(crewMemberId);
+  if (!member || member.organizationId !== organizationId) throw new Error("Crew member not found");
+
+  await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
+    id: crewMemberId,
+    set: { icalIncludeTentative: includeTentative, updatedAt: Date.now() },
+  });
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "crew_member",
+    entityId: crewMemberId,
+    entityName: `${member.firstName} ${member.lastName}`,
+    summary: `${includeTentative ? "Enabled" : "Disabled"} tentative assignments on iCal feed for ${member.firstName} ${member.lastName}`,
+  });
+
+  return { success: true };
 }
 
 // ─── Assignment .ics Download ────────────────────────────────────────────────

@@ -14,11 +14,19 @@ import { getMyOrganizations } from "@/server/public-org";
  * null, orgId is undefined, useCurrentRoleResource skips its fetch, useCanDo()
  * returns false, and RequirePermission shows "Access Denied" on every page.
  *
+ * `resolveActiveOrganizationId` (src/lib/auth-server.ts) and `definePayload`
+ * (src/lib/auth.ts) both tolerate this gap server-side with the same
+ * sole-membership fallback, so a single-org user's server-rendered data and
+ * Convex reads already resolve correctly before this effect ever runs — this
+ * component is what makes the CLIENT-side Better Auth session (and therefore
+ * `useActiveOrganization()`/`useCanDo()`) agree, by actually persisting
+ * `activeOrganizationId` onto the session via `organization.setActive()`.
+ *
  * This component detects the gap and heals it once per session on the client.
  *
  * Must not guess (#1071, A1): 1 membership → activate it; 2+ → route to the
  * picker rather than pick one; 0 → nothing to activate here (the (app) layout's
- * own guard routes a 0-membership session to /onboarding).
+ * own guard routes a 0-membership session to /welcome, not this component).
  */
 export function OrgActivator() {
   const router = useRouter();

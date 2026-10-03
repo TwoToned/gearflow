@@ -42,6 +42,10 @@ export function useProjectGroupWrites() {
       projectId: string,
       categoryId: string | null,
       title: string,
+      // #1221 follow-up — the version this new group lands on, defaulting to
+      // live (server-side) when omitted. Threaded from EquipmentTab's own
+      // `versionId` prop (the version currently being viewed).
+      versionId?: string,
     ): Promise<{ id: string; sortOrder: number }> => {
       return createM({
         id: createId(),
@@ -50,6 +54,7 @@ export function useProjectGroupWrites() {
         categoryId: categoryId || undefined,
         title,
         quantity: 1,
+        versionId,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
@@ -68,6 +73,22 @@ export function useProjectGroupWrites() {
         quantity: data.quantity,
         xeroAccountCode: data.xeroAccountCode,
         xeroTaxType: data.xeroTaxType,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+    },
+
+    /** Category price rollup, per-item reveal — print this group's collapsed
+     *  bundle price on client-facing documents even inside a rolled-up
+     *  category. Its own call (not folded into `update`) so a caller can't
+     *  accidentally blank the group's title/description by patching only the
+     *  flag through the shared, clears-on-falsy `update` shape above. */
+    setPriceReveal: async (groupId: string, reveal: boolean): Promise<void> => {
+      await updateM({
+        id: groupId,
+        orgId: requireOrg(),
+        revealPriceInRollup: reveal,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
@@ -93,29 +114,24 @@ export function useProjectGroupWrites() {
       });
     },
 
-    /** `justification` (#990) — forwarded to `deleteGroupNative`, required once
-     *  the project is ON_SITE+ with no open unlock session. */
-    remove: async (groupId: string, justification?: string): Promise<void> => {
+    /** Structural — never gated by pricingLocked (#1230). */
+    remove: async (groupId: string): Promise<void> => {
       await deleteM({
         id: groupId,
         orgId: requireOrg(),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification,
       });
     },
 
-    /** `justification` — required once a touched project is JUSTIFY+ with no
-     *  open unlock session (drag-and-drop reorder routes this through
-     *  useJustifiedMutation). */
-    reorder: async (args: { orderedIds: string[]; justification?: string }): Promise<void> => {
+    /** Structural — never gated by pricingLocked (#1230). */
+    reorder: async (args: { orderedIds: string[] }): Promise<void> => {
       await reorderM({
         orgId: requireOrg(),
         orderedIds: args.orderedIds,
         now: Date.now(),
         actor: actor(),
-        justification: args.justification,
       });
     },
 
@@ -123,7 +139,6 @@ export function useProjectGroupWrites() {
       lineItemId: string;
       targetGroupId: string | null;
       targetCategoryId: string | null;
-      justification?: string;
     }): Promise<void> => {
       await moveM({
         lineItemId: args.lineItemId,
@@ -133,7 +148,6 @@ export function useProjectGroupWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification: args.justification,
       });
     },
 

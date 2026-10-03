@@ -7,9 +7,10 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertProjectInOrg } from "./projectLineItems";
-import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+import * as enums from "./lib/validators";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
-/** Fetch a project by cuid, confirm it's the caller's org (needed for the tier check). */
+/** Fetch a project by cuid, confirm it's the caller's org. */
 async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId: string) {
   const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
   if (!p || p.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
@@ -53,6 +54,15 @@ const COLLAB_COLORS = [
   "#2563eb", "#7c3aed", "#db2777", "#0891b2", "#059669", "#65a30d",
   "#d97706", "#0d9488", "#4f46e5", "#9333ea", "#0284c7", "#16a34a",
 ] as const;
+
+/** A stored `pricingDisplay` read back with the default applied. Mirrors
+ *  `toCategoryPricingDisplay` in src/lib/category-pricing-display.ts — inlined
+ *  rather than imported for the same reason `getUserColor` above is: Convex
+ *  production modules don't reach across into `src/`. `projectCategoriesPricingDisplay.test.ts`
+ *  asserts the two stay byte-identical. */
+function storedPricingDisplay(value: unknown): "ITEMISED" | "ROLLUP" {
+  return value === "ROLLUP" ? "ROLLUP" : "ITEMISED";
+}
 
 function getUserColor(userId: string): string {
   let hash = 0;
@@ -114,13 +124,15 @@ export const createCategoryNative = mutation({
     orgId: v.string(),
     projectId: v.string(),
     name: v.string(),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the
+    // version this new category lands on, defaulting to live when absent.
+    // Validated against `catProject` (same org + project) by resolveWriteVersionId.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, projectId, name, now, actor: suppliedActor, auditId, justification }) => {
+  handler: async (ctx, { id, orgId, projectId, name, versionId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -130,8 +142,9 @@ export const createCategoryNative = mutation({
     // that references it (by_cuid/by_projectId are GLOBAL — else a member could attach a
     // category to another org's project).
     await assertProjectInOrg(ctx, projectId, orgId);
+    // Creating a category is structural — never gated.
     const catProject = await requireProjectForGuard(ctx, projectId, orgId);
-    const guard = await assertLifecycleGuard(ctx, catProject, { kind: "structural", justification });
+    const targetVersionId = await resolveWriteVersionId(ctx, catProject, versionId);
 
     // Idempotent: a retried create with the same cuid short-circuits (no dup row,
     // no second audit — the by_cuid index is global so re-check org on a hit).
@@ -144,19 +157,17 @@ export const createCategoryNative = mutation({
       return { id, sortOrder: existing.sortOrder ?? 0 };
     }
 
-    // by_projectId is a GLOBAL index — org-filter before computing max(sortOrder).
-    const siblings = (
-      await ctx.db
-        .query("projectCategories")
-        .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-        .collect()
-    ).filter((c) => c.organizationId === orgId);
+    // #1221: org-filter before computing max(sortOrder) within the TARGET
+    // version (was LIVE-ONLY, #1228).
+    const siblings = (await versionRows(ctx, "projectCategories", targetVersionId)).filter((c) => c.organizationId === orgId);
     const sortOrder = siblings.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
 
     await ctx.db.insert("projectCategories", {
       id,
       organizationId: orgId,
       projectId,
+      versionId: targetVersionId,
+      lineageId: id,
       name,
       sortOrder,
       createdAt: now,
@@ -172,7 +183,6 @@ export const createCategoryNative = mutation({
       action: "created",
       entityName: name,
       summary: `Created category "${name}"`,
-      metadata: lifecycleAuditMetadata(guard, justification),
     });
 
     return { id, sortOrder };
@@ -180,9 +190,17 @@ export const createCategoryNative = mutation({
 });
 
 /**
- * Patch a category's name / sortOrder. Strips organizationId + id (never client-set).
- * When the name changes, ALSO records the collaboration activity event the server
- * action wrote via writeCollabActivityEvent (atomic here instead of a second call).
+ * Patch a category's name / sortOrder / pricing display. Strips organizationId + id
+ * (never client-set). When the name changes, ALSO records the collaboration activity
+ * event the server action wrote via writeCollabActivityEvent (atomic here instead of
+ * a second call).
+ *
+ * `pricingDisplay` is a DISPLAY + billing-grouping switch, not a money edit: it never
+ * changes an amount, only whether the category's members print their own prices or
+ * one derived section subtotal. It therefore goes through the same `structural`
+ * lifecycle gate the rename/reorder use, not the FINANCIAL unlock-session flow (which
+ * exists to guard values, and which no value here moves). It IS client-facing on a
+ * quote/invoice, so it is audited like any other category change.
  */
 export const updateCategoryNative = mutation({
   returns: v.object({ ok: v.boolean() }),
@@ -191,30 +209,42 @@ export const updateCategoryNative = mutation({
     orgId: v.string(),
     name: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
+    // Category price rollup (src/lib/category-pricing-display.ts). Omitted =
+    // leave as-is; "ITEMISED" is written as an explicit value rather than an
+    // unset field so switching back is a real, audited edit.
+    pricingDisplay: v.optional(enums.CategoryPricingDisplay),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, name, sortOrder, now, actor: suppliedActor, auditId, justification }) => {
+  handler: async (ctx, { id, orgId, name, sortOrder, pricingDisplay, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const category = await requireCategoryInOrg(ctx, id, orgId);
-    const updCatProject = await requireProjectForGuard(ctx, category.projectId, orgId);
-    const guard = await assertLifecycleGuard(ctx, updCatProject, { kind: "structural", justification });
+    // Rename/reorder/pricingDisplay are all structural — never gated.
+    await requireProjectForGuard(ctx, category.projectId, orgId);
     if (name !== undefined) assertValidName(name);
 
-    const patch: { name?: string; sortOrder?: number; updatedAt: number } = { updatedAt: now };
+    const patch: {
+      name?: string;
+      sortOrder?: number;
+      pricingDisplay?: "ITEMISED" | "ROLLUP";
+      updatedAt: number;
+    } = { updatedAt: now };
     if (name !== undefined) patch.name = name;
     if (sortOrder !== undefined) patch.sortOrder = sortOrder;
+    if (pricingDisplay !== undefined) patch.pricingDisplay = pricingDisplay;
     await ctx.db.patch(category._id, patch);
 
     // Parity: the server logged the PRE-patch name (category.name) as entityName +
-    // in the summary — replicated verbatim here.
+    // in the summary — replicated verbatim here. A pricing-display change says so
+    // explicitly instead: it changes what a client-facing document shows, so
+    // "Updated category X" alone would leave no trace of WHAT changed.
+    const displayChanged =
+      pricingDisplay !== undefined && pricingDisplay !== storedPricingDisplay(category.pricingDisplay);
     await logCategoryChange(ctx, {
       orgId,
       projectId: category.projectId,
@@ -223,8 +253,12 @@ export const updateCategoryNative = mutation({
       now,
       action: "updated",
       entityName: category.name,
-      summary: `Updated category "${category.name}"`,
-      metadata: lifecycleAuditMetadata(guard, justification),
+      summary: displayChanged
+        ? `Updated category "${category.name}" — pricing display ${storedPricingDisplay(category.pricingDisplay)} -> ${pricingDisplay}`
+        : `Updated category "${category.name}"`,
+      metadata: displayChanged
+        ? { pricingDisplay: { from: storedPricingDisplay(category.pricingDisplay), to: pricingDisplay } }
+        : undefined,
     });
 
     // Realtime collaboration feed event (only on a rename) — uses the NEW name,
@@ -269,35 +303,29 @@ export const deleteCategoryNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, now, actor: suppliedActor, auditId, justification }) => {
+  handler: async (ctx, { id, orgId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const category = await requireCategoryInOrg(ctx, id, orgId);
+    // Delete is structural — never gated.
     const delCatProject = await requireProjectForGuard(ctx, category.projectId, orgId);
-    const guard = await assertLifecycleGuard(ctx, delCatProject, { kind: "structural", justification });
 
     // 1. Groups in this category (by_categoryId is global — org-filter).
     const groups = (
       await ctx.db
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         .query("projectGroups")
         .withIndex("by_categoryId", (q) => q.eq("categoryId", id))
         .collect()
     ).filter((g) => g.organizationId === orgId);
     const groupIds = new Set(groups.map((g) => g.id));
 
-    // 2. Affected top-level lines (by_projectId is global — org-filter).
-    const affected = (
-      await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", category.projectId))
-        .collect()
-    ).filter(
+    // 2. Affected top-level lines. LIVE-ONLY (#1228).
+    const affected = (await liveRows(ctx, delCatProject, "projectLineItems")).filter(
       (li) =>
         li.organizationId === orgId &&
         ((li.groupId != null && groupIds.has(li.groupId)) ||
@@ -312,6 +340,7 @@ export const deleteCategoryNative = mutation({
     // 4. Delete each group's slots then the group itself.
     for (const g of groups) {
       const gslots = await ctx.db
+        // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
         .query("categorySlots")
         .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", g.id))
         .collect();
@@ -321,6 +350,7 @@ export const deleteCategoryNative = mutation({
 
     // 5. Delete the category's own slots.
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", id))
       .collect();
@@ -339,7 +369,6 @@ export const deleteCategoryNative = mutation({
       action: "deleted",
       entityName: category.name,
       summary: `Deleted category "${category.name}" — ${n} items moved to uncategorized`,
-      metadata: lifecycleAuditMetadata(guard, justification),
     });
 
     return { ok: true, movedLineItems: n };
@@ -358,28 +387,20 @@ export const reorderCategoriesNative = mutation({
     orderedIds: v.array(v.string()),
     now: v.number(),
     actor: actorValidator,
-    // Required once a touched project is JUSTIFY+ and no unlock session is open —
-    // this mutation previously bypassed the lifecycle lock entirely.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, orderedIds, now, actor: suppliedActor, justification }) => {
+  handler: async (ctx, { orgId, orderedIds, now, actor: suppliedActor }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     await resolveActor(ctx, suppliedActor);
 
-    const guardedProjectIds = new Set<string>();
+    // Reordering is structural — never gated.
     for (let i = 0; i < orderedIds.length; i++) {
       const doc = await ctx.db
         .query("projectCategories")
         .withIndex("by_cuid", (q) => q.eq("id", orderedIds[i]))
         .first();
       if (doc && doc.organizationId === orgId) {
-        if (!guardedProjectIds.has(doc.projectId)) {
-          const project = await requireProjectForGuard(ctx, doc.projectId, orgId);
-          await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
-          guardedProjectIds.add(doc.projectId);
-        }
         await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: now });
       }
     }

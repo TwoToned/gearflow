@@ -22,6 +22,10 @@ import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { ClientContactsManager, ReadOnlyContactsList } from "@/components/clients/client-contacts-manager";
+import { ClientTimelineTab } from "@/components/clients/client-timeline-tab";
+import { NextStepBanner } from "@/components/clients/next-step-banner";
+import { ClientLogActions } from "@/components/clients/client-log-actions";
+import { ClientWorkTab } from "@/components/clients/client-work-tab";
 import { getPrimaryContact } from "@/lib/client-contact-helpers";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
@@ -45,7 +49,6 @@ import {
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
-import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { cn, focusRing } from "@/lib/utils";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -79,6 +82,16 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // subscription auto-updates — no manual refetch needed.
   const client = useAuthedQuery(api.clients.detail, orgId ? { orgId, id } : "skip");
   const isLoading = client === undefined;
+
+  // #1245 — ONE subscription for the Timeline tab AND the "since last touch"
+  // hero stat (fixed `now` for the life of the mount so the query doesn't
+  // resubscribe every render; the timeline is otherwise reactive to writes).
+  const [timelineNow] = useState(() => Date.now());
+  const timelineData = useAuthedQuery(
+    api.clientTimeline.forClient,
+    orgId ? { orgId, clientId: id, now: timelineNow } : "skip",
+  );
+  const lastTouchAt = timelineData?.rows[0]?.at ?? null;
 
   const clientWrites = useClientWrites();
   const media = useMediaWrites("client");
@@ -126,11 +139,10 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
     (sum: number, p: { total?: number | null }) => sum + (p.total != null ? Number(p.total) : 0),
     0,
   );
-  const lastProjectAt = client.projects.reduce<number | null>((latest, p) => {
-    const t = (p.createdAt ?? p._creationTime) as number | undefined;
-    if (t == null) return latest;
-    return latest == null || t > latest ? t : latest;
-  }, null);
+  // #1245 — the 4th hero stat is "since last touch" (days since the most
+  // recent timeline row), replacing the old "last job" stat: a client with
+  // no new project but an active back-and-forth shouldn't read as stale.
+  const daysSinceLastTouch = lastTouchAt != null ? Math.max(0, Math.floor((timelineNow - lastTouchAt) / 86_400_000)) : null;
 
   // Mobile card layout for the projects sub-table (rendered below `md`).
   const projectColumns: ColumnDef<(typeof client.projects)[number]>[] = [
@@ -246,6 +258,9 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
               {/* Action buttons (compact) */}
               <div className="flex flex-wrap items-center gap-2">
+                <CanDo resource="work" action="create">
+                  <ClientLogActions clientId={id} />
+                </CanDo>
                 {orgId && (
                   <EntityCommentsButton orgId={orgId} entityType="client" entityId={id} />
                 )}
@@ -284,27 +299,52 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <HeroStat figure={String(activeProjects.length)} label="Active jobs" />
               <HeroStat figure={formatCurrency(totalValue)} label="Total value" />
               <HeroStat
-                figure={lastProjectAt ? new Date(lastProjectAt).toLocaleDateString() : "—"}
-                label="Last job"
-                muted={!lastProjectAt}
+                figure={daysSinceLastTouch == null ? "—" : daysSinceLastTouch === 0 ? "Today" : `${daysSinceLastTouch}d`}
+                label="Since last touch"
+                muted={daysSinceLastTouch == null}
               />
             </div>
           </div>
+
+          {/* Next step (#1245) — pinned above the tabs, not inside one */}
+          <NextStepBanner clientId={id} />
 
           {/* ── 2-Column Layout ────────────────────────────────────── */}
           <DetailLayout>
             {/* Main content */}
             <DetailMain>
-              <Tabs defaultValue="projects">
+              <Tabs defaultValue="timeline">
                 <TabsList>
+                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
                   <TabsTrigger value="projects">
                     Projects ({client.projects.length})
                   </TabsTrigger>
+                  <TabsTrigger value="contacts">
+                    Contacts {contacts.length > 0 ? `(${contacts.length})` : ""}
+                  </TabsTrigger>
+                  <TabsTrigger value="work">Work</TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="files">
                     Files ({client.media?.length || 0})
                   </TabsTrigger>
                 </TabsList>
+
+                <TabsContent value="timeline" className="mt-4">
+                  <ClientTimelineTab data={timelineData} />
+                </TabsContent>
+
+                <TabsContent value="contacts" className="mt-4">
+                  <Panel padding="responsive">
+                    <h3 className="t-heading mb-4 text-ink">Contacts</h3>
+                    <CanDo resource="client" action="update" fallback={<ReadOnlyContactsList contacts={contacts} legacy={client} />}>
+                      <ClientContactsManager clientId={id} contacts={contacts} />
+                    </CanDo>
+                  </Panel>
+                </TabsContent>
+
+                <TabsContent value="work" className="mt-4">
+                  <ClientWorkTab clientId={id} />
+                </TabsContent>
 
                 <TabsContent value="projects" className="mt-4">
                   <Panel padding="responsive">
@@ -407,17 +447,12 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
             <DetailSidebar>
-                {/* Contacts (WS9 #948) — replaces the single-contact section; a
-                    separate per-project SITE contact (venue/on-site person) lives
-                    on the project itself and is intentionally independent. */}
-                <SidebarSection title="Contacts">
-                  <CanDo resource="client" action="update" fallback={<ReadOnlyContactsList contacts={contacts} legacy={client} />}>
-                    <ClientContactsManager clientId={id} contacts={contacts} />
-                  </CanDo>
-                </SidebarSection>
+                {/* Contacts (WS9 #948) moved to its own tab (#1245, design
+                    §8.4 — six tabs: Timeline · Projects · Contacts · Work ·
+                    Notes · Files) so the sidebar isn't a second copy. */}
 
                 {/* Address & billing — merged: addresses + payment terms */}
-                <SidebarSection title="Address & billing">
+                <SidebarSection title="Address & billing" divider={false}>
                   <div className="space-y-3 text-table-cell">
                     {client.billingAddress && (
                       <div>
@@ -488,11 +523,6 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <p className="text-muted">No address or billing details yet</p>
                       )}
                   </div>
-                </SidebarSection>
-
-                {/* Activity Timeline */}
-                <SidebarSection title="Activity" divider={false}>
-                  <ActivityTimeline entityType="client" entityId={id} />
                 </SidebarSection>
             </DetailSidebar>
           </DetailLayout>

@@ -18,6 +18,7 @@ export const list = query({
   handler: async (ctx, { projectCategoryId }) => {
     await requireService(ctx);
     return await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", projectCategoryId))
       .collect();
@@ -37,6 +38,7 @@ export const listByProjectGroupId = query({
   handler: async (ctx, { projectGroupId }) => {
     await requireService(ctx);
     return await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
       .collect();
@@ -48,6 +50,7 @@ export const listBySubHireGroupId = query({
   handler: async (ctx, { subHireGroupId }) => {
     await requireService(ctx);
     return await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
       .collect();
@@ -146,6 +149,7 @@ export const reorderSlots = mutation({
     const category = await ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", categoryId)).unique();
     if (!category || category.organizationId !== orgId) return;
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", categoryId))
       .collect();
@@ -205,6 +209,7 @@ export const upsertSlotForProjectGroup = mutation({
   handler: async (ctx, { projectGroupId, destCategoryId, newSlotId, now }) => {
     await requireService(ctx);
     const existing = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
       .collect();
@@ -214,11 +219,13 @@ export const upsertSlotForProjectGroup = mutation({
     if (destCategoryId) {
       // Guard: if a concurrent mutation already placed this group here, skip.
       const alreadyInDest = await ctx.db
+        // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
         .query("categorySlots")
         .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
         .first();
       if (alreadyInDest) return;
       const catSlots = await ctx.db
+        // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
         .query("categorySlots")
         .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
         .collect();
@@ -245,6 +252,7 @@ export const upsertSlotForSubHireGroup = mutation({
   handler: async (ctx, { subHireGroupId, destCategoryId, newSlotId, now }) => {
     await requireService(ctx);
     const existing = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
       .collect();
@@ -253,11 +261,13 @@ export const upsertSlotForSubHireGroup = mutation({
     }
     if (destCategoryId) {
       const alreadyInDest = await ctx.db
+        // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
         .query("categorySlots")
         .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
         .first();
       if (alreadyInDest) return;
       const catSlots = await ctx.db
+        // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
         .query("categorySlots")
         .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
         .collect();

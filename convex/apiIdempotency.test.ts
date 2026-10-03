@@ -216,7 +216,11 @@ describe("deterministic id derivation is the real double-write defence", () => {
       });
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
-        status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        status: "QUOTED", isTemplate: false, liveVersionId: "v1", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectVersions", {
+        id: "v1", organizationId: ORG, projectId: "p1", number: 1,
+        contentState: "ready", createdAt: NOW, createdById: "u1",
       });
     });
 
@@ -240,7 +244,7 @@ describe("deterministic id derivation is the real double-write defence", () => {
     await t.run(async (ctx) => {
       const lines = await ctx.db
         .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", "p1"))
+        .withIndex("by_versionId", (q) => q.eq("versionId", "v1"))
         .collect();
       expect(lines).toHaveLength(1);
       const logs = await ctx.db.query("activityLogs").collect();

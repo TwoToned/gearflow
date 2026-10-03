@@ -64,8 +64,7 @@ export function JoinRequestApprovals() {
 
   return (
     <div className="space-y-3">
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      {requests.map((request: any) => (
+      {requests.map((request) => (
         <div key={request.id} className="flex items-center justify-between rounded-md border p-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">

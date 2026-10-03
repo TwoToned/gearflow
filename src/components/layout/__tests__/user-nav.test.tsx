@@ -84,6 +84,15 @@ describe("UserNav", () => {
     expect(screen.queryByText("ada@example.com")).toBeNull();
   });
 
+  // Today is hidden (D10C) — this menu no longer offers it; Dashboard lives
+  // in the sidebar rail / bottom nav instead.
+  it("does not offer Today", async () => {
+    render(<UserNav />);
+    openMenu();
+    const menu = within(await waitFor(() => screen.getByRole("menu")));
+    expect(menu.queryByText("Today")).toBeNull();
+  });
+
   it("hides the Organisations group entirely with a single membership", async () => {
     myOrgsResult = [{ id: "org_1", name: "Org One", slug: "org-one", role: "OWNER" }];
     render(<UserNav />);

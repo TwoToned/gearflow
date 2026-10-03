@@ -32,6 +32,9 @@ export function toClientFields(parsed: ClientFieldsInput) {
     shippingLatitude: numOrUndefined(parsed.shippingLatitude),
     shippingLongitude: numOrUndefined(parsed.shippingLongitude),
     taxId: parsed.taxId || undefined,
+    // T3 (#1091) — a hard short-circuit read by recalc; see docs/designs/tax-model.md §2.
+    taxExempt: parsed.taxExempt,
+    taxExemptReason: parsed.taxExemptReason || undefined,
     paymentTerms: parsed.paymentTerms || undefined,
     defaultDiscount: numOrUndefined(parsed.defaultDiscount),
     // WS1 (#940) — invoice-generation payment profile. xeroContactId/Name are

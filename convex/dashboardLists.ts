@@ -3,6 +3,10 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, getAuthContext, isMemberAuth } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
+import { findLiveQuote, effectiveQuoteStatus } from "./lib/quoteState";
+import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "./lib/quoteDates";
+import { resolveCrewOfferStaleHours } from "./lib/orgSettings";
 
 /**
  * BROWSER-facing native replacements for the bounded project/thread dashboard
@@ -15,20 +19,32 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * actions' getOrgContext; Phase 5 domain slice, #1001).
  */
 
-const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED"]);
+const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED", "AWAITING_PAYMENT"]);
 const HOME_INACTIVE_STATUSES = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);
+
+/**
+ * A gig is "done" — and should stop surfacing needs-attention alerts (blocking
+ * comments, pending crew offers) — once it's closed out or cancelled (same
+ * terminal statuses as HOME_INACTIVE_STATUSES) OR its rental window has already
+ * ended. Alerts belong on current/future work; a finished job's loose ends are
+ * no longer anyone's "needs attention" item.
+ */
+function isCurrentOrFutureProject(project: { status?: string; rentalEndDate?: number }, now: number): boolean {
+  if (HOME_INACTIVE_STATUSES.has(project.status ?? "")) return false;
+  if (project.rentalEndDate != null && project.rentalEndDate < now) return false;
+  return true;
+}
 
 type ProjectDoc = { id: string; isTemplate?: boolean; status?: string; rentalStartDate?: number; rentalEndDate?: number; projectNumber: string; name: string; clientId?: string; projectManagerId?: string; createdAt?: number };
 
-/** EQUIPMENT line-item count per project id (mirrors countEquipmentLineItemsByProject). */
-async function countEquipmentLineItems(ctx: QueryCtx, projectIds: string[]): Promise<Map<string, number>> {
+/** EQUIPMENT line-item count per project id (mirrors countEquipmentLineItemsByProject).
+ *  LIVE-ONLY (#1228) — a dashboard tile counts the live plan. */
+async function countEquipmentLineItems(ctx: QueryCtx, orgId: string, projectIds: string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   await Promise.all(
     projectIds.map(async (pid) => {
-      const rows = await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", pid))
-        .collect();
+      const versionId = await resolveLiveVersionIdForProject(ctx, pid, orgId);
+      const rows = await versionRows(ctx, "projectLineItems", versionId);
       counts.set(pid, rows.filter((li) => (li.type ?? "EQUIPMENT") === "EQUIPMENT").length);
     }),
   );
@@ -84,13 +100,57 @@ export const upcoming = query({
       }
     }
 
-    const counts = await countEquipmentLineItems(ctx, candidates.map((p) => p.id));
+    const counts = await countEquipmentLineItems(ctx, orgId, candidates.map((p) => p.id));
     const clients = await resolveClients(ctx, candidates.map((p) => p.clientId).filter((x): x is string => !!x));
     return candidates.map((p) => projectTile(p, counts, clients));
   },
 });
 
 // ─── getMyHomeData ───────────────────────────────────────────────────────────
+
+const MANAGED_PROJECTS_LIMIT = 24;
+
+/**
+ * This user's current/future projects, not the whole org tables: directly-
+ * managed (projects.by_projectManagerId) ∪ PM-assigned (projectManagers.
+ * by_userId), de-duped, org-checked, sorted (soonest rentalStartDate first,
+ * undated last by recency), and bounded. Shared by `home` (below) and
+ * `needsYou` (work-layer phase 0.5, #1242) — ONE definition of "my projects"
+ * rather than two (R-3.1). `by_projectManagerId` / `by_userId` are GLOBAL
+ * indexes → org-re-checked below.
+ */
+async function resolveManagedProjectDocs(ctx: QueryCtx, orgId: string, userId: string): Promise<ProjectDoc[]> {
+  const [managedProjects, pmEntries] = await Promise.all([
+    ctx.db.query("projects").withIndex("by_projectManagerId", (q) => q.eq("projectManagerId", userId)).collect(),
+    ctx.db.query("projectManagers").withIndex("by_userId", (q) => q.eq("userId", userId)).collect(),
+  ]);
+
+  const managedById = new Map(managedProjects.map((p) => [p.id, p]));
+  const extraIds = [...new Set(pmEntries.filter((e) => e.organizationId === orgId).map((e) => e.projectId))]
+    .filter((pid) => !managedById.has(pid));
+  const extra = await Promise.all(
+    extraIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique()),
+  );
+  const userProjects = [
+    ...managedProjects,
+    ...extra.filter((p): p is NonNullable<typeof p> => p != null),
+  ] as unknown as ProjectDoc[];
+
+  return userProjects
+    .filter(
+      (p) =>
+        (p as { organizationId?: string }).organizationId === orgId &&
+        p.isTemplate !== true &&
+        !HOME_INACTIVE_STATUSES.has(p.status ?? ""),
+    )
+    .sort((a, b) => {
+      if (a.rentalStartDate != null && b.rentalStartDate != null) return a.rentalStartDate - b.rentalStartDate;
+      if (a.rentalStartDate != null) return -1;
+      if (b.rentalStartDate != null) return 1;
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    })
+    .slice(0, MANAGED_PROJECTS_LIMIT);
+}
 
 export const home = query({
   args: { orgId: v.string() },
@@ -100,44 +160,12 @@ export const home = query({
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
-    // Only THIS user's projects, not the whole org tables: directly-managed
-    // (projects.by_projectManagerId) ∪ PM-assigned (projectManagers.by_userId).
-    // Previously .collect()'d the whole org projects + whole org projectManagers
-    // tables reactively (re-read on any project/PM write). by_projectManagerId /
-    // by_userId are global → org-re-checked below.
-    const [managedProjects, pmEntries, userDoc] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_projectManagerId", (q) => q.eq("projectManagerId", userId)).collect(),
-      ctx.db.query("projectManagers").withIndex("by_userId", (q) => q.eq("userId", userId)).collect(),
+    const [candidates, userDoc] = await Promise.all([
+      resolveManagedProjectDocs(ctx, orgId, userId),
       ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", userId)).unique(),
     ]);
 
-    const managedById = new Map(managedProjects.map((p) => [p.id, p]));
-    const extraIds = [...new Set(pmEntries.filter((e) => e.organizationId === orgId).map((e) => e.projectId))]
-      .filter((pid) => !managedById.has(pid));
-    const extra = await Promise.all(
-      extraIds.map((pid) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique()),
-    );
-    const userProjects = [
-      ...managedProjects,
-      ...extra.filter((p): p is NonNullable<typeof p> => p != null),
-    ] as unknown as ProjectDoc[];
-
-    const candidates = userProjects
-      .filter(
-        (p) =>
-          (p as { organizationId?: string }).organizationId === orgId &&
-          p.isTemplate !== true &&
-          !HOME_INACTIVE_STATUSES.has(p.status ?? ""),
-      )
-      .sort((a, b) => {
-        if (a.rentalStartDate != null && b.rentalStartDate != null) return a.rentalStartDate - b.rentalStartDate;
-        if (a.rentalStartDate != null) return -1;
-        if (b.rentalStartDate != null) return 1;
-        return (b.createdAt ?? 0) - (a.createdAt ?? 0);
-      })
-      .slice(0, 24);
-
-    const counts = await countEquipmentLineItems(ctx, candidates.map((p) => p.id));
+    const counts = await countEquipmentLineItems(ctx, orgId, candidates.map((p) => p.id));
     const clients = await resolveClients(ctx, candidates.map((p) => p.clientId).filter((x): x is string => !!x));
     return {
       userName: userDoc?.name ?? "",
@@ -147,11 +175,231 @@ export const home = query({
   },
 });
 
+// ─── needsYou — Today's "needs you" rail (work-layer phase 0.5, #1242) ──────
+// Crew declined / unanswered offers, and quotes expiring soon, on projects
+// THIS user manages — never an org-wide scan (R4/R13: the 4.66 GB query came
+// from exactly that shape). Bounded to `resolveManagedProjectDocs`'s ≤24
+// candidates, same cost profile as `home`/`blocking` above. One-shot from the
+// client (refresh on focus + a slow interval), never a live subscription.
+//
+// Phase 1 (#1243, design doc §9): this IS the "workTriage.forMe" read the
+// design doc's diagram describes for the crew/quote signal types — a signal is
+// never stored (§9's rule), so it's computed live here every call, then a
+// human's stored DECISION about it (`workSignalStates`, §10.3) is subtracted
+// via `loadHiddenSourceKeys`. Kept as `needsYou` rather than renamed/duplicated
+// into a new module: the computation IS the same, R-3.1 forbids a second
+// definition of the same signal, and this is already the one live caller
+// (`today-needs-you-rail.tsx`). Mentions are deliberately NOT folded in here —
+// they have their own dismissal mechanism (`notificationsWrites.archiveNative`)
+// and don't need a `workSignalStates` row. "Work overdue/due soon" is also not
+// duplicated here — it's real, non-derived task rows already surfaced by
+// `projectTasks.myOpenTasks` in Today's Overdue/Today buckets.
+//
+// Phase 4 (#1246): the "> 48h" threshold is now the org's
+// `resolveCrewOfferStaleHours` setting (computed server-side, never the
+// browser's clock) instead of a hardcoded constant — see design doc §8.5.
+
+type CrewSignalRow = {
+  sourceKey: string; // deterministic — design doc §9 ("crew:declined:<id>" / "crew:stale:<id>")
+  assignmentId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  crewMemberName: string;
+  crewRoleId: string | null; // Phase 4 (#1246) — feeds the Triage "Find cover" planner deep-link
+  startDate: number | null; // Phase 4 (#1246) — the planner week to land the "Find cover" link on
+  at: number; // respondedAt for declined, offeredAt for stale
+};
+
+type ExpiringQuoteRow = {
+  sourceKey: string; // "quote:expiring:<quoteId>" (design doc §9)
+  quoteId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  version: number;
+  validUntil: number | null;
+  daysLeft: number | null;
+};
+
+// Work-layer Phase 3 (#1245, design §8.4/§9) — "24 hours after a quote send
+// with no next step logged, the quote:nonext source puts 'Quote v1 out, no
+// next step' in the PM's Triage." A SENT quote (via effectiveQuoteStatus,
+// never the raw column) whose client has no OPEN follow_up work item.
+const QUOTE_NO_NEXT_STEP_GRACE_MS = 24 * 60 * 60 * 1000;
+
+type QuoteNoNextStepRow = {
+  sourceKey: string; // "quote:nonext:<quoteId>" (design doc §9)
+  quoteId: string;
+  clientId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  version: number;
+  sentAt: number;
+};
+
+/** Whether `clientId` has at least one OPEN (not done/cancelled) `follow_up`
+ *  work item linked to it — the "a next step is required" test. Cached per
+ *  call so a PM managing several projects for the same client only pays for
+ *  this once. */
+function makeHasOpenFollowUpChecker(ctx: QueryCtx, orgId: string) {
+  const cache = new Map<string, Promise<boolean>>();
+  return (clientId: string): Promise<boolean> => {
+    let promise = cache.get(clientId);
+    if (!promise) {
+      promise = (async () => {
+        const links = await ctx.db
+          .query("workItemLinks")
+          .withIndex("by_organizationId_entityType_entityId", (q) =>
+            q.eq("organizationId", orgId).eq("entityType", "client").eq("entityId", clientId),
+          )
+          .collect();
+        if (links.length === 0) return false;
+        const items = await Promise.all(
+          links.map((l) => ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", l.workItemId)).first()),
+        );
+        return items.some((t) => t != null && t.kind === "follow_up" && t.status !== "DONE" && t.status !== "CANCELLED");
+      })();
+      cache.set(clientId, promise);
+    }
+    return promise;
+  };
+}
+
+/**
+ * A human's decision (snooze/dismiss/promote, `workSignalStates`) hides a
+ * derived signal from Triage — the "minus workSignalStates" step in design doc
+ * §9's diagram. Dismissed and promoted hide permanently; a snooze hides only
+ * until `snoozedUntil` (an expired snooze re-surfaces the signal, since nothing
+ * about the underlying row changed to resolve it).
+ */
+async function loadHiddenSourceKeys(ctx: QueryCtx, orgId: string, userId: string, now: number): Promise<Set<string>> {
+  const rows = await ctx.db
+    .query("workSignalStates")
+    .withIndex("by_organizationId_userId_sourceKey", (q) => q.eq("organizationId", orgId).eq("userId", userId))
+    .collect();
+  const hidden = new Set<string>();
+  for (const r of rows) {
+    if (r.state === "dismissed" || r.state === "promoted") hidden.add(r.sourceKey);
+    else if (r.state === "snoozed" && (r.snoozedUntil ?? 0) > now) hidden.add(r.sourceKey);
+  }
+  return hidden;
+}
+
+export const needsYou = query({
+  args: { orgId: v.string(), now: v.number() },
+  handler: async (
+    ctx,
+    { orgId, now },
+  ): Promise<{
+    declinedCrew: CrewSignalRow[];
+    staleOffers: CrewSignalRow[];
+    expiringQuotes: ExpiringQuoteRow[];
+    quotesNeedingNextStep: QuoteNoNextStepRow[];
+  }> => {
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
+    const auth = await getAuthContext(ctx);
+    if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
+    const userId = auth.userId;
+
+    const [projects, hiddenSourceKeys, staleOfferHours] = await Promise.all([
+      resolveManagedProjectDocs(ctx, orgId, userId),
+      loadHiddenSourceKeys(ctx, orgId, userId, now),
+      resolveCrewOfferStaleHours(ctx, orgId), // Phase 4 (#1246) — org setting, default 48h
+    ]);
+    const staleOfferMs = staleOfferHours * 60 * 60 * 1000;
+
+    const declinedCrew: CrewSignalRow[] = [];
+    const staleOffers: CrewSignalRow[] = [];
+    const expiringQuotes: ExpiringQuoteRow[] = [];
+    const quotesNeedingNextStep: QuoteNoNextStepRow[] = [];
+    const crewMemberIds = new Set<string>();
+    const pendingCrewRows: { row: CrewSignalRow; crewMemberId: string; bucket: CrewSignalRow[] }[] = [];
+    const hasOpenFollowUp = makeHasOpenFollowUpChecker(ctx, orgId);
+
+    await Promise.all(
+      projects.map(async (p) => {
+        const [assignments, liveQuote] = await Promise.all([
+          ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).collect(),
+          findLiveQuote(ctx, orgId, p.id, now),
+        ]);
+        for (const a of assignments) {
+          if (a.organizationId !== orgId) continue; // by_projectId is global — re-check
+          crewMemberIds.add(a.crewMemberId);
+          if (a.status === "DECLINED") {
+            const sourceKey = `crew:declined:${a.id}`;
+            if (hiddenSourceKeys.has(sourceKey)) continue;
+            const row: CrewSignalRow = {
+              sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              crewMemberName: "", crewRoleId: a.crewRoleId ?? null, startDate: a.startDate ?? null,
+              at: a.respondedAt ?? a.updatedAt ?? now,
+            };
+            pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: declinedCrew });
+          } else if (a.status === "OFFERED" && a.offeredAt != null && a.offeredAt < now - staleOfferMs) {
+            const sourceKey = `crew:stale:${a.id}`;
+            if (hiddenSourceKeys.has(sourceKey)) continue;
+            const row: CrewSignalRow = {
+              sourceKey, assignmentId: a.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              crewMemberName: "", crewRoleId: a.crewRoleId ?? null, startDate: a.startDate ?? null,
+              at: a.offeredAt,
+            };
+            pendingCrewRows.push({ row, crewMemberId: a.crewMemberId, bucket: staleOffers });
+          }
+        }
+        if (liveQuote && effectiveQuoteStatus(liveQuote, now) === "SENT") {
+          const daysLeft = daysUntilValidUntil(liveQuote.validUntil, now);
+          const sourceKey = `quote:expiring:${liveQuote.id}`;
+          if (daysLeft != null && daysLeft <= QUOTE_EXPIRING_SOON_DAYS && !hiddenSourceKeys.has(sourceKey)) {
+            expiringQuotes.push({
+              sourceKey, quoteId: liveQuote.id, projectId: p.id, projectName: p.name, projectNumber: p.projectNumber,
+              version: liveQuote.version, validUntil: liveQuote.validUntil ?? null, daysLeft,
+            });
+          }
+          // quote:nonext (#1245, design §8.4/§9) — sent 24h+ ago, this client
+          // still has no open follow_up. p.clientId is a plain field on the
+          // already org-scoped project doc, no extra org-check needed.
+          const nonextKey = `quote:nonext:${liveQuote.id}`;
+          if (
+            p.clientId &&
+            liveQuote.sentAt != null &&
+            liveQuote.sentAt <= now - QUOTE_NO_NEXT_STEP_GRACE_MS &&
+            !hiddenSourceKeys.has(nonextKey) &&
+            !(await hasOpenFollowUp(p.clientId))
+          ) {
+            quotesNeedingNextStep.push({
+              sourceKey: nonextKey, quoteId: liveQuote.id, clientId: p.clientId, projectId: p.id,
+              projectName: p.name, projectNumber: p.projectNumber, version: liveQuote.version, sentAt: liveQuote.sentAt,
+            });
+          }
+        }
+      }),
+    );
+
+    const crewNames = new Map<string, string>();
+    await Promise.all(
+      [...crewMemberIds].map(async (id) => {
+        const c = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+        if (c) crewNames.set(id, `${c.firstName} ${c.lastName}`.trim());
+      }),
+    );
+    for (const { row, crewMemberId, bucket } of pendingCrewRows) {
+      bucket.push({ ...row, crewMemberName: crewNames.get(crewMemberId) ?? "Unknown" });
+    }
+    declinedCrew.sort((a, b) => b.at - a.at);
+    staleOffers.sort((a, b) => a.at - b.at);
+    expiringQuotes.sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0));
+    quotesNeedingNextStep.sort((a, b) => a.sentAt - b.sentAt);
+
+    return { declinedCrew, staleOffers, expiringQuotes, quotesNeedingNextStep };
+  },
+});
+
 // ─── getMyBlockingComments ───────────────────────────────────────────────────
 
 export const blocking = query({
-  args: { orgId: v.string() },
-  handler: async (ctx, { orgId }) => {
+  args: { orgId: v.string(), now: v.number() },
+  handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
@@ -183,6 +431,10 @@ export const blocking = query({
       const projectId = t.projectId ?? t.entityId;
       const project = projectId ? projectMap.get(projectId) : undefined;
       if (!project) continue;
+      // Closed-out / cancelled / past gigs are done — their blocking comments
+      // stop being a "needs attention" alert (still resolvable from the
+      // project's own Activity tab, just not surfaced here).
+      if (!isCurrentOrFutureProject(project, now)) continue;
       const isPM = project.projectManagerId === userId || pmProjectIds.has(project.id);
       const isMentioned = (t.mentionUserIds ?? []).includes(userId);
       if (!isPM && !isMentioned) continue;
@@ -208,9 +460,49 @@ export const blocking = query({
   },
 });
 
+// ─── pendingCrewOffers (needs-attention scoped count) ────────────────────────
+// The dashboardCounters.pendingCrewOffers sharded counter is a raw org-wide
+// count (no project join — see convex/lib/counters.ts) used for the general
+// stats bundle. The "needs attention" chip wants a narrower question: how many
+// pending offers belong to a gig that hasn't happened yet or wrapped up? That
+// requires a project join, so it's a small bounded query here rather than a
+// field on the counter.
+const PENDING_OFFER_STATUSES = ["OFFERED", "PENDING"] as const;
+
+export const pendingCrewOffers = query({
+  args: { orgId: v.string(), now: v.number() },
+  handler: async (ctx, { orgId, now }) => {
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
+
+    const assignmentLists = await Promise.all(
+      PENDING_OFFER_STATUSES.map((status) =>
+        ctx.db
+          .query("crewAssignments")
+          .withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status))
+          .collect(),
+      ),
+    );
+    const assignments = assignmentLists.flat();
+    if (assignments.length === 0) return 0;
+
+    const projectIds = [...new Set(assignments.map((a) => a.projectId))];
+    const projectDocs = await Promise.all(
+      projectIds.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+    );
+    const projectMap = new Map(projectDocs.filter((p): p is NonNullable<typeof p> => p != null).map((p) => [p.id, p]));
+
+    return assignments.filter((a) => {
+      const project = projectMap.get(a.projectId);
+      return project != null && project.organizationId === orgId && isCurrentOrFutureProject(project, now);
+    }).length;
+  },
+});
+
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
   upcoming: { summary: "List the org's upcoming projects (next 8 by rental start date).", danger: "low", mcpTier: 2 },
   home: { summary: "The caller's personal dashboard project list (managed or PM-assigned).", danger: "low", mcpTier: 2 },
   blocking: { summary: "Blocking comment threads relevant to the caller (as PM or mentioned).", danger: "low", mcpTier: 2 },
+  pendingCrewOffers: { summary: "Count of pending crew offers on current/future (not past or closed) gigs.", danger: "low", mcpTier: 2 },
+  needsYou: { summary: "Declined/stale crew offers and expiring quotes on projects the caller manages.", danger: "low", mcpTier: 2 },
 };

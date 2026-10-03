@@ -33,6 +33,7 @@ import {
   type OverbookedInfo,
   type OverbookingBundleData,
 } from "@/lib/overbooking-core";
+import { getProjectWindowDates } from "@/lib/project-window";
 
 type ProjectDetailBundle = NonNullable<FunctionReturnType<typeof api.projectDetail.bundle>>;
 type ProjectDoc = ProjectDetailBundle["project"];
@@ -97,6 +98,9 @@ export function mapProject(d: ProjectDoc): ProjectRow {
     discountPercent: orNull(d.discountPercent),
     discountAmount: orNull(d.discountAmount),
     taxAmount: orNull(d.taxAmount),
+    // T3 (#1091, docs/designs/tax-model.md §5) — recalc outputs alongside taxAmount.
+    taxBreakdown: orNull(d.taxBreakdown),
+    taxStatus: orNull(d.taxStatus),
     total: orNull(d.total),
     // WS1 (#940) — depositPercent moved off the project (client payment profile
     // now owns it); depositPaid/invoicedTotal stay here as recalc-derived reads.
@@ -302,12 +306,8 @@ export function enrichProjectDetailOverbooked(
   overbooking: OverbookingBundleData | undefined,
 ): NativeProjectDetail {
   if (!overbooking) return base;
-  const map = reconstructOverbookedStatus(
-    overbooking,
-    base.lineItems,
-    base.rentalStartDate,
-    base.rentalEndDate,
-    base.id,
-  );
+  // Gear-committed window, not the raw rental dates — see project-window.ts.
+  const window = getProjectWindowDates(base);
+  const map = reconstructOverbookedStatus(overbooking, base.lineItems, window.start, window.end, base.id);
   return { ...base, lineItems: applyOverbookedMap(base.lineItems, map) };
 }

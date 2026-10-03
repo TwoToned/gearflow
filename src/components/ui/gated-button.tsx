@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  *
  * `gated={false}` renders a plain `Button` — this component is meant to wrap
  * every mutation-triggering button unconditionally, with the caller deciding
- * `gated` from `useProjectLockStatus`.
+ * `gated` from `useProjectPricingLock` (or any other lock-status hook).
  */
 export interface GatedButtonProps extends ButtonProps {
   gated: boolean;

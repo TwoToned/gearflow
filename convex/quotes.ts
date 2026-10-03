@@ -44,13 +44,12 @@ export const listForProject = query({
 /**
  * The project's revision state in one round trip: the current revision number,
  * the open draft (if any) and the revision the client is currently holding.
- * Backs the Finance tab's lock strip and, in Phase C (#988), the quote input to
- * `resolveLockTier`.
+ * Backs the Finance tab's quote rail.
  *
- * `draftQuoteId` is scoped to `liveRevision`, not `revision` (#1085) — since
- * `saveVersionNative` shipped, a project can have a non-live `DRAFT` row left
- * behind (a saved-but-never-sent version, or a recalled one), and that row
- * must never surface as "the" open draft here.
+ * `draftQuoteId` is scoped to `liveRevision`, not `revision` (#1085) — a
+ * project can have a non-live `DRAFT` row left behind (a saved-but-never-sent
+ * version, or a recalled one), and that row must never surface as "the" open
+ * draft here.
  */
 export const revisionStateForProject = query({
   args: { orgId: v.string(), projectId: v.string(), now: v.optional(v.number()) },
@@ -82,10 +81,6 @@ export const revisionStateForProject = query({
             sentAt: live.quote.sentAt ?? live.quote.publishedAt ?? null,
             validUntil: live.quote.validUntil ?? null,
             snapshotId: live.quote.snapshotId ?? null,
-            // #1080/#1100 — the recall-to-edit dialog needs this to decide
-            // between "Recall vN and edit" and the un-protect explanation
-            // without a second round trip.
-            protected: live.quote.protected ?? false,
           }
         : null,
     };

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireOrgPermission, requireService } from "./lib/auth";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for WarehouseClose (Convex table "warehouseCloses"). GENERATED — Phase 2/5.
@@ -164,12 +165,9 @@ export const closeOutSummary = query({
       throw new ConvexError("Project not found");
     }
 
-    const allLines = await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
-    // by_projectId is GLOBAL — org-re-check every row (the project is already org-checked,
-    // so this is defence-in-depth against a cross-tenant line under the same projectId).
+    // LIVE-ONLY (#1228). Org-re-check every row (the project is already
+    // org-checked, so this is defence-in-depth against a cross-tenant line).
+    const allLines = await liveRows(ctx, project, "projectLineItems");
     const lineItems = allLines.filter(
       (li) => li.organizationId === orgId && li.type === "EQUIPMENT" && li.isKitChild !== true,
     );

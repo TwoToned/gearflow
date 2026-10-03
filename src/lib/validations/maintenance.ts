@@ -33,6 +33,12 @@ export const maintenanceSchema = z.object({
   photos: z.array(z.string().url()).max(20).default([]),
   result: z.enum(["PASS", "FAIL", "CONDITIONAL"]).optional(),
   tags: z.array(z.string()).default([]),
+  // Per-asset outcome chosen when closing the record out to COMPLETED — see
+  // convex/maintenanceWrites.ts's applyAssetDispositions. Keyed by assetId; only
+  // consulted (and only sent to the mutation) when status === "COMPLETED".
+  assetDispositions: z
+    .record(z.string(), z.enum(["RETURN_TO_SERVICE", "KEEP_OUT_OF_SERVICE", "RETIRE"]))
+    .optional(),
   nextDueDate: z
     .union([z.literal(""), z.coerce.date()])
     .optional()

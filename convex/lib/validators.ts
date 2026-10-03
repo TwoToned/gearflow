@@ -1,4 +1,6 @@
 import { v } from "convex/values";
+import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_RECURRENCE_FREQUENCIES, WORK_ITEM_LINK_ENTITY_TYPES } from "./workVocabulary";
+import { FOLLOW_UP_RESOLUTIONS, FOLLOW_UP_RULE_KEYS } from "./followUpRules";
 
 /**
  * Convex validators for the 65 Prisma enums.
@@ -70,6 +72,19 @@ export const MaintenanceResult = v.union(
   v.literal("CONDITIONAL"),
 );
 /**
+ * Per-asset outcome chosen when closing out a COMPLETED maintenance record
+ * (maintenanceWrites.ts's `applyAssetDispositions`) — what happens to THIS asset,
+ * independent of the record-level `result`. RETURN_TO_SERVICE releases the hold
+ * (same guarded release as the legacy blanket path); KEEP_OUT_OF_SERVICE is a
+ * no-op (asset stays IN_MAINTENANCE); RETIRE is terminal and shares
+ * `retireAssetCore` with `assetWrites.archiveNative`.
+ */
+export const MaintenanceAssetDisposition = v.union(
+  v.literal("RETURN_TO_SERVICE"),
+  v.literal("KEEP_OUT_OF_SERVICE"),
+  v.literal("RETIRE"),
+);
+/**
  * Incident-report classification captured by the "Report Issue" flow
  * (FEATUREDOCS/64-incident-reporting.md). Set on a `maintenanceRecords` row to mark
  * it as originating from an incident report (vs. an ordinary manually-created
@@ -95,6 +110,12 @@ export const ProjectStatus = v.union(
   v.literal("ENQUIRY"),
   v.literal("QUOTING"),
   v.literal("QUOTED"),
+  // #1236 — the agreed-but-unpaid phase: the client has said yes and/or an
+  // invoice is out, but the money hasn't landed and the job isn't ours to prep
+  // yet. The finer sub-state ("deposit invoice sent" vs "deposit paid") is NOT
+  // stored here — it is derived from the invoice + payment rows
+  // (src/lib/project-payment-progress.ts). See FEATUREDOCS/77.
+  v.literal("AWAITING_PAYMENT"),
   v.literal("CONFIRMED"),
   v.literal("PREPPING"),
   v.literal("CHECKED_OUT"),
@@ -139,6 +160,15 @@ export const SaleMode = v.union(
 export const DiscountMode = v.union(
   v.literal("$"),
   v.literal("%"),
+);
+/** Category price rollup — how a project category prints its money on a
+ *  client-facing document. `ITEMISED` = every line prints its own price (the
+ *  legacy behaviour); `ROLLUP` = lines print description + quantity only and
+ *  the section header carries one derived subtotal. Absent on every
+ *  pre-feature row = `ITEMISED` (see src/lib/category-pricing-display.ts). */
+export const CategoryPricingDisplay = v.union(
+  v.literal("ITEMISED"),
+  v.literal("ROLLUP"),
 );
 export const PricingType = v.union(
   v.literal("PER_DAY"),
@@ -211,6 +241,15 @@ export const LineItemChildKind = v.union(
   v.literal("KIT"),
   v.literal("ACCESSORY"),
 );
+/** `projectContainers.kind` (packing containers, #1296) — ASSET is a
+ *  serialised case/tub with its own tag; BULK_ASSET draws one unit from a
+ *  tagged bulk asset (kept in the schema from day one, D2 — no picker built
+ *  yet); CUSTOM is free-text, no underlying asset. */
+export const ContainerKind = v.union(
+  v.literal("ASSET"),
+  v.literal("BULK_ASSET"),
+  v.literal("CUSTOM"),
+);
 /** Model-level accessory tier (issue #794): DEFAULT auto-attaches when the model
  *  is added to a project (PM may deselect per line via accessoryPlan.excluded);
  *  OPTIONAL never auto-attaches — offered in the add-time picker, opted in via
@@ -249,6 +288,11 @@ export const AllocationBasis = v.union(
   // projectModelRevenues (sale revenue lives in its own project.saleRevenue
   // bucket, not per-model rental ROI). Excluded from ROI_COUNTED_BASES.
   v.literal("EXCLUDED_SALE"),
+  // #1249 — the operator ticked "Exclude from ROI" on this line. It takes no
+  // share of any pool (the paying gear beside it splits the whole thing) and
+  // never reaches projectModelRevenues. Its own label rather than NO_REVENUE so
+  // a report can tell a deliberate exclusion from "the pool was $0".
+  v.literal("EXCLUDED_MANUAL"),
   v.literal("NO_REVENUE"),
 );
 export const KitCheckMode = v.union(
@@ -441,16 +485,48 @@ export const CustomFieldType = v.union(
   v.literal("SELECT"),
   v.literal("BOOLEAN"),
 );
-export const ProjectTaskStatus = v.union(
-  v.literal("TODO"),
-  v.literal("IN_PROGRESS"),
-  v.literal("DONE"),
-);
-export const ProjectTaskPriority = v.union(
-  v.literal("LOW"),
-  v.literal("NORMAL"),
-  v.literal("HIGH"),
-);
+// Work-layer phase 1 (#1243): sourced from workVocabulary.ts, the ONE
+// definition of these unions — do not hand-add a literal here again.
+export const ProjectTaskStatus = v.union(...WORK_ITEM_STATUSES.map((s) => v.literal(s)));
+export const ProjectTaskPriority = v.union(...WORK_ITEM_PRIORITIES.map((p) => v.literal(p)));
+export const ProjectTaskKind = v.union(...WORK_ITEM_KINDS.map((k) => v.literal(k)));
+export const ProjectTaskStage = v.union(...WORK_STAGES.map((s) => v.literal(s)));
+// Work-layer phase 2 (#1244): recurrence, sourced the same way — see
+// workVocabulary.ts's WORK_RECURRENCE_FREQUENCIES.
+export const ProjectTaskRecurrenceFrequency = v.union(...WORK_RECURRENCE_FREQUENCIES.map((f) => v.literal(f)));
+export const ProjectTaskRecurrence = v.object({
+  freq: ProjectTaskRecurrenceFrequency,
+  // weekly only — ISO weekday numbers (0 Sun – 6 Sat). Absent/empty = every 7 days.
+  daysOfWeek: v.optional(v.array(v.number())),
+  // monthly only — 1-31, clamped to the shorter month. Absent = same day as the current due date.
+  dayOfMonth: v.optional(v.number()),
+});
+// Follow-up automation (docs/designs/follow-up-automation.md §8.4): set only on
+// rows the follow-up engine owns. Sourced from followUpRules.ts's unions.
+export const FollowUpResolution = v.union(...FOLLOW_UP_RESOLUTIONS.map((r) => v.literal(r)));
+export const FollowUpAutomation = v.object({
+  ruleKey: v.union(...FOLLOW_UP_RULE_KEYS.map((k) => v.literal(k))),
+  /** The quote/invoice/project the row is currently about. */
+  subjectId: v.string(),
+  /** 1, 2 = chasing; 3 = decision; 0 = housekeeping. */
+  rung: v.number(),
+  /** When this loop started (the send that opened it) — groups a loop's rungs. */
+  loopStartAt: v.number(),
+  /** Push-eligible (the loop's deadline is under a week away). Not a priority. */
+  urgent: v.boolean(),
+  /** Why the row exists, in one line — shown under the title. */
+  why: v.string(),
+  /** Fields a human edited; the reconciler never writes them again. */
+  lockedFields: v.array(v.string()),
+  /** How the row was closed; absent while open. */
+  resolution: v.optional(FollowUpResolution),
+  /** "system" or the userId who closed it. */
+  resolvedBy: v.optional(v.string()),
+  /** A human's chosen date for the NEXT rung (from "no reply — next on…"). */
+  nextDate: v.optional(v.number()),
+});
+// Work-layer phase 3 (#1245): sourced from workVocabulary.ts.
+export const WorkItemLinkEntityType = v.union(...WORK_ITEM_LINK_ENTITY_TYPES.map((t) => v.literal(t)));
 
 // ─── WS1 Finance (#940) — Quote/Invoice entities, client payment profiles, Xero ───
 
@@ -489,8 +565,9 @@ export const InvoiceStatus = v.union(
   v.literal("ISSUED"),
   v.literal("VOID"),
 );
-/** Written by paymentsWrites.ts recordNative/voidNative, derived from the invoice's
- *  own amountPaid vs total — NOT by a Xero poll (that phase-2 idea was never built;
+/** Written by paymentsWrites.ts recordNative/voidNative and the Xero payment sync
+ *  (FEATUREDOCS/82), derived from the invoice's own payments plus Xero's reported
+ *  paid/credited amounts — the historical note below predates that sync (
  *  see FEATUREDOCS/66). Vocabulary matches SubHirePaymentStatus (same shape, separate
  *  enum — a different entity). */
 export const InvoicePaymentStatus = v.union(
@@ -523,6 +600,10 @@ export const InvoiceLineSourceType = v.union(
   v.literal("EQUIPMENT"),
   v.literal("SERVICE"),
   v.literal("GROUP"),
+  // A `pricingDisplay: "ROLLUP"` project category billed as ONE line covering
+  // everything inside it — the finance-snapshot counterpart of the rolled-up
+  // section a quote/invoice PDF prints (convex/lib/financeSnapshot.ts).
+  v.literal("CATEGORY"),
   v.literal("CUSTOM"),
 );
 export const XeroSyncStatus = v.union(
@@ -541,4 +622,6 @@ export const XeroSyncDirection = v.union(
   v.literal("SYNC_CONTACT"),
   v.literal("REFRESH_TOKEN"),
   v.literal("FETCH_REFERENCE_DATA"),
+  // Follow-up automation phase 2 — reading invoice payment state back from Xero.
+  v.literal("PULL_PAYMENTS"),
 );

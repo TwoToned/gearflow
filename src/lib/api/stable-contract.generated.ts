@@ -80,7 +80,8 @@ export const STABLE_CONTRACT: Record<string, { reachable: boolean; fields: reado
       "now",
       "orgDefaultTaxRate",
       "organizationId",
-      "projectId"
+      "projectId",
+      "versionId"
     ]
   },
   "maintenanceWrites.createNative": {

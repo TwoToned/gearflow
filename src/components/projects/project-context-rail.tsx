@@ -6,6 +6,7 @@ import { CalendarDays, MapPin, Navigation, Phone, Mail } from "lucide-react";
 import { SidebarSection } from "@/components/layout/page-layouts";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
+import { ProjectWorkRailSection } from "@/components/projects/project-work-rail-section";
 import { formatDate } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
 import {
@@ -119,15 +120,24 @@ function LocationSection({ project }: { project: ProjectContextRailProject }) {
  * (`overview/context-cards.tsx`) rather than bolted on as a rail — which is
  * why the facts themselves are shaped once in `@/lib/project-context` and only
  * the presentation differs here.
+ *
+ * Work-layer v2 (§4.3) adds **Work** between Team and Activity: the standing
+ * reference facts (schedule, location, team) stay together above it, and the
+ * two "what is happening" sections sit together below. `showWork` is false on
+ * the Work tab — that tab IS the list, and the same rows twice on one screen
+ * is the duplication this program exists to remove.
  */
 export function ProjectContextRail({
   projectId,
   orgId,
   project,
+  showWork = true,
 }: {
   projectId: string;
   orgId: string | undefined;
   project: ProjectContextRailProject;
+  /** False on the Work tab, which renders the full list itself. */
+  showWork?: boolean;
 }) {
   return (
     <>
@@ -149,6 +159,10 @@ export function ProjectContextRail({
         )}
         <ProjectManagersPanel projectId={projectId} managers={project.projectManagers ?? []} />
       </SidebarSection>
+
+      {/* Work — the job's outstanding list, between the standing facts above
+          and the activity feed below (§4.3). Templates have no work. */}
+      {showWork && !project.isTemplate && <ProjectWorkRailSection projectId={projectId} />}
 
       {/* Activity — realtime collaboration feed */}
       {orgId && !project.isTemplate && (

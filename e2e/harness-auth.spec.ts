@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Seeded-auth E2E keystone (POLICY.md R-8.8.3 / #621). Runs ONLY against the local
@@ -14,6 +15,12 @@ test.describe("harness: authenticated flow", () => {
     !process.env.E2E_HARNESS,
     "requires the seeded Convex harness (E2E_HARNESS=1)",
   );
+
+  // #1118: every harness file's own DB isolation, not just the ones that
+  // used to fail outright without it — see harness-db-reset.ts.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
 
   test("register → authenticated dashboard", async ({ page }) => {
     const email = `e2e+${Date.now()}@harness.local`;

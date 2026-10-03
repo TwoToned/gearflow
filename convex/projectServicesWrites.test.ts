@@ -30,11 +30,19 @@ async function member(t: T, role: string) {
   });
 }
 
+/** #1228 — every project needs a live projectVersions row + liveVersionId
+ *  (deterministic `v-${id}`), or every by_versionId-family read/write on it
+ *  throws. */
 async function seedProject(t: T, id = "p1", orgId = ORG, extra: Record<string, unknown> = {}) {
+  const versionId = `v-${id}`;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "QUOTED",
-      total: 999, taxRate: 10, ...extra,
+      total: 999, taxRate: 10, liveVersionId: versionId, ...extra,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1,
+      contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -476,7 +484,7 @@ describe("cloneServicesNative", () => {
       targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 5, actor: ACTOR, auditId: "logcl",
     });
     expect(res.cloned).toBe(1);
-    const targetServices = await t.run(async (ctx) => (await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect()));
+    const targetServices = await t.run(async (ctx) => (await ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p2")).collect()));
     expect(targetServices).toHaveLength(1);
     expect(targetServices[0].status).toBe("PLANNED");
     expect(targetServices[0].id).not.toBe("s1"); // fresh cuid
@@ -500,7 +508,7 @@ describe("cloneServicesNative", () => {
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, {
       targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 5, actor: ACTOR, auditId: "logcl",
     });
-    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect());
+    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p2")).collect());
     expect(targetServices).toHaveLength(1);
     expect(targetServices[0].date).toBe(NOW + 3 * DAY); // shifted by the 3-day window offset
   });
@@ -604,62 +612,52 @@ describe("service template CRUD", () => {
 });
 
 // ─── #988 (Phase C) — the previously-deferred bulk/generate/clone/convert gate
-// sites (FEATUREDOCS/62 "Deliberately deferred") are now gated. Each of these
-// is a "kind: structural" gate (same family a single create/update/delete
-// already uses), so an ON_SITE project (JUSTIFY tier) rejects without a
-// justification and succeeds with one. ─────────────────────────────────────
+// sites (FEATUREDOCS/62 "Deliberately deferred") are structural (add/remove/
+// convert services, not a money-field edit), so per #1230 they are never
+// gated regardless of projects.pricingLocked. generateServicesNative /
+// cloneServicesNative are the exception that still touches money on insert:
+// per the truth table, a locked project still allows new structural adds,
+// but a new/copied line defaults its price to $0 (pricedUnderLock). ────────
 describe("#988 previously-deferred gate sites", () => {
-  const JUSTIFICATION = "Client requested a change while on site today.";
-
-  test("bulkDeleteServicesNative rejects on ON_SITE without justification, succeeds with one", async () => {
+  test("bulkDeleteServicesNative succeeds on ON_SITE — structural, never gated (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t, "p1", ORG, { status: "ON_SITE" });
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
-      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, justification: JUSTIFICATION, now: NOW, actor: ACTOR, auditId: "logc",
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, now: NOW, actor: ACTOR, auditId: "logc",
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkDeleteServicesNative, { ids: ["s1"], orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logbd" }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkDeleteServicesNative, {
-      ids: ["s1"], orgId: ORG, now: NOW + 2, actor: ACTOR, auditId: "logbd2", justification: JUSTIFICATION,
+      ids: ["s1"], orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logbd",
     });
     expect(res.deleted).toBe(1);
   });
 
-  test("bulkUpdateServiceStatusNative rejects on ON_SITE without justification, succeeds with one", async () => {
+  test("bulkUpdateServiceStatusNative succeeds on ON_SITE — structural, never gated (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t, "p1", ORG, { status: "ON_SITE" });
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
-      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, justification: JUSTIFICATION, now: NOW, actor: ACTOR, auditId: "logc",
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, now: NOW, actor: ACTOR, auditId: "logc",
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkUpdateServiceStatusNative, { ids: ["s1"], orgId: ORG, status: "CONFIRMED", now: NOW + 1, actor: ACTOR, auditId: "logbs" }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkUpdateServiceStatusNative, {
-      ids: ["s1"], orgId: ORG, status: "CONFIRMED", now: NOW + 2, actor: ACTOR, auditId: "logbs2", justification: JUSTIFICATION,
+      ids: ["s1"], orgId: ORG, status: "CONFIRMED", now: NOW + 1, actor: ACTOR, auditId: "logbs",
     });
     expect(res.updated).toBe(1);
   });
 
-  test("generateServicesNative rejects on ON_SITE without justification, succeeds with one", async () => {
+  test("generateServicesNative succeeds on ON_SITE — structural, never gated (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t, "p1", ORG, { status: "ON_SITE", projectStartDate: NOW, projectEndDate: NOW });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, { projectId: "p1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logg" }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
-    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
-      projectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logg2", justification: JUSTIFICATION,
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
+      projectId: "p1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logg",
     });
-    expect(res.created).toBeGreaterThan(0);
   });
 
-  test("generateServicesNative $0-defaults new services when the project is locked with no open session", async () => {
+  test("generateServicesNative $0-defaults new services when the project is pricingLocked", async () => {
     const t = makeT();
     await member(t, "admin"); // orgSettings:update (template create) + project:update
-    await seedProject(t, "p1", ORG, { status: "CONFIRMED", projectStartDate: NOW, projectEndDate: NOW });
+    await seedProject(t, "p1", ORG, { status: "CONFIRMED", projectStartDate: NOW, projectEndDate: NOW, pricingLocked: true });
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceTemplateNative, {
       id: "tp1", orgId: ORG, type: "DELIVERY", title: "Std Delivery", showOnDocuments: true, isAutoAdded: true, isActive: true, defaultUnitPrice: 150, now: NOW, actor: ACTOR, auditId: "logtc",
     });
@@ -667,11 +665,11 @@ describe("#988 previously-deferred gate sites", () => {
       projectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logg",
     });
     expect(res.created).toBe(1);
-    const svcs = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    const svcs = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1")).collect());
     expect(svcs[0].unitPrice).toBeUndefined(); // template's defaultUnitPrice was zeroed, not copied
   });
 
-  test("cloneServicesNative rejects on an ON_SITE target without justification, succeeds with one", async () => {
+  test("cloneServicesNative succeeds on an ON_SITE target — structural, never gated (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t, "p1", ORG, { projectStartDate: NOW });
@@ -679,20 +677,17 @@ describe("#988 previously-deferred gate sites", () => {
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
       id: "s1", orgId: ORG, projectId: "p1", ...baseInput, now: NOW, actor: ACTOR, auditId: "logc",
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, { targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcl" }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, {
-      targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 2, actor: ACTOR, auditId: "logcl2", justification: JUSTIFICATION,
+      targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcl",
     });
     expect(res.cloned).toBe(1);
   });
 
-  test("cloneServicesNative $0-defaults copied pricing when the target is locked with no open session", async () => {
+  test("cloneServicesNative $0-defaults copied pricing when the target is pricingLocked", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t, "p1", ORG, { projectStartDate: NOW });
-    await seedProject(t, "p2", ORG, { status: "CONFIRMED", projectStartDate: NOW });
+    await seedProject(t, "p2", ORG, { status: "CONFIRMED", projectStartDate: NOW, pricingLocked: true });
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
       id: "s1", orgId: ORG, projectId: "p1", ...baseInput, unitPrice: 250, now: NOW, actor: ACTOR, auditId: "logc",
     });
@@ -700,23 +695,173 @@ describe("#988 previously-deferred gate sites", () => {
       targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcl",
     });
     expect(res.cloned).toBe(1);
-    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect());
+    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p2")).collect());
     expect(targetServices[0].unitPrice).toBeUndefined();
   });
 
-  test("convertLineItemToServiceNative rejects on ON_SITE without justification, succeeds with one", async () => {
+  test("convertLineItemToServiceNative succeeds on ON_SITE — structural, never gated (#1230)", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t, "p1", ORG, { status: "ON_SITE" });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "SERVICE", description: "Rigging", quantity: 1, lineTotal: 50, isKitChild: false, status: "CONFIRMED" });
     });
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, { serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logcv" }),
-    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
     const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, {
-      serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcv2", justification: JUSTIFICATION,
+      serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logcv",
     });
     expect(res.id).toBe("s1");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1221 follow-up (closes Phase 5's Equipment write-side gap, extended to
+// Labour) — createServiceNative/generateServicesNative now take an optional
+// `versionId`; convertLineItemToServiceNative always inherits the SOURCE
+// line's own version (never re-derives "live") — see projectServicesWrites.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectServicesWrites — #1221 versionId follow-up", () => {
+  async function seedSecondVersion(t: T, id = "p1", orgId = ORG) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: `v-${id}-b`, organizationId: orgId, projectId: id, number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+  }
+
+  describe("createServiceNative", () => {
+    test("defaults to the live version when versionId is absent", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s1", orgId: ORG, projectId: "p1", ...baseInput, now: NOW, actor: ACTOR, auditId: "log1",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.versionId).toBe("v-p1");
+    });
+
+    test("targets the named non-live version, sortOrder scoped to it", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s1", orgId: ORG, projectId: "p1", ...baseInput, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "log1",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.versionId).toBe("v-p1-b");
+      expect(s?.sortOrder).toBe(0);
+    });
+
+    test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedProject(t, "pX", OTHER);
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+          id: "s1", orgId: ORG, projectId: "p1", ...baseInput, versionId: "v-pX", now: NOW, actor: ACTOR, auditId: "log1",
+        }),
+      ).rejects.toThrow();
+    });
+
+    test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedProject(t, "p2", ORG);
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+          id: "s1", orgId: ORG, projectId: "p1", ...baseInput, versionId: "v-p2", now: NOW, actor: ACTOR, auditId: "log1",
+        }),
+      ).rejects.toThrow();
+    });
+
+    test("lock interaction: live + locked defaults costTotal to $0; non-live + locked keeps the real cost", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { pricingLocked: true });
+      await seedSecondVersion(t);
+
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s-live", orgId: ORG, projectId: "p1", ...baseInput, costTotal: 200, now: NOW, actor: ACTOR, auditId: "log1",
+      });
+      expect((await svcById(t, "s-live"))?.costTotal).toBe(0);
+
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s-nonlive", orgId: ORG, projectId: "p1", ...baseInput, costTotal: 200, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "log2",
+      });
+      expect((await svcById(t, "s-nonlive"))?.costTotal).toBe(200);
+    });
+  });
+
+  describe("generateServicesNative", () => {
+    test("targets the named non-live version", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { projectStartDate: NOW, projectEndDate: NOW });
+      await seedSecondVersion(t);
+      const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
+        projectId: "p1", orgId: ORG, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "logg",
+      });
+      expect(res.created).toBeGreaterThan(0);
+      const rows = await t.run((ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1-b")).collect());
+      expect(rows.length).toBe(res.created);
+      const liveRows = await t.run((ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1")).collect());
+      expect(liveRows).toHaveLength(0);
+    });
+
+    test("lock interaction: non-live target is never gated even while live is locked", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { projectStartDate: NOW, projectEndDate: NOW, pricingLocked: true });
+      await seedSecondVersion(t);
+      // Seed a template with a real unit price so we can observe whether it's zeroed.
+      await t.run(async (ctx) => {
+        await ctx.db.insert("serviceTemplates", { id: "tpl1", organizationId: ORG, type: "MISC", title: "Rig", isActive: true, defaultUnitPrice: 75, showOnDocuments: true, isAutoAdded: true, sortOrder: 0 });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
+        projectId: "p1", orgId: ORG, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "logg",
+      });
+      const rows = await t.run((ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1-b")).collect());
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.some((r) => r.unitPrice === 75)).toBe(true); // NOT zeroed
+    });
+  });
+
+  describe("convertLineItemToServiceNative", () => {
+    test("inherits the SOURCE line's own non-live version, never live", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectLineItems", {
+          id: "li1", organizationId: ORG, projectId: "p1", versionId: "v-p1-b", lineageId: "li1",
+          type: "SERVICE", description: "Rigging", quantity: 1, lineTotal: 50, isKitChild: false, status: "CONFIRMED",
+        });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, {
+        serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logcv",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.versionId).toBe("v-p1-b");
+    });
+
+    test("lock interaction: converting a line on a non-live version is never gated even while live is locked", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { pricingLocked: true });
+      await seedSecondVersion(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectLineItems", {
+          id: "li1", organizationId: ORG, projectId: "p1", versionId: "v-p1-b", lineageId: "li1",
+          type: "SERVICE", description: "Rigging", quantity: 1, unitPrice: 50, lineTotal: 50, isKitChild: false, status: "CONFIRMED",
+        });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, {
+        serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logcv",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.unitPrice).toBe(50); // kept — the source line lives on a non-live version
+    });
   });
 });

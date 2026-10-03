@@ -23,7 +23,10 @@ describe("projectLineItems.createMany — bulk single-call", () => {
   test("creates new rows, skips an existing id, stamps organizationId from the arg", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li-existing", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      // #1228 — createMany resolves the project's live version to stamp onto new rows.
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, liveVersionId: "v-p1", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "li-existing", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "li-existing", type: "EQUIPMENT", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
     });
 
     const { created } = await t.withIdentity(SERVICE).mutation(api.projectLineItems.createMany, {

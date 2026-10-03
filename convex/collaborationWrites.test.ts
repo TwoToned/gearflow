@@ -154,3 +154,102 @@ describe("collaboration browser-direct writes", () => {
     expect(comment!.authorColor).toBe(getUserColor(MEMBER));
   });
 });
+
+describe("mentions → notifications (work-layer phase 0, #1241)", () => {
+  test("createThread with mentions writes exactly one notification for the mentioned user, never the author", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "hey @Vic check this out",
+      createdBy: MEMBER, createdByName: "M", mentionUserIds: [VIEWER, MEMBER],
+    });
+    const rows = await t.run(async (ctx) => ctx.db.query("notifications").collect());
+    expect(rows.length).toBe(1);
+    expect(rows[0].userId).toBe(VIEWER);
+    expect(rows[0].type).toBe("mentioned");
+    expect(rows[0].organizationId).toBe(ORG);
+  });
+
+  test("addComment only notifies users newly mentioned in THAT reply, not the thread's merged history", async () => {
+    const t = makeT();
+    await seed(t);
+    const threadId = await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "start", createdBy: MEMBER, createdByName: "M",
+      mentionUserIds: [VIEWER],
+    });
+    expect((await t.run(async (ctx) => ctx.db.query("notifications").collect())).length).toBe(1);
+    // Reply mentions VIEWER again — a second, distinct comment, so it earns its own
+    // notification; it must not re-scan the thread's cumulative mentionUserIds.
+    await t.withIdentity(asMember).mutation(api.collaboration.addComment, {
+      orgId: ORG, threadId: threadId as string, body: "reply @Vic", authorId: MEMBER, authorName: "M", mentionUserIds: [VIEWER],
+    });
+    const rows = await t.run(async (ctx) => ctx.db.query("notifications").collect());
+    expect(rows.length).toBe(2);
+    expect(rows.every((r) => r.userId === VIEWER)).toBe(true);
+    expect(new Set(rows.map((r) => r.dedupeKey)).size).toBe(2); // distinct comments → distinct dedupe keys
+  });
+
+  test("a rejected comment write leaves no notification behind — commit or nothing, atomically", async () => {
+    const t = makeT();
+    await seed(t);
+    const threadId = await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "start", createdBy: MEMBER, createdByName: "M",
+    });
+    await t.withIdentity(asMember).mutation(api.collaboration.resolveThread, { orgId: ORG, threadId: threadId as string, resolvedBy: MEMBER });
+    // A reply mentioning VIEWER on a RESOLVED thread is rejected before any write happens.
+    await expect(
+      t.withIdentity(asMember).mutation(api.collaboration.addComment, {
+        orgId: ORG, threadId: threadId as string, body: "late @Vic", authorId: MEMBER, authorName: "M", mentionUserIds: [VIEWER],
+      }),
+    ).rejects.toThrow();
+    expect(await t.run(async (ctx) => ctx.db.query("notifications").collect())).toEqual([]);
+  });
+});
+
+// #1245 (Phase 3) — activityEvents' denormalised clientId/contactId, the
+// index key the client timeline read model relies on.
+describe("recordActivity stamps clientId/contactId (#1245)", () => {
+  test("a comment on a client entity stamps clientId = the entity itself", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run((ctx) => ctx.db.insert("clients", { id: "cl1", organizationId: ORG, name: "Acme" }));
+    await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "client", entityId: "cl1", firstComment: "hello", createdBy: MEMBER, createdByName: "M",
+    });
+    const events = await t.run((ctx) =>
+      ctx.db.query("activityEvents").withIndex("by_orgId_clientId_createdAt", (q) => q.eq("orgId", ORG).eq("clientId", "cl1")).collect(),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].entityType).toBe("client");
+  });
+
+  test("a comment on a project resolves clientId from the project's own clientId field", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "cl1", organizationId: ORG, name: "Acme" });
+      await ctx.db.insert("projects", { id: PROJECT, organizationId: ORG, projectNumber: "P1", name: "Gala", clientId: "cl1", isTemplate: false });
+    });
+    await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "hello", createdBy: MEMBER, createdByName: "M",
+    });
+    const events = await t.run((ctx) =>
+      ctx.db.query("activityEvents").withIndex("by_orgId_clientId_createdAt", (q) => q.eq("orgId", ORG).eq("clientId", "cl1")).collect(),
+    );
+    expect(events).toHaveLength(1);
+  });
+
+  test("a project with no client leaves clientId unset (not a write failure)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run((ctx) => ctx.db.insert("projects", { id: PROJECT, organizationId: ORG, projectNumber: "P1", name: "Gala", isTemplate: false }));
+    const threadId = await t.withIdentity(asMember).mutation(api.collaboration.createThread, {
+      orgId: ORG, entityType: "project", entityId: PROJECT, firstComment: "hello", createdBy: MEMBER, createdByName: "M",
+    });
+    expect(threadId).toBeTruthy();
+    const events = await t.run((ctx) =>
+      ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", PROJECT)).collect(),
+    );
+    expect(events[0].clientId).toBeUndefined();
+  });
+});

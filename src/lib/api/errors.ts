@@ -6,8 +6,8 @@ import { AgentTokenError } from "./agent-token";
  * The API/MCP error envelope (docs/designs/api-mcp-reimplementation.md §10).
  *
  * This is a MAPPING, not a re-invention. The Convex guards already throw
- * `ConvexError` with stable, meaningful codes — `PROJECT_LOCKED`,
- * `FINANCIALS_LOCKED`, `JUSTIFICATION_REQUIRED`, `BULK_TOO_LARGE`, `NOT_FOUND`,
+ * `ConvexError` with stable, meaningful codes — `PRICING_LOCKED`,
+ * `BULK_TOO_LARGE`, `NOT_FOUND`,
  * `RateLimited`, … — because the browser branches on them today. Inventing a
  * parallel API vocabulary would be a second copy of a business fact (R-3.1) and
  * would drift the moment a guard changed. So the envelope adds only what a
@@ -49,7 +49,7 @@ type ErrorCategory =
   | "internal";
 
 interface ApiErrorRecovery {
-  /** A stable machine token naming the next step (`open_unlock_session`, …). */
+  /** A stable machine token naming the next step (`unlock_pricing`, …). */
   action: string;
   /** One human sentence an agent can surface to its operator verbatim. */
   hint: string;
@@ -155,42 +155,28 @@ const CODE_SPECS: Record<string, CodeSpec> = {
       hint: "This read is not exposed to API keys yet. `list_operations` shows what is.",
     },
   },
-  FORBIDDEN_HARD_LOCK_OVERRIDE: {
+  // #1230 — the renamed `isHardLockOverrideAllowed` (D42's `canUnlockPricing`).
+  FORBIDDEN_UNLOCK_PRICING: {
     category: "permission",
     retryable: false,
     status: 403,
     recovery: {
       action: "escalate_to_manager",
-      hint: "Only an org admin/owner or an assigned project manager can act inside a full unlock session.",
+      hint: "Only an org admin/owner/manager or an assigned project manager can clear the pricing lock.",
     },
   },
 
   // ── gates ─────────────────────────────────────────────────────────────────
-  PROJECT_LOCKED: {
-    category: "gate",
-    retryable: false,
-    status: 409,
-    recovery: {
-      action: "open_unlock_session",
-      hint: "The project is completed and hard-locked. A manager must open a FULL unlock session first.",
-    },
-  },
-  FINANCIALS_LOCKED: {
-    category: "gate",
-    retryable: false,
-    status: 409,
-    recovery: {
-      action: "open_unlock_session",
-      hint: "A manager must open an unlock session on the project's Financials tab before money fields can change.",
-    },
-  },
-  JUSTIFICATION_REQUIRED: {
+  // #1230 — replaces the deleted PROJECT_LOCKED/FINANCIALS_LOCKED/
+  // JUSTIFICATION_REQUIRED trio: the whole 4-tier lock system collapsed to one
+  // `projects.pricingLocked` boolean and one rejection code.
+  PRICING_LOCKED: {
     category: "gate",
     retryable: true,
     status: 409,
     recovery: {
-      action: "retry_with_justification",
-      hint: "Re-send the same call with a `justification` of at least 10 characters explaining the change.",
+      action: "unlock_pricing",
+      hint: "This project's pricing is locked. An admin/owner/manager or the project's PM can clear it (unlock_pricing, danger:high, needs confirm:true).",
     },
   },
   BLOCKING_COMMENTS: {

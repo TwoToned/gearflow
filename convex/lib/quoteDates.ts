@@ -106,6 +106,24 @@ export function startOfDayInTimezone(instantMs: number, timezone?: string): numb
   return zonedWallClockToUtc(parts, { hour: 0, minute: 0, second: 0, ms: 0 }, timezone);
 }
 
+/**
+ * Start of the org-local day `days` BUSINESS days after the day `instantMs`
+ * falls on, in `timezone` (follow-up automation, docs/designs/follow-up-automation.md
+ * §8.4). Weekends (Sat/Sun) are skipped; public holidays are not (v1). `days`
+ * of 0 returns the start of the same day, and a weekend start rolls forward
+ * from that day like any other.
+ */
+export function addBusinessDaysInTimezone(instantMs: number, days: number, timezone?: string): number {
+  let parts = datePartsInTimezone(new Date(instantMs), timezone);
+  let remaining = Math.max(0, Math.floor(days));
+  while (remaining > 0) {
+    parts = addCalendarDays(parts, 1);
+    const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) remaining -= 1;
+  }
+  return zonedWallClockToUtc(parts, { hour: 0, minute: 0, second: 0, ms: 0 }, timezone);
+}
+
 /** Last instant (23:59:59.999 local) of the calendar day `instantMs` falls on
  *  in `timezone` — a quote stays valid through the whole of its final day. */
 export function endOfDayInTimezone(instantMs: number, timezone?: string): number {

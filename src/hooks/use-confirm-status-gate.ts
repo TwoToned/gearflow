@@ -22,40 +22,46 @@ export interface ConfirmImpact {
  * disables it. If the preview itself fails (permissions edge case, network),
  * fails OPEN (proceeds) rather than blocking a real status change on an
  * advisory check.
+ *
+ * #1244 — `projectId`/`currentStatus` moved from hook-creation time to CALL
+ * time (`requestStatusChange(projectId, currentStatus, nextStatus)`), so ONE
+ * hook instance can serve many projects — the revived project board
+ * (`project-board.tsx`) previews a drop on whichever card is being dragged,
+ * not a single project fixed for the component's whole lifetime. The
+ * project detail page (still one project per page) now passes its own
+ * `id`/`project.status` on every call instead of once at the top.
  */
 export function useConfirmStatusGate(
   orgId: string | undefined,
-  projectId: string,
-  currentStatus: string | undefined,
-  onProceed: (nextStatus: string) => void,
+  onProceed: (projectId: string, nextStatus: string) => void,
 ) {
   const convex = useConvex();
   const [checking, setChecking] = useState(false);
-  const [pending, setPending] = useState<{ status: string; impact: ConfirmImpact } | null>(null);
+  const [pending, setPending] = useState<{ projectId: string; status: string; impact: ConfirmImpact } | null>(null);
 
-  const requestStatusChange = async (nextStatus: string) => {
+  const requestStatusChange = async (projectId: string, currentStatus: string | undefined, nextStatus: string) => {
     const isNewConfirmation = nextStatus === "CONFIRMED" && currentStatus !== "CONFIRMED";
     if (!isNewConfirmation || !orgId) {
-      onProceed(nextStatus);
+      onProceed(projectId, nextStatus);
       return;
     }
     setChecking(true);
     try {
       const impact = await convex.query(api.overbookingBoard.confirmImpact, { orgId, projectId });
       if (impact.hardOverbookingModelCount > 0 || impact.unconfirmedCrewCount > 0) {
-        setPending({ status: nextStatus, impact });
+        setPending({ projectId, status: nextStatus, impact });
       } else {
-        onProceed(nextStatus);
+        onProceed(projectId, nextStatus);
       }
     } catch {
-      onProceed(nextStatus);
+      onProceed(projectId, nextStatus);
     } finally {
       setChecking(false);
     }
   };
 
   const confirmPending = () => {
-    if (pending) onProceed(pending.status);
+    if (pending) onProceed(pending.projectId, pending.status);
     setPending(null);
   };
   const cancelPending = () => setPending(null);

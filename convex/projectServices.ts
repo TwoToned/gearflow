@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { resolveLiveVersionIdForProject, resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for ProjectService (Convex table "projectServices"). GENERATED — Phase 2/5.
@@ -35,14 +36,16 @@ export const getById = query({
 });
 
 export const listByProject = query({
-  args: { projectId: v.string(), orgId: v.string() },
-  handler: async (ctx, { projectId, orgId }) => {
+  // #1228: optional versionId, defaulting to the project's live version.
+  args: { projectId: v.string(), orgId: v.string(), versionId: v.optional(v.string()) },
+  handler: async (ctx, { projectId, orgId, versionId }) => {
     await requireOrgReadFor(ctx, orgId, "project");
-    // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
-    return (await ctx.db
-      .query("projectServices")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect()).filter((r) => r.organizationId === orgId);
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) return [];
+    // by_versionId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    return (await versionRows(ctx, "projectServices", resolveVersionId(project, versionId))).filter(
+      (r) => r.organizationId === orgId,
+    );
   },
 });
 
@@ -81,12 +84,16 @@ export const create = mutation({
     crewCountRequired: v.optional(v.number()),
     crewRoleId: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
+    // #1228 — optional on this legacy service-only mirror mutation too.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("projectServices", args);
+    const versionId = args.versionId ?? (await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId));
+    return await ctx.db.insert("projectServices", { ...args, versionId, lineageId: args.lineageId ?? args.id });
   },
 });
 
@@ -125,6 +132,8 @@ export const createIfMissing = mutation({
     crewCountRequired: v.optional(v.number()),
     crewRoleId: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
@@ -132,7 +141,8 @@ export const createIfMissing = mutation({
     await requireService(ctx);
     const existing = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
-    const _id = await ctx.db.insert("projectServices", args);
+    const versionId = args.versionId ?? (await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId));
+    const _id = await ctx.db.insert("projectServices", { ...args, versionId, lineageId: args.lineageId ?? args.id });
     return { _id, created: true };
   },
 });

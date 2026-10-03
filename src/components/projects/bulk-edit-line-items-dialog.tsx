@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +34,19 @@ const PRICING_LABELS: Record<string, string> = {
 };
 
 type PricingType = NonNullable<BulkLineItemPatch["pricingType"]>;
+
+/** Split out of `handleSave` below to keep its own cyclomatic complexity down (R-3.6). */
+function resolveBulkDiscount(mode: DiscountMode, raw: string): BulkLineItemPatch["discount"] {
+  const value = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(value) || value <= 0) return null;
+  return { mode, value };
+}
+
+/** Split out of `handleSave` below to keep its own cyclomatic complexity down (R-3.6). */
+function resolveBulkTaxRate(raw: string): BulkLineItemPatch["taxRate"] {
+  const value = Number(raw);
+  return raw.trim() === "" || !Number.isFinite(value) ? null : value;
+}
 
 /**
  * Bulk-edit the shared fields of many selected line items at once.
@@ -73,6 +87,11 @@ export function BulkEditLineItemsDialog({
   const [discount, setDiscount] = React.useState("");
   const [discountMode, setDiscountMode] = React.useState<DiscountMode>("$");
 
+  // T3 (#1091, docs/designs/tax-model.md §3) — per-line tax rate override,
+  // bulk-settable like discount above.
+  const [taxRateOn, setTaxRateOn] = React.useState(false);
+  const [taxRate, setTaxRate] = React.useState("");
+
   const [notesOn, setNotesOn] = React.useState(false);
   const [notes, setNotes] = React.useState("");
 
@@ -87,6 +106,8 @@ export function BulkEditLineItemsDialog({
       setDiscountOn(false);
       setDiscount("");
       setDiscountMode("$");
+      setTaxRateOn(false);
+      setTaxRate("");
       setNotesOn(false);
       setNotes("");
       setOptionalOn(false);
@@ -94,18 +115,13 @@ export function BulkEditLineItemsDialog({
     }
   }, [open]);
 
-  const anyEnabled = pricingOn || discountOn || notesOn || optionalOn;
+  const anyEnabled = pricingOn || discountOn || taxRateOn || notesOn || optionalOn;
 
   const handleSave = () => {
     const patch: BulkLineItemPatch = {};
     if (pricingOn) patch.pricingType = pricingType;
-    if (discountOn) {
-      const value = Number(discount);
-      patch.discount =
-        discount.trim() === "" || !Number.isFinite(value) || value <= 0
-          ? null
-          : { mode: discountMode, value };
-    }
+    if (discountOn) patch.discount = resolveBulkDiscount(discountMode, discount);
+    if (taxRateOn) patch.taxRate = resolveBulkTaxRate(taxRate);
     if (notesOn) patch.notes = notes.trim() === "" ? null : notes;
     if (optionalOn) patch.isOptional = isOptional;
     onSubmit(patch);
@@ -194,6 +210,34 @@ export function BulkEditLineItemsDialog({
               </div>
             </div>
           </LockedField>
+
+          {/* Tax rate — T3 (#1091, docs/designs/tax-model.md §3) */}
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="bulk-tax-rate-on"
+              checked={taxRateOn}
+              onCheckedChange={(v: boolean | "indeterminate") => setTaxRateOn(v === true)}
+              className="mt-1"
+            />
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="bulk-tax-rate">Tax rate override</Label>
+              <Input
+                id="bulk-tax-rate"
+                type="number"
+                step="0.01"
+                min={0}
+                max={100}
+                placeholder="Inherit"
+                value={taxRate}
+                onChange={(e) => {
+                  setTaxRate(e.target.value);
+                  setTaxRateOn(true);
+                }}
+                disabled={!taxRateOn}
+              />
+              <p className="text-caption text-muted">Clears the override (inherits the project&apos;s rate) when left blank.</p>
+            </div>
+          </div>
 
           {/* Notes */}
           <div className="flex items-start gap-3">

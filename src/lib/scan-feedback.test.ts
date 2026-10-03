@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   playScanFeedback,
+  playScanHaptic,
   setScanFeedbackContextFactory,
   SCAN_FEEDBACK_TONES,
+  SCAN_FEEDBACK_HAPTICS,
   type AudioContextFactory,
+  type ScanFeedbackKind,
 } from "@/lib/scan-feedback";
 
 /**
@@ -120,6 +123,26 @@ describe("playScanFeedback", () => {
     expect(SCAN_FEEDBACK_TONES.error).toEqual({ frequency: 300, durationMs: 400 });
   });
 
+  it("plays capture as the shortest and highest of the set", () => {
+    // `capture` is the camera's read-tick, fired immediately before the caller
+    // plays one of the four verdicts. If it were long or low it would collide
+    // with the verdict and the pair would read as two competing opinions
+    // instead of tick-then-answer.
+    const capture = SCAN_FEEDBACK_TONES.capture;
+    const verdicts = [
+      SCAN_FEEDBACK_TONES.success,
+      SCAN_FEEDBACK_TONES.error,
+      SCAN_FEEDBACK_TONES.exception,
+      SCAN_FEEDBACK_TONES.info,
+    ];
+    for (const v of verdicts) {
+      expect(capture.durationMs).toBeLessThan(v.durationMs);
+      expect(capture.frequency).toBeGreaterThan(v.frequency);
+    }
+    // Single blip — a double would muddy the boundary with `exception`.
+    expect(capture.secondBlipGapMs).toBeUndefined();
+  });
+
   it("plays info at 600Hz / 80ms as a single blip", () => {
     const fake = createFakeAudioContext();
     setScanFeedbackContextFactory(() => fake.ctx);
@@ -195,5 +218,56 @@ describe("playScanFeedback", () => {
     playScanFeedback("success");
 
     expect(created).toBe(2);
+  });
+});
+
+describe("playScanHaptic", () => {
+  let vibrateMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vibrateMock = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "vibrate", {
+      value: vibrateMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "vibrate");
+  });
+
+  it("calls navigator.vibrate with the mapped pattern for every kind", () => {
+    (Object.keys(SCAN_FEEDBACK_HAPTICS) as ScanFeedbackKind[]).forEach((kind) => {
+      vibrateMock.mockClear();
+      playScanHaptic(kind);
+      expect(vibrateMock).toHaveBeenCalledTimes(1);
+      expect(vibrateMock).toHaveBeenCalledWith(SCAN_FEEDBACK_HAPTICS[kind]);
+    });
+  });
+
+  it("swallows a throwing navigator.vibrate instead of throwing", () => {
+    Object.defineProperty(navigator, "vibrate", {
+      value: () => {
+        throw new Error("boom");
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    expect(() => playScanHaptic("success")).not.toThrow();
+  });
+
+  it("is a no-op when navigator.vibrate is missing (e.g. iOS Safari)", () => {
+    Reflect.deleteProperty(navigator, "vibrate");
+    expect(() => playScanHaptic("success")).not.toThrow();
+  });
+});
+
+describe("scan feedback tone/haptic parity", () => {
+  it("every ScanFeedbackKind has both a tone and a haptic pattern", () => {
+    const toneKinds = Object.keys(SCAN_FEEDBACK_TONES).sort();
+    const hapticKinds = Object.keys(SCAN_FEEDBACK_HAPTICS).sort();
+    expect(hapticKinds).toEqual(toneKinds);
   });
 });

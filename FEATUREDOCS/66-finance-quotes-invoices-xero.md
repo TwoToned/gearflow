@@ -2,6 +2,23 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-31 (review quarterly — POLICY.md R-5.5)_
 
+> **#1160** — sending a quote now also advances the project to `QUOTED` by
+> itself (org-configurable, on by default). `sendNative` returns
+> `autoStatusChange` when it acted and the pre-#1160 `offerStatusChange` only
+> when the org opted out, so the two are never both set. Accept/decline are
+> unchanged: `CONFIRMED`/`CANCELLED` stay offers. See
+> [76 — Project Status Automation](./76-project-status-automation.md).
+
+> **#1236** — the finance verbs now drive the lifecycle. Accepting a quote or
+> issuing an invoice moves the project to the new `AWAITING_PAYMENT` status;
+> recording a payment that settles an invoice **in full** moves it to
+> `CONFIRMED`. `markAcceptedNative` reports `autoStatusChange` when it acted and
+> keeps the old `offerStatusChange: "CONFIRMED"` only for an opted-out org.
+> "Deposit invoice sent" and "deposit paid" are NOT statuses — they are derived
+> from these very rows. See
+> [77 — The Money Phase](./77-money-phase-lifecycle.md).
+
+
 WS1 of #934 (#940) — the finance model. **RVLT Flow owns quote + invoice
 generation; Xero owns the ledger, payment collection, and reconciliation.**
 This reverses the earlier "no Flow-side finance" stance recorded in
@@ -27,10 +44,12 @@ Project (recalc-owned pricing) → Quote revision (snapshot, versioned) → PDF
   (the ONE numbering moment — drafts stay unnumbered). Immutable once
   `ISSUED` — a correction is `VOID` + reissue, or a `CREDIT` invoice.
   `paymentStatus` (`UNPAID | PARTIALLY_PAID | PAID`) and `amountPaid` are
-  DERIVED, written by `paymentsWrites.ts` `recordNative`/`voidNative` (#1055)
-  from this invoice's own non-voided `payments` rows — not by a Xero poll
-  (that phase-2 idea was never built — see "Deferred" below, which now only
-  covers Xero-side payment reconciliation, not Flow-recorded payments).
+  DERIVED by `paymentsWrites.recomputeInvoicePaymentState` from this invoice's
+  own non-voided `payments` rows (#1055) **and** the invoice-level state the
+  Xero payment sync reads back (`xeroStatus`, `xeroAmountPaid`,
+  `xeroAmountCredited`, `xeroAmountDue` — FEATUREDOCS/82 "Xero payment sync"):
+  paid = max(Flow paid, Xero paid), so one payment recorded in both counts
+  once; Xero `PAID`, or paid + credited ≥ total, reads `PAID`.
 - **InvoiceLine** (`invoiceLines` table) — snapshot rows under an invoice.
   `PARENT_JOIN` for org-export (no `organizationId` column — joined via
   `invoiceId` into the already org-scoped `invoices` row, same pattern as
@@ -119,6 +138,133 @@ showed the whole project's total/breakdown regardless of kind. See
 FEATUREDOCS/13's "`invoice` rendering is keyed to a SPECIFIC invoice" for the
 fix (`invoiceId` threaded through `generatePdf`/`buildDocumentData`,
 `convex/financeArtifacts.ts invoiceArtifactContext`).
+
+### Invoice lines are tax-EXCLUSIVE: `sum(lineTotal) === the taxable base`
+
+Every invoice kind holds one invariant: **the lines add up to the amount Xero
+charges tax on** — the invoice's TAXABLE BASE, `total - taxAmount` — with
+`taxAmount` sitting on top of it.
+
+Deliberately not `subtotal`. For `DEPOSIT`/`BALANCE`/`CREDIT` the two are the
+same number by construction, but for a `FULL` invoice `subtotal` is the
+**pre-discount** project subtotal: `recalc.ts` applies `discountPercent` after
+summing the rows (`taxableAmount = subtotal - discountAmount`) and `invoices`
+has no discount column, so on a discounted project `subtotal + taxAmount ≠
+total` on the row itself. `assertLinesReconcileWithTaxableBase`
+(`src/server/xero.ts`) holds the lines against the taxable base for that
+reason — see "The project discount" below for what checking `subtotal` would
+have waved through.
+
+**Live bug fixed (reported 2026-09-15 against INV-260901).** `DEPOSIT`/`BALANCE`
+(`createNative`) and `CREDIT` (`createCreditNative`) wrote their single summary
+line at the tax-**inclusive** `total` instead of the ex-tax `subtotal`. Nothing
+threw; two things went wrong quietly:
+
+- **Flow's own PDF contradicted itself** — a deposit invoice printed a `$330.00`
+  line above a `$300.00` Subtotal, with `$30.00` GST and a `$330.00` Total. The
+  line simply didn't reconcile with the subtotal beneath it.
+- **The Xero push overbilled by the tax rate.** Xero's `LineAmount` is
+  tax-exclusive, so it added 10% GST on top of an already-inclusive figure: the
+  same invoice posted to Xero as **$363.00 with $33.00 GST**, against a Flow
+  invoice reading **$330.00 with $30.00 GST**.
+
+The deposit **basis** is unchanged — still a percentage (or a dollar amount) of
+the tax-**inclusive** project total, which is what an operator means by "25%
+deposit", and still what the description prints (`Deposit (25% of project
+total)`, `Deposit ($550.00)`). Only the stored line is ex-tax, because that is
+what a line amount means everywhere else in the system.
+
+Two structural guards now stand behind it, because this class of defect is
+silent by nature — the numbers are all plausible, they just describe different
+tax bases:
+
+1. `upsertXeroDraftInvoice` declares **`LineAmountTypes: "Exclusive"`**
+   explicitly rather than relying on Xero's default. The default happens to be
+   the right reading of Flow's data, but a vendor default is not where a
+   billing contract should live.
+2. `pushInvoiceToXero` calls `assertLinesReconcileWithTaxableBase` and
+   **refuses the push** when the lines and the invoice row disagree. A silent
+   10% overbill is worth failing a push over. Three details, each one an
+   adversarial-review catch on the first cut of this guard:
+   - It compares in **integer cents, exactly** — no tolerance. Every
+     contributing figure is already rounded to the cent before it is stored
+     (`computeLineTotal`, `recalc.ts`'s `round`, and `createNative`'s
+     `subtotal = total - taxAmount` splits), so a correctly-built invoice
+     lands on zero difference. A 1-cent tolerance guarded against dust that
+     cannot occur here while letting a real cent of overbill through.
+   - It runs **after** the connection check but **before** the contact block,
+     which creates or links a Xero contact and commits it onto the client row.
+     A rejection after that point would leave the Xero tenant and Flow both
+     mutated for a push that never happened.
+   - A rejection is recorded through `markXeroPushFailedNative` +
+     `logSyncEvent(... "FAILED")` like any Xero-side failure. Left to escape to
+     the outer catch it produced a toast and nothing else: the invoice kept its
+     previous `xeroSyncStatus` (`SYNCED` on a re-push) with no `lastSyncError`
+     and no sync-log entry.
+
+#### Two ways the invariant was already broken
+
+Enforcing it surfaced two pre-existing defects that had been silently mis-billing
+Xero for as long as the push has existed. Both are fixed here, because shipping
+the detector without them would have turned a silent underbill into an
+unpushable invoice.
+
+**A sub-hire line inside a PRICED group.** `recalc.ts`'s `subHireGroupedRevenue`
+counts it (it filters on `groupId != null && subHireId != null` with no
+priced-group exclusion — a sub-hire carries its own client charge independent of
+the host group's bundle price, pinned by `recalc.test.ts` "counts a sub-hire line
+placed inside a priced project group (issue #8)"), but `buildFinanceLines`
+dropped it with the rest of the priced group's members. The snapshot sat
+permanently below `projects.subtotal`, so Xero **under-billed** by the sub-hire's
+charge — and once the guard landed, every such invoice became unpushable with a
+"void and reissue" remedy that regenerates the same short lines.
+
+**The project discount.** `projects.discountPercent` reached neither the invoice
+row (no discount column) nor the snapshot, so the lines summed to the
+**pre-discount** figure. The Xero push sends them as tax-exclusive
+`LineAmount`s: a $1000 project at 10% that Flow issues at $990 arrived in Xero
+at **$1100** — a bigger overbill, in dollars and as a share of the bill, than
+the INV-260901 case that started this. `buildFinanceLines` now emits the
+discount as its own trailing negative line, so the lines land on the taxable
+base. Same reasoning for `createCreditNative`, which now negates the taxable
+base rather than `subtotal` — crediting the pre-discount figure would refund a
+discount the client never paid.
+
+Neither changes any PDF: `FULL` renders the live structured breakdown
+(`usesLiveBreakdown`) and `DEPOSIT`/`BALANCE` write their own summary line, so
+`invoiceLines` for a `FULL` invoice is read by the Xero push and nothing else.
+
+**Invoices drafted before this fix still carry the bad line.** They are not
+backfilled — an `ISSUED` invoice is immutable and its stored PDF may already be
+in the client's hands (see "A client-facing finance document is STORED BYTES").
+Guard 2 stops such an invoice from being pushed or re-pushed; the remedy, named
+in the error message, is **void and reissue**, which rebuilds the lines
+correctly. Already-pushed Xero invoices need correcting in Xero.
+
+### The deposit/balance rows on an invoice PDF describe THAT invoice
+
+Reported in the same report as the bug above, and the reason a deposit invoice
+"looked like the deposit was already paid": the PDF's `Deposit Paid` /
+`Balance Due` rows read the **live project's** `depositPaid` and `total`, no
+matter which invoice was being rendered. Issuing a `DEPOSIT` invoice recalcs
+the project (`recalcProjectTotals` step 6b sets `projects.depositPaid` to the
+sum of `ISSUED` `DEPOSIT` invoices), so the invoice **deducted itself from
+itself** — `Total $330.00` immediately above `Deposit Paid -$330.00` and a
+`Balance Due $990.00` lifted from the project's position, flatly contradicting
+the Total it sat under.
+
+`resolveInvoiceAmountDue` (`src/lib/pdfme/build-document-data.ts`) is now the
+single place that decision is made: when the render represents a **specific**
+invoice, the amount owed is that invoice's own `total` and the deposit row is
+suppressed — every kind is already netted correctly at creation time, so any
+deduction here is a double-count. The project-level fallback survives only for
+the watermarked DRAFT PREVIEW (`?type=invoice&preview=1`), which has no invoice
+row to speak for.
+
+That surviving row is also **relabelled "Deposit invoiced"**, matching the
+in-app financial summary (R-3.10): `projects.depositPaid` is derived from
+`ISSUED` `DEPOSIT` invoices, and Flow has no payment-collection signal at all —
+Xero owns that — so "paid" was never what the number meant.
 
 ## Quote revisions (#986 — Phase A of #985)
 
@@ -283,7 +429,7 @@ standing precedent).
 | **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. Restores the row this send superseded. The attached artifact is **retained, never deleted** — moved to `recalledPdfFileIds` and unlinked from `pdfFileId`, so a resend of the same revision is forced through a real render instead of `attachQuoteArtifact`'s "already attached" guard silently keeping the pre-recall bytes (#1027). |
 | **New version** (`newVersionNative`) | Increments `projects.revision` (and `liveRevision`, #1085) and inserts a `DRAFT` at the new number, after capturing the outgoing revision as a `VERSION_SAVED` snapshot. The previous live row is untouched until the new one sends. A draft carries `snapshot: null` — its figures are the project's live totals until it is sent. |
 | **Save version** (`projectVersionsWrites.saveVersionNative`, #1085) | The same "freeze and move `liveRevision` forward" shape as New version, but reachable from ANY live-revision state, including a never-sent draft. See the `liveRevision` section above. |
-| **Accept** (`markAcceptedNative`) | `SENT → ACCEPTED` + acceptance date + optional reference (PO number, email subject). An `EXPIRED` revision cannot be accepted without an explicit re-send. Unblocks `CONFIRMED`. |
+| **Accept** (`markAcceptedNative`) | `SENT`/`EXPIRED` → `ACCEPTED` + acceptance date + optional reference (PO number, email subject). Expiry is advisory (2026-09) — an `EXPIRED` revision can still be accepted as-is; re-sending is only needed to offer a NEW price. Unblocks `CONFIRMED`. |
 | **Decline** (`markDeclinedNative`) | `SENT`/`EXPIRED` → `DECLINED` + bounded reason. Offers `CANCELLED`, never forces it. |
 
 All five (and the Delete/Protect follow-ups below) take the standard 4-guard
@@ -449,6 +595,19 @@ uses the same component: Document + the one contextual "next step" action
 Delete draft/Void move into the menu via `invoiceRowMenuActions()`. Unit tests
 for the action-list logic: `quote-row-actions.test.ts`, `invoice-row-actions.test.ts`;
 smoke test for the shared menu: `row-actions-menu.smoke.test.tsx`.
+
+**Chase (#1225, Q2 of the QOL sweep)** — one more `standardQuoteRowActions()`
+entry, shown whenever `isHeldByClient` (a `SENT` or `EXPIRED` revision — the
+same condition that already gates Decline/Recall). Copies a follow-up summary
+to the clipboard: project number + version, subtotal/GST/total, the sent date,
+and days remaining (or days overdue if expired) — same grammar as
+`SendQuoteDialog`'s own `copySummary`, extracted here as the pure, testable
+`chaseSummary()` so the two can't drift in wording. **Flow still never emails
+the client itself** (decision 7 of #989, unchanged) — this hands the operator
+text for their own mail client, exactly like `copySummary` already does. See
+FEATUREDOCS/17 for the companion server-side nudge (`quote_expiring` bell +
+email) this pairs with — the bell tells the operator a quote needs chasing,
+this is what they paste once they open it.
 
 **Phase 4 additions (#1097, full story in `FEATUREDOCS/70`):** a "Make live"
 button next to any non-live revision with captured state (opens
@@ -825,7 +984,7 @@ bounded sections in `convex/financeOrg.ts`'s single `bundle` query:
 | Never sent | `DRAFT` revisions on active (non-template, non-`CANCELLED`) projects |
 | Confirmed but uninvoiced | Project status `CONFIRMED` or later (excluding `CANCELLED`) with zero `ISSUED` invoices |
 | Deposit due | Same CONFIRMED-or-later candidate set, client `paymentProfile === "DEPOSIT_BALANCE"`, no `ISSUED` `DEPOSIT` invoice — the per-project nudge chip (`project-finance-panel.tsx`) lifted to org scope |
-| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); the remaining gap is Xero-side payments Flow doesn't know about, since the Xero payment-status poll itself is still deferred (see "Deferred" below) |
+| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); Xero-side payments are read back at most hourly by the Xero payment sync (FEATUREDOCS/82) |
 
 ### Perf — bounded, not a per-project loop (the #942 lesson)
 
@@ -912,6 +1071,27 @@ through this engine.
   client-side `total * depositPercent / 100` math is replaced with a real
   "Invoicing" block (Deposit invoiced / Invoiced to date / Outstanding) fed
   by the derived fields above.
+
+## Category price rollup (FEATUREDOCS/74)
+
+A project category set to `pricingDisplay: "ROLLUP"` prints every one of its
+lines on a quote/invoice PDF with the money columns blank and ONE derived
+subtotal on the section header. `buildFinanceLines` mirrors that grouping:
+every line belonging to such a category folds into a single
+`sourceType: "CATEGORY"` snapshot line, so the document a client holds and the
+invoice they're billed from are grouped the same way.
+
+The fold is a REGROUPING, never a repricing — the rolled-up line totals the
+plain sum of the members it replaces, so the snapshot still sums to exactly
+the project totals `recalc.ts` already stored, and "rolling up" can never
+change what is billed. It sits where its first member would have appeared,
+carries `quantity: 1` (a quantity would imply a per-unit rate the category
+doesn't have), and absorbs per-item-revealed rows too — revealing a price is a
+display decision, and billing that row separately as well would double it.
+
+`resolveCategoryLineCode` (xeroPush.ts) codes the line: **category override →
+org default**, two levels rather than a group's three, because a
+`ProjectCategory` is per-project and has no org-level twin to inherit from.
 
 ## Lifecycle locks
 
@@ -1030,9 +1210,9 @@ line-item workflow; `resolveEquipmentLineCode` now branches `lineKind` on
 is unaffected either way (kits aren't sellable — see FEATUREDOCS/67 — so
 `isKitParent` and `type === "SALE"` never coincide).
 
-### Line amounts push `LineAmount`, never re-derived from Quantity × UnitAmount
+### Line amounts reconcile against Quantity × UnitAmount at the Xero boundary
 
-**Live bug fixed:** a discounted line's discount never reached Xero.
+**Live bug #1 (fixed):** a discounted line's discount never reached Xero.
 `pushInvoiceToXero` (`src/server/xero.ts`) used to send only `Quantity`/
 `UnitAmount` per line — the Xero `/Invoices` endpoint computes `LineAmount`
 itself as `Quantity × UnitAmount` when it isn't supplied, which knows nothing
@@ -1040,18 +1220,45 @@ about `projectLineItems.discount`/`projectGroups.discount` already netted
 into `invoiceLines.lineTotal` (`convex/lib/lineTotal.ts` `computeLineTotal` —
 `unitPrice · quantity · duration − discount`). A discounted (or multi-day
 `duration`-rated) line therefore posted to Xero at its pre-discount gross,
-overstating the client's actual charge.
+overstating the client's actual charge. The first fix populated
+`XeroInvoiceLineInput.lineAmount` from `lineTotal` and sent it as Xero's
+`LineAmount` alongside the unchanged `Quantity`/`UnitAmount` — on the
+(wrong) assumption that a supplied `LineAmount` overrides Xero's own calc.
 
-`XeroInvoiceLineInput.lineAmount` (`src/lib/xero-client.ts`) is now populated
-from the invoice line's own `lineTotal` and sent as Xero's `LineAmount` — an
-explicit override Xero accepts alongside `Quantity`/`UnitAmount`, so the
-posted total always matches Flow's already-resolved figure instead of being
-re-derived. `Quantity`/`UnitAmount` are still sent for Xero's own line
-display; `lineTotal` is the one number both a Flow document and the pushed
-Xero invoice now agree on (R-3.1 — no second, divergent total-calculation
-path). No schema change: `invoiceLines.lineTotal` already carried the correct
-net figure — the fix is purely "stop letting Xero recompute a number Flow
-already resolved," matching "Money is never hand-typed" project-wide.
+**Live bug #2 (fixed):** Xero does NOT treat a supplied `LineAmount` as an
+override. When `Quantity`, `UnitAmount`, and `LineAmount` are all present in
+one `POST /Invoices` line, Xero validates `LineAmount == Quantity ×
+UnitAmount` and rejects the whole push with a 400 ("The line total X does not
+match the expected line total Y") the moment they disagree — which they
+routinely do, since `lineTotal` is discount- and duration-adjusted while
+`quantity`/`unitPrice` on `invoiceLines` are the raw per-unit figures. This
+surfaced in production on the first duration- or discount-bearing line pushed
+after bug #1's fix shipped.
+
+`buildXeroLineItem` (`src/lib/xero-client.ts`, inside
+`upsertXeroDraftInvoice`) now reconciles the two at the wire-format boundary
+instead of hoping they already agree:
+
+- **`Quantity × UnitAmount == lineTotal`** (the common single-day,
+  undiscounted case) — send all three as-is, nothing to reconcile.
+- **`lineTotal` is LOWER** (a discount) — keep `Quantity`/`UnitAmount` as the
+  gross rate and send the gap as Xero's own `DiscountAmount`, so Xero's
+  internal check (`Quantity × UnitAmount − DiscountAmount`) lands on the same
+  figure Flow is asserting via `LineAmount`.
+- **`lineTotal` is HIGHER** (duration-multiplied, e.g. a 3-day hire) — Xero
+  has no "negative discount" field, so the line collapses to `Quantity: 1`,
+  `UnitAmount: lineTotal`; `Quantity × UnitAmount` then already equals
+  `LineAmount` with nothing left to reconcile. This changes what the
+  Quantity column shows in Xero's own ledger view, but Xero is
+  bookkeeping-only here — the client-facing document is Flow's own PDF (see
+  "A client-facing finance document is STORED BYTES" in CLAUDE.md), which is
+  unaffected.
+
+`lineTotal` is still the one number both a Flow document and the pushed Xero
+invoice agree on (R-3.1 — no second, divergent total-calculation path); the
+reconciliation only decides HOW that agreement is expressed in Xero's own
+line-item shape. No schema change: `invoiceLines.lineTotal` already carried
+the correct net figure.
 
 ### Per-entity coding override UI
 
@@ -1418,7 +1625,8 @@ duplicated here.
   CONFIRMED, finance-locked project raising no unlock-session requirement).
   #986 added the four revision invariants,
   supersede-on-send-not-on-draft, the recall round trip (including restoring
-  the superseded predecessor), derived-`EXPIRED` blocking acceptance, and the
+  the superseded predecessor), derived-`EXPIRED` still being acceptable
+  (2026-09 — expiry is advisory, not a hard stop), and the
   manager-can-send-but-not-recall / PM-can-recall RBAC split.
 - `convex/quoteDates.test.ts` — pins the `convex/lib` ↔ `src/lib` mirror over a
   timezone × instant × validity matrix, and asserts `validUntil` lands on the
@@ -1480,17 +1688,11 @@ duplicated here.
 
 ## Deferred (not built in this PR)
 
-- **Xero payment-status poll.** Flow-recorded payments (#1055,
-  `paymentsWrites.ts`) now make `invoices.paymentStatus`/`amountPaid` real for
-  money collected and entered in Flow — what's still deferred is a cron that
-  polls Xero itself for payments collected/reconciled on the Xero side (e.g. a
-  client paying an invoice Flow pushed) and reflects those back. `convex/
-  scheduledJobs.ts`'s `ENABLE_CONVEX_CRONS` off-by-default discipline
-  (FEATUREDOCS in that file) is the pattern to follow when this lands; it
-  would need to merge with, not overwrite, Flow-recorded payments (e.g. sum
-  both sources, or treat a Xero-side reconciliation as its own `payments` row
-  with a distinguishing `method`/source marker) rather than assuming Xero is
-  the only payment source once built.
+- ~~**Xero payment-status poll.**~~ Built by follow-up automation phase 2
+  (FEATUREDOCS/82): `src/server/xero-payment-sync.ts` on the notification
+  cron, invoice-level (Status / AmountPaid / AmountCredited / AmountDue) rather
+  than Payments, merged with Flow-recorded payments as max(Flow, Xero) — never
+  overwriting them.
 - **Project financial tab "invoiced/paid/outstanding" summary** beyond what
   `financial-summary.tsx`'s new Invoicing block already shows.
 - **Live Xero verification — partial.** The OAuth connect/callback round trip

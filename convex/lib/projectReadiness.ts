@@ -193,6 +193,54 @@ export interface ReadinessPricingSection {
   unpricedCount: number;
 }
 
+/**
+ * #1296 build plan phase 4 — a top-level equipment line counts as "planned"
+ * once either the PM has set a planned container (`plannedContainerId`, the
+ * Packing tab's own intent field) OR any of its units has actually been
+ * packed into a real container (`containerId`) — matching
+ * `resolveItemContainerId`'s "actual overrides plan" reading elsewhere. A
+ * line whose OWN kind is a container (`isContainerLineItem`) is a box, not
+ * gear to plan, and is excluded — same reasoning `equipmentItems`'s filter
+ * uses on the warehouse page.
+ */
+export interface PackingLineInput {
+  id: string;
+  projectId: string;
+  type?: string | null;
+  status?: string | null;
+  isKitChild?: boolean | null;
+  isContainerLineItem?: boolean | null;
+  plannedContainerId?: string | null;
+}
+
+export interface PackingUnitInput {
+  lineItemId: string;
+  containerId?: string | null;
+}
+
+export interface ReadinessPackingSection {
+  totalCount: number;
+  notPlannedCount: number;
+}
+
+function isPlannableEquipmentLine(li: PackingLineInput, projectId: string): boolean {
+  if (li.projectId !== projectId) return false;
+  if (li.type !== "EQUIPMENT") return false;
+  if (li.isKitChild || li.isContainerLineItem) return false;
+  return (li.status ?? "") !== "CANCELLED";
+}
+
+export function computeProjectPackingReadiness(
+  projectId: string,
+  lines: PackingLineInput[],
+  units: PackingUnitInput[],
+): ReadinessPackingSection {
+  const packedLineIds = new Set(units.filter((u) => u.containerId != null).map((u) => u.lineItemId));
+  const plannable = lines.filter((li) => isPlannableEquipmentLine(li, projectId));
+  const notPlanned = plannable.filter((li) => li.plannedContainerId == null && !packedLineIds.has(li.id));
+  return { totalCount: plannable.length, notPlannedCount: notPlanned.length };
+}
+
 export interface PricingLineInput {
   id: string;
   projectId: string;

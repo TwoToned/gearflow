@@ -29,6 +29,10 @@ import {
   reconstructScope,
   reconstructCategories,
 } from "@/lib/project-line-item-tree-read";
+import {
+  type CategoryPricingDisplay,
+  toCategoryPricingDisplay,
+} from "@/lib/category-pricing-display";
 
 type LineItemDoc = Doc<"projectLineItems">;
 type UnitDoc = Doc<"projectLineItemUnits">;
@@ -167,6 +171,20 @@ export interface MappedLineItem {
   discount: number | null;
   /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
   discountMode: "$" | "%" | null;
+  /** T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3. */
+  taxRate: number | null;
+  /** Category price rollup, per-item reveal — true when this line prints its
+   *  own price even inside a rolled-up category (absent on the row = false).
+   *  See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on a client-facing document (description +
+   *  quantity, never a price). Absent on the row = false.
+   *  See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs: boolean;
+  /** #1249 — excluded from revenue allocation / model ROI by the operator.
+   *  Absent on the row = included. See convex/lib/allocation.ts. */
+  excludeFromRoi: boolean;
   /** Set only when `type === "SALE"` — which stock pool the sale drew from. */
   saleMode: "NEW_STOCK" | "FROM_RENTAL_STOCK" | null;
   /** NEW_STOCK sale-item pick checklist timestamp — absent = to pick. */
@@ -200,6 +218,12 @@ export interface MappedLineItem {
   returnNotes: string | null;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** #1296 packing containers, D9 — the PM's planned container for this whole
+   *  line (Packing tab, phase 4). Null until a plan exists. */
+  plannedContainerId: string | null;
+  /** #1296 — set ONLY on a container's own line item (reverse lookup to the
+   *  `projectContainers` row this line IS, not one it's packed inside). */
+  containerId: string | null;
   isContainerLineItem: boolean;
   isCustomItem: boolean;
   returnStatus: string | null;
@@ -238,6 +262,10 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     duration: d.duration ?? 1,
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
+    taxRate: d.taxRate ?? null,
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
+    showInGroupOnDocs: d.showInGroupOnDocs ?? false,
+    excludeFromRoi: d.excludeFromRoi ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,
@@ -264,6 +292,8 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     returnNotes: d.returnNotes ?? null,
     prepStatus: d.prepStatus ?? null,
     prepContainer: d.prepContainer ?? null,
+    plannedContainerId: d.plannedContainerId ?? null,
+    containerId: d.containerId ?? null,
     isContainerLineItem: d.isContainerLineItem ?? false,
     isCustomItem: d.isCustomItem ?? false,
     returnStatus: d.returnStatus ?? null,
@@ -274,7 +304,12 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     subHireId: d.subHireId ?? null,
     subHireItemId: d.subHireItemId ?? null,
     subHireGroupId: d.subHireGroupId ?? null,
-    createdAt: msToDate(d.createdAt),
+    // `createdAt` is `v.optional` in the schema (older/backfilled rows can lack
+    // it) — fall back to Convex's own `_creationTime` (always present) so a
+    // consumer that needs a real "when was this line added" ordering (e.g. the
+    // FCFS overbooking allocation, overbooking-core.ts's `sumBookingsByModel`)
+    // never gets `null` for an otherwise-real row.
+    createdAt: msToDate(d.createdAt ?? d._creationTime),
     updatedAt: msToDate(d.updatedAt),
   };
 }
@@ -292,6 +327,9 @@ export interface MappedUnit {
   status: string;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** #1296 packing containers — the container this unit is actually packed
+   *  in (membership lives on the UNIT, never the line). Null = loose. */
+  containerId: string | null;
   checkedOutAt: Date | null;
   checkedOutById: string | null;
   returnedAt: Date | null;
@@ -318,6 +356,7 @@ export function mapUnitDoc(d: UnitDoc): MappedUnit {
     status: d.status ?? "CONFIRMED",
     prepStatus: d.prepStatus ?? null,
     prepContainer: d.prepContainer ?? null,
+    containerId: d.containerId ?? null,
     checkedOutAt: msToDate(d.checkedOutAt),
     checkedOutById: d.checkedOutById ?? null,
     returnedAt: msToDate(d.returnedAt),
@@ -335,6 +374,12 @@ export interface MappedCategory {
   organizationId: string;
   projectId: string;
   name: string;
+  /** Category price rollup — normalised to one of the two literals (absent
+   *  reads as `ITEMISED`). Drives the equipment tab's rollup badge and the
+   *  per-item reveal affordance. See src/lib/category-pricing-display.ts. */
+  pricingDisplay: CategoryPricingDisplay;
+  xeroAccountCode: string | null;
+  xeroTaxType: string | null;
   sortOrder: number;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -346,6 +391,9 @@ export function mapCategoryDoc(d: CategoryDoc): MappedCategory {
     organizationId: d.organizationId,
     projectId: d.projectId,
     name: d.name,
+    pricingDisplay: toCategoryPricingDisplay(d.pricingDisplay),
+    xeroAccountCode: orNull(d.xeroAccountCode),
+    xeroTaxType: orNull(d.xeroTaxType),
     sortOrder: d.sortOrder ?? 0,
     createdAt: msToDate(d.createdAt),
     updatedAt: msToDate(d.updatedAt),
@@ -364,6 +412,9 @@ export interface MappedGroup {
   discount: number | null;
   /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
   discountMode: "$" | "%" | null;
+  /** Category price rollup, per-item reveal — prints this group's own bundle
+   *  price even inside a rolled-up category. */
+  revealPriceInRollup: boolean;
   suggestedPrice: number | null;
   sortOrder: number;
   /** Mirrors `MappedLineItem.pricedUnderLock` — see that field's comment. */
@@ -386,6 +437,7 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     price: orNull(d.price),
     discount: orNull(d.discount),
     discountMode: orNull(d.discountMode),
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
     suggestedPrice: orNull(d.suggestedPrice),
     sortOrder: d.sortOrder ?? 0,
     pricedUnderLock: d.pricedUnderLock ?? false,

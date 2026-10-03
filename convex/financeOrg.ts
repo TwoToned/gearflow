@@ -207,9 +207,9 @@ function buildExpiring(
 
 /** Never sent: DRAFT revisions on active (non-template, non-cancelled)
  *  projects — work sitting unfinished. Scoped to each project's LIVE
- *  revision (#1085) — a non-live `DRAFT` (one `saveVersionNative` left
- *  behind: a saved-but-never-sent version, or a recalled one) is a version
- *  the operator deliberately moved past, not unfinished work. */
+ *  revision (#1085) — a non-live `DRAFT` (one left behind by a saved-but-
+ *  never-sent version, or a recalled one) is a version the operator
+ *  deliberately moved past, not unfinished work. */
 function buildNeverSent(
   draftQuotes: Doc<"quotes">[],
   projectDocsById: Map<string, Doc<"projects">>,
@@ -371,6 +371,44 @@ export const bundle = query({
 });
 
 /**
+ * The expiring-quote rows the notification pipeline nudges on (#1225, Q2).
+ * Reuses `buildExpiring` — the SAME predicate the `/finance` board's
+ * "Expiring" section already applies (R-3.1: the board and the notifier must
+ * never be able to disagree about what counts as expiring soon) — over a
+ * lighter read than the full bundle (no invoice/draft-quote scans, since the
+ * notifier only cares about live quotes).
+ */
+export const expiringForNotifications = query({
+  args: { orgId: v.string(), now: v.number() },
+  handler: async (ctx, { orgId, now }) => {
+    await requireOrgReadFor(ctx, orgId, "invoice");
+
+    const [sentRaw, publishedLegacyRaw] = await Promise.all([
+      fetchQuotesByRawStatus(ctx, orgId, "SENT"),
+      fetchQuotesByRawStatus(ctx, orgId, "PUBLISHED"),
+    ]);
+    const liveQuotes = [...sentRaw, ...publishedLegacyRaw];
+
+    const projectDocsById = new Map<string, Doc<"projects">>();
+    await fillReferencedProjects(ctx, orgId, projectDocsById, new Set(liveQuotes.map((q) => q.projectId)));
+    const clientsById = await fetchReferencedClients(ctx, orgId, projectDocsById);
+
+    return buildExpiring(liveQuotes, now, projectDocsById, clientsById)
+      .slice(0, SECTION_CAP)
+      .map((row) => ({
+        quoteId: row.quoteId,
+        projectId: row.project.id,
+        projectNumber: row.project.projectNumber,
+        clientName: row.project.clientName,
+        version: row.version,
+        validUntil: row.validUntil,
+        daysLeft: row.daysLeft,
+        total: row.total,
+      }));
+  },
+});
+
+/**
  * Cheap dashboard-chip counts — same bounded reads `bundle` uses, small
  * return shape, so the dashboard doesn't subscribe to every row just to show
  * a couple of numbers (mirrors `overbookingBoard.ts`'s `counts`).
@@ -399,4 +437,9 @@ export const agentOps: AgentOpsAnnotations = {
     mcpTier: 2,
   },
   counts: { summary: "Cheap counts for the six financeOrg.bundle sections, for a dashboard chip.", danger: "low", mcpTier: 3 },
+  expiringForNotifications: {
+    summary: "Quotes expiring within the notification window, for the quote_expiring bell/email pipeline (#1225).",
+    danger: "low",
+    mcpTier: 3,
+  },
 };

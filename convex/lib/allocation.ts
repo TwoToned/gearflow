@@ -36,6 +36,11 @@ export type AllocationBasisValue =
   // projectModelRevenues. Sale revenue lives in its own `project.saleRevenue`
   // bucket (convex/lib/recalc.ts), not per-model rental ROI.
   | "EXCLUDED_SALE"
+  // #1249 — the operator ticked "Exclude from ROI" on this line. Takes no share
+  // of any pool and never reaches projectModelRevenues. Its own label rather
+  // than NO_REVENUE so a report can tell a deliberate exclusion from "the pool
+  // happened to be $0".
+  | "EXCLUDED_MANUAL"
   | "NO_REVENUE";
 
 /** The `allocationBasis` values that represent revenue OUR capital earned. */
@@ -69,6 +74,12 @@ export interface AllocLine {
   isOptional?: boolean | null;
   isCustomItem?: boolean | null;
   isContainerLineItem?: boolean | null;
+  /**
+   * #1249 — the operator's explicit "this gear earned nothing" opt-out. The ONE
+   * thing that excludes a gear line from a split; a `lineTotal` of 0 no longer
+   * does (see `isRoiExcluded`).
+   */
+  excludeFromRoi?: boolean | null;
 }
 
 export interface AllocModel {
@@ -241,14 +252,34 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     Math.max(0, Math.round((amount ?? 0) * factor * 100));
   const out = new Map<string, LineAllocation>();
 
-  // An item explicitly priced at $0 is a freebie — it takes NO share of any split
-  // and never counts toward ROI. (A price-less item shows "—" / null, which is
-  // different: that one still earns via its rate or cost.) Pre-stamped so every
-  // participant filter and the child-fallback passes skip it cleanly.
-  const isFreebie = (l: AllocLine): boolean =>
-    l.lineTotal === 0 && !isInactive(l) && !isNonGear(l);
+  // #1249 — an item the operator has ticked "Exclude from ROI" on: it takes NO
+  // share of any split and never counts toward ROI. Pre-stamped so every
+  // participant filter and the child-fallback pass skips it cleanly.
+  //
+  // This used to be inferred from `lineTotal === 0`, which conflated two very
+  // different things. Inside a Project Group the BUNDLE price is the charge, so
+  // members are routinely left unpriced — and a blank price field parsed to $0
+  // rather than "—", so the gear inside a priced group silently reported $0 ROI.
+  // An explicit $0 is now treated exactly like an unpriced "—": it still earns
+  // via its rate/cost (see `subtreeWeight`, which already skips a non-positive
+  // price). Only this flag excludes, and only a human can set it.
+  //
+  // The flag only ever REMOVES a line the allocator would otherwise credit. It
+  // must not reach a line that is already excluded structurally, because there
+  // "excluded" means something different and stronger: a sub-hire line
+  // (`EXCLUDED_SUBHIRE`) earns nothing but still CONSUMES pool weight, so the
+  // owned gear beside it isn't over-credited. Letting the flag drop it from the
+  // split entirely would hand that weight to the owned gear — inflating real
+  // ROI. `patchNative` takes `set: v.any()` and this field is patchable, so the
+  // UI's `canExcludeFromRoi` gate is not the enforcement point; this is.
+  const isRoiExcluded = (l: AllocLine): boolean =>
+    l.excludeFromRoi === true &&
+    !isInactive(l) &&
+    !isNonGear(l) &&
+    l.subHireId == null &&
+    l.modelId != null;
   for (const l of lines) {
-    if (isFreebie(l)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
+    if (isRoiExcluded(l)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "EXCLUDED_MANUAL" });
   }
 
   const byId = new Map(lines.map((l) => [l.id, l]));
@@ -263,10 +294,10 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     else childrenOf.set(l.parentLineItemId, [l]);
   }
 
-  /** Children eligible to take a share of their parent's pool (freebies excluded). */
+  /** Children eligible to take a share of their parent's pool (opt-outs excluded). */
   const participantsOf = (l: AllocLine): AllocLine[] =>
     (childrenOf.get(l.id) ?? []).filter(
-      (c) => !isInactive(c) && !isNonGear(c) && !isFreebie(c),
+      (c) => !isInactive(c) && !isNonGear(c) && !isRoiExcluded(c),
     );
 
   const sortKey = (l: AllocLine): number => l.sortOrder ?? 0;
@@ -461,9 +492,9 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
   // grouped member's own lineTotal never reaches project revenue.
   for (const g of groups) {
     const inGroup = roots.filter((l) => l.groupId === g.id && !isInactive(l));
-    // Freebies ($0 items) are pre-stamped and take no share — the paying gear splits
-    // the whole pool between them.
-    const gear = inGroup.filter((l) => !isNonGear(l) && !isFreebie(l));
+    // Excluded items (#1249) are pre-stamped and take no share — the paying gear
+    // splits the whole pool between them.
+    const gear = inGroup.filter((l) => !isNonGear(l) && !isRoiExcluded(l));
     // A priced custom item inside a group is PART of the group's flat price, not an
     // extra on top (recalc bills the flat price only). So it takes its own set
     // amount straight off the pool and the owned gear splits what's left — a $1,800
@@ -509,7 +540,7 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
       gearPool = 0;
     }
 
-    // No paying gear (all freebies, or an empty group). Whatever the customs didn't
+    // No paying gear (all excluded, or an empty group). Whatever the customs didn't
     // consume is genuinely unattributable — nothing owned earned it — so it's left
     // off ROI. The group's price still bills; it just credits no model. (SUM(children)
     // == pool holds whenever there IS a paying participant.)
@@ -552,12 +583,12 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     if (!out.has(l.id)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
   }
 
-  // Freebies are ALWAYS $0 / excluded, no matter what a subtree pass stamped on the
-  // way through — e.g. a freebie nested under a sub-hire is first stamped with the
-  // sub-hire's audit value by the wholesale `stamp`. This final override is the
-  // single source of truth for "$0 means excluded."
+  // An excluded line is ALWAYS $0 / EXCLUDED_MANUAL, no matter what a subtree pass
+  // stamped on the way through — e.g. one nested under a sub-hire is first stamped
+  // with the sub-hire's audit value by the wholesale `stamp`. This final override is
+  // the single source of truth for "the operator excluded this line."
   for (const l of lines) {
-    if (isFreebie(l)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
+    if (isRoiExcluded(l)) out.set(l.id, { allocatedRevenue: 0, allocationBasis: "EXCLUDED_MANUAL" });
   }
 
   return out;

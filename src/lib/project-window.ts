@@ -43,3 +43,28 @@ export function getProjectWindow(p: ProjectWindowInput): ProjectWindow {
     end: p.projectEndDate ?? p.rentalEndDate ?? null,
   };
 }
+
+/** Date-typed convenience for callers holding Prisma-row-shaped dates (Date |
+ *  null) rather than raw epoch-ms — same resolution as {@link getProjectWindow},
+ *  wrapped so availability/overbooking call sites don't hand-roll the epoch
+ *  round-trip (and can't accidentally read rentalStartDate/rentalEndDate raw,
+ *  skipping the projectStartDate/projectEndDate override — see #941). */
+export interface ProjectWindowDates {
+  projectStartDate?: Date | null;
+  projectEndDate?: Date | null;
+  rentalStartDate?: Date | null;
+  rentalEndDate?: Date | null;
+}
+
+const toEpoch = (d: Date | null | undefined): number | null => (d ? d.getTime() : null);
+const epochToDate = (ms: number | null): Date | null => (ms != null ? new Date(ms) : null);
+
+export function getProjectWindowDates(p: ProjectWindowDates): { start: Date | null; end: Date | null } {
+  const { start, end } = getProjectWindow({
+    projectStartDate: toEpoch(p.projectStartDate),
+    projectEndDate: toEpoch(p.projectEndDate),
+    rentalStartDate: toEpoch(p.rentalStartDate),
+    rentalEndDate: toEpoch(p.rentalEndDate),
+  });
+  return { start: epochToDate(start), end: epochToDate(end) };
+}

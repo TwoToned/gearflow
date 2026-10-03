@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
+import { getProjectWindow } from "./lib/projectWindow";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
  * BROWSER-facing native replacement for the warehouse LANDING list
@@ -22,6 +24,12 @@ import { requireOrgReadFor } from "./lib/auth";
 // landing shows. Querying these via the by_organizationId_status composite index
 // keeps the composite bounded (active projects only, never the whole-org history).
 const WAREHOUSE_STATUSES = [
+  // #1236 — AWAITING_PAYMENT is in HARD_PROJECT_STATUSES (the gear is held from
+  // the moment the job is agreed), so it belongs on the warehouse landing too.
+  // Leaving it out stranded every org that reconciles payments in Xero rather
+  // than recording them in Flow: the job entered the money phase and became
+  // invisible to the only screen that could move it on.
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",
@@ -37,6 +45,8 @@ type ProjectDoc = {
   projectNumber: string;
   rentalStartDate?: number;
   rentalEndDate?: number;
+  projectStartDate?: number;
+  projectEndDate?: number;
   clientId?: string;
 };
 
@@ -59,19 +69,18 @@ export const bundle = query({
     );
     const pipeline = (byStatus.flat() as unknown as ProjectDoc[])
       .filter((p) => p.isTemplate !== true)
-      .sort((a, b) => (a.rentalStartDate ?? 0) - (b.rentalStartDate ?? 0));
+      .sort((a, b) => (getProjectWindow(a).start ?? 0) - (getProjectWindow(b).start ?? 0));
 
     // Thin line items per project (only the 3 fields the stage counter reads).
     const lineItemsByProject = new Map<
       string,
       Array<{ status: string; type: string; isKitChild: boolean }>
     >();
+    // LIVE-ONLY (#1228) — the warehouse landing counts the live plan.
     await Promise.all(
       pipeline.map(async (p) => {
-        const rows = await ctx.db
-          .query("projectLineItems")
-          .withIndex("by_projectId", (q) => q.eq("projectId", p.id))
-          .collect();
+        const versionId = await resolveLiveVersionIdForProject(ctx, p.id, orgId);
+        const rows = await versionRows(ctx, "projectLineItems", versionId);
         lineItemsByProject.set(
           p.id,
           rows.map((li) => ({
@@ -101,6 +110,11 @@ export const bundle = query({
         status: p.status ?? "",
         rentalStartDate: p.rentalStartDate ?? null,
         rentalEndDate: p.rentalEndDate ?? null,
+        // Gear-committed window — falls back to rental when unset (see
+        // project-window.ts). The list's urgency classifier reads THESE, not the
+        // raw rental pair above (kept for reference/other display uses).
+        projectStartDate: p.projectStartDate ?? null,
+        projectEndDate: p.projectEndDate ?? null,
         client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
         lineItems: lineItemsByProject.get(p.id) ?? [],
       })),

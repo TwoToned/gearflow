@@ -6,7 +6,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
-  ListTodo,
   Package,
   Boxes,
   FolderOpen,
@@ -31,6 +30,7 @@ import {
   Undo2,
   Landmark,
   PackagePlus,
+  GitBranch,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -94,14 +94,11 @@ interface RailItem {
 
 // Primary modules. Hues per DESIGN.md §3.7/§15.5.
 const RAIL: RailItem[] = [
+  // Dashboard is the rail's first slot and the landing page (D10C — Today is
+  // now hidden; its widgets live on the customizable dashboard board instead).
+  // No `resource` gate: Dashboard never had one, so viewer/warehouse roles
+  // keep it without project:read.
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
-  // No `resource` gate — personal scope (this user's own assignments), not an
-  // org resource. A resource gate here would fail-open-flash on load like every
-  // other gated item; skipping it entirely (rather than gating on "project")
-  // means viewer/warehouse roles keep their own task list even without
-  // project:read. Sidebar-only per DESIGN.md §16 — NOT in the mobile bottom nav
-  // (that's the 5 daily-operator workflows; see mobile-nav.tsx).
-  { title: "My tasks", url: "/my-tasks", icon: ListTodo, hue: "blue" },
   {
     title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
     subs: [
@@ -153,6 +150,11 @@ const RAIL: RailItem[] = [
 // Secondary destinations — own group at the bottom (expanded) / "More" flyout (rail).
 const MORE: SubItem[] = [
   { title: "Clients", url: "/clients", icon: Users, resource: "client" },
+  // #1245 — the client relationship layer's pipeline view. A separate MORE
+  // entry rather than nested under Clients: SubItem (unlike RailItem) has no
+  // `subs` of its own, so "Clients → Pipeline" is expressed as two adjacent
+  // rows in the same group rather than a sub-menu.
+  { title: "Pipeline", url: "/clients/pipeline", icon: GitBranch, resource: "client" },
   { title: "Suppliers", url: "/suppliers", icon: Truck, resource: "supplier" },
   { title: "Locations", url: "/locations", icon: MapPin, resource: "location" },
   { title: "Activity Log", url: "/activity", icon: ScrollText, resource: "reports" },

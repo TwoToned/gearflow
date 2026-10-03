@@ -10,10 +10,11 @@
  * `applyOptimisticEdits` pattern — see `applyOrderOverlay`), the analogous
  * overlay for groups (`applyGroupOrderOverlay` + friends, same file), the
  * analogous (simpler — no reparent field) overlay for categories
- * (`applyCategoryOrderOverlay`), and the justified-mutation wrappers (reorder
- * within a container / move across containers, one pair per row kind — a
- * single reorder wrapper for categories, which never move across containers)
- * with their shared <JustificationDialog> instances.
+ * (`applyCategoryOrderOverlay`), and the direct-call reorder/move wrappers
+ * (one pair per row kind — a single reorder wrapper for categories, which
+ * never move across containers). #1230: these are structural mutations,
+ * never gated by the pricing lock, so there is no justification dialog
+ * anymore — a plain toast reports a failure.
  *
  * Container membership resolution and the actual "what should this drop do"
  * decision are pure, framework-free functions exported for unit testing
@@ -63,7 +64,6 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers";
-import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import {
   getDisallowedDropReason,
@@ -74,9 +74,6 @@ import {
   type SubHireGroupData,
   type MixedGroupSlot,
 } from "@/components/projects/equipment-rows";
-import { JustificationDialog } from "@/components/projects/justification-dialog";
-import { useJustifiedMutation, type LockStatusLike } from "@/hooks/use-justified-mutation";
-import { isUserFacingError } from "@/lib/errors/user-facing-error";
 import type { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import type { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
 import type { useCategorySlotWrites } from "@/hooks/use-category-slots-writes";
@@ -817,30 +814,11 @@ export function resolveCrossKindCategoryReorder(
   return { kind: "noop" };
 }
 
-// ─── Error classification (mirrors use-justified-mutation.ts's own helper) ──
-
-function getConvexErrorCode(e: unknown): string | undefined {
-  if (isUserFacingError(e)) return e.code;
-  if (e instanceof ConvexError && e.data && typeof e.data === "object") {
-    const code = (e.data as { code?: unknown }).code;
-    if (typeof code === "string") return code;
-  }
-  return undefined;
-}
-
-/** HARD_LOCKED has no retry path (no `JUSTIFICATION_REQUIRED` prompt can fix
- *  it — only a full unlock session can) — `useJustifiedMutation` doesn't
- *  intercept `PROJECT_LOCKED`, so it reaches here and needs its own clear
- *  toast instead of a generic error message. A user-cancelled justification
- *  dialog (`useJustifiedMutation`'s `cancel()`) rejects with a plain
- *  "Cancelled" Error — that's an intentional no-op, not a failure to report. */
+// ─── Error reporting ─────────────────────────────────────────────────────────
+// #1230: reorder/move mutations are structural — never gated by the pricing
+// lock — so there is no locked-project error case to special-case here
+// anymore. Any failure (network, permission, cross-tenant) gets a plain toast.
 function reportDragMutationError(e: unknown) {
-  if (e instanceof Error && e.message === "Cancelled") return;
-  const code = getConvexErrorCode(e);
-  if (code === "PROJECT_LOCKED") {
-    toast.error("This project is locked. Open a full unlock session to make changes.");
-    return;
-  }
   toast.error(e instanceof Error ? e.message : "Couldn't move that item.");
 }
 
@@ -866,7 +844,6 @@ export interface UseEquipmentDndArgs {
   categorySlotWrites: ReturnType<typeof useCategorySlotWrites>;
   /** Categories-only: top-level reorder write. */
   categoryWrites: ReturnType<typeof useProjectCategoryWrites>;
-  lockStatus: LockStatusLike;
   /** Called once a drag-driven mutation settles (success OR failure) — mirrors
    *  every other mutation call site in equipment-tab.tsx, which invalidates
    *  from its own onSuccess/onError. */
@@ -960,10 +937,6 @@ export interface UseEquipmentDndResult {
    *  `applyCategoryOrderOverlay`. No reparent field: categories never move
    *  across containers. */
   categoryOrderOverlay: ReadonlyMap<string, CategoryOrderEdit>;
-  /** <JustificationDialog> instance(s) for the reorder/move wrappers (line
-   *  items, groups, AND categories) — render once near this equipment tab's
-   *  other dialogs. */
-  dialogs: React.ReactNode;
 }
 
 export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResult {
@@ -977,7 +950,6 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     groupWrites,
     categorySlotWrites,
     categoryWrites,
-    lockStatus,
     onSettled,
   } = args;
 
@@ -1014,76 +986,46 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     () => new Map(),
   );
 
-  const justifiedReorder = useJustifiedMutation(
-    (jargs: { itemIds: string[]; justification?: string }) =>
-      lineItemWrites.reorder(projectId, jargs.itemIds, undefined, jargs.justification),
-    lockStatus,
-  );
-  const justifiedMove = useJustifiedMutation(
-    (jargs: {
-      lineItemId: string;
-      targetGroupId: string | null;
-      targetCategoryId: string | null;
-      justification?: string;
-    }) => groupWrites.moveLineItem(jargs),
-    lockStatus,
-  );
+  // #1230: reorder/move are structural — never gated by the pricing lock —
+  // so these are thin direct-call wrappers now, not justified-mutation
+  // dialogs. Kept as `{ run }` shims (rather than rewriting every call site
+  // below) so the dispatch logic reads identically either way.
+  const justifiedReorder = {
+    run: (jargs: { itemIds: string[] }) => lineItemWrites.reorder(projectId, jargs.itemIds),
+  };
+  const justifiedMove = {
+    run: (jargs: { lineItemId: string; targetGroupId: string | null; targetCategoryId: string | null }) =>
+      groupWrites.moveLineItem(jargs),
+  };
 
   // One combined reorder wrapper for BOTH group-reorder branches (mirrors the
   // old `moveGroupSlot`'s own branching): a mixed list with no sub-hire group
   // in it reorders the lighter plain-project-group way; a mixed list WITH a
-  // sub-hire group goes through the cross-type slot reorder. Combined behind
-  // one `useJustifiedMutation`/dialog (rather than two) since they're the same
-  // logical operation from the user's point of view — "reorder this category's
-  // groups" — just two different mutations underneath depending on what's in
-  // the list.
-  const justifiedGroupReorder = useJustifiedMutation(
-    (
-      jargs: { justification?: string } & (
+  // sub-hire group goes through the cross-type slot reorder.
+  const justifiedGroupReorder = {
+    run: (
+      jargs:
         | { kind: "pure"; orderedIds: string[] }
-        | { kind: "mixed"; categoryId: string; orderedIds: string[] }
-      ),
+        | { kind: "mixed"; categoryId: string; orderedIds: string[] },
     ) =>
       jargs.kind === "pure"
-        ? groupWrites.reorder({ orderedIds: jargs.orderedIds, justification: jargs.justification })
-        : categorySlotWrites.reorderMixed({
-            categoryId: jargs.categoryId,
-            orderedIds: jargs.orderedIds,
-            justification: jargs.justification,
-          }),
-    lockStatus,
-  );
+        ? groupWrites.reorder({ orderedIds: jargs.orderedIds })
+        : categorySlotWrites.reorderMixed({ categoryId: jargs.categoryId, orderedIds: jargs.orderedIds }),
+  };
   // Same combining rationale for the two move mutations (project group vs
-  // sub-hire group) — one dialog for "move this group to a different
+  // sub-hire group) — one wrapper for "move this group to a different
   // category", branching on which underlying mutation the dragged row needs.
-  const justifiedGroupMove = useJustifiedMutation(
-    (jargs: {
-      groupKind: "project" | "subHire";
-      groupId: string;
-      categoryId: string | null;
-      justification?: string;
-    }) =>
+  const justifiedGroupMove = {
+    run: (jargs: { groupKind: "project" | "subHire"; groupId: string; categoryId: string | null }) =>
       jargs.groupKind === "project"
-        ? categorySlotWrites.moveProjectGroup({
-            groupId: jargs.groupId,
-            categoryId: jargs.categoryId,
-            justification: jargs.justification,
-          })
-        : categorySlotWrites.moveSubHireGroup({
-            groupId: jargs.groupId,
-            categoryId: jargs.categoryId,
-            justification: jargs.justification,
-          }),
-    lockStatus,
-  );
+        ? categorySlotWrites.moveProjectGroup({ groupId: jargs.groupId, categoryId: jargs.categoryId })
+        : categorySlotWrites.moveSubHireGroup({ groupId: jargs.groupId, categoryId: jargs.categoryId }),
+  };
   // Categories' single reorder wrapper — no move counterpart (categories
-  // never leave the one top-level container), so unlike line items/groups
-  // there's only one mutation, one dialog.
-  const justifiedCategoryReorder = useJustifiedMutation(
-    (jargs: { orderedIds: string[]; justification?: string }) =>
-      categoryWrites.reorder({ orderedIds: jargs.orderedIds, justification: jargs.justification }),
-    lockStatus,
-  );
+  // never leave the one top-level container).
+  const justifiedCategoryReorder = {
+    run: (jargs: { orderedIds: string[] }) => categoryWrites.reorder({ orderedIds: jargs.orderedIds }),
+  };
 
   /** Dispatch the right reorder mutation for an ordered PREFIXED sortable-id
    *  list — see `planGroupReorder` (pure, unit-tested independently). */
@@ -1364,16 +1306,6 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     [handleGroupDrop, handleCategoryDrop, handleLineItemDrop, categoriesRef, runCrossKindReorder],
   );
 
-  const dialogs = React.createElement(
-    React.Fragment,
-    null,
-    React.createElement(JustificationDialog, { key: "reorder", ...justifiedReorder.dialogProps }),
-    React.createElement(JustificationDialog, { key: "move", ...justifiedMove.dialogProps }),
-    React.createElement(JustificationDialog, { key: "group-reorder", ...justifiedGroupReorder.dialogProps }),
-    React.createElement(JustificationDialog, { key: "group-move", ...justifiedGroupMove.dialogProps }),
-    React.createElement(JustificationDialog, { key: "category-reorder", ...justifiedCategoryReorder.dialogProps }),
-  );
-
   return {
     sensors,
     modifiers: dragModifiers,
@@ -1388,6 +1320,5 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     orderOverlay,
     groupOrderOverlay,
     categoryOrderOverlay,
-    dialogs,
   };
 }

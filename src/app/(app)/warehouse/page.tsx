@@ -24,12 +24,14 @@ import { useFormatters } from "@/components/providers/format-provider";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { ScanButton } from "@/components/scanner/scan-button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { focusRing } from "@/lib/utils";
+import { getProjectWindow } from "@/lib/project-window";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +57,8 @@ import {
 } from "@/components/ui/motion";
 
 const WAREHOUSE_STATUSES = [
+  // Mirrors convex/warehouseList.ts — see the note there on #1236.
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",
@@ -63,6 +67,7 @@ const WAREHOUSE_STATUSES = [
 ];
 
 const statusLabels: Record<string, string> = {
+  AWAITING_PAYMENT: "Awaiting payment",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",
@@ -71,7 +76,7 @@ const statusLabels: Record<string, string> = {
 };
 
 /** `formatDateDayMonth` is the org-locale-bound I3 role (I3, #1082) —
- *  replaces a bare `toLocaleDateString("en-AU", …)`, which hardcoded the
+ *  replaces a hardcoded-AU-locale date call, which fixed the
  *  day-before-month order regardless of the org's own country. */
 function formatDateRange(
   start: string | null | undefined,
@@ -92,6 +97,8 @@ type Project = {
   status: string;
   rentalStartDate?: string | null;
   rentalEndDate?: string | null;
+  projectStartDate?: string | null;
+  projectEndDate?: string | null;
   client?: { name: string } | null;
   lineItems?: Array<{ status: string; type: string; isKitChild: boolean }>;
 };
@@ -104,6 +111,23 @@ type PendingAction = {
 
 type UrgencyGroup = "overdue" | "today" | "out" | "upcoming" | "returned";
 
+/** The gear-committed window (falls back to rental when unset) — when gear is
+ *  physically due out/back is exactly what projectStartDate/projectEndDate
+ *  mean, so nothing in this file should read rentalStartDate/rentalEndDate
+ *  directly. See project-window.ts / FEATUREDOCS/11 invariant #4. The fields
+ *  arrive as epoch-ms numbers (native Convex bundle) despite the `Project`
+ *  type's loose `string | null` annotation — see useNativeWarehouseList. */
+function projectWindowOf(project: Project): { start: number | null; end: number | null } {
+  return getProjectWindow({
+    projectStartDate: project.projectStartDate as unknown as number | null | undefined,
+    projectEndDate: project.projectEndDate as unknown as number | null | undefined,
+    rentalStartDate: project.rentalStartDate as unknown as number | null | undefined,
+    rentalEndDate: project.rentalEndDate as unknown as number | null | undefined,
+  });
+}
+
+/** Port of convex/warehouseReturns.ts's projectUrgency — kept in lockstep
+ *  deliberately rather than imported (this is a client component). */
 function getProjectUrgency(project: Project): UrgencyGroup {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -117,18 +141,20 @@ function getProjectUrgency(project: Project): UrgencyGroup {
   // close-out bar). Never "overdue" — it's already returned.
   if (project.status === "RETURNED") return "returned";
 
+  const window = projectWindowOf(project);
+
   const isOut = project.status === "CHECKED_OUT" || project.status === "ON_SITE";
   if (isOut) {
     // Deployed gear is OVERDUE only when it's past its due-back (in / end) date
     // and still out — NOT just because the out date has passed. Otherwise it's
     // out on site and on schedule.
-    const end = project.rentalEndDate ? dayOf(new Date(project.rentalEndDate)) : null;
+    const end = window.end != null ? dayOf(new Date(window.end)) : null;
     if (end && end < today) return "overdue";
     return "out";
   }
 
   // Not yet out (confirmed / prepping): the prep queue, ordered by the out date.
-  const start = project.rentalStartDate ? dayOf(new Date(project.rentalStartDate)) : null;
+  const start = window.start != null ? dayOf(new Date(window.start)) : null;
   if (!start) return "upcoming";
   if (start < dayAfterTomorrow) return "today";
   return "upcoming";
@@ -431,31 +457,43 @@ export default function WarehousePage() {
         {/* ── Scanner hero: the primary lookup ────────────────────── */}
         <FadeIn delay={0.04}>
           <div className="rounded-[var(--r-lg)] border border-line bg-card p-3 shadow-[var(--sh-card)] sm:p-4">
-            <div className="relative">
-              <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-lime" />
-              <AssetTagInput
-                placeholder="Scan a barcode or search project name / number…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+            {/* The camera button is a flex SIBLING of the field's box, not a
+                child: that box is `relative` and carries absolutely positioned
+                overlays (the left barcode icon, the right Clear / kbd hint),
+                which the button would otherwise sit underneath. */}
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-lime" />
+                <AssetTagInput
+                  placeholder="Scan a barcode or search project name / number…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onScan={(scanned) => setSearch(scanned)}
+                  showScanButton={false}
+                  className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-20 text-[14px] text-ink placeholder:text-faint"
+                  autoFocus
+                />
+                {search ? (
+                  <button
+                    onClick={() => setSearch("")}
+                    className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-[var(--r)] px-2 py-1 text-caption text-faint transition-colors hover:text-ink-2 ${focusRing}`}
+                  >
+                    Clear
+                  </button>
+                ) : (
+                  <span className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 items-center gap-1 text-[11px] text-faint sm:flex">
+                    <kbd className="rounded-[6px] border border-line-2 bg-paper px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted">
+                      scan
+                    </kbd>
+                    to look up
+                  </span>
+                )}
+              </div>
+              <ScanButton
+                scannerTitle="Scan to look up"
                 onScan={(scanned) => setSearch(scanned)}
-                className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-20 text-[14px] text-ink placeholder:text-faint"
-                autoFocus
+                className="h-12 w-12"
               />
-              {search ? (
-                <button
-                  onClick={() => setSearch("")}
-                  className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-[var(--r)] px-2 py-1 text-caption text-faint transition-colors hover:text-ink-2 ${focusRing}`}
-                >
-                  Clear
-                </button>
-              ) : (
-                <span className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 items-center gap-1 text-[11px] text-faint sm:flex">
-                  <kbd className="rounded-[6px] border border-line-2 bg-paper px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted">
-                    scan
-                  </kbd>
-                  to look up
-                </span>
-              )}
             </div>
           </div>
         </FadeIn>
@@ -867,14 +905,16 @@ function ProjectCard({
         )}
       </div>
 
-      {/* Dates + lifecycle stepper */}
+      {/* Dates + lifecycle stepper — the gear-committed window (falls back to
+          rental), so this stays consistent with the urgency badge above, which
+          reads the same window via getProjectUrgency. */}
       <div className="mt-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-caption text-ink-2">
           <CalendarDays className="h-3.5 w-3.5 text-muted" />
           <span className="tabular-nums">
             {formatDateRange(
-              project.rentalStartDate as string | null,
-              project.rentalEndDate as string | null,
+              projectWindowOf(project).start as unknown as string | null,
+              projectWindowOf(project).end as unknown as string | null,
               formatDateDayMonth
             )}
           </span>

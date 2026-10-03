@@ -81,6 +81,7 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
     assetType: model.assetType,
     barcodeLabelTemplate: model.barcodeLabelTemplate || "",
     isActive: model.isActive,
+    isContainer: model.isContainer ?? false,
     tags: model.tags ?? [],
     xeroRentalAccountCode: model.xeroRentalAccountCode || undefined,
     xeroSaleAccountCode: model.xeroSaleAccountCode || undefined,
@@ -105,7 +106,11 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
           </BreadcrumbList>
         </Breadcrumb>
         <PageHeader title="Edit model" description={model.name} />
-        <ModelForm initialData={initialData} />
+        <ModelForm
+          initialData={initialData}
+          existingAssetCount={model.assets.length}
+          existingBulkAssetCount={model.bulkAssets.length}
+        />
       </div>
     </FadeIn>
   );

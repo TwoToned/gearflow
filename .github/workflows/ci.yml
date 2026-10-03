@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -120,7 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -182,11 +182,13 @@ jobs:
     #     (~10s each, vs. the previous 240s timeouts) before restoring this job.
     name: E2E (seeded harness — revenue path)
     runs-on: ubuntu-latest
-    # 20, not the usual 15: the revenue-path test alone can take up to 3
-    # attempts (2 retries) at up to 240s each under CI load — see its
-    # test.setTimeout comment. A hard job timeout here would cancel the whole
-    # job mid-run rather than let it report a clean pass/fail.
-    timeout-minutes: 20
+    # 30, not the usual 15: revenue-path alone can take up to 3 attempts (2
+    # retries) at up to 300s each under CI load (see its test.setTimeout
+    # comment), and D5 (#1109) added 3 more full-flow specs (up to 150s each)
+    # to the same job that can each retry twice too. A hard job timeout here
+    # would cancel the whole job mid-run rather than let it report a clean
+    # pass/fail for whichever spec is still running.
+    timeout-minutes: 30
     # NOT blocking yet: re-added after fixing the stuck-dialog bug that made it
     # guaranteed-red, but that fix hasn't been proven on a GitHub-hosted runner
     # yet (only verified locally, 4/4 clean runs). Flip this off once a run
@@ -216,7 +218,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -245,7 +247,7 @@ jobs:
         run: pnpm run build
 
       - name: Run E2E (seeded harness, chromium)
-        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-onboarding.spec.ts e2e/harness-sign-out.spec.ts e2e/harness-create-inventory.spec.ts e2e/harness-revenue-path.spec.ts
+        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-onboarding.spec.ts e2e/harness-sign-out.spec.ts e2e/harness-create-inventory.spec.ts e2e/harness-revenue-path.spec.ts e2e/harness-onboarding-happy-path.spec.ts e2e/harness-invite-join.spec.ts e2e/harness-org-switch.spec.ts
         env:
           E2E_HARNESS: "1"
 
@@ -289,7 +291,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -327,7 +329,7 @@ jobs:
           # Full history so the migration-drift gate can merge-base against origin/main.
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -398,6 +400,15 @@ jobs:
       # SERVICE-only count stays visible instead of drifting.
       - name: API registry + coverage + privileged-arg gates (#997)
         run: pnpm run api:registry:check
+
+      # The camera scanner's ZXing decoder binary is served from our own origin
+      # (public/wasm/), not a CDN, so it is committed like convex/_generated/.
+      # This proves the committed copy still matches the installed zxing-wasm —
+      # a version bump that skips `pnpm run wasm:sync` would otherwise pair new
+      # JS glue with an old binary, which only fails in the browser at
+      # instantiate time. See scripts/sync-zxing-wasm.mjs.
+      - name: ZXing wasm binary staleness gate
+        run: pnpm run wasm:sync:check
 
       # OpenAPI 3.1 + llms.txt staleness gate (#998, design §11). Regenerated
       # from the SAME registry the step above just verified is current, so this
@@ -498,7 +509,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

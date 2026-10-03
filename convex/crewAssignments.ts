@@ -7,6 +7,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -75,7 +76,7 @@ export const projectCrew = query({
       ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect().then((rows) => rows.filter((a) => a.organizationId === orgId)),
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded by the org's crew roster (name resolution) — see docs/exceptions.md R-8.3.3
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
-      ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect().then((rows) => rows.filter((s) => s.organizationId === orgId)),
+      liveRows(ctx, project, "projectServices").then((rows) => rows.filter((s) => s.organizationId === orgId)),
     ]);
     const memberById = new Map(members.map((m) => [m.id, m]));
     const roleById = new Map(roles.map((r) => [r.id, r]));
@@ -556,6 +557,47 @@ export const patchAssignment = mutation({
     await ctx.db.patch(doc._id, patch);
     await bumpCountersForTable(ctx, "crewAssignments", doc, { ...doc, ...patch });
     return doc._id;
+  },
+});
+
+/**
+ * "First-come fill" (work-layer Phase 4, #1246, design §8.5's "Request
+ * availability…") — called ONLY by the public crew-respond route right after
+ * it accepts an offer (`/api/crew/respond/[token]`, service-authed, no user
+ * session to check RBAC against, same posture as `getByResponseToken` /
+ * `patchAssignment` above). If the just-accepted assignment is linked to a
+ * `projectServices` row (`serviceId`) and enough OTHER assignments on that
+ * same service are now ACCEPTED/CONFIRMED to meet `crewCountRequired`, every
+ * remaining OFFERED/PENDING sibling is auto-cancelled (single-use token
+ * cleared) and returned so the caller can best-effort email each one a
+ * "position filled" notice (`notifyPositionFilled`, `crew-communication.ts`)
+ * — this mutation only does the DB write, never sends email itself (Convex
+ * mutations can't call out).
+ */
+export const autoFillServiceNative = mutation({
+  returns: v.object({ filled: v.boolean(), cancelled: v.array(v.object({ assignmentId: v.string(), crewMemberId: v.string() })) }),
+  args: { serviceId: v.string(), organizationId: v.string(), acceptedAssignmentId: v.string(), now: v.number() },
+  handler: async (ctx, { serviceId, organizationId, acceptedAssignmentId, now }) => {
+    await requireService(ctx);
+    const service = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", serviceId)).unique();
+    if (!service || service.organizationId !== organizationId) return { filled: false, cancelled: [] };
+    const required = service.crewCountRequired ?? 0;
+    if (required <= 0) return { filled: false, cancelled: [] };
+
+    const siblings = (await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", serviceId)).collect())
+      .filter((a) => a.organizationId === organizationId);
+    const filledCount = siblings.filter((a) => a.status === "ACCEPTED" || a.status === "CONFIRMED").length;
+    if (filledCount < required) return { filled: false, cancelled: [] };
+
+    const cancelled: { assignmentId: string; crewMemberId: string }[] = [];
+    for (const a of siblings) {
+      if (a.id === acceptedAssignmentId) continue;
+      if (a.status !== "OFFERED" && a.status !== "PENDING") continue;
+      await ctx.db.patch(a._id, { status: "CANCELLED", updatedAt: now, responseToken: undefined });
+      await bumpCountersForTable(ctx, "crewAssignments", a, { ...a, status: "CANCELLED" });
+      cancelled.push({ assignmentId: a.id, crewMemberId: a.crewMemberId });
+    }
+    return { filled: true, cancelled };
   },
 });
 

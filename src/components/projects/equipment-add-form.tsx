@@ -28,21 +28,18 @@ import { checkAvailability, lookupAssetByTag } from "@/server/line-items";
 import { useLineItemWrites, type AccessoryPlanInput } from "@/hooks/use-line-item-writes";
 import { useModelSearch, useModel } from "@/hooks/use-models";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field, DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
+import { AccessorySelectionFields } from "./accessory-selection-fields";
+import { SectionTitle, Field, DiscountField, TaxRateField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -65,6 +62,13 @@ export interface EquipmentAddFormProps {
   onClose: () => void;
   /** Open the sub-hire order dialog instead of overbooking. */
   onOpenSubHire?: () => void;
+  /** D3 (#1107) — pre-select this model when the dialog is opened via the
+   *  "Add <model> to it" chained hand-off from job creation. Only ever set
+   *  for that one deep link; an ordinary "Add" click leaves this unset. */
+  preselectedModelId?: string;
+  /** #1221 follow-up — the version this new line lands on (the version
+   *  currently being viewed on the Equipment tab). Absent = live. */
+  versionId?: string;
 }
 
 export function EquipmentAddForm({
@@ -77,12 +81,14 @@ export function EquipmentAddForm({
   onInvalidate,
   onClose,
   onOpenSubHire,
+  preselectedModelId,
+  versionId,
 }: EquipmentAddFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const lineItemWrites = useLineItemWrites();
   const [mode, setMode] = useState<AddMode>("model");
-  const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState(preselectedModelId ?? "");
   const [assetTagInput, setAssetTagInput] = useState("");
   const [lookupTag, setLookupTag] = useState("");
   const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
@@ -99,8 +105,6 @@ export function EquipmentAddForm({
   // override — gated behind a required typed reason (issue #794 follow-up),
   // unlike OPTIONAL rows which stay a plain, frictionless checkbox.
   const [excludeReasons, setExcludeReasons] = useState<Record<string, string>>({});
-  const [pendingExclude, setPendingExclude] = useState<{ id: string; label: string } | null>(null);
-  const [excludeReasonDraft, setExcludeReasonDraft] = useState("");
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -209,6 +213,23 @@ export function EquipmentAddForm({
 
   const mutation = useServerMutation({
     mutationFn: async (data: LineItemFormValues) => {
+      // #1249: a `%` discount is resolved HERE, against a gross built from the
+      // unit price on screen — but a blank price means the SERVER decides the
+      // price (auto-pricing off the model's rates), which the client cannot
+      // know. Resolving anyway gives `gross = 0`, so the percentage silently
+      // collapses to a $0 discount and the line lands fully priced and
+      // undiscounted. That was harmless while a blank price stayed $0; now that
+      // blank auto-prices, it is real money quietly dropped. There is no
+      // client-side answer (the percentage needs a price that doesn't exist
+      // yet), so refuse the combination instead of guessing.
+      const priceBlank = data.unitPrice == null || (data.unitPrice as unknown) === "";
+      const discountEntered =
+        data.discount != null && (data.discount as unknown) !== "" && Number(data.discount) > 0;
+      if (discountMode === "%" && priceBlank && discountEntered) {
+        throw new Error(
+          "Enter a unit price to use a % discount — this line auto-prices from the model's rate, so the percentage can't be worked out yet. Use a $ discount instead, or type the price.",
+        );
+      }
       // #1012: one shared conversion (resolveDiscountAmount) instead of a
       // hand-rolled copy, and the MODE is submitted alongside the resolved
       // dollar amount so documents can print it back as entered.
@@ -234,6 +255,7 @@ export function EquipmentAddForm({
         // #794) — "exclude all" is just a plan excluding every default.
         includeAccessories: true,
         accessoryPlan,
+        versionId,
       });
       // Native returns { id, merged }; reshape to the _merged/_newQuantity onSuccess
       // expects. Merged qty mirrors the "combine" radio's preview.
@@ -629,6 +651,30 @@ export function EquipmentAddForm({
               )}
             />
           </div>
+
+          {/* T3 (#1091, docs/designs/tax-model.md §3) — collapsed by default:
+              a per-line rate override is the uncommon case, most lines
+              inherit the project's rate. */}
+          <Accordion type="single" collapsible>
+            <AccordionItem value="tax" className="border-line">
+              <AccordionTrigger>Advanced: tax rate</AccordionTrigger>
+              <AccordionContent>
+                <div className="pt-1">
+                  <Controller
+                    control={form.control}
+                    name="taxRate"
+                    render={({ field }) => (
+                      <TaxRateField
+                        id="eq-tax-rate"
+                        value={field.value == null ? "" : String(field.value)}
+                        onValueChange={(v) => field.onChange(v === "" ? undefined : v)}
+                      />
+                    )}
+                  />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </section>
 
         {/* Placement & options */}
@@ -670,70 +716,14 @@ export function EquipmentAddForm({
             <span className="text-ui-text text-ink-2">Optional item (excluded from totals)</span>
           </label>
 
-          {accessories.length > 0 && (
-            <div className="space-y-2.5 rounded-[var(--r)] border border-line bg-paper-2/50 p-3">
-              <p className="t-overline text-muted">Accessories</p>
-
-              {defaultAccessories.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="t-micro text-faint">Included</p>
-                  {defaultAccessories.map((a) => {
-                    const checked = accessorySelection[a.id] ?? true;
-                    const label = a.modelName ?? a.assetTag;
-                    return (
-                      <div key={a.id} className="space-y-1">
-                        <label className="flex cursor-pointer items-center gap-2.5">
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(c) => {
-                              if (c === true) {
-                                setAccessorySelection((prev) => ({ ...prev, [a.id]: true }));
-                                setExcludeReasons((prev) => {
-                                  const next = { ...prev };
-                                  delete next[a.id];
-                                  return next;
-                                });
-                              } else {
-                                setExcludeReasonDraft("");
-                                setPendingExclude({ id: a.id, label });
-                              }
-                            }}
-                          />
-                          <span className="text-ui-text text-ink-2">
-                            <span className="t-data tabular-nums">{a.quantity * requestedQty}×</span>{" "}
-                            {label}
-                          </span>
-                        </label>
-                        {!checked && excludeReasons[a.id] && (
-                          <p className="pl-6 t-micro text-muted">Removed: {excludeReasons[a.id]}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {optionalAccessories.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="t-micro text-faint">Optional</p>
-                  {optionalAccessories.map((a) => (
-                    <label key={a.id} className="flex cursor-pointer items-center gap-2.5">
-                      <Checkbox
-                        checked={accessorySelection[a.id] ?? false}
-                        onCheckedChange={(c) =>
-                          setAccessorySelection((prev) => ({ ...prev, [a.id]: c === true }))
-                        }
-                      />
-                      <span className="text-ui-text text-ink-2">
-                        <span className="t-data tabular-nums">{a.quantity * requestedQty}×</span>{" "}
-                        {a.modelName ?? a.assetTag}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <AccessorySelectionFields
+            accessories={accessories}
+            quantity={requestedQty}
+            selection={accessorySelection}
+            onSelectionChange={setAccessorySelection}
+            excludeReasons={excludeReasons}
+            onExcludeReasonsChange={setExcludeReasons}
+          />
         </section>
 
         <DialogFooter>
@@ -753,47 +743,6 @@ export function EquipmentAddForm({
           </Button>
         </DialogFooter>
       </form>
-
-      {/* Removing a DEFAULT accessory is a deliberate override — require a
-          reason before it actually excludes (issue #794 follow-up). Optional
-          accessories stay a plain, frictionless checkbox. */}
-      <Dialog open={!!pendingExclude} onOpenChange={(o) => !o && setPendingExclude(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Remove default accessory?</DialogTitle>
-          </DialogHeader>
-          <p className="text-caption text-muted">
-            <span className="font-medium text-ink">{pendingExclude?.label}</span> ships with every asset
-            of this model by default. Removing it from just this line needs a reason.
-          </p>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="exclude-reason">Reason</Label>
-            <Textarea
-              id="exclude-reason"
-              value={excludeReasonDraft}
-              onChange={(e) => setExcludeReasonDraft(e.target.value)}
-              placeholder="e.g. customer is supplying their own"
-              rows={2}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="line" onClick={() => setPendingExclude(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!excludeReasonDraft.trim()}
-              onClick={() => {
-                if (!pendingExclude) return;
-                setAccessorySelection((prev) => ({ ...prev, [pendingExclude.id]: false }));
-                setExcludeReasons((prev) => ({ ...prev, [pendingExclude.id]: excludeReasonDraft.trim() }));
-                setPendingExclude(null);
-              }}
-            >
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

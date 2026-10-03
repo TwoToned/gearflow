@@ -118,13 +118,31 @@ blocks** — it never disables a write, it only surfaces as a heads-up.
   pattern as `getProjectWindow`.
 - `OverbookLineItem` gained `isOptional?: boolean` (defaults `false` — no
   behaviour change for a caller that doesn't pass it). `OverbookedInfo` gained
-  `hardOverBy` (== `overBy`, an explicit alias — existing badges/PDFs/pull-sheets
-  are UNCHANGED for the common case) and `pencilledOverBy` (the additional
-  overage if every currently-pencilled booking for that model also went hard).
-  `reconstructOverbookedStatus`'s hard-overbooked gate runs on hard-only sums —
-  an optional line, or a still-quoted project's own demand, drops out of the
-  hard sum entirely (existing per-project badges only lose a flag when the
-  overage was purely pencilled — "that's the rule working," not a regression).
+  `hardOverBy` (the hard-layer overage alone) and `pencilledOverBy` (the
+  additional overage if every currently-pencilled booking for that model also
+  went hard); `overBy` is the COMBINED figure, `hardOverBy + pencilledOverBy`.
+- **Superseded (2026-09):** the badge originally gated on hard-only sums — a
+  purely-pencilled overage raised no flag anywhere, matching the add/edit-time
+  warning's asymmetry (that gate has no hard/pencilled distinction at all — see
+  `computeModelAvailability` in `convex/lib/availabilityCore.ts`) but confusing
+  in practice: a user got the "this will overbook, confirm?" prompt with no
+  badge to match. Per explicit product request, `reconstructOverbookedStatus`
+  (`src/lib/overbooking-core.ts`) now fires whenever `combinedOverBy > 0` —
+  ANY overage, hard or pencilled-only, raises the map entry — for the
+  **interactive UI** (equipment tab, project list/board, warehouse pull-sheet):
+  `hardOverBy`/`pencilledOverBy` are always both populated (including on the
+  kit-parent inherited aggregate) so a consumer can still tell the two apart.
+  `equipment-rows.tsx`'s `OverbookedBadge` uses this to show a softer amber
+  "Pencilled overbook" pill (`hardOverBy === 0`) instead of the red "Overbooked"
+  one — a genuine hard conflict still reads as more urgent.
+  **The PDF pipeline is the deliberate exception**: `build-document-data.ts`
+  filters every `isOverbooked` flag (top-level AND kit children) through
+  `isHardOverbooked()` (`overbooking-core.ts`), so a rendered/exported document
+  — a client-facing quote/invoice is literally STORED BYTES, see CLAUDE.md —
+  never prints a warning for a collision that's purely speculative and may
+  resolve before anyone reads the document. Warehouse pull-sheet
+  (`getProjectPullSheet`) is a live-rendered internal page, not a stored
+  artifact, so it stays combined like the rest of the UI.
 - **The Overbookings & Gaps board** (`convex/overbookingBoard.ts` +
   `convex/lib/overbookingBoard.ts`) is the org-wide, date-ranged rollup of this
   same two-layer split — a SEPARATE aggregation from the per-project engine
@@ -146,9 +164,52 @@ When a project has **no rental dates**, availability is still calculated:
 - Returns `Map<lineItemId, { overBy, totalStock, effectiveStock, totalBooked, reducedOnly, inherited }>`
 - Kit parents inherit overbooking from children (`hasOverbookedChildren`, `hasReducedChildren`)
 ## UI Indicators
-- **Red badge**: "OVERBOOKED" — shown on project list (AlertTriangle), project detail, all 5 PDFs
-- **Purple badge**: "REDUCED STOCK" — shown when overbooking is caused only by unavailable assets
+- **Red badge**: "OVERBOOKED" — shown on project list (AlertTriangle), project detail, and the 5 PDFs (PDFs only ever show this for a genuine HARD overage — see "Superseded" above)
+- **Amber badge**: "Pencilled overbook" — equipment-tab/project-detail only, when the overage is purely from still-quoted/optional demand elsewhere (`hardOverBy === 0`); never shown on PDFs
 - Overbooking allowed with explicit checkbox confirmation in add/edit dialogs
+
+**`reducedOnly` never softens the badge (2026-09 fix).** A separate purple/blue
+"REDUCED STOCK" (info-level) badge used to replace the Red/Amber one whenever
+`unavailable > 0` and the overage would vanish with full stock — even when
+today's real, CONFIRMED demand genuinely exceeds today's usable stock (e.g. 19
+booked, 23 total, 17 usable after 5 in maintenance + 1 retired: a real hard
+overbooking, badged as a soft "info" pill instead of an alarm). `reducedOnly`
+is still computed and still explains *why* stock is short (folded into the
+badge tooltip — "…, N in maintenance or lost"), but it no longer decides
+severity: severity is `hardOverBy`/`pencilledOverBy` only, exactly like any
+other cause of overage. Same fix applied to the pull-sheet badge
+(`src/app/(app)/warehouse/[projectId]/pull-sheet/page.tsx`) and the project
+list/board issue flags (`getProjectIssueFlags` in `src/server/projects.ts`,
+which used to set `hasReducedStock` INSTEAD OF `hasOverbooked` — now sets both
+when applicable, so the red "Overbooked items" alert fires either way). The
+kit-parent rollup (`hasOverbookedChildren` in `reconstructOverbookedStatus`)
+was fixed the same way: a kit parent whose only overbooked child is
+`reducedOnly` now still counts as genuinely overbooked, not silently dropped.
+
+**FCFS attribution, not "everyone sharing the pool is flagged" (2026-09,
+supersedes the symmetric WS3 rule below).** The above fix made MORE overages
+alarm (maintenance-caused ones no longer soften), and that combined with the
+original WS3 rule — every project whose OWN demand exceeded `effectiveStock -
+everyone else's demand` got flagged, so two projects competing for the same
+units could BOTH show "Overbooked" — produced noticeably noisier badges,
+especially multiplied across kit children. Per explicit product decision, a
+model's stock is now allocated **first-come-first-served**: `allocateFifo`
+(`src/lib/overbooking-core.ts`, duplicated in `convex/lib/overbookingBoard.ts`
+for the org board — same reason `isConfirmedOrLater` is duplicated, no `@/`
+alias between `convex/lib/` and `src/lib/`) sorts every project's claim on a
+model ascending by `claimedAt` (the EARLIEST line-item creation time for that
+project+model+layer — `createdAt` falling back to Convex's own
+`_creationTime`, see `mapLineItemDoc`), then grants each claim against
+whatever capacity remains after every EARLIER claim's full quantity is
+deducted. Only the claim(s) that don't fit are "over" — a project that got its
+gear first is never flagged just because someone booked the same model later.
+Hard claims always allocate before pencilled ones (a CONFIRMED job never loses
+stock to a mere quote, regardless of which was created first); pencilled
+claims then compete FCFS among themselves for whatever's left. This also
+resolved (superseded) the "pencilled row should list the hard-holding project
+too" fix from the same week: a project that already secured its stock via
+hard demand is no longer part of ANY collision row, pencilled or hard — the
+collision belongs solely to whichever claim doesn't fit.
 
 ## Invariants (don't break these)
 
@@ -161,3 +222,33 @@ When a project has **no rental dates**, availability is still calculated:
    This adds back the item's own quantity (since `availability.available` already subtracts all overlapping bookings, including this one). It matches both the add dialog and the overbook badge semantics.
 
 3. **Cache invalidation is now a no-op.** Line items, availability and overbooking are all native Convex queries — the `projectDetail` subscription pushes every change live over the WebSocket, so there's no query-key cache to invalidate. The `invalidate()` helper in `equipment-tab.tsx` still exists (called after every tab mutation) but now just calls `refreshProjectDetail(projectId)` (`src/hooks/use-project-detail.ts`), which is documented as a deliberate no-op kept only so call sites didn't need touching. The old React Query `["availability"]` / `["project-overbooked", projectId]` invalidation this section used to describe no longer exists.
+
+4. **Every date-window overlap/conflict/availability check must resolve `getProjectWindow`/`getProjectWindowDates` (`src/lib/project-window.ts`) first — never read a project's raw `rentalStartDate`/`rentalEndDate` for this purpose.** This applies to BOTH sides of an overlap check: the "anchor"/subject project whose window defines the range being checked, AND every candidate/other project being scanned for a conflict against that range. A project's gear-committed window (`projectStartDate`/`projectEndDate`, WS2 #941) can diverge from — or exist when — its rental window doesn't. Reading the raw rental pair for the anchor project silently drops into the "Dateless Stock Checks" branch above (only-this-project's-own-demand) whenever `rentalStartDate`/`rentalEndDate` are unset, even though a real committed window exists — UNDERCOUNTING cross-project overlap and hiding a real overbooked badge, or (worse) letting a write-time enforcement gate (`computeModelAvailability`/`findAssetConflict`/`findKitConflict` in `convex/lib/availabilityCore.ts`) skip its check entirely so a genuine double-booking gets WRITTEN, not just mis-displayed. Reading it for a CANDIDATE project has the mirror failure: the candidate's committed window might overlap the range being checked even though its rental window doesn't, so the conflict goes undetected and an asset/kit gets reported "available" when it's actually already committed elsewhere.
+
+   Found as a live bug (2026-09) in two rounds. Round 1 (read/display paths, all fixed): `getProject`/`getProjectIssueFlags` (`src/server/projects.ts`), `enrichProjectDetailOverbooked` (`src/lib/project-detail-reconstruct.ts`), the `overbooking.bundle` query args (`src/hooks/use-native-project-equipment.ts`), the project detail page's `rentalStart`/`rentalEnd` fed into `EquipmentTabSlot` (`src/app/(app)/projects/[id]/page.tsx`). Round 2 (a full sweep of every booking/overbooking/stock-control code path, prompted by round 1 — also all fixed): the WRITE-TIME enforcement gates in `convex/lineItemWrites.ts` (`patchNative`, `addNative`, `addKitNative`/kit-add path, `addLineItemSmartNative`, and their sale-stock warning calls) and `convex/projectLineItems.ts` (`swapLineItemAsset`'s own anchor window — its candidate-side scan was already correct); the conflict-detection queries in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`) that silently returned `[]`/hid the Conflicts banner and swap candidates; `convex/projectVersionsWrites.ts`'s post-promote `deriveDateMoveConflicts`; the equipment tab's OTHER native hook `src/hooks/use-native-equipment-tab.ts` (a sibling of the already-fixed one); the warehouse pull-sheet (`src/server/warehouse.ts` `getProjectPullSheet`, backing both the printable pull sheet and the Online Pick List); all 5 project PDFs (`src/lib/pdfme/build-document-data.ts`); the CANDIDATE-side misses in `src/server/line-items.ts`'s `lookupAssetByTag` and `checkKitAvailability` (its sibling `checkAvailability` in the same file was already correct); and the bulk group-template kit conflict pre-check (`convex/groupTemplatesWrites.ts`).
+
+   **Billing is the one deliberate exception** — `FinanceTabSlot`/`inclusiveCalendarDays`/`computeGroupSuggestedPrice` call sites keep reading raw rental dates, because pricing runs on the chargeable window, never the gear-committed one (see `project-dates.ts`). Regression tests: `src/lib/project-detail-reconstruct.test.ts` ("uses the gear-committed project window, not raw rental dates…") and the existing per-file Convex test suites (`convex/lineItemWrites.test.ts`, `convex/reservationConflicts.test.ts`, `convex/projectVersionsWrites.test.ts`, `convex/groupTemplatesWrites.test.ts`, `convex/projectLineItems.test.ts`), which all continued passing unchanged — this class of fix corrects which window is checked, not the pass/fail math those tests already cover with dateless/rental-only fixtures.
+
+6. **A `type: "SALE"` line is never rental demand.** Found as a live bug (2026-09):
+   every "booked" / "demand" sum across the availability + overbooking stack summed
+   ALL non-cancelled, non-sub-hire line items for a model — including `SALE` lines —
+   so adding a `NEW_STOCK` sale line (which only decrements `Model.saleStockQuantity`,
+   a wholly separate pool per WS11 #950) inflated demand against the model's *rental*
+   assets/bulk stock and could pencil a phantom overbooking that had nothing to do with
+   rental availability. A `FROM_RENTAL_STOCK` sale line has the mirror problem: the unit
+   is already removed from the rental pool at sale time (asset → `SOLD` / `bulkAsset`
+   `totalQuantity` decremented, `convex/lib/saleStock.ts`), which `effectiveStock`
+   already reflects — counting the line as booked too would double-subtract it.
+   Every "booked"/demand computation now explicitly excludes `li.type === "SALE"`
+   lines, alongside the existing `CANCELLED`/sub-hire exclusions:
+   `src/lib/overbooking-core.ts` (`sumBookingsByModel`, `relevantOverbookModelIds`,
+   `reconstructOverbookedStatus`'s `relevantItems`), `src/lib/availability.ts`
+   (`computeOverbookedStatus`'s `relevantItems`), `convex/lib/availabilityCore.ts`
+   (`computeModelAvailability`'s write-time enforcement), `src/server/line-items.ts`
+   (`checkAvailability`'s add-form pre-check), and `convex/lib/overbookingBoard.ts`
+   (`isRelevantDemandLine`, feeding the Overbookings & Gaps board's gear-shortage
+   sections — see FEATUREDOCS/65). The "Sale stock to procure" board section
+   (`computeSaleStockToProcure`) is unaffected — it already keyed off `saleMode`
+   specifically and is the correct place `NEW_STOCK` shortfalls surface.
+
+5. **`patchNative` (the ordinary edit-line-item mutation) must validate a client-supplied FK the same way every other browser-direct line-item mutation does.** Found alongside the above (2026-09): `patchNative` had NO `assertRefInOrg` calls at all — unlike `addNative`/`addLineItemSmartNative`, which org-validate `modelId`/`assetId`/`bulkAssetId`/`groupId`/`categoryId`/`supplierId` before writing them (`by_cuid` is a GLOBAL index, so an unchecked FK can point at another org's row). It also had no kit-membership/status/double-booking check when `assetId` was being reassigned to a genuinely different asset — unlike the dedicated `swapLineItemAsset` mutation, which exists specifically to run those checks. Both are now fixed directly in `patchNative`: the same `assertRefInOrg` block as `addNative`, plus an unconditional (no `allowOverbook` escape — these are hard invariants on which physical asset a line references, not soft stock-count warnings) reassignment check mirroring `swapLineItemAsset`, that only runs when the effective new `assetId` actually differs from the line's current one.

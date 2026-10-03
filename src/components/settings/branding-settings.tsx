@@ -12,16 +12,17 @@ import { updateOrganization } from "@/server/settings";
 import type { OrgSettings, OrgBranding } from "@/lib/org-settings-types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import {
+  DEFAULT_PRIMARY_COLOR as DEFAULT_PRIMARY,
+  DEFAULT_ACCENT_COLOR as DEFAULT_ACCENT,
+  DEFAULT_DOCUMENT_COLOR as DEFAULT_DOCUMENT,
+} from "@/lib/branding-defaults";
 
 interface BrandingSettingsProps {
   orgName: string;
   settings: OrgSettings;
   onBrandingChange?: (branding: OrgBranding | undefined) => void;
 }
-
-const DEFAULT_PRIMARY = "#0d4f4f";
-const DEFAULT_ACCENT = "#10b981";
-const DEFAULT_DOCUMENT = "#0d4f4f";
 
 export function BrandingSettings({ orgName, settings, onBrandingChange }: BrandingSettingsProps) {
   const { data: activeOrg } = useActiveOrganization();

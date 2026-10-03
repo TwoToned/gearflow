@@ -3,7 +3,7 @@
   "entry": [
     "convex/**/*.ts!",
     "scripts/**/*.{ts,cjs,mjs}",
-    "src/lib/react-pdf-spike/render-spike.tsx"
+    "src/lib/react-pdf/render-spike.tsx"
   ],
   "project": [
     "src/**/*.{ts,tsx}",

@@ -2,6 +2,8 @@
 
 import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
+import { toast } from "sonner";
+import { autoStatusToast } from "@/lib/project-status-automation";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import {
@@ -76,7 +78,7 @@ export function useInvoiceWrites() {
     issue: async (
       id: string,
       data: InvoiceIssueValues = {},
-    ): Promise<{ id: string; invoiceNumber: string; artifactReady: boolean }> => {
+    ): Promise<{ id: string; invoiceNumber: string; artifactReady: boolean; autoStatus: string | null }> => {
       const org = requireOrg();
       const parsed = invoiceIssueSchema.parse(data);
       const config = await getInvoiceNumberConfig();
@@ -104,6 +106,11 @@ export function useInvoiceWrites() {
       } catch {
         artifactReady = false;
       }
+      // #1236 — issuing an invoice on a still-unagreed job moves it to
+      // Awaiting payment. Announced, never asked: the status change is a
+      // consequence of the document going out, not a decision to make.
+      const copy = autoStatusToast(result.autoStatus);
+      if (copy) toast(copy.title, { description: copy.description });
       return { ...result, artifactReady };
     },
     void: async (id: string, reason: string): Promise<void> => {

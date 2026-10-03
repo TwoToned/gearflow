@@ -35,7 +35,36 @@ export const AnalyticsEvent = {
   VendorUsage: "vendor_usage",
   // Product usage (extend as needed — keep PII out of properties).
   PageView: "$pageview",
+  // D4 (#1108) — the onboarding/activation funnel (docs/designs/
+  // onboarding-and-activation.md §8): signup -> fork -> org created ->
+  // setup complete -> four activation milestones. R-8.12.4 applies without
+  // exception here: every property below is an enum-ish string or a count,
+  // never an org name/email/address/free-text. See SetupStepId/
+  // ActivationMilestoneId for the exact enum values each event's `step`/
+  // `milestone` property takes.
+  OnboardingForkChosen: "onboarding_fork_chosen",
+  SetupStepViewed: "setup_step_viewed",
+  SetupStepCompleted: "setup_step_completed",
+  SetupStepSkipped: "setup_step_skipped",
+  SetupCompleted: "setup_completed",
+  ActivationMilestone: "activation_milestone",
+  ActivationChecklistDismissed: "activation_checklist_dismissed",
 } as const;
+
+/** `/welcome`'s three fork destinations (B1, #1092) — {@link AnalyticsEvent.OnboardingForkChosen}. */
+export type OnboardingForkChoice = "create" | "join_invite" | "join_domain";
+
+/** The `/setup` wizard's five steps, in order — {@link AnalyticsEvent.SetupStepViewed}/
+ *  {@link AnalyticsEvent.SetupStepCompleted}/{@link AnalyticsEvent.SetupStepSkipped}.
+ *  Step 1 ("company") is the only one that's never skippable (C1, #1098). */
+export type SetupStepId = "company" | "operating" | "branding" | "numbering" | "team_gear";
+
+/** The four D1 (#1105) activation milestones, in the design doc's own
+ *  snake_case naming — {@link AnalyticsEvent.ActivationMilestone}. Distinct
+ *  from `MilestoneKey` (src/lib/activation-milestones.ts), which uses
+ *  camelCase for TS ergonomics; map explicitly at the one emit site rather
+ *  than reusing the app-internal casing for an external analytics property. */
+export type ActivationMilestoneId = "model" | "asset" | "project" | "line_item";
 
 export type AnalyticsEventName =
   (typeof AnalyticsEvent)[keyof typeof AnalyticsEvent];

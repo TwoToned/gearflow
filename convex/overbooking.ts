@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import { getProjectWindow } from "./lib/projectWindow";
 import type { Doc } from "./_generated/dataModel";
+import { liveRows } from "./lib/versionScope";
 
 /** Parity with src/lib/overbooking-core.ts EXCLUDED_PROJECT_STATUSES (Convex functions
  *  can't import from src/lib) — projects in these statuses never contribute to a
@@ -107,18 +108,40 @@ export const bundle = query({
             if (s <= rentalEndDate && e >= rentalStartDate) candidateProjectIds.add(p.id);
           }
         }
+        // LIVE-ONLY (#1228): overbooking checks the live plan. Falls back to a
+        // point-read for `thisProjectId`, which isn't guaranteed to be in
+        // `projectDocCache` (it's seeded unconditionally into
+        // candidateProjectIds, not discovered by the range-scans above).
         const perProject = await Promise.all(
-          [...candidateProjectIds].map((pid) =>
-            ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", pid)).collect(),
-          ),
+          [...candidateProjectIds].map(async (pid) => {
+            const p = projectDocCache.get(pid) ?? (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique());
+            if (p) projectDocCache.set(pid, p);
+            return p ? liveRows(ctx, p, "projectLineItems") : [];
+          }),
         );
         return perProject.flat().filter((li) => li.modelId != null && modelSet.has(li.modelId));
       }
       // UNSCOPED fallback — unchanged all-time by_modelId scan (pre-rollout callers).
+      // VERSION-SCOPE: all-versions read (by_modelId is not a by_versionId-family
+      // index) — join-filtered to each row's own project's LIVE version below
+      // (#1228 "Availability read cost": keep the join filter rather than
+      // pushing the filter into the index yet; scanned-rows budget registered
+      // in docs/exceptions.md).
       const lineItemGroups = await Promise.all(
         unique.map((mid) => ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
       );
-      return lineItemGroups.flat();
+      const allLines = lineItemGroups.flat();
+      const refProjectIds = [...new Set(allLines.map((li) => li.projectId))];
+      const liveVersionByProject = new Map<string, string | undefined>(
+        await Promise.all(
+          refProjectIds.map(async (pid): Promise<[string, string | undefined]> => {
+            const p = projectDocCache.get(pid) ?? (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique());
+            if (p) projectDocCache.set(pid, p);
+            return [pid, p?.liveVersionId];
+          }),
+        ),
+      );
+      return allLines.filter((li) => li.versionId != null && li.versionId === liveVersionByProject.get(li.projectId));
     }
 
     // Line items and assets/bulkAssets are independent reads — run them concurrently

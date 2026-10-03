@@ -68,25 +68,27 @@ export async function assertEmitSideEffectsAgentTrue(
   });
 }
 
-/** The extra scope a key must hold to open a project unlock session at all — the
- *  one true HARD_LOCKED / FINANCE_LOCKED escape hatch. Granted in no preset. */
-export const UNLOCK_SESSION_SCOPE = { resource: "project", action: "unlock_session" } as const;
+/** The extra scope a key must hold to clear `projects.pricingLocked` at all —
+ *  the one true pricing-lock escape hatch (#1230, successor to the deleted
+ *  `projectUnlockSessions` mechanism's `UNLOCK_SESSION_SCOPE`). Granted in no
+ *  preset. */
+export const UNLOCK_PRICING_SCOPE = { resource: "project", action: "unlock_pricing" } as const;
 
 /**
- * Throw unless the caller may open a project unlock session.
+ * Throw unless the caller may clear the pricing lock.
  *
- * Unlike {@link assertOverbookAllowed}, this is unconditional for agents — opening
- * ANY unlock session (`FULL` or `PARTIAL` scope) is the one true lock override, so
- * an agent token needs the explicit scope regardless of which scope it's opening.
- * No-op for browser/service callers, who are still gated by
- * `isHardLockOverrideAllowed`'s ordinary RBAC/assignment check.
+ * Unlike {@link assertOverbookAllowed}, this is unconditional for agents —
+ * clearing the lock is the one true escape hatch, so an agent token needs the
+ * explicit scope regardless of the ordinary RBAC/assignment check. No-op for
+ * browser/service callers, who are still gated by `canUnlockPricing`'s
+ * ordinary check (`convex/lib/projectLocks.ts`).
  */
-export async function assertUnlockSessionAllowed(
+export async function assertUnlockPricingAllowed(
   ctx: QueryCtx | MutationCtx,
 ): Promise<void> {
   const auth = await getAuthContext(ctx);
   if (auth?.kind !== "agent") return;
-  await requireAgentScope(ctx, auth, UNLOCK_SESSION_SCOPE.resource, UNLOCK_SESSION_SCOPE.action);
+  await requireAgentScope(ctx, auth, UNLOCK_PRICING_SCOPE.resource, UNLOCK_PRICING_SCOPE.action);
 }
 
 /** The extra scope a key must hold to run `agentRevert.revertAgentWindow` on

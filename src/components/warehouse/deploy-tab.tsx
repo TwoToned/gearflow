@@ -7,6 +7,7 @@ import {
   Container,
   X,
   Undo2,
+  ArrowRightLeft,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -28,11 +29,13 @@ import {
 } from "@/components/ui/table";
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
-import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
-import { KitChildRows } from "./kit-child-rows";
+import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey, isAccessoryParentPartiallyDeployed } from "./warehouse-types";
+import { KitChildRows, BulkAccessoryRows, MobileBulkAccessoryCards } from "./kit-child-rows";
 import { MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
+import { ScanHistoryStrip } from "./scan-history-strip";
+import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
 export interface DeployTabProps {
   /**
@@ -50,6 +53,7 @@ export interface DeployTabProps {
   handleDeployScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   deployScanMutationMutate: (value: string) => void;
   deployScanMutationIsPending: boolean;
+  scanHistoryEntries: ScanHistoryRecord[];
 
   // Selection
   selectedOut: Set<string>;
@@ -79,6 +83,14 @@ export interface DeployTabProps {
   clearContainerMutate: (containerName: string) => void;
   clearContainerIsPending: boolean;
   checkOutIsPending: boolean;
+  /** #1296 Move-to… — open the shared MoveToContainerDialog against this
+   *  tab's current selection. */
+  onMoveSelected: () => void;
+  /** #1296 D4 — "Deploy container": select every one of this container's
+   *  entries so the existing Deploy button (already visible, already wired)
+   *  becomes the trigger, instead of a second deploy code path. Deploy tab
+   *  only (never passed a meaningful handler in deprep mode). */
+  onDeployContainer: (entries: GroupEntry[]) => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -101,6 +113,7 @@ export function DeployTab({
   handleDeployScanKeyDown,
   deployScanMutationMutate,
   deployScanMutationIsPending,
+  scanHistoryEntries,
   selectedOut,
   setSelectedOut,
   selectedOutCount,
@@ -119,6 +132,8 @@ export function DeployTab({
   clearContainerMutate,
   clearContainerIsPending,
   checkOutIsPending,
+  onMoveSelected,
+  onDeployContainer,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -130,9 +145,14 @@ export function DeployTab({
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
             {!isDeprep && (
+              <ScanHistoryStrip entries={scanHistoryEntries} />
+            )}
+            {!isDeprep && (
               <AssetTagInput
                 ref={deployScanInputRef}
                 placeholder="Scan asset tag to deploy..."
+                scannerTitle="Scan gear to deploy"
+                continuous
                 value={deployScanValue}
                 onChange={(e) => setDeployScanValue(e.target.value)}
                 onScan={(value) => deployScanMutationMutate(value)}
@@ -148,6 +168,15 @@ export function DeployTab({
                   : "Items prepped and ready to deploy."}
               </p>
               <div className="flex items-center gap-2">
+                <Button
+                  variant="line"
+                  onClick={onMoveSelected}
+                  disabled={selectedOutCount === 0}
+                  className="shrink-0"
+                >
+                  <ArrowRightLeft className="mr-1.5 h-4 w-4" />
+                  Move to…{selectedOutCount > 0 ? ` (${selectedOutCount})` : ""}
+                </Button>
                 {isDeprep ? (
                   <>
                     {/* Move back a stage — return this gear to Deployed (un-return). */}
@@ -247,16 +276,26 @@ export function DeployTab({
                               {container}
                             </div>
                             {!isDeprep && (
-                              <button
-                                type="button"
-                                onClick={() => clearContainerMutate(container)}
-                                disabled={clearContainerIsPending}
-                                className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
-                                title="Remove container"
-                                aria-label={`Remove container ${container}`}
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="line"
+                                  size="sm"
+                                  className="h-7"
+                                  onClick={() => onDeployContainer(deployContainerGroups.find((g) => g.container === container)?.entries ?? [])}
+                                >
+                                  Deploy container
+                                </Button>
+                                <button
+                                  type="button"
+                                  onClick={() => clearContainerMutate(container)}
+                                  disabled={clearContainerIsPending}
+                                  className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                                  title="Remove container"
+                                  aria-label={`Remove container ${container}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             )}
                           </div>
                         </TableCell>
@@ -358,6 +397,14 @@ export function DeployTab({
                             </TableRow>
                           );
                         })}
+                        <BulkAccessoryRows
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="deploy"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </Fragment>
                     );
                   }
@@ -451,7 +498,7 @@ export function DeployTab({
                     const allIds = collectAllVerifiableIds(entry.children, "deploy");
                     const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
                     const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                    const isPartiallyDeployed = entry.item.status === "CHECKED_OUT" && entry.children.some((c) => c.status === "CHECKED_OUT");
+                    const isPartiallyDeployed = isAccessoryParentPartiallyDeployed(entry.item);
                     return (
                       <Fragment key={entry.groupKey}>
                         <TableRow
@@ -493,7 +540,7 @@ export function DeployTab({
                           <TableCell className="t-mono text-muted">
                             {entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
                           </TableCell>
-                          <TableCell className="text-center tabular-nums">{entry.children.length}</TableCell>
+                          <TableCell className="text-center tabular-nums">{entry.item.quantity}</TableCell>
                           <TableCell>
                             {isPartiallyDeployed ? (
                               <Badge status="warn">
@@ -574,16 +621,26 @@ export function DeployTab({
                     label={container}
                     action={
                       isDeprep ? undefined : (
-                        <button
-                          type="button"
-                          onClick={() => clearContainerMutate(container)}
-                          disabled={clearContainerIsPending}
-                          className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
-                          title="Remove container"
-                          aria-label={`Remove container ${container}`}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="line"
+                            size="sm"
+                            className="h-7"
+                            onClick={() => onDeployContainer(deployContainerGroups.find((g) => g.container === container)?.entries ?? [])}
+                          >
+                            Deploy
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => clearContainerMutate(container)}
+                            disabled={clearContainerIsPending}
+                            className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--r)] text-muted transition-colors hover:text-t-out hover:bg-out-soft disabled:opacity-45 disabled:cursor-not-allowed ${focusRing}`}
+                            title="Remove container"
+                            aria-label={`Remove container ${container}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
                       )
                     }
                   />
@@ -665,6 +722,14 @@ export function DeployTab({
                             />
                           );
                         })}
+                        <MobileBulkAccessoryCards
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="deploy"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </ScanGroupCard>
                     );
                   }
@@ -723,7 +788,7 @@ export function DeployTab({
                     const allIds = collectAllVerifiableIds(entry.children, "deploy");
                     const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
                     const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
-                    const isPartiallyDeployed = entry.item.status === "CHECKED_OUT" && entry.children.some((c) => c.status === "CHECKED_OUT");
+                    const isPartiallyDeployed = isAccessoryParentPartiallyDeployed(entry.item);
                     return (
                       <ScanGroupCard
                         key={entry.groupKey}
@@ -743,7 +808,7 @@ export function DeployTab({
                           </>
                         }
                         assetTag={entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
-                        qtyLabel={entry.children.length}
+                        qtyLabel={entry.item.quantity}
                         status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <PrepStatusBadge item={entry.item} />}
                       >
                         <MobileKitChildCards

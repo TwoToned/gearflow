@@ -27,6 +27,10 @@ import {
   reconstructScope,
 } from "@/lib/project-line-item-tree-read";
 import { reconstructProjectEquipmentTree } from "@/lib/project-equipment-reconstruct";
+import {
+  type CategoryPricingDisplay,
+  toCategoryPricingDisplay,
+} from "@/lib/category-pricing-display";
 
 /**
  * Convex read layer for the project **equipment line-item tree** — the I/O +
@@ -102,6 +106,10 @@ export type MappedLineItem = Omit<
   | "duration"
   | "discount"
   | "discountMode"
+  | "taxRate"
+  | "revealPriceInRollup"
+  | "showInGroupOnDocs"
+  | "excludeFromRoi"
   | "lineTotal"
   | "priceBreakdown"
   | "priceOverridden"
@@ -128,6 +136,8 @@ export type MappedLineItem = Omit<
   | "returnNotes"
   | "prepStatus"
   | "prepContainer"
+  | "plannedContainerId"
+  | "containerId"
   | "isContainerLineItem"
   | "isCustomItem"
   | "returnStatus"
@@ -163,6 +173,23 @@ export type MappedLineItem = Omit<
   /** #1012 — how `discount` was ENTERED. Null on every pre-#1012 row, which the
    *  document renderer reads as `"$"` (the pre-#1012 behaviour, no backfill). */
   discountMode: "$" | "%" | null;
+  /** T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3. */
+  taxRate: number | null;
+  /** Category price rollup, per-item reveal — true when this line prints its own
+   *  price even inside a rolled-up category. Absent on the stored row is
+   *  normalised to `false` (the default: hidden inside a rollup, and irrelevant
+   *  outside one). See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on a client-facing document (description +
+   *  quantity, never a price). Absent on the row = false.
+   *  See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs: boolean;
+  /** #1249 — the operator has excluded this line from revenue allocation: it
+   *  takes no share of its group/kit pool and never counts toward model ROI.
+   *  Absent on the row = included (the default). Internal only — it changes
+   *  nothing on a client-facing document. See convex/lib/allocation.ts. */
+  excludeFromRoi: boolean;
   lineTotal: number | null;
   priceBreakdown: string | null;
   priceOverridden: boolean;
@@ -192,6 +219,12 @@ export type MappedLineItem = Omit<
   returnNotes: string | null;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** #1296 packing containers, D9 — the PM's planned container for this whole
+   *  line (Packing tab, phase 4). Null until a plan exists. */
+  plannedContainerId: string | null;
+  /** #1296 — set ONLY on a container's own line item (reverse lookup to the
+   *  `projectContainers` row this line IS, not one it's packed inside). */
+  containerId: string | null;
   isContainerLineItem: boolean;
   isCustomItem: boolean;
   returnStatus: string | null;
@@ -230,6 +263,10 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     duration: d.duration ?? 1,
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
+    taxRate: d.taxRate ?? null,
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
+    showInGroupOnDocs: d.showInGroupOnDocs ?? false,
+    excludeFromRoi: d.excludeFromRoi ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,
@@ -256,6 +293,8 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     returnNotes: d.returnNotes ?? null,
     prepStatus: d.prepStatus ?? null,
     prepContainer: d.prepContainer ?? null,
+    plannedContainerId: d.plannedContainerId ?? null,
+    containerId: d.containerId ?? null,
     isContainerLineItem: d.isContainerLineItem ?? false,
     isCustomItem: d.isCustomItem ?? false,
     returnStatus: d.returnStatus ?? null,
@@ -289,6 +328,7 @@ export type MappedUnit = Omit<
   | "status"
   | "prepStatus"
   | "prepContainer"
+  | "containerId"
   | "checkedOutAt"
   | "checkedOutById"
   | "returnedAt"
@@ -307,6 +347,9 @@ export type MappedUnit = Omit<
   status: string;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** #1296 packing containers — the container this unit is actually packed
+   *  in (membership lives on the UNIT, never the line). Null = loose. */
+  containerId: string | null;
   checkedOutAt: Date | null;
   checkedOutById: string | null;
   returnedAt: Date | null;
@@ -333,6 +376,7 @@ export function mapUnitDoc(d: UnitDoc): MappedUnit {
     status: d.status ?? "CONFIRMED",
     prepStatus: d.prepStatus ?? null,
     prepContainer: d.prepContainer ?? null,
+    containerId: d.containerId ?? null,
     checkedOutAt: msToDate(d.checkedOutAt),
     checkedOutById: d.checkedOutById ?? null,
     returnedAt: msToDate(d.returnedAt),
@@ -346,7 +390,16 @@ export function mapUnitDoc(d: UnitDoc): MappedUnit {
 }
 
 /** Derived from `Doc<"projectCategories">` (R-8.2.4) so schema drift is a compile error. */
-export type MappedCategory = Omit<CategoryDoc, "_id" | "_creationTime" | "sortOrder" | "createdAt" | "updatedAt"> & {
+export type MappedCategory = Omit<
+  CategoryDoc,
+  "_id" | "_creationTime" | "pricingDisplay" | "xeroAccountCode" | "xeroTaxType" | "sortOrder" | "createdAt" | "updatedAt"
+> & {
+  /** Category price rollup — normalised to one of the two literals here (absent
+   *  reads as `ITEMISED`) so no consumer downstream has to apply the default
+   *  itself. See src/lib/category-pricing-display.ts. */
+  pricingDisplay: CategoryPricingDisplay;
+  xeroAccountCode: string | null;
+  xeroTaxType: string | null;
   sortOrder: number;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -358,6 +411,9 @@ export function mapCategoryDoc(d: CategoryDoc): MappedCategory {
     organizationId: d.organizationId,
     projectId: d.projectId,
     name: d.name,
+    pricingDisplay: toCategoryPricingDisplay(d.pricingDisplay),
+    xeroAccountCode: orNull(d.xeroAccountCode),
+    xeroTaxType: orNull(d.xeroTaxType),
     sortOrder: d.sortOrder ?? 0,
     createdAt: msToDate(d.createdAt),
     updatedAt: msToDate(d.updatedAt),
@@ -375,6 +431,7 @@ export type MappedGroup = Omit<
   | "price"
   | "discount"
   | "discountMode"
+  | "revealPriceInRollup"
   | "suggestedPrice"
   | "sortOrder"
   | "pricedUnderLock"
@@ -390,6 +447,9 @@ export type MappedGroup = Omit<
   discount: number | null;
   /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
   discountMode: "$" | "%" | null;
+  /** Category price rollup, per-item reveal — prints this group's own collapsed
+   *  bundle price even inside a rolled-up category. Absent on the row = false. */
+  revealPriceInRollup: boolean;
   suggestedPrice: number | null;
   sortOrder: number;
   /** Mirrors `MappedLineItem.pricedUnderLock` — see that field's comment. */
@@ -412,6 +472,7 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     price: orNull(d.price),
     discount: orNull(d.discount),
     discountMode: orNull(d.discountMode),
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
     suggestedPrice: orNull(d.suggestedPrice),
     sortOrder: d.sortOrder ?? 0,
     pricedUnderLock: d.pricedUnderLock ?? false,
@@ -627,6 +688,9 @@ export interface DocCategoryWithGroups {
   id: string;
   name: string;
   sortOrder: number;
+  /** Category price rollup — drives whether this section's members print their
+   *  own prices or one derived subtotal on the header row. */
+  pricingDisplay: CategoryPricingDisplay;
   groups: MappedGroup[];
 }
 
@@ -645,12 +709,17 @@ export interface DocCategoryWithGroups {
  * Returns `{ lineItems, categories }` (categories = the cat+groups array for
  * `structureLineItems`).
  */
-export async function buildDocumentLineItemData(projectId: string, organizationId: string) {
+export async function buildDocumentLineItemData(projectId: string, organizationId: string, versionId?: string) {
   const convex = await getConvexClient();
+  // #1233 (Phase 6) — `versionId` (optional, defaults to the project's live
+  // version) threads straight through to the three already-version-aware
+  // Convex reads (Phase 2, #1228) — a quote rendered for a NON-live version
+  // reconstructs THAT version's own equipment/groups/categories, not the
+  // live plan's.
   const [liDocs, catDocs, grpDocs] = await Promise.all([
-    convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId }),
-    convex.query(api.projectCategories.listByProject, { projectId, orgId: organizationId }),
-    convex.query(api.projectGroups.listByProject, { projectId, orgId: organizationId }),
+    convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId, versionId }),
+    convex.query(api.projectCategories.listByProject, { projectId, orgId: organizationId, versionId }),
+    convex.query(api.projectGroups.listByProject, { projectId, orgId: organizationId, versionId }),
   ]);
 
   const lineItems = liDocs.map(mapLineItemDoc);
@@ -682,6 +751,8 @@ export async function buildDocumentLineItemData(projectId: string, organizationI
       parentUnitAssetId: u.parentUnitAssetId,
       assetId: u.assetId,
       bulkAssetId: u.bulkAssetId,
+      // #1296 — the container this unit is packed in (byContainer structuring).
+      containerId: u.containerId,
       // lineItemId + ordinal drive indexUnits (bucket + sort); harmless extras on output.
       lineItemId: u.lineItemId,
       ordinal: u.ordinal,
@@ -726,6 +797,7 @@ export async function buildDocumentLineItemData(projectId: string, organizationI
       id: c.id,
       name: c.name,
       sortOrder: c.sortOrder,
+      pricingDisplay: c.pricingDisplay,
       groups: mappedGroups
         .filter((g) => g.categoryId === c.id)
         .sort((a, b) => a.sortOrder - b.sortOrder),
@@ -750,6 +822,9 @@ export async function buildDocumentLineItemData(projectId: string, organizationI
       id: "__uncategorized__",
       name: "Uncategorized",
       sortOrder: Number.MAX_SAFE_INTEGER,
+      // The synthetic bucket has no row to carry a setting, so it always
+      // itemises — there is no category for an operator to have rolled up.
+      pricingDisplay: "ITEMISED",
       groups: uncategorizedGroups,
     });
   }

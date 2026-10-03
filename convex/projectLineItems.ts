@@ -14,6 +14,8 @@ import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { getProjectWindow } from "./lib/projectWindow";
 import { pricedUnderLockOnInsert } from "./lib/projectLocks";
+import { deleteCommentsAndMarkersForTarget } from "./lib/commentCleanup";
+import { liveRows, resolveLiveVersionIdForProject, resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for ProjectLineItem (Convex table "projectLineItems"). GENERATED — Phase 2/5.
@@ -71,13 +73,13 @@ export const getById = query({
 });
 
 export const listByProject = query({
-  args: { projectId: v.string(), orgId: v.string() },
-  handler: async (ctx, { projectId, orgId }) => {
+  // #1228: optional versionId, defaulting to the project's live version.
+  args: { projectId: v.string(), orgId: v.string(), versionId: v.optional(v.string()) },
+  handler: async (ctx, { projectId, orgId, versionId }) => {
     await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
-    const rows = await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) return [];
+    const rows = await versionRows(ctx, "projectLineItems", resolveVersionId(project, versionId));
     // `requireOrgReadFor` proves the CALLER belongs to `orgId`. It says nothing about
     // whether `projectId` does — and it short-circuits entirely for the service
     // token. Without this row filter, a foreign projectId returns another org's
@@ -124,11 +126,11 @@ export const listByProjectIds = query({
   handler: async (ctx, { orgId, projectIds }) => {
     await requireOrgReadFor(ctx, orgId, "project");
     const out = [];
+    // LIVE-ONLY (#1228) — this dashboard aggregation counts the live plan.
     for (const projectId of projectIds) {
-      const rows = await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-        .collect();
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+      if (!project || project.organizationId !== orgId) continue;
+      const rows = await liveRows(ctx, project, "projectLineItems");
       for (const r of rows) if (r.organizationId === orgId) out.push(r);
     }
     return out;
@@ -190,12 +192,18 @@ export const create = mutation({
     subHireId: v.optional(v.string()),
     subHireItemId: v.optional(v.string()),
     subHireGroupId: v.optional(v.string()),
+    // #1228 — optional on this legacy service-only mirror mutation too
+    // (additive-only). Defaults to the project's live version when absent,
+    // so a caller that predates this phase still inserts a visible row.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("projectLineItems", args);
+    const versionId = args.versionId ?? (await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId));
+    return await ctx.db.insert("projectLineItems", { ...args, versionId, lineageId: args.lineageId ?? args.id });
   },
 });
 
@@ -254,6 +262,9 @@ export const createIfMissing = mutation({
     subHireId: v.optional(v.string()),
     subHireItemId: v.optional(v.string()),
     subHireGroupId: v.optional(v.string()),
+    // #1228 — see the identical note on `create` above.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
@@ -261,7 +272,8 @@ export const createIfMissing = mutation({
     await requireService(ctx);
     const existing = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
-    const _id = await ctx.db.insert("projectLineItems", args);
+    const versionId = args.versionId ?? (await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId));
+    const _id = await ctx.db.insert("projectLineItems", { ...args, versionId, lineageId: args.lineageId ?? args.id });
     return { _id, created: true };
   },
 });
@@ -331,6 +343,9 @@ export const createMany = mutation({
         subHireId: v.optional(v.string()),
         subHireItemId: v.optional(v.string()),
         subHireGroupId: v.optional(v.string()),
+        // #1228 — see the identical note on `create` above.
+        versionId: v.optional(v.string()),
+        lineageId: v.optional(v.string()),
         createdAt: v.optional(v.number()),
         updatedAt: v.optional(v.number()),
       }),
@@ -339,13 +354,19 @@ export const createMany = mutation({
   handler: async (ctx, { organizationId, rows }) => {
     await requireService(ctx);
     let created = 0;
+    const versionIdByProject = new Map<string, string>();
     for (const r of rows) {
       const existing = await ctx.db
         .query("projectLineItems")
         .withIndex("by_cuid", (q) => q.eq("id", r.id))
         .unique();
       if (existing) continue;
-      await ctx.db.insert("projectLineItems", { ...r, organizationId });
+      let versionId = r.versionId ?? versionIdByProject.get(r.projectId);
+      if (!versionId) {
+        versionId = await resolveLiveVersionIdForProject(ctx, r.projectId, organizationId);
+        versionIdByProject.set(r.projectId, versionId);
+      }
+      await ctx.db.insert("projectLineItems", { ...r, organizationId, versionId, lineageId: r.lineageId ?? r.id });
       created++;
     }
     return { created };
@@ -429,6 +450,7 @@ export const remove = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("projectLineItems not found: " + id);
+    await deleteCommentsAndMarkersForTarget(ctx, doc.organizationId, doc.id);
     await ctx.db.delete(doc._id);
   },
 });
@@ -440,24 +462,35 @@ export const remove = mutation({
 // accessory expansion + cascade delete in one transaction.
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string): Promise<number> {
-  // Max sortOrder for the project = desc-first on by_projectId_sortOrder (1 doc),
-  // instead of collecting ALL the project's lines to reduce the max (O(N) per add,
-  // O(N^2) across a bulk add). projectId is org-scoped, so the org check is defensive.
+/** Max sortOrder within ONE version = desc-first on by_versionId_sortOrder (1
+ *  doc), instead of collecting ALL the version's lines to reduce the max
+ *  (O(N) per add, O(N^2) across a bulk add). `versionId` defaults to the
+ *  project's live version (every pre-#1221 caller's exact behaviour — this
+ *  legacy CRUD layer's own `create`/`createCustomLineItem` callers still
+ *  only ever write the live plan); `createKitLineItemCore` (#1221 follow-up)
+ *  passes an explicit target instead. */
+async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string, versionId?: string): Promise<number> {
+  const targetVersionId = versionId ?? (await resolveLiveVersionIdForProject(ctx, projectId, organizationId));
   const top = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId_sortOrder", (q) => q.eq("projectId", projectId))
+    .withIndex("by_versionId_sortOrder", (q) => q.eq("versionId", targetVersionId))
     .order("desc")
     .first();
   return ((top && top.organizationId === organizationId ? top.sortOrder : undefined) ?? -1) + 1;
 }
 
-async function deleteLineWithUnits(ctx: MutationCtx, lineDocId: import("./_generated/dataModel").Id<"projectLineItems">, lineCuid: string) {
+async function deleteLineWithUnits(
+  ctx: MutationCtx,
+  lineDocId: import("./_generated/dataModel").Id<"projectLineItems">,
+  lineCuid: string,
+  orgId: string,
+) {
   const units = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineCuid))
     .collect();
   for (const u of units) await ctx.db.delete(u._id);
+  await deleteCommentsAndMarkersForTarget(ctx, orgId, lineCuid);
   await ctx.db.delete(lineDocId);
 }
 
@@ -496,11 +529,14 @@ export const createLineItem = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const sortOrder = await nextLineSort(ctx, a.projectId, a.organizationId);
+    const versionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+    const sortOrder = await nextLineSort(ctx, a.projectId, a.organizationId, versionId);
     await ctx.db.insert("projectLineItems", {
       id: a.id,
       organizationId: a.organizationId,
       projectId: a.projectId,
+      versionId,
+      lineageId: a.id,
       ...a.fields,
       accessoryPlan: a.accessoryPlan,
       status: "CONFIRMED",
@@ -521,6 +557,7 @@ export const createLineItem = mutation({
         organizationId: a.organizationId,
         projectId: a.projectId,
         accessoryPlan: a.accessoryPlan ?? null,
+        versionId,
       });
     }
     return { id: a.id, sortOrder };
@@ -552,10 +589,13 @@ export const createCustomLineItem = mutation({
   handler: async (ctx, a) => {
     await requireService(ctx);
     const sortOrder = await nextLineSort(ctx, a.projectId, a.organizationId);
+    const versionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
     await ctx.db.insert("projectLineItems", {
       id: a.id,
       organizationId: a.organizationId,
       projectId: a.projectId,
+      versionId,
+      lineageId: a.id,
       type: "EQUIPMENT",
       isCustomItem: true,
       ...a.fields,
@@ -632,6 +672,9 @@ export async function createKitLineItemCore(
     /** #1012 — entry shape of `discount` ($ off vs % of `unitPrice`). Display
      *  only; stored alongside the resolved dollar amount above. */
     discountMode?: "$" | "%";
+    /** T3 (#1091) — per-line tax rate override on the PARENT line only, same
+     *  scope as `discount` above; see docs/designs/tax-model.md §3. */
+    taxRate?: number;
     pricingMode: "KIT_PRICE" | "ITEMIZED";
     groupName?: string;
     categoryId?: string;
@@ -642,13 +685,20 @@ export async function createKitLineItemCore(
      *  `pricedUnderLock`). Omitted (the service-only `createKitLineItem` path,
      *  which has no lock guard of its own) leaves the row unflagged. */
     pricedUnderLock?: boolean;
+    /** #1221 follow-up — the version this kit lands on. `addKitNative`
+     *  resolves + validates this itself (it already loads the project doc)
+     *  and passes it straight through; the service-only `createKitLineItem`
+     *  path (no project doc in scope, no lock guard) omits it and gets the
+     *  old LIVE-ONLY behaviour unchanged. */
+    versionId?: string;
     now: number;
   },
 ): Promise<{ id: string }> {
     await assertProjectInOrg(ctx, a.projectId, a.organizationId);
     const kit = await getKitByCuid(ctx, a.kitId);
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
-    let sort = await nextLineSort(ctx, a.projectId, a.organizationId);
+    const versionId = a.versionId ?? (await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId));
+    let sort = await nextLineSort(ctx, a.projectId, a.organizationId, versionId);
 
     // Discount only means anything alongside a flat unitPrice (KIT_PRICE mode) —
     // ITEMIZED kits have no parent-row price to discount against.
@@ -656,10 +706,11 @@ export async function createKitLineItemCore(
       a.unitPrice != null ? Math.max(0, a.unitPrice - (a.discount ?? 0)) : a.unitPrice;
 
     await ctx.db.insert("projectLineItems", {
-      id: a.id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", kitId: a.kitId,
+      id: a.id, organizationId: a.organizationId, projectId: a.projectId, versionId, lineageId: a.id, type: "EQUIPMENT", kitId: a.kitId,
       description: `${kit.assetTag} - ${kit.name}`, quantity: 1, unitPrice: a.unitPrice, pricingType: "PER_DAY",
       duration: 1, discount: a.unitPrice != null ? a.discount : undefined,
       discountMode: a.unitPrice != null && a.discount != null ? a.discountMode : undefined,
+      taxRate: a.taxRate,
       lineTotal: kitLineTotal, sortOrder: sort++, pricingMode: a.pricingMode,
       groupName: a.groupName, categoryId: a.categoryId, groupId: a.groupId, status: "CONFIRMED",
       pricedUnderLock: pricedUnderLockOnInsert(a.pricedUnderLock),
@@ -674,7 +725,7 @@ export async function createKitLineItemCore(
       const childPrice = itemized && model?.defaultRentalPrice != null ? Number(model.defaultRentalPrice) : undefined;
       const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        id: childId, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT",
+        id: childId, organizationId: a.organizationId, projectId: a.projectId, versionId, lineageId: childId, type: "EQUIPMENT",
         modelId: asset?.modelId, assetId: si.assetId, description: model?.name ?? asset?.modelId ?? "",
         quantity: 1, unitPrice: childPrice, pricingType: "PER_DAY", duration: 1, lineTotal: childPrice,
         sortOrder: sort++, isKitChild: true, parentLineItemId: a.id, status: "CONFIRMED", createdAt: a.now, updatedAt: a.now,
@@ -692,7 +743,7 @@ export async function createKitLineItemCore(
       const childTotal = itemized && model?.defaultRentalPrice != null ? Number(model.defaultRentalPrice) * bi.quantity : undefined;
       const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        id: childId, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT",
+        id: childId, organizationId: a.organizationId, projectId: a.projectId, versionId, lineageId: childId, type: "EQUIPMENT",
         modelId: ba?.modelId, bulkAssetId: bi.bulkAssetId, description: `${bi.quantity}x ${model?.name ?? ba?.modelId ?? ""}`,
         quantity: bi.quantity, unitPrice: childTotal != null ? childTotal / bi.quantity : undefined, pricingType: "PER_DAY",
         duration: 1, lineTotal: childTotal, sortOrder: sort++, isKitChild: true, parentLineItemId: a.id,
@@ -762,11 +813,12 @@ export async function removeLineItemCascadeCore(ctx: MutationCtx, id: string): P
   const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
   if (!line) throw new ConvexError("projectLineItems not found: " + id);
   const children = await ctx.db
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
     .query("projectLineItems")
     .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
     .collect();
-  for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id);
-  await deleteLineWithUnits(ctx, line._id, line.id);
+  for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id, c.organizationId);
+  await deleteLineWithUnits(ctx, line._id, line.id, line.organizationId);
 }
 
 /** Cascade delete a line: its children (+ all units), then the line (+ its units). */
@@ -801,6 +853,12 @@ export const reorderLineItems = mutation({
 
 const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"]);
 
+// Mirrors convex/overbooking.ts's own MIN_TS — an unbounded-below range scan on
+// projectStartDate sweeps in every not-yet-backfilled project (undefined sorts
+// first in a Convex index), degrading the scoped scan below back into a
+// whole-org read. See that file's comment for the full rationale.
+const MIN_TS = -8_640_000_000_000_000;
+
 /** Reassign a line's asset, re-checking free-in-window + writing in ONE mutation
  *  (the double-booking TOCTOU guard — OCC makes the check+write race-safe). */
 export const swapLineItemAsset = mutation({
@@ -830,8 +888,8 @@ export const swapLineItemAsset = mutation({
     if (newAsset.status === "RETIRED" || newAsset.status === "LOST" || newAsset.status === "SOLD") throw new ConvexError(`Asset ${newAsset.assetTag} is ${(newAsset.status as string).toLowerCase()}`);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", line.projectId)).unique();
-    const startMs = project?.rentalStartDate ?? null;
-    const endMs = project?.rentalEndDate ?? null;
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const { start: startMs, end: endMs } = getProjectWindow(project ?? {});
     if (startMs != null && endMs != null) {
       // Range-scan only projects that could overlap [startMs, endMs] — instead of
       // collecting the whole org projects table on every asset reassign. TWO scans
@@ -852,7 +910,7 @@ export const swapLineItemAsset = mutation({
       for await (const p of ctx.db
         .query("projects")
         .withIndex("by_organizationId_projectStartDate", (q) =>
-          q.eq("organizationId", a.organizationId).lte("projectStartDate", endMs),
+          q.eq("organizationId", a.organizationId).gt("projectStartDate", MIN_TS).lte("projectStartDate", endMs),
         )) {
         candidates.set(p.id, p);
       }

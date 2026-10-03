@@ -16,9 +16,11 @@ import { renderProjectNumber, scopeKeyFor, type IncrementReset, type ProjectNumb
 import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
 import { computeDueDate } from "./lib/invoiceDates";
 import { startOfDayInTimezone } from "./lib/quoteDates";
-import { projectLiveRevision, findQuoteAtRevision, effectiveQuoteStatus } from "./lib/quoteState";
+import { projectLiveRevision } from "./lib/quoteState";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
+import { reconcileFollowUps } from "./lib/followUpReconcile";
 
 /**
  * Invoice write mutations (WS1 #940) — browser-direct, standard 4-guard shape.
@@ -216,20 +218,46 @@ export const createNative = mutation({
     // A DEPOSIT/BALANCE invoice doesn't carry the full equipment/service line
     // breakdown (the % is against the total, not itemised) — snapshot a
     // single summary line instead of the full FULL-invoice breakdown.
+    //
+    // The line amount is `subtotal`, i.e. tax-EXCLUSIVE — the invariant every
+    // invoice kind holds: `sum(invoiceLines.lineTotal) === invoices.subtotal`,
+    // with `taxAmount` added on top. FULL already satisfies it (its lines come
+    // straight from `buildFinanceLines`, which sums to the project's ex-tax
+    // subtotal). Writing the tax-INCLUSIVE `total` here instead was a real
+    // billing bug (reported 2026-09-15, INV-260901) with two faces: Flow's own
+    // PDF printed a $330.00 line above a $300.00 Subtotal that it didn't
+    // reconcile with, and the Xero push — whose `LineAmount` contract is
+    // explicitly tax-exclusive (src/lib/xero-client.ts) — had GST added on top
+    // of the already-inclusive figure, billing the client $363.00 with $33.00
+    // GST for an invoice Flow said was $330.00 with $30.00 GST.
+    //
+    // The deposit BASIS is unchanged: it is still a % of the tax-INCLUSIVE
+    // project total (matching how an operator quotes "25% deposit"), which is
+    // what `total` above holds and what the description below prints. Only the
+    // stored LINE is ex-tax, because that is what a line amount means.
     const linesToWrite =
       fields.kind === "DEPOSIT" || fields.kind === "BALANCE"
         ? [
             {
               sourceType: "CUSTOM" as const,
+              // The description states the BASIS, never the line's own amount.
+              // `Deposit ($550.00)` against a $500.00 ex-tax line (the $550 is
+              // the tax-INCLUSIVE figure the operator typed) put two different
+              // numbers for the same charge on one row — the same
+              // self-contradiction the inclusive line amount itself caused.
+              // The typed figure is still on the document: it IS the Total.
+              // The `%` wording is a basis statement against the project's
+              // tax-inclusive total, which is what this invoice's own Total
+              // resolves to, so it stays as-is.
               description:
                 fields.kind === "DEPOSIT"
                   ? depositMode === "$"
-                    ? `Deposit ($${total.toFixed(2)})`
+                    ? "Deposit"
                     : `Deposit (${fields.depositPercent ?? 25}% of project total)`
                   : "Balance due",
               quantity: 1,
-              unitPrice: total,
-              lineTotal: total,
+              unitPrice: subtotal,
+              lineTotal: subtotal,
             },
           ]
         : lines;
@@ -268,43 +296,26 @@ export const createNative = mutation({
 });
 
 /**
- * An invoice may only become real (ISSUED) once the quote it's linked to — by
- * the revision stamped on it at creation (`sourceRevision`, never updated
- * afterwards) — is the project's currently ACCEPTED quote. Draft invoices
- * stay unrestricted; this only gates the DRAFT→ISSUED transition (split out
- * of `issueNative`'s handler to keep its own complexity down, R-3.6, same
- * reasoning as `quotesWrites.ts`'s `assertQuoteStatusIs`).
+ * `issueNative` used to require the quote at the invoice's own
+ * `sourceRevision` to be `ACCEPTED` before a DRAFT could become ISSUED
+ * (2026-08, `QUOTE_NOT_ACCEPTED`). Reversed 2026-09: an operator can issue an
+ * invoice with no quote sent at all, or against a quote that's still SENT/
+ * EXPIRED/DECLINED — the invoice always bills whatever the project's own
+ * pricing already snapshotted at `createNative` time (server-computed,
+ * R-9.3), never the quote's figures, so there was never a money reason to
+ * gate on quote status; it only blocked the legitimate case of invoicing a
+ * job the client agreed to verbally, or before a formal quote existed. Quote
+ * acceptance still gates `CONFIRMED` (`convex/lib/quoteState.ts`
+ * `hasAcceptedQuote`) — that decision is unaffected.
  */
-async function assertInvoiceQuoteAccepted(
-  ctx: MutationCtx,
-  orgId: string,
-  invoice: Pick<Doc<"invoices">, "projectId" | "sourceRevision">,
-  nowMs: number,
-): Promise<void> {
-  if (invoice.sourceRevision == null) {
-    throw new ConvexError({
-      code: "QUOTE_NOT_ACCEPTED",
-      message: "This invoice has no linked quote version — recreate it against the current version to issue it.",
-    });
-  }
-  const linkedQuote = await findQuoteAtRevision(ctx, orgId, invoice.projectId, invoice.sourceRevision);
-  if (!linkedQuote) {
-    throw new ConvexError({
-      code: "QUOTE_NOT_ACCEPTED",
-      message: "Can't issue this invoice — no quote exists yet for this version.",
-    });
-  }
-  const linkedStatus = effectiveQuoteStatus(linkedQuote, nowMs);
-  if (linkedStatus !== "ACCEPTED") {
-    throw new ConvexError({
-      code: "QUOTE_NOT_ACCEPTED",
-      message: `Can't issue this invoice — the quote for this version is ${linkedStatus.toLowerCase()}, not accepted.`,
-    });
-  }
-}
 
 export const issueNative = mutation({
-  returns: v.object({ id: v.string(), invoiceNumber: v.string() }),
+  returns: v.object({
+    id: v.string(),
+    invoiceNumber: v.string(),
+    /** #1236 — non-null when the automation moved the job to AWAITING_PAYMENT. */
+    autoStatus: v.union(v.string(), v.null()),
+  }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -343,7 +354,6 @@ export const issueNative = mutation({
     if (doc.status !== "DRAFT") {
       throw new ConvexError({ code: "INVALID_STATE", message: `Invoice is ${doc.status}, only a DRAFT invoice can be issued.` });
     }
-    await assertInvoiceQuoteAccepted(ctx, orgId, doc, now);
 
     const invoiceNumber = await allocateInvoiceNumber(ctx, orgId, autoNumber, now);
 
@@ -385,7 +395,26 @@ export const issueNative = mutation({
       createdAt: now,
     });
 
-    return { id, invoiceNumber };
+    // #1236 — a job with an invoice out is waiting on money, even if nobody ever
+    // clicked "accept" on a quote (some jobs go straight to a full invoice). A
+    // no-op on a job already at AWAITING_PAYMENT or beyond.
+    //
+    // A CREDIT note is excluded: it is money going back to the client, the exact
+    // opposite of "waiting to be paid". (In practice its original invoice already
+    // fired this trigger — you can only credit an ISSUED one — but the rule should
+    // read correctly rather than rely on that.)
+    const autoStatus =
+      doc.kind === "CREDIT"
+        ? null
+        : autoAdvanceStatus(
+            await maybeAutoAdvanceProjectStatus(ctx, {
+              orgId, projectId: doc.projectId, trigger: "INVOICE_ISSUED", actor, now,
+            }),
+          );
+    // Follow-up automation (FEATUREDOCS/82): issuing closes "invoice not raised".
+    await reconcileFollowUps(ctx, { orgId, projectId: doc.projectId, now });
+
+    return { id, invoiceNumber, autoStatus };
   },
 });
 
@@ -456,6 +485,7 @@ export const voidNative = mutation({
       createdAt: now,
     });
 
+    await reconcileFollowUps(ctx, { orgId: orgId, projectId: doc.projectId, now });
     return { id };
   },
 });
@@ -620,6 +650,7 @@ export const deleteDraftNative = mutation({
       createdAt: now,
     });
 
+    await reconcileFollowUps(ctx, { orgId: orgId, projectId: doc.projectId, now });
     return { id };
   },
 });
@@ -679,14 +710,22 @@ export const createCreditNative = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    const creditTaxableBase = round((Number(original.total) || 0) - (Number(original.taxAmount) || 0));
     await ctx.db.insert("invoiceLines", {
       id: createId(),
       invoiceId: id,
       sourceType: "CUSTOM",
       description: `Credit for invoice ${original.invoiceNumber ?? creditForInvoiceId}`,
       quantity: 1,
-      unitPrice: -original.total,
-      lineTotal: -original.total,
+      // Tax-EXCLUSIVE, and specifically the negated TAXABLE BASE
+      // (`total - taxAmount`), not the negated `subtotal`. They differ for a
+      // FULL invoice on a discounted project, where `subtotal` is the
+      // PRE-discount figure — crediting that would refund the discount the
+      // client never paid. Negating `total` (the original bug here) was worse
+      // still: on the Xero push, whose `LineAmount` is tax-exclusive, a
+      // GST-inclusive credit line had a further 10% credited on top of it.
+      unitPrice: -creditTaxableBase,
+      lineTotal: -creditTaxableBase,
       sortOrder: 0,
     });
 
@@ -704,6 +743,7 @@ export const createCreditNative = mutation({
       createdAt: now,
     });
 
+    await reconcileFollowUps(ctx, { orgId: orgId, projectId: original.projectId, now });
     return { id };
   },
 });

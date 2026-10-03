@@ -7,8 +7,8 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
-import { assertLifecycleGuard, lifecycleAuditMetadata, type LifecycleGuardResult } from "./lib/projectLocks";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Native CROSS-TYPE CATEGORY-SLOT write mutations (Phase 3 browser-direct —
@@ -167,12 +167,14 @@ async function upsertSlotForProjectGroup(
   now: number,
 ): Promise<void> {
   const existing = await ctx.db
+    // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
     .query("categorySlots")
     .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
     .collect();
   for (const slot of existing) await ctx.db.delete(slot._id);
   if (destCategoryId) {
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
       .collect();
@@ -198,12 +200,14 @@ async function upsertSlotForSubHireGroup(
   now: number,
 ): Promise<void> {
   const existing = await ctx.db
+    // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
     .query("categorySlots")
     .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
     .collect();
   for (const slot of existing) await ctx.db.delete(slot._id);
   if (destCategoryId) {
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
       .collect();
@@ -239,12 +243,14 @@ export async function upsertSlotForLineItem(
   now: number,
 ): Promise<void> {
   const existing = await ctx.db
+    // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
     .query("categorySlots")
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId))
     .collect();
   for (const slot of existing) await ctx.db.delete(slot._id);
   if (destCategoryId) {
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
       .collect();
@@ -278,9 +284,6 @@ export const moveSubHireGroupToCategory = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // Required once the sub-hire's project is JUSTIFY+ and no unlock session is
-    // open — this mutation previously bypassed the lifecycle lock entirely.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "categorySlot");
@@ -291,11 +294,11 @@ export const moveSubHireGroupToCategory = mutation({
 
     const { group, subHire } = await requireSubHireGroupInOrg(ctx, a.groupId, a.orgId);
     const projectId = subHire.projectId ?? null;
-    let guard: LifecycleGuardResult | null = null;
+    // Moving a sub-hire group's placement is structural — never gated.
+    let project: Doc<"projects"> | null = null;
     if (projectId != null) {
-      const project = await getProjectInOrg(ctx, projectId, a.orgId);
+      project = await getProjectInOrg(ctx, projectId, a.orgId);
       if (!project) throw new ConvexError("Project not found");
-      guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
     }
 
     // Validate the destination category is the caller's org + this sub-hire's project.
@@ -314,11 +317,9 @@ export const moveSubHireGroupToCategory = mutation({
     });
 
     // 2. Keep the synthetic parent line items' categoryId in sync (top-level lines
-    //    for this sub-hire group). by_projectId is GLOBAL — org-filter.
-    if (projectId != null) {
-      const lines = (
-        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-      ).filter(
+    //    for this sub-hire group). LIVE-ONLY (#1228).
+    if (projectId != null && project) {
+      const lines = (await liveRows(ctx, project, "projectLineItems")).filter(
         (li) =>
           li.organizationId === a.orgId &&
           li.subHireGroupId === a.groupId &&
@@ -351,7 +352,6 @@ export const moveSubHireGroupToCategory = mutation({
         summary: destCategoryId
           ? `Moved sub-hire group to category ${destCategoryId}`
           : `Moved sub-hire group to uncategorised`,
-        metadata: guard ? lifecycleAuditMetadata(guard, a.justification) : undefined,
       });
     }
 
@@ -376,9 +376,6 @@ export const moveProjectGroupToCategory = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
-    // Required once the group's project is JUSTIFY+ and no unlock session is
-    // open — this mutation previously bypassed the lifecycle lock entirely.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "categorySlot");
@@ -389,7 +386,7 @@ export const moveProjectGroupToCategory = mutation({
     const group = await requireGroupInOrg(ctx, a.groupId, a.orgId);
     const project = await getProjectInOrg(ctx, group.projectId, a.orgId);
     if (!project) throw new ConvexError("Project not found");
-    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
+    // Moving a group's placement is structural — never gated.
 
     // Validate the destination category is the caller's org + this group's project.
     let destCategoryId: string | null = null;
@@ -408,10 +405,10 @@ export const moveProjectGroupToCategory = mutation({
       return { ok: true, noop: true };
     }
 
-    // 1. Keep member line items' categoryId in sync. by_projectId is GLOBAL — org-filter.
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", group.projectId)).collect()
-    ).filter((li) => li.organizationId === a.orgId && li.groupId === a.groupId);
+    // 1. Keep member line items' categoryId in sync. LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter(
+      (li) => li.organizationId === a.orgId && li.groupId === a.groupId,
+    );
     for (const li of lines) {
       await ctx.db.patch(li._id, {
         categoryId: destCategoryId != null ? destCategoryId : undefined,
@@ -442,7 +439,6 @@ export const moveProjectGroupToCategory = mutation({
       summary: destCategoryName
         ? `Moved project group to category ${destCategoryName}`
         : `Moved project group to uncategorised`,
-      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { ok: true };
@@ -465,9 +461,6 @@ export const reorderMixedGroupsInCategory = mutation({
     items: v.array(v.object({ prefixedId: v.string(), newSlotId: v.string() })),
     now: v.number(),
     actor: actorValidator,
-    // Required once this category's project is JUSTIFY+ and no unlock session is
-    // open — this mutation previously bypassed the lifecycle lock entirely.
-    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "categorySlot");
@@ -479,7 +472,7 @@ export const reorderMixedGroupsInCategory = mutation({
     const category = await requireCategoryInOrg(ctx, a.categoryId, a.orgId);
     const categoryProject = await getProjectInOrg(ctx, category.projectId, a.orgId);
     if (!categoryProject) throw new ConvexError("Project not found");
-    await assertLifecycleGuard(ctx, categoryProject, { kind: "structural", justification: a.justification });
+    // Reordering is display-only — never gated.
 
     // Parse every prefixed id up front (a bare/malformed id is a client bug).
     const parsed = a.items.map((item) => {
@@ -499,10 +492,11 @@ export const reorderMixedGroupsInCategory = mutation({
     }
 
     // Validate: every project group belongs to this category's project + org.
+    // LIVE-ONLY (#1228).
     if (projectGroupIds.length > 0) {
-      const projGroups = (
-        await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", category.projectId)).collect()
-      ).filter((g) => g.organizationId === a.orgId);
+      const projGroups = (await liveRows(ctx, categoryProject, "projectGroups")).filter(
+        (g) => g.organizationId === a.orgId,
+      );
       const groupIdSet = new Set(projGroups.map((g) => g.id));
       for (const id of projectGroupIds) {
         if (!groupIdSet.has(id)) throw new ConvexError("One or more project groups do not belong to this project");
@@ -536,6 +530,7 @@ export const reorderMixedGroupsInCategory = mutation({
 
     // Rewrite slot sortOrder = position in `items` (missing slots are minted).
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", a.categoryId))
       .collect();
@@ -598,6 +593,15 @@ export const createCategoryAndPlaceGroup = mutation({
       projectGroupId: v.optional(v.union(v.string(), v.null())),
       subHireGroupId: v.optional(v.union(v.string(), v.null())),
     }),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the
+    // version the new category lands on, defaulting to live when absent.
+    // NOTE: no UI currently threads this (the Move-to-new-category dialogs
+    // weren't wired to a viewed version in this pass — see FEATUREDOCS/78);
+    // added for API completeness/future wiring, additive-only. Whatever it
+    // resolves to MUST match the moved group's own version (checked below) —
+    // a group can't be relocated into a category living in a different
+    // version than the group itself.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -612,6 +616,7 @@ export const createCategoryAndPlaceGroup = mutation({
 
     const project = await getProjectInOrg(ctx, a.projectId, a.orgId);
     if (!project) throw new ConvexError("Project not found");
+    const targetVersionId = await resolveWriteVersionId(ctx, project, a.versionId);
 
     const projectGroupId = a.slot.projectGroupId ?? null;
     const subHireGroupId = a.slot.subHireGroupId ?? null;
@@ -627,6 +632,12 @@ export const createCategoryAndPlaceGroup = mutation({
       projGroupDoc = await requireGroupInOrg(ctx, projectGroupId, a.orgId);
       if (projGroupDoc.projectId !== a.projectId) {
         throw new ConvexError("Project group not found in this project");
+      }
+      // A group can only be relocated within its OWN version — the category
+      // it lands in must share that version, or the group's rows and its new
+      // parent category would straddle two versions (an inconsistent tree).
+      if (projGroupDoc.versionId != null && projGroupDoc.versionId !== targetVersionId) {
+        throw new ConvexError("Project group does not belong to the target version");
       }
     } else if (subHireGroupId) {
       const { group, subHire } = await requireSubHireGroupInOrg(ctx, subHireGroupId, a.orgId);
@@ -647,14 +658,15 @@ export const createCategoryAndPlaceGroup = mutation({
       }
       sortOrder = existingCat.sortOrder ?? 0;
     } else {
-      const siblings = (
-        await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect()
-      ).filter((c) => c.organizationId === a.orgId);
+      // #1221: scoped to the TARGET version (was LIVE-ONLY, #1228).
+      const siblings = (await versionRows(ctx, "projectCategories", targetVersionId)).filter((c) => c.organizationId === a.orgId);
       sortOrder = siblings.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
       await ctx.db.insert("projectCategories", {
         id: a.categoryId,
         organizationId: a.orgId,
         projectId: a.projectId,
+        versionId: targetVersionId,
+        lineageId: a.categoryId,
         name: a.name,
         sortOrder,
         createdAt: a.now,
@@ -664,9 +676,11 @@ export const createCategoryAndPlaceGroup = mutation({
 
     // 2. Delete any existing slot for this group (re-categorise leaks otherwise).
     if (projectGroupId) {
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       const slots = await ctx.db.query("categorySlots").withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId)).collect();
       for (const s of slots) await ctx.db.delete(s._id);
     } else if (subHireGroupId) {
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       const slots = await ctx.db.query("categorySlots").withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId)).collect();
       for (const s of slots) await ctx.db.delete(s._id);
     }
@@ -683,10 +697,8 @@ export const createCategoryAndPlaceGroup = mutation({
       updatedAt: a.now,
     });
 
-    // 4. Update group placement + sync member line items' categoryId.
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect()
-    ).filter((li) => li.organizationId === a.orgId);
+    // 4. Update group placement + sync member line items' categoryId. LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === a.orgId);
     if (projectGroupId && projGroupDoc) {
       await ctx.db.patch(projGroupDoc._id, { categoryId: a.categoryId, updatedAt: a.now });
       for (const li of lines.filter((li) => li.groupId === projectGroupId)) {

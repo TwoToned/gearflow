@@ -65,4 +65,25 @@ crons.daily(
   {},
 );
 
+// B4 (#1096) abandonment guards — "never activated" email ladder + 30-day
+// archive sweep. 21:00 UTC, clear of the other two daily HTTP-hop crons
+// (22:00/23:00) so they don't compete for the same tick.
+crons.daily(
+  "org-dormancy-sweep",
+  { hourUTC: 21, minuteUTC: 0 },
+  internal.scheduledJobs.runOrgDormancySweep,
+  {},
+);
+
+// Follow-up automation (docs/designs/follow-up-automation.md §8.2) — hourly
+// reconcile of every org's quote follow-ups: expiry → decision rung, deadlines
+// inside a week → urgent, events started → housekeeping. Native Convex, gated
+// on its OWN flag (ENABLE_FOLLOW_UP_CRON), not ENABLE_CONVEX_CRONS.
+crons.interval(
+  "follow-up-reconcile",
+  { hours: 1 },
+  internal.followUpTick.tick,
+  {},
+);
+
 export default crons;

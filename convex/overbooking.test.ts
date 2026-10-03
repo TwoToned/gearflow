@@ -54,29 +54,54 @@ async function seed(t: T) {
     await ctx.db.insert("projects", {
       id: "P1", organizationId: ORG, projectNumber: "P1", name: "Under inspection", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW, rentalEndDate: NOW + 5 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P1",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P1", organizationId: ORG, projectId: "P1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P2", organizationId: ORG, projectNumber: "P2", name: "Overlapping", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW + 1 * DAY, rentalEndDate: NOW + 3 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P2",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P2", organizationId: ORG, projectId: "P2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P3", organizationId: ORG, projectNumber: "P3", name: "Overlapping but cancelled", status: "CANCELLED",
       isTemplate: false, rentalStartDate: NOW + 1 * DAY, rentalEndDate: NOW + 3 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P3",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P3", organizationId: ORG, projectId: "P3", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P4", organizationId: ORG, projectNumber: "P4", name: "Non-overlapping", status: "CONFIRMED",
       isTemplate: false, rentalStartDate: NOW + 30 * DAY, rentalEndDate: NOW + 33 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P4",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P4", organizationId: ORG, projectId: "P4", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", {
       id: "P5", organizationId: ORG, projectNumber: "P5", name: "Ancient history", status: "RETURNED",
       isTemplate: false, rentalStartDate: NOW - 400 * DAY, rentalEndDate: NOW - 395 * DAY, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-P5",
     });
+    await ctx.db.insert("projectVersions", { id: "v-P5", organizationId: ORG, projectId: "P5", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
 
-    await ctx.db.insert("projectLineItems", { id: "L1", organizationId: ORG, projectId: "P1", modelId: "mdl", status: "CONFIRMED", quantity: 2, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L2", organizationId: ORG, projectId: "P2", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L3", organizationId: ORG, projectId: "P3", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L4", organizationId: ORG, projectId: "P4", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
-    await ctx.db.insert("projectLineItems", { id: "L5", organizationId: ORG, projectId: "P5", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT" });
+    await ctx.db.insert("projectLineItems", { id: "L1", organizationId: ORG, projectId: "P1", modelId: "mdl", status: "CONFIRMED", quantity: 2, type: "EQUIPMENT",
+      versionId: "v-P1",
+      lineageId: "L1",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L2", organizationId: ORG, projectId: "P2", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P2",
+      lineageId: "L2",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L3", organizationId: ORG, projectId: "P3", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P3",
+      lineageId: "L3",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L4", organizationId: ORG, projectId: "P4", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P4",
+      lineageId: "L4",
+    });
+    await ctx.db.insert("projectLineItems", { id: "L5", organizationId: ORG, projectId: "P5", modelId: "mdl", status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+      versionId: "v-P5",
+      lineageId: "L5",
+    });
   });
 }
 
@@ -140,8 +165,15 @@ describe("overbooking.bundle — scoped vs unscoped parity", () => {
       rentalStartDate: NOW,
       rentalEndDate: NOW + 5 * DAY,
     });
-    const result = reconstructOverbookedStatus(scoped, p1LineItems, new Date(NOW), new Date(NOW + 5 * DAY), "P1");
-    expect(result.get("L1")?.overBy).toBe(3); // 8 booked - 5 stock
+    // FCFS (2026-09): L1 (P1) was created FIRST in `seed()`, so it claims its 2
+    // units and fits (5 stock available). L2 (P2, created second, bumped to 6)
+    // is the one that doesn't fit — this checks P2's own perspective instead of
+    // P1's, since P1 booking first means P1 is no longer the one flagged.
+    const p2LineItems: OverbookLineItem[] = [
+      { id: "L2", modelId: "mdl", quantity: 6, isKitChild: false, parentLineItemId: null, kitId: null, status: "CONFIRMED" },
+    ];
+    const result = reconstructOverbookedStatus(scoped, p2LineItems, new Date(NOW + 1 * DAY), new Date(NOW + 3 * DAY), "P2");
+    expect(result.get("L2")?.overBy).toBe(3); // 8 booked - 5 stock, P1's 2 already claimed
   });
 
   // WS2 (#941) — the scoped candidate scan is re-keyed to also catch a project
@@ -159,8 +191,13 @@ describe("overbooking.bundle — scoped vs unscoped parity", () => {
         rentalStartDate: NOW + 60 * DAY, rentalEndDate: NOW + 63 * DAY,
         projectStartDate: NOW + 1 * DAY, projectEndDate: NOW + 2 * DAY,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-P6",
       });
-      await ctx.db.insert("projectLineItems", { id: "L6", organizationId: ORG, projectId: "P6", modelId: "mdl", status: "CONFIRMED", quantity: 10, type: "EQUIPMENT" });
+      await ctx.db.insert("projectVersions", { id: "v-P6", organizationId: ORG, projectId: "P6", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "L6", organizationId: ORG, projectId: "P6", modelId: "mdl", status: "CONFIRMED", quantity: 10, type: "EQUIPMENT",
+        versionId: "v-P6",
+        lineageId: "L6",
+      });
     });
     const modelIds = relevantOverbookModelIds(p1LineItems);
     const scoped = await t.withIdentity(asUser).query(api.overbooking.bundle, {
@@ -172,9 +209,17 @@ describe("overbooking.bundle — scoped vs unscoped parity", () => {
     });
     const projectIdsInBundle = new Set(scoped.lineItems.map((li) => li.projectId));
     expect(projectIdsInBundle.has("P6")).toBe(true);
-    const result = reconstructOverbookedStatus(scoped, p1LineItems, new Date(NOW), new Date(NOW + 5 * DAY), "P1");
+    // FCFS (2026-09): L1 (P1) and L2 (P2) were created first and together
+    // exactly fill the 5-asset stock (2 + 3 = 5); L6 (P6, created last, just
+    // now, via this test's own insert) is the one that doesn't fit at all —
+    // checking P6's own perspective instead of P1's, since P1 booking first
+    // means P1 is no longer the one flagged.
+    const p6LineItems: OverbookLineItem[] = [
+      { id: "L6", modelId: "mdl", quantity: 10, isKitChild: false, parentLineItemId: null, kitId: null, status: "CONFIRMED" },
+    ];
+    const result = reconstructOverbookedStatus(scoped, p6LineItems, new Date(NOW + 1 * DAY), new Date(NOW + 2 * DAY), "P6");
     // 2 (P1) + 3 (P2) + 10 (P6) = 15 booked against 5 stock.
-    expect(result.get("L1")?.overBy).toBe(10);
+    expect(result.get("L6")?.overBy).toBe(10);
   });
 
   test("dateless project (no rental window) scopes to only its own bookings, no org-wide read", async () => {

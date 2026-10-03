@@ -34,6 +34,21 @@ type). `abn` is edited on the General settings page (`/settings`, next to
 address/email/phone); the `documents` fields are edited on the "Documents"
 card at `/settings/branding` (`document-settings.tsx`).
 
+### Status automation switches (#1160)
+
+`OrgSettings.projectStatusAutomation` — four optional booleans
+(`quoteSent`/`prepStarted`/`allCheckedOut`/`allReturned`), **absent = ON**, so
+every pre-#1160 org gets the automation with no backfill and the blob only ever
+stores an explicit opt-OUT (turning a switch back on DELETES the key — one
+representation of the default). Edited on the General settings page under
+"Status automation" (`status-automation-settings.tsx`), validated on write by
+`projectStatusAutomationSchema` (`.strict()`, so a mistyped key is rejected
+rather than silently persisted and read back as "enabled"), and read
+IN-mutation by `resolveAutoStatusEnabled` (`convex/lib/orgSettings.ts`) — never
+trusted from a client argument. The rules themselves live in
+`convex/lib/projectAutoStatus.ts`; see
+[76 — Project Status Automation](./76-project-status-automation.md).
+
 ### The country table (I1, #1079)
 
 `src/lib/countries.ts` is the single source of truth (POLICY.md R-3.1) for

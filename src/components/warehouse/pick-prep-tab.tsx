@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ContainerRail, type ContainerRailItem } from "@/components/warehouse/container-rail";
 import { focusRing } from "@/lib/utils";
 import {
   TabsContent,
@@ -27,13 +27,13 @@ import {
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
-import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
+import { KitChildRows, MobileKitChildCards, BulkAccessoryRows, MobileBulkAccessoryCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
+import { ScanHistoryStrip } from "./scan-history-strip";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
-
-type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
+import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
 export interface PickPrepTabProps {
   // Scan state
@@ -43,11 +43,16 @@ export interface PickPrepTabProps {
   handleScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   scanMutationMutate: (value: string) => void;
   scanMutationIsPending: boolean;
+  scanHistoryEntries: ScanHistoryRecord[];
 
-  // Container state
+  // Container state (#1296) — the rail replaces the old free-text/creatable
+  // picker; `selectedContainer` is still read for the "&rarr; Case 12" label,
+  // kept in sync by the parent's `onSelectContainer`/`onNewContainer` handlers.
   selectedContainer: string;
-  setSelectedContainer: (v: string) => void;
-  containerOptions: ContainerOption[];
+  containers: ContainerRailItem[];
+  activeContainerId: string | null;
+  onSelectContainer: (id: string | null) => void;
+  onNewContainer: () => void;
 
   // Selection
   selectedPrep: Set<string>;
@@ -95,9 +100,12 @@ export function PickPrepTab({
   handleScanKeyDown,
   scanMutationMutate,
   scanMutationIsPending,
+  scanHistoryEntries,
   selectedContainer,
-  setSelectedContainer,
-  containerOptions,
+  containers,
+  activeContainerId,
+  onSelectContainer,
+  onNewContainer,
   selectedPrep,
   setSelectedPrep,
   selectedPrepCount,
@@ -121,11 +129,14 @@ export function PickPrepTab({
     <TabsContent value="pick-prep">
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
+            <ScanHistoryStrip entries={scanHistoryEntries} />
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <AssetTagInput
                   ref={scanInputRef}
                   placeholder="Scan or enter asset tag to prep..."
+                  scannerTitle="Scan gear to prep"
+                  continuous
                   value={scanValue}
                   onChange={(e) => setScanValue(e.target.value)}
                   onKeyDown={handleScanKeyDown}
@@ -135,18 +146,13 @@ export function PickPrepTab({
                   autoFocus
                 />
               </div>
-              <div className="w-48 shrink-0">
-                <ComboboxPicker
-                  value={selectedContainer}
-                  onChange={setSelectedContainer}
-                  options={containerOptions}
-                  placeholder="No container"
-                  searchPlaceholder="Search or create..."
-                  creatable
-                  allowClear
-                />
-              </div>
             </div>
+            <ContainerRail
+              containers={containers}
+              activeContainerId={activeContainerId}
+              onSelect={onSelectContainer}
+              onNew={onNewContainer}
+            />
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-ui-text text-muted">
                 Items that need to be picked and prepped.
@@ -291,6 +297,14 @@ export function PickPrepTab({
                             </TableRow>
                           );
                         })}
+                        <BulkAccessoryRows
+                          accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                          mode="deploy"
+                          verifiedKitItems={verifiedKitItems}
+                          setVerifiedKitItems={setVerifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                        />
                       </Fragment>
                     );
                   }
@@ -561,6 +575,14 @@ export function PickPrepTab({
                         />
                       );
                     })}
+                    <MobileBulkAccessoryCards
+                      accessoryChildren={isExpanded ? entry.accessoryChildren : undefined}
+                      mode="deploy"
+                      verifiedKitItems={verifiedKitItems}
+                      setVerifiedKitItems={setVerifiedKitItems}
+                      expandedGroups={expandedGroups}
+                      toggleExpanded={toggleExpanded}
+                    />
                   </ScanGroupCard>
                 );
               }
@@ -636,7 +658,7 @@ export function PickPrepTab({
                       </>
                     }
                     assetTag={entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
-                    qtyLabel={entry.children.length}
+                    qtyLabel={entry.item.quantity}
                     status={<PrepStatusBadge item={entry.item} />}
                   >
                     <MobileKitChildCards

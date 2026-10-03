@@ -5,6 +5,7 @@ import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { resolveClientContactDisplay } from "./lib/clientContactCore";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for Client (Convex table "clients"). GENERATED — Phase 2/5.
@@ -161,16 +162,13 @@ export const detail = query({
       .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
       .slice(0, 20);
 
-    // Per-project TOTAL line-item count (all rows, matching countAllLineItemsByProject).
-    // by_projectId is a GLOBAL index → re-check organizationId per row (parity with
-    // the deleted listByProjectIds, which org-filters; defense-in-depth even though
-    // projectId is a unique cuid).
+    // Per-project TOTAL line-item count (LIVE plan only, #1228 — matching
+    // countAllLineItemsByProject's pre-versioning "all of this project's
+    // lines" intent, which meant the live plan before non-live versions
+    // could exist).
     const projects = await Promise.all(
       clientProjects.map(async (p) => {
-        const lineItems = await ctx.db
-          .query("projectLineItems")
-          .withIndex("by_projectId", (q) => q.eq("projectId", p.id))
-          .collect();
+        const lineItems = await liveRows(ctx, p, "projectLineItems");
         const lineItemCount = lineItems.filter((li) => li.organizationId === orgId).length;
         return { ...p, _count: { lineItems: lineItemCount } };
       }),

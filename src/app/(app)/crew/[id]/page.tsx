@@ -45,6 +45,7 @@ import {
   enableIcalFeed,
   disableIcalFeed,
   regenerateIcalToken,
+  setIcalIncludeTentative,
 } from "@/server/crew-calendar";
 import { useCrewTimeWrites } from "@/hooks/use-crew-time-writes";
 import {
@@ -74,6 +75,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -266,6 +268,15 @@ export default function CrewMemberDetailPage({
     mutationFn: () => regenerateIcalToken(id),
     onSuccess: () => {
       toast.success("iCal token regenerated — old URL is now invalid");
+      refetchIcal();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const includeTentativeMutation = useServerMutation({
+    mutationFn: (include: boolean) => setIcalIncludeTentative(id, include),
+    onSuccess: (_data, include) => {
+      toast.success(include ? "Pending assignments will now show on the feed" : "Pending assignments hidden from the feed");
       refetchIcal();
     },
     onError: (e) => toast.error(e.message),
@@ -1634,6 +1645,26 @@ export default function CrewMemberDetailPage({
                                 <Copy className="size-5" />
                               </Button>
                             </div>
+                          </div>
+
+                          <div className="flex items-start justify-between gap-4 rounded-[var(--r)] border border-line p-3">
+                            <div className="space-y-1">
+                              <Label htmlFor="icalIncludeTentative" className="text-ui-text">
+                                Include pending assignments
+                              </Label>
+                              <p className="text-caption text-muted">
+                                Off: feed shows confirmed/accepted assignments only. On: assignments still
+                                awaiting an offer or response also appear, marked tentative.
+                              </p>
+                            </div>
+                            <CanDo resource="crew" action="update">
+                              <Switch
+                                id="icalIncludeTentative"
+                                checked={icalSettings?.icalIncludeTentative ?? false}
+                                onCheckedChange={(checked) => includeTentativeMutation.mutate(checked)}
+                                disabled={includeTentativeMutation.isPending}
+                              />
+                            </CanDo>
                           </div>
 
                           <CanDo resource="crew" action="update">

@@ -9,6 +9,10 @@ import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import {
+  type CategoryPricingDisplay,
+  isRollupCategory,
+} from "@/lib/category-pricing-display";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectCategoryWrites } from "@/hooks/use-project-categories-writes";
 import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
@@ -20,13 +24,14 @@ import {
 } from "@/hooks/use-native-line-item-writes";
 import { useEquipmentDnd, type DraggedRowClone } from "@/hooks/use-equipment-dnd";
 import { useCanDo } from "@/lib/use-permissions";
-import { Plus, FolderPlus, FolderTree, Pencil, Trash2, ChevronDown as ChevronDownIcon } from "lucide-react";
+import { FolderTree, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EquipmentAddMenuTrigger } from "./equipment-add-menu-trigger";
 import { toast } from "sonner";
 import { ConvexError } from "convex/values";
 
@@ -43,7 +48,6 @@ import { computeInlineLineItemPayload, type InlineLineItemPatch } from "@/lib/li
 import { computeInlineSubHireItemInput, type SubHireItemRowLike, type InlineSubHireItemPatch } from "@/lib/sub-hire-item-edit-payload";
 import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { Button } from "@/components/ui/button";
-import { GatedButton } from "@/components/ui/gated-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
@@ -73,6 +77,8 @@ import { AddCategoryDialog } from "./add-category-dialog";
 import { RenameCategoryDialog } from "./rename-category-dialog";
 import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
+import { EditAccessoryPlanDialog } from "./edit-accessory-plan-dialog";
+import { canEditAccessoryPlan } from "@/lib/accessory-plan-eligibility";
 import { SubHireExpandedItems } from "./sub-hire-expanded-items";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
@@ -101,10 +107,8 @@ import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useSelection } from "./use-selection";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CategoryCardHeading } from "./equipment-cards";
-import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
-import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
-import { JustificationDialog } from "./justification-dialog";
 
 interface EquipmentTabProps {
   projectId: string;
@@ -115,6 +119,31 @@ interface EquipmentTabProps {
    *  slot inline with the Equipment/Labour/Tasks tabs and hands the node here so
    *  the Add action sits on the tab row. */
   addMenuSlot?: HTMLElement | null;
+  /** D3 (#1107) — auto-opens the "Add equipment" dialog with this model
+   *  pre-selected, once, when set. Set only by the "Add <model> to it"
+   *  chained hand-off deep link (`?modelId=` on this tab's URL), never by
+   *  an ordinary tab visit. */
+  autoOpenAddModelId?: string;
+  /** Project Versioning v2, Phase 5 (#1231) — the version being VIEWED
+   *  (`?v=`'s resolved id), or undefined for the project's live version.
+   *  Threaded straight to `equipmentTab.bundle`'s own `versionId` arg so
+   *  every existing/edited row on screen belongs to the viewed version. */
+  versionId?: string;
+  /** #1221 follow-up — Phase 5 (D15) greyed the "Add ▾" trigger while
+   *  viewing a non-live version, because every create mutation this tab
+   *  calls stamped its new row onto the project's LIVE version
+   *  unconditionally. Every one of those mutations now takes an optional
+   *  `versionId` (defaulting to live), and `EquipmentTab` threads its own
+   *  `versionId` prop through to all of them (own-stock/kit/custom-item/
+   *  group/category/apply-template), so nothing left to gate here — the
+   *  page no longer passes a reason, but the prop stays for a FUTURE
+   *  disable reason (e.g. a permission gate), not removed outright. One
+   *  narrower exception survives inside the "Add" dialog itself: the
+   *  "Sale" kind (`unified-add-dialog.tsx`) always applies to the live
+   *  version (it sells REAL stock immediately, not a plan entry), so it
+   *  stays disabled specifically while viewing non-live — see that file's
+   *  header comment. */
+  addDisabledReason?: string;
 }
 
 /** `useSortable()`'s `transform`/`transition` turned into an inline style —
@@ -407,7 +436,7 @@ function UncategorizedHeader({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId, versionId, addDisabledReason }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isMobile = useIsMobile();
@@ -449,26 +478,21 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // own their own separate instances of this same hook for their dialogs.
   const subHireWrites = useSubHireWrites();
 
-  // #990 — one `useProjectLockStatus` subscription backs every money-field
-  // lock in this tab (price/discount edit dialogs, bulk edit, gated add/
-  // delete buttons at HARD_LOCKED). `moneyLocked` mirrors the server's
-  // `defaultToZero`/gate condition: tier isn't OPEN and no session is open.
-  const [lockNow] = useState(() => Date.now());
-  const lockStatus = useProjectLockStatus(projectId, orgId, lockNow);
-  const moneyLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
-  const lockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
-  const hardLocked = !lockStatus.loading && lockStatus.tier === "HARD_LOCKED" && !lockStatus.hasOpenSession;
+  // #1230 — one `useProjectPricingLock` subscription backs every money-field
+  // lock in this tab (price/discount edit dialogs, bulk edit). `moneyLocked`
+  // mirrors the server's `assertPricingUnlocked` gate condition directly —
+  // structure (add/remove/reorder/move) is NEVER gated, only a MONEY write.
+  const pricingLock = useProjectPricingLock(projectId, orgId);
+  const moneyLocked = pricingLock.pricingLocked;
+  const lockReason = resolveLockCopy(pricingLock).oneLiner;
 
   // Drag-and-drop is client-gated on the SAME permission every reorder/move
   // mutation already enforces server-side (`project:manage_line_items`) —
   // unlike the old ▲/▼ buttons (which rendered unconditionally for any
   // viewer), a dragged handle should simply not exist for someone who can't
-  // write. Also disabled at HARD_LOCKED with no open FULL session: every
-  // drag mutation's `assertLifecycleGuard` throws `PROJECT_LOCKED` there with
-  // no retry-with-justification path (see use-equipment-dnd.ts's
-  // `reportDragMutationError`), so starting that drag can only ever fail —
-  // better to not offer the handle at all than let it fail every time.
-  const canDragEquipment = useCanDo("project", "manage_line_items") && !hardLocked;
+  // write. #1230: reordering/moving is structural and never rejected by the
+  // pricing lock, so there is no longer a locked state to also disable it for.
+  const canDragEquipment = useCanDo("project", "manage_line_items");
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -513,7 +537,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     groupWrites,
     categorySlotWrites,
     categoryWrites,
-    lockStatus,
     onSettled: invalidate,
   });
 
@@ -524,23 +547,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     dnd.orderOverlay,
     dnd.groupOrderOverlay,
     dnd.categoryOrderOverlay,
+    versionId,
   );
 
-  // #990 (surface 5, "justify tier") — line item/group remove prompt for a
-  // reason at ON_SITE+ with no open session (`useJustifiedMutation` pre-checks
-  // `lockStatus.tier` and shows `<JustificationDialog>` before firing).
-  const justifiedRemoveLineItem = useJustifiedMutation(
-    (args: { id: string; justification?: string }) => lineItemWrites.remove(args.id, args.justification),
-    lockStatus,
-  );
-  const justifiedRemoveLineItems = useJustifiedMutation(
-    (args: { ids: string[]; justification?: string }) => lineItemWrites.removeMany(args.ids, args.justification),
-    lockStatus,
-  );
-  const justifiedRemoveGroup = useJustifiedMutation(
-    (args: { groupId: string; justification?: string }) => groupWrites.remove(args.groupId, args.justification),
-    lockStatus,
-  );
+  // #1230: removing a line item/group is structural — never gated by the
+  // pricing lock, so no justification/dialog wrapper is needed anymore.
 
   // Passive section/group/line-item collaboration state: one review-marker
   // subscription and one comment-count subscription for the whole project,
@@ -629,6 +640,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     label?: string;
   }>({});
 
+  // D3 (#1107) — the chained "Add <model> to it" hand-off deep link opens
+  // straight into the own-stock add dialog with that model already chosen.
+  // Runs once per mount (a ref guard, not a dep-array trick) — if the user
+  // closes the dialog it must stay closed on its own, not reopen on some
+  // unrelated re-render. `pendingAutoModelId` (not the raw `autoOpenAddModelId`
+  // prop) is what actually reaches UnifiedAddDialog's `preselectedModelId`,
+  // and is cleared the moment the dialog closes — otherwise the preselect
+  // would silently leak into every LATER manual "Add" click for the rest of
+  // the tab's lifetime, since the prop itself stays truthy long after this
+  // one auto-triggered open is done with.
+  const autoOpenedRef = useRef(false);
+  const [pendingAutoModelId, setPendingAutoModelId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!autoOpenAddModelId || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    setUnifiedAddKind("own-stock");
+    setUnifiedAddTarget({});
+    setPendingAutoModelId(autoOpenAddModelId);
+    setShowUnifiedAdd(true);
+  }, [autoOpenAddModelId]);
+
   // Sub-hire order dialog state
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
   const [managingSubHireId, setManagingSubHireId] = useState<string | null>(null);
@@ -677,6 +709,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
+  // EditAccessoryPlanDialog target — the dialog fetches the line's current
+  // accessoryPlan itself (not on LineItemData), so this just needs enough of
+  // the row to resolve the accessory catalog (modelId/assetId/quantity).
+  const [editAccessoryItem, setEditAccessoryItem] = useState<LineItemData | null>(null);
   // The clicked item's current placement — line items don't carry categoryId/groupId
   // directly (the tree position IS the placement), so each onEdit call site captures
   // it from the same closure the neighbouring onMoveToCategory/onMoveToGroup use.
@@ -883,7 +919,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   const createCategoryMut = useServerMutation({
-    mutationFn: (name: string) => categoryWrites.create(projectId, name),
+    // #1221 follow-up — lands on the version being viewed (absent = live).
+    mutationFn: (name: string) => categoryWrites.create(projectId, name, versionId),
     onSuccess: () => {
       invalidate();
       setShowAddCategory(false);
@@ -898,6 +935,100 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       invalidate();
       setRenameCategoryId(null);
       toast.success("Category renamed");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Category price rollup — flips a category between per-line pricing and one
+  // derived subtotal on client-facing documents (src/lib/category-pricing-display.ts).
+  const setCategoryPricingDisplayMut = useServerMutation({
+    mutationFn: ({ id, pricingDisplay }: { id: string; pricingDisplay: CategoryPricingDisplay }) =>
+      categoryWrites.setPricingDisplay(id, pricingDisplay),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.pricingDisplay === "ROLLUP"
+          ? "Combined price shown for this category on client documents"
+          : "Individual prices shown for this category on client documents",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Category price rollup, per-item reveal — prints ONE row's own price inside
+  // a rolled-up category. Display-only: `setPriceReveal` sends a minimal patch
+  // and patchNative recomputes lineTotal from the row's own unchanged inputs.
+  const togglePriceRevealMut = useServerMutation({
+    mutationFn: ({ item }: { item: LineItemData }) =>
+      lineItemWrites.setPriceReveal(item.id, !item.revealPriceInRollup, {
+        entityName: item.description ?? "Line item",
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.item.revealPriceInRollup
+          ? "Price hidden on client documents"
+          : "Price shown on client documents",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Category price rollup, per-item reveal for a GROUP's collapsed bundle row.
+  // Separate from the line-item toggle because a group is a different entity
+  // with its own mutation, not because the semantics differ.
+  const toggleGroupPriceRevealMut = useServerMutation({
+    mutationFn: ({ group }: { group: GroupData }) =>
+      groupWrites.setPriceReveal(group.id, !group.revealPriceInRollup),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.group.revealPriceInRollup
+          ? "Price hidden on client documents"
+          : "Price shown on client documents",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Group child disclosure — lists ONE member of a Project Group under the
+  // group's collapsed row on client-facing documents (description + quantity,
+  // never a price: the group's bundle price is the charge). Display-only, so
+  // like the reveal toggle it sends a minimal patch and moves no money.
+  const toggleGroupChildDisclosureMut = useServerMutation({
+    mutationFn: ({ item }: { item: LineItemData }) =>
+      lineItemWrites.setGroupChildDisclosure(item.id, !item.showInGroupOnDocs, {
+        entityName: item.description ?? "Line item",
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.item.showInGroupOnDocs
+          ? "Item hidden on client documents"
+          : "Item shown under its group on client documents",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Revenue allocation, per-item opt-out (#1249) — "this gear earned nothing".
+  // The line takes no share of its group/kit bundle price and never counts
+  // toward model ROI. Internal reporting only: the project's totals, the
+  // invoice and every client-facing document are untouched, which is why this
+  // is available even on a price-locked project. patchNative's post-write
+  // recalc re-runs the allocation, so the sibling shares move with it.
+  const toggleRoiExclusionMut = useServerMutation({
+    mutationFn: ({ item }: { item: LineItemData }) =>
+      lineItemWrites.setRoiExclusion(item.id, !item.excludeFromRoi, {
+        entityName: item.description ?? "Line item",
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.item.excludeFromRoi
+          ? "Item counts toward ROI again"
+          : "Item excluded from ROI — the rest of its group keeps the revenue",
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1102,12 +1233,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const removeMut = useServerMutation({
     mutationFn: async (id: string) => {
       // Browser-direct native path. removeNative applies the child-guard + cascade
-      // (children + units) + recalc + audit + collab atomically. Result unused (onSuccess
-      // just invalidates), so it resolves void. Routed through `useJustifiedMutation`
-      // (#990) — prompts for a reason first when the project is ON_SITE+ with no
-      // open unlock session, instead of firing straight into a server rejection.
+      // (children + units) + recalc + audit + collab atomically. Result unused
+      // (onSuccess just invalidates), so it resolves void. Structural — never
+      // gated by the pricing lock (#1230).
       if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
-      await justifiedRemoveLineItem.run({ id });
+      await lineItemWrites.remove(id);
     },
     onSuccess: () => {
       invalidate();
@@ -1142,7 +1272,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const bulkDeleteMut = useServerMutation({
     mutationFn: (ids: string[]) => {
       if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
-      return justifiedRemoveLineItems.run({ ids });
+      return lineItemWrites.removeMany(ids);
     },
     onSuccess: (r: { removed: number; skipped: number }) => {
       invalidate();
@@ -1190,6 +1320,59 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Explicit, PM-initiated: pulls in any DEFAULT accessory added to a model/asset
+  // in the catalog AFTER a line was already added to this job. Never automatic —
+  // see resyncProjectAccessoriesNative for why a catalog edit doesn't push itself
+  // onto every open project.
+  const resyncAccessoriesMut = useServerMutation({
+    mutationFn: () => {
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      return lineItemWrites.resyncProjectAccessories(projectId);
+    },
+    onSuccess: (r: { linesChecked: number; linesUpdated: number; childrenAdded: number; childrenRemoved: number }) => {
+      invalidate();
+      if (r.linesUpdated === 0) {
+        toast.success("Already up to date with the catalog defaults");
+        return;
+      }
+      const parts = [
+        r.childrenAdded ? `+${r.childrenAdded} added` : null,
+        r.childrenRemoved ? `-${r.childrenRemoved} removed` : null,
+      ].filter(Boolean);
+      toast.success(
+        `Updated ${r.linesUpdated} line${r.linesUpdated === 1 ? "" : "s"}` +
+          (parts.length ? ` (${parts.join(", ")})` : ""),
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Companion to resyncAccessoriesMut — see resyncProjectKitsNative for why a kit
+  // membership edit doesn't push itself onto every open project automatically.
+  const resyncKitsMut = useServerMutation({
+    mutationFn: () => {
+      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+      return lineItemWrites.resyncProjectKits(projectId);
+    },
+    onSuccess: (r: { linesChecked: number; linesUpdated: number; childrenAdded: number; childrenRemoved: number; unpricedChildrenAdded: number }) => {
+      invalidate();
+      if (r.linesUpdated === 0) {
+        toast.success("Already up to date with the kit's catalog membership");
+        return;
+      }
+      const parts = [
+        r.childrenAdded ? `+${r.childrenAdded} added` : null,
+        r.childrenRemoved ? `-${r.childrenRemoved} removed` : null,
+      ].filter(Boolean);
+      toast.success(
+        `Updated ${r.linesUpdated} kit line${r.linesUpdated === 1 ? "" : "s"}` +
+          (parts.length ? ` (${parts.join(", ")})` : "") +
+          (r.unpricedChildrenAdded > 0 ? ` — ${r.unpricedChildrenAdded} added unpriced, review pricing` : ""),
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // No prune needed: a successfully-removed id simply stops matching any rendered
   // row (the refetch drops it). ids are cuids (never reused), so a retained dead id
   // is a harmless no-op in the filters — and skipping a prune effect avoids a
@@ -1209,6 +1392,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const createGroupMut = useServerMutation({
+    // #1221 follow-up — both branches land on the version being viewed
+    // (absent = live).
     mutationFn: async ({ categoryId, title, templateId }: { categoryId: string | null; title: string; templateId?: string }) => {
       if (templateId) {
         // Templates are category-scoped concepts — fall back to no-template
@@ -1216,7 +1401,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         // group structurally. The template can be applied via a follow-up
         // move + recalculate if they later want to materialise its items.
         if (!categoryId) {
-          await groupWrites.create(projectId, null, title);
+          await groupWrites.create(projectId, null, title, versionId);
           return;
         }
         const tpl = templates.find((t) => t.id === templateId);
@@ -1230,10 +1415,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             kitId: it.kitId,
             quantity: it.quantity,
           })),
+          versionId,
         });
         return;
       }
-      await groupWrites.create(projectId, categoryId, title);
+      await groupWrites.create(projectId, categoryId, title, versionId);
     },
     onSuccess: () => {
       invalidate();
@@ -1244,7 +1430,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
 
   const deleteGroupMut = useServerMutation({
-    mutationFn: (groupId: string) => justifiedRemoveGroup.run({ groupId }),
+    mutationFn: (groupId: string) => groupWrites.remove(groupId),
     onSuccess: () => {
       invalidate();
       setDeleteGroupId(null);
@@ -1390,79 +1576,68 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     else selection.toggle(sortableId, true);
   };
 
-  // Primary "Add ▾" menu (item / group / category). The three add actions reuse
-  // the exact handlers the old three buttons triggered (UnifiedAddDialog,
-  // AddGroupToolbarDialog, AddCategoryDialog) — no behaviour change. Rendered
-  // either inline in the in-panel toolbar (fallback) or portalled onto the tab
-  // row when the page supplies `addMenuSlot`.
-  // #990 (surface 4) — at HARD_LOCKED, every add path is rejected server-side
-  // (`assertLifecycleGuard` has no per-edit path at this tier, only a FULL
-  // unlock session), so the menu itself is gated rather than opening onto
-  // three dead end items. `GatedButton` replaces the `DropdownMenuTrigger`
-  // entirely here (a gated trigger can't compose with Radix's `asChild` Slot,
-  // which needs a single plain element, not `GatedButton`'s own Tooltip wrap).
-  const addMenu = hardLocked ? (
-    <GatedButton
-      size="sm"
-      className="gap-1.5"
-      gated
-      reason={lockReason}
-      exitLabel="Open full unlock session"
-      onExit={scrollToLockStrip}
-    >
-      <Plus className="h-3.5 w-3.5" />
-      Add
-      <ChevronDownIcon className="h-3 w-3" />
-    </GatedButton>
-  ) : (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm" className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
-          Add
-          <ChevronDownIcon className="h-3 w-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onClick={() => {
-            setUnifiedAddTarget({});
-            setShowUnifiedAdd(true);
-          }}
-        >
-          <Plus className="mr-2 h-3.5 w-3.5" />
-          Add item
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>
-          <FolderPlus className="mr-2 h-3.5 w-3.5" />
-          Add group
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setShowAddCategory(true)}>
-          <FolderTree className="mr-2 h-3.5 w-3.5" />
-          Add category
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+  // Primary "Add ▾" menu (item / group / category) — extracted to
+  // `equipment-add-menu-trigger.tsx` (Phase 5, #1231) so its two render
+  // paths (normal menu vs. greyed+tooltipped while viewing a non-live
+  // version, `addDisabledReason`) are independently testable. The three add
+  // actions reuse the exact handlers the old three buttons triggered
+  // (UnifiedAddDialog, AddGroupToolbarDialog, AddCategoryDialog) — no
+  // behaviour change. Rendered either inline in the in-panel toolbar
+  // (fallback) or portalled onto the tab row when the page supplies
+  // `addMenuSlot`. #1230: adding is always structural (never gated by the
+  // pricing lock — a locked project just defaults a new add's price to $0 +
+  // Unpriced badge), so this is never gated by the PRICING lock.
+  const addMenu = (
+    <EquipmentAddMenuTrigger
+      disabledReason={addDisabledReason}
+      onAddItem={() => {
+        setUnifiedAddTarget({});
+        setShowUnifiedAdd(true);
+      }}
+      onAddGroup={() => setShowAddGroupFromToolbar(true)}
+      onAddCategory={() => setShowAddCategory(true)}
+    />
   );
 
   return (
     <ReassignProvider value={reassignValue}>
     <div className="space-y-3" data-shortcut-scope="equipment">
       {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
-          inline in this toolbar. The quiet margin toggle always stays here. */}
+          inline in this toolbar. Sync accessories/kits + the margin toggle are
+          secondary, infrequent actions — tucked behind the "More" menu so the
+          toolbar itself stays to the one primary action. */}
       {addMenuSlot ? createPortal(addMenu, addMenuSlot) : null}
       <div className="flex items-center gap-2">
         {!addMenuSlot && addMenu}
         <div className="flex-1" />
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-pressed={showCostColumn}
-          onClick={toggleShowCostColumn}
-          title="Toggle the supplier-cost column so margin is visible at a glance"
-        >
-          {showCostColumn ? "Hide margin" : "Show margin"}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" aria-label="More equipment actions">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {canDragEquipment && (
+              <DropdownMenuItem
+                disabled={resyncAccessoriesMut.isPending}
+                onClick={() => resyncAccessoriesMut.mutate()}
+              >
+                {resyncAccessoriesMut.isPending ? "Syncing accessories…" : "Sync accessories"}
+              </DropdownMenuItem>
+            )}
+            {canDragEquipment && (
+              <DropdownMenuItem
+                disabled={resyncKitsMut.isPending}
+                onClick={() => resyncKitsMut.mutate()}
+              >
+                {resyncKitsMut.isPending ? "Syncing kits…" : "Sync kits"}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={toggleShowCostColumn}>
+              {showCostColumn ? "Hide margin" : "Show margin"}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Empty state */}
@@ -1544,6 +1719,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           setRenameCategoryValue(cat.name);
                         }}
                         onDelete={() => deleteCategoryMut.mutate(cat.id)}
+                        onSetPricingDisplay={(pricingDisplay) =>
+                          setCategoryPricingDisplayMut.mutate({ id: cat.id, pricingDisplay })
+                        }
                         onAddEquipment={() => {
                           setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
                           setUnifiedAddKind("own-stock");
@@ -1609,6 +1787,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 setEditLineItemPlacement({ categoryId: cat.id });
                                 setEditLineItem(item);
                               }}
+                              onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                               onMoveToCategory={() => setMoveItemToCategory({
                                 lineItemId: item.id,
                                 initialCategoryId: cat.id,
@@ -1616,6 +1795,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               onMoveToGroup={() => setMoveItemToGroup({
                                 lineItemId: item.id,
                               })}
+                              inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                              onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
+                              onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                               onRemove={() => handleRemoveItem(item.id)}
                               onInlineUpdate={handleInlineLineItemUpdate}
                               moneyLocked={moneyLocked}
@@ -1696,6 +1878,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     setManagingSubHireId(shGroup.subHire.id);
                                     setShowSubHireOrderDialog(true);
                                   }}
+                                  inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                                  onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
                                   onRemove={() => handleRemoveItem(item.id)}
                                   onInlineUpdate={handleInlineLineItemUpdate}
                                 />
@@ -1755,6 +1939,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 setShowUnifiedAdd(true);
                               }}
                               onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
+                              inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                              onTogglePriceReveal={() => toggleGroupPriceRevealMut.mutate({ group })}
                               onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
                               onInlinePriceUpdate={handleInlineGroupPriceUpdate}
                               moneyLocked={moneyLocked}
@@ -1803,6 +1989,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     setEditLineItemPlacement({ categoryId: cat.id, groupId: group.id });
                                     setEditLineItem(item);
                                   }}
+                                  onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                                   onMoveToCategory={() => setMoveItemToCategory({
                                     lineItemId: item.id,
                                     initialCategoryId: cat.id,
@@ -1811,6 +1998,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     lineItemId: item.id,
                                     initialGroupId: group.id,
                                   })}
+                                  inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                                  onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
+                                  inProjectGroup
+                                  onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
+                                  onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                                   onRemove={() => handleRemoveItem(item.id)}
                                   onInlineUpdate={handleInlineLineItemUpdate}
                                   moneyLocked={moneyLocked}
@@ -1874,12 +2066,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             setEditLineItemPlacement({});
                             setEditLineItem(item);
                           }}
+                          onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                           onMoveToCategory={() => setMoveItemToCategory({
                             lineItemId: item.id,
                           })}
                           onMoveToGroup={() => setMoveItemToGroup({
                             lineItemId: item.id,
                           })}
+                          onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                           onRemove={() => handleRemoveItem(item.id)}
                           onInlineUpdate={handleInlineLineItemUpdate}
                           moneyLocked={moneyLocked}
@@ -2010,6 +2204,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               setEditLineItemPlacement({ groupId: group.id });
                               setEditLineItem(item);
                             }}
+                            onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
                             onMoveToCategory={() => setMoveItemToCategory({
                               lineItemId: item.id,
                             })}
@@ -2017,6 +2212,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               lineItemId: item.id,
                               initialGroupId: group.id,
                             })}
+                            inProjectGroup
+                            onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
+                            onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
                             onRemove={() => handleRemoveItem(item.id)}
                             onInlineUpdate={handleInlineLineItemUpdate}
                             moneyLocked={moneyLocked}
@@ -2398,6 +2596,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             .then(() => invalidate())
             .catch((e: Error) => toast.error(e.message));
         }}
+        onAccessoryPlanChange={(id, plan) => {
+          // Its own mutation (it reconciles CHILD line items, not fields on this
+          // row), fired by the dialog only when the picker's selection actually
+          // moved — and only after the line patch above resolves, so a quantity
+          // change in the same save is the quantity the child rescale reads.
+          lineItemWrites
+            .updateAccessoryPlan(id, plan)
+            .then(() => {
+              invalidate();
+              toast.success("Accessories updated");
+            })
+            .catch((e: Error) => toast.error(e.message));
+        }}
         onSubmit={(id, data, allowOverbook, baseUpdatedAt) => {
           // Optimistically overlay the edited fields onto the row so it updates
           // instantly; the server action below is still the authoritative write.
@@ -2418,7 +2629,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             });
             return next;
           });
-          updateLineItemMut.mutate({
+          // `mutateAsync` (not `mutate`) so the dialog can sequence the
+          // accessory-plan save after this write lands; its own onError already
+          // toasts, and the dialog swallows the rejection rather than
+          // re-reporting it.
+          return updateLineItemMut.mutateAsync({
             id,
             data: data as unknown as Record<string, unknown>,
             allowOverbook,
@@ -2426,6 +2641,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
           });
         }}
       />
+
+      {/* Edit accessories dialog (kebab → "Edit accessories") */}
+      <EditAccessoryPlanDialog item={editAccessoryItem} onClose={() => setEditAccessoryItem(null)} />
 
       {/* Move-item-to-category dialog (kebab → "Move to category").
           Item lands as standalone under the picked category. */}
@@ -2491,15 +2709,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         onConfirm={() => bulkDeleteMut.mutate(selectedLineItemIds)}
       />
 
-      {/* #990 — the shared justification prompts backing removeMut/bulkDeleteMut/
-          deleteGroupMut above. One dialog per justified mutation (each has its
-          own pending call state) rather than a single shared dialog racing
-          three concurrent callers. */}
-      <JustificationDialog {...justifiedRemoveLineItem.dialogProps} />
-      <JustificationDialog {...justifiedRemoveLineItems.dialogProps} />
-      <JustificationDialog {...justifiedRemoveGroup.dialogProps} />
-      {/* Drag-and-drop reorder/move justification prompts (useEquipmentDnd). */}
-      {dnd.dialogs}
 
       {/* Bulk move to group — reuses the single-item picker with a sentinel id;
           the echoed id is ignored in favour of the current selection. */}
@@ -2574,7 +2783,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         open={showUnifiedAdd}
         onOpenChange={(open) => {
           setShowUnifiedAdd(open);
-          if (!open) setUnifiedAddTarget({});
+          if (!open) {
+            setUnifiedAddTarget({});
+            setPendingAutoModelId(undefined);
+          }
         }}
         kind={unifiedAddKind}
         onKindChange={setUnifiedAddKind}
@@ -2586,6 +2798,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         targetLabel={unifiedAddTarget.label}
         categories={categories as CategoryData[]}
         onInvalidate={invalidate}
+        preselectedModelId={pendingAutoModelId}
+        versionId={versionId}
         onSubHireCreated={(newSubHireId) => {
           // Hand off from the inline create form to the manage view so
           // the user can add items to their new order without a context

@@ -356,7 +356,7 @@ export async function getWarehouseDisplayData(
   const todayMs = todayStart.getTime();
   const tomorrowMs = todayEnd.getTime();
 
-  const activeStatusSet = new Set<string>(["CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]);
+  const activeStatusSet = new Set<string>(["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]);
   const returnStatusSet = new Set<string>(["CHECKED_OUT", "ON_SITE", "RETURNED"]);
   const returnOrActiveStatusSet = new Set<string>([...returnStatusSet, ...activeStatusSet]);
 
@@ -389,7 +389,7 @@ export async function getWarehouseDisplayData(
   const preppingRaw = allProjects
     .filter((p) => {
       if (p.isTemplate || !matchesLocation(p)) return false;
-      return p.status === "CONFIRMED" || p.status === "PREPPING";
+      return p.status === "AWAITING_PAYMENT" || p.status === "CONFIRMED" || p.status === "PREPPING";
     })
     .sort((a, b) => {
       const aMs = getProjectWindow(a).start ?? Infinity;

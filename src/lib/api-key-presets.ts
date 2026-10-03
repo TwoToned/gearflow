@@ -13,7 +13,7 @@
  * enforces nothing itself.
  *
  * None of these presets grant `delete`, `warehouse:check_out`/`check_in`,
- * `project:unlock_session`, or `project:allow_overbook` — those stay explicit,
+ * `project:unlock_pricing`, or `project:allow_overbook` — those stay explicit,
  * deliberate opt-ins per §995 decision 7/10 and the archived design's "an
  * agent overbooking is almost always a mistake" finding. They are not offered
  * anywhere in this file, including `full_agent`.
@@ -53,6 +53,7 @@ const READ_RESOURCES: readonly Resource[] = [
   "crew",
   "checkItem",
   "invoice",
+  "work",
 ];
 
 /** "Every `:read` + `self:read`" (design §14) — the literal read_only_agent rule,
@@ -128,6 +129,8 @@ const FULL_AGENT_WRITE_SCOPES: readonly string[] = [
   "invoice:publish",
   "invoice:issue",
   "invoice:xero_push",
+  "work:create",
+  "work:update",
   "self:write",
 ];
 

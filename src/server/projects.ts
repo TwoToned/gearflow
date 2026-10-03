@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { resolvePrimaryDateRange } from "@/lib/project-dates";
+import { getProjectWindowDates } from "@/lib/project-window";
 import {
   getCallSheetData,
   getProjectsByOrgMapped,
@@ -20,6 +21,7 @@ import {
 import type { ProjectStatus } from "@/generated/prisma/client";
 import { serialize } from "@/lib/serialize";
 import { computeOverbookedStatus } from "@/lib/availability";
+import { isHardOverbooked, type OverbookedInfo } from "@/lib/overbooking-core";
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { getProjectMediaFromConvex, withResolvedFile } from "@/lib/media-read";
 import { api } from "../../convex/_generated/api";
@@ -335,6 +337,28 @@ export async function getProjects(params?: {
 }
 
 /**
+ * Only a genuine HARD overage (isHardOverbooked) may set the full-severity
+ * `hasOverbooked` flag — an entry that exists purely from pencilled/quoted
+ * demand (`hardOverBy === 0`) is a speculative collision, not a real one, and
+ * must not render as the same red "Overbooked" badge (see isHardOverbooked's
+ * own doc comment). An overage caused solely by maintenance/lost stock
+ * (`reducedOnly`) IS still hard-real, so it still counts — `hasReducedStock`
+ * stays as additional tooltip context, not a lower-severity substitute.
+ * Returns `undefined` when nothing in the map is hard-overbooked.
+ */
+function summarizeOverbookedMap(
+  overbookedMap: Map<string, OverbookedInfo>,
+): { hasOverbooked: true; hasReducedStock: boolean } | undefined {
+  let hasOverbooked = false;
+  let hasReducedStock = false;
+  for (const info of overbookedMap.values()) {
+    if (isHardOverbooked(info)) hasOverbooked = true;
+    if (info.reducedOnly) hasReducedStock = true;
+  }
+  return hasOverbooked ? { hasOverbooked: true, hasReducedStock } : undefined;
+}
+
+/**
  * For a list of project IDs, returns which ones have overbooked or reduced-stock issues.
  * Only computes for projects in active statuses (not completed/cancelled/etc).
  */
@@ -345,7 +369,7 @@ export async function getProjectIssueFlags(projectIds: string[]) {
   // Only compute for active projects. `project` is dual-written to Convex — read
   // all org projects (Prisma-row-shaped) and filter to the requested ids + active
   // statuses in JS (pure, reversible swap of the old Prisma findMany).
-  const activeStatuses: ProjectStatus[] = ["ENQUIRY", "QUOTING", "QUOTED", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"];
+  const activeStatuses: ProjectStatus[] = ["ENQUIRY", "QUOTING", "QUOTED", "AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"];
   const idSet = new Set(projectIds);
   const activeStatusSet = new Set<string>(activeStatuses);
   const projects = (await getProjectsByOrgMapped(organizationId)).filter(
@@ -373,19 +397,17 @@ export async function getProjectIssueFlags(projectIds: string[]) {
     const items = itemsByProject.get(project.id) ?? [];
     if (items.length === 0) continue;
 
+    // Availability reads the gear-committed window (projectStartDate/projectEndDate,
+    // falling back to rental), not the raw rental dates — see project-window.ts.
+    const window = getProjectWindowDates(project);
     const overbookedMap = await computeOverbookedStatus(
-      organizationId, items, project.rentalStartDate, project.rentalEndDate, project.id,
+      organizationId, items, window.start, window.end, project.id,
     );
 
     if (overbookedMap.size === 0) continue;
 
-    let hasOverbooked = false;
-    let hasReducedStock = false;
-    for (const info of overbookedMap.values()) {
-      if (info.reducedOnly) hasReducedStock = true;
-      else hasOverbooked = true;
-    }
-    result[project.id] = { hasOverbooked, hasReducedStock };
+    const flags = summarizeOverbookedMap(overbookedMap);
+    if (flags) result[project.id] = flags;
   }
 
   return result;
@@ -432,6 +454,8 @@ export async function getProject(id: string) {
   // independent of each other → parallel.
   const sortedPmRows = [...pmRows].sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0));
   const pmUserIds = [...new Set(sortedPmRows.map((pm) => pm.userId))];
+  // Gear-committed window, not the raw rental dates — see project-window.ts.
+  const availabilityWindow = getProjectWindowDates(projectScalars);
   // NOTE: pm.user left as a prisma.user join (NOT the Convex mirror): the project
   // page reads pm.user.id non-null, so a best-effort-mirror gap would crash it —
   // waits for the surface-conversion PR.
@@ -442,7 +466,7 @@ export async function getProject(id: string) {
           select: { id: true, name: true, email: true, image: true },
         })
       : Promise.resolve([] as Array<{ id: string; name: string; email: string; image: string | null }>),
-    computeOverbookedStatus(organizationId, topLineItems, projectScalars.rentalStartDate, projectScalars.rentalEndDate, id),
+    computeOverbookedStatus(organizationId, topLineItems, availabilityWindow.start, availabilityWindow.end, id),
   ]);
   const pmUserMap = new Map(pmUsers.map((u) => [u.id, u]));
   const projectManagers = sortedPmRows.map((pm) => ({

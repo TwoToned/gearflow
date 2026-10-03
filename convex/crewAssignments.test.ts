@@ -172,3 +172,79 @@ describe("conflictsForProject (crew table sibling query, WS8 #947)", () => {
     expect(res.aSolo).toBeUndefined();
   });
 });
+
+const SERVICE = { subject: "gearflow-service", svc: true };
+
+describe("autoFillServiceNative — first-come fill (work-layer Phase 4, #1246)", () => {
+  async function seedService(t: T, crewCountRequired: number) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectServices", {
+        id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Riggers",
+        crewCountRequired,
+      });
+    });
+  }
+
+  test("cancels the other open offers once ACCEPTED+CONFIRMED reaches crewCountRequired", async () => {
+    const t = makeT(); await seedBase(t);
+    await seedService(t, 1);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "cm2", organizationId: ORG, firstName: "Amy", lastName: "Lee", isActive: true, status: "ACTIVE" });
+      await ctx.db.insert("crewMembers", { id: "cm3", organizationId: ORG, firstName: "Zed", lastName: "Cole", isActive: true, status: "ACTIVE" });
+      await ctx.db.insert("crewAssignments", { id: "accepted1", organizationId: ORG, projectId: "p1", crewMemberId: "cm1", serviceId: "svc1", status: "ACCEPTED", responseToken: "tok-accepted" });
+      await ctx.db.insert("crewAssignments", { id: "stillOffered", organizationId: ORG, projectId: "p1", crewMemberId: "cm2", serviceId: "svc1", status: "OFFERED", responseToken: "tok-offered" });
+      await ctx.db.insert("crewAssignments", { id: "stillPending", organizationId: ORG, projectId: "p1", crewMemberId: "cm3", serviceId: "svc1", status: "PENDING" });
+    });
+
+    const res = await t.withIdentity(SERVICE).mutation(api.crewAssignments.autoFillServiceNative, {
+      serviceId: "svc1", organizationId: ORG, acceptedAssignmentId: "accepted1", now: T0,
+    });
+    expect(res.filled).toBe(true);
+    expect(new Set(res.cancelled.map((c) => c.assignmentId))).toEqual(new Set(["stillOffered", "stillPending"]));
+
+    const rows = await t.run(async (ctx) => ({
+      accepted: await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "accepted1")).unique(),
+      offered: await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "stillOffered")).unique(),
+      pending: await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "stillPending")).unique(),
+    }));
+    expect(rows.accepted?.status).toBe("ACCEPTED"); // the accepting row itself is untouched
+    expect(rows.offered?.status).toBe("CANCELLED");
+    expect(rows.offered?.responseToken).toBeUndefined(); // single-use token cleared
+    expect(rows.pending?.status).toBe("CANCELLED");
+  });
+
+  test("does nothing while the required headcount is still unmet", async () => {
+    const t = makeT(); await seedBase(t);
+    await seedService(t, 2);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "cm2", organizationId: ORG, firstName: "Amy", lastName: "Lee", isActive: true, status: "ACTIVE" });
+      await ctx.db.insert("crewAssignments", { id: "accepted1", organizationId: ORG, projectId: "p1", crewMemberId: "cm1", serviceId: "svc1", status: "ACCEPTED" });
+      await ctx.db.insert("crewAssignments", { id: "stillOffered", organizationId: ORG, projectId: "p1", crewMemberId: "cm2", serviceId: "svc1", status: "OFFERED" });
+    });
+    const res = await t.withIdentity(SERVICE).mutation(api.crewAssignments.autoFillServiceNative, {
+      serviceId: "svc1", organizationId: ORG, acceptedAssignmentId: "accepted1", now: T0,
+    });
+    expect(res).toEqual({ filled: false, cancelled: [] });
+  });
+
+  test("a cross-org serviceId is rejected as not-found, never silently reaches into the other org", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectServices", { id: "svcOther", organizationId: OTHER_ORG, projectId: "pOther", type: "LABOUR", title: "Other org's service", crewCountRequired: 1 });
+    });
+    const res = await t.withIdentity(SERVICE).mutation(api.crewAssignments.autoFillServiceNative, {
+      serviceId: "svcOther", organizationId: ORG, acceptedAssignmentId: "whatever", now: T0,
+    });
+    expect(res).toEqual({ filled: false, cancelled: [] });
+  });
+
+  test("rejects a non-service caller (requireService gate)", async () => {
+    const t = makeT(); await seedBase(t);
+    await seedService(t, 1);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewAssignments.autoFillServiceNative, {
+        serviceId: "svc1", organizationId: ORG, acceptedAssignmentId: "whatever", now: T0,
+      }),
+    ).rejects.toThrow();
+  });
+});

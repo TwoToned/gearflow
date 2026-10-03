@@ -22,6 +22,8 @@ export const agentOps: AgentOpsAnnotations = {
   forMember: { summary: "A crew member's time entries, newest first.", danger: "low", mcpTier: 2 },
   list: { summary: "List crew time entries for the org.", danger: "low", mcpTier: 2 },
   getById: { summary: "Get a single crew time entry by id.", danger: "low", mcpTier: 2 },
+  approvedHoursByMember: { summary: "Approved logged hours per crew member over a date range (planner 'planned vs actual').", danger: "low", mcpTier: 3 },
+  loggedMinutesForWorkItems: { summary: "Approved logged minutes per work item (crewTimeEntries.workItemId).", danger: "low", mcpTier: 3 },
 };
 type TE = { id: string; assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; totalHours?: number; status?: string; approvedById?: string; approvedAt?: number; notes?: string; createdAt?: number; updatedAt?: number };
 function teWire(e: TE) {
@@ -134,6 +136,64 @@ export const forMember = query({
         approvedBy: e.approvedById ? { name: approvers.get(e.approvedById) ?? null } : null,
       };
     });
+  },
+});
+
+/**
+ * Approved logged hours per crew member over [startMs, endMs] — the "actual"
+ * half of the planner's Phase 4 (#1246) "planned vs actual" column. Planned
+ * hours are already on `crewAvailability.plannerData`'s own assignment rows
+ * (`estimatedHours`), so this covers only the missing half: derived,
+ * read-only, no new table. Only APPROVED entries count — a draft/submitted/
+ * disputed entry hasn't been signed off as real hours worked yet. Bounded to
+ * the caller-supplied member ids (the planner's own visible roster), one
+ * indexed range-scan per member (`by_crewMemberId_date`), same N+1-but-bounded
+ * shape `plannerData` already uses for this roster size.
+ */
+export const approvedHoursByMember = query({
+  args: { orgId: v.string(), crewMemberIds: v.array(v.string()), startMs: v.number(), endMs: v.number() },
+  handler: async (ctx, { orgId, crewMemberIds, startMs, endMs }): Promise<Record<string, number>> => {
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 4 (#1246), same resource as the rest of this module
+    const ids = [...new Set(crewMemberIds)];
+    const out: Record<string, number> = {};
+    await Promise.all(
+      ids.map(async (crewMemberId) => {
+        const rows = await ctx.db
+          .query("crewTimeEntries")
+          .withIndex("by_crewMemberId_date", (q) => q.eq("crewMemberId", crewMemberId).gte("date", startMs).lte("date", endMs))
+          .collect();
+        out[crewMemberId] = rows
+          .filter((e) => e.organizationId === orgId && e.status === "APPROVED")
+          .reduce((sum, e) => sum + (e.totalHours ?? 0), 0);
+      }),
+    );
+    return out;
+  },
+});
+
+/**
+ * Approved logged minutes per work item (`projectTasks.id`), via the optional
+ * `crewTimeEntries.workItemId` link (Phase 4, #1246, design §8.2 "Estimate ·
+ * logged"). Gated on `work` (not `crew`) — a work item's peek shows "logged"
+ * to whoever can see the work item, which needs `work:read`, not `crew:read`.
+ * Indexed by the new `by_workItemId` (global — org-checked per row below, same
+ * shape as every other `by_cuid`-style global-index read in this codebase).
+ */
+export const loggedMinutesForWorkItems = query({
+  args: { orgId: v.string(), workItemIds: v.array(v.string()) },
+  handler: async (ctx, { orgId, workItemIds }): Promise<Record<string, number>> => {
+    await requireOrgReadFor(ctx, orgId, "work");
+    const ids = [...new Set(workItemIds)];
+    const out: Record<string, number> = {};
+    await Promise.all(
+      ids.map(async (workItemId) => {
+        const rows = await ctx.db.query("crewTimeEntries").withIndex("by_workItemId", (q) => q.eq("workItemId", workItemId)).collect();
+        out[workItemId] = rows
+          .filter((e) => e.organizationId === orgId && e.status === "APPROVED") // by_workItemId is global — org-re-check
+          .reduce((sum, e) => sum + Math.round((e.totalHours ?? 0) * 60), 0);
+      }),
+    );
+    return out;
   },
 });
 

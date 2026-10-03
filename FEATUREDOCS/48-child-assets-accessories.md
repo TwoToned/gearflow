@@ -124,10 +124,79 @@ stale tier on an already-expanded child.
   override changed. **Hard-blocks** once any unit of the *parent* line has
   deployed (`checkedOutQuantity > 0` or `status === "CHECKED_OUT"`), and
   separately refuses to delete a child that itself has a `CHECKED_OUT` unit —
-  "office decides, warehouse verifies" holds even for edits. No row-menu
-  entry point wired into `equipment-rows.tsx` yet — the mutation exists and
-  is tested, but reopening the picker from the project equipment tab is a
-  follow-up (TODOS.md).
+  "office decides, warehouse verifies" holds even for edits.
+  **Row-menu entry point:** `equipment-rows.tsx`'s per-line "…" kebab now
+  offers an **"Edit accessories"** item, gated by `canEditAccessoryPlan`
+  (`src/lib/accessory-plan-eligibility.ts` — a top-level equipment line, not a
+  kit/accessory/sub-hire child, has a model or asset, not yet deployed; the
+  server's `assertLineOwnsAccessoryPlan` is the actual authority, this is UX
+  only). Opens `EditAccessoryPlanDialog`
+  (`src/components/projects/edit-accessory-plan-dialog.tsx`), which fetches
+  the line's own current `accessoryPlan` fresh via `projectLineItems.getById`
+  (not carried on the equipment tab's `LineItemData` display type — narrower
+  than a full doc on purpose) and reseeds the SAME checkbox list the add-time
+  picker uses — extracted to a shared `AccessorySelectionFields` component
+  (`src/components/projects/accessory-selection-fields.tsx`) so the two
+  pickers can't drift, differing only in how each caller seeds
+  `selection`/`excludeReasons` (add defaults every DEFAULT row to included;
+  edit seeds from the stored plan).
+
+  **Edit Item entry point (second pass):** the row's **Edit Item** dialog
+  (`edit-line-item-dialog.tsx`) now carries an **Accessories** section too — the
+  PM edits what ships with a line in the same window they edit its quantity,
+  price and placement, rather than having to know a second menu item exists.
+  It renders `AccessoryPlanSection` (`accessory-plan-section.tsx` — a
+  `SectionTitle` around the same `AccessorySelectionFields`, with the card's own
+  overline off so one card doesn't get two headings), shown only when
+  `canEditAccessoryPlan(item)` passes AND the model/asset actually has
+  accessories configured. The picker scales its per-parent counts by the
+  quantity CURRENTLY TYPED in the dialog, so "3× XLR Cable" tracks the quantity
+  field live.
+
+  The two post-add entry points share `useAccessoryPlanEditor`
+  (`src/components/projects/use-accessory-plan-editor.ts` — the catalog query,
+  the `projectLineItems.getById` plan read, the seeding, the derived plan) over
+  the pure helpers in `src/lib/accessory-plan-editor.ts`; the kebab dialog is
+  now a thin shell around it. Only the SAVE differs:
+  - the kebab dialog saves on its own button, as before;
+  - the Edit Item dialog fires `onAccessoryPlanChange` (a separate callback from
+    `onSubmit`, because `updateAccessoryPlanNative` reconciles CHILD lines
+    rather than patching fields on this row — the same reason placement has its
+    own `onMove`), **only when `isDirty`** (`accessoryPlansEqual` compares the
+    `excluded`/`added` sets order-insensitively and ignores reason-only edits,
+    so saving a price change never reconciles an untouched line's children), and
+    **only after the line patch resolves** — `equipment-tab.tsx`'s `onSubmit`
+    returns `updateLineItemMut.mutateAsync(...)` for exactly this, since
+    `reconcileLineAccessoryChildren` rescales bulk children from the line's
+    CURRENT quantity and must therefore see a same-save quantity change. A
+    rejected line write skips the plan write entirely.
+
+  Tests: `src/lib/__tests__/accessory-plan-editor.test.ts` (seed/derive
+  round-trip, the dirty rules) and
+  `src/components/projects/__tests__/edit-line-item-accessories.smoke.test.tsx`
+  (section gating, the save sequencing, and that the nested reason dialog still
+  mounts inside the Edit Item dialog).
+- **Project-wide resync (opt-in, PM-initiated)** — `lineItemWrites.resyncProjectAccessoriesNative`
+  (`convex/lineItemWrites.ts`), surfaced as a **"Sync accessories"** button in the project
+  Equipment tab toolbar (`src/components/projects/equipment-tab.tsx`, gated on `manage_line_items`
+  the same way as the other structural equipment actions). Loops every top-level equipment line
+  on the project's LIVE version and calls the SAME `reconcileLineAccessoryChildren` the per-line
+  "Edit accessories" picker uses, but against the line's OWN already-stored `accessoryPlan`
+  (unchanged) — so a model/asset accessory config edited in the catalog **after** the line was
+  added (a new DEFAULT, a removed one, a quantity change) reaches jobs that haven't shipped yet,
+  without the PM re-opening the picker on every affected line one at a time. Also closes the
+  "quantity-merge path never rescales" limitation above for any line it touches, since
+  `wantedSetForModel` recomputes bulk demand from the line's CURRENT quantity every time it runs.
+  Skips (never touches) any line with a deployed unit — same `checkedOutQuantity`/`CHECKED_OUT`
+  gate as `assertLineOwnsAccessoryPlan` ("office decides, warehouse verifies" holds here too).
+  **Deliberately never automatic** — a catalog edit does NOT push itself onto every open project
+  the instant it's saved. Removing a model accessory from the catalog still does NOT retroactively
+  delete an untouched line's existing child (the "Known limitation" note two bullets above still
+  holds for a line nobody has resynced) — a project only picks up a catalog change when a human
+  asks it to, one project at a time. Accessory children carry no price of their own, so this never
+  touches a `PROJECT_MONEY_ANCHOR` and needs no pricing-lock check, unlike a money-field edit.
+  Returns `{ linesChecked, linesUpdated, childrenAdded, childrenRemoved }`, surfaced as a toast.
+  Tests: `convex/lineItemWrites.test.ts` (`resyncProjectAccessoriesNative`).
 - **Simplification vs. the full design** (`docs/designs/accessories-v2.md`):
   the add-form picker surfaces the model's DEFAULT/OPTIONAL bulk accessories
   only — it does not additionally list the specific asset's own
@@ -204,6 +273,10 @@ what every existing query keys off.
    same model again increments an existing line) does not re-scale the accessory
    child; and changing a line's quantity later doesn't retroactively rescale.
    Add the full quantity in one go for an exact accessory count.
+   `prepUnit` packs each accessory child's units for the prepped parent asset AND
+   re-syncs the child LINE's rollup (`syncLineItemRollup`) — the warehouse tabs
+   read `prepStatus` off the child line, so skipping that left accessories
+   permanently "unprepped" and Deploy flagging them as missing.
    No units created at expansion — units stay lazy-at-prep. `removeLineItem`
    cascade-deletes children (transactional) and blocks direct child removal.
 3. **Warehouse** (`src/server/warehouse.ts`) — `lookupAssetForScan` returns
@@ -402,12 +475,24 @@ either kind runs `warehouseWrites.logAccessoryCheckoutOverride` — a new
 activity log (one entry per skipped accessory, e.g. `"Deployed <parent>
 without default accessory <name>: <reason>"`) and that accessory child line's
 own `notes` field (merge-appended, same "join with `; `" convention as custom
-line item notes) — then the actual `checkOutItems` call proceeds unchanged.
-The gate is client-side pre-flight only; it does not touch
-`checkoutAccessoryChildren`/`expandAccessoriesForAsset` in
-`convex/warehouseOps.ts` — an accessory that was never prepped simply has no
-unit to flip, so the existing cascade does nothing for it either way, exactly
-as if the operator had scanned the parent alone.
+line item notes) — then the resent `checkOutItems` call carries an
+`includeAccessoryIds` narrowed to every accessory child of the deploying
+parent(s) **except** the ones just declared missing (computed client-side from
+`accessoryChildrenOf` minus the skipped set, translated to asset/bulk-asset
+identity the same way `findPartiallyVerifiedAccessoryParent` does).
+
+This narrowing is load-bearing for a **bulk** DEFAULT accessory (e.g. a
+battery-kit template accessory) that was already added to the project at
+add-time but never packed: the "no unit to flip" assumption above only holds
+for a *serialised* accessory. A bulk one gets its unit **materialised at
+checkout time** by `expandAccessoriesForAsset` regardless of prep state (it's
+how a never-touched DEFAULT bulk accessory ever gets a unit at all), and
+`checkoutAccessoryChildren` immediately flips whatever unit exists — so
+without the narrowing, the very accessory the operator just said was missing
+got silently checked out anyway in the same call. `includeAccessoryIds` is
+exactly the existing "verified subset" filter both of those functions already
+respect (issue #794's partial-deploy escape hatch), so no new gate was needed
+on the Convex side — the client just wasn't setting it on the override path.
 
 ## Not in v1
 
@@ -499,3 +584,41 @@ Both are tracked in TODOS.md.
 **Perf note:** bulk demand recompute resolves each distinct parent-unit asset once
 per expansion call (O(units) per call, O(units²) over a full multi-unit deploy).
 Fine for typical rental line sizes; revisit if very large lines appear.
+
+**Cascade scoping & guards (warehouse audit):** every accessory cascade is scoped to
+the parent unit(s) that actually moved — partial return without an `assetId`,
+`undeployItems`/`unreturnItems` (which now honour the requested `assetId`) and the
+deprep path no longer touch another parent's accessories. Un-returning clears the
+return record (`returnCondition`/`returnedAt`/`returnedQuantity`) on parent and
+accessory units; deprep resets emptied accessory lines to `PENDING` (the rollup falls
+back to the line's current value when no units remain). Deploy skips (leaves behind)
+an accessory whose asset is LOST/RETIRED/IN_MAINTENANCE/SOLD rather than erasing that
+state. `forceReturnAsset` re-syncs lines whose asset lives on the unit. An accessory
+line never counts toward `ALL_CHECKED_OUT` (it rides with its parent). A bulk/untagged parent's accessory lines are packed once the whole parent
+line is packed (`packParentlessAccessories`, no `parentUnitAssetId`, cascaded unscoped
+at deploy/return). A repeat deploy of an already-out parent still carries any
+left-behind accessory, and returning an already-returned parent brings a stranded one
+home. Re-prep never un-deploys a CHECKED_OUT unit and honours `includeAccessoryIds`;
+kit prep leaves accessory lines to the parent-scoped deploy path (no duplicate unit);
+undeploy after a partial bulk return releases only the quantity still out; partial
+bulk returns keep the worst condition; `correctReturnCondition` skips an asset that has
+since gone out again. Not done (design decisions): per-accessory return condition at
+the returns station (accessories inherit the parent's), and the returns board still
+only lists CHECKED_OUT parents.
+
+## Warehouse UI: quantity>1 accessory parents, shared gate (follow-up)
+
+- **Per-unit selection is kept for bulk accessory parents.** `groupItems`/`groupCheckinItems`
+  (now pure, in `warehouse-types.ts`) emit a `bulk-group` carrying `accessoryChildren` for a
+  quantity>1 accessory parent, so `selectionKeysForEntries` yields `bulkUnitKey` per unit and a
+  subset of units can be picked/prepped/deployed/returned while the accessories still render
+  (`BulkAccessoryRows` / `MobileBulkAccessoryCards`). If no unit is actionable in the stage but an
+  accessory is, it falls back to the line-id `accessory-group`.
+- **One deploy gate.** `openAccessoryGateIfNeeded` (page.tsx) runs the missing-accessory and
+  partial-verify checks for the Deploy button AND scan-deploy, over every line id (bulk keys too).
+- **`accessoryAssetIds`** is the single source for `includeAccessoryIds` (line ids plus
+  `units[].assetId/bulkAssetId`).
+- The accessory-group "Partial" badge comes from `isAccessoryParentPartiallyDeployed(item)`;
+  the Qty column shows the parent quantity on every tab/viewport.
+- Pick hides already-packed accessories (`accessoryChildrenForStage`), and a successful prep clears
+  that line's accessory ids from the shared `verifiedKitItems`, so Deploy verification starts fresh.

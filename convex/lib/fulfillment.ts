@@ -24,6 +24,7 @@ import {
   type UnitLike,
 } from "./lineItemUnits";
 import { bumpAssetCounters } from "./counters";
+import { resolveLiveVersionIdForProject, versionRows } from "./versionScope";
 
 type Ctx = MutationCtx;
 
@@ -44,8 +45,9 @@ async function lineDocByCuid(ctx: Ctx, id: string) {
 /** A parent line's ACCESSORY child lines — one shared query (R-9.8 collect-ratchet:
  *  four call sites duplicated this exact `by_parentLineItemId` + childKind filter
  *  before this helper). */
-async function accessoryChildrenOf(ctx: Ctx, organizationId: string, parentLineItemId: string) {
+export async function accessoryChildrenOf(ctx: Ctx, organizationId: string, parentLineItemId: string) {
   return (
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
     await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", parentLineItemId)).collect()
   ).filter((c) => c.organizationId === organizationId && c.childKind === "ACCESSORY");
 }
@@ -78,15 +80,21 @@ export async function syncLineItemRollup(ctx: Ctx, lineItemId: string): Promise<
   });
 }
 
-/** Find-or-create the serialised unit for a (line, asset) pair. */
+/** Find-or-create the serialised unit for a (line, asset) pair. Uses `.collect()` +
+ *  take-first rather than `.unique()`: a duplicate row on `by_lineItemId_assetId`
+ *  (e.g. from an old double-submit before the client had pending-state guards)
+ *  must not turn every future checkout of that asset into a masked Convex system
+ *  error — degrade to "use the first one" instead of throwing (see CLAUDE.md's
+ *  `.unique()`-on-a-duplicate-row footgun). */
 export async function ensureSerialisedUnit(
   ctx: Ctx,
   args: { organizationId: string; lineItemId: string; assetId: string },
 ): Promise<{ id: string; created: boolean }> {
-  const existing = await ctx.db
+  const existingRows = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", args.lineItemId).eq("assetId", args.assetId))
-    .unique();
+    .collect();
+  const existing = existingRows[0];
   if (existing) return { id: existing.id, created: false };
 
   const siblings = await lineUnits(ctx, args.lineItemId);
@@ -179,6 +187,13 @@ export function assetStatusFromReturnCondition(
   if (cond === "DAMAGED") return "IN_MAINTENANCE";
   if (cond === "MISSING") return "LOST";
   return "AVAILABLE";
+}
+
+const RETURN_CONDITION_SEVERITY = { GOOD: 0, DAMAGED: 1, MISSING: 2 } as const;
+type ReturnCondition = keyof typeof RETURN_CONDITION_SEVERITY;
+function worstReturnCondition(prev: ReturnCondition | null | undefined, next: ReturnCondition): ReturnCondition {
+  if (!prev) return next;
+  return RETURN_CONDITION_SEVERITY[prev] >= RETURN_CONDITION_SEVERITY[next] ? prev : next;
 }
 
 async function setAssetStatus(ctx: Ctx, assetId: string, status: string, locationId: string | null) {
@@ -282,7 +297,9 @@ export async function returnLineUnits(
         status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
         returnedAt: fullyReturned ? now : unit.returnedAt,
         returnedById: fullyReturned ? args.userId : unit.returnedById,
-        returnCondition: args.returnCondition,
+        // Partial returns accumulate: keep the WORST condition seen so a later
+        // GOOD return can't hide an earlier DAMAGED/MISSING one.
+        returnCondition: worstReturnCondition(unit.returnCondition, args.returnCondition),
         returnNotes: args.notes || unit.returnNotes,
         updatedAt: now,
       });
@@ -525,6 +542,11 @@ export async function expandAccessoriesForAsset(
   const baseChild = {
     organizationId,
     projectId: line.projectId,
+    // #1221 follow-up — inherit the PARENT's own versionId (it's already
+    // loaded above), same reasoning as expandAccessoryChildLines/
+    // accessoryChildInsertBase: an unstamped child is invisible to every
+    // by_versionId read, live or not.
+    versionId: line.versionId ?? undefined,
     type: "EQUIPMENT" as const,
     isKitChild: true,
     childKind: "ACCESSORY" as const,
@@ -542,6 +564,7 @@ export async function expandAccessoriesForAsset(
       await ctx.db.insert("projectLineItems", {
         ...baseChild,
         id: childLineId,
+        lineageId: childLineId,
         modelId: child.modelId ?? undefined,
         assetId: child.assetId,
         quantity: 1,
@@ -570,6 +593,7 @@ export async function expandAccessoriesForAsset(
       await ctx.db.insert("projectLineItems", {
         ...baseChild,
         id: childLineId,
+        lineageId: childLineId,
         modelId: bulk.modelId ?? undefined,
         bulkAssetId: bulk.bulkAssetId,
         quantity: demand,
@@ -609,6 +633,14 @@ export async function expandAccessoryChildLines(
     organizationId: string;
     projectId: string;
     accessoryPlan?: AccessoryPlan | null;
+    // #1221 follow-up — the PARENT's own resolved `versionId` (the target
+    // version the parent line was just inserted into, live or not). Every
+    // accessory child MUST land in the SAME version as its parent, or it's
+    // an orphan row: `versionId` absent matches no `by_versionId` read at
+    // all (not even the live one), so before this fix a child inserted here
+    // was invisible everywhere, not just on a non-live version — see
+    // FEATUREDOCS/78's "closing the Equipment write-side gap" note.
+    versionId: string | null | undefined;
   },
 ): Promise<void> {
   const now = Date.now();
@@ -616,6 +648,7 @@ export async function expandAccessoryChildLines(
   const base = {
     organizationId: parentLine.organizationId,
     projectId: parentLine.projectId,
+    versionId: parentLine.versionId ?? undefined,
     type: "EQUIPMENT" as const,
     isKitChild: true,
     childKind: "ACCESSORY" as const,
@@ -632,15 +665,17 @@ export async function expandAccessoryChildLines(
     const profile = await resolveLineAccessoryPlan(ctx, parentLine.organizationId, parentLine.assetId, plan);
     if (profile.serialised.length === 0 && profile.bulks.length === 0) return;
     for (const child of profile.serialised) {
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        ...base, id: createId(), modelId: child.modelId ?? undefined, assetId: child.assetId,
+        ...base, id: childId, lineageId: childId, modelId: child.modelId ?? undefined, assetId: child.assetId,
         quantity: 1, description: child.modelName ?? undefined, sortOrder: sort++,
         accessoryInclusion: "DEFAULT", createdAt: now, updatedAt: now,
       });
     }
     for (const b of profile.bulks) {
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
+        ...base, id: childId, lineageId: childId, modelId: b.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
         quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
         sortOrder: sort++, accessoryInclusion: b.inclusion, createdAt: now, updatedAt: now,
       });
@@ -664,8 +699,9 @@ export async function expandAccessoryChildLines(
       const perParent = added.get(b.bulkAssetId)?.quantityPerParent ?? b.quantity;
       const qty = perParent * Math.max(parentLine.quantity, 1);
       const name = await modelName(ctx, ba?.modelId);
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        ...base, id: createId(), modelId: ba?.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
+        ...base, id: childId, lineageId: childId, modelId: ba?.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
         quantity: qty, description: name ? `${qty}x ${name}` : undefined, sortOrder: sort++,
         accessoryInclusion: inclusion, createdAt: now, updatedAt: now,
       });
@@ -697,6 +733,10 @@ type ReconcileParentLine = {
   pricingType: string | null | undefined;
   organizationId: string;
   projectId: string;
+  // #1221 follow-up — see the identical field on expandAccessoryChildLines'
+  // parentLine above: a reconciled child must land in the SAME version as
+  // the parent it belongs to, never unstamped.
+  versionId: string | null | undefined;
 };
 
 type WantedSet = { wantSerialised: WantedSerialised; wantBulk: WantedBulk };
@@ -802,6 +842,7 @@ function accessoryChildInsertBase(parentLine: ReconcileParentLine) {
   return {
     organizationId: parentLine.organizationId,
     projectId: parentLine.projectId,
+    versionId: parentLine.versionId ?? undefined,
     type: "EQUIPMENT" as const,
     isKitChild: true,
     childKind: "ACCESSORY" as const,
@@ -820,8 +861,9 @@ async function insertMissingSerialisedAccessories(
   const base = accessoryChildInsertBase(parentLine);
   for (const [assetId, s] of wantSerialised) {
     if (existingAssetIds.has(assetId)) continue;
+    const childId = createId();
     await ctx.db.insert("projectLineItems", {
-      ...base, id: createId(), modelId: s.modelId ?? undefined, assetId,
+      ...base, id: childId, lineageId: childId, modelId: s.modelId ?? undefined, assetId,
       quantity: 1, description: s.modelName ?? undefined, sortOrder: sort.n++,
       accessoryInclusion: s.inclusion, createdAt: now, updatedAt: now,
     });
@@ -834,8 +876,9 @@ async function insertMissingBulkAccessories(
   const base = accessoryChildInsertBase(parentLine);
   for (const [bulkAssetId, b] of wantBulk) {
     if (existingBulkIds.has(bulkAssetId)) continue;
+    const childId = createId();
     await ctx.db.insert("projectLineItems", {
-      ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId,
+      ...base, id: childId, lineageId: childId, modelId: b.modelId ?? undefined, bulkAssetId,
       quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
       sortOrder: sort.n++, accessoryInclusion: b.inclusion, createdAt: now, updatedAt: now,
     });
@@ -859,6 +902,37 @@ export async function reconcileLineAccessoryChildren(ctx: Ctx, parentLine: Recon
   await insertMissingAccessoryChildren(ctx, parentLine, existing, wanted, now);
 }
 
+/** Look up a container's label (widen-step fallback for `prepContainer` —
+ *  #1296). `null`/missing/cross-org → `undefined` (no label to stamp). */
+async function containerLabelById(ctx: Ctx, organizationId: string, containerId: string | null | undefined): Promise<string | undefined> {
+  if (!containerId) return undefined;
+  const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
+  return c && c.organizationId === organizationId ? c.label : undefined;
+}
+
+/**
+ * Resolves what a NEWLY-created unit's `containerId` should be (#1296, D9):
+ * the caller's explicit value if one was given (a real id, or `null` for
+ * "Loose" — the operator has an active rail selection), else the line's
+ * `plannedContainerId` (the PM's plan; may itself be absent → loose). An
+ * EXISTING unit being re-patched (a repeat prep call for the same
+ * asset/bulk row) never falls back to the plan — only an explicit value
+ * touches it, so a checklist-only re-prep can't silently move gear.
+ */
+async function resolveContainerForWrite(
+  ctx: Ctx,
+  args: { organizationId: string; lineItemId: string; containerId?: string | null },
+  isNewUnit: boolean,
+): Promise<{ containerId: string | undefined; label: string | undefined } | null> {
+  if (args.containerId !== undefined) {
+    return { containerId: args.containerId ?? undefined, label: await containerLabelById(ctx, args.organizationId, args.containerId) };
+  }
+  if (!isNewUnit) return null; // nothing explicit, existing row — leave untouched
+  const line = await lineDocByCuid(ctx, args.lineItemId);
+  const planned = line?.plannedContainerId ?? undefined;
+  return { containerId: planned, label: await containerLabelById(ctx, args.organizationId, planned) };
+}
+
 /** Mark a unit prepped/packed (pick-and-pack before checkout). Rolls the line up. */
 export async function prepUnit(
   ctx: Ctx,
@@ -868,19 +942,27 @@ export async function prepUnit(
     assetId?: string | null;
     bulkAssetId?: string | null;
     quantity?: number;
-    prepContainer?: string | null;
+    /** #1296 — the container to pack this prep into. `undefined` = caller
+     *  gave no signal (defaults to the line's plan on a NEW unit only);
+     *  `null` = explicitly Loose. Superset of the old `prepContainer`
+     *  string, which callers may still pass instead (resolved to a real
+     *  container one layer up, in checkRecordOps.ts). */
+    containerId?: string | null;
     includeAccessoryIds?: Set<string> | null;
   },
 ): Promise<void> {
   const now = Date.now();
   if (args.assetId) {
-    const { id } = await ensureSerialisedUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, assetId: args.assetId });
+    const { id, created } = await ensureSerialisedUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, assetId: args.assetId });
+    const resolved = await resolveContainerForWrite(ctx, args, created);
     const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (u) {
+    // Never re-prep a unit that is already OUT — flipping it back to CONFIRMED
+    // would silently un-deploy it with no asset/availability change.
+    if (u && u.status !== "CHECKED_OUT") {
       await ctx.db.patch(u._id, {
         status: "CONFIRMED",
         prepStatus: "PACKED",
-        ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+        ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
         updatedAt: now,
       });
     }
@@ -890,20 +972,30 @@ export async function prepUnit(
       assetId: args.assetId,
       includeAccessoryIds: args.includeAccessoryIds ?? null,
     });
-    // Pack the accessory units tied to this parent unit.
+    // Pack the accessory units tied to this parent unit — they inherit the
+    // SAME resolution as the parent asset just prepped (existing shape,
+    // now keyed on containerId).
     const accChildren = await accessoryChildrenOf(ctx, args.organizationId, args.lineItemId);
     for (const child of accChildren) {
+      const narrow = args.includeAccessoryIds ?? null;
       const units = (await lineUnits(ctx, child.id)).filter(
-        (un) => un.parentUnitAssetId === args.assetId && un.status !== "CHECKED_OUT",
+        (un) =>
+          un.parentUnitAssetId === args.assetId &&
+          un.status !== "CHECKED_OUT" && un.status !== "RETURNED" && un.status !== "CANCELLED" &&
+          (!narrow || narrow.has(un.assetId ?? un.bulkAssetId ?? "")),
       );
       for (const un of units) {
         await ctx.db.patch(un._id, {
           status: "CONFIRMED",
           prepStatus: "PACKED",
-          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
           updatedAt: now,
         });
       }
+      // The warehouse reads packed state off the child LINE, not its units —
+      // roll it up here exactly as checkoutAccessoryChildren does, or the
+      // accessory stays "unprepped" and Deploy flags it as missing.
+      await syncLineItemRollup(ctx, child.id);
     }
   } else if (args.bulkAssetId) {
     // A bulk line keeps ONE unit per (line, bulkAsset) carrying the packed quantity.
@@ -918,21 +1010,23 @@ export async function prepUnit(
     const ordered = line?.quantity ?? addQty;
     const existing = (await lineUnits(ctx, args.lineItemId)).find((un) => un.bulkAssetId === args.bulkAssetId);
     if (existing) {
+      const resolved = await resolveContainerForWrite(ctx, args, false);
       await ctx.db.patch(existing._id, {
         status: "CONFIRMED",
         prepStatus: "PACKED",
         quantity: Math.min(ordered, (existing.quantity ?? 0) + addQty),
-        ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+        ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
         updatedAt: now,
       });
     } else {
       const { id } = await ensureBulkUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, bulkAssetId: args.bulkAssetId, quantity: Math.min(ordered, addQty) });
+      const resolved = await resolveContainerForWrite(ctx, args, true);
       const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
       if (u) {
         await ctx.db.patch(u._id, {
           status: "CONFIRMED",
           prepStatus: "PACKED",
-          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
           updatedAt: now,
         });
       }
@@ -951,6 +1045,7 @@ export async function prepUnit(
         const room = Math.max(0, ordered - assigned);
         const toCreate = Math.min(Math.max(1, args.quantity ?? 1), room);
         let ordinal = nextOrdinal(existing);
+        const resolved = await resolveContainerForWrite(ctx, args, true);
         for (let i = 0; i < toCreate; i++) {
           await ctx.db.insert("projectLineItemUnits", {
             id: createId(),
@@ -961,21 +1056,189 @@ export async function prepUnit(
             returnedQuantity: 0,
             status: "CONFIRMED",
             prepStatus: "PACKED",
-            ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+            ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
             createdAt: now,
             updatedAt: now,
           });
         }
       } else {
         // Single-unit / legacy generic line — whole-line prep (unchanged).
+        // There is no unit row here to carry `containerId` (membership is
+        // per-unit, never on the line — §3.3), and `projectLineItems.containerId`
+        // is reserved for a CONTAINER's own reverse lookup, so this branch
+        // stamps only the widen-step label, same as before #1296.
+        const resolved = args.containerId !== undefined
+          ? { label: await containerLabelById(ctx, args.organizationId, args.containerId) }
+          : null;
         await ctx.db.patch(line._id, {
           status: "CONFIRMED",
           prepStatus: "PACKED",
-          ...(args.prepContainer !== undefined ? { prepContainer: args.prepContainer ?? undefined } : {}),
+          ...(resolved ? { prepContainer: resolved.label } : {}),
           updatedAt: now,
         });
       }
     }
   }
+  // A parent with no serialised asset (bulk / untagged) has no per-asset accessory
+  // units, so its accessory child lines would otherwise never read PACKED.
+  if (!args.assetId) await packParentlessAccessories(ctx, args.organizationId, args.lineItemId);
   await syncLineItemRollup(ctx, args.lineItemId);
+}
+
+/** Pack the accessory child lines of a bulk/untagged parent once the WHOLE parent
+ *  line is packed. These children carry no `parentUnitAssetId` (there is no parent
+ *  asset), so checkout/return cascade them unscoped — see checkoutAccessoryChildren. */
+async function packParentlessAccessories(ctx: Ctx, organizationId: string, parentLineItemId: string): Promise<void> {
+  const parent = await lineDocByCuid(ctx, parentLineItemId);
+  if (!parent) return;
+  const assigned = (await lineUnits(ctx, parentLineItemId)).reduce((n, u) => n + (u.quantity ?? 0), 0);
+  if (assigned < (parent.quantity ?? 0)) return; // wait for the whole line
+  const now = Date.now();
+  for (const child of await accessoryChildrenOf(ctx, organizationId, parentLineItemId)) {
+    const unitId = await ensureParentlessAccessoryUnit(ctx, organizationId, child);
+    if (!unitId) continue;
+    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).unique();
+    if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
+      await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
+    }
+    await syncLineItemRollup(ctx, child.id);
+  }
+}
+
+/** The unit id backing a parent-less accessory child line, or null if it has no asset. */
+async function ensureParentlessAccessoryUnit(
+  ctx: Ctx,
+  organizationId: string,
+  child: { id: string; bulkAssetId?: string; assetId?: string; quantity?: number },
+): Promise<string | null> {
+  if (child.bulkAssetId) {
+    return (await ensureBulkUnit(ctx, { organizationId, lineItemId: child.id, bulkAssetId: child.bulkAssetId, quantity: child.quantity ?? 1 })).id;
+  }
+  if (child.assetId) return (await ensureSerialisedUnit(ctx, { organizationId, lineItemId: child.id, assetId: child.assetId })).id;
+  return null;
+}
+
+/**
+ * #1296 widen-step legacy path: resolve a free-text container label (the OLD
+ * `prepContainer` API arg) to a real `projectContainers` row, minting a new
+ * CUSTOM one if this project's live version has no container with that exact
+ * label yet — so an old client that still sends a label keeps working
+ * end-to-end (create-on-first-use, same idempotent shape
+ * `ensureContainerOnProjectCore` uses for an ASSET container). Retired along
+ * with the legacy arg itself in phase 5 (build plan phase 1c note).
+ */
+export async function resolveOrCreateContainerByLabel(
+  ctx: Ctx,
+  args: { organizationId: string; projectId: string; label: string; now: number },
+): Promise<string> {
+  const versionId = await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId);
+  const containers = (await versionRows(ctx, "projectContainers", versionId)).filter((c) => c.organizationId === args.organizationId);
+  const existing = containers.find((c) => c.label === args.label);
+  if (existing) return existing.id;
+
+  const containerId = createId();
+  const lineItemId = createId();
+  const lines = (await versionRows(ctx, "projectLineItems", versionId)).filter((l) => l.organizationId === args.organizationId);
+  const lineSort = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
+  await ctx.db.insert("projectLineItems", {
+    id: lineItemId, organizationId: args.organizationId, projectId: args.projectId, versionId, lineageId: lineItemId,
+    type: "EQUIPMENT", isCustomItem: true, description: args.label,
+    quantity: 1, sortOrder: lineSort, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED",
+    prepContainer: args.label, containerId, isContainerLineItem: true, createdAt: args.now, updatedAt: args.now,
+  });
+  const containerSort = containers.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
+  await ctx.db.insert("projectContainers", {
+    id: containerId, organizationId: args.organizationId, projectId: args.projectId, versionId, lineageId: containerId,
+    kind: "CUSTOM", label: args.label, lineItemId, sortOrder: containerSort, createdAt: args.now, updatedAt: args.now,
+  });
+  return containerId;
+}
+
+/** A container flip `syncContainerStatuses` applied — the caller (warehouseOps.ts,
+ *  which owns `setAssetsStatus`) uses this to flip the underlying asset too when
+ *  the container is an ASSET kind, keeping fulfillment.ts one-directional
+ *  (warehouseOps.ts imports FROM here, never the reverse). */
+export interface ContainerStatusFlip {
+  containerId: string;
+  lineItemId: string;
+  assetId?: string;
+  status: "CHECKED_OUT" | "RETURNED";
+}
+
+/** Loads a container's own line item + its live (non-CANCELLED) member units,
+ *  org-checked at every hop — `null` when there's nothing to roll up. Split
+ *  out of `syncContainerStatuses` to keep each helper's branching under the
+ *  complexity ratchet (R-3.6). */
+async function loadContainerFlipContext(ctx: Ctx, containerId: string, organizationId: string) {
+  const container = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
+  if (!container || container.organizationId !== organizationId) return null;
+  const containerLI = await lineDocByCuid(ctx, container.lineItemId);
+  if (!containerLI || containerLI.organizationId !== organizationId) return null;
+
+  const members = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", containerId)).collect())
+    .filter((u) => u.organizationId === organizationId && u.status !== "CANCELLED");
+  if (members.length === 0) return null;
+  return { containerLI, members };
+}
+
+/** `null` when the container's members don't (yet) unanimously agree on a
+ *  status the container line item doesn't already have. */
+function resolveContainerFlipStatus(
+  containerLI: { status?: string },
+  members: Array<{ status?: string }>,
+): "CHECKED_OUT" | "RETURNED" | null {
+  if (members.every((u) => u.status === "CHECKED_OUT") && containerLI.status !== "CHECKED_OUT") return "CHECKED_OUT";
+  if (members.every((u) => u.status === "RETURNED") && containerLI.status !== "RETURNED") return "RETURNED";
+  return null;
+}
+
+async function flipForContainer(
+  ctx: Ctx,
+  containerId: string,
+  args: { organizationId: string; userId: string; now: number },
+): Promise<ContainerStatusFlip | null> {
+  const context = await loadContainerFlipContext(ctx, containerId, args.organizationId);
+  if (!context) return null;
+  const { containerLI, members } = context;
+  const status = resolveContainerFlipStatus(containerLI, members);
+  if (!status) return null;
+
+  if (status === "CHECKED_OUT") {
+    await ctx.db.patch(containerLI._id, {
+      status: "CHECKED_OUT", checkedOutQuantity: containerLI.quantity ?? 1,
+      checkedOutAt: args.now, checkedOutById: args.userId, updatedAt: args.now,
+    });
+  } else {
+    await ctx.db.patch(containerLI._id, {
+      status: "RETURNED", returnedQuantity: 1,
+      returnedAt: args.now, returnedById: args.userId, returnCondition: "GOOD", updatedAt: args.now,
+    });
+  }
+  return { containerId, lineItemId: containerLI.id, assetId: containerLI.assetId ?? undefined, status };
+}
+
+/**
+ * #1296 — the container status roll-up, moved server-side and keyed by
+ * `containerId` (replaces `syncContainersBatchCore`'s label bucketing).
+ * "Contents" is every unit with `containerId === X` — nesting needs no
+ * separate traversal: a container packed inside another is itself just a
+ * line item, and if IT gets physically packed via `prepUnit`, that write
+ * lands a unit with `containerId` pointing at the OUTER box, so the outer
+ * box's own by_containerId read already sees it (§3.5). CANCELLED units
+ * (tombstones) never block an "all deployed/returned" verdict.
+ */
+export async function syncContainerStatuses(
+  ctx: Ctx,
+  containerIds: Iterable<string>,
+  args: { organizationId: string; userId: string; now: number },
+): Promise<ContainerStatusFlip[]> {
+  const flips: ContainerStatusFlip[] = [];
+  const seen = new Set<string>();
+  for (const containerId of containerIds) {
+    if (seen.has(containerId)) continue;
+    seen.add(containerId);
+    const flip = await flipForContainer(ctx, containerId, args);
+    if (flip) flips.push(flip);
+  }
+  return flips;
 }

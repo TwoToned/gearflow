@@ -70,6 +70,13 @@ describe("countries — the single source of truth (I1, #1079)", () => {
     expect(new Set(codes).size).toBe(codes.length);
   });
 
+  it("every row has a non-empty representative timezone (C2, #1099)", () => {
+    for (const c of COUNTRIES) {
+      expect(typeof c.timezone).toBe("string");
+      expect(c.timezone.length).toBeGreaterThan(0);
+    }
+  });
+
   it("only AU/NZ use the 'TAX INVOICE' heading — everyone else gets the generic 'INVOICE' (I4, #1083)", () => {
     expect(getCountry("AU")?.invoiceHeading).toBe("TAX INVOICE");
     expect(getCountry("NZ")?.invoiceHeading).toBe("TAX INVOICE");

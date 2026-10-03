@@ -5,8 +5,11 @@
  * builds the org-wide board) purely to keep that file under the line-count
  * lint budget — this reuses its exported aggregation core directly.
  */
+import type { QueryCtx, MutationCtx } from "../_generated/server";
+import type { Doc } from "../_generated/dataModel";
 import { EXCLUDED_ASSIGNMENT_STATUSES } from "./crewConflicts";
 import {
+  candidateBoardProjects,
   computeGearShortageBoard,
   type DateRange,
   type BoardProject,
@@ -16,6 +19,7 @@ import {
   type BoardBulkAsset,
   type BoardAssignment,
 } from "./overbookingBoard";
+import { fetchCandidateProjects, fetchGearData } from "./overbookingFetch";
 import { ownGearModelIds } from "./projectReadiness";
 
 export interface ConfirmImpactModels {
@@ -48,7 +52,11 @@ export function computeConfirmImpactModels(
 
   const { hard } = computeGearShortageBoard(window, projects, lineItems, models, assets, bulkAssets);
   const relevant = hard.filter((r) => ownModelIds.has(r.modelId));
-  return { modelCount: relevant.length, qty: relevant.reduce((sum, r) => sum + r.qty, 0) };
+  // A model can now produce more than one row (day-sliced, 2026-09) if it has
+  // multiple distinct conflict windows within `window` — count DISTINCT
+  // models, not rows, so "modelCount" keeps meaning "how many kinds of gear."
+  const distinctModelIds = new Set(relevant.map((r) => r.modelId));
+  return { modelCount: distinctModelIds.size, qty: relevant.reduce((sum, r) => sum + r.qty, 0) };
 }
 
 /** Count of a project's OWN crew assignments that aren't CONFIRMED yet (and
@@ -89,7 +97,51 @@ export function computePromoteOverbookingConflicts(
   if (ownModelIds.size === 0) return [];
 
   const { hard } = computeGearShortageBoard(window, projects, lineItems, models, assets, bulkAssets);
-  return hard
-    .filter((r) => ownModelIds.has(r.modelId))
-    .map((r) => ({ modelId: r.modelId, modelName: r.modelName, qty: r.qty, projectNumbers: r.projects.map((p) => p.projectNumber) }));
+  // A model can now produce more than one row (day-sliced, 2026-09) if it has
+  // multiple distinct conflict windows within `window` — this list has no
+  // per-row date field, so multiple rows for the same model would look like
+  // an unexplained duplicate. Merge them into one summary row per model:
+  // combined qty, and the union of every distinct project involved across
+  // all of that model's conflict windows.
+  const byModel = new Map<string, PromoteOverbookingRow>();
+  for (const r of hard) {
+    if (!ownModelIds.has(r.modelId)) continue;
+    const existing = byModel.get(r.modelId);
+    if (existing) {
+      existing.qty += r.qty;
+      for (const num of r.projects.map((p) => p.projectNumber)) {
+        if (!existing.projectNumbers.includes(num)) existing.projectNumbers.push(num);
+      }
+    } else {
+      byModel.set(r.modelId, { modelId: r.modelId, modelName: r.modelName, qty: r.qty, projectNumbers: r.projects.map((p) => p.projectNumber) });
+    }
+  }
+  return [...byModel.values()];
+}
+
+/**
+ * The fetch-and-compute core behind BOTH `makeLiveCore.ts`'s post-promote
+ * `deriveDateMoveConflicts` and `overbookingBoard.dateMoveImpact` (#1227,
+ * Q3's pre-save preview) — factored out so the two can never disagree about
+ * what a date move did to other jobs' gear (R-3.1). `projectWithWindow` must
+ * be the target project's own doc with its date fields already reflecting
+ * the window being checked (the post-promote caller passes the just-patched
+ * row; the pre-save preview passes a copy with the PROPOSED dates spliced
+ * in) — everything else about it (status included) stays real, so a
+ * dateless-to-dated move on an already-CONFIRMED job is checked exactly as
+ * it will actually land.
+ */
+export async function computeDateMoveOverbookingRows(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+  projectId: string,
+  window: DateRange,
+  projectWithWindow: Doc<"projects">,
+): Promise<PromoteOverbookingRow[]> {
+  const projectDocsById = await fetchCandidateProjects(ctx, organizationId, window.end);
+  projectDocsById.set(projectWithWindow.id, projectWithWindow);
+  const candidateProjects = candidateBoardProjects([...projectDocsById.values()], window);
+  const candidateProjectIds = candidateProjects.map((p) => p.id);
+  const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, organizationId, candidateProjectIds, projectDocsById);
+  return computePromoteOverbookingConflicts(projectId, window, candidateProjects, lineItems, models, assets, bulkAssetsForModels);
 }

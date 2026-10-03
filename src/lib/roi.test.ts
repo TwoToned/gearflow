@@ -1,8 +1,9 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, it, expect } from "vitest";
 import {
   computeRoi,
   formatPayback,
   statusesForScope,
+  canExcludeFromRoi,
   defaultRoiWindow,
   NEVER_COUNTED_STATUSES,
 } from "./roi";
@@ -97,5 +98,26 @@ describe("defaultRoiWindow", () => {
     const { from, to } = defaultRoiWindow("booked", now);
     expect(to).toBeUndefined();
     expect(new Date(from).toISOString()).toBe("2025-07-10T00:00:00.000Z");
+  });
+});
+
+describe("canExcludeFromRoi (#1249)", () => {
+  // The menu's copy of the rule. It must match `isRoiExcluded` in
+  // convex/lib/allocation.ts, which is the actual enforcement point — the menu
+  // must never offer a toggle the engine then ignores.
+  const gear = { modelId: "m1" };
+
+  it("offers the toggle on an ordinary gear line", () => {
+    expect(canExcludeFromRoi(gear)).toBe(true);
+  });
+
+  it.each([
+    ["no modelId — nothing to attribute revenue to", { modelId: null }],
+    ["a SALE line — a disposal, never rental ROI", { ...gear, type: "SALE" }],
+    ["a sub-hire line — never our capital, and it must keep consuming pool weight", { ...gear, subHireId: "sh1" }],
+    ["a custom item", { ...gear, isCustomItem: true }],
+    ["a container row (road case) — carries a modelId but is isNonGear", { ...gear, isContainerLineItem: true }],
+  ])("withholds it for %s", (_label, item) => {
+    expect(canExcludeFromRoi(item)).toBe(false);
   });
 });

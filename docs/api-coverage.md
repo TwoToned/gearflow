@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 417 | 290 | 125 | 1 | 1 |
-| Mutations | 764 | 277 | 478 | 0 | 9 |
-| **Total** | **1181** | **567** | **603** | **1** | **10** |
+| Queries | 447 | 312 | 133 | 1 | 1 |
+| Mutations | 802 | 303 | 492 | 0 | 7 |
+| **Total** | **1249** | **615** | **625** | **1** | **8** |
 
-<!-- reachability-floor: 567 -->
+<!-- reachability-floor: 615 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,9 +42,9 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 93 |
-| `medium` | 142 |
-| `low` | 42 |
+| `high` | 91 |
+| `medium` | 148 |
+| `low` | 64 |
 
 ## Modules with no agent-reachable operation
 
@@ -59,11 +59,16 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `apiKeys` | 10 |
 | `apiRequestLog` | 3 |
 | `availabilityCheck` | 1 |
+| `backfillChecklistSubtasks` | 1 |
 | `backfillClientContacts` | 1 |
 | `backfillInvoiceSourceRevision` | 2 |
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
+| `backfillOrphanedLineItemComments` | 4 |
+| `backfillProjectContainers` | 3 |
 | `backfillProjectLiveRevision` | 2 |
+| `backfillProjectPricingLock` | 2 |
+| `backfillProjectVersions` | 2 |
 | `backfillProjectWindow` | 1 |
 | `backfillQuoteRevisions` | 2 |
 | `backfillStripProjectDepositPercent` | 1 |
@@ -73,6 +78,8 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `crewShifts` | 9 |
 | `emails` | 1 |
 | `financeArtifacts` | 4 |
+| `followUpPush` | 3 |
+| `followUpTick` | 1 |
 | `globalSearch` | 1 |
 | `mediaWrites` | 4 |
 | `miraConversations` | 4 |
@@ -90,6 +97,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `pendingOrgJoinRequests` | 6 |
 | `pendingSSOApprovals` | 5 |
 | `projectNumberSequences` | 7 |
+| `projectVersionsWrites` | 1 |
 | `siteSettings` | 9 |
 | `subHireGroups` | 8 |
 | `subHireItems` | 7 |
@@ -102,6 +110,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `webhooks` | 14 |
 | `wooCommerceIntegrations` | 8 |
 | `wooCommerceOrderLogs` | 7 |
+| `xeroPaymentSync` | 4 |
 
 ## Deliberately denied (Phase 5 triage, #1001)
 

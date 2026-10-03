@@ -25,13 +25,34 @@ describe("dashboardLists.upcoming", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("clients", { id: "cl1", organizationId: ORG, name: "Acme" });
       // p1 CONFIRMED future, p2 PREPPING further future, pPast (excluded), pTpl (excluded), pDone (excluded status)
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "P2", status: "PREPPING", isTemplate: false, rentalStartDate: NOW + 2 * DAY });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "P1", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW + DAY, clientId: "cl1" });
-      await ctx.db.insert("projects", { id: "pPast", organizationId: ORG, projectNumber: "PP", name: "PP", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW - DAY });
-      await ctx.db.insert("projects", { id: "pTpl", organizationId: ORG, projectNumber: "PT", name: "PT", status: "CONFIRMED", isTemplate: true, rentalStartDate: NOW + DAY });
-      await ctx.db.insert("projects", { id: "pDone", organizationId: ORG, projectNumber: "PD", name: "PD", status: "COMPLETED", isTemplate: false, rentalStartDate: NOW + DAY });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT" });
-      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", type: "SERVICE" }); // not counted
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "P2", status: "PREPPING", isTemplate: false, rentalStartDate: NOW + 2 * DAY,
+        liveVersionId: "v-p2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "P1", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW + DAY, clientId: "cl1",
+        liveVersionId: "v-p1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pPast", organizationId: ORG, projectNumber: "PP", name: "PP", status: "CONFIRMED", isTemplate: false, rentalStartDate: NOW - DAY,
+        liveVersionId: "v-pPast",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pPast", organizationId: ORG, projectId: "pPast", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pTpl", organizationId: ORG, projectNumber: "PT", name: "PT", status: "CONFIRMED", isTemplate: true, rentalStartDate: NOW + DAY,
+        liveVersionId: "v-pTpl",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pTpl", organizationId: ORG, projectId: "pTpl", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pDone", organizationId: ORG, projectNumber: "PD", name: "PD", status: "COMPLETED", isTemplate: false, rentalStartDate: NOW + DAY,
+        liveVersionId: "v-pDone",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pDone", organizationId: ORG, projectId: "pDone", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT",
+        versionId: "v-p1",
+        lineageId: "li1",
+      });
+      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", type: "SERVICE",
+        versionId: "v-p1",
+        lineageId: "li2",
+      }); // not counted
     });
     const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.upcoming, { orgId: ORG, now: NOW });
     expect(res.map((p) => p.id)).toEqual(["p1", "p2"]); // sorted by start asc; past/template/done excluded
@@ -47,10 +68,22 @@ describe("dashboardLists.home", () => {
     await member(t);
     await t.run(async (ctx) => {
       // pm1 directly managed; pm2 via projectManagers join; pOther not managed; pDone excluded.
-      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "PM1", status: "CONFIRMED", isTemplate: false, projectManagerId: USER, rentalStartDate: NOW + DAY });
-      await ctx.db.insert("projects", { id: "pm2", organizationId: ORG, projectNumber: "PM2", name: "PM2", status: "ON_SITE", isTemplate: false, rentalStartDate: NOW + 2 * DAY });
-      await ctx.db.insert("projects", { id: "pOther", organizationId: ORG, projectNumber: "PO", name: "PO", status: "CONFIRMED", isTemplate: false });
-      await ctx.db.insert("projects", { id: "pDone", organizationId: ORG, projectNumber: "PD", name: "PD", status: "INVOICED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "PM1", status: "CONFIRMED", isTemplate: false, projectManagerId: USER, rentalStartDate: NOW + DAY,
+        liveVersionId: "v-pm1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pm1", organizationId: ORG, projectId: "pm1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pm2", organizationId: ORG, projectNumber: "PM2", name: "PM2", status: "ON_SITE", isTemplate: false, rentalStartDate: NOW + 2 * DAY,
+        liveVersionId: "v-pm2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pm2", organizationId: ORG, projectId: "pm2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pOther", organizationId: ORG, projectNumber: "PO", name: "PO", status: "CONFIRMED", isTemplate: false,
+        liveVersionId: "v-pOther",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pOther", organizationId: ORG, projectId: "pOther", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pDone", organizationId: ORG, projectNumber: "PD", name: "PD", status: "INVOICED", isTemplate: false, projectManagerId: USER,
+        liveVersionId: "v-pDone-2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pDone-2", organizationId: ORG, projectId: "pDone", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("projectManagers", { id: "pmj", organizationId: ORG, projectId: "pm2", userId: USER });
     });
     const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.home, { orgId: ORG });
@@ -60,14 +93,214 @@ describe("dashboardLists.home", () => {
   });
 });
 
+describe("dashboardLists.needsYou", () => {
+  test("surfaces declined/stale crew and expiring quotes ONLY for projects the caller manages", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    const STALE = 49 * 60 * 60 * 1000; // > the 48h threshold
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "PM Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("projects", { id: "pOther", organizationId: ORG, projectNumber: "PO", name: "Other Job", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Sam", lastName: "Smith" });
+      await ctx.db.insert("crewMembers", { id: "cm2", organizationId: ORG, firstName: "Rita", lastName: "Rivera" });
+      // On MY project: one declined, one stale-offered, one recently-offered (excluded), one confirmed (excluded).
+      await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "DECLINED", respondedAt: NOW - DAY });
+      await ctx.db.insert("crewAssignments", { id: "a2", organizationId: ORG, projectId: "pm1", crewMemberId: "cm2", status: "OFFERED", offeredAt: NOW - STALE });
+      await ctx.db.insert("crewAssignments", { id: "a3", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "OFFERED", offeredAt: NOW - 60_000 });
+      await ctx.db.insert("crewAssignments", { id: "a4", organizationId: ORG, projectId: "pm1", crewMemberId: "cm2", status: "CONFIRMED" });
+      // On someone else's project: declined too, but must not surface.
+      await ctx.db.insert("crewAssignments", { id: "aOther", organizationId: ORG, projectId: "pOther", crewMemberId: "cm1", status: "DECLINED", respondedAt: NOW });
+      // Quotes: MY project's SENT quote expires in 3 days (surfaces); the other project's expiring quote must not.
+      await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+      await ctx.db.insert("quotes", { id: "qOther", organizationId: ORG, projectId: "pOther", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+
+    expect(res.declinedCrew).toEqual([
+      { sourceKey: "crew:declined:a1", assignmentId: "a1", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Sam Smith", crewRoleId: null, startDate: null, at: NOW - DAY },
+    ]);
+    expect(res.staleOffers).toEqual([
+      { sourceKey: "crew:stale:a2", assignmentId: "a2", projectId: "pm1", projectName: "PM Job", projectNumber: "PM1", crewMemberName: "Rita Rivera", crewRoleId: null, startDate: null, at: NOW - STALE },
+    ]);
+    expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+  });
+
+  // Work-layer Phase 4 (#1246) — the "> 48h" threshold is an org setting.
+  test("the unanswered-offer threshold is the org's own setting, not the hardcoded 48h default", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Sam", lastName: "Smith" });
+      // 6h old — NOT stale under the default 48h, but IS stale under this org's 5h setting.
+      await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "pm1", crewMemberId: "cm1", status: "OFFERED", offeredAt: NOW - 6 * 60 * 60 * 1000 });
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ crewTime: { unansweredOfferHours: 5 } }) });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res.staleOffers.map((s) => s.assignmentId)).toEqual(["a1"]);
+  });
+
+  test("a project with nothing outstanding returns empty buckets, not an error", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Quiet Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res).toEqual({ declinedCrew: [], staleOffers: [], expiringQuotes: [], quotesNeedingNextStep: [] });
+  });
+
+  test("a quote expiring far in the future does not count as 'expiring soon'", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("quotes", { id: "qFar", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 60 * DAY });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+    expect(res.expiringQuotes).toEqual([]);
+  });
+
+  // #1243 Phase 1 — a human's decision (workSignalStates) hides a signal.
+  describe("workSignalStates filtering (#1243 Phase 1)", () => {
+    async function seedExpiringQuote(t: ReturnType<typeof convexTest>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+        await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, validUntil: NOW + 3 * DAY });
+      });
+    }
+
+    test("a dismissed signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes).toEqual([]);
+    });
+
+    test("a promoted signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "promoted", promotedWorkItemId: "t1", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes).toEqual([]);
+    });
+
+    test("a signal snoozed into the future is hidden; an expired snooze re-surfaces it", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:expiring:q1", state: "snoozed", snoozedUntil: NOW + DAY, createdAt: NOW, updatedAt: NOW }),
+      );
+      const stillSnoozed = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(stillSnoozed.expiringQuotes).toEqual([]);
+
+      const afterSnooze = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW + DAY + 1 });
+      expect(afterSnooze.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+
+    test("another user's decision does not hide the signal for this user", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedExpiringQuote(t);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: "user_other", sourceKey: "quote:expiring:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.expiringQuotes.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+  });
+
+  // #1245 Phase 3 — "24 hours after a quote send with no next step logged,
+  // the quote:nonext source puts it in the PM's Triage" (design §8.4/§9).
+  describe("quote:nonext (#1245 Phase 3)", () => {
+    async function seedSentQuote(t: ReturnType<typeof convexTest>, sentAt: number) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme" });
+        await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER, clientId: "c1" });
+        await ctx.db.insert("quotes", { id: "q1", organizationId: ORG, projectId: "pm1", version: 1, status: "SENT", snapshot: null, sentAt, validUntil: sentAt + 60 * DAY });
+      });
+    }
+
+    test("does not surface before the 24h grace period elapses", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 12 * 60 * 60 * 1000);
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([]);
+    });
+
+    test("surfaces once 24h have elapsed with no open follow_up for the client", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([
+        { sourceKey: "quote:nonext:q1", quoteId: "q1", clientId: "c1", projectId: "pm1", projectName: "Job", projectNumber: "PM1", version: 1, sentAt: NOW - 25 * 60 * 60 * 1000 },
+      ]);
+    });
+
+    test("an open follow_up linked to the client clears the signal", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, title: "Follow up", kind: "follow_up", status: "TODO", createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("workItemLinks", { id: "l1", organizationId: ORG, workItemId: "t1", entityType: "client", entityId: "c1", createdAt: NOW });
+      });
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([]);
+    });
+
+    test("a DONE follow_up does not count as open, so the signal still surfaces", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, title: "Follow up", kind: "follow_up", status: "DONE", completedAt: NOW, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("workItemLinks", { id: "l1", organizationId: ORG, workItemId: "t1", entityType: "client", entityId: "c1", createdAt: NOW });
+      });
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep.map((q) => q.quoteId)).toEqual(["q1"]);
+    });
+
+    test("a dismissed nonext signal is hidden", async () => {
+      const t = convexTest(schema, modules);
+      await member(t);
+      await seedSentQuote(t, NOW - 25 * 60 * 60 * 1000);
+      await t.run((ctx) =>
+        ctx.db.insert("workSignalStates", { id: "ws1", organizationId: ORG, userId: USER, sourceKey: "quote:nonext:q1", state: "dismissed", createdAt: NOW, updatedAt: NOW }),
+      );
+      const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.needsYou, { orgId: ORG, now: NOW });
+      expect(res.quotesNeedingNextStep).toEqual([]);
+    });
+  });
+});
+
 describe("dashboardLists.blocking", () => {
   test("surfaces open blocking threads where the user is PM or mentioned", async () => {
     const t = convexTest(schema, modules);
     await member(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "PM Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
-      await ctx.db.insert("projects", { id: "pMent", organizationId: ORG, projectNumber: "PMN", name: "Mention Job", status: "CONFIRMED", isTemplate: false });
-      await ctx.db.insert("projects", { id: "pNone", organizationId: ORG, projectNumber: "PN", name: "Other Job", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projects", { id: "pm1", organizationId: ORG, projectNumber: "PM1", name: "PM Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER,
+        liveVersionId: "v-pm1-2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pm1-2", organizationId: ORG, projectId: "pm1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pMent", organizationId: ORG, projectNumber: "PMN", name: "Mention Job", status: "CONFIRMED", isTemplate: false,
+        liveVersionId: "v-pMent",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pMent", organizationId: ORG, projectId: "pMent", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pNone", organizationId: ORG, projectNumber: "PN", name: "Other Job", status: "CONFIRMED", isTemplate: false,
+        liveVersionId: "v-pNone",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pNone", organizationId: ORG, projectId: "pNone", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       const baseT = { orgId: ORG, entityType: "project", status: "open" as const, isBlocking: true, createdBy: "u9", createdByName: "Bob", updatedAt: NOW };
       const th1 = await ctx.db.insert("commentThreads", { ...baseT, entityId: "pm1", projectId: "pm1", createdAt: NOW + 2, mentionUserIds: [] });
       const th2 = await ctx.db.insert("commentThreads", { ...baseT, entityId: "pMent", projectId: "pMent", createdAt: NOW + 1, mentionUserIds: [USER] });
@@ -75,10 +308,74 @@ describe("dashboardLists.blocking", () => {
       await ctx.db.insert("comments", { orgId: ORG, threadId: th1 as unknown as string, body: "blocked on X", authorId: "u9", authorName: "Bob", authorColor: "#000", createdAt: NOW });
       void th2;
     });
-    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.blocking, { orgId: ORG });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.blocking, { orgId: ORG, now: NOW });
     expect(res.map((b) => b.projectId)).toEqual(["pm1", "pMent"]); // createdAt desc; pNone excluded
     expect(res[0].reason).toBe("pm");
     expect(res[0].snippet).toBe("blocked on X");
     expect(res[1].reason).toBe("mention");
+  });
+
+  test("excludes threads on a cancelled/completed/invoiced or past-dated project", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pLive", organizationId: ORG, projectNumber: "PL", name: "Live Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER,
+        liveVersionId: "v-pLive",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pLive", organizationId: ORG, projectId: "pLive", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pCancelled", organizationId: ORG, projectNumber: "PC", name: "Cancelled Job", status: "CANCELLED", isTemplate: false, projectManagerId: USER,
+        liveVersionId: "v-pCancelled",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pCancelled", organizationId: ORG, projectId: "pCancelled", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pInvoiced", organizationId: ORG, projectNumber: "PI", name: "Invoiced Job", status: "INVOICED", isTemplate: false, projectManagerId: USER,
+        liveVersionId: "v-pInvoiced",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pInvoiced", organizationId: ORG, projectId: "pInvoiced", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pPast", organizationId: ORG, projectNumber: "PP", name: "Past Job", status: "ON_SITE", isTemplate: false, projectManagerId: USER, rentalEndDate: NOW - DAY,
+        liveVersionId: "v-pPast-2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pPast-2", organizationId: ORG, projectId: "pPast", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      const baseT = { orgId: ORG, entityType: "project", status: "open" as const, isBlocking: true, createdBy: "u9", createdByName: "Bob", updatedAt: NOW, mentionUserIds: [] };
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pLive", projectId: "pLive", createdAt: NOW });
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pCancelled", projectId: "pCancelled", createdAt: NOW });
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pInvoiced", projectId: "pInvoiced", createdAt: NOW });
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pPast", projectId: "pPast", createdAt: NOW });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.blocking, { orgId: ORG, now: NOW });
+    expect(res.map((b) => b.projectId)).toEqual(["pLive"]);
+  });
+});
+
+describe("dashboardLists.pendingCrewOffers", () => {
+  test("counts only offers on current/future gigs, not closed/cancelled/past ones", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pLive", organizationId: ORG, projectNumber: "PL", name: "Live Job", status: "CONFIRMED", isTemplate: false,
+        liveVersionId: "v-pLive-2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pLive-2", organizationId: ORG, projectId: "pLive", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pFuture", organizationId: ORG, projectNumber: "PF", name: "Future Job", status: "QUOTED", isTemplate: false, rentalEndDate: NOW + DAY,
+        liveVersionId: "v-pFuture",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pFuture", organizationId: ORG, projectId: "pFuture", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pCancelled", organizationId: ORG, projectNumber: "PC", name: "Cancelled Job", status: "CANCELLED", isTemplate: false,
+        liveVersionId: "v-pCancelled-2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pCancelled-2", organizationId: ORG, projectId: "pCancelled", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "pPast", organizationId: ORG, projectNumber: "PP", name: "Past Job", status: "ON_SITE", isTemplate: false, rentalEndDate: NOW - DAY,
+        liveVersionId: "v-pPast-3",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pPast-3", organizationId: ORG, projectId: "pPast", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      const assign = (id: string, status: "OFFERED" | "PENDING" | "ACCEPTED", projectId: string) =>
+        ctx.db.insert("crewAssignments", { id, organizationId: ORG, projectId, crewMemberId: "c1", status });
+      await assign("ca1", "OFFERED", "pLive");
+      await assign("ca2", "PENDING", "pFuture");
+      await assign("ca3", "OFFERED", "pCancelled");
+      await assign("ca4", "PENDING", "pPast");
+      await assign("ca5", "ACCEPTED", "pLive"); // not pending → excluded regardless
+    });
+    const count = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.pendingCrewOffers, { orgId: ORG, now: NOW });
+    expect(count).toBe(2); // ca1 (pLive) + ca2 (pFuture)
   });
 });

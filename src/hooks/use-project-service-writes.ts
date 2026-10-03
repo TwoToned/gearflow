@@ -117,18 +117,17 @@ export function useProjectServiceWrites() {
       });
     },
 
-    /** `justification` (#990) — forwarded to `deleteServiceNative`, required once
-     *  the project is ON_SITE+ with no open unlock session. */
-    remove: async (serviceId: string, justification?: string): Promise<{ id: string }> => {
-      return deleteM({ id: serviceId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId(), justification });
+    /** Structural — never gated by pricingLocked (#1230). */
+    remove: async (serviceId: string): Promise<{ id: string }> => {
+      return deleteM({ id: serviceId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
     },
 
     setStatus: async (serviceId: string, status: ServiceStatus): Promise<{ id: string }> => {
       return statusM({ id: serviceId, orgId: requireOrg(), status, now: Date.now(), actor: actor(), auditId: createId() });
     },
 
-    bulkDelete: async (ids: string[], justification?: string): Promise<{ deleted: number; skipped: number }> => {
-      return bulkDeleteM({ ids, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId(), justification });
+    bulkDelete: async (ids: string[]): Promise<{ deleted: number; skipped: number }> => {
+      return bulkDeleteM({ ids, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
     },
 
     bulkSetStatus: async (ids: string[], status: ServiceStatus): Promise<{ updated: number; skipped: number }> => {

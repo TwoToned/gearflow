@@ -26,19 +26,22 @@ import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import { getSubHiresByProject, getSubHireGroups } from "@/lib/sub-hire-read";
 import { getLatestInvoiceNumberForProject } from "@/lib/invoices-read";
 import { computeOverbookedStatus } from "@/lib/availability";
+import { isHardOverbooked } from "@/lib/overbooking-core";
 import { getFileAsDataUri } from "@/lib/storage";
-import { getProjectWindow } from "@/lib/project-window";
-import { formatDate } from "./plugins/helpers";
+import { getProjectWindow, getProjectWindowDates } from "@/lib/project-window";
+import { formatDateInTimezone, documentDueDateText } from "./plugins/helpers";
 import {
   structureLineItems,
   type CategoryForStructuring,
   type SubHireGroupForStructuring,
 } from "./structure-line-items";
+import { loadContainersForStructuring } from "./container-data-for-documents";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 import type { OrgDocumentSettings } from "@/lib/org-settings-types";
 import { computeValidUntil, resolveQuoteValidityDays } from "@/lib/quote-validity";
 import { resolvePaymentTermsDays } from "@/lib/invoice-terms";
 import { getCountry } from "@/lib/countries";
+import { composeProjectWithVersion } from "@/lib/project-version-compose";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
@@ -90,6 +93,75 @@ export function invoiceLineToDocumentLineItem(line: {
     asset: null,
     bulkAsset: null,
   };
+}
+
+/**
+ * The "what is still owed on this document" pair (`deposit_paid` /
+ * `balance_due`) — the one place that decision is made, because getting it
+ * wrong puts two contradictory numbers for the same money on one page.
+ *
+ * A render that represents a SPECIFIC invoice describes THAT invoice and
+ * nothing else: the amount owed is its own `total`, which `invoicesWrites.ts`
+ * createNative already nets correctly for every kind (a DEPOSIT is its
+ * fraction of the project, a BALANCE is the project less every non-VOID
+ * partial already raised, a FULL is the whole project, a CREDIT is a
+ * negation). There is no deposit to deduct a second time, so the row is
+ * suppressed — `TotalsBlock` gates the pair on `depositInvoiced > 0`.
+ *
+ * This is the deposit-invoice bug (reported 2026-09-15, INV-260901): issuing a
+ * DEPOSIT invoice recalcs the project (`convex/lib/recalc.ts` step 6b), which
+ * sets `projects.depositPaid` to that invoice's OWN total. Reading the project
+ * figure here made the deposit invoice deduct itself from itself — it printed
+ * "Total $330.00 / Deposit Paid -$330.00 / Balance Due $990.00", where $990 was
+ * the PROJECT's balance and flatly contradicted the Total directly above it.
+ *
+ * The project-level fallback is the watermarked DRAFT PREVIEW
+ * (`/api/documents/[projectId]?type=invoice&preview=1`), which has no invoice
+ * row to speak for and correctly shows the project's position. Note the figure
+ * means "invoiced", not "received" — `recalcProjectTotals` derives it from
+ * ISSUED DEPOSIT invoices and Flow has no payment-collection signal (Xero owns
+ * that), which is why the label matches the in-app "Deposit invoiced" (R-3.10).
+ */
+export function resolveInvoiceAmountDue(input: {
+  /** The specific invoice being rendered, or null for a project-level render. */
+  invoice: { total: number } | null;
+  /** The live project's tax-inclusive total. */
+  projectTotal: number;
+  /** `projects.depositPaid` — sum of ISSUED DEPOSIT invoices, recalc-derived. */
+  projectDepositInvoiced: number;
+}): { depositInvoiced: number; balanceDue: number } {
+  if (input.invoice) return { depositInvoiced: 0, balanceDue: input.invoice.total };
+  return {
+    depositInvoiced: input.projectDepositInvoiced,
+    balanceDue: input.projectTotal - input.projectDepositInvoiced,
+  };
+}
+
+/**
+ * #1233 (Phase 6) — `versionsRead.getVersion`'s `planFields` are Convex-shaped
+ * (date fields are epoch-ms `number`s, matching `projectVersions`'/`projects`'
+ * own schema.ts types). `projectScalars` here is PRISMA-shaped (`ProjectRow`,
+ * `src/lib/projects-read.ts`'s `mapProject`), where the SAME fields are
+ * `Date | null` — every downstream reader in this file (`formatDate`,
+ * `getProjectWindow`, `.getTime()`) expects that shape. Composing the raw
+ * numbers straight on top of `projectScalars` (the way the CLIENT-side
+ * `composeProjectWithVersion` correctly does, since ITS consumers already
+ * expect epoch-ms) would silently hand a `number` where a `Date` is expected.
+ * This converts just the date-shaped keys before composing — the ONE place
+ * this conversion happens, so it can't drift between the two call sites that
+ * would otherwise need it.
+ */
+const PLAN_FIELD_DATE_KEYS = [
+  "rentalStartDate", "rentalEndDate", "projectStartDate", "projectEndDate",
+  "loadInDate", "eventStartDate", "eventEndDate", "loadOutDate",
+] as const;
+function toDocumentShapedPlanFields(planFields: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...planFields };
+  for (const key of PLAN_FIELD_DATE_KEYS) {
+    const v = out[key];
+    out[key] = typeof v === "number" ? new Date(v) : null;
+  }
+  return out;
 }
 
 /** Serialize Decimal fields to numbers (Prisma v6 Decimal type) */
@@ -162,6 +234,32 @@ export async function buildDocumentData(
      * caller that hasn't been updated to pass one yet.
      */
     invoiceId?: string;
+    /**
+     * #1233 (Phase 6, "Project versioning v2") — the SPECIFIC quote this
+     * render represents (`docType: "quote"` only), mirroring `invoiceId`
+     * above 1:1. Without this, a quote render always reconstructed the LIVE
+     * project's equipment/groups/categories and read `project.subtotal`/
+     * `total`/etc — only ever correct when the quote being sent targets the
+     * live version. When set: the quote's OWN `versionId` (from
+     * `financeArtifacts.quoteArtifactContext`) is threaded through
+     * `buildDocumentLineItemData` so a NON-live version's quote renders THAT
+     * version's own content, and the quote's OWN frozen money snapshot
+     * (subtotal/discountPercent/discountAmount/taxAmount/total, built once at
+     * send by `buildQuoteSnapshot`) wins over the live project's figures for
+     * the totals block — the same "this specific document's money, not the
+     * live project's" pattern `invoiceId` already established. Omitted ⇒
+     * unchanged legacy behaviour (live project state) — the DRAFT PREVIEW
+     * render never sets this (there is no sent document yet to represent).
+     */
+    quoteId?: string;
+    /**
+     * #1296 build plan phase 3b — bucket line items by container first
+     * (`structureLineItems`'s `byContainer` mode) instead of the flat
+     * category/kit grouping. Comes from `DOCUMENT_LAYOUTS[docType].
+     * byContainer` — manifest only for now; phase 3c extends docket/
+     * return-sheet the same way.
+     */
+    byContainer?: boolean;
   }
 ): Promise<DocumentData> {
   const expandProjectGroups = options?.expandProjectGroups ?? false;
@@ -220,6 +318,47 @@ export async function buildDocumentData(
 
   if (!projectScalars) {
     throw new Error(`Project ${projectId} not found`);
+  }
+
+  // #1233 (Phase 6) — the SPECIFIC quote's own version + frozen money
+  // snapshot, mirroring the `invoiceContext` fetch further down. Fetched
+  // early so the plan-field overlay below can run before `projectRow` is
+  // assembled — everything downstream (dates/client/location/discount/tax)
+  // reads off the (possibly overlaid) `projectScalars` from this point on.
+  const quoteContext =
+    docType === "quote" && options?.quoteId
+      ? await (
+          await getConvexClient()
+        ).query(api.financeArtifacts.quoteArtifactContext, {
+          quoteId: options.quoteId,
+          orgId: organizationId,
+        })
+      : null;
+  let effectiveProjectScalars = projectScalars;
+  if (quoteContext?.versionId) {
+    const version = await (
+      await getConvexClient()
+    ).query(api.versionsRead.getVersion, {
+      organizationId,
+      projectId,
+      versionId: quoteContext.versionId,
+    });
+    // A missing/foreign version (shouldn't happen — `quoteContext.versionId`
+    // came from an org-checked Convex row a moment ago) or the LIVE version
+    // itself (nothing to overlay — `projectScalars` already IS the live
+    // plan) leaves `projectScalars` untouched.
+    if (version && !version.isLive) {
+      // `ProjectRow` has no index signature (unlike the Convex-doc shape
+      // `composeProjectWithVersion`'s other, client-side caller passes), so
+      // it doesn't structurally satisfy the generic's `Record<string,
+      // unknown>` constraint — the overlay itself (a plain object spread) is
+      // exactly as type-safe either way; this is a shape-widening cast, not
+      // a behaviour change.
+      effectiveProjectScalars = composeProjectWithVersion(
+        projectScalars as unknown as Record<string, unknown>,
+        toDocumentShapedPlanFields(version.planFields),
+      ) as unknown as typeof projectScalars;
+    }
   }
 
   // crewAssignments (call-sheet only) are Convex-only. Re-source the same shape the
@@ -293,13 +432,13 @@ export async function buildDocumentData(
     });
   }
 
-  const projectRow = { ...projectScalars, subHires: subHireRows, crewAssignments: crewAssignmentRows };
+  const projectRow = { ...effectiveProjectScalars, subHires: subHireRows, crewAssignments: crewAssignmentRows };
 
   // The line-item tree + categories come from Convex via buildDocumentLineItemData
   // (model/supplier/kit/asset/bulkAsset + per-line category/group selects, units in
   // the SELECT shape). client / location / subHire supplier are also Convex.
   const [docData, locationMap, supplierMap, clientRaw, clientContacts] = await Promise.all([
-    buildDocumentLineItemData(projectId, organizationId),
+    buildDocumentLineItemData(projectId, organizationId, quoteContext?.versionId ?? undefined),
     getLocationMap(organizationId),
     getSupplierMap(organizationId),
     projectRow.clientId ? getClientById(projectRow.clientId) : Promise.resolve(null),
@@ -332,12 +471,13 @@ export async function buildDocumentData(
     })),
   };
 
-  // Compute overbooking status
+  // Compute overbooking status — gear-committed window, not raw rental dates.
+  const documentAvailabilityWindow = getProjectWindowDates(project);
   const overbookedMap = await computeOverbookedStatus(
     organizationId,
     project.lineItems,
-    project.rentalStartDate,
-    project.rentalEndDate,
+    documentAvailabilityWindow.start,
+    documentAvailabilityWindow.end,
     project.id
   );
 
@@ -355,8 +495,17 @@ export async function buildDocumentData(
     const locId = row?.asset?.locationId ?? row?.bulkAsset?.locationId ?? null;
     return locId ? locationMap.get(locId)?.name ?? null : null;
   };
+  // PDFs stay HARD-only: `reconstructOverbookedStatus` now also flags a line
+  // whose overage is purely PENCILLED (still-quoted/optional demand elsewhere
+  // in the org) so the equipment-tab/project-list badges can show it, but a
+  // rendered document is a point-in-time artifact (client-facing quote/invoice
+  // are literally stored bytes — see CLAUDE.md) and a pencilled collision can
+  // resolve within the hour. Surfacing it there would print a warning that's
+  // both misleading to a client and potentially stale by the time anyone reads
+  // it, so a doc only ever reflects genuine hard overbooking.
   const enrichedLineItems = project.lineItems.map((li: LineItemRow) => {
-    const info = overbookedMap.get(li.id);
+    const rawInfo = overbookedMap.get(li.id);
+    const info = isHardOverbooked(rawInfo) ? rawInfo : undefined;
     const children = (li as unknown as { childLineItems?: LineItemRow[] }).childLineItems;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const liAny = li as any;
@@ -374,7 +523,8 @@ export async function buildDocumentData(
       overbookedHasOverbooked: info?.hasOverbookedChildren ?? false,
       overbookedHasReduced: info?.hasReducedChildren ?? false,
       childLineItems: children?.map((child: LineItemRow) => {
-        const childInfo = overbookedMap.get(child.id);
+        const rawChildInfo = overbookedMap.get(child.id);
+        const childInfo = isHardOverbooked(rawChildInfo) ? rawChildInfo : undefined;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const childAny = child as any;
         return {
@@ -453,9 +603,27 @@ export async function buildDocumentData(
   // line(s) and nothing else.
   const usesLiveBreakdown = !invoiceContext || invoiceContext.kind === "FULL";
 
+  const byContainer = options?.byContainer ?? false;
+  const containerData = byContainer
+    ? await loadContainersForStructuring(organizationId, projectId, quoteContext?.versionId ?? undefined)
+    : null;
+
   const lineItems: DocumentLineItem[] = usesLiveBreakdown
-    ? structureLineItems(rawLineItems, categories, { expandProjectGroups, packerSort }, subHireGroups)
+    ? structureLineItems(
+        rawLineItems,
+        categories,
+        { expandProjectGroups, packerSort, byContainer, containers: containerData?.containers },
+        subHireGroups,
+      )
     : invoiceContext.lines.map(invoiceLineToDocumentLineItem);
+
+  // Sum of raw (non-container) items' quantity that never got a groupName
+  // sorted into "Loose" — the manifest summary's "N loose items". Read off
+  // the STRUCTURED result (post-byContainer) so it reflects exactly what the
+  // "Loose" section itself will show.
+  const looseItemCount = byContainer
+    ? lineItems.filter((li) => li.groupName === "Loose" && !li.isContainerRow).reduce((sum, li) => sum + (li.quantity || 0), 0)
+    : undefined;
 
   // ─── Append billable services as virtual line items ─────────────────────────
   // A service appears on quotes/invoices as its own section once it has an actual
@@ -470,6 +638,18 @@ export async function buildDocumentData(
   // Skipped when rendering a DEPOSIT/BALANCE/CREDIT invoice's own summary
   // line(s) — those already ARE the whole invoice; appending the project's
   // live services here would silently show more than that invoice bills for.
+  //
+  // #1233 (Phase 6) — KNOWN, DOCUMENTED GAP: `getProjectServicesByOrg` is
+  // NOT version-aware (it predates versioning entirely and filters by
+  // `projectId` only), so a quote rendered for a NON-live version still
+  // shows the project's LIVE services here, not that version's own. This
+  // matches FEATUREDOCS/78's existing "Labour/Services were never threaded
+  // onto versionId" gap (Phase 5) — equipment/groups/categories above ARE
+  // fully version-scoped via `buildDocumentLineItemData`'s `versionId`, only
+  // this services append is not. Closing it means wiring
+  // `projectServices.listByProject`'s OWN already-version-aware `versionId`
+  // arg through here too — left for the same follow-up that wires the
+  // Labour tab, not attempted in this phase.
   if (usesLiveBreakdown) {
     const billableServices = (await getProjectServicesByOrg(organizationId))
       .filter(
@@ -505,8 +685,10 @@ export async function buildDocumentData(
     }
   }
 
-  // Compute totals for packing list / delivery docket
-  const topLevelItems = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem);
+  // Compute totals for packing list / delivery docket / manifest. Excludes
+  // `isContainerRow` synthetic header rows (byContainer mode) the same way
+  // it already excludes a container's own line item — neither is gear.
+  const topLevelItems = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem && !i.isContainerRow);
   const totalItems = topLevelItems.reduce((sum, i) => {
     if (i.kitId && !i.isKitChild) {
       const children = i.childLineItems || [];
@@ -779,6 +961,11 @@ export async function buildDocumentData(
 
   const totalNum = Number(serialized.total) || 0;
   const depositNum = Number(serialized.depositPaid) || 0;
+  const amountDue = resolveInvoiceAmountDue({
+    invoice: invoiceContext,
+    projectTotal: totalNum,
+    projectDepositInvoiced: depositNum,
+  });
   const now = new Date();
   // #986/#987 — the validity DEFAULT and the day-boundary maths come from the one
   // shared module (`quote-validity.ts`), resolved in the ORG's timezone rather
@@ -819,6 +1006,27 @@ export async function buildDocumentData(
         ? await getLatestInvoiceNumberForProject(projectId, organizationId)
         : null;
 
+  // T3 (#1091, docs/designs/tax-model.md §2/§5) — an EXEMPT/UNSET status only
+  // applies to the LIVE project's own resolution; a specific DEPOSIT/BALANCE/
+  // CREDIT invoice's frozen `taxAmount` (invoiceContext, same "stored bytes"
+  // snapshot the subtotal/total above already defer to) has no per-rate
+  // breakdown recorded on it — it renders as a single COMPUTED row, exactly
+  // the one tax line every invoice rendered before this feature already did.
+  const taxStatus: "EXEMPT" | "UNSET" | "COMPUTED" = invoiceContext
+    ? "COMPUTED"
+    : (serialized.taxStatus as "EXEMPT" | "UNSET" | "COMPUTED" | null) ?? "COMPUTED";
+  const taxBreakdown: { rate: number; amount: number }[] = invoiceContext
+    ? invoiceContext.taxAmount > 0
+      ? [{ rate: Number(orgSettings.taxRate) || 0, amount: invoiceContext.taxAmount }]
+      : []
+    : (() => {
+        try {
+          return JSON.parse(serialized.taxBreakdown || "[]");
+        } catch {
+          return [];
+        }
+      })();
+
   return {
     // Org
     org_name: org?.name || "",
@@ -844,16 +1052,16 @@ export async function buildDocumentData(
     project_type: serialized.type || "",
 
     // Dates
-    rental_start: formatDate(serialized.rentalStartDate),
-    rental_end: formatDate(serialized.rentalEndDate),
+    rental_start: formatDateInTimezone(serialized.rentalStartDate, orgTimezone),
+    rental_end: formatDateInTimezone(serialized.rentalEndDate, orgTimezone),
     // event_start/event_end/load_in_date/load_out_date are DEPRECATED aliases
     // (WS2 #941) — kept so a saved custom template referencing them still
     // resolves, now to the PROJECT window instead of the removed/deprecated
     // source fields.
-    event_start: formatDate(windowStartDate),
-    event_end: formatDate(windowEndDate),
-    load_in_date: formatDate(windowStartDate),
-    load_out_date: formatDate(windowEndDate),
+    event_start: formatDateInTimezone(windowStartDate, orgTimezone),
+    event_end: formatDateInTimezone(windowEndDate, orgTimezone),
+    load_in_date: formatDateInTimezone(windowStartDate, orgTimezone),
+    load_out_date: formatDateInTimezone(windowEndDate, orgTimezone),
 
     // Client
     client_name: serialized.client?.name || "",
@@ -871,19 +1079,27 @@ export async function buildDocumentData(
     site_contact_phone: serialized.siteContactPhone || "",
     site_contact_email: serialized.siteContactEmail || "",
 
-    // Financial — a specific invoice's own frozen snapshot wins over the
-    // live project figures (bug fix, see `invoiceId` doc above): a
-    // DEPOSIT/BALANCE/CREDIT invoice's total is a fraction of the project's,
-    // and even a FULL invoice's total is frozen at whenever it was created,
-    // which can predate a later line-item edit.
-    subtotal: invoiceContext ? invoiceContext.subtotal : Number(serialized.subtotal) || 0,
-    discount_percent: Number(serialized.discountPercent) || 0,
-    discount_amount: Number(serialized.discountAmount) || 0,
+    // Financial — a specific invoice's (or #1233 quote's) own frozen
+    // snapshot wins over the live project figures (bug fix, see `invoiceId`
+    // doc above / `quoteId` doc above): a DEPOSIT/BALANCE/CREDIT invoice's
+    // total is a fraction of the project's, a quote may target a NON-live
+    // version with its own discount/tax, and even a FULL invoice's or a
+    // LIVE-version quote's total is frozen at whenever it was created, which
+    // can predate a later line-item edit.
+    subtotal: invoiceContext ? invoiceContext.subtotal : quoteContext ? quoteContext.subtotal : Number(serialized.subtotal) || 0,
+    discount_percent: quoteContext ? quoteContext.discountPercent : Number(serialized.discountPercent) || 0,
+    discount_amount: quoteContext ? quoteContext.discountAmount : Number(serialized.discountAmount) || 0,
     tax_label: (orgSettings.taxLabel as string) || (country?.taxLabel ?? "GST"),
-    tax_amount: invoiceContext ? invoiceContext.taxAmount : Number(serialized.taxAmount) || 0,
-    total: invoiceContext ? invoiceContext.total : totalNum,
-    deposit_paid: depositNum,
-    balance_due: totalNum - depositNum,
+    tax_amount: invoiceContext ? invoiceContext.taxAmount : quoteContext ? quoteContext.taxAmount : Number(serialized.taxAmount) || 0,
+    tax_status: taxStatus,
+    tax_breakdown: taxBreakdown,
+    tax_exempt_reason: client?.taxExemptReason || "",
+    total: invoiceContext ? invoiceContext.total : quoteContext ? quoteContext.total : totalNum,
+    // See `resolveInvoiceAmountDue` — a specific invoice's document states
+    // its OWN amount owed; only the project-level preview deducts the
+    // project's deposit figure.
+    deposit_paid: amountDue.depositInvoiced,
+    balance_due: amountDue.balanceDue,
 
     // Notes
     client_notes: serialized.clientNotes || "",
@@ -893,7 +1109,7 @@ export async function buildDocumentData(
     // Metadata
     // The date PRINTED on the document — a frozen finance row's own date when
     // this render represents one, `now` otherwise (#987).
-    document_date: formatDate(documentDate),
+    document_date: formatDateInTimezone(documentDate, orgTimezone),
     invoice_number: invoiceNumber || "",
     document_footer_text: documentSettings?.footerText || "",
     document_footer_second_line: documentSettings?.footerSecondLine || "",
@@ -904,8 +1120,9 @@ export async function buildDocumentData(
       docType === "invoice" && !documentSettings?.showTermsAndConditionsOnInvoice
         ? ""
         : documentSettings?.termsAndConditions || "",
-    quote_valid_until: formatDate(quoteValidUntil),
-    invoice_due_date: formatDate(invoiceDueDate),
+    quote_valid_until: formatDateInTimezone(quoteValidUntil, orgTimezone),
+    // Invoice-only: a quote has an expiry (quote_valid_until), never a due date.
+    invoice_due_date: documentDueDateText(docType, invoiceDueDate, orgTimezone),
     payment_details: docType === "invoice" ? documentSettings?.paymentDetails || "" : "",
 
     // PM
@@ -929,5 +1146,8 @@ export async function buildDocumentData(
     // Computed
     total_items: totalItems,
     total_weight: totalWeight,
+    container_count: containerData?.containerCount,
+    nested_container_count: containerData?.nestedContainerCount,
+    loose_item_count: looseItemCount,
   };
 }

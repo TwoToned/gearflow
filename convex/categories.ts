@@ -1,5 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -159,34 +160,62 @@ function collectDescendants(cats: { id: string; parentId?: string | null }[], ro
   return ids;
 }
 
+/** Every configured container category's id, plus descendants — reads the
+ *  plural `containerCategoryIds` (#1296), falling back to the singular
+ *  pre-#1296 `prepKitCategoryId` when unset. Empty when neither is configured
+ *  (a model's own `isContainer` flag can still make it a candidate). */
+async function resolveContainerCategoryIds(ctx: QueryCtx, orgId: string): Promise<Set<string>> {
+  const settingsRow = await ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).first();
+  let roots: string[] = [];
+  if (settingsRow?.settings) {
+    try {
+      const parsed = JSON.parse(settingsRow.settings) as { containerCategoryIds?: string[]; prepKitCategoryId?: string };
+      roots = parsed.containerCategoryIds?.length ? parsed.containerCategoryIds : parsed.prepKitCategoryId ? [parsed.prepKitCategoryId] : [];
+    } catch {
+      roots = [];
+    }
+  }
+  if (roots.length === 0) return new Set();
+
+  const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment) — see docs/exceptions.md R-8.3.3
+  const categoryIds = new Set<string>();
+  for (const root of roots) for (const id of collectDescendants(cats, root)) categoryIds.add(id);
+  return categoryIds;
+}
+
+/** A model is a container candidate if it sits in a configured container
+ *  category tree, OR is itself flagged `isContainer` (#1296) — the two are
+ *  OR'd, not either-replaces-the-other (convex/schema.ts's `isContainer` doc). */
+function isContainerModel(model: { categoryId?: string; isContainer?: boolean } | undefined, categoryIds: Set<string>): boolean {
+  if (!model) return false;
+  if (model.isContainer === true) return true;
+  return !!model.categoryId && categoryIds.has(model.categoryId);
+}
+
 /**
- * Search assets in the org's configured container category (orgSettings.prepKitCategoryId
- * + descendants). Returns up to 20 picker options. Empty when no container category is set.
+ * Search assets eligible to be used as packing containers (#1296): assets
+ * whose model sits in a configured container category, or whose model is
+ * itself flagged `isContainer`. Returns up to 20 picker options with each
+ * asset's current availability so the picker can warn on an already-deployed
+ * container.
  */
 export const containerAssetSearch = query({
   args: { orgId: v.string(), query: v.optional(v.string()) },
   handler: async (ctx, { orgId, query: search }) => {
     await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
-    const settingsRow = await ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).first();
-    let rootCatId: string | undefined;
-    if (settingsRow?.settings) {
-      try { rootCatId = (JSON.parse(settingsRow.settings) as { prepKitCategoryId?: string }).prepKitCategoryId; } catch { rootCatId = undefined; }
-    }
-    if (!rootCatId) return [];
-
-    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment) — see docs/exceptions.md R-8.3.3
-    const categoryIds = collectDescendants(cats, rootCatId);
+    const categoryIds = await resolveContainerCategoryIds(ctx, orgId);
     const models = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment) — see docs/exceptions.md R-8.3.3
     const modelById = new Map(models.map((m) => [m.id, m]));
+    const containerModelIds = new Set(models.filter((m) => isContainerModel(m, categoryIds)).map((m) => m.id));
+    if (containerModelIds.size === 0) return [];
 
     const q = (search ?? "").toLowerCase();
     const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q2) => q2.eq("organizationId", orgId)).collect(); // r9.8-ok: asset picker: scans the org asset set for container candidates — accepted, revisit with a status/category index if large
     const matched = assets
       .filter((a) => {
-        const model = a.modelId ? modelById.get(a.modelId) : undefined;
-        if (!model?.categoryId || !categoryIds.has(model.categoryId)) return false;
+        if (!a.modelId || !containerModelIds.has(a.modelId)) return false;
         if (!q) return true;
-        const name = model.name?.toLowerCase() ?? "";
+        const name = modelById.get(a.modelId)?.name?.toLowerCase() ?? "";
         return a.assetTag.toLowerCase().includes(q) || (a.customName ?? "").toLowerCase().includes(q) || name.includes(q);
       })
       .sort((a, b) => a.assetTag.localeCompare(b.assetTag))
@@ -200,6 +229,7 @@ export const containerAssetSearch = query({
         assetId: a.id,
         assetTag: a.assetTag,
         modelId: a.modelId ?? null,
+        available: (a.status ?? "AVAILABLE") === "AVAILABLE",
       };
     });
   },
@@ -291,5 +321,5 @@ export const agentOps: AgentOpsAnnotations = {
   getById: { summary: "Get a single category by id.", danger: "low", mcpTier: 2 },
   counts: { summary: "Per-category model and kit counts for the caller's org.", danger: "low", mcpTier: 3 },
   detail: { summary: "Category detail composite: parent/children (with counts), kits (with member counts), active models (with asset counts + primary photo).", danger: "low", mcpTier: 2 },
-  containerAssetSearch: { summary: "Search assets in the org's configured prep-kit container category for a picker.", danger: "low", mcpTier: 3 },
+  containerAssetSearch: { summary: "Search assets eligible to be packing containers (configured container categories, or a model flagged isContainer) for a picker.", danger: "low", mcpTier: 3 },
 };

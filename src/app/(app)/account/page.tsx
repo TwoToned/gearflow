@@ -270,7 +270,7 @@ export default function AccountPage() {
         password: currentPassword,
       });
       if (res.error) throw new Error(res.error.message || "Failed to enable 2FA");
-      const uri = res.data?.totpURI || "";
+      const uri = res.data?.method === "totp" ? res.data.totpURI : "";
       setTotpURI(uri);
       if (uri) {
         const QRCode = (await import("qrcode")).default;

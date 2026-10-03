@@ -65,6 +65,8 @@ export const getForOrg = query({
       cacheRefreshedAt: v.optional(v.number()),
       cacheError: v.optional(v.string()),
       lastSyncError: v.optional(v.string()),
+      // Follow-up automation phase 2 — when the payment sync last read Xero.
+      paymentsSyncedAt: v.optional(v.number()),
     }),
   ),
   handler: async (ctx, { organizationId }) => {
@@ -86,6 +88,7 @@ export const getForOrg = query({
       cacheRefreshedAt: doc.cacheRefreshedAt,
       cacheError: doc.cacheError,
       lastSyncError: doc.lastSyncError,
+      paymentsSyncedAt: doc.paymentsSyncedAt,
     };
   },
 });

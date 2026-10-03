@@ -35,7 +35,7 @@ import {
 } from "@/server/warehouse";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -85,28 +85,40 @@ import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
+import { ContainerRail } from "@/components/warehouse/container-rail";
+import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
+import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
 import { summarizeWarehouseStages } from "@/components/warehouse/warehouse-stages";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
+import { AssetTagInput } from "@/components/ui/asset-tag-input";
+import { resolvePickerScan, countAssigned } from "@/lib/asset-picker-scan";
 import {
-  isBulkItem,
   modelDisplayName,
   isKitParent,
   isAccessoryParent,
   accessoryChildrenOf,
   collectAllVerifiableIds,
-  bulkUnitKey,
-  bulkUnpackedRemaining,
-  bulkPackedWaiting,
   isInPickPrepStage,
   isInPreppedStage,
   isInReturnedStage,
   isInDeprepedStage,
   isInCheckedOutStage,
+  buildContainerGroups,
+  resolveSelectionToUnitIds,
+  isMoveableAtDeployStage,
+  isMoveableAtReturnStage,
+  isMoveableAtDeprepStage,
+  keysForGroupEntries,
+  selectionKeysForEntries,
+  accessoryAssetIds,
+  groupItems,
+  groupCheckinItems,
 } from "@/components/warehouse/warehouse-types";
+import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
 import {
   pullItem,
   prepItemDirect,
@@ -117,7 +129,7 @@ import {
   prepKitsBatch,
   unpackItem,
 } from "@/server/check-records";
-import { useConvex, useConvexAuth } from "convex/react";
+import { useConvex, useConvexAuth, useQuery } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
@@ -154,163 +166,6 @@ const statusLabels: Record<string, string> = {
 
 // GroupEntry, isKitParent, PrepStatusBadge, collectAllVerifiableIds are imported from warehouse-types / components
 
-// `countStage` picks how a bulk line's per-unit count is derived so a partially
-// prepped line shows the right number of units in each tab: the units still to
-// pick in Pick, and the units packed-and-waiting in Prepped. Omitted (De-prep /
-// legacy) keeps the whole ordered quantity.
-function groupItems(
-  items: LineItem[],
-  mode: "prep" | "deploy" = "prep",
-  countStage?: "prep" | "prepped",
-): GroupEntry[] {
-  const serializedByModel = new Map<string, LineItem[]>();
-  const result: GroupEntry[] = [];
-
-  for (const item of items) {
-    if (isKitParent(item)) {
-      // Deploy tab: show children that aren't checked out, or nested kits with undeployed grandchildren
-      const allChildren = (item.childLineItems || []) as LineItem[];
-      const deployChildren = allChildren.filter((c) => {
-        if (c.status === "CANCELLED") return false;
-        if (c.status !== "CHECKED_OUT") return true;
-        // Nested kit that's checked out: still include if any grandchildren need deploying
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED"
-          );
-        }
-        return false;
-      });
-      result.push({
-        kind: "kit-group",
-        groupKey: `kit-${item.id}`,
-        item,
-        children: deployChildren,
-      });
-    } else if (isAccessoryParent(item)) {
-      // Deploy tab: accessories render like a kit's children — always visible,
-      // not gated behind the prep asset-picker (issue #794 follow-up).
-      const deployChildren = accessoryChildrenOf(item).filter((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
-      result.push({
-        kind: "accessory-group",
-        groupKey: `acc-${item.id}`,
-        item,
-        children: deployChildren,
-      });
-    } else if (isBulkItem(item)) {
-      // Bulk items (qty > 1) show as expandable groups with per-unit rows
-      // just like serialized groups. unitCount reflects the units actionable in
-      // this stage (still-to-pick vs packed-and-waiting) so a partially prepped
-      // line shows the right count in each tab.
-      const unitCount =
-        countStage === "prep"
-          ? bulkUnpackedRemaining(item)
-          : countStage === "prepped"
-            ? bulkPackedWaiting(item)
-            : item.quantity;
-      result.push({
-        kind: "bulk-group",
-        groupKey: `bulk-${item.id}`,
-        item,
-        unitCount,
-      });
-    } else if (item.model) {
-      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
-      // In deploy mode, items in different containers must be in separate groups
-      // so each group's container is unambiguous for the container section headers
-      const containerSuffix = mode === "deploy" ? `\0${item.prepContainer || ""}` : "";
-      const key = modelKey + containerSuffix;
-      const existing = serializedByModel.get(key);
-      if (existing) {
-        existing.push(item);
-      } else {
-        const arr = [item];
-        serializedByModel.set(key, arr);
-        result.push({ kind: "serialized-group", groupKey: `ser-${key}`, modelName: modelKey, items: arr });
-      }
-    } else {
-      result.push({ kind: "single", item });
-    }
-  }
-
-  // Flatten serialized groups with only 1 item
-  return result.map((e) => {
-    if (e.kind === "serialized-group" && e.items.length === 1) {
-      return { kind: "single" as const, item: e.items[0] };
-    }
-    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
-      return { kind: "single" as const, item: e.item };
-    }
-    return e;
-  });
-}
-
-function groupCheckinItems(items: LineItem[]): GroupEntry[] {
-  const serializedByModel = new Map<string, LineItem[]>();
-  const result: GroupEntry[] = [];
-
-  for (const item of items) {
-    if (isKitParent(item)) {
-      // Return tab: show children that are checked out, or nested kits with deployed grandchildren
-      const allChildren = (item.childLineItems || []) as LineItem[];
-      const returnChildren = allChildren.filter((c) => {
-        if (c.status === "CHECKED_OUT") return true;
-        // Nested kit not checked out: still include if any grandchildren are deployed
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
-        }
-        return false;
-      });
-      result.push({
-        kind: "kit-group",
-        groupKey: `kit-in-${item.id}`,
-        item,
-        children: returnChildren,
-      });
-    } else if (isAccessoryParent(item)) {
-      const returnChildren = accessoryChildrenOf(item).filter((c) => c.status === "CHECKED_OUT");
-      result.push({
-        kind: "accessory-group",
-        groupKey: `acc-in-${item.id}`,
-        item,
-        children: returnChildren,
-      });
-    } else if (isBulkItem(item)) {
-      const remaining = item.checkedOutQuantity - item.returnedQuantity;
-      result.push({
-        kind: "bulk-group",
-        groupKey: `bulk-in-${item.id}`,
-        item,
-        unitCount: Math.max(remaining, 0),
-      });
-    } else if (item.model) {
-      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
-      // Items in different containers must be in separate groups
-      const containerSuffix = `\0${item.prepContainer || ""}`;
-      const key = modelKey + containerSuffix;
-      const existing = serializedByModel.get(key);
-      if (existing) {
-        existing.push(item);
-      } else {
-        const arr = [item];
-        serializedByModel.set(key, arr);
-        result.push({ kind: "serialized-group", groupKey: `ser-in-${key}`, modelName: modelKey, items: arr });
-      }
-    } else {
-      result.push({ kind: "single", item });
-    }
-  }
-
-  return result.map((e) => {
-    if (e.kind === "serialized-group" && e.items.length === 1) {
-      return { kind: "single" as const, item: e.items[0] };
-    }
-    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
-      return { kind: "single" as const, item: e.item };
-    }
-    return e;
-  });
-}
 
 // bulkUnitKey is imported from warehouse-types
 
@@ -356,8 +211,38 @@ function WarehouseProjectPage({
   const wConvex = useConvex();
   const { isAuthenticated: wAuthed } = useConvexAuth();
 
-  // Container state for prep grouping
+  // Container state for prep grouping. `selectedContainer` (a label string) is
+  // the legacy widen-step field, kept in sync so unmigrated readers (grouping,
+  // display) keep working; `activeContainerId` (#1296) is the real container
+  // now written through alongside it — see `handleSelectContainer`.
   const [selectedContainer, setSelectedContainer] = useState<string>("");
+  const [activeContainerId, setActiveContainerId] = useState<string | null>(null);
+  const [newContainerSheetOpen, setNewContainerSheetOpen] = useState(false);
+  const realContainers = useQuery(
+    convexApi.projectContainers.listForProject,
+    orgId ? { orgId, projectId } : "skip",
+  ) ?? [];
+  // Deploy/Return/De-prep sectioning (buildContainerGroups) resolves a real
+  // containerId to its current label through this map.
+  const containerLabelById = useMemo(() => new Map(realContainers.map((c) => [c.id, c.label])), [realContainers]);
+  const handleSelectContainer = useCallback((id: string | null) => {
+    setActiveContainerId(id);
+    setSelectedContainer(id ? realContainers.find((c) => c.id === id)?.label ?? "" : "");
+  }, [realContainers]);
+  const handleContainerCreated = useCallback((container: { id: string; label: string }) => {
+    setActiveContainerId(container.id);
+    setSelectedContainer(container.label);
+    setNewContainerSheetOpen(false);
+  }, []);
+  // #1296 phase 2 — scan-to-activate: scanning a container's OWN asset tag
+  // (the case/tub itself, not its contents) on the pick/prep scan bar
+  // switches the active rail chip instead of running the normal
+  // lookupAssetForScan prep flow, which would otherwise either try to
+  // (re-)prep the container's own line item or report it as unassigned.
+  const matchContainerByTag = useCallback(
+    (scannedTag: string) => realContainers.find((c) => c.tag && c.tag === scannedTag) ?? null,
+    [realContainers],
+  );
 
   // Selection state
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
@@ -396,6 +281,28 @@ function WarehouseProjectPage({
     lineItemId: string;
     quantity: number;
   }>>([]);
+  /** Typed / wedge-scanned text in the Assign-assets dialog's scan field. */
+  const [assetPickerScanValue, setAssetPickerScanValue] = useState("");
+  /**
+   * Synchronous mirror of `assetPickerItems`, for scan resolution only.
+   *
+   * Continuous scanning delivers hits from a decode callback, so the handler
+   * React invokes is the one captured at the last COMMITTED render. Two units
+   * scanned before that commit lands would both resolve against the same rows,
+   * pick the same empty slot, and the second would silently overwrite the
+   * first — losing a unit in exactly the eleven-in-a-row flow this feature
+   * exists for. Writing the ref before the setState makes each scan see the
+   * previous one regardless of render timing.
+   */
+  const assetPickerItemsRef = useRef<typeof assetPickerItems>([]);
+  /** Write picker rows through here so the ref can never drift from state. */
+  const applyAssetPickerItems = (
+    next: typeof assetPickerItems | ((prev: typeof assetPickerItems) => typeof assetPickerItems)
+  ) => {
+    const resolved = typeof next === "function" ? next(assetPickerItemsRef.current) : next;
+    assetPickerItemsRef.current = resolved;
+    setAssetPickerItems(resolved);
+  };
 
   // Kit verification confirmation dialog
   const [kitConfirm, setKitConfirm] = useState<{
@@ -604,10 +511,12 @@ function WarehouseProjectPage({
             assetId: i.assetId || undefined,
             quantity: i.quantity,
             prepContainer: selectedContainer || null,
+            containerId: activeContainerId,
             includeAccessoryIds: i.includeAccessoryIds,
           })),
         )
           .then(() => {
+            clearAccessoryVerification(checkQueueDirectItems.map((i) => i.lineItemId));
             toast.success("Items prepped — ready to deploy");
             invalidate();
           })
@@ -777,6 +686,11 @@ function WarehouseProjectPage({
   const quickAddMutation = useServerMutation({
     mutationFn: async (data: { modelId: string; assetId?: string; bulkAssetId?: string; quantity?: number }) => {
       await ensureContainerIfNeeded();
+      // #1296 — quickAddCore inserts a bare line item with no unit row (unlike
+      // prepUnit), so there's nothing to stamp a real containerId onto yet;
+      // it stays on the legacy label-only path. The very next prep step for
+      // this line (below, in onSuccess) DOES create a unit and gets the real
+      // containerId — this line just can't itself.
       return warehouseWrites.quickAddAndCheckOut(projectId, { ...data, prepContainer: selectedContainer || null });
     },
     onSuccess: (result) => {
@@ -806,7 +720,7 @@ function WarehouseProjectPage({
         scanInputRef.current?.focus();
       } else {
         // No checks — prep directly
-        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null)
+        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
           .then(() => {
             toast.success(`Added and prepped: ${assetName}`);
             invalidate();
@@ -837,7 +751,8 @@ function WarehouseProjectPage({
   const kitBatchOutMutation = useServerMutation<KitBatchResult, string[]>({
     mutationFn: (kitIds: string[]) => warehouseWrites.checkOutKitsBatch(projectId, kitIds),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Deployed ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },
@@ -846,7 +761,8 @@ function WarehouseProjectPage({
   const kitBatchInMutation = useServerMutation<KitBatchResult, Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>>({
     mutationFn: (kits) => warehouseWrites.checkInKitsBatch(projectId, kits),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },
@@ -954,7 +870,7 @@ function WarehouseProjectPage({
   // --- Scan mutations ---
   const scanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
-    onSuccess: async (result) => {
+    onSuccess: async (result, scannedTag) => {
       // Handle kit scans — prep the kit (not deploy)
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; kitAssetTag: string; assetName: string; lineItemId: string | null; reason: string | null };
@@ -983,12 +899,15 @@ function WarehouseProjectPage({
               // No checks — mark kit children as prepped
               prepKitChildren(projectId, kitLi.id)
                 .then(() => {
-                  scanFeedback.play("success");
+                  scanFeedback.play("success", { label: kitResult.assetName, outcome: "Kit prepped" });
                   toast.success(`Kit prepped: ${kitResult.assetName}`);
                   invalidate();
                 })
                 .catch((e) => {
-                  scanFeedback.play("error");
+                  scanFeedback.play("error", {
+                    label: kitResult.assetName,
+                    outcome: e instanceof Error ? e.message : "Failed to prep kit",
+                  });
                   showError(e, { fallbackTitle: "Failed to prep kit" });
                 });
               setScanValue("");
@@ -1000,8 +919,9 @@ function WarehouseProjectPage({
             not_on_project: "Kit not assigned to this project",
             already_checked_out: "Kit already deployed",
           };
-          scanFeedback.play("error");
-          toast.error(messages[kitResult.reason as string] || "Cannot prep this kit");
+          const outcome = messages[kitResult.reason as string] || "Cannot prep this kit";
+          scanFeedback.play("error", { label: kitResult.assetName, outcome });
+          toast.error(outcome);
           setScanValue("");
           scanInputRef.current?.focus();
         }
@@ -1029,10 +949,10 @@ function WarehouseProjectPage({
             next.add(kitGroupKey);
             return next;
           });
-          scanFeedback.play("success");
+          scanFeedback.play("success", { label: memberResult.assetName, outcome: "Verified" });
           toast.success(`Verified: ${memberResult.assetName}`);
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this project" });
           toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
         setScanValue("");
@@ -1044,7 +964,7 @@ function WarehouseProjectPage({
         const r = result as { assetName: string; parentAssetTag: string | null };
         // Disambiguation needed — scanned an accessory, not its parent. Resolved
         // but needs attention, not a hard failure.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent instead" });
         toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent; accessories move with it.`);
         setScanValue("");
         scanInputRef.current?.focus();
@@ -1076,16 +996,19 @@ function WarehouseProjectPage({
           scanInputRef.current?.focus();
         } else {
           // No check items — prep directly (set prepStatus=PACKED, no deploy)
-          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null)
+          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
             .then(() => {
-              scanFeedback.play("success");
+              scanFeedback.play("success", { label: result.assetName || "Asset", outcome: "Prepped" });
               toast.success(`Prepped: ${result.assetName || "Asset"}`);
               setScanValue("");
               scanInputRef.current?.focus();
               invalidate();
             })
             .catch((e) => {
-              scanFeedback.play("error");
+              scanFeedback.play("error", {
+                label: result.assetName || "Asset",
+                outcome: e instanceof Error ? e.message : "Failed to prep",
+              });
               showError(e);
             });
         }
@@ -1093,7 +1016,7 @@ function WarehouseProjectPage({
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
           // Asset found but not on this project — resolved but needs a decision
           // (add it?), not a hard failure.
-          scanFeedback.play("exception");
+          scanFeedback.play("exception", { label: result.assetName || "Unknown asset", outcome: "Not on this project" });
           // Prompt user to add asset to the project
           setAddPromptData({
             assetName: result.assetName || "Unknown asset",
@@ -1125,21 +1048,22 @@ function WarehouseProjectPage({
         // "already_returned" is resolved but needs attention (all units are back
         // already) rather than a hard failure — every other reason here blocks
         // the scan outright.
-        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error");
-        toast.error(messages[result.reason as string] || "Cannot deploy this asset");
+        const outcome = messages[result.reason as string] || "Cannot deploy this asset";
+        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error", { label: scannedTag, outcome });
+        toast.error(outcome);
         setScanValue("");
         scanInputRef.current?.focus();
       } else {
         // Unknown tag — resolved (we know it's not in the system) but needs the
         // operator's attention, not a hard error.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
         toast.error("Asset not found");
         setScanValue("");
         scanInputRef.current?.focus();
       }
     },
-    onError: (e) => {
-      scanFeedback.play("error");
+    onError: (e, scannedTag) => {
+      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
       showError(e);
       setScanValue("");
       scanInputRef.current?.focus();
@@ -1148,7 +1072,7 @@ function WarehouseProjectPage({
 
   const deployScanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
-    onSuccess: (result) => {
+    onSuccess: (result, scannedTag) => {
       // Deploy scan: find matching prepped item and deploy it
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
@@ -1156,16 +1080,25 @@ function WarehouseProjectPage({
         if (kitLi && kitLi.prepStatus === "PACKED") {
           kitCheckOutMutation
             .mutateAsync(kitResult.kitId)
-            .then(() => {
-              scanFeedback.play("success");
+            .then((res) => {
+              scanFeedback.play("success", {
+                label: kitResult.assetName,
+                outcome: "Deployed kit",
+                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+              });
               toast.success(`Deployed kit: ${kitResult.assetName}`);
             })
-            .catch(() => scanFeedback.play("error"));
+            .catch((e) =>
+              scanFeedback.play("error", {
+                label: kitResult.assetName,
+                outcome: e instanceof Error ? e.message : "Failed to deploy kit",
+              }),
+            );
         } else if (kitResult.reason === "already_checked_out") {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: kitResult.assetName, outcome: "Kit already deployed" });
           toast.error("Kit already deployed");
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: kitResult.assetName, outcome: "Kit is not prepped yet" });
           toast.error("Kit is not prepped yet — prep it first in Pick/Prep");
         }
         setDeployScanValue("");
@@ -1175,7 +1108,7 @@ function WarehouseProjectPage({
 
       if (result.found && result.type === "kit_member") {
         const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetName: string };
-        scanFeedback.play("error");
+        scanFeedback.play("error", { label: memberResult.assetName, outcome: "Scan the kit barcode to deploy" });
         toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} — scan the kit barcode to deploy`);
         setDeployScanValue("");
         deployScanInputRef.current?.focus();
@@ -1185,7 +1118,7 @@ function WarehouseProjectPage({
       if (result.found && result.type === "asset_child") {
         const r = result as { assetName: string; parentAssetTag: string | null };
         // Disambiguation needed — scanned an accessory, not its parent.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent to deploy" });
         toast.error(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to deploy; it moves with the parent.`);
         setDeployScanValue("");
         deployScanInputRef.current?.focus();
@@ -1194,34 +1127,48 @@ function WarehouseProjectPage({
 
       if (result.found && result.lineItemId) {
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
-        if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
+        const scanItems = [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }];
+        if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT" && openAccessoryGateIfNeeded(scanItems)) {
+          // Same accessory gate as the Deploy button — a scan must not bypass it.
+          scanFeedback.play("exception", { label: result.assetName || "Item", outcome: "Check accessories to deploy" });
+        } else if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
           checkOutMutation
-            .mutateAsync({ items: [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }] })
-            .then(() => {
-              scanFeedback.play("success");
+            .mutateAsync({ items: scanItems })
+            .then((res) => {
+              scanFeedback.play("success", {
+                label: result.assetName || "Item",
+                outcome: "Deployed",
+                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+              });
               toast.success(`Deployed: ${result.assetName || "Item"}`);
             })
-            .catch(() => scanFeedback.play("error"));
+            .catch((e) =>
+              scanFeedback.play("error", {
+                label: result.assetName || "Item",
+                outcome: e instanceof Error ? e.message : "Failed to deploy",
+              }),
+            );
         } else if (matchedLi?.status === "CHECKED_OUT") {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: result.assetName || "Item", outcome: "Item already deployed" });
           toast.error("Item already deployed");
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: result.assetName || "Item", outcome: "Item is not prepped yet" });
           toast.error("Item is not prepped yet — prep it first in Pick/Prep");
         }
       } else if (result.found && !result.lineItemId) {
-        scanFeedback.play("error");
-        toast.error(result.reason === "not_on_project" ? "Asset not on this project" : "Cannot deploy this item");
+        const outcome = result.reason === "not_on_project" ? "Asset not on this project" : "Cannot deploy this item";
+        scanFeedback.play("error", { label: scannedTag, outcome });
+        toast.error(outcome);
       } else {
         // Unknown tag.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
         toast.error("Asset not found");
       }
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
     },
-    onError: (e) => {
-      scanFeedback.play("error");
+    onError: (e, scannedTag) => {
+      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
       showError(e);
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
@@ -1230,7 +1177,7 @@ function WarehouseProjectPage({
 
   const returnScanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkin"),
-    onSuccess: (result) => {
+    onSuccess: (result, scannedTag) => {
       // Handle kit return scans
       if (result.found && result.type === "kit") {
         const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
@@ -1258,14 +1205,23 @@ function WarehouseProjectPage({
             if (!started) {
               kitCheckInMutation
                 .mutateAsync({ kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" })
-                .then(() => {
-                  scanFeedback.play("success");
+                .then((res) => {
+                  scanFeedback.play("success", {
+                    label: kitResult.assetName,
+                    outcome: "Kit returned",
+                    undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+                  });
                   toast.success(`Kit returned: ${kitResult.assetName}`);
                   setReturnScanValue("");
                   setReturnNotes("");
                   returnScanInputRef.current?.focus();
                 })
-                .catch(() => scanFeedback.play("error"));
+                .catch((e) =>
+                  scanFeedback.play("error", {
+                    label: kitResult.assetName,
+                    outcome: e instanceof Error ? e.message : "Failed to return kit",
+                  }),
+                );
             }
           }
         } else {
@@ -1273,8 +1229,9 @@ function WarehouseProjectPage({
             not_on_project: "Kit not assigned to this project",
             not_checked_out: "Kit is not deployed",
           };
-          scanFeedback.play("error");
-          toast.error(messages[kitResult.reason as string] || "Cannot return this kit");
+          const outcome = messages[kitResult.reason as string] || "Cannot return this kit";
+          scanFeedback.play("error", { label: kitResult.assetName, outcome });
+          toast.error(outcome);
           setReturnScanValue("");
           returnScanInputRef.current?.focus();
         }
@@ -1302,10 +1259,10 @@ function WarehouseProjectPage({
             next.add(kitGroupKey);
             return next;
           });
-          scanFeedback.play("success");
+          scanFeedback.play("success", { label: memberResult.assetName, outcome: "Verified" });
           toast.success(`Verified: ${memberResult.assetName}`);
         } else {
-          scanFeedback.play("error");
+          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this project" });
           toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
         setReturnScanValue("");
@@ -1316,7 +1273,7 @@ function WarehouseProjectPage({
       if (result.found && result.type === "asset_child") {
         const r = result as { assetName: string; parentAssetTag: string | null };
         // Disambiguation needed — scanned an accessory, not its parent.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent to return" });
         toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to return; it comes back with the parent.`);
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
@@ -1359,14 +1316,23 @@ function WarehouseProjectPage({
                 notes: returnNotes || undefined,
               }],
             })
-            .then(() => {
-              scanFeedback.play("success");
+            .then((res) => {
+              scanFeedback.play("success", {
+                label: result.assetName || "Asset",
+                outcome: "Returned",
+                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
+              });
               toast.success(`Returned: ${result.assetName || "Asset"}`);
               setReturnScanValue("");
               setReturnNotes("");
               returnScanInputRef.current?.focus();
             })
-            .catch(() => scanFeedback.play("error"));
+            .catch((e) =>
+              scanFeedback.play("error", {
+                label: result.assetName || "Asset",
+                outcome: e instanceof Error ? e.message : "Failed to return",
+              }),
+            );
         }
       } else if (result.found && !result.lineItemId) {
         const messages: Record<string, string> = {
@@ -1377,20 +1343,21 @@ function WarehouseProjectPage({
         };
         // "already_returned" is resolved but needs attention (nothing left to
         // return), not a hard failure — every other reason here blocks the scan.
-        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error");
-        toast.error(messages[result.reason as string] || "Cannot return this asset");
+        const outcome = messages[result.reason as string] || "Cannot return this asset";
+        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error", { label: scannedTag, outcome });
+        toast.error(outcome);
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
       } else {
         // Unknown tag.
-        scanFeedback.play("exception");
+        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
         toast.error("Asset not found");
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
       }
     },
-    onError: (e) => {
-      scanFeedback.play("error");
+    onError: (e, scannedTag) => {
+      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
       showError(e);
       setReturnScanValue("");
       returnScanInputRef.current?.focus();
@@ -1401,10 +1368,20 @@ function WarehouseProjectPage({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && scanValue.trim()) {
         e.preventDefault();
-        scanMutation.mutate(scanValue.trim());
+        const trimmed = scanValue.trim();
+        const container = matchContainerByTag(trimmed);
+        if (container) {
+          handleSelectContainer(container.id);
+          scanFeedback.play("info", { label: container.label, outcome: "Active container" });
+          toast.info(`Active container: ${container.label}`);
+          setScanValue("");
+          scanInputRef.current?.focus();
+          return;
+        }
+        scanMutation.mutate(trimmed);
       }
     },
-    [scanValue, scanMutation]
+    [scanValue, scanMutation, matchContainerByTag, handleSelectContainer, scanFeedback]
   );
 
   const handleDeployScanKeyDown = useCallback(
@@ -1489,7 +1466,16 @@ function WarehouseProjectPage({
     }
   };
 
-  // Fetch container assets from the configured case category
+  // #1296 — `caseAssets`/`containerOptions`/`selectedContainerAsset`/
+  // `ensureContainerIfNeeded` are the PRE-rail mechanism: the free-text
+  // ComboboxPicker matched a typed label back to an asset here, then
+  // lazily added that asset to the job the first time it was used as a
+  // container. The rail's "+ New" sheet now creates a container (and its
+  // line item) atomically via `projectContainersWrites.createNative`, so
+  // `selectedContainer` is only ever set to a REAL container's label —
+  // this lookup effectively never matches for anything created through
+  // the rail. Left in place (not dead per knip — still called) rather than
+  // removed here; phase 5 (narrow + retire) is where this goes.
   const { data: caseAssets } = useServerQuery({
     queryKey: ["containerAssets", orgId],
     queryFn: () => wConvex.query(convexApi.categories.containerAssetSearch, { orgId: orgId as string, query: "" }),
@@ -1578,155 +1564,74 @@ function WarehouseProjectPage({
   // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
   const groupedDeprep = groupItems(returnedItems, "deploy");
 
-  // Group deploy items by container for visual sectioning
-  const deployContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedOut }> = [];
-    const containerMap = new Map<string | null, typeof groupedOut>();
-
-    for (const entry of groupedOut) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
-    }
-
-    // Sort: named containers first (alphabetically), then ungrouped
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedOut]);
+  // Group deploy items by container for visual sectioning — real containerId
+  // preferred over the legacy prepContainer label (buildContainerGroups,
+  // #1296 phase 2).
+  const representativeItem = (entry: typeof groupedOut[number]) => (entry.kind === "serialized-group" ? entry.items[0] : entry.item);
+  const deployContainerGroups = useMemo(
+    () => buildContainerGroups(groupedOut, representativeItem, containerLabelById),
+    [groupedOut, containerLabelById],
+  );
 
   // Group de-prep items by the container they came back in (visual sectioning).
-  const deprepContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedDeprep }> = [];
-    const containerMap = new Map<string | null, typeof groupedDeprep>();
-
-    for (const entry of groupedDeprep) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
-    }
-
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedDeprep]);
+  const deprepContainerGroups = useMemo(
+    () => buildContainerGroups(groupedDeprep, representativeItem, containerLabelById),
+    [groupedDeprep, containerLabelById],
+  );
 
   const groupedIn = groupCheckinItems(checkedOutItems);
 
   // Group return items by container for visual sectioning
-  const returnContainerGroups = useMemo(() => {
-    const groups: Array<{ container: string | null; entries: typeof groupedIn }> = [];
-    const containerMap = new Map<string | null, typeof groupedIn>();
+  const returnContainerGroups = useMemo(
+    () => buildContainerGroups(groupedIn, representativeItem, containerLabelById),
+    [groupedIn, containerLabelById],
+  );
 
-    for (const entry of groupedIn) {
-      const item = entry.kind === "serialized-group" ? entry.items[0] : entry.item;
-      const container = item.prepContainer || null;
-      if (!containerMap.has(container)) {
-        containerMap.set(container, []);
-      }
-      containerMap.get(container)!.push(entry);
+  // #1296 phase 2 — Move to…: reassign a Deploy/Return/De-prep selection to a
+  // different container. `moveDialogFor` names which tab's own selection Set
+  // + stage predicate the dialog resolves against (they differ — a bulk
+  // unit's `isRelevant` depends on which stage of its lifecycle this tab
+  // shows); resolving happens once, right before opening, not on every
+  // keystroke/selection change.
+  const [moveDialogFor, setMoveDialogFor] = useState<"deploy" | "deprep" | "return" | null>(null);
+  const containerWrites = useProjectContainerWrites();
+  const [moveIsPending, setMoveIsPending] = useState(false);
+
+  const moveDialogUnitIds = useMemo(() => {
+    if (moveDialogFor === "deploy") return resolveSelectionToUnitIds(selectedOut, lineItems, isMoveableAtDeployStage);
+    if (moveDialogFor === "deprep") return resolveSelectionToUnitIds(selectedDeprep, lineItems, isMoveableAtDeprepStage);
+    if (moveDialogFor === "return") return resolveSelectionToUnitIds(selectedIn, lineItems, isMoveableAtReturnStage);
+    return [];
+  }, [moveDialogFor, selectedOut, selectedDeprep, selectedIn, lineItems]);
+
+  const handleConfirmMove = async (toContainerId: string | null) => {
+    const unitIds = moveDialogUnitIds;
+    const forTab = moveDialogFor;
+    if (unitIds.length === 0 || !forTab) return;
+    setMoveIsPending(true);
+    try {
+      const { moved } = await containerWrites.moveUnits(unitIds, toContainerId);
+      toast.success(`Moved ${moved} item${moved === 1 ? "" : "s"}`);
+      if (forTab === "deploy") setSelectedOut(new Set());
+      else if (forTab === "deprep") setSelectedDeprep(new Set());
+      else setSelectedIn(new Set());
+      setMoveDialogFor(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to move");
+    } finally {
+      setMoveIsPending(false);
     }
-
-    const sorted = Array.from(containerMap.entries()).sort(([a], [b]) => {
-      if (a === null && b === null) return 0;
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    });
-
-    for (const [container, entries] of sorted) {
-      groups.push({ container, entries });
-    }
-    return groups;
-  }, [groupedIn]);
+  };
 
   // Build all selectable keys for pick/prep
-  const allPrepKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedPrep) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedPrep]);
+  const allPrepKeys = useMemo(() => selectionKeysForEntries(groupedPrep), [groupedPrep]);
 
   // Build all selectable keys for check-out
-  const allOutKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedOut) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedOut]);
+  const allOutKeys = useMemo(() => selectionKeysForEntries(groupedOut), [groupedOut]);
 
-  const allDeprepKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedDeprep) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedDeprep]);
+  const allDeprepKeys = useMemo(() => selectionKeysForEntries(groupedDeprep), [groupedDeprep]);
 
-  const allInKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedIn) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedIn]);
+  const allInKeys = useMemo(() => selectionKeysForEntries(groupedIn), [groupedIn]);
 
   const selectedPrepCount = selectedPrep.size;
   const selectedOutCount = selectedOut.size;
@@ -1844,7 +1749,7 @@ function WarehouseProjectPage({
         }
 
         if (pickerItems.length > 0) {
-          setAssetPickerItems(pickerItems);
+          applyAssetPickerItems(pickerItems);
           setAssetPickerBulkItems(bulkItems);
           setAssetPickerOpen(true);
           setSelectedPrep(new Set());
@@ -1937,12 +1842,14 @@ function WarehouseProjectPage({
         assetId?: string;
         quantity?: number;
         prepContainer?: string | null;
+        containerId?: string | null;
       }> = [];
       for (const bi of bulkNoCheckItems) {
         directPrepItems.push({
           lineItemId: bi.lineItemId,
           quantity: bi.quantity,
           prepContainer: selectedContainer || null,
+          containerId: activeContainerId,
         });
       }
 
@@ -1975,10 +1882,12 @@ function WarehouseProjectPage({
           assetId: item.assetId,
           quantity: item.quantity,
           prepContainer: selectedContainer || null,
+          containerId: activeContainerId,
         });
       }
       if (directPrepItems.length > 0) {
         await prepItemsBatch(projectId, directPrepItems);
+        clearAccessoryVerification(directPrepItems.map((i) => i.lineItemId));
       }
 
       // Start check queue if any items need checks
@@ -2063,13 +1972,75 @@ function WarehouseProjectPage({
       if (packed.length === 0) continue;
       const verified = packed.filter((c) => verifiedKitItems.has(c.id));
       if (verified.length > 0 && verified.length < packed.length) {
-        const verifiedAccessoryIds = verified
-          .map((c) => c.assetId ?? c.bulkAssetId ?? "")
-          .filter((v): v is string => v !== "");
+        const verifiedAccessoryIds = accessoryAssetIds(verified);
         return { li, verifiedCount: verified.length, totalCount: packed.length, verifiedAccessoryIds };
       }
     }
     return null;
+  }
+
+  // #1296 D4 — "Deploy container": select every one of the container's
+  // entries so the EXISTING Deploy button (already wired, already tested)
+  // becomes the trigger — never a second deploy code path alongside
+  // handleCheckOutSelected's own accessory-gate/kit-batch/partial-verify
+  // branching below.
+  const handleDeployContainer = (entries: GroupEntry[]) => {
+    setSelectedOut(new Set(keysForGroupEntries(entries)));
+  };
+
+  // Click-to-verify state lives in `verifiedKitItems` and is shared with Deploy.
+  // Verification done while picking must not pre-tick the Deploy checks, so a
+  // successful prep clears the prepped lines' accessory ids; Deploy then starts
+  // from a clean slate.
+  function clearAccessoryVerification(lineItemIds: string[]) {
+    const toClear = new Set<string>();
+    for (const id of lineItemIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (li) accessoryChildrenOf(li).forEach((c) => toClear.add(c.id));
+    }
+    if (toClear.size === 0) return;
+    setVerifiedKitItems((prev) => {
+      if (![...toClear].some((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      toClear.forEach((id) => next.delete(id));
+      return next;
+    });
+  }
+
+  // The ONE accessory gate for every deploy entry point (selection Deploy and
+  // scan-deploy): DEFAULT/OPTIONAL accessories left unpacked open the
+  // missing-accessory dialog; a partly click-verified accessory set opens the
+  // "Deploy Verified Only" confirm (after deploying the rest of the batch).
+  // Returns true when a dialog took over and the caller must NOT deploy `items`
+  // itself. Bulk keys (quantity>1 parents) are gated too — every line id in
+  // `items`, not just the serialized ones.
+  function openAccessoryGateIfNeeded(
+    items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>,
+  ): boolean {
+    const lineIds = items.map((i) => i.lineItemId);
+    const { missingDefaults, missingOptionals } = computeMissingAccessories(lineIds);
+    if (missingDefaults.length > 0 || missingOptionals.length > 0) {
+      setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
+      setOptionalSkipReasons({});
+      setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
+      return true;
+    }
+
+    const partial = findPartiallyVerifiedAccessoryParent(lineIds);
+    if (partial) {
+      const rest = items.filter((i) => i.lineItemId !== partial.li.id);
+      if (rest.length > 0) runCheckOut(rest);
+      setAccessoryVerifyConfirm({
+        parentLineItemId: partial.li.id,
+        parentAssetId: partial.li.assetId || undefined,
+        parentName: modelDisplayName(partial.li),
+        verifiedCount: partial.verifiedCount,
+        totalCount: partial.totalCount,
+        verifiedAccessoryIds: partial.verifiedAccessoryIds,
+      });
+      return true;
+    }
+    return false;
   }
 
   const handleCheckOutSelected = async () => {
@@ -2114,28 +2085,7 @@ function WarehouseProjectPage({
 
     if (items.length === 0) return;
 
-    const { missingDefaults, missingOptionals } = computeMissingAccessories(serializedLineItemIds);
-    if (missingDefaults.length > 0 || missingOptionals.length > 0) {
-      setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
-      setOptionalSkipReasons({});
-      setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
-      return;
-    }
-
-    const partial = findPartiallyVerifiedAccessoryParent(serializedLineItemIds);
-    if (partial) {
-      const rest = items.filter((i) => i.lineItemId !== partial.li.id);
-      if (rest.length > 0) runCheckOut(rest);
-      setAccessoryVerifyConfirm({
-        parentLineItemId: partial.li.id,
-        parentAssetId: partial.li.assetId || undefined,
-        parentName: modelDisplayName(partial.li),
-        verifiedCount: partial.verifiedCount,
-        totalCount: partial.totalCount,
-        verifiedAccessoryIds: partial.verifiedAccessoryIds,
-      });
-      return;
-    }
+    if (openAccessoryGateIfNeeded(items)) return;
 
     runCheckOut(items);
   };
@@ -2168,10 +2118,27 @@ function WarehouseProjectPage({
     } catch {
       // Never let the audit trail write block the actual deploy.
     }
+
+    // Narrow each pending parent's accessory cascade to exclude the accessories
+    // just declared missing — the override records WHY they're being left
+    // behind, it must not also silently deploy them anyway (issue #794: this
+    // gate previously logged the reason but still checked out the "missing"
+    // accessory since `includeAccessoryIds` was never set on the resend).
+    const skippedLineIds = new Set(skipped.map((s) => s.accessoryLineItemId));
+    const narrowedItems = pendingCheckOutItems.map((item) => {
+      const li = lineItems.find((l) => l.id === item.lineItemId);
+      if (!li) return item;
+      const allAccessories = accessoryChildrenOf(li);
+      const eligible = allAccessories.filter((c) => !skippedLineIds.has(c.id));
+      if (eligible.length === allAccessories.length) return item; // nothing skipped for this parent
+      const includeAccessoryIds = accessoryAssetIds(eligible);
+      return { ...item, includeAccessoryIds };
+    });
+
     setAccessoryGate(null);
     setDefaultOverrideReason("");
     setOptionalSkipReasons({});
-    runCheckOut(pendingCheckOutItems);
+    runCheckOut(narrowedItems);
   };
 
   // De-prep selected returned items: run return checks where the model has them,
@@ -2273,6 +2240,47 @@ function WarehouseProjectPage({
     setSelectedOut(new Set());
   };
 
+  /**
+   * Scan a tag in the Assign-assets dialog: fill the next slot that can take it.
+   *
+   * Eleven identical headsets means eleven dropdowns; a packer holding the gear
+   * already knows which unit they picked up. All four outcomes come from the
+   * pure `resolvePickerScan` (tested in `asset-picker-scan.test.ts`) — this only
+   * applies the result and plays the matching feedback.
+   */
+  const handleAssetPickerScan = (rawTag: string) => {
+    const result = resolvePickerScan(assetPickerItemsRef.current, rawTag);
+    setAssetPickerScanValue("");
+
+    switch (result.kind) {
+      case "assigned":
+        applyAssetPickerItems((prev) =>
+          prev.map((item, i) => (i === result.index ? { ...item, selectedAssetId: result.assetId } : item))
+        );
+        scanFeedback.play("success", {
+          label: `${result.modelName} · ${result.assetTag}`,
+          outcome: `Assigned #${result.index + 1}`,
+        });
+        return;
+      case "already-assigned":
+        // Not a failure — the operator is checking whether it registered.
+        scanFeedback.play("exception", {
+          label: result.assetTag,
+          outcome: `Already assigned to #${result.index + 1}`,
+        });
+        toast.info(`${result.assetTag} is already assigned to ${result.modelName} #${result.index + 1}`);
+        return;
+      case "no-slot":
+        scanFeedback.play("exception", { label: result.assetTag, outcome: "No slot left" });
+        toast.warning(`Every ${result.modelName} slot is already filled`);
+        return;
+      case "unknown":
+        scanFeedback.play("error", { label: result.assetTag || "Unknown tag", outcome: "Not available here" });
+        toast.error(`${result.assetTag || "That tag"} isn't an available asset for this prep`);
+        return;
+    }
+  };
+
   const handleAssetPickerConfirm = () => {
     const incomplete = assetPickerItems.find((i) => !i.selectedAssetId);
     if (incomplete) {
@@ -2366,9 +2374,11 @@ function WarehouseProjectPage({
         assetId: i.assetId,
         quantity: i.quantity,
         prepContainer: selectedContainer || null,
+        containerId: activeContainerId,
       })),
     )
       .then(() => {
+        clearAccessoryVerification(withoutChecks.map((i) => i.lineItemId));
         toast.success("Items prepped — ready to deploy");
         invalidate();
       })
@@ -2597,7 +2607,7 @@ function WarehouseProjectPage({
         </div>
         <div className="flex gap-2">
           {/* Scan audio toggle — shared across prep/deploy/return scan verdicts */}
-          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+          <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           {/* Mobile: Pick List button shown prominently */}
           <Button variant="line" className="sm:hidden" onClick={() => setPickListOpen(true)}>
             <ClipboardList className="mr-2 h-4 w-4" />
@@ -2712,9 +2722,12 @@ function WarehouseProjectPage({
           handleScanKeyDown={handleScanKeyDown}
           scanMutationMutate={(v) => scanMutation.mutate(v)}
           scanMutationIsPending={scanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           selectedContainer={selectedContainer}
-          setSelectedContainer={setSelectedContainer}
-          containerOptions={containerOptions}
+          containers={realContainers}
+          activeContainerId={activeContainerId}
+          onSelectContainer={handleSelectContainer}
+          onNewContainer={() => setNewContainerSheetOpen(true)}
           selectedPrep={selectedPrep}
           setSelectedPrep={setSelectedPrep}
           selectedPrepCount={selectedPrepCount}
@@ -2734,6 +2747,21 @@ function WarehouseProjectPage({
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
         />
+        <NewContainerSheet
+          open={newContainerSheetOpen}
+          onOpenChange={setNewContainerSheetOpen}
+          projectId={projectId}
+          existingContainers={realContainers.map((c) => ({ id: c.id, label: c.label }))}
+          onCreated={handleContainerCreated}
+        />
+        <MoveToContainerDialog
+          open={moveDialogFor !== null}
+          onOpenChange={(open) => !open && setMoveDialogFor(null)}
+          unitCount={moveDialogUnitIds.length}
+          containers={realContainers}
+          onConfirm={handleConfirmMove}
+          pending={moveIsPending}
+        />
 
         {/* Deploy Tab */}
         <DeployTab
@@ -2743,6 +2771,7 @@ function WarehouseProjectPage({
           handleDeployScanKeyDown={handleDeployScanKeyDown}
           deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
           deployScanMutationIsPending={deployScanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           selectedOut={selectedOut}
           setSelectedOut={setSelectedOut}
           selectedOutCount={selectedOutCount}
@@ -2759,6 +2788,8 @@ function WarehouseProjectPage({
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
+          onMoveSelected={() => setMoveDialogFor("deploy")}
+          onDeployContainer={handleDeployContainer}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2774,6 +2805,7 @@ function WarehouseProjectPage({
           handleDeployScanKeyDown={handleDeployScanKeyDown}
           deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
           deployScanMutationIsPending={deployScanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           selectedOut={selectedDeprep}
           setSelectedOut={setSelectedDeprep}
           selectedOutCount={selectedDeprepCount}
@@ -2792,6 +2824,8 @@ function WarehouseProjectPage({
           clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
           clearContainerIsPending={clearContainerMutation.isPending}
           checkOutIsPending={checkOutMutation.isPending}
+          onMoveSelected={() => setMoveDialogFor("deprep")}
+          onDeployContainer={() => {}}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -2806,6 +2840,7 @@ function WarehouseProjectPage({
           handleReturnScanKeyDown={handleReturnScanKeyDown}
           returnScanMutationMutate={(v) => returnScanMutation.mutate(v)}
           returnScanMutationIsPending={returnScanMutation.isPending}
+          scanHistoryEntries={scanFeedback.entries}
           returnCondition={returnCondition}
           setReturnCondition={setReturnCondition}
           returnNotes={returnNotes}
@@ -2825,6 +2860,7 @@ function WarehouseProjectPage({
           handleUndeploy={handleUndeploy}
           undeployIsPending={undeployMutation.isPending || undeployKitsMutation.isPending}
           onReportIssue={handleReportIssue}
+          onMoveSelected={() => setMoveDialogFor("return")}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -3176,8 +3212,39 @@ function WarehouseProjectPage({
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-ui-text text-muted">
-              Select which specific asset to deploy for each item.
+              Scan each unit as you pick it, or choose from the dropdowns.
             </p>
+
+            {/* Scan-to-assign. Continuous, because assigning eleven headsets is
+                one pass down a shelf — the camera stays open between units.
+                Typing and HID wedges land on the same handler via Enter.
+
+                Sticky: DialogContent is the scroll container, and eleven slots
+                scroll the field out of view exactly when it is being used every
+                few seconds. Full-bleed (-mx-6/px-6 against the dialog's p-6) so
+                rows scrolling underneath don't show through the edges. */}
+            <div className="sticky top-0 z-10 -mx-6 space-y-1.5 border-b border-line bg-elev px-6 pb-3">
+              <AssetTagInput
+                value={assetPickerScanValue}
+                onChange={(e) => setAssetPickerScanValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAssetPickerScan(assetPickerScanValue);
+                  }
+                }}
+                onScan={handleAssetPickerScan}
+                scannerTitle="Scan to assign"
+                continuous
+                placeholder="Scan an asset tag to assign it..."
+                className="h-11 font-mono"
+                autoFocus
+              />
+              <p className="text-ui-text text-muted" aria-live="polite">
+                {countAssigned(assetPickerItems)} of {assetPickerItems.length} assigned
+              </p>
+            </div>
+
             {assetPickerItems.map((pickerItem, idx) => (
               <div key={`${pickerItem.lineItemId}-${idx}`} className="space-y-1.5">
                 <Label className="text-ui-text font-medium">
@@ -3193,7 +3260,7 @@ function WarehouseProjectPage({
                     value={pickerItem.selectedAssetId}
                     onValueChange={(val) => {
                       const assetId = val ?? "";
-                      setAssetPickerItems((prev) =>
+                      applyAssetPickerItems((prev) =>
                         prev.map((item, i) =>
                           i === idx ? { ...item, selectedAssetId: assetId } : item
                         )
@@ -3313,6 +3380,8 @@ function WarehouseProjectPage({
                       item.assetId || undefined,
                       item.assetId ? undefined : 1,
                       selectedContainer || null,
+                      undefined,
+                      activeContainerId,
                     );
                   } else if (item.fromDeprep) {
                     // completeCheckAndDeprep tolerates an empty checks[] (it
@@ -3354,6 +3423,7 @@ function WarehouseProjectPage({
                     assetId: item.assetId,
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
+                    containerId: activeContainerId,
                     checks,
                     includeAccessoryIds: item.includeAccessoryIds,
                   });
@@ -3426,6 +3496,7 @@ function WarehouseProjectPage({
                     assetId: checkFormData.assetId,
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
+                    containerId: activeContainerId,
                     checks,
                     includeAccessoryIds: checkFormData.includeAccessoryIds,
                   });

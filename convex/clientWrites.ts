@@ -40,6 +40,7 @@ function assertClientFields(f: {
   billingAddress?: string;
   shippingAddress?: string;
   taxId?: string;
+  taxExemptReason?: string;
   paymentTerms?: string;
   defaultDiscount?: number;
   notes?: string;
@@ -52,6 +53,8 @@ function assertClientFields(f: {
   assertStrLen(f.billingAddress, "billingAddress", { max: 500 });
   assertStrLen(f.shippingAddress, "shippingAddress", { max: 500 });
   assertStrLen(f.taxId, "taxId", { max: 50 });
+  // T3 (#1091) — same 500-char bound every other free-text client field gets.
+  assertStrLen(f.taxExemptReason, "taxExemptReason", { max: 500 });
   assertStrLen(f.paymentTerms, "paymentTerms", { max: 100 });
   assertNumRange(f.defaultDiscount, "defaultDiscount", { min: 0, max: 100 });
   assertStrLen(f.notes, "notes", { max: 2000 });
@@ -72,6 +75,11 @@ export const clientFields = {
   shippingLatitude: v.optional(v.number()),
   shippingLongitude: v.optional(v.number()),
   taxId: v.optional(v.string()),
+  // T3 (#1091, docs/designs/tax-model.md §2) — a hard short-circuit read by
+  // recalcProjectTotals: an exempt client's projects produce zero tax
+  // regardless of any project/line rate.
+  taxExempt: v.optional(v.boolean()),
+  taxExemptReason: v.optional(v.string()),
   paymentTerms: v.optional(v.string()),
   defaultDiscount: v.optional(v.number()),
   notes: v.optional(v.string()),

@@ -12,7 +12,7 @@
  * matching the deleted `getNotificationPreferences` server action.
  */
 
-/** The eight form-controlled email opt-in flags. Mirrors NotificationPreferenceValues. */
+/** The nine form-controlled email opt-in flags. Mirrors NotificationPreferenceValues. */
 export interface NotificationPreferenceValues {
   overdueMaintenance: boolean;
   overdueReturn: boolean;
@@ -22,6 +22,8 @@ export interface NotificationPreferenceValues {
   pendingTimesheets: boolean;
   flaggedAsset: boolean;
   incidentReport: boolean;
+  quoteExpiring: boolean;
+  followUpBrief: boolean;
 }
 
 /** The single source of truth for preference defaults — mirrors the Prisma model. */
@@ -34,9 +36,11 @@ export const NOTIFICATION_PREFERENCE_DEFAULTS: NotificationPreferenceValues = {
   pendingTimesheets: false,
   flaggedAsset: true,
   incidentReport: true,
+  quoteExpiring: true,
+  followUpBrief: true,
 };
 
-/** A raw Convex row — the eight flags as optionals (plus other columns we ignore). */
+/** A raw Convex row — the nine flags as optionals (plus other columns we ignore). */
 export interface RawPreferenceRow {
   overdueMaintenance?: boolean;
   overdueReturn?: boolean;
@@ -46,6 +50,8 @@ export interface RawPreferenceRow {
   pendingTimesheets?: boolean;
   flaggedAsset?: boolean;
   incidentReport?: boolean;
+  quoteExpiring?: boolean;
+  followUpBrief?: boolean;
 }
 
 /** Coerce a Convex optional boolean to the Prisma `@default` for that column. */
@@ -71,5 +77,7 @@ export function resolvePreferenceValues(
     pendingTimesheets: coerce(raw.pendingTimesheets, NOTIFICATION_PREFERENCE_DEFAULTS.pendingTimesheets),
     flaggedAsset: coerce(raw.flaggedAsset, NOTIFICATION_PREFERENCE_DEFAULTS.flaggedAsset),
     incidentReport: coerce(raw.incidentReport, NOTIFICATION_PREFERENCE_DEFAULTS.incidentReport),
+    quoteExpiring: coerce(raw.quoteExpiring, NOTIFICATION_PREFERENCE_DEFAULTS.quoteExpiring),
+    followUpBrief: coerce(raw.followUpBrief, NOTIFICATION_PREFERENCE_DEFAULTS.followUpBrief),
   };
 }

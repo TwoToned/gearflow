@@ -15,6 +15,7 @@ import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByIds, getBulkAssetsByIds, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectById, getProjectByIdMapped, getProjectsByOrg } from "@/lib/projects-read";
+import { getProjectWindowDates } from "@/lib/project-window";
 
 export async function getProjectForWarehouse(projectId: string) {
   const { organizationId } = await getOrgContext();
@@ -832,12 +833,13 @@ export async function getProjectPullSheet(projectId: string) {
     organizationId,
   );
 
-  // Compute overbooked status
+  // Compute overbooked status — gear-committed window, not raw rental dates.
+  const pullSheetWindow = getProjectWindowDates(project);
   const overbookedMap = await computeOverbookedStatus(
     organizationId,
     attachedLineItems,
-    project.rentalStartDate,
-    project.rentalEndDate,
+    pullSheetWindow.start,
+    pullSheetWindow.end,
     project.id,
   );
 

@@ -31,6 +31,7 @@ import {
   CalendarCheck,
   Boxes,
   Sparkles,
+  Building2,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ *
@@ -261,7 +262,7 @@ export function AuthShell({
   children: React.ReactNode;
   /** Optional Kalam caption shown under the card (decorative). */
   annotation?: string;
-  accent?: "welcome" | "join" | "admin";
+  accent?: "welcome" | "join" | "admin" | "setup";
 }) {
   const cornerSticker =
     accent === "join" ? (
@@ -271,6 +272,10 @@ export function AuthShell({
     ) : accent === "admin" ? (
       <StickerChip tone="ink" className="rotate-[8deg]">
         <Zap className="size-3" /> keys to the kingdom
+      </StickerChip>
+    ) : accent === "setup" ? (
+      <StickerChip tone="red" className="rotate-[8deg]">
+        <Building2 className="size-3" /> let&apos;s go
       </StickerChip>
     ) : (
       <StickerChip tone="cream" className="rotate-[8deg]">

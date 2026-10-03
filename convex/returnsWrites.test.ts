@@ -35,10 +35,14 @@ async function member(t: T, role: string, orgId = ORG) {
 }
 
 async function seedProject(t: T, id: string, orgId = ORG, status: string = "CHECKED_OUT") {
+  const versionId = `v-${id}-${orgId}`;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: status as never,
-      total: 0,
+      total: 0, liveVersionId: versionId,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1",
     });
   });
 }
@@ -52,7 +56,8 @@ async function seedModelAsset(t: T, assetId = "a1", tag = "A-1", orgId = ORG) {
 }
 
 const baseLine = (id: string, projectId: string, extra: Record<string, unknown>, orgId = ORG) => ({
-  id, organizationId: orgId, projectId, type: "EQUIPMENT" as const, quantity: 1, sortOrder: 0,
+  id, organizationId: orgId, projectId, versionId: `v-${projectId}-${orgId}`, lineageId: id,
+  type: "EQUIPMENT" as const, quantity: 1, sortOrder: 0,
   status: "CHECKED_OUT" as const, checkedOutQuantity: 1, isKitChild: false, createdAt: NOW, updatedAt: NOW, ...extra,
 });
 
@@ -219,6 +224,19 @@ describe("correctReturnConditionNative", () => {
     expect(res.updated).toBe(true);
     expect((await unitById(t, "u1"))?.returnCondition).toBe("DAMAGED");
     expect((await assetById(t, "a1"))?.status).toBe("IN_MAINTENANCE");
+  });
+
+  test("does not touch an asset that has since gone out on another job", async () => {
+    const t = makeT();
+    await seedReturned(t);
+    await t.run(async (ctx) => {
+      const a1 = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).unique();
+      await ctx.db.patch(a1!._id, { status: "CHECKED_OUT" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.returnsWrites.correctReturnConditionNative, {
+      orgId: ORG, lineItemId: "li1", assetId: "a1", returnCondition: "GOOD", auditId: "log1", now: NOW, actor: SPOOF,
+    });
+    expect((await assetById(t, "a1"))?.status).toBe("CHECKED_OUT");
   });
 
   test("rejects correcting an item that hasn't been returned yet", async () => {

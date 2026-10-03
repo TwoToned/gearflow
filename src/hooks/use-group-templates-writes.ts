@@ -86,6 +86,9 @@ export function useGroupTemplateWrites() {
       categoryId: string;
       title: string;
       items: ApplyTemplateItem[];
+      // #1221 follow-up — the version the new group + its expanded items
+      // land on, defaulting to live (server-side) when omitted.
+      versionId?: string;
     }): Promise<{ groupId: string; kitWarnings: string[] }> => {
       // Mint one id per model item + one id per kit UNIT (flattened in item order).
       const modelLineIds = args.items.filter((it) => it.modelId).map(() => createId());
@@ -103,6 +106,7 @@ export function useGroupTemplateWrites() {
         groupId: createId(),
         modelLineIds,
         kitLineIds,
+        versionId: args.versionId,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

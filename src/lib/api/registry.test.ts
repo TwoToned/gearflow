@@ -48,6 +48,38 @@ function runGenerator(
   }
 }
 
+/**
+ * Run `fn` against an isolated COPY of the repo, and clean it up afterwards.
+ *
+ * The deliberate-violation tests work by breaking an input and asserting the
+ * generator refuses — which means mutating a file the generator reads. Doing
+ * that to the LIVE repo is a cross-file race: vitest runs test FILES in
+ * parallel, so while `registry.generated.ts` or `docs/api-coverage.md` sits
+ * corrupted, any other file reading it sees the corruption. That is exactly
+ * what `openapi-docs.test.ts` does — it counts agent-reachable operations, and
+ * caught 578 instead of 577 mid-flip, failing a test that passes in isolation.
+ * Restoring in a `finally` closes the window but does not remove it.
+ *
+ * So every violation runs in its own tree. `node_modules` is symlinked rather
+ * than copied (~1GB), and the generator is invoked from INSIDE the copy: the
+ * script resolves its own repo root from `import.meta.dirname`, so running the
+ * checked-in copy against a temp `cwd` would silently scan the real repo and
+ * report a pass.
+ */
+function withRepoCopy(fn: (dir: string, generator: string) => void): void {
+  const dir = mkdtempSync(join(tmpdir(), "api-registry-gate-"));
+  try {
+    for (const path of ["convex", "src", "scripts", "docs", "package.json", "tsconfig.json"]) {
+      cpSync(join(ROOT, path), join(dir, path), { recursive: true });
+    }
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    execFileSync("ln", ["-s", join(ROOT, "node_modules"), join(dir, "node_modules")]);
+    fn(dir, join(dir, "scripts/generate-api-registry.mts"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // The registry's own invariants
 // ────────────────────────────────────────────────────────────────────────────
@@ -146,17 +178,7 @@ describe("gate 1: privileged-arg policy", () => {
   });
 
   test("DELIBERATE VIOLATION: a new privileged arg with no policy row fails the build", () => {
-    const dir = mkdtempSync(join(tmpdir(), "api-registry-gate-"));
-    try {
-      // A minimal but real tree: the generator needs convex/ (source + generated),
-      // the policy register, and the packages they import.
-      for (const path of ["convex", "src", "scripts", "package.json", "tsconfig.json"]) {
-        cpSync(join(ROOT, path), join(dir, path), { recursive: true });
-      }
-      mkdirSync(join(dir, "docs"), { recursive: true });
-      // Symlink node_modules rather than copying ~1GB of dependencies.
-      execFileSync("ln", ["-s", join(ROOT, "node_modules"), join(dir, "node_modules")]);
-
+    withRepoCopy((dir, generator) => {
       // The violation: a public mutation taking an unclassified bypass-lever arg.
       writeFileSync(
         join(dir, "convex/zzGateProbe.ts"),
@@ -176,16 +198,11 @@ describe("gate 1: privileged-arg policy", () => {
         ].join("\n"),
       );
 
-      const result = runGenerator([], {
-        cwd: dir,
-        generator: join(dir, "scripts/generate-api-registry.mts"),
-      });
+      const result = runGenerator([], { cwd: dir, generator });
       expect(result.ok, "the generator should have FAILED on the unclassified arg").toBe(false);
       expect(result.output).toMatch(/bypassEverything/);
       expect(result.output).toMatch(/privileged-args/i);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   }, 180_000);
 });
 
@@ -201,16 +218,14 @@ describe("gate 2: registry staleness", () => {
   }, 180_000);
 
   test("DELIBERATE VIOLATION: a hand-edited registry fails --check", () => {
-    const path = join(ROOT, "src/lib/api/registry.generated.ts");
-    const original = readFileSync(path, "utf8");
-    try {
+    withRepoCopy((dir, generator) => {
+      const path = join(dir, "src/lib/api/registry.generated.ts");
+      const original = readFileSync(path, "utf8");
       writeFileSync(path, original.replace('"agentReachable": false', '"agentReachable": true'));
-      const result = runGenerator(["--check"]);
+      const result = runGenerator(["--check"], { cwd: dir, generator });
       expect(result.ok, "the staleness gate should have FAILED").toBe(false);
       expect(result.output).toMatch(/staleness gate failed/i);
-    } finally {
-      writeFileSync(path, original);
-    }
+    });
   }, 180_000);
 });
 
@@ -229,19 +244,17 @@ describe("gate 3: reachability floor", () => {
     // Simulates the real regression: someone adds `requireService` to an
     // agent-reachable query, the count drops below the committed floor, and CI
     // refuses rather than letting the surface silently narrow.
-    const path = join(ROOT, "docs/api-coverage.md");
-    const original = readFileSync(path, "utf8");
-    try {
+    withRepoCopy((dir, generator) => {
+      const path = join(dir, "docs/api-coverage.md");
+      const original = readFileSync(path, "utf8");
       writeFileSync(
         path,
         original.replace(/reachability-floor:\s*\d+/, `reachability-floor: ${REGISTRY_COUNTS.agentReachable + 5}`),
       );
-      const result = runGenerator([]);
+      const result = runGenerator([], { cwd: dir, generator });
       expect(result.ok, "the reachability gate should have FAILED").toBe(false);
       expect(result.output).toMatch(/Reachability gate failed/i);
-    } finally {
-      writeFileSync(path, original);
-    }
+    });
   }, 180_000);
 });
 

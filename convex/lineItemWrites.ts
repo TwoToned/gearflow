@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
@@ -16,9 +16,10 @@ import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertRefInOrg } from "./lib/orgRef";
+import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
-import { getKitByCuid } from "./lib/kits";
-import { expandAccessoryChildLines, reconcileLineAccessoryChildren, type AccessoryPlan } from "./lib/fulfillment";
+import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
+import { expandAccessoryChildLines, reconcileLineAccessoryChildren, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
   loadModelAvailabilityBundle,
@@ -36,7 +37,8 @@ import {
   isBreakdownStale,
   type PriceBreakdown,
 } from "./lib/billingDerivation";
-import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS, pricedUnderLockOnInsert } from "./lib/projectLocks";
+import { assertPricingUnlocked, afterLockAuditMetadata, defaultsToZeroOnInsert, LOCKED_LINE_ITEM_FIELDS, pricedUnderLockOnInsert } from "./lib/projectLocks";
+import { deleteCommentsAndMarkersForTarget } from "./lib/commentCleanup";
 import {
   adjustModelSaleStock,
   sellSerializedAssetForSale,
@@ -44,6 +46,7 @@ import {
   unsellSerializedAsset,
   type SaleActor,
 } from "./lib/saleStock";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /** Fetch the line's parent project, org-checked — every gate site needs the
  *  project's `status` to resolve its lock tier. */
@@ -327,6 +330,7 @@ async function deleteLineWithUnits(ctx: MutationCtx, lineDocId: Id<"projectLineI
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineCuid))
     .collect()).filter((u) => u.organizationId === orgId);
   for (const u of units) await ctx.db.delete(u._id);
+  await deleteCommentsAndMarkersForTarget(ctx, orgId, lineCuid);
   await ctx.db.delete(lineDocId);
 }
 
@@ -347,11 +351,9 @@ export const removeNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -362,8 +364,8 @@ export const removeNative = mutation({
     if (!line) throw new ConvexError({ code: "NOT_FOUND", message: "This item was deleted by someone else. Refresh the page." });
     if (line.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    const project = await requireLineProjectInOrg(ctx, line.projectId, orgId);
-    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
+    // Delete is structural — never gated.
+    await requireLineProjectInOrg(ctx, line.projectId, orgId);
 
     // Child items (kit members, sub-hire group children, accessory children) are
     // removed via their parent, never individually — same guard as removeLineItem.
@@ -378,6 +380,7 @@ export const removeNative = mutation({
     // Cascade-delete the children (+ their units) and the line (+ its units) — the
     // exact removeLineItemCascade sequence, now atomic with the guard + audit.
     const children = (await ctx.db
+      // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
       .query("projectLineItems")
       .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
       .collect()).filter((c) => c.organizationId === orgId);
@@ -399,7 +402,6 @@ export const removeNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Removed line item from project",
-      metadata: lifecycleAuditMetadata(guard, justification),
       projectId: line.projectId,
       createdAt: now,
     });
@@ -450,12 +452,9 @@ export const removeManyNative = mutation({
     orgId: v.string(),
     actor: actorValidator,
     auditId: v.string(),
-    // #793: "one justification per user action, applied to each affected row's
-    // audit entry" — checked once per distinct project this bulk selection touches.
-    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { ids, orgId, actor: suppliedActor, auditId, justification, now }) => {
+  handler: async (ctx, { ids, orgId, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await assertBulkSizeOk(ctx, ids.length);
@@ -467,8 +466,8 @@ export const removeManyNative = mutation({
     // Affected projectIds in first-seen order (recalc each once; audit uses [0]).
     const affected: string[] = [];
     const affectedSet = new Set<string>();
-    const guardedProjectIds = new Set<string>();
 
+    // Deleting is structural — never gated.
     for (const id of ids) {
       const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       // Missing / cross-org (by_cuid is GLOBAL) / a child item → skipped, never removed.
@@ -476,12 +475,8 @@ export const removeManyNative = mutation({
         skipped++;
         continue;
       }
-      if (!guardedProjectIds.has(line.projectId)) {
-        const project = await requireLineProjectInOrg(ctx, line.projectId, orgId);
-        await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
-        guardedProjectIds.add(line.projectId);
-      }
       const children = (await ctx.db
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         .query("projectLineItems")
         .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
         .collect()).filter((c) => c.organizationId === orgId);
@@ -545,7 +540,7 @@ const LINE_IMMUTABLE_ON_PATCH = [
   "allocatedRevenue", "allocationBasis",
   "subHireId", "subHireItemId", "subHireGroupId", "supplierOrderId",
   "createdAt",
-  // Server-derived (see schema comment) — only assertLifecycleGuard's defaultToZero
+  // Server-derived (see schema comment) — only `defaultsToZeroOnInsert`'s
   // path and the explicit-money-edit clear below may ever set this.
   "pricedUnderLock",
 ] as const;
@@ -584,12 +579,9 @@ export const patchNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
-    // #791/#793: required (one or the other, never both — no double-prompt) once
-    // the project is locked and no unlock session is open.
-    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, set, clear, entityName, allowOverbook, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
+  handler: async (ctx, { id, orgId, set, clear, entityName, allowOverbook, actor: suppliedActor, auditId, emitSideEffects, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -607,23 +599,54 @@ export const patchNative = mutation({
     // fields it CAN set — a browser-direct caller bypasses the server-side Zod.
     const setObj = sanitizeClientSet(set, LINE_IMMUTABLE_ON_PATCH);
 
-    // #791/#793 lock gate: a money-field edit goes through the FINANCIAL unlock-
-    // session flow only (never ALSO prompted by the structural justify dialog —
-    // #957 precedence); a purely structural edit (description/notes/quantity/...)
-    // goes through the JUSTIFY-tier per-edit gate instead.
+    // Org-validate every referenced FK the client can patch (by_cuid is global — the
+    // row could be another org's). Same block as addNative/addLineItemSmartNative —
+    // patchNative was missing this entirely, letting a browser-direct caller point a
+    // line at another org's model/asset/bulkAsset/category/group/supplier.
+    if (setObj.modelId) await assertRefInOrg(ctx, "models", setObj.modelId as string, orgId);
+    if (setObj.assetId) await assertRefInOrg(ctx, "assets", setObj.assetId as string, orgId);
+    if (setObj.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", setObj.bulkAssetId as string, orgId);
+    if (setObj.groupId) await assertRefInOrg(ctx, "projectGroups", setObj.groupId as string, orgId);
+    if (setObj.categoryId) await assertRefInOrg(ctx, "projectCategories", setObj.categoryId as string, orgId);
+    if (setObj.supplierId) await assertRefInOrg(ctx, "suppliers", setObj.supplierId as string, orgId);
+
+    // #1230: a money-field edit is gated by `pricingLocked` on the LIVE version
+    // only; a purely structural edit (description/notes/quantity/...) is never
+    // gated at all.
     const project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const patchWindow = getProjectWindow(project);
     const touchesMoney = LOCKED_LINE_ITEM_FIELDS.some((f) => f in setObj || clear.includes(f));
-    const guard = await assertLifecycleGuard(ctx, project, {
-      kind: touchesMoney ? "financial" : "structural",
-      justification,
-    });
+    if (touchesMoney) assertPricingUnlocked(project, doc.versionId);
 
     assertLineMoneyFields(setObj as {
-      quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number;
+      quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number; taxRate?: number;
     });
     // #1012: `discountMode` describes `discount`, so it never outlives it — a patch
     // that clears the amount clears the mode too, whatever the client sent.
     if (clear.includes("discount") && !clear.includes("discountMode")) clear.push("discountMode");
+    // Client-document disclosure flags are strict booleans whose `false` is
+    // stored as an ABSENT field, so each has exactly ONE representation of
+    // "off". A browser-direct caller bypasses the client Zod and `set` is
+    // `v.any()`, so normalise here rather than relying on the table schema to
+    // reject a truthy non-boolean — these decide what a CLIENT sees, so they
+    // fail closed.
+    //   revealPriceInRollup — print this row's own price inside a rolled-up
+    //     category (src/lib/category-pricing-display.ts).
+    //   showInGroupOnDocs   — list this group member under the group's
+    //     collapsed row (src/lib/group-child-disclosure.ts).
+    //   excludeFromRoi      — #1249, this line earned nothing: it takes no share
+    //     of its group/kit pool and never counts toward model ROI
+    //     (convex/lib/allocation.ts). Internal attribution only — it moves no
+    //     money and changes nothing the client sees, which is why it is NOT in
+    //     LOCKED_LINE_ITEM_FIELDS and stays editable on a priced-locked project.
+    for (const flag of ["revealPriceInRollup", "showInGroupOnDocs", "excludeFromRoi"] as const) {
+      if (!(flag in setObj)) continue;
+      if (setObj[flag] !== true) {
+        delete setObj[flag];
+        if (!clear.includes(flag)) clear.push(flag);
+      }
+    }
     assertLineItemFields(setObj as { description?: string; subhireOrderNumber?: string; xeroAccountCode?: string; xeroTaxType?: string }); // R-8.6.2
 
     // lineTotal is a DERIVED value — assertLineMoneyFields only bounds it, it never
@@ -674,6 +697,44 @@ export const patchNative = mutation({
     const effType = effField("type");
     const effModelId = effField("modelId") as string | undefined;
     const newQty = clearSet.has("quantity") ? currentQty : ((setObj.quantity as number | undefined) ?? currentQty);
+
+    // Asset REASSIGNMENT (`assetId` actually changing to a different value) — the same
+    // hard guards the dedicated `swapLineItemAsset` mutation runs (model match, kit
+    // membership, RETIRED/LOST/SOLD status, dated double-booking). UNCONDITIONAL, no
+    // `allowOverbook` escape hatch — these aren't soft stock-count warnings, they're
+    // invariants on which physical asset a line may reference. Previously patchNative
+    // let a client repoint `assetId` at any asset in the org (or, pre-task-1, any org)
+    // with zero validation, silently double-booking or reviving a retired asset.
+    const effAssetId = effField("assetId") as string | undefined;
+    if (effAssetId && effAssetId !== doc.assetId) {
+      const newAsset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", effAssetId)).unique();
+      if (!newAsset || newAsset.organizationId !== orgId) throw new ConvexError("Target asset not found");
+      if (effModelId && newAsset.modelId !== effModelId) {
+        throw new ConvexError("Target asset is a different model");
+      }
+      if (newAsset.kitId) {
+        throw new ConvexError(`Asset ${newAsset.assetTag} is part of a kit and can't be assigned directly`);
+      }
+      if (newAsset.status === "RETIRED" || newAsset.status === "LOST" || newAsset.status === "SOLD") {
+        throw new ConvexError(`Asset ${newAsset.assetTag} is ${(newAsset.status as string).toLowerCase()}`);
+      }
+      if (patchWindow.start != null && patchWindow.end != null) {
+        const conflict = await findAssetConflict(ctx, {
+          assetId: effAssetId,
+          orgId,
+          excludeProjectId: doc.projectId,
+          rentalStart: patchWindow.start,
+          rentalEnd: patchWindow.end,
+        });
+        if (conflict) {
+          throw new ConvexError({
+            code: "ASSET_DOUBLE_BOOKED",
+            message: `This asset is booked on ${conflict.projectNumber} — ${conflict.name} during those dates.`,
+          });
+        }
+      }
+    }
+
     // Gate is `newQty > currentQty` (NOT `!sameModel || ...`) to stay BYTE-parity with
     // updateLineItem (src/server/line-items.ts:565-573), which ALSO skips enforcement when
     // the new qty isn't an increase — even on a model change. Over-enforcing here would
@@ -687,12 +748,11 @@ export const patchNative = mutation({
       !allowOverbook &&
       newQty > currentQty
     ) {
-      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", doc.projectId)).unique();
       const bundle = await loadModelAvailabilityBundle(ctx, effModelId, orgId);
       if (bundle.model) {
         const { available, booked, unavailable, totalStock } = computeModelAvailability(bundle, {
-          rentalStart: project?.rentalStartDate ?? null,
-          rentalEnd: project?.rentalEndDate ?? null,
+          rentalStart: patchWindow.start,
+          rentalEnd: patchWindow.end,
           excludeProjectId: doc.projectId,
         });
         // If the model is UNCHANGED, this line's currentQty is already in `booked`, so
@@ -722,9 +782,9 @@ export const patchNative = mutation({
       currentQty, newQty,
     });
 
-    // A deliberate `unitPrice` edit reaching here means the FINANCIAL guard already
-    // passed (open tier or open unlock session) — clear any stale "priced under lock"
-    // flag so the Unpriced badge stops pointing at a cause that's no longer true.
+    // A deliberate `unitPrice` edit reaching here means pricing isn't locked (or
+    // this is a non-live version) — clear any stale "priced under lock" flag so
+    // the Unpriced badge stops pointing at a cause that's no longer true.
     // Scoped to `unitPrice` itself (not the whole `touchesMoney` set) so a
     // duration-only change on an otherwise-still-$0 line doesn't silently clear it.
     if ("unitPrice" in setObj || clear.includes("unitPrice")) setObj.pricedUnderLock = false;
@@ -751,7 +811,6 @@ export const patchNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Updated line item on project",
-      metadata: lifecycleAuditMetadata(guard, justification),
       projectId: doc.projectId,
       createdAt: now,
     });
@@ -811,14 +870,15 @@ export const patchManyNative = mutation({
       discount: v.optional(v.union(v.object({ mode: v.string(), value: v.number() }), v.null())),
       notes: v.optional(v.union(v.string(), v.null())),
       isOptional: v.optional(v.boolean()),
+      // T3 (#1091) — per-line tax rate override, bulk-settable like discount.
+      // `null` clears back to inheriting the project/org rate.
+      taxRate: v.optional(v.union(v.number(), v.null())),
     }),
     actor: actorValidator,
     auditId: v.string(),
-    // #791/#793: checked once per distinct project this bulk selection touches.
-    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { ids, orgId, patch, actor: suppliedActor, auditId, justification, now }) => {
+  handler: async (ctx, { ids, orgId, patch, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await assertBulkSizeOk(ctx, ids.length);
@@ -830,11 +890,10 @@ export const patchManyNative = mutation({
     // Affected projectIds in first-seen order (recalc each once; audit uses [0]).
     const affected: string[] = [];
     const affectedSet = new Set<string>();
-    const guardedProjectIds = new Set<string>();
-    // `discount` is the only money field patchMany touches — pricingType/notes/
-    // isOptional are structural (#793), so a bulk edit with no discount goes
-    // through the JUSTIFY per-edit gate instead of the FINANCIAL unlock flow.
-    const touchesMoney = patch.discount !== undefined;
+    const projectCache = new Map<string, Doc<"projects">>();
+    // `discount`/`taxRate` are the money fields patchMany touches — pricingType/
+    // notes/isOptional are structural, never gated (#1230).
+    const touchesMoney = patch.discount !== undefined || patch.taxRate !== undefined;
 
     for (const id of ids) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -843,10 +902,14 @@ export const patchManyNative = mutation({
         skipped++;
         continue;
       }
-      if (!guardedProjectIds.has(doc.projectId)) {
-        const project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
-        await assertLifecycleGuard(ctx, project, { kind: touchesMoney ? "financial" : "structural", justification });
-        guardedProjectIds.add(doc.projectId);
+      if (touchesMoney) {
+        let project = projectCache.get(doc.projectId);
+        if (!project) {
+          project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
+          projectCache.set(doc.projectId, project);
+        }
+        // #1230: pricing-lock only applies to the row's own LIVE version.
+        assertPricingUnlocked(project, doc.versionId);
       }
 
       // Build set/clear IN-mutation — byte-parity with updateLineItemsBatch, reading the
@@ -894,10 +957,15 @@ export const patchManyNative = mutation({
         else set.lineTotal = lineTotal;
       }
 
+      if (patch.taxRate !== undefined) {
+        if (patch.taxRate == null) clear.push("taxRate");
+        else set.taxRate = patch.taxRate;
+      }
+
       // Belt-and-braces bound-check on the money fields this bulk edit can touch (a
       // browser-direct caller bypasses the server-side Zod).
       assertLineMoneyFields(set as {
-        quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number;
+        quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number; taxRate?: number;
       });
 
       if (clear.length === 0) {
@@ -941,13 +1009,18 @@ export const patchManyNative = mutation({
   },
 });
 
-/** Next sort order for a project's lines (replica of nextLineSort). */
-async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string): Promise<number> {
-  // desc-first on by_projectId_sortOrder (1 doc) instead of collecting all the
-  // project's lines to reduce the max (O(N) per add, O(N^2) across a bulk add).
+/** Next sort order for a project's lines in ONE version (replica of
+ *  projectLineItems.ts's own nextLineSort). #1221 follow-up: takes an
+ *  explicit `versionId` (defaulting to live, resolved by the caller via
+ *  `resolveWriteVersionId`) instead of always resolving live itself — a new
+ *  line landing on a non-live version must be sorted among THAT version's
+ *  own siblings, not live's. */
+async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string, versionId: string): Promise<number> {
+  // desc-first on by_versionId_sortOrder (1 doc) instead of collecting all the
+  // version's lines to reduce the max (O(N) per add, O(N^2) across a bulk add).
   const top = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId_sortOrder", (q) => q.eq("projectId", projectId))
+    .withIndex("by_versionId_sortOrder", (q) => q.eq("versionId", versionId))
     .order("desc")
     .first();
   return ((top && top.organizationId === organizationId ? top.sortOrder : undefined) ?? -1) + 1;
@@ -1038,9 +1111,8 @@ export const projectPricingStaleness = query({
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
     if (!project || project.organizationId !== orgId) return { staleLineCount: 0 };
     const chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate);
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-    ).filter((li) => li.organizationId === orgId);
+    // LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
     let staleLineCount = 0;
     for (const li of lines) {
       const update = await computeAutoPricedLineUpdate(ctx, li, chargeableDays);
@@ -1077,9 +1149,8 @@ export const recalcAutoPricedLinesNative = mutation({
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
 
     const chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate);
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-    ).filter((li) => li.organizationId === orgId);
+    // LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
 
     let linesUpdated = 0;
     const touchedGroupIds = new Set<string>();
@@ -1198,6 +1269,8 @@ export const addCustomNative = mutation({
       // #1012 — entry shape of `discount` (display only; the number above is
       // still the resolved flat dollar amount every money path reads).
       discountMode: v.optional(enums.DiscountMode),
+      // T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3.
+      taxRate: v.optional(v.number()),
       notes: v.optional(v.string()),
       isOptional: v.optional(v.boolean()),
       categoryId: v.optional(v.string()),
@@ -1217,26 +1290,34 @@ export const addCustomNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the version
+    // this new line lands on, defaulting to live when absent (additive-only,
+    // same "optional versionId" shape Phase 2 gave every read). Validated
+    // against `project` (same org + project) by resolveWriteVersionId — a
+    // caller can't smuggle a line onto a foreign project's version.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, versionId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
     const actor = await resolveActor(ctx, suppliedActor);
     const project = await requireLineProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org
+    const targetVersionId = await resolveWriteVersionId(ctx, project, versionId);
 
-    // #791: adding while locked defaults to $0 (server-enforced, not just a client
-    // suggestion — a browser-direct caller must not be able to smuggle a real price
-    // into a confirmed quote). #793: adding is a structural mutation at JUSTIFY+.
-    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
-    if (guard.defaultToZero) {
+    // Adding is structural — never gated. While pricing is locked, a new item
+    // still defaults to $0 (server-enforced, not just a client suggestion — a
+    // browser-direct caller must not be able to smuggle a real price into a
+    // confirmed quote). #1221: only the LIVE version's money is ever gated —
+    // an add targeting a non-live version keeps its real price regardless.
+    const defaultToZero = defaultsToZeroOnInsert(project, targetVersionId);
+    if (defaultToZero) {
       fields.unitPrice = 0;
       fields.discount = undefined;
       fields.discountMode = undefined; // #1012: no amount, no entry shape
+      fields.taxRate = undefined; // T3 (#1091) — same lock treatment as discount
     }
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
@@ -1258,16 +1339,18 @@ export const addCustomNative = mutation({
     const dup = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dup) throw new ConvexError("Line item already exists");
 
-    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId, targetVersionId);
     await ctx.db.insert("projectLineItems", {
       id,
       organizationId,
       projectId,
+      versionId: targetVersionId,
+      lineageId: id,
       type: "EQUIPMENT",
       isCustomItem: true,
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
-      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
+      pricedUnderLock: pricedUnderLockOnInsert(defaultToZero),
       sortOrder,
       createdAt: now,
       updatedAt: now,
@@ -1283,7 +1366,7 @@ export const addCustomNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Added custom item "${fields.description ?? ""}" to project`,
-      metadata: lifecycleAuditMetadata(guard, justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
       projectId,
       createdAt: now,
     });
@@ -1352,6 +1435,8 @@ export const addNative = mutation({
       discount: v.optional(v.number()),
       // #1012 — entry shape of `discount` (display only).
       discountMode: v.optional(enums.DiscountMode),
+      // T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3.
+      taxRate: v.optional(v.number()),
       lineTotal: v.optional(v.number()),
       groupName: v.optional(v.string()),
       notes: v.optional(v.string()),
@@ -1373,11 +1458,20 @@ export const addNative = mutation({
     // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
     // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
     orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    // #1230: accepted-but-IGNORED. This mutation is wrapped by a stable/v1
+    // curated MCP tool (design §13 decision 12 — additive-only, a field may
+    // never be REMOVED from a stable operation's contract), and the JUSTIFY
+    // tier this argument used to soften (`assertLifecycleGuard`'s ON_SITE
+    // gate) is deleted along with the rest of the 4-tier lock system. A
+    // caller may still pass it; it is read, validated by nothing, and never
+    // reaches an audit row. See `src/lib/api/privileged-args.ts`'s
+    // `justification` policy row.
     justification: v.optional(v.string()),
+    // #1221 follow-up — see addCustomNative's identical note.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, accessoryPlan, allowOverbook, actor: suppliedActor, auditId, justification, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, accessoryPlan, allowOverbook, actor: suppliedActor, auditId, versionId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1390,14 +1484,19 @@ export const addNative = mutation({
     // (stamped with their org) into ANOTHER org's project, which recalcProjectTotals
     // (collects lines by projectId, no org filter) would sweep into that org's totals.
     const addProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    const targetVersionId = await resolveWriteVersionId(ctx, addProject, versionId);
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const addProjectWindow = getProjectWindow(addProject);
 
-    // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
-    // structural mutation at JUSTIFY+.
-    const guard = await assertLifecycleGuard(ctx, addProject, { kind: "structural", justification });
-    if (guard.defaultToZero) {
+    // Adding is structural — never gated. While pricing is locked, a new line
+    // still defaults to $0 (server-enforced). #1221: never gated when the
+    // target is a non-live version (defaultsToZeroOnInsert's own gate).
+    const defaultToZero = defaultsToZeroOnInsert(addProject, targetVersionId);
+    if (defaultToZero) {
       fields.unitPrice = 0;
       fields.discount = undefined;
       fields.discountMode = undefined; // #1012: no amount, no entry shape
+      fields.taxRate = undefined; // T3 (#1091) — same lock treatment as discount
     }
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
@@ -1436,8 +1535,7 @@ export const addNative = mutation({
     // does, so it's non-breaking for the legit path and self-sufficient for a future
     // browser-direct caller. Sub-hire items never consume our stock (excluded).
     if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
-      const rentalStart = addProject.rentalStartDate ?? null;
-      const rentalEnd = addProject.rentalEndDate ?? null;
+      const { start: rentalStart, end: rentalEnd } = addProjectWindow;
       const hasDates = rentalStart != null && rentalEnd != null;
 
       if (fields.assetId) {
@@ -1504,14 +1602,16 @@ export const addNative = mutation({
 
     // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
     // accessories expanded as child lines atomically via the shared helper).
-    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId, targetVersionId);
     await ctx.db.insert("projectLineItems", {
       id,
       organizationId,
       projectId,
+      versionId: targetVersionId,
+      lineageId: id,
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
-      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
+      pricedUnderLock: pricedUnderLockOnInsert(defaultToZero),
       accessoryPlan,
       status: "CONFIRMED",
       sortOrder,
@@ -1531,6 +1631,7 @@ export const addNative = mutation({
         organizationId,
         projectId,
         accessoryPlan: (accessoryPlan as AccessoryPlan | undefined) ?? null,
+        versionId: targetVersionId,
       });
     }
 
@@ -1541,8 +1642,8 @@ export const addNative = mutation({
       orgId: organizationId,
       projectId,
       lineItemId: id,
-      rentalStart: addProject.rentalStartDate ?? null,
-      rentalEnd: addProject.rentalEndDate ?? null,
+      rentalStart: addProjectWindow.start,
+      rentalEnd: addProjectWindow.end,
       actor,
       now,
     });
@@ -1557,7 +1658,7 @@ export const addNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Added line item to project",
-      metadata: lifecycleAuditMetadata(guard, justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
       projectId,
       createdAt: now,
     });
@@ -1633,6 +1734,10 @@ export const updateAccessoryPlanNative = mutation({
       pricingType: line.pricingType,
       organizationId,
       projectId: line.projectId,
+      // #1221 follow-up — reconciled children must stay in the SAME version
+      // as the parent line they belong to (the line's own already-stamped
+      // versionId), never re-derived from "live".
+      versionId: line.versionId,
     }, accessoryPlan);
 
     await writeActivityLog(ctx, {
@@ -1660,6 +1765,247 @@ export const updateAccessoryPlanNative = mutation({
 });
 
 /**
+ * resyncProjectAccessoriesNative — re-run `reconcileLineAccessoryChildren`
+ * against every eligible line's OWN already-stored `accessoryPlan` (unchanged),
+ * so a model/asset accessory config edited in the catalog AFTER the line was
+ * added reaches jobs that haven't shipped yet. This is an explicit, PM-initiated
+ * per-project action — there is deliberately no trigger on the catalog write
+ * itself (a model-accessory edit reaches many projects at once; FEATUREDOCS/48
+ * documents "removing a model accessory ... does NOT retroactively delete the
+ * project line item" as a considered invariant, not an oversight — an
+ * already-quoted job's composition shouldn't change out from under the PM
+ * without them asking for it).
+ *
+ * Eligible = a top-level equipment line (not itself an accessory/kit child),
+ * asset- or model-based, with no deployed unit yet (`assertLineOwnsAccessoryPlan`'s
+ * same gate as the post-add "Edit accessories" picker — "office decides,
+ * warehouse verifies" holds here too). Accessory child lines carry no price
+ * of their own (FEATUREDOCS/48: "no separate price"), so this never touches a
+ * `PROJECT_MONEY_ANCHOR` and needs no `assertPricingUnlocked` check, unlike a
+ * money-field edit. RBAC(project, manage_line_items).
+ */
+/** A top-level equipment line is eligible for an accessory resync when it isn't
+ *  itself an accessory/kit child, has a model or asset to resolve accessories
+ *  from, and hasn't deployed yet — same gate as `assertLineOwnsAccessoryPlan`. */
+function isAccessoryResyncEligible(line: Doc<"projectLineItems">): boolean {
+  if (line.isKitChild || line.childKind) return false; // accessory/kit children have no plan of their own
+  if (!line.modelId && !line.assetId) return false;
+  if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") return false; // deployed — warehouse owns it now
+  return true;
+}
+
+/** Reconcile one line's accessory children against its own stored plan (picking
+ *  up any catalog change since it was last resolved) and report what changed. */
+async function resyncOneLineAccessories(
+  ctx: MutationCtx,
+  organizationId: string,
+  line: Doc<"projectLineItems">,
+): Promise<{ added: number; removed: number }> {
+  const before = await accessoryChildrenOf(ctx, organizationId, line.id);
+  await reconcileLineAccessoryChildren(ctx, {
+    id: line.id,
+    assetId: line.assetId,
+    modelId: line.modelId,
+    quantity: line.quantity ?? 1,
+    categoryId: line.categoryId,
+    groupId: line.groupId,
+    duration: line.duration,
+    pricingType: line.pricingType,
+    organizationId,
+    projectId: line.projectId,
+    versionId: line.versionId,
+  }, (line.accessoryPlan as AccessoryPlan | undefined) ?? null);
+  const after = await accessoryChildrenOf(ctx, organizationId, line.id);
+
+  const beforeIds = new Set(before.map((c) => c.id));
+  const afterIds = new Set(after.map((c) => c.id));
+  return {
+    added: after.filter((c) => !beforeIds.has(c.id)).length,
+    removed: before.filter((c) => !afterIds.has(c.id)).length,
+  };
+}
+
+export const resyncProjectAccessoriesNative = mutation({
+  returns: v.object({ linesChecked: v.number(), linesUpdated: v.number(), childrenAdded: v.number(), childrenRemoved: v.number() }),
+  args: {
+    projectId: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { projectId, organizationId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const project = await requireLineProjectInOrg(ctx, projectId, organizationId);
+
+    const lines = await liveRows(ctx, project, "projectLineItems");
+    let linesChecked = 0;
+    let linesUpdated = 0;
+    let childrenAdded = 0;
+    let childrenRemoved = 0;
+
+    for (const line of lines) {
+      if (!isAccessoryResyncEligible(line)) continue;
+      linesChecked++;
+
+      const { added, removed } = await resyncOneLineAccessories(ctx, organizationId, line);
+      if (added > 0 || removed > 0) linesUpdated++;
+      childrenAdded += added;
+      childrenRemoved += removed;
+    }
+
+    if (linesUpdated > 0) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId,
+        action: "UPDATE",
+        entityType: "project",
+        entityId: projectId,
+        entityName: project.name || "Project",
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Resynced accessories from catalog defaults (${linesUpdated} line${linesUpdated === 1 ? "" : "s"}, +${childrenAdded}/-${childrenRemoved})`,
+        projectId,
+        createdAt: now,
+      });
+      const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
+      await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
+    }
+
+    return { linesChecked, linesUpdated, childrenAdded, childrenRemoved };
+  },
+});
+
+/** A kit parent line is off-limits to resync once ANY of its units have
+ *  deployed — its own aggregate (a partial checkout can roll the parent's
+ *  own `checkedOutQuantity`/`status` up before every child has) OR any
+ *  individual member child's, since kit fulfillment can deploy members one
+ *  at a time. Same "office decides, warehouse verifies" gate as
+ *  `assertLineOwnsAccessoryPlan` / `resyncProjectAccessoriesNative`. */
+async function kitLineHasDeployedUnit(
+  ctx: MutationCtx,
+  organizationId: string,
+  line: { id: string; checkedOutQuantity?: number; status?: string },
+): Promise<boolean> {
+  if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") return true;
+  const children = await kitChildrenOf(ctx, organizationId, line.id);
+  return children.some((c) => (c.checkedOutQuantity ?? 0) > 0 || c.status === "CHECKED_OUT");
+}
+
+/** Reconcile one kit parent line if it's eligible — its kit still exists in
+ *  this org and no unit on the line has deployed — else `null` (skipped).
+ *  Extracted to keep the mutation handler's own branch count under the
+ *  complexity ratchet (R-3.6), same reason `resyncOneLineAccessories` exists
+ *  for the accessories resync above. */
+async function resyncOneKitLine(
+  ctx: MutationCtx,
+  organizationId: string,
+  line: Doc<"projectLineItems">,
+): Promise<KitLineReconcileResult | null> {
+  if (await kitLineHasDeployedUnit(ctx, organizationId, line)) return null; // deployed — warehouse owns it now
+  const kit = await getKitByCuid(ctx, line.kitId!);
+  if (!kit || kit.organizationId !== organizationId) return null; // kit deleted/foreign — nothing to reconcile against
+  return reconcileKitLineChildren(ctx, {
+    id: line.id,
+    kitId: line.kitId!,
+    organizationId,
+    projectId: line.projectId,
+    versionId: line.versionId,
+    pricingMode: line.pricingMode,
+    categoryId: line.categoryId,
+    groupId: line.groupId,
+  });
+}
+
+/**
+ * resyncProjectKitsNative — re-run `reconcileKitLineChildren` against every
+ * eligible kit parent line's CURRENT `KitSerializedItem`/`KitBulkItem`
+ * membership, so a kit whose contents were edited in the catalog AFTER it was
+ * already added to a job can pick up the change without re-adding the whole
+ * kit. Companion to `resyncProjectAccessoriesNative` above (FEATUREDOCS/09 /
+ * FEATUREDOCS/48) — same explicit, PM-initiated, per-project shape, for the
+ * same reason: a catalog edit reaches many jobs at once, so it never pushes
+ * itself onto an open one automatically.
+ *
+ * Eligible = a kit parent line (`kitId` set, not itself a child) whose kit
+ * still exists in this org, with no deployed unit anywhere on the line
+ * (`kitLineHasDeployedUnit`). A newly-added member gets priced the same way
+ * `createKitLineItemCore` prices one at add time — ITEMIZED pulls the
+ * member's model rate, KIT_PRICE leaves it unpriced (the bundle price is a
+ * hand-set number that a new member can't assign itself a share of) — so
+ * `unpricedChildrenAdded` is surfaced separately for the caller to flag for
+ * PM review rather than imply every resync leaves the job fully priced.
+ * RBAC(project, manage_line_items).
+ */
+export const resyncProjectKitsNative = mutation({
+  returns: v.object({
+    linesChecked: v.number(),
+    linesUpdated: v.number(),
+    childrenAdded: v.number(),
+    childrenRemoved: v.number(),
+    unpricedChildrenAdded: v.number(),
+  }),
+  args: {
+    projectId: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { projectId, organizationId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const project = await requireLineProjectInOrg(ctx, projectId, organizationId);
+
+    const lines = await liveRows(ctx, project, "projectLineItems");
+    const kitParents = lines.filter((l) => !!l.kitId && !l.isKitChild);
+
+    let linesChecked = 0;
+    let linesUpdated = 0;
+    let childrenAdded = 0;
+    let childrenRemoved = 0;
+    let unpricedChildrenAdded = 0;
+
+    for (const line of kitParents) {
+      const result = await resyncOneKitLine(ctx, organizationId, line);
+      if (!result) continue;
+      linesChecked++;
+      if (result.added > 0 || result.removed > 0) linesUpdated++;
+      childrenAdded += result.added;
+      childrenRemoved += result.removed;
+      unpricedChildrenAdded += result.unpricedAdded;
+    }
+
+    if (linesUpdated > 0) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId,
+        action: "UPDATE",
+        entityType: "project",
+        entityId: projectId,
+        entityName: project.name || "Project",
+        userId: actor.userId,
+        userName: actor.userName,
+        summary:
+          `Resynced kit membership from catalog (${linesUpdated} line${linesUpdated === 1 ? "" : "s"}, +${childrenAdded}/-${childrenRemoved})` +
+          (unpricedChildrenAdded > 0 ? ` — ${unpricedChildrenAdded} added unpriced, review pricing` : ""),
+        projectId,
+        createdAt: now,
+      });
+      const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
+      await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
+    }
+
+    return { linesChecked, linesUpdated, childrenAdded, childrenRemoved, unpricedChildrenAdded };
+  },
+});
+
+/**
  * addKitNative — add a kit to a project: parent line + expanded member child lines
  * (ITEMIZED pricing) via the SHARED createKitLineItemCore (same code createKitLineItem
  * runs) + CREATE audit, atomic. RBAC(project, manage_line_items). The kit
@@ -1678,6 +2024,9 @@ export const addKitNative = mutation({
     discount: v.optional(v.number()),
     /** #1012 — entry shape of the discount above (display only). */
     discountMode: v.optional(enums.DiscountMode),
+    // T3 (#1091) — per-line tax rate override on the kit's PARENT line, same
+    // scope as `discount` above; see docs/designs/tax-model.md §3.
+    taxRate: v.optional(v.number()),
     pricingMode: enums.KitPricingMode,
     groupName: v.optional(v.string()),
     categoryId: v.optional(v.string()),
@@ -1697,11 +2046,11 @@ export const addKitNative = mutation({
     // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
     // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
     orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
+    // #1221 follow-up — see addCustomNative's identical note.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, discountMode, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, justification, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, discountMode, taxRate, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, versionId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1710,20 +2059,24 @@ export const addKitNative = mutation({
     // The client supplies projectId; verify it's the caller's org before reading it or
     // sweeping its lines (by_cuid is global) — same guard addNative applies.
     const kitProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    const targetVersionId = await resolveWriteVersionId(ctx, kitProject, versionId);
 
-    // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
-    // structural mutation at JUSTIFY+.
-    const guard = await assertLifecycleGuard(ctx, kitProject, { kind: "structural", justification });
-    const effectiveUnitPrice = guard.defaultToZero ? 0 : unitPrice;
-    const effectiveDiscount = guard.defaultToZero ? undefined : discount;
+    // Adding is structural — never gated. While pricing is locked, a new kit
+    // still defaults to $0 (server-enforced). #1221: never gated for a
+    // non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(kitProject, targetVersionId);
+    const effectiveUnitPrice = defaultToZero ? 0 : unitPrice;
+    const effectiveDiscount = defaultToZero ? undefined : discount;
     // #1012: no amount, no entry shape.
     const effectiveDiscountMode = effectiveDiscount != null ? discountMode : undefined;
+    // T3 (#1091) — same lock treatment as discount.
+    const effectiveTaxRate = defaultToZero ? undefined : taxRate;
 
     // Every other add* mutation in this file bounds unitPrice/lineTotal before insert
     // (assertLineMoneyFields) — this one didn't, so a browser caller sending
     // `unitPrice: NaN` (or Infinity/negative) flowed straight into the line and then
     // poisoned recalcProjectTotals' project.total/subtotal/margin to NaN.
-    assertLineMoneyFields({ unitPrice: effectiveUnitPrice, discount: effectiveDiscount });
+    assertLineMoneyFields({ unitPrice: effectiveUnitPrice, discount: effectiveDiscount, taxRate: effectiveTaxRate });
 
     // Dup-guard the client-minted kit-line id (by_cuid is global + non-unique).
     const dupKit = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1746,13 +2099,15 @@ export const addKitNative = mutation({
         });
       }
       // (b) Dated double-booking on an overlapping project (parent kit line only).
-      if (kitProject.rentalStartDate != null && kitProject.rentalEndDate != null) {
+      // Gear-committed window, not raw rental dates — see project-window.ts.
+      const { start: kitWinStart, end: kitWinEnd } = getProjectWindow(kitProject);
+      if (kitWinStart != null && kitWinEnd != null) {
         const conflict = await findKitConflict(ctx, {
           kitId,
           orgId: organizationId,
           excludeProjectId: projectId,
-          rentalStart: kitProject.rentalStartDate,
-          rentalEnd: kitProject.rentalEndDate,
+          rentalStart: kitWinStart,
+          rentalEnd: kitWinEnd,
         });
         if (conflict) {
           throw new ConvexError({
@@ -1767,8 +2122,11 @@ export const addKitNative = mutation({
 
     await createKitLineItemCore(ctx, {
       id, organizationId, projectId, kitId, unitPrice: effectiveUnitPrice, discount: effectiveDiscount,
-      discountMode: effectiveDiscountMode, pricingMode, groupName, categoryId, groupId, now,
-      pricedUnderLock: guard.defaultToZero,
+      discountMode: effectiveDiscountMode, taxRate: effectiveTaxRate, pricingMode, groupName, categoryId, groupId, now,
+      pricedUnderLock: defaultToZero,
+      // Already resolved + validated above — passed straight through so the
+      // core doesn't re-resolve (and silently fall back to live) underneath us.
+      versionId: targetVersionId,
     });
 
     // Parity with the deleted addKitLineItem: when the client can't resolve the kit
@@ -1787,7 +2145,7 @@ export const addKitNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Added kit ${resolvedKitLabel} to project`,
-      metadata: lifecycleAuditMetadata(guard, justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
       projectId,
       kitId,
       createdAt: now,
@@ -1804,6 +2162,7 @@ export const addKitNative = mutation({
     // description is `${assetTag} - ${name}`), so the summary reads it from kitLabel.
     if (emitActivity === true) {
       const memberChildren = await ctx.db
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         .query("projectLineItems")
         .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
         .collect();
@@ -1838,26 +2197,16 @@ export const reorderNative = mutation({
     orgId: v.string(),
     items: v.array(v.object({ id: v.string(), sortOrder: v.number(), groupName: v.optional(v.string()) })),
     now: v.number(),
-    // #988: required once a touched project is JUSTIFY+ and no session is open.
-    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, items, now, justification }) => {
+  handler: async (ctx, { orgId, items, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await assertBulkSizeOk(ctx, items.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
-    // #988: reordering is structural (sortOrder-only, no money touched) — gated
-    // once per distinct project this selection touches, same dedup pattern as
-    // patchManyNative/removeManyNative.
-    const guardedProjectIds = new Set<string>();
+    // Reordering is structural (sortOrder-only, no money touched) — never gated.
     for (const it of items) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).first();
       if (doc && doc.organizationId === orgId) {
-        if (!guardedProjectIds.has(doc.projectId)) {
-          const project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
-          await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
-          guardedProjectIds.add(doc.projectId);
-        }
         await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, groupName: it.groupName, updatedAt: now });
       }
     }
@@ -1946,6 +2295,8 @@ export const addLineItemSmartNative = mutation({
       discount: v.optional(v.number()),
       // #1012 — entry shape of `discount` (display only).
       discountMode: v.optional(enums.DiscountMode),
+      // T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3.
+      taxRate: v.optional(v.number()),
       groupName: v.optional(v.string()),
       notes: v.optional(v.string()),
       isOptional: v.optional(v.boolean()),
@@ -1972,13 +2323,13 @@ export const addLineItemSmartNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
-    // #793: required once the project is ON_SITE+ and no unlock session is open.
-    justification: v.optional(v.string()),
+    // #1221 follow-up — see addCustomNative's identical note.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
   handler: async (ctx, {
     id, organizationId, projectId, fields, allowOverbook, forceSeparate, includeAccessories, accessoryPlan,
-    actor: suppliedActor, auditId, emitSideEffects, justification, now,
+    actor: suppliedActor, auditId, emitSideEffects, versionId, now,
   }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
@@ -1991,15 +2342,18 @@ export const addLineItemSmartNative = mutation({
     // Client-supplied projectId: prove it's the caller's org before reading/sweeping its
     // lines (by_cuid + by_projectId are GLOBAL). Then bound-check the money inputs.
     const smartProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    const targetVersionId = await resolveWriteVersionId(ctx, smartProject, versionId);
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const smartProjectWindow = getProjectWindow(smartProject);
 
-    // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
-    // structural mutation at JUSTIFY+. `guard.defaultToZero` is applied differently
+    // Adding is structural — never gated. `defaultToZero` is applied differently
     // below on the two paths: a fresh INSERT forces $0 (below); a MERGE-into-existing
     // instead ignores the client's unitPrice/discount override entirely (ie. keeps
     // the existing line's own price) — resetting an already-priced existing line to
     // $0 just because its quantity grew would be a worse surprise than the lock is
     // meant to prevent, but accepting the override would smuggle a real price past it.
-    const guard = await assertLifecycleGuard(ctx, smartProject, { kind: "structural", justification });
+    // #1221: never gated for a non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(smartProject, targetVersionId);
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
@@ -2020,8 +2374,7 @@ export const addLineItemSmartNative = mutation({
 
     // ── Availability / double-booking (copied verbatim from addNative) ─────────
     if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
-      const rentalStart = smartProject.rentalStartDate ?? null;
-      const rentalEnd = smartProject.rentalEndDate ?? null;
+      const { start: rentalStart, end: rentalEnd } = smartProjectWindow;
       const hasDates = rentalStart != null && rentalEnd != null;
 
       if (fields.assetId) {
@@ -2090,9 +2443,12 @@ export const addLineItemSmartNative = mutation({
     // `type === "EQUIPMENT"`; a SALE line (any saleMode) always falls through to a fresh
     // insert below, never merging into an EQUIPMENT line or another SALE line.
     if (fields.type === "EQUIPMENT" && fields.modelId && !fields.assetId && !forceSeparate) {
-      const projectLines = (
-        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-      ).filter((li) => li.organizationId === organizationId);
+      // #1221: merge-dedup against the TARGET version's own lines (was
+      // LIVE-ONLY, #1228) — a smart-add aimed at a non-live version must
+      // merge into THAT version's matching line, never live's.
+      const projectLines = (await versionRows(ctx, "projectLineItems", targetVersionId)).filter(
+        (li) => li.organizationId === organizationId,
+      );
       const existing = projectLines.find(
         (li) =>
           li.modelId === fields.modelId &&
@@ -2109,12 +2465,14 @@ export const addLineItemSmartNative = mutation({
         // #791: while locked (no open session), ignore the client's unitPrice/discount
         // override entirely — a merge must not smuggle a real price past the lock, but
         // an already-priced existing line also isn't reset to $0 just because it grew.
-        const mergeUnitPriceInput = guard.defaultToZero ? undefined : fields.unitPrice;
-        const mergeDiscountInput = guard.defaultToZero ? undefined : fields.discount;
+        const mergeUnitPriceInput = defaultToZero ? undefined : fields.unitPrice;
+        const mergeDiscountInput = defaultToZero ? undefined : fields.discount;
         // #1012: the entry shape follows the amount it describes — when the
         // client's discount is the one that wins, so is its mode; when the
         // existing line's amount is kept, its stored mode is kept too.
         const mergeDiscountModeInput = mergeDiscountInput != null ? fields.discountMode : undefined;
+        // T3 (#1091) — same lock treatment as discount above.
+        const mergeTaxRateInput = defaultToZero ? undefined : fields.taxRate;
         // lineTotal recomputed server-side (never trusts the client). Mirrors the server
         // merge exactly: parsed value first, else the existing row's value.
         const mergedUnitPrice = mergeUnitPriceInput ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined);
@@ -2134,6 +2492,9 @@ export const addLineItemSmartNative = mutation({
           duration: fields.duration || existing.duration || undefined,
           discount: mergeDiscountInput ?? existing.discount ?? undefined,
           discountMode: mergeDiscountModeInput ?? existing.discountMode ?? undefined,
+          // T3 (#1091) — same "client override wins, else keep the existing
+          // line's value" precedent as discount above.
+          taxRate: mergeTaxRateInput ?? existing.taxRate ?? undefined,
           lineTotal: newLineTotal ?? undefined,
           groupName: fields.groupName || existing.groupName || undefined,
           notes: mergedNotes || undefined,
@@ -2155,7 +2516,7 @@ export const addLineItemSmartNative = mutation({
           userId: actor.userId,
           userName: actor.userName,
           summary: `Merged line item into existing on project (qty ${existing.quantity ?? 0} -> ${newQuantity})`,
-          metadata: lifecycleAuditMetadata(guard, justification),
+          metadata: afterLockAuditMetadata(defaultToZero),
           projectId,
           createdAt: now,
         });
@@ -2196,12 +2557,15 @@ export const addLineItemSmartNative = mutation({
     // available), so ANY pricingType with no manual price now auto-prices.
     // #791: while locked (no open session) a fresh insert forces $0 instead — skip the
     // rate autofill entirely and drop any client-supplied discount too.
-    let autoUnitPrice = guard.defaultToZero ? 0 : fields.unitPrice;
+    let autoUnitPrice = defaultToZero ? 0 : fields.unitPrice;
     let autoDuration = fields.duration;
     let autoPriceBreakdown: string | undefined;
-    const insertDiscount = guard.defaultToZero ? undefined : fields.discount;
+    const insertDiscount = defaultToZero ? undefined : fields.discount;
     // #1012: no amount, no entry shape (the lock drops both together).
     const insertDiscountMode = insertDiscount != null ? fields.discountMode : undefined;
+    // T3 (#1091) — same lock treatment as discount: a locked/no-session add
+    // can't smuggle a tax-rate override in any more than it can a price.
+    const insertTaxRate = defaultToZero ? undefined : fields.taxRate;
     // `== null` (not `!unitPrice`) — an EXPLICIT $0 manual price (a free item) is a real
     // choice and must be kept, not overwritten by the model rate.
     if (fields.type === "SALE") {
@@ -2211,14 +2575,14 @@ export const addLineItemSmartNative = mutation({
       // it (deliberately its own branch, not folded into computeBlendedCharge).
       // No fallback chain (spec decision): an unset salePrice requires manual
       // entry, same as today's unset dailyRate/weeklyRate falls through to $0.
-      if (!guard.defaultToZero && fields.modelId && fields.unitPrice == null) {
+      if (!defaultToZero && fields.modelId && fields.unitPrice == null) {
         const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", fields.modelId!)).first();
         if (model && model.organizationId === organizationId && model.salePrice != null) {
           autoUnitPrice = model.salePrice;
         }
       }
       autoDuration = 1;
-    } else if (!guard.defaultToZero && fields.modelId && fields.unitPrice == null) {
+    } else if (!defaultToZero && fields.modelId && fields.unitPrice == null) {
       const [model, proj] = await Promise.all([
         ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", fields.modelId!)).first(),
         ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
@@ -2245,11 +2609,13 @@ export const addLineItemSmartNative = mutation({
     const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dupLine) throw new ConvexError("Line item already exists");
 
-    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId, targetVersionId);
     await ctx.db.insert("projectLineItems", {
       id,
       organizationId,
       projectId,
+      versionId: targetVersionId,
+      lineageId: id,
       type: fields.type,
       saleMode: fields.type === "SALE" ? fields.saleMode : undefined,
       modelId: fields.modelId || undefined,
@@ -2262,8 +2628,9 @@ export const addLineItemSmartNative = mutation({
       duration: autoDuration ?? undefined,
       discount: insertDiscount ?? undefined,
       discountMode: insertDiscountMode,
+      taxRate: insertTaxRate ?? undefined,
       lineTotal: lineTotal ?? undefined,
-      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
+      pricedUnderLock: pricedUnderLockOnInsert(defaultToZero),
       priceBreakdown: autoPriceBreakdown,
       groupName: fields.groupName || undefined,
       notes: fields.notes || undefined,
@@ -2293,6 +2660,7 @@ export const addLineItemSmartNative = mutation({
         organizationId,
         projectId,
         accessoryPlan: (accessoryPlan as AccessoryPlan | undefined) ?? null,
+        versionId: targetVersionId,
       });
     }
 
@@ -2303,8 +2671,8 @@ export const addLineItemSmartNative = mutation({
       orgId: organizationId,
       projectId,
       lineItemId: id,
-      rentalStart: smartProject.rentalStartDate ?? null,
-      rentalEnd: smartProject.rentalEndDate ?? null,
+      rentalStart: smartProjectWindow.start,
+      rentalEnd: smartProjectWindow.end,
       actor,
       now,
     });
@@ -2319,7 +2687,7 @@ export const addLineItemSmartNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Added line item to project",
-      metadata: lifecycleAuditMetadata(guard, justification),
+      metadata: afterLockAuditMetadata(defaultToZero),
       projectId,
       createdAt: now,
     });
@@ -2443,6 +2811,8 @@ export const agentOps: AgentOpsAnnotations = {
   removeManyNative: { danger: "high" },
   removeNative: { danger: "high" },
   reorderNative: { danger: "low" },
+  resyncProjectAccessoriesNative: { danger: "medium" },
+  resyncProjectKitsNative: { danger: "medium" },
   unsellLineItemNative: { danger: "medium" },
   updateAccessoryPlanNative: { danger: "medium" },
 };

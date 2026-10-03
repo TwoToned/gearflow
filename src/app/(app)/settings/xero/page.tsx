@@ -15,6 +15,7 @@ import {
   isXeroConfigured,
   type XeroCodingSettingsInput,
 } from "@/server/xero";
+import { syncXeroPaymentsNow } from "@/server/xero-payment-sync";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,12 @@ export default function XeroSettingsPage() {
   const refreshMutation = useServerMutation({
     mutationFn: () => refreshXeroReferenceData(),
     onSuccess: (result) => toast.success(`Refreshed ${result.accounts} accounts, ${result.taxRates} tax rates`),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const paymentsMutation = useServerMutation({
+    mutationFn: () => syncXeroPaymentsNow(),
+    onSuccess: (r) => toast.success(r.settled ? `Checked ${r.checked} invoices — ${r.settled} now paid` : `Checked ${r.checked} invoices`),
     onError: (e) => toast.error(e.message),
   });
 
@@ -151,6 +158,24 @@ export default function XeroSettingsPage() {
                 <RequirePermission resource="invoice" action="xero_manage">
                   <Button type="button" variant="line" size="sm" loading={refreshMutation.isPending} onClick={() => refreshMutation.mutate(undefined)}>
                     <RefreshCw className="h-3.5 w-3.5" /> Refresh
+                  </Button>
+                </RequirePermission>
+              </div>
+            </SettingsCard>
+          </FormSection>
+
+          <FormSection
+            title="Payments"
+            description="Payments reconciled in Xero flow back hourly: a paid invoice closes its chase task and can confirm the job."
+          >
+            <SettingsCard>
+              <div className="flex items-center justify-between gap-4">
+                <div className="t-micro text-fg-3">
+                  {integration?.paymentsSyncedAt ? `Last checked ${new Date(integration.paymentsSyncedAt).toLocaleString()}` : "Not checked yet"}
+                </div>
+                <RequirePermission resource="invoice" action="xero_push">
+                  <Button type="button" variant="line" size="sm" loading={paymentsMutation.isPending} onClick={() => paymentsMutation.mutate(undefined)}>
+                    <RefreshCw className="h-3.5 w-3.5" /> Check now
                   </Button>
                 </RequirePermission>
               </div>

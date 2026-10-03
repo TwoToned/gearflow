@@ -11,7 +11,7 @@ memberships determine which org(s) they belong to. Single-org mode (exactly one
 
 **Self-serve org creation gate is live** (Phase B, B3/#1095, D6):
 `allowUserToCreateOrganization` in `src/lib/auth.ts` allows the one-time
-bootstrap (no org exists anywhere yet, `src/app/(auth)/onboarding/page.tsx`)
+bootstrap (no org exists anywhere yet, `src/app/(auth)/setup/page.tsx`)
 unconditionally, then falls through to the site-admin `SiteSettings.allowOrgCreation`
 toggle (`/admin/settings`, `updateSiteSettings`). If `orgCreationCodeEnabled` is
 also on, `organizationHooks.beforeCreateOrganization` additionally requires a
@@ -34,8 +34,8 @@ since neither Better Auth hook exposes the request in this version (1.6.25); see
 `org-creation-gate.ts`'s doc comment for the scope note. `getOrgCreationPolicy`
 (any authenticated user) is the status check `/welcome` (the B1 fork screen,
 #1092) uses to decide whether to show a "set up a new company" card at all,
-and whether `/onboarding` — the "Set up a new company" destination — should
-render a signup-code field. It never returns the code itself; hiding the card
+and whether `/setup` (C1, #1098) — the "Set up a new company" destination —
+should render a signup-code field. It never returns the code itself; hiding the card
 or the field is cosmetic only, `beforeCreateOrganization` is the real gate
 either way (R-9.3). Additional orgs can also still be created by a site admin
 directly (`adminCreateOrganization`, `src/server/site-admin.ts`), which is not
@@ -46,15 +46,28 @@ code-gated (a site admin is already trusted).
   the session** (`session.session.activeOrganizationId`, set by the client-callable
   `organization.setActive()`), but **never trust it alone** (R-9.3) — every
   resolution re-validates it against a live `Member` row. A removed member, an
-  archived membership, or a stale/forged session value resolves to `null`, not the
-  claimed org.
+  archived membership, or a stale/forged session value falls through to the
+  sole-membership fallback below rather than resolving to the claimed org.
+- **Sole-membership fallback**, shared with the Convex JWT mint below: if
+  `activeOrganizationId` is unset, or doesn't re-validate, and the caller has
+  **exactly one** live membership, that org is used — nothing is guessed with 0
+  or 2+ memberships (still `null`). This exists for the SSO-redirect race
+  `OrgActivator` (`src/components/providers/org-activator.tsx`) heals
+  client-side: an SSO login redirects straight to `/dashboard` via
+  `callbackURL`, bypassing the login page's `handlePostLogin()` →
+  `organization.setActive()` call, so `activeOrganizationId` can still be unset
+  on the very first server-rendered request/server action after the redirect.
+  Before this fallback existed, that request threw `"No active organization.
+  Please select an organization."` (observed in production) instead of just
+  resolving the obvious answer.
 - Memoized per-request with React `cache()` so every caller in the same request
-  shares one session fetch + one membership query.
+  shares one session fetch + one membership query (plus the fallback query only
+  when needed).
 - The Convex JWT's `orgId`/`role` claims (`src/lib/auth.ts`'s `definePayload`) are
-  minted the same way — re-read from a live `Member` row at every mint, with a
-  same-request fallback to the user's SOLE membership if `activeOrganizationId` is
-  unset (e.g. the SSO-redirect race `OrgActivator` exists to heal). With 0 or 2+
-  memberships and no active org set, nothing is guessed — `orgId: null`.
+  minted the same way — re-read from a live `Member` row at every mint, with the
+  identical same-request fallback to the user's SOLE membership if
+  `activeOrganizationId` is unset or stale. With 0 or 2+ memberships and no active
+  org set, nothing is guessed — `orgId: null`.
 
 ### Membership creation — invite/provisioning only, never auto-join
 Membership is only ever created by: invite-accept (`organization.acceptInvitation`),
@@ -89,8 +102,8 @@ in Settings → Team's "Pending Join Requests" section (`approveJoinRequest`/
 - `getMyOrganizations()` — the calling session's memberships (`{ id, name, slug,
   role }[]`), membership-derived, never a list of all orgs filtered client-side
   (R-9.3). The multi-tenant replacement for the single-org `getTheOrgId()` —
-  login/register/invite/onboarding/`OrgActivator`/the `(app)` layout gate all
-  resolve through here: **0 → `/onboarding`, 1 → activate it, 2+ → `/select-organization`
+  login/register/invite/`/setup`/`OrgActivator`/the `(app)` layout gate all
+  resolve through here: **0 → `/welcome`, 1 → activate it, 2+ → `/select-organization`
   (never guess which one).**
 - `getSoloOrgBranding()` — best-effort org name for the pre-auth login page, returned
   only when exactly one org exists system-wide (an anonymous visitor's org isn't
@@ -197,7 +210,7 @@ Tracked under the same `#1118` as the other quarantined harness gaps.
   they never appear in the picker/switcher/`OrgActivator`.
   `hasOnlyArchivedMemberships()` distinguishes "every org I'm in got archived" from
   "never had one" for the `(app)` layout gate, which routes the former to
-  `/organization-archived` (an explanatory screen) instead of `/onboarding`.
+  `/organization-archived` (an explanatory screen) instead of `/welcome`.
 
 ### Tenancy hygiene (#1077, A7)
 
@@ -232,18 +245,19 @@ Tracked under the same `#1118` as the other quarantined harness gaps.
   typed exactly, deletes storage blobs before the `storedFiles` records that
   reference them, then deletes the Postgres `Organization` row last (cascading
   `Member`/`Invitation` via the schema's own `onDelete: Cascade`).
-- **Seed-vs-operating tax rate.** `resolveOrgDefaultTaxRate`
-  (`convex/lib/orgSettings.ts`) already treats an org's own
-  `orgSettings.defaultTaxRate` as the sole operating value — `SiteSettings.
-  defaultTaxRate` was pure admin-UI decoration with no live-read path into any
-  org's actual tax math. `seedOrgDefaultTaxRate` (`src/server/public-org.ts`)
-  copies the platform's *current* default into a freshly-created org's own
-  settings once, at creation, wired into both org-creation paths (self-serve
-  onboarding and `adminCreateOrganization`) — never a live cross-org read.
-  `SiteSettings.defaultCurrency` gets no equivalent treatment: it has zero
-  consumers anywhere today (currency formatting is hardcoded, not
-  settings-driven), so there's no live read to fix — international currency
-  support is later epic work.
+- **Seed-vs-operating tax rate + currency.** `resolveOrgDefaultTaxRate`
+  (`convex/lib/orgSettings.ts`) treats an org's own `orgSettings.defaultTaxRate`
+  as the sole operating value, and `formatConfigFromOrgSettings`
+  (`src/lib/formatters.ts`, I2/#1081) does the same for `orgSettings.currency`
+  — `SiteSettings.defaultTaxRate`/`.defaultCurrency` would otherwise be pure
+  admin-UI decoration with no live-read path into any org's actual tax math or
+  formatting. `seedOrgDefaults` (`src/server/public-org.ts`, extended to
+  currency by C1/#1098) copies the platform's *current* defaults into a
+  freshly-created org's own settings once, at creation, wired into both
+  org-creation paths (`/setup`'s step 0 and `adminCreateOrganization`) — never
+  a live cross-org read. It also busts the org/SSO login-info cache
+  (`org-login-info-cache.ts`) for the new org's slug, in case a pre-creation
+  slug-availability probe already cached it as an "unknown org" miss.
 
 ### Site admin: the real org list (#1078, A8)
 
@@ -291,6 +305,32 @@ resolution" section above for the full mechanics.
 - Session stored in PostgreSQL `Session` table
 - Passkey RP ID configurable via `PASSKEY_RP_ID` env var (defaults to `localhost`)
 
+### ⚠️ `prisma/schema.prisma` must track the plugin columns Better Auth expects at runtime
+`better-auth` (and `@better-auth/passkey`/`@better-auth/sso`) are pinned `^1.7.4` in
+`package.json`, so a routine `pnpm-lock.yaml` dependency bump can silently resolve a
+newer patch/minor whose `admin()`/`twoFactor()`/`jwt()` plugins expect NEW columns —
+Better Auth's Prisma adapter validates its schema at **request time**, not build time,
+and throws `SCHEMA_MISMATCH` (never a `ConvexError`/typed error — Next just returns a
+bare 500) on every auth call once the columns are missing. This bit production on
+2026-09-16: the 1.6.25 → 1.7.4 resolution shipped in the 0.28.0 deps-group bump landed
+in `prisma/schema.prisma` was never regenerated, and the deploy pipeline's own two-step
+gap (`ci.yml` never runs against a real Postgres; migrations run in
+`docker-entrypoint.sh` at container start, so nothing in CI/build catches a schema
+mismatch before prod) let it reach main and deploy clean. `getSession` and
+`get-full-organization` 500'd for every user; see
+`prisma/migrations/20260916100000_fix_better_auth_schema_mismatch/`.
+
+**After bumping `better-auth`/`@better-auth/passkey`/`@better-auth/sso`, always run
+`prisma validate` against the plugin config in `src/lib/auth.ts` (or the framework's
+`generate` helper, if available) before merging** — a green `pnpm build`/`ci.yml` run
+proves nothing here, since the adapter only checks its schema against a live DB
+connection at runtime. Current plugin-required columns, for reference:
+- `admin()`: `user.banned`, `user.banReason`, `user.banExpires`, `session.impersonatedBy`
+- `twoFactor()`: `twoFactor.verified`, `twoFactor.failedVerificationCount`, `twoFactor.lockedUntil`
+- `jwt()`: `jwks.alg`, `jwks.crv` (this app pins `JWKS_ALG = "ES256"` — see
+  `src/lib/convex-auth-constants.ts` — so `alg`/`crv` are always `"ES256"`/`"P-256"`, never
+  Better Auth's EdDSA default)
+
 ## Auth Client Base URL & CORS (`src/lib/auth-client.ts`)
 The browser auth client resolves its `baseURL` from `window.location.origin` — **never** from `NEXT_PUBLIC_APP_URL`. The `/api/auth` handler is co-located with the app, so auth calls are always same-origin; there is no CORS preflight and no `Access-Control-Allow-Origin` requirement.
 
@@ -300,7 +340,7 @@ Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/au
 
 ## Middleware (`src/middleware.ts`)
 - Checks cookies: `better-auth.session_token` or `__Secure-better-auth.session_token` (HTTPS)
-- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
+- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/welcome`, `/setup`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
 - Unauthenticated requests redirect to `/login?callbackUrl=...`
 
 ## Session Cookie Hardening (POLICY.md R-8.4.5)

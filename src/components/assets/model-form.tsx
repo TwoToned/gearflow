@@ -35,8 +35,10 @@ import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { QuickCreateCategory } from "./quick-create-category";
 import { SpecificationsEditor } from "./specifications-editor";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
+  SmartFormLayout, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActiveMilestoneKey } from "@/hooks/use-activation-milestones";
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   SERIALIZED: "Serialized (tracked individually)",
@@ -46,14 +48,26 @@ const ASSET_TYPE_ORDER = ["SERIALIZED", "BULK"] as const;
 
 interface ModelFormProps {
   initialData?: ModelFormValues & { id: string };
+  // Active asset / bulk-asset counts under this model (edit only) — locks the
+  // Asset type select when flipping it would orphan existing stock from the
+  // model detail tab and the bulk-asset picker (both branch on this field).
+  // The server (modelWrites.ts updateNative) enforces the same rule; this is
+  // just the UI reflecting it before the user hits an error toast.
+  existingAssetCount?: number;
+  existingBulkAssetCount?: number;
 }
 
-export function ModelForm({ initialData }: ModelFormProps) {
+export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAssetCount = 0 }: ModelFormProps) {
   const router = useRouter();
   const isEditing = !!initialData;
   const [showCreateCategory, setShowCreateCategory] = useState(false);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  // D3 (#1107): whether THIS creation is the one completing the org's active
+  // "model" milestone — read before submit, so a returning org creating its
+  // 50th model never sees the hand-off (it only ever fires for the one
+  // model creation D1/D2's coaching was actually about).
+  const isActiveModelMilestone = useActiveMilestoneKey(orgId) === "model";
 
   // Reactive categories (Convex) with synthetic parent name, sorted to match the
   // old getCategories() order.
@@ -86,6 +100,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
   });
 
   const v = form.watch();
+  // Directional, not blanket: switching TO Bulk orphans active SERIALIZED assets;
+  // switching TO Serialized orphans active BULK assets. Picking the type that
+  // already matches the existing stock (fixing a mismatch, e.g. #1266) must stay
+  // available — only the direction that would orphan data is disabled.
+  const bulkBlockedByAssets = isEditing && existingAssetCount > 0;
+  const serializedBlockedByBulk = isEditing && existingBulkAssetCount > 0;
 
   const modelWrites = useModelWrites();
 
@@ -93,7 +113,16 @@ export function ModelForm({ initialData }: ModelFormProps) {
     mutationFn: (data: ModelFormValues) =>
       isEditing ? modelWrites.update(initialData.id, data) : modelWrites.create(data),
     onSuccess: (result) => {
-      toast.success(isEditing ? "Model updated" : "Model created");
+      // D3 (#1107) — a chained hand-off is a SUGGESTION, never a redirect:
+      // the normal navigation to the new model below is unchanged either
+      // way, this only adds an optional action button to the same toast.
+      if (!isEditing && isActiveModelMilestone) {
+        toast.success("Model created", {
+          action: { label: "Add an asset", onClick: () => router.push(`/assets/registry/new?modelId=${result.id}`) },
+        });
+      } else {
+        toast.success(isEditing ? "Model updated" : "Model created");
+      }
       router.push(`/assets/models/${result.id}`);
     },
     onError: (e) => toast.error(e.message),
@@ -123,7 +152,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
       onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
       aside={
         <>
-          <SmartFormRail eyebrow={isEditing ? "Editing" : "New model"} tip={helperTip} />
+          <CoachingTip
+            orgId={orgId}
+            milestoneKey="model"
+            fallbackEyebrow={isEditing ? "Editing" : "New model"}
+            fallbackTip={helperTip}
+          />
           <SmartFormPreview>
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
               <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
@@ -153,7 +187,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
         {/* Identity */}
         <SmartFormSection title="Identity" hint="What it is and how you'll find it." divider={false}>
           <div className="grid gap-5 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2" data-tour-anchor="tour-model-name">
               <SmartFormField label="Name" required error={form.formState.errors.name?.message}>
                 <Input
                   {...form.register("name")}
@@ -190,7 +224,17 @@ export function ModelForm({ initialData }: ModelFormProps) {
               )} />
             </SmartFormField>
             <div className="sm:col-span-2">
-              <SmartFormField label="Asset type" hint="Serialized assets are tracked individually; bulk by quantity.">
+              <SmartFormField
+                label="Asset type"
+                hint={
+                  bulkBlockedByAssets || serializedBlockedByBulk
+                    ? [
+                        bulkBlockedByAssets && `${existingAssetCount} serialized asset(s) block switching to Bulk`,
+                        serializedBlockedByBulk && `${existingBulkAssetCount} bulk asset record(s) block switching to Serialized`,
+                      ].filter(Boolean).join(" — ") + ". Archive or move them first."
+                    : "Serialized assets are tracked individually; bulk by quantity."
+                }
+              >
                 <Controller control={form.control} name="assetType" render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger>
@@ -198,7 +242,13 @@ export function ModelForm({ initialData }: ModelFormProps) {
                     </SelectTrigger>
                     <SelectContent>
                       {ASSET_TYPE_ORDER.map((t) => (
-                        <SelectItem key={t} value={t}>{ASSET_TYPE_LABELS[t]}</SelectItem>
+                        <SelectItem
+                          key={t}
+                          value={t}
+                          disabled={(t === "BULK" && bulkBlockedByAssets) || (t === "SERIALIZED" && serializedBlockedByBulk)}
+                        >
+                          {ASSET_TYPE_LABELS[t]}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -415,6 +465,17 @@ export function ModelForm({ initialData }: ModelFormProps) {
                       id="isActive"
                       checked={v.isActive}
                       onCheckedChange={(val) => form.setValue("isActive", val)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-[var(--r)] border border-line bg-paper-2/40 px-3.5 py-3">
+                    <div>
+                      <Label htmlFor="isContainer">Packing container</Label>
+                      <p className="t-micro text-muted">Assets of this model can be used as containers in the warehouse, regardless of category.</p>
+                    </div>
+                    <Switch
+                      id="isContainer"
+                      checked={!!v.isContainer}
+                      onCheckedChange={(val) => form.setValue("isContainer", val)}
                     />
                   </div>
                 </div>

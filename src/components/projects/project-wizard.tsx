@@ -33,7 +33,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
-import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
+import { useDateMoveGate } from "@/hooks/use-date-move-gate";
+import { DateMoveImpactDialog } from "@/components/projects/date-move-impact-dialog";
+import { getProjectWindowDates } from "@/lib/project-window";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { TagInput } from "@/components/ui/tag-input";
@@ -42,6 +45,9 @@ import {
 } from "@/components/ui/select";
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActivationMilestones } from "@/hooks/use-activation-milestones";
+import { activeMilestoneKey } from "@/lib/activation-milestones";
 
 const TYPE_OPTIONS = [
   { value: "DRY_HIRE", label: "Dry hire" }, { value: "WET_HIRE", label: "Wet hire" },
@@ -53,7 +59,8 @@ const TYPE_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: "ENQUIRY", label: "Enquiry" }, { value: "QUOTING", label: "Quoting" },
-  { value: "QUOTED", label: "Quoted" }, { value: "CONFIRMED", label: "Confirmed" },
+  { value: "QUOTED", label: "Quoted" }, { value: "AWAITING_PAYMENT", label: "Awaiting payment" },
+  { value: "CONFIRMED", label: "Confirmed" },
   { value: "PREPPING", label: "Prepping" }, { value: "CHECKED_OUT", label: "Checked out" },
   { value: "ON_SITE", label: "On site" }, { value: "RETURNED", label: "Returned" },
   { value: "COMPLETED", label: "Completed" }, { value: "INVOICED", label: "Invoiced" },
@@ -111,6 +118,13 @@ const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFor
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
 ];
 
+/** Split out purely to keep `onSuccess`'s own complexity under the ceiling
+ *  (D3, #1107's hand-off branch pushed it over). */
+function projectSavedToastCopy(isEditing: boolean, isTemplate: boolean): string {
+  if (isEditing) return isTemplate ? "Template updated" : "Job updated";
+  return isTemplate ? "Template created" : "Job created";
+}
+
 export function ProjectWizard({
   isTemplate: isTemplateProp,
   project,
@@ -124,17 +138,22 @@ export function ProjectWizard({
   const managerWrites = useProjectManagerWrites();
   const orgId = activeOrg?.id;
   const projectWrites = useProjectWrites(orgId);
+  // D3 (#1107) — see the identical note in model-form.tsx. Reads the FULL
+  // milestone state (not just the active key) because the hand-off needs
+  // firstModelId/firstModelName too, to deep-link + label "Add <model> to it".
+  const activationState = useActivationMilestones(orgId);
+  const isActiveProjectMilestone =
+    activationState != null && activeMilestoneKey(activationState) === "project";
 
   const isEditing = !!project;
 
-  // #990 — `discountPercent` is a LOCKED_PROJECT_FIELDS entry
+  // #1230 — `discountPercent` is a LOCKED_PROJECT_FIELDS entry
   // (convex/lib/projectLocks.ts). `taxRate` is likewise locked but has no
   // field in this form (org-default only, resolved server-side) — nothing to
   // wrap. Skipped entirely on create (no project yet to be locked).
-  const [wizardLockNow] = useState(() => Date.now());
-  const wizardLockStatus = useProjectLockStatus(isEditing ? project.id : undefined, orgId, wizardLockNow);
-  const discountLocked = isEditing && !wizardLockStatus.loading && wizardLockStatus.tier !== "OPEN" && !wizardLockStatus.hasOpenSession;
-  const discountLockReason = resolveLockCopy(wizardLockStatus, wizardLockNow).oneLiner;
+  const wizardLockStatus = useProjectPricingLock(isEditing ? project.id : undefined, orgId);
+  const discountLocked = isEditing && wizardLockStatus.pricingLocked;
+  const discountLockReason = resolveLockCopy(wizardLockStatus).oneLiner;
   const isTemplate = isTemplateProp ?? project?.isTemplate ?? false;
 
   const initialManagerIds = (project?.projectManagers ?? []).map((pm) => pm.user.id);
@@ -328,11 +347,22 @@ export function ProjectWizard({
       return result;
     },
     onSuccess: (result) => {
-      toast.success(
-        isEditing
-          ? isTemplate ? "Template updated" : "Job updated"
-          : isTemplate ? "Template created" : "Job created",
-      );
+      // D3 (#1107) — offered, never forced: the navigation below is
+      // unchanged either way, this only adds an optional action button.
+      // Templates never complete the "project" milestone (activationMilestones
+      // excludes them), so they never offer this hand-off either.
+      const firstModelId = activationState?.firstModelId;
+      const offerHandoff = !isEditing && !isTemplate && isActiveProjectMilestone && !!firstModelId;
+      if (offerHandoff) {
+        toast.success("Job created", {
+          action: {
+            label: `Add ${activationState?.firstModelName ?? "it"} to it`,
+            onClick: () => router.push(`/projects/${result.id}?tab=equipment&modelId=${firstModelId}`),
+          },
+        });
+      } else {
+        toast.success(projectSavedToastCopy(isEditing, isTemplate));
+      }
       router.push(`/projects/${result.id}`);
     },
     onError: (e) => {
@@ -348,6 +378,20 @@ export function ProjectWizard({
       toast.error(e.message);
     },
   });
+
+  // #1227 (Q3 of the QOL sweep) — non-blocking preview: does moving THIS
+  // project's dates strand another job's gear? Only meaningful in edit mode
+  // (create has no "before" window to compare against — currentWindow is
+  // {null,null}, which the hook's own no-op guard treats as "always moved",
+  // so the call site below skips it for create entirely rather than relying
+  // on that).
+  const dateMoveGate = useDateMoveGate<ProjectFormValues>(
+    orgId,
+    project?.id ?? "",
+    project?.status ?? undefined,
+    project ? resolveWindowMs(project) : { start: null, end: null },
+    (data) => mutation.mutate(data),
+  );
 
   const next = async () => {
     const ok = await form.trigger(STEPS[step].fields);
@@ -397,7 +441,16 @@ export function ProjectWizard({
         })}
       </ol>
 
-      <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="mt-6 grid gap-6 lg:grid-cols-[1fr_280px]">
+      <form
+        onSubmit={form.handleSubmit((d) => {
+          if (isEditing) {
+            void dateMoveGate.requestSave(resolveWindowMs(d), d);
+          } else {
+            mutation.mutate(d);
+          }
+        })}
+        className="mt-6 grid gap-6 lg:grid-cols-[1fr_280px]"
+      >
         {/* Step content */}
         <div className="rounded-[var(--r-lg)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
           <h2
@@ -409,9 +462,11 @@ export function ProjectWizard({
           </h2>
           {step === 0 && (
             <div className="space-y-5">
-              <Field label="Name" required error={form.formState.errors.name?.message}>
-                <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
-              </Field>
+              <div data-tour-anchor="tour-project-name">
+                <Field label="Name" required error={form.formState.errors.name?.message}>
+                  <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
+                </Field>
+              </div>
               {!isTemplate && (
                 <Field label="Project code" required hint="Pre-filled from your next sequence — edit if you need a custom code." error={form.formState.errors.projectNumber?.message}>
                   <Input {...form.register("projectNumber")} placeholder={nextProjectNumber ? `Auto: ${nextProjectNumber}` : "e.g. PROJ-2026-0001"} className="font-mono" />
@@ -556,21 +611,38 @@ export function ProjectWizard({
             {step < STEPS.length - 1 ? (
               <Button type="button" variant="primary" onClick={next}>Continue <ArrowRight className="h-4 w-4" /></Button>
             ) : (
-              <Button type="submit" variant="halo" disabled={mutation.isPending}>
-                {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              <Button type="submit" variant="halo" disabled={mutation.isPending || dateMoveGate.checking}>
+                {mutation.isPending || dateMoveGate.checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {isEditing ? "Save changes" : isTemplate ? "Create template" : "Create job"}
               </Button>
             )}
           </div>
         </div>
 
+        <DateMoveImpactDialog
+          open={!!dateMoveGate.pending}
+          rows={dateMoveGate.pending?.rows ?? []}
+          pending={mutation.isPending}
+          onConfirm={dateMoveGate.confirmPending}
+          onCancel={dateMoveGate.cancelPending}
+        />
+
         {/* Helper rail */}
         <aside className="hidden lg:block">
           <div className="sticky top-4 space-y-4 rounded-[var(--r-lg)] border border-line bg-paper-2/50 p-4">
-            <div>
-              <p className="t-overline text-faint">Step {step + 1} of {STEPS.length}</p>
-              <p className="mt-1 font-hand text-[15px] text-t-out">{STEPS[step].tip}</p>
-            </div>
+            {step === 0 ? (
+              <CoachingTip
+                orgId={orgId}
+                milestoneKey="project"
+                fallbackEyebrow={`Step ${step + 1} of ${STEPS.length}`}
+                fallbackTip={STEPS[step].tip}
+              />
+            ) : (
+              <div>
+                <p className="t-overline text-faint">Step {step + 1} of {STEPS.length}</p>
+                <p className="mt-1 font-hand text-[15px] text-t-out">{STEPS[step].tip}</p>
+              </div>
+            )}
             <div className="space-y-2 border-t border-line pt-3">
               <p className="t-overline text-faint">So far</p>
               <SummaryLine label="Name" value={v.name || "—"} />
@@ -604,6 +676,25 @@ function fromDateStr(s?: unknown): Date | undefined {
 function normalizeDate(value?: unknown): string | undefined {
   const d = fromDateStr(value);
   return d ? toDateStr(d) : undefined;
+}
+
+/** Resolve a project-shaped record's window (`projectStartDate ?? rentalStartDate`,
+ *  same as `getProjectWindow`) into epoch-ms — #1227's date-move gate needs the
+ *  BEFORE window (raw stored values) and the AFTER window (form strings) in the
+ *  same {start,end} shape to compare them. */
+function resolveWindowMs(values: {
+  projectStartDate?: unknown;
+  projectEndDate?: unknown;
+  rentalStartDate?: unknown;
+  rentalEndDate?: unknown;
+}): { start: number | null; end: number | null } {
+  const { start, end } = getProjectWindowDates({
+    projectStartDate: fromDateStr(values.projectStartDate) ?? null,
+    projectEndDate: fromDateStr(values.projectEndDate) ?? null,
+    rentalStartDate: fromDateStr(values.rentalStartDate) ?? null,
+    rentalEndDate: fromDateStr(values.rentalEndDate) ?? null,
+  });
+  return { start: start ? start.getTime() : null, end: end ? end.getTime() : null };
 }
 
 /**

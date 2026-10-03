@@ -14,6 +14,7 @@ import { reserveSubHireOrderNumberCounter } from "./lib/subHireOrderCounter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { createId } from "@paralleldrive/cuid2";
 import * as enums from "./lib/validators";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
  * Native SUB-HIRE write mutations (Phase 3 browser-direct — PR-1 of 2, replaces the
@@ -447,6 +448,7 @@ export const deleteSubHireNative = mutation({
     for (const line of linkedLines) {
       if (line.isKitChild) continue;
       const children = (
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id)).collect()
       ).filter((c) => c.organizationId === a.orgId);
       for (const c of children) await ctx.db.delete(c._id);
@@ -1143,12 +1145,15 @@ export const changeSubHireProjectNative = mutation({
     // Delete the OLD project's lines for this sub-hire. Iterate TOP-LEVEL (!isKitChild)
     // only so each child is deleted once via its parent (sub-hire lines have no units).
     if (oldProjectId) {
-      const oldLines = (
-        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", oldProjectId)).collect()
-      ).filter((l) => l.organizationId === a.orgId && l.subHireId === a.subHireId);
+      // LIVE-ONLY (#1228) — a sub-hire's lines only ever live on the live plan.
+      const oldVersionId = await resolveLiveVersionIdForProject(ctx, oldProjectId, a.orgId);
+      const oldLines = (await versionRows(ctx, "projectLineItems", oldVersionId)).filter(
+        (l) => l.organizationId === a.orgId && l.subHireId === a.subHireId,
+      );
       for (const line of oldLines) {
         if (line.isKitChild) continue;
         const kids = (
+          // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
           await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id)).collect()
         ).filter((c) => c.organizationId === a.orgId);
         for (const c of kids) await ctx.db.delete(c._id);

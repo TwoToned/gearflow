@@ -24,17 +24,41 @@ async function seed(t: ReturnType<typeof makeT>) {
     await ctx.db.insert("clients", { id: "cX", organizationId: OTHER, name: "Other" });
 
     // Projects for c1: two owned (different createdAt), one for another client, one cross-org (same clientId!).
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Old", clientId: "c1", createdAt: 100 });
-    await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "New", clientId: "c1", createdAt: 200 });
-    await ctx.db.insert("projects", { id: "p3", organizationId: ORG, projectNumber: "P3", name: "Nope", clientId: "c2", createdAt: 300 });
-    await ctx.db.insert("projects", { id: "pX", organizationId: OTHER, projectNumber: "PX", name: "Foreign", clientId: "c1", createdAt: 400 }); // cross-org, must NOT leak
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Old", clientId: "c1", createdAt: 100,
+      liveVersionId: "v-p1",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: 100, createdById: "u1" });
+    await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "New", clientId: "c1", createdAt: 200,
+      liveVersionId: "v-p2",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: 100, createdById: "u1" });
+    await ctx.db.insert("projects", { id: "p3", organizationId: ORG, projectNumber: "P3", name: "Nope", clientId: "c2", createdAt: 300,
+      liveVersionId: "v-p3",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p3", organizationId: ORG, projectId: "p3", number: 1, contentState: "ready", createdAt: 100, createdById: "u1" });
+    await ctx.db.insert("projects", { id: "pX", organizationId: OTHER, projectNumber: "PX", name: "Foreign", clientId: "c1", createdAt: 400,
+      liveVersionId: "v-pX",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-pX", organizationId: OTHER, projectId: "pX", number: 1, contentState: "ready", createdAt: 100, createdById: "u1" }); // cross-org, must NOT leak
 
     // Line items: p1 has 2 (any status/type — count is ALL), p2 has 1.
-    await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CANCELLED", quantity: 1 });
-    await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", quantity: 1 });
-    await ctx.db.insert("projectLineItems", { id: "li3", organizationId: ORG, projectId: "p2", status: "CONFIRMED", quantity: 1 });
+    await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "CANCELLED", quantity: 1,
+      versionId: "v-p1",
+      lineageId: "li1",
+    });
+    await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", quantity: 1,
+      versionId: "v-p1",
+      lineageId: "li2",
+    });
+    await ctx.db.insert("projectLineItems", { id: "li3", organizationId: ORG, projectId: "p2", status: "CONFIRMED", quantity: 1,
+      versionId: "v-p2",
+      lineageId: "li3",
+    });
     // Malformed cross-org line item reusing p1's id → must NOT inflate p1's count.
-    await ctx.db.insert("projectLineItems", { id: "liX", organizationId: OTHER, projectId: "p1", status: "CONFIRMED", quantity: 1 });
+    await ctx.db.insert("projectLineItems", { id: "liX", organizationId: OTHER, projectId: "p1", status: "CONFIRMED", quantity: 1,
+      versionId: "v-p1",
+      lineageId: "liX",
+    });
 
     // A file + two media rows (out-of-order sortOrder) + a media row whose file is missing.
     await ctx.db.insert("fileUploads", { id: "f1", organizationId: ORG, fileName: "a.pdf", fileSize: 10, mimeType: "application/pdf", storageKey: "k1", url: "http://x/a.pdf", uploadedById: USER });

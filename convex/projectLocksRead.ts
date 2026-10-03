@@ -1,10 +1,9 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
-import { getOpenUnlockSession, isHardLockOverrideAllowed, resolveLockTier } from "./lib/projectLocks";
+import { canUnlockPricing } from "./lib/projectLocks";
 import { getAuthContext } from "./lib/auth";
 import { collectCurrentEntries } from "./lib/projectSnapshots";
-import { effectiveQuoteStatus, findQuoteAtRevision, projectLiveRevision, projectRevision } from "./lib/quoteState";
 
 const ENTRY_RETURNS = v.array(
   v.object({
@@ -26,106 +25,45 @@ const ENTRY_RETURNS = v.array(
 );
 
 /**
- * BROWSER-facing reads for the #957 lifecycle-lock program: the project's
- * current tier + open unlock session (for the banner/lock icons), and the
- * snapshot/version list + a single snapshot's entries (for the Versions/diff
- * UI, #792). Gated on `project:read` — same permission the rest of the
- * project-detail composites use.
+ * BROWSER-facing reads for the #1230 pricing-lock model (successor to the old
+ * #957 lifecycle-lock program): the project's `pricingLocked` flag + who can
+ * clear it, and the snapshot/version list + a single snapshot's entries (for
+ * the Versions/diff UI, #792, unaffected by this phase). Gated on
+ * `project:read` — same permission the rest of the project-detail composites
+ * use.
  */
 
 export const status = query({
   args: {
     projectId: v.string(),
     orgId: v.string(),
-    // Optional (like `quotes.ts`'s reads) — a Convex query must be deterministic
-    // to stay reactively cacheable, so `now` is client-supplied rather than
-    // `Date.now()`. Only used to resolve a real EXPIRED for display; omitting it
-    // still resolves the correct TIER (#988's lock escalation treats SENT and
-    // EXPIRED identically — see `quoteState.ts#currentRevisionQuoteStatus`).
-    now: v.optional(v.number()),
   },
   returns: v.union(
     v.null(),
     v.object({
-      tier: v.union(v.literal("OPEN"), v.literal("FINANCE_LOCKED"), v.literal("JUSTIFY"), v.literal("HARD_LOCKED")),
-      // #988 — why `tier` is what it is, so the UI can explain itself and offer
-      // the right exit (Create quote v(N+1) / Recall vs. the existing unlock
-      // session flow) instead of a bare "locked".
-      reason: v.union(v.literal("STATUS"), v.literal("QUOTE_SENT")),
-      // #988 — the shared revision counter + the current revision's quote state,
-      // so Phase E can render one coherent banner from this single query instead
-      // of a second round trip.
-      revision: v.number(),
-      // #1080/#1100 — the LIVE revision (`projectLiveRevision`), separate from
-      // `revision` (the allocator) once a promote has moved them apart. The
-      // QUOTE_SENT escalation below is resolved against THIS number, not
-      // `revision` — see `assertLifecycleGuard`'s matching fix.
-      liveRevision: v.number(),
-      quoteState: v.union(
-        v.null(),
-        v.literal("DRAFT"),
-        v.literal("SENT"),
-        v.literal("ACCEPTED"),
-        v.literal("DECLINED"),
-        v.literal("SUPERSEDED"),
-        v.literal("EXPIRED"),
-      ),
-      canOverrideHardLock: v.boolean(),
-      openSession: v.union(
-        v.null(),
-        v.object({
-          id: v.string(),
-          scope: v.union(v.literal("FINANCIAL"), v.literal("FULL")),
-          justification: v.string(),
-          openedBy: v.string(),
-          openedByName: v.optional(v.string()),
-          openedAt: v.number(),
-          // #990 (Phase E) — the UNLOCK snapshot this session opened against,
-          // so the client can diff it against `currentEntries` before Save &
-          // relock / Discard (finance-workflow-ux.md §7.2 "committing blind is
-          // the one thing that turns an audit trail into noise").
-          snapshotId: v.string(),
-        }),
-      ),
+      pricingLocked: v.boolean(),
+      pricingLockedAt: v.optional(v.number()),
+      pricingLockedByName: v.optional(v.string()),
+      // D42 — whether the CALLER may clear the lock (owner/admin/manager, or
+      // this project's own PM). Service tokens (trusted backend) always pass.
+      canUnlockPricing: v.boolean(),
     }),
   ),
-  handler: async (ctx, { projectId, orgId, now }) => {
+  handler: async (ctx, { projectId, orgId }) => {
     await requireOrgPermission(ctx, orgId, "project", "read");
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
     if (!project || project.organizationId !== orgId) return null;
 
-    const revision = projectRevision(project);
-    const liveRevision = projectLiveRevision(project);
-    // The QUOTE_SENT escalation is about the LIVE revision's quote — not the
-    // allocator's high-water mark, which a promote can leave ahead of it.
-    const currentQuote = await findQuoteAtRevision(ctx, orgId, projectId, liveRevision);
-    const quoteState = currentQuote ? effectiveQuoteStatus(currentQuote, now ?? 0) : null;
-    const { tier, reason } = resolveLockTier({ status: project.status, quoteState });
-    const session = await getOpenUnlockSession(ctx, orgId, projectId);
-
     const auth = await getAuthContext(ctx);
-    const canOverrideHardLock =
+    const canUnlock =
       auth?.kind === "service" ||
-      (auth?.kind === "user" && (await isHardLockOverrideAllowed(ctx, orgId, projectId, auth.userId)));
+      (auth?.kind === "user" && (await canUnlockPricing(ctx, orgId, projectId, auth.userId)));
 
     return {
-      tier,
-      reason,
-      revision,
-      liveRevision,
-      quoteState,
-      canOverrideHardLock,
-      openSession: session
-        ? {
-            id: session.id,
-            scope: session.scope,
-            justification: session.justification,
-            openedBy: session.openedBy,
-            openedByName: session.openedByName,
-            openedAt: session.openedAt,
-            snapshotId: session.snapshotId,
-          }
-        : null,
+      pricingLocked: project.pricingLocked === true,
+      pricingLockedAt: project.pricingLockedAt,
+      pricingLockedByName: project.pricingLockedByName,
+      canUnlockPricing: canUnlock,
     };
   },
 });

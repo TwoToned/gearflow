@@ -6,6 +6,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { applyProjectAllocation } from "./lib/allocation";
 import { deriveBillingSummary } from "./lib/billingDerivation";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Recompute a project's revenue allocation on its own.
@@ -39,9 +40,10 @@ export const recomputeForProject = mutation({
       throw new ConvexError(`project ${projectId} is not in org ${orgId}`);
     }
 
+    // LIVE-ONLY (#1228) — revenue allocation follows recalc, which is live-only.
     const [groups, lines] = await Promise.all([
-      ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-      ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+      liveRows(ctx, project, "projectGroups"),
+      liveRows(ctx, project, "projectLineItems"),
     ]);
 
     const billingSummary = deriveBillingSummary({

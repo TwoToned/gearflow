@@ -73,7 +73,8 @@ export function UserNav() {
       // the previous org into the newly-activated one (design doc §4.3.1). The
       // Convex client re-authenticates for free (src/components/providers/
       // convex-provider.tsx reacts to the orgId change), so nothing else here
-      // needs to force a token refresh or drop a cache.
+      // needs to force a token refresh or drop a cache. Dashboard is that
+      // landing page (D10C).
       router.push("/dashboard");
     } finally {
       setSwitchingId(null);

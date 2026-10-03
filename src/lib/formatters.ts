@@ -85,6 +85,41 @@ export function formatDate(
 }
 
 /**
+ * Same "short" role as `formatDate`, pinned to an explicit IANA `timezone`
+ * instead of the render host's system default. For a date that was RESOLVED
+ * as a calendar day in the org's own timezone (a stamped `invoiceDueDate`/
+ * `quoteValidUntil`/`documentDate` — see `computeValidUntil`/
+ * `startOfDayInTimezone` in convex/lib/quoteDates.ts), formatting with no
+ * timezone uses whatever timezone the PDF render happened to run in (the
+ * deploy container, UTC by default) — which silently prints the wrong day
+ * whenever that differs from the org's timezone (e.g. an AEST org's "3 Oct
+ * 00:00" invoice due date is "2 Oct 14:00" UTC, and `formatDate` on a UTC
+ * host would print "2 Oct"). `timezone` undefined falls back to the exact
+ * `formatDate` behaviour (Intl treats an undefined `timeZone` as "system
+ * default").
+ */
+export function formatDateInTimezone(
+  date: string | Date | null | undefined,
+  timezone: string | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { day: "numeric", month: "short", year: "numeric", timeZone: timezone });
+}
+
+/**
+ * The printed "Due Date" for a finance document. Invoice-only: a quote carries
+ * an expiry (`quote_valid_until`), never a due date, so every other doc type
+ * gets `""` (which the renderers treat as "print nothing").
+ */
+export function documentDueDateText(
+  docType: string,
+  dueDate: string | Date | null | undefined,
+  timezone: string | undefined,
+): string {
+  return docType === "invoice" ? formatDateInTimezone(dueDate, timezone) : "";
+}
+
+/**
  * I3 (#1082) \u2014 named date-format ROLES, built on the one shared
  * `formatDateWithOptions` implementation, so a display date is one of a
  * small closed set of locale-correct shapes instead of an ad-hoc inline

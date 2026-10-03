@@ -184,6 +184,40 @@ describe("crewTimeEntriesWrites", () => {
   });
 });
 
+describe("crewTimeEntries.workItemId (work-layer Phase 4, #1246)", () => {
+  async function seedWorkItem(t: T, orgId: string) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "wi1", organizationId: orgId, title: "Pack truck", status: "TODO" });
+    });
+  }
+
+  test("createNative accepts an in-org workItemId and stores it", async () => {
+    const t = makeT(); await seed(t);
+    await seedWorkItem(t, ORG);
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, { ...base, workItemId: "wi1" });
+    const e = await te(t, "t1");
+    expect(e?.workItemId).toBe("wi1");
+  });
+
+  test("createNative rejects a cross-org workItemId", async () => {
+    const t = makeT(); await seed(t);
+    await seedWorkItem(t, OTHER);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, { ...base, workItemId: "wi1" }),
+    ).rejects.toThrow();
+  });
+
+  test("updateNative can set and clear workItemId", async () => {
+    const t = makeT(); await seed(t);
+    await seedWorkItem(t, ORG);
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createNative, base);
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.updateNative, { ...base, workItemId: "wi1", auditId: "l2" });
+    expect((await te(t, "t1"))?.workItemId).toBe("wi1");
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.updateNative, { ...base, auditId: "l3" }); // resend without workItemId
+    expect((await te(t, "t1"))?.workItemId).toBeUndefined();
+  });
+});
+
 describe("crewTimeEntries reads", () => {
   test("allEntries: filter/sort/paginate + joins + membership-gated approvedBy; forMember", async () => {
     const t = makeT(); await seed(t);
@@ -202,5 +236,35 @@ describe("crewTimeEntries reads", () => {
     expect(res.entries[0].approvedBy?.name).toBe("Alice"); // membership-gated users mirror
     const forMem = await t.withIdentity(asUser).query(api.crewTimeEntries.forMember, { crewMemberId: "c1", orgId: ORG });
     expect(forMem.map((e) => e.id)).toEqual(["t2", "t1"]); // date desc (t2 later)
+  });
+
+  test("approvedHoursByMember: sums only APPROVED hours per member within [startMs,endMs] (work-layer Phase 4, #1246)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "c2", organizationId: ORG, firstName: "Amy", lastName: "Lee", isActive: true });
+      await ctx.db.insert("crewTimeEntries", { id: "e1", organizationId: ORG, crewMemberId: "c1", date: NOW, startTime: "09:00", endTime: "17:00", totalHours: 8, status: "APPROVED" });
+      await ctx.db.insert("crewTimeEntries", { id: "e2", organizationId: ORG, crewMemberId: "c1", date: NOW + 86_400_000, startTime: "09:00", endTime: "13:00", totalHours: 4, status: "SUBMITTED" }); // not approved — excluded
+      await ctx.db.insert("crewTimeEntries", { id: "e3", organizationId: ORG, crewMemberId: "c1", date: NOW - 30 * 86_400_000, startTime: "09:00", endTime: "17:00", totalHours: 8, status: "APPROVED" }); // outside range — excluded
+      await ctx.db.insert("crewTimeEntries", { id: "e4", organizationId: ORG, crewMemberId: "c2", date: NOW, startTime: "09:00", endTime: "15:00", totalHours: 6, status: "APPROVED" });
+      // cross-tenant row on the same crewMemberId — must never leak in
+      await ctx.db.insert("crewTimeEntries", { id: "eX", organizationId: OTHER, crewMemberId: "c1", date: NOW, startTime: "09:00", endTime: "20:00", totalHours: 11, status: "APPROVED" });
+    });
+    const res = await t.withIdentity(asUser).query(api.crewTimeEntries.approvedHoursByMember, {
+      orgId: ORG, crewMemberIds: ["c1", "c2"], startMs: NOW - 86_400_000, endMs: NOW + 86_400_000,
+    });
+    expect(res).toEqual({ c1: 8, c2: 6 });
+  });
+
+  test("loggedMinutesForWorkItems: sums only APPROVED entries' minutes per workItemId (work-layer Phase 4, #1246)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "wi1", organizationId: ORG, title: "Pack truck", status: "TODO" });
+      await ctx.db.insert("crewTimeEntries", { id: "e1", organizationId: ORG, crewMemberId: "c1", workItemId: "wi1", date: NOW, startTime: "09:00", endTime: "11:00", totalHours: 2, status: "APPROVED" });
+      await ctx.db.insert("crewTimeEntries", { id: "e2", organizationId: ORG, crewMemberId: "c1", workItemId: "wi1", date: NOW, startTime: "13:00", endTime: "13:30", totalHours: 0.5, status: "DRAFT" }); // not approved — excluded
+      // cross-tenant row referencing the same workItemId string — must never leak in
+      await ctx.db.insert("crewTimeEntries", { id: "eX", organizationId: OTHER, crewMemberId: "cX", workItemId: "wi1", date: NOW, startTime: "09:00", endTime: "17:00", totalHours: 8, status: "APPROVED" });
+    });
+    const res = await t.withIdentity(asUser).query(api.crewTimeEntries.loggedMinutesForWorkItems, { orgId: ORG, workItemIds: ["wi1", "wiMissing"] });
+    expect(res).toEqual({ wi1: 120, wiMissing: 0 });
   });
 });

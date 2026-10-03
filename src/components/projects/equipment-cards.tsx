@@ -143,6 +143,7 @@ export function GroupCard({
 /** Section heading for a category (folder glyph + label + optional add/kebab). */
 export function CategoryCardHeading({
   name,
+  badge,
   action,
   dragHandleRef,
   dragAttributes,
@@ -152,6 +153,9 @@ export function CategoryCardHeading({
   dropHighlight,
 }: {
   name: string;
+  /** Optional status pill rendered beside the name — the category price-rollup
+   *  marker today (equipment-rows.tsx's `CategoryRow`). */
+  badge?: React.ReactNode;
   action?: React.ReactNode;
   /** Same whole-surface drag entry point as `GroupCard` — see its doc comment. */
   dragHandleRef?: (el: HTMLElement | null) => void;
@@ -177,6 +181,7 @@ export function CategoryCardHeading({
       <div className="flex items-center gap-1.5 text-caption font-semibold text-ink-2">
         <Container className="h-3.5 w-3.5" />
         {name}
+        {badge}
       </div>
       {action}
     </div>

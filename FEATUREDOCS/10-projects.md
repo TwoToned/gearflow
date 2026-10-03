@@ -521,6 +521,22 @@ Custom items are ad-hoc line items for gear not in the system — borrowed equip
 
 **Distinction from sub-hires:** Sub-hires represent formally ordered gear from a supplier with a structured order workflow. Custom items are anonymous ad-hoc entries with no supplier and no order tracking.
 
+### The Edit Item dialog
+The "Edit" pencil's `EditLineItemDialog` (`edit-line-item-dialog.tsx`) edits
+description, quantity, unit price, discount, an advanced tax-rate override,
+Xero coding (when linked), placement (category/group), notes, and the optional
+flag — plus, for an equipment line whose model/asset has accessories
+configured, an **Accessories** section for choosing what ships with that line
+on this job (issue #794 — see
+[FEATUREDOCS/48](./48-child-assets-accessories.md#per-line-accessory-selection-accessoryplan--issue-794)
+for the picker, its eligibility rules, and why the plan saves as its own write
+sequenced after the line patch).
+
+Three of those are separate writes fired alongside the main line patch, not
+fields on it: placement (`onMove` → `groupWrites.moveLineItem`), the accessory
+plan (`onAccessoryPlanChange` → `lineItemWrites.updateAccessoryPlan`), and the
+patch itself. Each fires only when its own value actually changed.
+
 ### Inline editing (equipment table)
 Unit price, discount, quantity, description, and notes are editable directly
 in the equipment table row — click the cell, type, then blur (click away or

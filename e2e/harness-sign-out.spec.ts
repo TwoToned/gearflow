@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Sign out (docs/critical-flows.md flow #3, POLICY.md R-8.8.3). Runs ONLY
@@ -13,14 +14,14 @@ import { expect, test } from "@playwright/test";
 test.describe("harness: sign out", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
 
-  // Quarantined (POLICY.md R-8.8.4): #1071 deleted the single-org auto-join
-  // hook, which is what silently gave every OTHER harness spec file's fresh
-  // registrant org membership for free. This file's setup now correctly
-  // can't create a second org once another harness spec has already
-  // bootstrapped one in the shared harness DB, so it never reaches an
-  // authenticated app page — an E2E test-isolation gap, not a product bug.
-  // Owner: Jayden (eng). Tracked: #1118. Deadline: 2026-08-15.
-  test("authenticated -> sign out -> session invalidated @quarantine", async ({ page }) => {
+  // #1118 fix: restore this file's own "fresh Better Auth DB" (every harness
+  // file's docstring already assumes one) rather than sharing whatever state
+  // an earlier file in the same CI job left behind — see harness-db-reset.ts.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
+
+  test("authenticated -> sign out -> session invalidated", async ({ page }) => {
     // Playwright's default test timeout is 30s for the WHOLE test — this can
     // chain register -> create org -> sign-out -> a revisit-check across up to
     // 4 page loads when run standalone against a fresh harness (see the
@@ -44,14 +45,22 @@ test.describe("harness: sign out", () => {
     // Run standalone against a fresh harness, this is the first-ever user, so
     // the (app) layout redirects to /welcome (no org yet) — which has no
     // UserNav, so "Account menu" below wouldn't exist without completing it.
-    // "Set up a new company" leads to /onboarding, the actual create-org form.
+    // "Set up a new company" leads to /setup, the actual create-org form.
     if (new URL(page.url()).pathname === "/welcome") {
       await page.getByRole("button", { name: "Set up a new company" }).click();
-      await expect(page).toHaveURL(/\/onboarding\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/setup\b/, { timeout: 20000 });
     }
-    if (new URL(page.url()).pathname === "/onboarding") {
-      await page.getByLabel("Organization name").fill(`Sign Out Org ${unique}`);
-      await page.getByRole("button", { name: "Create organization" }).click();
+    if (new URL(page.url()).pathname === "/setup") {
+      await page.getByLabel("Company name").fill(`Sign Out Org ${unique}`);
+      await page.getByRole("button", { name: "Create company" }).click();
+      // Step 1's success lands on step 2 ("where you operate", C2 #1099),
+      // step 3 ("your brand", C3 #1101), step 4 ("how you work", C4
+      // #1102), then step 5 ("your team & your gear", C5 #1103), all still
+      // at /setup — skip all four, only the name is required (D3).
+      await page.getByRole("button", { name: "Skip for now" }).click();
+      await page.getByRole("button", { name: "Skip for now" }).click();
+      await page.getByRole("button", { name: "Skip for now" }).click();
+      await page.getByRole("button", { name: "Skip for now" }).click();
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     }
 

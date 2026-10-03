@@ -19,7 +19,6 @@
  *   listed (the inline "TAG1, TAG2 +N" summary hid most of them)
  * - `showSiteContact: true` in the details row — the driver needs to know
  *   who to hand the gear to
- * - a container summary line, same as the manifest's
  * - `signature` block ("Delivered By"/"Received By"/"Date")
  * - sentence-case title ("Delivery docket", not "DELIVERY DOCKET") — a
  *   deliberate, docket-scoped exception to the fixed-vocabulary ALL-CAPS
@@ -33,7 +32,6 @@ import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
 import { Header } from "./components/header";
 import { DetailsRow } from "./components/details-row";
 import { LineItemsTable } from "./components/line-items-table";
-import { SummaryLine } from "./components/summary-line";
 import { SignatureLine } from "./components/signature-line";
 import { Footer } from "./components/footer";
 import { PAGE_MARGIN, pageSizeFor } from "./styles";
@@ -85,10 +83,6 @@ export function DeliveryDocketDocument({ data }: { data: DocumentData }) {
 
         <View style={{ marginBottom: "3mm" }} wrap={false}>
           <DetailsRow data={data} config={{ showSiteContact: true }} />
-        </View>
-
-        <View style={{ marginBottom: "4mm" }} wrap={false}>
-          <SummaryLine data={data} />
         </View>
 
         <View style={{ marginBottom: "6mm" }}>

@@ -313,3 +313,19 @@ describe("undeploy after a partial bulk return", () => {
     expect((await readBulkUnit(t))?.returnedQuantity ?? 0).toBe(0);
   });
 });
+
+describe("partial bulk returns keep the worst condition", () => {
+  test("DAMAGED then GOOD stays DAMAGED", async () => {
+    const t = convexTest(schema, modules);
+    await seedBulkLine(t, { orderedQuantity: 5, availableQuantity: 20 });
+    const { checkoutItemsCore } = await import("./warehouseOps");
+    await t.run((ctx) =>
+      checkoutItemsCore(ctx, { organizationId: ORG, projectId: "p1", userId: "user_1", items: [{ lineItemId: "bl", quantity: 5 }], includeAccessories: false, now: NOW }),
+    );
+    const ret = (qty: number, cond: "GOOD" | "DAMAGED") =>
+      t.run((ctx) => returnLineUnits(ctx, { organizationId: ORG, projectId: "p1", lineItemId: "bl", quantity: qty, returnCondition: cond, userId: "user_1", defaultLocationId: null }));
+    await ret(3, "DAMAGED");
+    await ret(2, "GOOD");
+    expect((await readBulkUnit(t))?.returnCondition).toBe("DAMAGED");
+  });
+});

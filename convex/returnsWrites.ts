@@ -9,6 +9,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
+import { bumpAssetCounters } from "./lib/counters";
 import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { checkinItemsCore } from "./warehouseOps";
 import { syncLineItemRollup, assetStatusFromReturnCondition } from "./lib/fulfillment";
@@ -391,8 +392,12 @@ export const correctReturnConditionNative = mutation({
       if (unit.assetId) {
         const newStatus = assetStatusFromReturnCondition(a.returnCondition);
         const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", unit!.assetId!)).first();
-        if (asset && asset.organizationId === a.orgId) {
+        // Skip an asset that has since gone out again (another job) — correcting
+        // an old return must not flip a live asset to AVAILABLE/IN_MAINTENANCE.
+        if (asset && asset.organizationId === a.orgId && asset.status !== "CHECKED_OUT") {
           await ctx.db.patch(asset._id, { status: newStatus, updatedAt: a.now });
+          // Keep the dashboard counters in step with the status change.
+          await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: newStatus });
         }
       }
     }

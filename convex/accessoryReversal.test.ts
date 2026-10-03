@@ -232,3 +232,29 @@ describe("prepUnit repack safety", () => {
     expect(packed).toEqual(["c1"]);
   });
 });
+
+describe("accessories of a parent with no serialised asset", () => {
+  test("prep packs and deploy carries a bulk accessory of an untagged multi-qty parent", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "ba1", organizationId: ORG, modelId: "m2", assetTag: "BAT", isActive: true, availableQuantity: 10 });
+      await ctx.db.insert("projectLineItems", {
+        id: "L2", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", description: "Generic", quantity: 2, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", {
+        id: "C2", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "L2",
+        bulkAssetId: "ba1", quantity: 2, status: "CONFIRMED", accessoryInclusion: "DEFAULT", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L2", quantity: 2 }],
+    });
+    const child = () => t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "C2")).unique());
+    expect((await child())?.prepStatus).toBe("PACKED");
+    await svc(t).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, includeAccessories: true, items: [{ lineItemId: "L2", quantity: 2 }],
+    });
+    expect((await child())?.status).toBe("CHECKED_OUT");
+  });
+});

@@ -189,6 +189,13 @@ export function assetStatusFromReturnCondition(
   return "AVAILABLE";
 }
 
+const RETURN_CONDITION_SEVERITY = { GOOD: 0, DAMAGED: 1, MISSING: 2 } as const;
+type ReturnCondition = keyof typeof RETURN_CONDITION_SEVERITY;
+function worstReturnCondition(prev: ReturnCondition | null | undefined, next: ReturnCondition): ReturnCondition {
+  if (!prev) return next;
+  return RETURN_CONDITION_SEVERITY[prev] >= RETURN_CONDITION_SEVERITY[next] ? prev : next;
+}
+
 async function setAssetStatus(ctx: Ctx, assetId: string, status: string, locationId: string | null) {
   const a = await assetDocByCuid(ctx, assetId);
   if (!a) return;
@@ -290,7 +297,9 @@ export async function returnLineUnits(
         status: fullyReturned ? "RETURNED" : "CHECKED_OUT",
         returnedAt: fullyReturned ? now : unit.returnedAt,
         returnedById: fullyReturned ? args.userId : unit.returnedById,
-        returnCondition: args.returnCondition,
+        // Partial returns accumulate: keep the WORST condition seen so a later
+        // GOOD return can't hide an earlier DAMAGED/MISSING one.
+        returnCondition: worstReturnCondition(unit.returnCondition, args.returnCondition),
         returnNotes: args.notes || unit.returnNotes,
         updatedAt: now,
       });
@@ -1070,7 +1079,36 @@ export async function prepUnit(
       }
     }
   }
+  // A parent with no serialised asset (bulk / untagged) has no per-asset accessory
+  // units, so its accessory child lines would otherwise never read PACKED.
+  if (!args.assetId) await packParentlessAccessories(ctx, args.organizationId, args.lineItemId);
   await syncLineItemRollup(ctx, args.lineItemId);
+}
+
+/** Pack the accessory child lines of a bulk/untagged parent once the WHOLE parent
+ *  line is packed. These children carry no `parentUnitAssetId` (there is no parent
+ *  asset), so checkout/return cascade them unscoped — see checkoutAccessoryChildren. */
+async function packParentlessAccessories(ctx: Ctx, organizationId: string, parentLineItemId: string): Promise<void> {
+  const parent = await lineDocByCuid(ctx, parentLineItemId);
+  if (!parent) return;
+  const assigned = (await lineUnits(ctx, parentLineItemId)).reduce((n, u) => n + (u.quantity ?? 0), 0);
+  if (assigned < (parent.quantity ?? 0)) return; // wait for the whole line
+  const now = Date.now();
+  for (const child of await accessoryChildrenOf(ctx, organizationId, parentLineItemId)) {
+    let unitId: string;
+    if (child.bulkAssetId) {
+      unitId = (await ensureBulkUnit(ctx, { organizationId, lineItemId: child.id, bulkAssetId: child.bulkAssetId, quantity: child.quantity ?? 1 })).id;
+    } else if (child.assetId) {
+      unitId = (await ensureSerialisedUnit(ctx, { organizationId, lineItemId: child.id, assetId: child.assetId })).id;
+    } else {
+      continue;
+    }
+    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).unique();
+    if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
+      await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
+    }
+    await syncLineItemRollup(ctx, child.id);
+  }
 }
 
 /**

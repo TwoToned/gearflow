@@ -105,3 +105,12 @@ minimumReleaseAgeExclude:
   - '@better-auth/sso@1.6.15'
   - '@better-auth/telemetry@1.6.15'
   - better-auth@1.6.15
+
+# Audit ignore list — every entry MUST have a matching, dated row in docs/exceptions.md (§15).
+#   GHSA-vfj7-8cjw-p6xm  braces <=3.0.3 stack-exhaustion DoS. Advisory says fixed in 3.0.4,
+#                        which is not published (3.0.3 is latest) so an override cannot fix
+#                        it. Dev/build tooling only (next-pwa build, eslint-config-next,
+#                        shadcn CLI) — never in the runtime bundle. Remove once braces ships.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm

@@ -5,10 +5,12 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrganization } from "@/hooks/use-organization";
 import {
   formatCurrency as baseFormatCurrency,
+  formatCurrencyWhole as baseFormatCurrencyWhole,
   formatDate as baseFormatDate,
   formatDateDayMonth as baseFormatDateDayMonth,
   formatDateLong as baseFormatDateLong,
   formatDateWeekdayShort as baseFormatDateWeekdayShort,
+  formatDateWeekdayLong as baseFormatDateWeekdayLong,
   formatDateWithTime as baseFormatDateWithTime,
   formatMonthYear as baseFormatMonthYear,
   formatConfigFromOrgSettings,
@@ -46,6 +48,8 @@ type DateArg = string | Date | null | undefined;
 
 export interface Formatters {
   formatCurrency: (value: number | null | undefined) => string;
+  /** `formatCurrency` without cents. */
+  formatCurrencyWhole: (value: number | null | undefined) => string;
   /** The "short" role — day, short month, year. */
   formatDate: (date: DateArg) => string;
   /** No year — a compact range/relative label. */
@@ -54,6 +58,8 @@ export interface Formatters {
   formatDateLong: (date: DateArg) => string;
   /** Weekday (short) + day + short month, no year — a date-range endpoint label. */
   formatDateWeekdayShort: (date: DateArg) => string;
+  /** Weekday (long) + day + full month, no year — a schedule day heading. */
+  formatDateWeekdayLong: (date: DateArg) => string;
   /** The "short" role plus a 24-hour clock time. */
   formatDateWithTime: (date: DateArg) => string;
   /** Month + year only — calendar headers. */
@@ -73,10 +79,12 @@ export function useFormatters(): Formatters {
   return useMemo(
     () => ({
       formatCurrency: (value: number | null | undefined) => baseFormatCurrency(value, config),
+      formatCurrencyWhole: (value: number | null | undefined) => baseFormatCurrencyWhole(value, config),
       formatDate: (date: DateArg) => baseFormatDate(date, config),
       formatDateDayMonth: (date: DateArg) => baseFormatDateDayMonth(date, config),
       formatDateLong: (date: DateArg) => baseFormatDateLong(date, config),
       formatDateWeekdayShort: (date: DateArg) => baseFormatDateWeekdayShort(date, config),
+      formatDateWeekdayLong: (date: DateArg) => baseFormatDateWeekdayLong(date, config),
       formatDateWithTime: (date: DateArg) => baseFormatDateWithTime(date, config),
       formatMonthYear: (date: DateArg) => baseFormatMonthYear(date, config),
       config,

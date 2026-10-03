@@ -65,6 +65,16 @@ export function formatCurrency(
   return `${symbol}${Number(value).toLocaleString(config.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** `formatCurrency` without cents \u2014 compact cards where the pennies are noise. */
+export function formatCurrencyWhole(
+  value: number | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  if (value == null) return "\u2014";
+  const symbol = currencySymbol(config.currency);
+  return `${symbol}${Number(value).toLocaleString(config.locale, { maximumFractionDigits: 0 })}`;
+}
+
 function formatDateWithOptions(
   date: string | Date | null | undefined,
   config: FormatConfig,
@@ -179,6 +189,15 @@ export function formatDateWeekdayShort(
   config: FormatConfig = DEFAULT_FORMAT_CONFIG,
 ): string {
   return formatDateWithOptions(date, config, { weekday: "short", day: "numeric", month: "short" });
+}
+
+/** Weekday (long) + day + full month, no year \u2014 a day heading on a
+ *  schedule/run-sheet (e.g. AU "Monday 15 July", US "Monday, July 15"). */
+export function formatDateWeekdayLong(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { weekday: "long", day: "numeric", month: "long" });
 }
 
 /** Month + year only \u2014 calendar headers (e.g. "July 2024"). */

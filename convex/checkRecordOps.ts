@@ -233,7 +233,15 @@ async function deprepItemInner(
           .filter((u) => u.status !== "CHECKED_OUT" && u.parentUnitAssetId && removedParentAssetIds.includes(u.parentUnitAssetId));
         for (const u of accUnits) await ctx.db.delete(u._id);
       }
-      for (const child of accChildren) await syncLineItemRollup(ctx, child.id);
+      for (const child of accChildren) {
+        // With no units left the rollup falls back to the line's CURRENT values,
+        // so an emptied child would stay PACKED — reset it like the parent.
+        const left = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect();
+        if (left.length === 0 && child.status !== "CHECKED_OUT" && child.status !== "RETURNED" && child.status !== "CANCELLED") {
+          await ctx.db.patch(child._id, { prepStatus: "PENDING", status: "CONFIRMED", updatedAt: a.now });
+        }
+        await syncLineItemRollup(ctx, child.id);
+      }
     }
   }
 

@@ -897,10 +897,15 @@ export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{
     }
     await syncLineItemRollup(ctx, item.lineItemId);
     if (unitsFlipped > 0) {
-      await checkinAccessoryChildren(ctx, {
-        organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
-        returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId: item.assetId ?? null,
-      });
+      // Scope the cascade to the parent assets that actually came back — a
+      // partial return with no assetId must not return every parent's accessories.
+      const scopes: Array<string | null> = item.assetId ? [item.assetId] : assetsTouched.length > 0 ? assetsTouched : [null];
+      for (const returnedAssetId of scopes) {
+        await checkinAccessoryChildren(ctx, {
+          organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
+          returnCondition: item.returnCondition ?? "GOOD", userId: a.userId, defaultLocationId, returnedAssetId,
+        });
+      }
     }
     updated.add(item.lineItemId);
   }
@@ -949,10 +954,16 @@ async function flipLineUnits(
     toPrepStatus?: "PACKED"; resetReturnedQty?: boolean;
     assetStatus: string; locationId: string | null; clearLoc: boolean;
     want?: number; now: number;
+    /** Only flip the unit for this serialised parent asset (undeploy/unreturn of a specific asset). */
+    onlyAssetId?: string;
+    /** Accessory scope: only flip units whose parent unit is one of these assets. */
+    parentAssetIds?: string[];
   },
 ): Promise<{ flipped: number; assetIds: string[]; bulkFlips: Array<{ bulkAssetId: string; quantity: number }> }> {
   const units = (await lineUnits(ctx, p.lineItemId))
     .filter((u) => u.status === p.fromStatus)
+    .filter((u) => !p.onlyAssetId || u.assetId === p.onlyAssetId)
+    .filter((u) => !p.parentAssetIds || (u.parentUnitAssetId != null && p.parentAssetIds.includes(u.parentUnitAssetId)))
     .sort((a, b) => a.ordinal - b.ordinal);
   const toFlip = p.want != null ? units.slice(0, Math.max(0, Math.min(p.want, units.length))) : units;
   const assetIds: string[] = [];
@@ -961,7 +972,11 @@ async function flipLineUnits(
     await ctx.db.patch(u._id, {
       status: p.toStatus,
       ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
-      ...(p.resetReturnedQty ? { returnedQuantity: 0 } : {}),
+      // Un-returning also wipes the return record, or the unit keeps a stale
+      // condition / returnedQuantity while it is out again.
+      ...(p.resetReturnedQty
+        ? { returnedQuantity: 0, returnCondition: undefined, returnedAt: undefined, returnedById: undefined, returnNotes: undefined }
+        : {}),
       updatedAt: p.now,
     });
     if (u.assetId) assetIds.push(u.assetId);
@@ -992,13 +1007,14 @@ async function applyBulkFlipAvailability(
 /** Cascade a line's ACCESSORY children back with their parent (whole units). */
 async function reverseAccessoryChildren(
   ctx: Ctx,
-  p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
+  p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; resetReturnedQty?: boolean; parentAssetIds?: string[]; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
 ): Promise<void> {
   const children = (await childLines(ctx, p.parentLineItemId, p.organizationId)).filter((c) => c.childKind === "ACCESSORY");
   for (const child of children) {
     await flipLineUnits(ctx, {
       organizationId: p.organizationId, lineItemId: child.id,
       fromStatus: p.fromStatus, toStatus: p.toStatus, toPrepStatus: p.toPrepStatus,
+      resetReturnedQty: p.resetReturnedQty, parentAssetIds: p.parentAssetIds,
       assetStatus: p.assetStatus, locationId: p.locationId, clearLoc: p.clearLoc, now: p.now,
     });
     await syncLineItemRollup(ctx, child.id);
@@ -1024,10 +1040,10 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
+    const { flipped, assetIds, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "CHECKED_OUT",
       toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE",
-      locationId: defLoc, clearLoc: true, want: item.quantity, now: a.now,
+      locationId: defLoc, clearLoc: true, want: item.quantity, onlyAssetId: item.assetId, now: a.now,
     });
     const wholeLine = flipped === 0 && line.status === "CHECKED_OUT";
     if (wholeLine) {
@@ -1035,7 +1051,7 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       await ctx.db.patch(line._id, { status: "CONFIRMED", prepStatus: "PACKED", checkedOutQuantity: 0, updatedAt: a.now });
     }
     await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, 1);
-    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, parentAssetIds: assetIds.length > 0 ? assetIds : undefined, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Prepped (un-deploy)" });
     updated.add(line.id);
@@ -1061,10 +1077,10 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
+    const { flipped, assetIds, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "RETURNED",
       toStatus: "CHECKED_OUT", resetReturnedQty: true, assetStatus: "CHECKED_OUT",
-      locationId: projLoc, clearLoc: false, want: item.quantity, now: a.now,
+      locationId: projLoc, clearLoc: false, want: item.quantity, onlyAssetId: item.assetId, now: a.now,
     });
     const wholeLine = flipped === 0 && line.status === "RETURNED";
     if (wholeLine) {
@@ -1073,7 +1089,7 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       await ctx.db.patch(line._id, { status: "CHECKED_OUT", returnedQuantity: 0, checkedOutQuantity: line.quantity ?? 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
     }
     await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, -1);
-    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
+    await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, parentAssetIds: assetIds.length > 0 ? assetIds : undefined, resetReturnedQty: true, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Deployed (un-return)" });
     updated.add(line.id);

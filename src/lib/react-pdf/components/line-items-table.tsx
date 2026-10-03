@@ -539,6 +539,11 @@ function ContainerHeaderRow({
   );
 }
 
+/** Per-unit sub-rows print for checkbox docs AND tag-only docs (delivery docket). */
+function listsUnits(config: TablePluginConfig): boolean {
+  return config.showPerUnitCheckboxes || config.showPerUnitTags === true;
+}
+
 function PerUnitRow({
   unit,
   index,
@@ -546,6 +551,7 @@ function PerUnitRow({
   indent,
   size,
   checked,
+  showCheckbox,
 }: {
   unit: { asset: { assetTag: string } | null; bulkAsset: { assetTag: string } | null } | undefined;
   index: number;
@@ -553,12 +559,13 @@ function PerUnitRow({
   indent: `${number}mm`;
   size: number;
   checked: boolean;
+  showCheckbox: boolean;
 }) {
   const { label, tagged } = perUnitLabel(unit, index, fallbackName);
   return (
     <View wrap={false} style={{ flexDirection: "row", alignItems: "center", paddingLeft: indent, paddingVertical: "0.6mm" }}>
-      <Checkbox size={size} checked={checked} />
-      <Text style={{ fontSize: 7, fontFamily: tagged ? "Courier" : "Helvetica", color: COLORS.label, marginLeft: "1.5mm" }}>
+      {showCheckbox && <Checkbox size={size} checked={checked} />}
+      <Text style={{ fontSize: 7, fontFamily: tagged ? "Courier" : "Helvetica", color: COLORS.label, marginLeft: showCheckbox ? "1.5mm" : 0 }}>
         {label}
       </Text>
     </View>
@@ -622,7 +629,7 @@ function renderParentCell(col: ColumnDef, item: DocumentLineItem, config: TableP
     case "assetTag": {
       // Blank when per-unit sub-rows will list every tag below — cramming
       // "TAG1, TAG2 +N" into the parent too is noisy.
-      const willListUnitsBelow = config.showPerUnitCheckboxes && !display.isKit && item.quantity > 1;
+      const willListUnitsBelow = listsUnits(config) && !display.isKit && item.quantity > 1;
       const tag = willListUnitsBelow ? "" : getAssetTag(item, display.isKit);
       return (
         <Cell key={col.key} col={col} fontSize={8}>
@@ -771,7 +778,7 @@ function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TableP
         </Cell>
       );
     case "assetTag": {
-      const willListUnitsBelow = config.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1;
+      const willListUnitsBelow = listsUnits(config) && !isNestedKit && child.quantity > 1;
       const tag = willListUnitsBelow ? "" : isNestedKit ? child.kit?.assetTag || "-" : getAssetTag(child, false);
       return (
         <Cell key={col.key} col={col} fontSize={7} color={COLORS.childText}>
@@ -882,7 +889,7 @@ function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; colu
           <View key={child.id}>
             <ChildRow child={child} columns={columns} config={config} />
 
-            {config.showPerUnitCheckboxes && !isNestedKit && child.quantity > 1 && (
+            {listsUnits(config) && !isNestedKit && child.quantity > 1 && (
               <>
                 {Array.from({ length: child.quantity }, (_, i) => (
                   <PerUnitRow
@@ -893,6 +900,7 @@ function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; colu
                     indent="19mm"
                     size={7}
                     checked={i < (child.checkedOutQuantity || 0)}
+                    showCheckbox={config.showPerUnitCheckboxes}
                   />
                 ))}
               </>
@@ -902,7 +910,7 @@ function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; colu
               grandchildren.map((nested) => (
                 <View key={nested.id}>
                   <GrandchildRow nested={nested} columns={columns} config={config} />
-                  {config.showPerUnitCheckboxes && nested.childKind === "ACCESSORY" && nested.quantity > 1 && (
+                  {listsUnits(config) && nested.childKind === "ACCESSORY" && nested.quantity > 1 && (
                     <>
                       {Array.from({ length: nested.quantity }, (_, i) => (
                         <PerUnitRow
@@ -913,6 +921,7 @@ function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; colu
                           indent="25mm"
                           size={6}
                           checked={i < (nested.checkedOutQuantity || 0)}
+                          showCheckbox={config.showPerUnitCheckboxes}
                         />
                       ))}
                     </>
@@ -985,7 +994,7 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
               <View key={item.id}>
                 <ItemRow item={item} columns={columns} config={config} altBg={idx % 2 === 0} rowNum={idx} />
 
-                {config.showPerUnitCheckboxes && !display.isKit && item.quantity > 1 && (
+                {listsUnits(config) && !display.isKit && item.quantity > 1 && (
                   <>
                     {Array.from({ length: item.quantity }, (_, i) => (
                       <PerUnitRow
@@ -996,6 +1005,7 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
                         indent="9mm"
                         size={7}
                         checked={i < (item.checkedOutQuantity || 0)}
+                        showCheckbox={config.showPerUnitCheckboxes}
                       />
                     ))}
                   </>

@@ -1309,7 +1309,7 @@ section header + divider treatment as a real category, not a blank/falsy
 - Markdown-lite formatting (`**bold**`, `*italic*`, `- `/`* ` bullets — `parseRichText`/`drawRichText` in `helpers.ts`) works anywhere text flows through `gearflowTable` (item/group notes) or `gearflowRichText` (client notes, terms & conditions, details columns, system notes). No other markdown syntax (links, headings, tables) is supported.
 - Badges: red "OVERBOOKED", purple "REDUCED STOCK"
 - Pull slip: per-unit checkboxes for qty > 1 items, ticked for already-deployed units
-- Per-unit rows (`showPerUnitCheckboxes`): a qty > 1 line expands to one row per assigned unit ("Unit 1 — TTP00042", …) instead of collapsing tags to "tag, tag +N". On for `packing-list`, `return-sheet`, and `delivery-docket` — a single literal in each doc type's `DOCUMENT_LAYOUTS` entry (there is exactly one default source now, not two that have to be kept in sync).
+- Per-unit rows (`showPerUnitCheckboxes`): a qty > 1 line expands to one row per assigned unit ("Unit 1 — TTP00042", …) instead of collapsing tags to "tag, tag +N". On for `packing-list` and `return-sheet` (with checkboxes); `delivery-docket` uses `showPerUnitTags` instead — same per-unit rows, no checkbox, so every asset tag is listed — a single literal in each doc type's `DOCUMENT_LAYOUTS` entry (there is exactly one default source now, not two that have to be kept in sync).
 
 ### Discount column prints the discount as it was ENTERED (#1012, 2026-07-28)
 

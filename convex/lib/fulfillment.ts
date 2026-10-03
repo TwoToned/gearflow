@@ -947,7 +947,9 @@ export async function prepUnit(
     const { id, created } = await ensureSerialisedUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, assetId: args.assetId });
     const resolved = await resolveContainerForWrite(ctx, args, created);
     const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (u) {
+    // Never re-prep a unit that is already OUT — flipping it back to CONFIRMED
+    // would silently un-deploy it with no asset/availability change.
+    if (u && u.status !== "CHECKED_OUT") {
       await ctx.db.patch(u._id, {
         status: "CONFIRMED",
         prepStatus: "PACKED",
@@ -966,8 +968,12 @@ export async function prepUnit(
     // now keyed on containerId).
     const accChildren = await accessoryChildrenOf(ctx, args.organizationId, args.lineItemId);
     for (const child of accChildren) {
+      const narrow = args.includeAccessoryIds ?? null;
       const units = (await lineUnits(ctx, child.id)).filter(
-        (un) => un.parentUnitAssetId === args.assetId && un.status !== "CHECKED_OUT",
+        (un) =>
+          un.parentUnitAssetId === args.assetId &&
+          un.status !== "CHECKED_OUT" && un.status !== "RETURNED" && un.status !== "CANCELLED" &&
+          (!narrow || narrow.has(un.assetId ?? un.bulkAssetId ?? "")),
       );
       for (const un of units) {
         await ctx.db.patch(un._id, {

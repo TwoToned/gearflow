@@ -292,3 +292,24 @@ describe("standalone bulk move-back maintains bulkAssets.availableQuantity", () 
     expect(await readBulkAvailable(t)).toBe(20);
   });
 });
+
+describe("undeploy after a partial bulk return", () => {
+  test("releases only the quantity still out and clears returnedQuantity", async () => {
+    const t = convexTest(schema, modules);
+    await seedBulkLine(t, { orderedQuantity: 10, availableQuantity: 100 });
+    const { checkoutItemsCore, undeployItemsCore } = await import("./warehouseOps");
+    await t.run((ctx) =>
+      checkoutItemsCore(ctx, { organizationId: ORG, projectId: "p1", userId: "user_1", items: [{ lineItemId: "bl", quantity: 10 }], includeAccessories: false, now: NOW }),
+    );
+    expect(await readBulkAvailable(t)).toBe(90);
+    await t.run((ctx) =>
+      returnLineUnits(ctx, { organizationId: ORG, projectId: "p1", lineItemId: "bl", quantity: 4, returnCondition: "GOOD", userId: "user_1", defaultLocationId: null }),
+    );
+    expect(await readBulkAvailable(t)).toBe(94);
+    await t.run((ctx) =>
+      undeployItemsCore(ctx, { organizationId: ORG, projectId: "p1", userId: "user_1", items: [{ lineItemId: "bl" }], now: NOW }),
+    );
+    expect(await readBulkAvailable(t)).toBe(100); // not 104
+    expect((await readBulkUnit(t))?.returnedQuantity ?? 0).toBe(0);
+  });
+});

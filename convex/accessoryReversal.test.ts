@@ -163,3 +163,72 @@ describe("force-return and the accessory deploy guard", () => {
     expect(await asset(t, "c1")).toBe("LOST");
   });
 });
+
+describe("deploying an accessory left behind after its parent went out", () => {
+  test("a repeat deploy carries the left-behind accessory out", async () => {
+    const t = makeT();
+    await seed(t);
+    await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    // Partial deploy: narrow to a non-existent accessory id so c1 stays behind.
+    await svc(t).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, includeAccessories: true,
+      items: [{ lineItemId: "L1", assetId: "a1", includeAccessoryIds: ["none"] }],
+    });
+    expect(await asset(t, "a1")).toBe("CHECKED_OUT");
+    expect(await asset(t, "c1")).toBe("AVAILABLE");
+    await svc(t).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, includeAccessories: true,
+      items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    expect(await asset(t, "c1")).toBe("CHECKED_OUT");
+  });
+});
+
+describe("prepUnit repack safety", () => {
+  test("re-prepping an already-deployed parent does not un-deploy it", async () => {
+    const t = makeT();
+    await seed(t);
+    const prep = () => svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await prep();
+    await svc(t).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, includeAccessories: true, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await prep();
+    const u = await t.run(async (ctx) => (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).find((x) => x.assetId === "a1"));
+    expect(u?.status).toBe("CHECKED_OUT");
+  });
+
+  test("a narrowed prep only packs the selected accessory units", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "c1b", organizationId: ORG, modelId: "m2", assetTag: "AN1B", status: "AVAILABLE", isActive: true, parentAssetId: "a1", createdAt: NOW, updatedAt: NOW });
+    });
+    // First prep creates + packs both accessories; return one to CONFIRMED then re-prep narrowed to c1.
+    await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await t.run(async (ctx) => {
+      const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect();
+      for (const k of kids) for (const u of await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", k.id)).collect()) {
+        await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PENDING" });
+      }
+    });
+    await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1", includeAccessoryIds: ["c1"] }],
+    });
+    const packed = await t.run(async (ctx) => {
+      const out: string[] = [];
+      const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect();
+      for (const k of kids) for (const u of await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", k.id)).collect()) {
+        if (u.prepStatus === "PACKED" && u.assetId) out.push(u.assetId);
+      }
+      return out;
+    });
+    expect(packed).toEqual(["c1"]);
+  });
+});

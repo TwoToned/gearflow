@@ -366,7 +366,21 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
           organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, userId: a.userId,
           projectLocationId, projectId: a.projectId, notes: item.notes, now: a.now,
         });
-        if (res === "continue") continue;
+        if (res === "continue") {
+          // The parent unit is already out. A "Deploy Verified Only" / logged override
+          // can leave an accessory behind, so a repeat deploy must still carry any
+          // not-yet-deployed accessory out (idempotent: only flips what is still in).
+          if (a.includeAccessories) {
+            await finalizeCheckoutItem(ctx, {
+              organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, projectId: a.projectId,
+              userId: a.userId, projectLocationId, includeAccessories: true,
+              includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
+              now: a.now,
+            });
+            updated.add(lineItem.id);
+          }
+          continue;
+        }
       } else if (lineItem.bulkAssetId) {
         await checkOutBulkItem(ctx, {
           organizationId: a.organizationId, lineItemId: lineItem.id, lineItemQuantity: lineItem.quantity ?? 0,
@@ -981,13 +995,15 @@ async function flipLineUnits(
       ...(p.toPrepStatus ? { prepStatus: p.toPrepStatus } : {}),
       // Un-returning also wipes the return record, or the unit keeps a stale
       // condition / returnedQuantity while it is out again.
-      ...(p.resetReturnedQty
+      ...(p.resetReturnedQty || p.toStatus === "CONFIRMED"
         ? { returnedQuantity: 0, returnCondition: undefined, returnedAt: undefined, returnedById: undefined, returnNotes: undefined }
         : {}),
       updatedAt: p.now,
     });
     if (u.assetId) assetIds.push(u.assetId);
-    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: u.quantity ?? 0 });
+    // Undeploy releases only what is still OUT: a partial return already put its
+    // share back on the shelf, so releasing the full quantity would double-count.
+    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: p.toStatus === "CONFIRMED" ? Math.max(0, (u.quantity ?? 0) - (u.returnedQuantity ?? 0)) : (u.quantity ?? 0) });
   }
   if (assetIds.length > 0) await setAssetsStatus(ctx, assetIds, p.assetStatus, p.locationId, p.clearLoc, p.now);
   return { flipped: toFlip.length, assetIds, bulkFlips };

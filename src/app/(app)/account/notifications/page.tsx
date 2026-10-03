@@ -7,6 +7,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -120,7 +121,7 @@ export default function NotificationPreferencesPage() {
                 const action = next ? push.subscribe() : push.unsubscribe();
                 action
                   .then(() => toast.success(next ? "Push notifications enabled" : "Push notifications disabled"))
-                  .catch((e: Error) => toast.error(e.message));
+                  .catch((e: unknown) => toast.error(convexErrorMessage(e, "Could not update push notifications.")));
               }}
             />
           </div>

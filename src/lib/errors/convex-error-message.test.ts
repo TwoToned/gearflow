@@ -34,3 +34,12 @@ describe("convexErrorMessage", () => {
     expect(convexErrorMessage(undefined, "fallback")).toBe("fallback");
   });
 });
+
+describe("masked Convex server errors", () => {
+  it("never shows the [CONVEX M(...)] wrapper, keeps the request id", () => {
+    const e = new Error("[CONVEX M(warehouseWrites:checkOutKitsBatch)] [Request ID: 14c6ba53f5ca59c4] Server Error");
+    const msg = convexErrorMessage(e, "fallback");
+    expect(msg).not.toMatch(/CONVEX|Server Error/);
+    expect(msg).toContain("14c6ba53f5ca59c4");
+  });
+});

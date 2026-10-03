@@ -131,6 +131,9 @@ Plus, on every mutation:
   the Convex arg validator's *field set* stay in sync — the `assert*Fields` guards
   are the matching *value*-level guarantee.
 
+### Errors the user sees
+A failed write must always say why — never the raw `[CONVEX M(fn)] [Request ID: …] Server Error\nUncaught ConvexError: …` wrapper. `useServerMutation` normalises every thrown error through `convexErrorMessage` (`src/lib/errors/convex-error-message.ts`) before `onError`/`error`, so `toast.error(e.message)` is always safe (original kept as `cause`). A `ConvexError` shows its `data.message` / string payload; a masked server failure (plain `Error` thrown in a Convex function, which production reduces to `Server Error`) shows "Something went wrong on our side (ref <request id>)". Code that calls a Convex mutation outside `useServerMutation` must use `convexErrorMessage(e, fallback)` itself. In `convex/*.ts` always throw `ConvexError` with a human message so the first case, not the generic one, is what users get.
+
 ## What stays a server action (permanent)
 
 A set of surfaces is server-only **by nature** — they need secrets, crypto, Node

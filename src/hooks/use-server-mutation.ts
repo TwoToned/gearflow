@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
+import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 
 /**
  * Server-action mutation hook (Phase 6 of the Convex migration — React Query
@@ -51,8 +52,22 @@ export interface ServerMutationResult<TData, TVariables> {
   reset: () => void;
 }
 
+/**
+ * Every call site shows `error.message` in a toast, so the message must already be
+ * human-readable. A raw Convex error's `.message` is the
+ * `[CONVEX M(fn)] [Request ID: …] Server Error\nUncaught ConvexError: …` wrapper —
+ * rebuild the error around the real reason (`convexErrorMessage`) and keep the
+ * original as `cause` for logging/debugging. Done once here instead of at ~300
+ * `toast.error(e.message)` sites.
+ */
 function toError(e: unknown): Error {
-  return e instanceof Error ? e : new Error(String(e));
+  // A thrown non-Error (a bare string) is its own message; only an unreadable
+  // ConvexError payload gets the generic line.
+  const message = convexErrorMessage(e, typeof e === "string" && e ? e : "Something went wrong. Please try again.");
+  if (e instanceof Error && e.message === message) return e;
+  const err = new Error(message, { cause: e });
+  if (e instanceof Error) err.name = e.name === "ConvexError" ? "Error" : e.name;
+  return err;
 }
 
 export function useServerMutation<TData = unknown, TVariables = void>(

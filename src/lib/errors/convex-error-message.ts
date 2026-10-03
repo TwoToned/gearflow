@@ -24,8 +24,23 @@ export function convexErrorMessage(e: unknown, fallback: string): string {
     if (typeof data === "string" && data) return data;
     return fallback;
   }
-  // A non-ConvexError Error (client-side validation, "No active organization",
-  // a thrown plain string, …) already carries a message written for a human.
-  if (e instanceof Error) return e.message;
+  if (e instanceof Error) {
+    // Convex masks a plain (non-ConvexError) throw in production to
+    // `"[CONVEX M(mod:fn)] [Request ID: abc123] Server Error"` — nothing in it is
+    // written for a human. Say it's on us, and keep the request id so support can
+    // find the server log.
+    if (isMaskedServerError(e.message)) {
+      const ref = /Request ID: ([\w-]+)/.exec(e.message)?.[1];
+      return `Something went wrong on our side${ref ? ` (ref ${ref})` : ""}. Please try again, and contact support if it keeps happening.`;
+    }
+    // A non-ConvexError Error (client-side validation, "No active organization",
+    // a thrown plain string, …) already carries a message written for a human.
+    return e.message;
+  }
   return fallback;
+}
+
+/** The raw wrapper Convex builds around any server-side failure. */
+export function isMaskedServerError(message: string): boolean {
+  return /^\s*\[CONVEX [MQA]\(/.test(message) || /\bServer Error\b/.test(message);
 }

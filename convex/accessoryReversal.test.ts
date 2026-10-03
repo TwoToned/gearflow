@@ -258,3 +258,39 @@ describe("accessories of a parent with no serialised asset", () => {
     expect((await child())?.status).toBe("CHECKED_OUT");
   });
 });
+
+describe("accessory stranded under an already-returned parent", () => {
+  test("returning the parent again brings the stranded accessory home", async () => {
+    const t = makeT();
+    await seed(t);
+    await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await svc(t).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, includeAccessories: true, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await svc(t).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", assetId: "a1", returnCondition: "GOOD" }],
+    });
+    // Simulate the stranded state: accessory unit + asset back out under a RETURNED parent.
+    await t.run(async (ctx) => {
+      const u = await accUnitDoc(ctx);
+      await ctx.db.patch(u!._id, { status: "CHECKED_OUT" });
+      const c1 = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "c1")).unique();
+      await ctx.db.patch(c1!._id, { status: "CHECKED_OUT" });
+    });
+    await svc(t).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", assetId: "a1", returnCondition: "GOOD" }],
+    });
+    expect(await asset(t, "c1")).toBe("AVAILABLE");
+  });
+});
+
+async function accUnitDoc(ctx: import("./_generated/server").MutationCtx) {
+  const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect();
+  for (const k of kids) {
+    const us = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", k.id)).collect();
+    if (us[0]) return us[0];
+  }
+  return null;
+}

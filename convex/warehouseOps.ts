@@ -917,7 +917,11 @@ export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{
       await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: item.notes || `Returned ${unitsFlipped} unit(s)` });
     }
     await syncLineItemRollup(ctx, item.lineItemId);
-    if (unitsFlipped > 0) {
+    // A parent that is ALREADY returned can still have an accessory stranded out
+    // (left behind by an earlier partial deploy/return); returning it again must
+    // bring that accessory home instead of silently doing nothing.
+    const strandedParent = unitsFlipped === 0 && (await lineByCuid(ctx, item.lineItemId))?.status === "RETURNED";
+    if (unitsFlipped > 0 || strandedParent) {
       // Scope the cascade to the parent assets that actually came back — a
       // partial return with no assetId must not return every parent's accessories.
       const scopes: Array<string | null> = item.assetId ? [item.assetId] : assetsTouched.length > 0 ? assetsTouched : [null];

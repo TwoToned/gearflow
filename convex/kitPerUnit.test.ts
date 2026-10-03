@@ -251,6 +251,25 @@ describe("kit per-unit — accessories on a member", () => {
   }
   const accAssetStatus = (t: T) => t.run(async (ctx) => (await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "acc1")).unique())?.status);
 
+  test("prepping the kit then deploying creates ONE accessory unit (no parent-less duplicate)", async () => {
+    const t = makeT();
+    await seedKitWithAccessory(t);
+    await t.run(async (ctx) => {
+      const kids = await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "kl1")).collect();
+      const member = kids.find((k) => k.assetId === "a1")!;
+      await ctx.db.insert("projectLineItems", {
+        id: "accL", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", isKitChild: true, childKind: "ACCESSORY",
+        parentLineItemId: member.id, assetId: "acc1", quantity: 1, status: "CONFIRMED", accessoryInclusion: "DEFAULT", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    await t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepKitChildren, { organizationId: ORG, projectId: "p1", parentLineItemId: "kl1", now: NOW });
+    await co(t);
+    const us = await accessoryUnits(t);
+    expect(us.length).toBe(1);
+    expect(us[0].parentUnitAssetId).toBe("a1");
+    expect(us[0].status).toBe("CHECKED_OUT");
+  });
+
   test("checkout deploys the member's accessory unit + asset", async () => {
     const t = makeT();
     await seedKitWithAccessory(t);

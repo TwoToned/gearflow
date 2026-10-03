@@ -352,7 +352,10 @@ async function setKitTreePrep(ctx: Ctx, parentLineItemId: string, organizationId
       if (gc.status === "CHECKED_OUT" || gc.status === "CANCELLED") continue;
       if (mode === "PREP") await ctx.db.patch(gc._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
       else await ctx.db.patch(gc._id, { prepStatus: "PENDING", updatedAt: now });
-      if (!gc.kitId) await setKitMemberUnitPrep(ctx, gc, now, mode);
+      // An accessory's unit is created PARENT-scoped (parentUnitAssetId) by
+      // expandAccessoriesForAsset at deploy — a plain unit made here would sit
+      // beside it as a duplicate that is never deployed or returned.
+      if (!gc.kitId && gc.childKind !== "ACCESSORY") await setKitMemberUnitPrep(ctx, gc, now, mode);
     }
   }
   const parent = await lineByCuid(ctx, parentLineItemId);

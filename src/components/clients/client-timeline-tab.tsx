@@ -9,18 +9,9 @@ import { Panel } from "@/components/ui/card";
 import { intentStyles } from "@/lib/status-colors";
 import { TIMELINE_FILTERS, TIMELINE_FILTER_LABELS, TIMELINE_CATEGORY_INTENT, matchesTimelineFilter, type TimelineFilter } from "@/lib/client-timeline";
 import { cn, focusRing } from "@/lib/utils";
+import { useFormatters } from "@/components/providers/format-provider";
 
 export type ClientTimelineData = FunctionReturnType<typeof api.clientTimeline.forClient>;
-
-function formatWhen(at: number) {
-  return new Date(at).toLocaleString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 /** Client timeline tab (#1245, design §8.4) — the unified stream of quote/
  *  invoice/job events, comments and mentions, logged calls/emails/notes, and
@@ -29,6 +20,7 @@ function formatWhen(at: number) {
  *  owned by the client detail page so the "since last touch" hero stat and
  *  this tab share ONE subscription rather than two independently-timed ones. */
 export function ClientTimelineTab({ data }: { data: ClientTimelineData | undefined }) {
+  const { formatDateWithTime: formatWhen } = useFormatters();
   const [filter, setFilter] = useState<TimelineFilter>("all");
 
   const rows = data?.rows.filter((r) => matchesTimelineFilter(r.category, filter)) ?? [];
@@ -75,7 +67,7 @@ export function ClientTimelineTab({ data }: { data: ClientTimelineData | undefin
                 <div className="min-w-0 flex-1 border-b border-line pb-3 last:border-0 last:pb-0">
                   <p className="text-[13.5px] text-ink-2">{row.summary}</p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted">
-                    <span>{formatWhen(row.at)}</span>
+                    <span>{formatWhen(new Date(row.at))}</span>
                     {row.actorName && (
                       <>
                         <span aria-hidden>&middot;</span>

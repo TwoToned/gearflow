@@ -11,6 +11,7 @@ import { createApiKey } from "@/server/api-keys";
 import { findApiKeyPreset } from "@/lib/api-key-presets";
 import { SettingsCard, FormSection } from "@/components/layout/page-layouts";
 import { Button } from "@/components/ui/button";
+import { useFormatters } from "@/components/providers/format-provider";
 
 type TestState = "idle" | "testing" | "ok" | "error";
 
@@ -58,6 +59,7 @@ export function ConnectAgentCard({
   disabled?: boolean;
   onCreated: (token: string, name: string) => void;
 }) {
+  const { formatDate } = useFormatters();
   const { data: session } = useSession();
   const { data: activeOrg } = useActiveOrganization();
   const [connected, setConnected] = useState<{ token: string; prefix: string } | null>(null);
@@ -68,7 +70,7 @@ export function ConnectAgentCard({
     mutationFn: () => {
       const preset = findApiKeyPreset("read_only_agent")!;
       return createApiKey({
-        name: `AI Agent (${new Date().toLocaleDateString("en-AU")})`,
+        name: `AI Agent (${formatDate(new Date())})`,
         actingUserId: session?.user?.id ?? "",
         scopes: [...preset.scopes],
         noFinancials: preset.noFinancialsDefault,

@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { StickyTable } from "@/components/ui/sticky-table";
 import { getAccessoryChildren } from "@/components/warehouse/pick-list-progress";
+import { useFormatters } from "@/components/providers/format-provider";
 
 /** First truthy value, or "" — a plain loop (not a chain of `||`/`?.`) keeps
  *  the caller's own branch count down for the complexity ratchet (R-3.6). */
@@ -161,6 +162,7 @@ export default function PullSheetPage({
 }: {
   params: Promise<{ projectId: string }>;
 }) {
+  const { formatDate } = useFormatters();
   const { projectId } = use(params);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -434,7 +436,7 @@ export default function PullSheetPage({
       {/* Print footer */}
       <div className="hidden print:block text-caption text-muted border-t pt-2 mt-8">
         <p>
-          Printed {new Date().toLocaleDateString("en-AU")} — {project.name} (
+          Printed {formatDate(new Date())} — {project.name} (
           {project.projectNumber})
         </p>
       </div>

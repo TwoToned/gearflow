@@ -48,6 +48,7 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@/components/ui/tooltip";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,14 +56,6 @@ function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
-}
-
-function formatDateShort(date: Date): string {
-  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-}
-
-function formatDayOfWeek(date: Date): string {
-  return date.toLocaleDateString("en-AU", { weekday: "short" });
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -161,6 +154,7 @@ const ALL = "__all__";
 const DAYS_TO_SHOW = 14;
 
 export default function CrewPlannerPage() {
+  const { formatDateDayMonth: formatDateShort, config: formatConfig } = useFormatters();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const pConvex = useConvex();
@@ -637,7 +631,7 @@ export default function CrewPlannerPage() {
                             isToday ? "text-red" : isWeekend(day) ? "text-faint" : "text-muted"
                           }`}
                         >
-                          {formatDayOfWeek(day)}
+                          {day.toLocaleDateString(formatConfig.locale, { weekday: "short" })}
                         </div>
                         <div
                           className={`mx-auto mt-0.5 flex size-6 items-center justify-center rounded-full text-caption tabular-nums ${

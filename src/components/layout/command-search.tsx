@@ -72,6 +72,7 @@ import { matchSlashCommands, extractEntityId, type SlashCommand } from "@/lib/sl
 import { signOut } from "@/lib/auth-client";
 import { useCurrentRole } from "@/lib/use-permissions";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // ─── Icon maps ─────────────────────────────────────────────────────
 
@@ -172,6 +173,7 @@ const KB_HINT_FONT_SIZE = "10px";
 const BREADCRUMB_MAX_WIDTH = "150px";
 
 export function CommandSearch() {
+  const { formatDateLong } = useFormatters();
   const isMobile = useIsMobile();
   const globalSearch = useGlobalSearch();
   const [open, setOpen] = useState(false);
@@ -643,12 +645,10 @@ export function CommandSearch() {
 
     // Format as local YYYY-MM-DD (avoid toISOString which converts to UTC)
     const iso = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
-    const formatted = parsed.toLocaleDateString("en-AU", {
-      weekday: "long", day: "numeric", month: "long", year: "numeric",
-    });
+    const formatted = formatDateLong(parsed);
 
     return { date: parsed, iso, formatted, searchPart };
-  }, [query, atQuery, isAtMode, isDrilling, isAtEntityMode]);
+  }, [query, atQuery, isAtMode, isDrilling, isAtEntityMode, formatDateLong]);
 
   // When date + search text, fetch matching entities
   const [dateSearchResults, setDateSearchResults] = useState<SearchResult[]>([]);

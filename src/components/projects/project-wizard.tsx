@@ -133,6 +133,7 @@ export function ProjectWizard({
   /** When present, the wizard runs in EDIT mode for this project. */
   project?: EditableProject;
 }) {
+  const { formatDateDayMonth } = useFormatters();
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const managerWrites = useProjectManagerWrites();
@@ -594,8 +595,8 @@ export function ProjectWizard({
                 <ReviewRow label="Type" value={typeName} />
                 <ReviewRow label="Managers" value={managerIds.length ? `${managerIds.length} assigned` : undefined} />
                 <ReviewRow label="Project code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />
-                <ReviewRow label="Rental" value={dateRange(v.rentalStartDate, v.rentalEndDate)} />
-                <ReviewRow label="Project window" value={dateRange(v.projectStartDate, v.projectEndDate) || "Same as rental"} />
+                <ReviewRow label="Rental" value={dateRange(formatDateDayMonth, v.rentalStartDate, v.rentalEndDate)} />
+                <ReviewRow label="Project window" value={dateRange(formatDateDayMonth, v.projectStartDate, v.projectEndDate) || "Same as rental"} />
                 <ReviewRow label="Location" value={locationName} />
                 <ReviewRow label="Site contact" value={v.siteContactName} />
                 <ReviewRow label="Tags" value={(v.tags && v.tags.length) ? v.tags.join(", ") : undefined} />
@@ -648,7 +649,7 @@ export function ProjectWizard({
               <SummaryLine label="Name" value={v.name || "—"} />
               <SummaryLine label="Client" value={clientName || "—"} />
               <SummaryLine label="Type" value={typeName || "—"} />
-              <SummaryLine label="Dates" value={dateRange(v.rentalStartDate, v.rentalEndDate) || "—"} />
+              <SummaryLine label="Dates" value={dateRange(formatDateDayMonth, v.rentalStartDate, v.rentalEndDate) || "—"} />
             </div>
           </div>
         </aside>
@@ -905,11 +906,15 @@ function SummaryLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function dateRange(a?: unknown, b?: unknown): string | undefined {
+function dateRange(
+  formatDateDayMonth: (d: Date) => string,
+  a?: unknown,
+  b?: unknown,
+): string | undefined {
   const fmt = (s?: unknown) => {
     if (!s) return null;
     const d = new Date(String(s));
-    return isNaN(d.getTime()) ? null : d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+    return isNaN(d.getTime()) ? null : formatDateDayMonth(d);
   };
   const x = fmt(a), y = fmt(b);
   if (x && y) return `${x} – ${y}`;

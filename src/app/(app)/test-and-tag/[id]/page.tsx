@@ -49,17 +49,9 @@ import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { LabelTemplate } from "@/components/test-tag/label-template";
 import { cn, focusRing } from "@/lib/utils";
 import { testTagStatusLabels, testTagResultLabels, equipmentClassLabels, applianceTypeLabels } from "@/lib/status-labels";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // ─── Helpers ──────────────────────────────────────────────────────
-
-function formatDate(date: Date | string | null | undefined) {
-  if (!date) return "\u2014";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 function resultBadge(result: string) {
   if (result === "PASS")
@@ -88,6 +80,7 @@ export default function TestTagDetailPage({ params }: { params: Promise<{ id: st
 }
 
 function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
+  const { formatDate } = useFormatters();
   const { id } = use(params);
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();

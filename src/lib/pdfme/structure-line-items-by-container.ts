@@ -203,6 +203,7 @@ function emitContainerSection(
   entries: PlacedEntry[],
   containers: ContainerForStructuring[],
   byId: Map<string, ContainerForStructuring>,
+  sectionName: string,
 ): DocumentLineItem[] {
   const out: DocumentLineItem[] = [];
   const sectionMembers = entries.filter((e) => e._topId === top.id);
@@ -213,13 +214,13 @@ function emitContainerSection(
     descendants.filter((d) => d.parentContainerId === containerId).length;
 
   out.push(containerHeaderRow(
-    top, 0, top.label,
+    top, 0, sectionName,
     sectionMembers.filter((e) => e._containerId === top.id),
     directChildContainerCount(top.id),
   ));
   for (const desc of descendants) {
     out.push(containerHeaderRow(
-      desc, depthOf(desc.id, byId), top.label,
+      desc, depthOf(desc.id, byId), sectionName,
       sectionMembers.filter((e) => e._containerId === desc.id),
       directChildContainerCount(desc.id),
     ));
@@ -228,7 +229,7 @@ function emitContainerSection(
   for (const e of sectionMembers.sort(byCategoryThenKit)) {
     const { _containerId, _topId, ...rest } = e;
     void _containerId; void _topId;
-    out.push({ ...rest, groupName: top.label, containerDepth: depthOf(e._containerId, byId) + 1 });
+    out.push({ ...rest, groupName: sectionName, containerDepth: depthOf(e._containerId, byId) + 1 });
   }
   return out;
 }
@@ -247,8 +248,15 @@ export function structureLineItemsByContainer(
   const topLevel = containers
     .filter((c) => !c.parentContainerId || !byId.has(c.parentContainerId))
     .sort((a, b) => a.sortOrder - b.sortOrder);
+  // `groupName` is the section's bucket/filter key, so two cases sharing a
+  // label ("Pelican 1450" ×2) MUST get distinct keys — otherwise they merge
+  // into one bucket and an EMPTY case's header survives the status filter on
+  // its namesake's items. The header still prints `description`/tag, not this.
+  const labelCounts = new Map<string, number>();
+  for (const t of topLevel) labelCounts.set(t.label, (labelCounts.get(t.label) ?? 0) + 1);
   for (const top of topLevel) {
-    structured.push(...emitContainerSection(top, entries, containers, byId));
+    const sectionName = (labelCounts.get(top.label) ?? 0) > 1 ? `${top.label} [${top.id}]` : top.label;
+    structured.push(...emitContainerSection(top, entries, containers, byId, sectionName));
   }
 
   const loose = entries.filter((e) => e._topId === null && e._containerId === null).sort(byCategoryThenKit);

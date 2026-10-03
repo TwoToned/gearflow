@@ -138,7 +138,7 @@ describe("DeliveryDocketDocument (react-pdf)", () => {
       expect(fullText).not.toContain("Received");
     });
 
-    it("lists every unit's asset tag on its own sub-row (no "+N" truncation)", async () => {
+    it("lists every unit's asset tag on its own sub-row (no +N truncation)", async () => {
       const raw = [
         {
           id: "bulk",

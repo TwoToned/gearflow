@@ -64,6 +64,66 @@ export function buildVideoConstraints(): MediaStreamConstraints {
   };
 }
 
+/**
+ * Lens labels we never want for scanning: ultra-wide and macro lenses distort or
+ * crop badly, telephoto cannot focus at arm's length, depth/IR sensors are not
+ * colour cameras at all.
+ */
+const UNWANTED_LENS = /ultra|tele|macro|depth|infrared|\bir\b|monochrome|ir camera/i;
+const BACK_LENS = /back|rear|environment|facing back/i;
+
+/**
+ * Pick the rear MAIN camera from a post-permission device list, or `null` to keep
+ * whatever `facingMode` gave us.
+ *
+ * Android Chrome on multi-lens phones often hands `facingMode: "environment"` the
+ * ultra-wide or a logical camera that hunts between lenses — a linear barcode
+ * then arrives soft. Labels are only populated AFTER permission, which is why
+ * this runs on the live stream's device list and never before `getUserMedia`
+ * (see the `deviceId` note on `buildVideoConstraints`).
+ */
+export function pickBackCamera(devices: readonly MediaDeviceInfo[]): string | null {
+  const back = devices.filter(
+    (d) => d.kind === "videoinput" && d.deviceId && BACK_LENS.test(d.label),
+  );
+  if (back.length < 2) return null;
+  // iOS names its plain wide lens exactly "Back Camera"; the "Dual"/"Triple"
+  // virtual devices switch lenses under the OS (and can land on the ultra-wide),
+  // so the plain device is the stable choice there.
+  const plain = back.find((d) => /^back camera$/i.test(d.label.trim()));
+  if (plain) return plain.deviceId;
+  const preferred = back.filter((d) => !UNWANTED_LENS.test(d.label));
+  return (preferred[0] ?? back[0])?.deviceId ?? null;
+}
+
+/** Zoom factor applied where supported: lets the operator hold the phone beyond minimum focus distance. */
+const TARGET_ZOOM = 1.8;
+
+/**
+ * Per-track tuning to apply once the stream exists, from its advertised
+ * capabilities. `null` when there is nothing worth applying (iOS exposes none of
+ * these, so this is a no-op there rather than a silent failed constraint).
+ *
+ * - `focusMode: "continuous"` — Android's default is frequently single-shot, so
+ *   the lens focuses once on whatever was in frame at open and never again.
+ * - `zoom` — a label read from ~25 cm at 1.8x fills the frame like one read from
+ *   ~14 cm at 1x, which is inside most lenses' minimum focus distance.
+ */
+export function buildTrackTuning(caps: MediaTrackCapabilities | null): MediaTrackConstraintSet | null {
+  if (!caps) return null;
+  const tuning: Record<string, unknown> = {};
+  const focusModes = (caps as { focusMode?: string[] }).focusMode;
+  if (Array.isArray(focusModes) && focusModes.includes("continuous")) {
+    tuning.focusMode = "continuous";
+  }
+  const zoom = (caps as { zoom?: { min?: number; max?: number } }).zoom;
+  if (zoom && typeof zoom.max === "number") {
+    const min = typeof zoom.min === "number" ? zoom.min : 1;
+    tuning.zoom = Math.min(zoom.max, Math.max(min, TARGET_ZOOM));
+  }
+  return Object.keys(tuning).length > 0 ? (tuning as MediaTrackConstraintSet) : null;
+}
+
 type CameraErrorKind =
   | "denied"
   | "insecure"

@@ -106,8 +106,8 @@ export function CameraScannerDialog({
         <DialogHeader className="px-4 pb-3 pt-4 text-left">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Hold the code inside the frame. Works with QR, Micro QR, rMQR, Data Matrix, and standard
-            barcodes.
+            Hold the code inside the frame, about 20 cm away so the camera can focus. Works with QR,
+            Micro QR, rMQR, Data Matrix, and standard barcodes.
           </DialogDescription>
         </DialogHeader>
 

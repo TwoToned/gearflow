@@ -97,15 +97,11 @@ import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehous
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { resolvePickerScan, countAssigned } from "@/lib/asset-picker-scan";
 import {
-  isBulkItem,
   modelDisplayName,
   isKitParent,
   isAccessoryParent,
   accessoryChildrenOf,
   collectAllVerifiableIds,
-  bulkUnitKey,
-  bulkUnpackedRemaining,
-  bulkPackedWaiting,
   isInPickPrepStage,
   isInPreppedStage,
   isInReturnedStage,
@@ -117,6 +113,10 @@ import {
   isMoveableAtReturnStage,
   isMoveableAtDeprepStage,
   keysForGroupEntries,
+  selectionKeysForEntries,
+  accessoryAssetIds,
+  groupItems,
+  groupCheckinItems,
 } from "@/components/warehouse/warehouse-types";
 import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
 import {
@@ -166,163 +166,6 @@ const statusLabels: Record<string, string> = {
 
 // GroupEntry, isKitParent, PrepStatusBadge, collectAllVerifiableIds are imported from warehouse-types / components
 
-// `countStage` picks how a bulk line's per-unit count is derived so a partially
-// prepped line shows the right number of units in each tab: the units still to
-// pick in Pick, and the units packed-and-waiting in Prepped. Omitted (De-prep /
-// legacy) keeps the whole ordered quantity.
-function groupItems(
-  items: LineItem[],
-  mode: "prep" | "deploy" = "prep",
-  countStage?: "prep" | "prepped",
-): GroupEntry[] {
-  const serializedByModel = new Map<string, LineItem[]>();
-  const result: GroupEntry[] = [];
-
-  for (const item of items) {
-    if (isKitParent(item)) {
-      // Deploy tab: show children that aren't checked out, or nested kits with undeployed grandchildren
-      const allChildren = (item.childLineItems || []) as LineItem[];
-      const deployChildren = allChildren.filter((c) => {
-        if (c.status === "CANCELLED") return false;
-        if (c.status !== "CHECKED_OUT") return true;
-        // Nested kit that's checked out: still include if any grandchildren need deploying
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED"
-          );
-        }
-        return false;
-      });
-      result.push({
-        kind: "kit-group",
-        groupKey: `kit-${item.id}`,
-        item,
-        children: deployChildren,
-      });
-    } else if (isAccessoryParent(item)) {
-      // Deploy tab: accessories render like a kit's children — always visible,
-      // not gated behind the prep asset-picker (issue #794 follow-up).
-      const deployChildren = accessoryChildrenOf(item).filter((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
-      result.push({
-        kind: "accessory-group",
-        groupKey: `acc-${item.id}`,
-        item,
-        children: deployChildren,
-      });
-    } else if (isBulkItem(item)) {
-      // Bulk items (qty > 1) show as expandable groups with per-unit rows
-      // just like serialized groups. unitCount reflects the units actionable in
-      // this stage (still-to-pick vs packed-and-waiting) so a partially prepped
-      // line shows the right count in each tab.
-      const unitCount =
-        countStage === "prep"
-          ? bulkUnpackedRemaining(item)
-          : countStage === "prepped"
-            ? bulkPackedWaiting(item)
-            : item.quantity;
-      result.push({
-        kind: "bulk-group",
-        groupKey: `bulk-${item.id}`,
-        item,
-        unitCount,
-      });
-    } else if (item.model) {
-      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
-      // In deploy mode, items in different containers must be in separate groups
-      // so each group's container is unambiguous for the container section headers
-      const containerSuffix = mode === "deploy" ? `\0${item.prepContainer || ""}` : "";
-      const key = modelKey + containerSuffix;
-      const existing = serializedByModel.get(key);
-      if (existing) {
-        existing.push(item);
-      } else {
-        const arr = [item];
-        serializedByModel.set(key, arr);
-        result.push({ kind: "serialized-group", groupKey: `ser-${key}`, modelName: modelKey, items: arr });
-      }
-    } else {
-      result.push({ kind: "single", item });
-    }
-  }
-
-  // Flatten serialized groups with only 1 item
-  return result.map((e) => {
-    if (e.kind === "serialized-group" && e.items.length === 1) {
-      return { kind: "single" as const, item: e.items[0] };
-    }
-    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
-      return { kind: "single" as const, item: e.item };
-    }
-    return e;
-  });
-}
-
-function groupCheckinItems(items: LineItem[]): GroupEntry[] {
-  const serializedByModel = new Map<string, LineItem[]>();
-  const result: GroupEntry[] = [];
-
-  for (const item of items) {
-    if (isKitParent(item)) {
-      // Return tab: show children that are checked out, or nested kits with deployed grandchildren
-      const allChildren = (item.childLineItems || []) as LineItem[];
-      const returnChildren = allChildren.filter((c) => {
-        if (c.status === "CHECKED_OUT") return true;
-        // Nested kit not checked out: still include if any grandchildren are deployed
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
-        }
-        return false;
-      });
-      result.push({
-        kind: "kit-group",
-        groupKey: `kit-in-${item.id}`,
-        item,
-        children: returnChildren,
-      });
-    } else if (isAccessoryParent(item)) {
-      const returnChildren = accessoryChildrenOf(item).filter((c) => c.status === "CHECKED_OUT");
-      result.push({
-        kind: "accessory-group",
-        groupKey: `acc-in-${item.id}`,
-        item,
-        children: returnChildren,
-      });
-    } else if (isBulkItem(item)) {
-      const remaining = item.checkedOutQuantity - item.returnedQuantity;
-      result.push({
-        kind: "bulk-group",
-        groupKey: `bulk-in-${item.id}`,
-        item,
-        unitCount: Math.max(remaining, 0),
-      });
-    } else if (item.model) {
-      const modelKey = item.model.name + (item.model.modelNumber ? ` - ${item.model.modelNumber}` : "");
-      // Items in different containers must be in separate groups
-      const containerSuffix = `\0${item.prepContainer || ""}`;
-      const key = modelKey + containerSuffix;
-      const existing = serializedByModel.get(key);
-      if (existing) {
-        existing.push(item);
-      } else {
-        const arr = [item];
-        serializedByModel.set(key, arr);
-        result.push({ kind: "serialized-group", groupKey: `ser-in-${key}`, modelName: modelKey, items: arr });
-      }
-    } else {
-      result.push({ kind: "single", item });
-    }
-  }
-
-  return result.map((e) => {
-    if (e.kind === "serialized-group" && e.items.length === 1) {
-      return { kind: "single" as const, item: e.items[0] };
-    }
-    if (e.kind === "bulk-group" && e.unitCount <= 1 && e.unitCount === e.item.quantity) {
-      return { kind: "single" as const, item: e.item };
-    }
-    return e;
-  });
-}
 
 // bulkUnitKey is imported from warehouse-types
 
@@ -673,6 +516,7 @@ function WarehouseProjectPage({
           })),
         )
           .then(() => {
+            clearAccessoryVerification(checkQueueDirectItems.map((i) => i.lineItemId));
             toast.success("Items prepped — ready to deploy");
             invalidate();
           })
@@ -1283,9 +1127,13 @@ function WarehouseProjectPage({
 
       if (result.found && result.lineItemId) {
         const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
-        if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
+        const scanItems = [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }];
+        if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT" && openAccessoryGateIfNeeded(scanItems)) {
+          // Same accessory gate as the Deploy button — a scan must not bypass it.
+          scanFeedback.play("exception", { label: result.assetName || "Item", outcome: "Check accessories to deploy" });
+        } else if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
           checkOutMutation
-            .mutateAsync({ items: [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }] })
+            .mutateAsync({ items: scanItems })
             .then((res) => {
               scanFeedback.play("success", {
                 label: result.assetName || "Item",
@@ -1776,70 +1624,14 @@ function WarehouseProjectPage({
   };
 
   // Build all selectable keys for pick/prep
-  const allPrepKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedPrep) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedPrep]);
+  const allPrepKeys = useMemo(() => selectionKeysForEntries(groupedPrep), [groupedPrep]);
 
   // Build all selectable keys for check-out
-  const allOutKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedOut) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedOut]);
+  const allOutKeys = useMemo(() => selectionKeysForEntries(groupedOut), [groupedOut]);
 
-  const allDeprepKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedDeprep) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedDeprep]);
+  const allDeprepKeys = useMemo(() => selectionKeysForEntries(groupedDeprep), [groupedDeprep]);
 
-  const allInKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const entry of groupedIn) {
-      if (entry.kind === "single") {
-        keys.push(entry.item.id);
-      } else if (entry.kind === "serialized-group") {
-        entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
-        keys.push(entry.item.id);
-      } else {
-        for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
-      }
-    }
-    return keys;
-  }, [groupedIn]);
+  const allInKeys = useMemo(() => selectionKeysForEntries(groupedIn), [groupedIn]);
 
   const selectedPrepCount = selectedPrep.size;
   const selectedOutCount = selectedOut.size;
@@ -2095,6 +1887,7 @@ function WarehouseProjectPage({
       }
       if (directPrepItems.length > 0) {
         await prepItemsBatch(projectId, directPrepItems);
+        clearAccessoryVerification(directPrepItems.map((i) => i.lineItemId));
       }
 
       // Start check queue if any items need checks
@@ -2179,9 +1972,7 @@ function WarehouseProjectPage({
       if (packed.length === 0) continue;
       const verified = packed.filter((c) => verifiedKitItems.has(c.id));
       if (verified.length > 0 && verified.length < packed.length) {
-        const verifiedAccessoryIds = verified
-          .map((c) => c.assetId ?? c.bulkAssetId ?? "")
-          .filter((v): v is string => v !== "");
+        const verifiedAccessoryIds = accessoryAssetIds(verified);
         return { li, verifiedCount: verified.length, totalCount: packed.length, verifiedAccessoryIds };
       }
     }
@@ -2196,6 +1987,61 @@ function WarehouseProjectPage({
   const handleDeployContainer = (entries: GroupEntry[]) => {
     setSelectedOut(new Set(keysForGroupEntries(entries)));
   };
+
+  // Click-to-verify state lives in `verifiedKitItems` and is shared with Deploy.
+  // Verification done while picking must not pre-tick the Deploy checks, so a
+  // successful prep clears the prepped lines' accessory ids; Deploy then starts
+  // from a clean slate.
+  function clearAccessoryVerification(lineItemIds: string[]) {
+    const toClear = new Set<string>();
+    for (const id of lineItemIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (li) accessoryChildrenOf(li).forEach((c) => toClear.add(c.id));
+    }
+    if (toClear.size === 0) return;
+    setVerifiedKitItems((prev) => {
+      if (![...toClear].some((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      toClear.forEach((id) => next.delete(id));
+      return next;
+    });
+  }
+
+  // The ONE accessory gate for every deploy entry point (selection Deploy and
+  // scan-deploy): DEFAULT/OPTIONAL accessories left unpacked open the
+  // missing-accessory dialog; a partly click-verified accessory set opens the
+  // "Deploy Verified Only" confirm (after deploying the rest of the batch).
+  // Returns true when a dialog took over and the caller must NOT deploy `items`
+  // itself. Bulk keys (quantity>1 parents) are gated too — every line id in
+  // `items`, not just the serialized ones.
+  function openAccessoryGateIfNeeded(
+    items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>,
+  ): boolean {
+    const lineIds = items.map((i) => i.lineItemId);
+    const { missingDefaults, missingOptionals } = computeMissingAccessories(lineIds);
+    if (missingDefaults.length > 0 || missingOptionals.length > 0) {
+      setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
+      setOptionalSkipReasons({});
+      setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
+      return true;
+    }
+
+    const partial = findPartiallyVerifiedAccessoryParent(lineIds);
+    if (partial) {
+      const rest = items.filter((i) => i.lineItemId !== partial.li.id);
+      if (rest.length > 0) runCheckOut(rest);
+      setAccessoryVerifyConfirm({
+        parentLineItemId: partial.li.id,
+        parentAssetId: partial.li.assetId || undefined,
+        parentName: modelDisplayName(partial.li),
+        verifiedCount: partial.verifiedCount,
+        totalCount: partial.totalCount,
+        verifiedAccessoryIds: partial.verifiedAccessoryIds,
+      });
+      return true;
+    }
+    return false;
+  }
 
   const handleCheckOutSelected = async () => {
     const bulkQtyMap = new Map<string, number>();
@@ -2239,28 +2085,7 @@ function WarehouseProjectPage({
 
     if (items.length === 0) return;
 
-    const { missingDefaults, missingOptionals } = computeMissingAccessories(serializedLineItemIds);
-    if (missingDefaults.length > 0 || missingOptionals.length > 0) {
-      setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
-      setOptionalSkipReasons({});
-      setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
-      return;
-    }
-
-    const partial = findPartiallyVerifiedAccessoryParent(serializedLineItemIds);
-    if (partial) {
-      const rest = items.filter((i) => i.lineItemId !== partial.li.id);
-      if (rest.length > 0) runCheckOut(rest);
-      setAccessoryVerifyConfirm({
-        parentLineItemId: partial.li.id,
-        parentAssetId: partial.li.assetId || undefined,
-        parentName: modelDisplayName(partial.li),
-        verifiedCount: partial.verifiedCount,
-        totalCount: partial.totalCount,
-        verifiedAccessoryIds: partial.verifiedAccessoryIds,
-      });
-      return;
-    }
+    if (openAccessoryGateIfNeeded(items)) return;
 
     runCheckOut(items);
   };
@@ -2306,9 +2131,7 @@ function WarehouseProjectPage({
       const allAccessories = accessoryChildrenOf(li);
       const eligible = allAccessories.filter((c) => !skippedLineIds.has(c.id));
       if (eligible.length === allAccessories.length) return item; // nothing skipped for this parent
-      const includeAccessoryIds = eligible
-        .map((c) => c.assetId ?? c.bulkAssetId ?? "")
-        .filter((v): v is string => v !== "");
+      const includeAccessoryIds = accessoryAssetIds(eligible);
       return { ...item, includeAccessoryIds };
     });
 
@@ -2555,6 +2378,7 @@ function WarehouseProjectPage({
       })),
     )
       .then(() => {
+        clearAccessoryVerification(withoutChecks.map((i) => i.lineItemId));
         toast.success("Items prepped — ready to deploy");
         invalidate();
       })

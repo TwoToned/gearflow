@@ -252,3 +252,45 @@ export function MobileKitChildCards({
     </>
   );
 }
+
+/** Toggle one id in a verified-set updater — shared by every accessory render. */
+function toggledSet(prev: Set<string>, id: string): Set<string> {
+  const next = new Set(prev);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+interface BulkAccessoryProps {
+  accessoryChildren?: LineItem[];
+  mode: "deploy" | "return";
+  verifiedKitItems: Set<string>;
+  setVerifiedKitItems: (updater: (prev: Set<string>) => Set<string>) => void;
+  expandedGroups: Set<string>;
+  toggleExpanded: (key: string) => void;
+}
+
+/** Accessories of a quantity>1 accessory parent, rendered under its per-unit
+ *  rows (the parent keeps per-unit selection; see `bulk-group`'s
+ *  `accessoryChildren`). */
+export function BulkAccessoryRows({ accessoryChildren, setVerifiedKitItems, ...rest }: BulkAccessoryProps) {
+  if (!accessoryChildren || accessoryChildren.length === 0) return null;
+  return (
+    <KitChildRows
+      kitChildren={accessoryChildren}
+      onToggleVerify={(id) => setVerifiedKitItems((prev) => toggledSet(prev, id))}
+      {...rest}
+    />
+  );
+}
+
+export function MobileBulkAccessoryCards({ accessoryChildren, setVerifiedKitItems, ...rest }: BulkAccessoryProps) {
+  if (!accessoryChildren || accessoryChildren.length === 0) return null;
+  return (
+    <MobileKitChildCards
+      kitChildren={accessoryChildren}
+      onToggleVerify={(id) => setVerifiedKitItems((prev) => toggledSet(prev, id))}
+      {...rest}
+    />
+  );
+}

@@ -598,3 +598,20 @@ line never counts toward `ALL_CHECKED_OUT` (it rides with its parent). Known gap
 tracked as follow-ups: a parent with no serialised asset (bulk/generic) never gets
 accessory units; the scan-deploy path bypasses the missing-accessory gate; a
 left-behind accessory can't be deployed after its parent is already out.
+
+## Warehouse UI: quantity>1 accessory parents, shared gate (follow-up)
+
+- **Per-unit selection is kept for bulk accessory parents.** `groupItems`/`groupCheckinItems`
+  (now pure, in `warehouse-types.ts`) emit a `bulk-group` carrying `accessoryChildren` for a
+  quantity>1 accessory parent, so `selectionKeysForEntries` yields `bulkUnitKey` per unit and a
+  subset of units can be picked/prepped/deployed/returned while the accessories still render
+  (`BulkAccessoryRows` / `MobileBulkAccessoryCards`). If no unit is actionable in the stage but an
+  accessory is, it falls back to the line-id `accessory-group`.
+- **One deploy gate.** `openAccessoryGateIfNeeded` (page.tsx) runs the missing-accessory and
+  partial-verify checks for the Deploy button AND scan-deploy, over every line id (bulk keys too).
+- **`accessoryAssetIds`** is the single source for `includeAccessoryIds` (line ids plus
+  `units[].assetId/bulkAssetId`).
+- The accessory-group "Partial" badge comes from `isAccessoryParentPartiallyDeployed(item)`;
+  the Qty column shows the parent quantity on every tab/viewport.
+- Pick hides already-packed accessories (`accessoryChildrenForStage`), and a successful prep clears
+  that line's accessory ids from the shared `verifiedKitItems`, so Deploy verification starts fresh.

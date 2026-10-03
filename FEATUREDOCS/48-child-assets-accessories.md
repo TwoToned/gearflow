@@ -584,3 +584,17 @@ Both are tracked in TODOS.md.
 **Perf note:** bulk demand recompute resolves each distinct parent-unit asset once
 per expansion call (O(units) per call, O(units²) over a full multi-unit deploy).
 Fine for typical rental line sizes; revisit if very large lines appear.
+
+**Cascade scoping & guards (warehouse audit):** every accessory cascade is scoped to
+the parent unit(s) that actually moved — partial return without an `assetId`,
+`undeployItems`/`unreturnItems` (which now honour the requested `assetId`) and the
+deprep path no longer touch another parent's accessories. Un-returning clears the
+return record (`returnCondition`/`returnedAt`/`returnedQuantity`) on parent and
+accessory units; deprep resets emptied accessory lines to `PENDING` (the rollup falls
+back to the line's current value when no units remain). Deploy skips (leaves behind)
+an accessory whose asset is LOST/RETIRED/IN_MAINTENANCE/SOLD rather than erasing that
+state. `forceReturnAsset` re-syncs lines whose asset lives on the unit. An accessory
+line never counts toward `ALL_CHECKED_OUT` (it rides with its parent). Known gaps,
+tracked as follow-ups: a parent with no serialised asset (bulk/generic) never gets
+accessory units; the scan-deploy path bypasses the missing-accessory gate; a
+left-behind accessory can't be deployed after its parent is already out.

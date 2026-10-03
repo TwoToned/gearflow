@@ -84,6 +84,8 @@ async function syncContainersForLines(
 
 // ── Checkout helpers ─────────────────────────────────────────────────────────
 
+const NON_DEPLOYABLE_ASSET_STATUSES = new Set(["RETIRED", "IN_MAINTENANCE", "LOST", "SOLD"]);
+
 /** Returns "continue" when the asset is already on its own unit (skip finalize). */
 async function checkOutSerializedItem(
   ctx: Ctx,
@@ -103,7 +105,7 @@ async function checkOutSerializedItem(
     if (ownUnit && ownUnit.status === "CHECKED_OUT") return "continue";
     throw new ConvexError(`Asset ${asset.assetTag} is already deployed`);
   }
-  if (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST" || asset.status === "SOLD") {
+  if (NON_DEPLOYABLE_ASSET_STATUSES.has(asset.status as string)) {
     throw new ConvexError(`Asset ${asset.assetTag} is ${(asset.status as string).replace("_", " ").toLowerCase()} and cannot be deployed`);
   }
   const { id: unitId } = await ensureSerialisedUnit(ctx, { organizationId: p.organizationId, lineItemId: p.lineItemId, assetId: p.targetAssetId });
@@ -205,9 +207,14 @@ async function checkoutAccessoryChildren(
 
   const assetsTouched: string[] = [];
   for (const u of units) {
+    // A lost / retired / in-maintenance accessory must not be silently flipped
+    // to CHECKED_OUT (that would erase its state). Leave it behind — it stays
+    // unprepped on the line and the operator sees it; the parent still deploys.
+    const accAsset = u.assetId ? await assetByCuid(ctx, u.assetId) : null;
+    if (accAsset && NON_DEPLOYABLE_ASSET_STATUSES.has(accAsset.status as string)) continue;
     await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
     if (u.assetId) {
-      const asset = await assetByCuid(ctx, u.assetId);
+      const asset = accAsset;
       if (asset) {
         await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
         await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
@@ -1323,14 +1330,17 @@ const FORCE_RET = (now: number) => ({ status: "RETURNED" as const, returnedQuant
 /** Kit per-unit: force-return the CHECKED_OUT unit(s) bound to one asset, wherever
  *  they live (loose line or kit member). Mirrors FORCE_RET onto the unit row so
  *  force-return doesn't leave a member unit stuck CHECKED_OUT (split-brain). */
-async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number) {
+async function forceReturnAssetUnits(ctx: Ctx, organizationId: string, assetId: string, userId: string, now: number): Promise<Set<string>> {
   const units = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", organizationId).eq("assetId", assetId).eq("status", "CHECKED_OUT"))
     .collect();
+  const lineIds = new Set<string>();
   for (const u of units) {
     await ctx.db.patch(u._id, { status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: now, returnedById: userId, returnCondition: "GOOD", updatedAt: now });
+    lineIds.add(u.lineItemId);
   }
+  return lineIds;
 }
 
 /**
@@ -1345,7 +1355,11 @@ export async function forceReturnAssetCore(ctx: Ctx, organizationId: string, ass
   for (const li of await linesByAsset(ctx, assetId, organizationId)) {
     if (li.status === "CHECKED_OUT") await ctx.db.patch(li._id, FORCE_RET(now));
   }
-  await forceReturnAssetUnits(ctx, organizationId, assetId, userId, now);
+  // Lines prepped per-unit carry the asset on the UNIT (not line.assetId), so the
+  // line loop above never saw them — roll each one up or it stays CHECKED_OUT.
+  for (const lineItemId of await forceReturnAssetUnits(ctx, organizationId, assetId, userId, now)) {
+    await syncLineItemRollup(ctx, lineItemId);
+  }
   await setAssetsStatus(ctx, [assetId], "AVAILABLE", loc, true, now);
 }
 

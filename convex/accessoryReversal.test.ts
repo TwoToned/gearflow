@@ -129,3 +129,37 @@ describe("deprep resets accessory child lines", () => {
     for (const k of kids) expect(k.prepStatus).not.toBe("PACKED");
   });
 });
+
+describe("force-return and the accessory deploy guard", () => {
+  test("forceReturnAsset on a per-unit prepped line rolls the line up to RETURNED", async () => {
+    const t = makeT();
+    await seed(t);
+    await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await svc(t).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, includeAccessories: true, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await svc(t).mutation(api.warehouseOps.forceReturnAsset, { organizationId: ORG, assetId: "a1", userId: USER, now: NOW });
+    const l = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "L1")).unique());
+    expect(l?.status).not.toBe("CHECKED_OUT");
+    expect(l?.checkedOutQuantity ?? 0).toBe(0);
+  });
+
+  test("a LOST accessory is left behind, not silently flipped to CHECKED_OUT", async () => {
+    const t = makeT();
+    await seed(t);
+    await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    await t.run(async (ctx) => {
+      const c1 = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "c1")).unique();
+      await ctx.db.patch(c1!._id, { status: "LOST" });
+    });
+    await svc(t).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW, includeAccessories: true, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    expect(await asset(t, "a1")).toBe("CHECKED_OUT");
+    expect(await asset(t, "c1")).toBe("LOST");
+  });
+});

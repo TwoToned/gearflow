@@ -631,6 +631,25 @@ async function checkoutKitPreflight(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLi
     ttBulk.push(...(await ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", nk)).collect()).map((b) => b.bulkAssetId));
   }
   await assertTestTagAllowsCheckout(ctx, a.organizationId, { assetIds: ttAssets, bulkAssetIds: ttBulk });
+
+  // Already deployed: the write core CONSUMES bulk stock unconditionally, so a
+  // repeat deploy would double-consume (and trip "Insufficient stock" on a pool
+  // the first deploy already drew down).
+  if (kitLine.status === "CHECKED_OUT") throw new ConvexError("Kit is already deployed");
+
+  // Bulk stock check — read-only, BEFORE any write. The core's
+  // `adjustBulkAvailability` throws mid-write on a short bulk, which rolls back the
+  // WHOLE batch; surfacing it here skips just this kit with a per-kit error.
+  const needed = coalesceAdjustments([
+    ...(await collectKitBulkAdjustments(ctx, a.kitId, a.organizationId, -1)),
+    ...(await Promise.all(nestedKitIds.map((nk) => collectKitBulkAdjustments(ctx, nk, a.organizationId, -1)))).flat(),
+  ]);
+  for (const { bulkAssetId, delta } of needed) {
+    const bulk = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", bulkAssetId)).unique();
+    if (bulk && bulk.organizationId === a.organizationId && (bulk.availableQuantity ?? 0) + delta < 0) {
+      throw new ConvexError(`Insufficient stock: ${bulk.assetTag} has ${bulk.availableQuantity ?? 0} available, kit needs ${-delta}`);
+    }
+  }
 }
 
 /** Write phase of checkoutKit for ONE already-validated kit (preflight passed).

@@ -181,6 +181,32 @@ describe("kit per-unit — reverse + force", () => {
     expect(serialUnit(await memberUnits(t)).status).toBe("CHECKED_OUT");
   });
 
+  test("checkoutKitsBatch: a short bulk member skips the kit with an error instead of aborting the batch", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    await t.run(async (ctx) => {
+      const b = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).unique();
+      await ctx.db.patch(b!._id, { availableQuantity: 0 });
+    });
+    const res = await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1"], now: NOW });
+    expect(res.succeeded).toEqual([]);
+    expect(res.errors).toHaveLength(1);
+    expect(res.errors[0].message).toMatch(/Insufficient stock: B-1 has 0 available/);
+    expect(serialUnit(await memberUnits(t)).status).toBe("CONFIRMED");
+  });
+
+  test("checkoutKitsBatch: re-deploying an already-deployed kit does not consume bulk again", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true });
+    const run = () => t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutKitsBatch, { organizationId: ORG, projectId: "p1", userId: USER, kitIds: ["k1"], now: NOW });
+    expect((await run()).succeeded).toEqual(["k1"]);
+    const second = await run();
+    expect(second.succeeded).toEqual([]);
+    expect(second.errors[0].message).toBe("Kit is already deployed");
+    const avail = await t.run(async (ctx) => (await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).unique())?.availableQuantity);
+    expect(avail).toBe(7);
+  });
+
   test("checkinKitsBatch: checks in the kit in one call", async () => {
     const t = makeT();
     await seedKit(t);

@@ -215,6 +215,10 @@ function accessoryParentNeedsPrep(item: LineItem): boolean {
   if (item.quantity <= 0) return false; // exhausted originals post prep-split
   const ownNeedsPrep = item.status !== "CHECKED_OUT" && item.status !== "RETURNED" && item.prepStatus !== "PACKED";
   if (ownNeedsPrep) return true;
+  return accessoryChildrenNeedPrep(item);
+}
+
+function accessoryChildrenNeedPrep(item: LineItem): boolean {
   return accessoryChildrenOf(item).some(
     (c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED" && c.prepStatus !== "PACKED",
   );
@@ -226,7 +230,11 @@ export function isInPickPrepStage(item: LineItem): boolean {
   // Bulk lines are quantity-aware: show while any ordered unit is still
   // unpacked, even once some units are prepped/deployed (kit parents are
   // handled by their child rollup below, never as a bulk line).
-  if (isBulkItem(item) && !isKitParent(item)) return bulkUnpackedRemaining(item) > 0;
+  // An accessory parent also stays while any of its accessories still needs
+  // prep, even if every parent unit is already packed.
+  if (isBulkItem(item) && !isKitParent(item)) {
+    return bulkUnpackedRemaining(item) > 0 || (isAccessoryParent(item) && accessoryChildrenNeedPrep(item));
+  }
   // Accessory parents are checked BEFORE the blanket CHECKED_OUT/RETURNED
   // early-return (see accessoryParentNeedsPrep) — everyone else still exits
   // early on it.
@@ -263,7 +271,9 @@ function accessoryParentPreppedNotDeployed(item: LineItem): boolean {
 /** Deploy tab: items prepped (PACKED) but not yet deployed. */
 export function isInPreppedStage(item: LineItem): boolean {
   if (item.status === "CANCELLED") return false;
-  if (isBulkItem(item) && !isKitParent(item)) return bulkPackedWaiting(item) > 0;
+  if (isBulkItem(item) && !isKitParent(item)) {
+    return bulkPackedWaiting(item) > 0 || (isAccessoryParent(item) && accessoryParentPreppedNotDeployed(item));
+  }
   if (isAccessoryParent(item)) return accessoryParentPreppedNotDeployed(item);
   if (item.status === "CHECKED_OUT" || item.status === "RETURNED") return false;
   if (isKitParent(item)) return (item.childLineItems ?? []).some(kitPreppedNotDeployed);

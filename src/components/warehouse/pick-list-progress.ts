@@ -8,7 +8,7 @@
  */
 export function getAccessoryChildren(item: Record<string, unknown>): Array<Record<string, unknown>> {
   const children = (item.childLineItems || []) as Array<Record<string, unknown>>;
-  return children.filter((c) => c.childKind === "ACCESSORY");
+  return children.filter((c) => c.childKind === "ACCESSORY" && c.status !== "CANCELLED");
 }
 
 /**

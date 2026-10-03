@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildTrackTuning,
   buildVideoConstraints,
+  pickBackCamera,
   classifyCameraError,
   computeRoi,
   detectCameraBlocker,
@@ -216,5 +218,38 @@ describe("computeRoi", () => {
     const roi = computeRoi(320, 240);
     expect(roi.sWidth).toBeGreaterThan(0);
     expect(roi.sHeight).toBeGreaterThan(0);
+  });
+});
+
+describe("pickBackCamera", () => {
+  const dev = (deviceId: string, label: string) =>
+    ({ kind: "videoinput", deviceId, label }) as MediaDeviceInfo;
+
+  it("prefers the main rear lens over ultra-wide and telephoto", () => {
+    expect(
+      pickBackCamera([
+        dev("front", "Front Camera"),
+        dev("uw", "Back Ultra Wide Camera"),
+        dev("main", "Back Camera"),
+        dev("tele", "Back Telephoto Camera"),
+      ]),
+    ).toBe("main");
+  });
+
+  it("returns null with a single rear camera or blank labels", () => {
+    expect(pickBackCamera([dev("a", "Back Camera")])).toBeNull();
+    expect(pickBackCamera([dev("a", ""), dev("b", "")])).toBeNull();
+  });
+});
+
+describe("buildTrackTuning", () => {
+  it("asks for continuous focus and clamps zoom into range", () => {
+    const caps = { focusMode: ["manual", "continuous"], zoom: { min: 1, max: 1.5 } } as unknown as MediaTrackCapabilities;
+    expect(buildTrackTuning(caps)).toEqual({ focusMode: "continuous", zoom: 1.5 });
+  });
+
+  it("is null when nothing is advertised (iOS)", () => {
+    expect(buildTrackTuning({} as MediaTrackCapabilities)).toBeNull();
+    expect(buildTrackTuning(null)).toBeNull();
   });
 });

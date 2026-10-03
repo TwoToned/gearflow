@@ -317,7 +317,11 @@ rear *main* lens from `enumerateDevices` via `pickBackCamera` (skips
 ultra/tele/macro/depth; labels are only populated after permission, so rule 3
 still holds), then (b) applies `buildTrackTuning`: `focusMode: "continuous"` and
 a ~1.8x zoom, clamped to the track's range, so the label can be held beyond
-minimum focus distance. Both are capability-gated, so iOS is unchanged.
+minimum focus distance. Focus/zoom are capability-gated, so they are no-ops on
+iOS. Lens picking does apply on iOS (labels populate after permission): it
+prefers the plain `Back Camera` over the `Dual`/`Triple` virtual devices and
+the ultra-wide. The dialog copy asks for ~20 cm distance, since iOS has no zoom
+to compensate for the wide lens's ~10 cm minimum focus.
 
 **The camera plays `capture`, never `success`.** All the decoder knows is that
 it read a code; whether that tag means anything is the caller's business, and

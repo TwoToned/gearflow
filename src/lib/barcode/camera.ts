@@ -87,6 +87,11 @@ export function pickBackCamera(devices: readonly MediaDeviceInfo[]): string | nu
     (d) => d.kind === "videoinput" && d.deviceId && BACK_LENS.test(d.label),
   );
   if (back.length < 2) return null;
+  // iOS names its plain wide lens exactly "Back Camera"; the "Dual"/"Triple"
+  // virtual devices switch lenses under the OS (and can land on the ultra-wide),
+  // so the plain device is the stable choice there.
+  const plain = back.find((d) => /^back camera$/i.test(d.label.trim()));
+  if (plain) return plain.deviceId;
   const preferred = back.filter((d) => !UNWANTED_LENS.test(d.label));
   return (preferred[0] ?? back[0])?.deviceId ?? null;
 }

@@ -236,6 +236,17 @@ describe("pickBackCamera", () => {
     ).toBe("main");
   });
 
+  it("on iPhone prefers plain 'Back Camera' over Triple/Dual virtual devices", () => {
+    expect(
+      pickBackCamera([
+        dev("front", "Front Camera"),
+        dev("tri", "Back Triple Camera"),
+        dev("uw", "Back Ultra Wide Camera"),
+        dev("main", "Back Camera"),
+      ]),
+    ).toBe("main");
+  });
+
   it("returns null with a single rear camera or blank labels", () => {
     expect(pickBackCamera([dev("a", "Back Camera")])).toBeNull();
     expect(pickBackCamera([dev("a", ""), dev("b", "")])).toBeNull();

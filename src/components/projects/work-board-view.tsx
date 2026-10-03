@@ -26,6 +26,7 @@ import { TASK_STAGES, TASK_STAGE_LABELS, TASK_PRIORITY_LABELS, type ProjectTaskS
 import type { Task } from "./tasks-panel";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { cn, focusRing } from "@/lib/utils";
+import { useFormatters } from "@/components/providers/format-provider";
 
 /**
  * Work tab — board view (#1244, design §8.3): one column per stage, drag
@@ -232,6 +233,7 @@ function isOverdue(task: Task): boolean {
 
 /** Split out of BoardCard (R-3.6) — the priority/due/assignee meta row. */
 function BoardCardMeta({ task }: { task: Task }) {
+  const { formatDateDayMonth } = useFormatters();
   const overdue = isOverdue(task);
   const assigneeName = assigneeNameOf(task);
   return (
@@ -247,7 +249,7 @@ function BoardCardMeta({ task }: { task: Task }) {
           )}
         >
           <CalendarClock className="h-3 w-3" />
-          {new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+          {formatDateDayMonth(new Date(task.dueDate))}
         </span>
       )}
       {assigneeName && <PersonAvatar name={assigneeName} src={task.assigneeUser?.image ?? undefined} className="size-5 border-0" />}

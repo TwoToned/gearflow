@@ -29,12 +29,13 @@ import { TodayPeek } from "@/components/today/today-peek";
 import type { TodayItem } from "@/components/today/today-types";
 import { api } from "../../../../convex/_generated/api";
 import type { Doc } from "../../../../convex/_generated/dataModel";
+import { useFormatters } from "@/components/providers/format-provider";
 
-function taskContextLine(task: NativeMyOpenTask): string {
+function taskContextLine(task: NativeMyOpenTask, formatDateDayMonth: (d: Date) => string): string {
   const parts = task.projectId ? [task.projectNumber, task.projectName].filter(Boolean) : ["Personal"];
   if (task.stage) parts.push(TASK_STAGE_LABELS[task.stage as ProjectTaskStage] ?? task.stage);
   if (task.dueDate != null) {
-    parts.push(new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+    parts.push(formatDateDayMonth(new Date(task.dueDate)));
   }
   return parts.join(" · ");
 }
@@ -60,6 +61,7 @@ export function TodayWorkListWidget({
    *  of this widget. */
   onStatusChange?: (status: TodayWorkListStatus) => void;
 }) {
+  const { formatDateDayMonth } = useFormatters();
   const canEditTasks = useCanDo("project", "update");
   const writes = useProjectTaskWrites();
   const signalWrites = useWorkSignalWrites();
@@ -124,7 +126,7 @@ export function TodayWorkListWidget({
         kind: "task" as const,
         bucket,
         title: t.title,
-        contextLine: taskContextLine(t),
+        contextLine: taskContextLine(t, formatDateDayMonth),
         href: t.projectId ? `/projects/${t.projectId}` : undefined,
         followUp: t.followUp ?? null,
         overdue: !done && bucket === "overdue",

@@ -70,20 +70,20 @@ export function resolveWorkDue(
  * the year only when it isn't this one) rather than the raw ISO string — the
  * chip is read at a glance, and `2026-10-12` isn't.
  */
-export function workDueLabel(value: WorkDueValue, nowMs: number, timezone?: string): string {
+export function workDueLabel(value: WorkDueValue, nowMs: number, timezone?: string, locale?: string): string {
   if (value.kind === "preset") return WORK_DUE_PRESET_LABELS[value.preset];
-  return formatCalendarDate(value.date, calendarDateInTimezone(nowMs, timezone));
+  return formatCalendarDate(value.date, calendarDateInTimezone(nowMs, timezone), locale);
 }
 
 /** `YYYY-MM-DD` → "12 Oct" (same year as `todayDate`) or "12 Oct 2027". */
-export function formatCalendarDate(date: CalendarDate, todayDate: CalendarDate): string {
+export function formatCalendarDate(date: CalendarDate, todayDate: CalendarDate, locale?: string): string {
   const [year, month, day] = date.split("-").map(Number);
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return date;
   // Midday UTC, never midnight: the parts go straight back out through the
   // UTC getters, so no zone can pull the rendered day off by one.
   const at = new Date(Date.UTC(year, month - 1, day, 12));
   const sameYear = date.slice(0, 4) === todayDate.slice(0, 4);
-  return at.toLocaleDateString(undefined, {
+  return at.toLocaleDateString(locale, {
     timeZone: "UTC",
     day: "numeric",
     month: "short",
@@ -185,12 +185,12 @@ export function resolveWorkDates(
  * one. Uses the SAME `workDueLabel`/`formatCalendarDate` the point case does,
  * so the two can't drift into different date formats on one chip.
  */
-export function workDatesLabel(dates: WorkDates, nowMs: number, timezone?: string): string {
-  const dueText = workDueLabel(dates.due, nowMs, timezone);
+export function workDatesLabel(dates: WorkDates, nowMs: number, timezone?: string, locale?: string): string {
+  const dueText = workDueLabel(dates.due, nowMs, timezone, locale);
   const { startDate, dueDate } = resolveWorkDates(dates, nowMs, timezone);
   if (!startDate || !dueDate) return dueText;
   const today = calendarDateInTimezone(nowMs, timezone);
   // The due end keeps its own label so a preset still reads as "Today", not as
   // a date the user never typed.
-  return `${formatCalendarDate(startDate, today)} \u2192 ${dueText}`;
+  return `${formatCalendarDate(startDate, today, locale)} \u2192 ${dueText}`;
 }

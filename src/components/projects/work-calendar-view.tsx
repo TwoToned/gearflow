@@ -8,6 +8,7 @@ import { spanDays, spanCaption, type SpanPosition } from "@/lib/work-calendar-sp
 import { formatCalendarDate } from "@/lib/work-due-dates";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { cn, focusRing } from "@/lib/utils";
+import { useFormatters } from "@/components/providers/format-provider";
 
 /**
  * Work tab — calendar view (#1244, design §8.3: "list / board / calendar
@@ -28,10 +29,10 @@ import { cn, focusRing } from "@/lib/utils";
 
 const UNDATED = "undated";
 
-function dayLabel(key: string): string {
+function dayLabel(key: string, formatDateWeekdayShort: (d: Date) => string): string {
   if (key === UNDATED) return "No due date";
   const d = new Date(`${key}T00:00:00`);
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return formatDateWeekdayShort(d);
 }
 
 /**
@@ -77,8 +78,9 @@ function CalendarRow({
   today: string;
   onOpen: (task: Task) => void;
 }) {
+  const { config } = useFormatters();
   const assigneeName = assigneeNameOf(task);
-  const caption = spanCaption(task, day, (d) => formatCalendarDate(d, today));
+  const caption = spanCaption(task, day, (d) => formatCalendarDate(d, today, config.locale));
 
   return (
     <button
@@ -109,6 +111,7 @@ function CalendarRow({
 }
 
 export function WorkCalendarView({ tasks, onOpen }: { tasks: Task[]; onOpen: (task: Task) => void }) {
+  const { formatDateWeekdayShort } = useFormatters();
   const groups = useMemo(() => {
     const byDay = new Map<string, { task: Task; position: SpanPosition }[]>();
     const push = (key: string, entry: { task: Task; position: SpanPosition }) => {
@@ -128,8 +131,8 @@ export function WorkCalendarView({ tasks, onOpen }: { tasks: Task[]; onOpen: (ta
     }
     const dated = [...byDay.keys()].filter((k) => k !== UNDATED).sort();
     const ordered = byDay.has(UNDATED) ? [...dated, UNDATED] : dated;
-    return ordered.map((key) => ({ key, label: dayLabel(key), entries: byDay.get(key) ?? [] }));
-  }, [tasks]);
+    return ordered.map((key) => ({ key, label: dayLabel(key, formatDateWeekdayShort), entries: byDay.get(key) ?? [] }));
+  }, [tasks, formatDateWeekdayShort]);
 
   if (tasks.length === 0) {
     return (

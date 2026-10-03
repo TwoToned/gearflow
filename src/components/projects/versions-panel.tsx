@@ -21,6 +21,7 @@ import { useProjectVersionWrites, type MakeLiveResult } from "@/hooks/use-projec
 import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
 import { cn } from "@/lib/utils";
 import type { ProjectVersionSummary } from "@/components/projects/project-version-context";
+import { useFormatters } from "@/components/providers/format-provider";
 
 /**
  * Project Versioning v2, Phase 5 (#1231, parent #1221, design §5.1/§5's
@@ -30,10 +31,6 @@ import type { ProjectVersionSummary } from "@/components/projects/project-versio
  * under the hood, `sheet.tsx`) opened by the header pill's "Manage
  * versions…" entry or the `V` keyboard shortcut.
  */
-
-function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-}
 
 function versionRowActions(
   v: ProjectVersionSummary,
@@ -66,6 +63,7 @@ function VersionRow({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  const { formatDate } = useFormatters();
   const actions = versionRowActions(v, canPublish, { onMakeLive, onRename, onDelete });
   return (
     <div className="flex items-center gap-1 rounded-[var(--r)] border border-line px-2 py-2 hover:bg-elev">
@@ -80,7 +78,7 @@ function VersionRow({
             {v.label ? ` · ${v.label}` : ""}
           </span>
           <span className="block text-caption text-muted">
-            {formatDate(v.createdAt)}
+            {formatDate(new Date(v.createdAt))}
             {v.contentState === "missing" ? " · no captured content" : ""}
           </span>
         </span>

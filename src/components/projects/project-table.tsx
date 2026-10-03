@@ -25,6 +25,7 @@ import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { projectStatusLabels } from "@/lib/status-labels";
 import { getStatusColor } from "@/lib/status-colors";
+import { useFormatters } from "@/components/providers/format-provider";
 
 const typeLabels: Record<string, string> = {
   DRY_HIRE: "Dry hire",
@@ -52,19 +53,24 @@ const typeColors: Record<string, string> = {
   OTHER: "bg-rep-soft text-rep",
 };
 
-function formatDateRange(
-  start: number | string | null | undefined,
-  end: number | string | null | undefined,
-) {
-  if (!start && !end) return "—";
-  const fmt = (d: number | string) =>
-    new Date(d).toLocaleDateString("en-AU", {
-      day: "numeric",
-      month: "short",
-    });
-  if (start && end) return `${fmt(start)} – ${fmt(end)}`;
-  if (start) return `From ${fmt(start)}`;
-  return `Until ${fmt(end!)}`;
+function ProjectDates({
+  start,
+  end,
+}: {
+  start: number | string | null | undefined;
+  end: number | string | null | undefined;
+}) {
+  const { formatDateDayMonth } = useFormatters();
+  if (!start && !end) return <>—</>;
+  const fmt = (d: number | string) => formatDateDayMonth(new Date(d));
+  if (start && end) return <>{fmt(start)} – {fmt(end)}</>;
+  if (start) return <>From {fmt(start)}</>;
+  return <>Until {fmt(end!)}</>;
+}
+
+function ProjectTotal({ value }: { value: number | null | undefined }) {
+  const { formatCurrency } = useFormatters();
+  return <>{value != null ? formatCurrency(value) : "—"}</>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,7 +200,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     mobile: "meta",
     cell: (row) => (
       <span className="text-muted text-sm min-w-[120px]">
-        {formatDateRange(row.rentalStartDate as number | null, row.rentalEndDate as number | null)}
+        <ProjectDates start={row.rentalStartDate as number | null} end={row.rentalEndDate as number | null} />
       </span>
     ),
   },
@@ -207,9 +213,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     mobileEmpty: (row) => row.total == null,
     cell: (row) => (
       <span className="t-data">
-        {row.total != null
-          ? `$${Number(row.total).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
-          : "—"}
+        <ProjectTotal value={row.total as number | null | undefined} />
       </span>
     ),
   },

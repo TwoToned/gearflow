@@ -86,7 +86,7 @@ export type GroupEntry =
  *  a positional `bulkUnitKey` per unit for a bulk entry (including a bulk
  *  ACCESSORY parent, which keeps per-unit selection). Single source of truth
  *  for page.tsx's `all*Keys` and "Deploy container" (#1296 D4). */
-export function selectionKeysForEntry(entry: GroupEntry): string[] {
+function selectionKeysForEntry(entry: GroupEntry): string[] {
   if (entry.kind === "single") return [entry.item.id];
   if (entry.kind === "serialized-group") return entry.items.map((i) => i.id);
   if (entry.kind === "kit-group" || entry.kind === "accessory-group") return [entry.item.id];
@@ -515,7 +515,7 @@ export function resolveSelectionToUnitIds(
 
 /** Per-unit count of a bulk line that is actionable in a stage: units still to
  *  pick (`prep`), packed-and-waiting (`prepped`), else the whole quantity. */
-export function bulkStageUnitCount(item: LineItem, countStage?: "prep" | "prepped"): number {
+function bulkStageUnitCount(item: LineItem, countStage?: "prep" | "prepped"): number {
   if (countStage === "prep") return bulkUnpackedRemaining(item);
   if (countStage === "prepped") return bulkPackedWaiting(item);
   return item.quantity;

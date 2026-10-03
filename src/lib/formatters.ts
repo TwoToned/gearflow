@@ -65,6 +65,16 @@ export function formatCurrency(
   return `${symbol}${Number(value).toLocaleString(config.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** `formatCurrency` without cents \u2014 compact cards where the pennies are noise. */
+export function formatCurrencyWhole(
+  value: number | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  if (value == null) return "\u2014";
+  const symbol = currencySymbol(config.currency);
+  return `${symbol}${Number(value).toLocaleString(config.locale, { maximumFractionDigits: 0 })}`;
+}
+
 function formatDateWithOptions(
   date: string | Date | null | undefined,
   config: FormatConfig,
@@ -167,6 +177,27 @@ export function formatDateWithTime(
     minute: "2-digit",
     hour12: false,
   });
+}
+
+/** Weekday (short) + day + short month, no year \u2014 a date-range endpoint
+ *  label (e.g. AU "Mon, 15 Jul", US "Mon, Jul 15"). Replaces the ad-hoc
+ *  `date-fns format(d, "EEE d MMM")` the project wizard's range picker used
+ *  before I3 \u2014 that string hardcoded day-before-month regardless of org
+ *  locale. */
+export function formatDateWeekdayShort(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { weekday: "short", day: "numeric", month: "short" });
+}
+
+/** Weekday (long) + day + full month, no year \u2014 a day heading on a
+ *  schedule/run-sheet (e.g. AU "Monday 15 July", US "Monday, July 15"). */
+export function formatDateWeekdayLong(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { weekday: "long", day: "numeric", month: "long" });
 }
 
 /** Month + year only \u2014 calendar headers (e.g. "July 2024"). */

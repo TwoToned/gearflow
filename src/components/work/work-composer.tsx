@@ -14,6 +14,7 @@ import { describeWorkDestination, type WorkDestination } from "@/lib/work-destin
 import { cn, focusRing } from "@/lib/utils";
 import { OwnerChip, StageChip, DatesChip, PriorityChip, NotesChip } from "./composer-chips";
 import { ownerLabel, type WorkComposerAssignees, type WorkComposerOwner } from "./work-composer-owner";
+import { useFormatters } from "@/components/providers/format-provider";
 
 export type { WorkComposerOwner };
 
@@ -144,6 +145,7 @@ export function WorkComposer({
   placeholder,
   className,
 }: WorkComposerProps) {
+  const { config: formatConfig } = useFormatters();
   const { data: session } = useSession();
   const meId = session?.user.id;
   const writes = useProjectTaskWrites();
@@ -166,7 +168,7 @@ export function WorkComposer({
   const [busy, setBusy] = useState(false);
 
   const trimmed = title.trim();
-  const datesText = workDatesLabel(dates, nowMs, timezone);
+  const datesText = workDatesLabel(dates, nowMs, timezone, formatConfig.locale);
   // What the start field is allowed to reach, and the reason it exists at all:
   // with no due date there is no span to open.
   const resolvedDue = resolveWorkDue(dates.due, nowMs, timezone);

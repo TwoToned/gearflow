@@ -36,6 +36,7 @@ import { toast } from "sonner";
 import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
 } from "@/components/ui/tooltip";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // Lifecycle stages → columns. Each stage carries a module hue for its header.
 type Hue = "rep" | "blue" | "ok" | "warn" | "red";
@@ -69,12 +70,15 @@ const ROTTING_STATUSES = new Set(["QUOTING", "QUOTED"]);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyProject = Record<string, any>;
 
-function dateLine(p: AnyProject): { text: string; tone: "error" | "warning" | "muted" } | null {
+function dateLine(
+  p: AnyProject,
+  formatDateDayMonth: (d: Date) => string,
+): { text: string; tone: "error" | "warning" | "muted" } | null {
   const now = Date.now();
   const start = p.rentalStartDate as number | null;
   const end = p.rentalEndDate as number | null;
   const out = p.status === "CHECKED_OUT" || p.status === "ON_SITE";
-  const fmt = (d: number) => new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+  const fmt = (d: number) => formatDateDayMonth(new Date(d));
   if (out && end) {
     const days = Math.round((end - now) / DAY);
     if (days < 0) return { text: `${Math.abs(days)}d overdue`, tone: "error" };
@@ -470,6 +474,7 @@ function ProjectCard({
   advancing: boolean;
   overlay?: boolean;
 }) {
+  const { formatDateDayMonth, formatCurrencyWhole } = useFormatters();
   // Destructured immediately (never kept as a `draggable.foo` member
   // access later) — matches the established dnd-kit pattern in
   // equipment-tab.tsx's per-row `useSortable()` calls, which avoids
@@ -477,8 +482,8 @@ function ProjectCard({
   // hook-returned object as a ref access during render.
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: project.id, disabled: overlay });
   const client = project.client as { name?: string } | null;
-  const dl = dateLine(project);
-  const total = project.total != null ? `$${Number(project.total).toLocaleString("en-AU", { maximumFractionDigits: 0 })}` : null;
+  const dl = dateLine(project, formatDateDayMonth);
+  const total = project.total != null ? formatCurrencyWhole(project.total as number) : null;
 
   const cardBody = (
     <>

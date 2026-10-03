@@ -19,9 +19,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BASELINE_FILE=".date-format-ratchet-baseline"
-PATTERN='format\([^)]*,[[:space:]]*"[^"]*(MMM|EEE)[^"]*"'
+# Two shapes of the same bug: a date-fns `format(x, "…MMM…")` display string, and a bare
+# `toLocale{Date,Time,}String(undefined | "en-XX", …)` that hardcodes the render locale (AU)
+# or defers to the VIEWER's browser instead of the org's. Server-side/PDF/e-mail renderers
+# have no `useFormatters()` and are baselined here until each gets an org locale threaded in.
+PATTERN='format\([^)]*,[[:space:]]*"[^"]*(MMM|EEE)[^"]*"|toLocale(Date|Time)?String\((undefined|"en-[A-Za-z]+")'
+# `grep -c` (not `-l | wc -l`) so a zero-match result exits via grep's own
+# "no match" status (1) *inside* this command substitution, not the pipeline —
+# under `pipefail`, `grep | wc -l` finding zero matches would otherwise abort
+# the whole script before the count is ever reported.
 current=$(grep -rInE "$PATTERN" src --include='*.ts' --include='*.tsx' 2>/dev/null \
-  | grep -vE '\.test\.|\.spec\.|__tests__|src/lib/formatters\.ts' | wc -l | tr -d ' ')
+  | grep -cE -v '\.test\.|\.spec\.|__tests__|src/lib/formatters\.ts' || true)
+current=${current:-0}
 baseline=$(cat "$BASELINE_FILE" 2>/dev/null || echo 0)
 
 echo "inline display-date-format count: current=$current baseline=$baseline"
@@ -29,7 +38,7 @@ echo "inline display-date-format count: current=$current baseline=$baseline"
 if [ "$current" -gt "$baseline" ]; then
   echo "❌ Inline display-date format() calls grew ${baseline} -> ${current}. Route the new"
   echo "   call(s) through a named role in src/lib/formatters.ts (formatDate/formatDateDayMonth/"
-  echo "   formatDateLong/formatDateWithTime/formatMonthYear) instead of a new format(x, \"…\") string."
+  echo "   formatDateLong/formatDateWithTime/formatMonthYear) — or useFormatters().config.locale — instead of a new format(x, \"…\") string."
   exit 1
 fi
 if [ "$current" -lt "$baseline" ]; then

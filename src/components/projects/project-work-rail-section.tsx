@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "@/components/ui/section-header";
 import { cn, focusRing } from "@/lib/utils";
 import { FollowUpBadges } from "@/components/work/follow-up-badges";
+import { useFormatters } from "@/components/providers/format-provider";
 
 /**
  * Work, in the project's context sidebar (work-layer v2 §4.3).
@@ -66,7 +67,12 @@ function writeCollapsed(v: boolean): void {
   }
 }
 
-function dueLabel(task: ProjectTaskRow, nowMs: number, timezone: string | undefined): string | null {
+function dueLabel(
+  task: ProjectTaskRow,
+  nowMs: number,
+  timezone: string | undefined,
+  formatDateDayMonth: (d: Date) => string,
+): string | null {
   if (!task.dueDate) return null;
   const ms = new Date(task.dueDate).getTime();
   if (!Number.isFinite(ms)) return null;
@@ -74,10 +80,11 @@ function dueLabel(task: ProjectTaskRow, nowMs: number, timezone: string | undefi
     const days = Math.max(1, Math.round((nowMs - ms) / 86_400_000));
     return `${days}d late`;
   }
-  return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return formatDateDayMonth(new Date(ms));
 }
 
 export function ProjectWorkRailSection({ projectId }: { projectId: string }) {
+  const { formatDateDayMonth } = useFormatters();
   const { tasks, isLoading, refetch, assignees } = useProjectWorkData(projectId);
   const writes = useProjectTaskWrites();
   const { timezone } = useDocumentDatesConfig();
@@ -176,7 +183,7 @@ export function ProjectWorkRailSection({ projectId }: { projectId: string }) {
                       task={task}
                       done={task.status === "DONE" || justDone.has(task.id)}
                       late={isLateWork(task, nowMs, timezone)}
-                      due={dueLabel(task, nowMs, timezone)}
+                      due={dueLabel(task, nowMs, timezone, formatDateDayMonth)}
                       canEdit={canEdit}
                       onToggle={() => toggleDone(task)}
                     />

@@ -25,6 +25,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { cn, focusRing } from "@/lib/utils";
+import { useFormatters } from "@/components/providers/format-provider";
 
 const SERVICE_TYPE_ICONS: Record<string, typeof Truck> = {
   DELIVERY: Truck,
@@ -47,15 +48,6 @@ const SERVICE_TYPE_LABELS: Record<string, string> = {
 function formatTime(time: string | null | undefined): string {
   if (!time) return "";
   return time;
-}
-
-function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "";
-  return new Date(date).toLocaleDateString("en-AU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
 }
 
 interface ServiceGroup {
@@ -83,7 +75,10 @@ interface ServiceGroup {
   }>;
 }
 
-function groupByDate(services: Array<Record<string, unknown>>): ServiceGroup[] {
+function groupByDate(
+  services: Array<Record<string, unknown>>,
+  formatDate: (d: Date) => string,
+): ServiceGroup[] {
   const groups = new Map<string, ServiceGroup>();
 
   for (const s of services) {
@@ -115,6 +110,7 @@ export default function RunsheetPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const { formatDateWeekdayLong } = useFormatters();
   const { id } = use(params);
 
   const { data: project } = useProjectDetail(id);
@@ -122,7 +118,7 @@ export default function RunsheetPage({
   const { data: services, isLoading } = useProjectServices(id);
 
   const dateGroups = services
-    ? groupByDate(services as unknown as Record<string, unknown>[])
+    ? groupByDate(services as unknown as Record<string, unknown>[], formatDateWeekdayLong)
     : [];
   const today = new Date().toISOString().slice(0, 10);
 

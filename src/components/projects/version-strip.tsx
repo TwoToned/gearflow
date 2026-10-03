@@ -11,6 +11,7 @@ import { resolveLockCopy, type LockCopyStatus } from "@/lib/lock-copy";
 import { intentStyles, intentBorderClass } from "@/lib/status-colors";
 import { cn } from "@/lib/utils";
 import type { ProjectVersionSummary } from "@/components/projects/project-version-context";
+import { useFormatters } from "@/components/providers/format-provider";
 
 /**
  * Project Versioning v2, Phase 5 (#1231, parent #1221, design §5.2) — the
@@ -84,12 +85,10 @@ interface VersionStripProps {
   onOpenDriftCompare?: () => void;
 }
 
-/** Plain currency text, no `Intl` locale plumbing threaded through this far —
- *  matches the sign convention `describeDrift` (`src/lib/quote-drift.ts`)
- *  already uses elsewhere on this page ("+$1,240" / "-$1,240"). */
-function formatDriftAmount(amount: number): string {
-  const abs = Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${amount >= 0 ? "+" : "-"}$${abs}`;
+/** "+$1,240.00" / "-$1,240.00" — sign convention matches `describeDrift`
+ *  (`src/lib/quote-drift.ts`); the amount itself is the org's formatter. */
+function formatDriftAmount(amount: number, formatCurrency: (v: number) => string): string {
+  return `${amount >= 0 ? "+" : "-"}${formatCurrency(Math.abs(amount))}`;
 }
 
 function NonLiveVersionStrip({
@@ -107,6 +106,7 @@ function NonLiveVersionStrip({
   quoteDrift?: VersionStripQuoteDrift | null;
   onOpenDriftCompare?: () => void;
 }) {
+  const { formatCurrency } = useFormatters();
   return (
     <div
       id="version-strip"
@@ -140,11 +140,11 @@ function NonLiveVersionStrip({
                   onClick={onOpenDriftCompare}
                   className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
                 >
-                  Quote total has moved {formatDriftAmount(quoteDrift.driftAmount)} since {quoteDrift.quoteLabel} was sent.
+                  Quote total has moved {formatDriftAmount(quoteDrift.driftAmount, formatCurrency)} since {quoteDrift.quoteLabel} was sent.
                 </button>
               ) : (
                 <>
-                  Quote total has moved {formatDriftAmount(quoteDrift.driftAmount)} since {quoteDrift.quoteLabel} was sent.
+                  Quote total has moved {formatDriftAmount(quoteDrift.driftAmount, formatCurrency)} since {quoteDrift.quoteLabel} was sent.
                 </>
               )}
             </>

@@ -42,6 +42,7 @@ import {
   updateDisplayToken,
   regenerateDisplayToken,
 } from "@/server/warehouse-display";
+import { useFormatters } from "@/components/providers/format-provider";
 
 interface DisplayToken {
   id: string;
@@ -60,16 +61,6 @@ const LAYOUTS = [
   { value: "compact", label: "Compact", description: "Dispatch + returns only, larger text" },
   { value: "dispatch-only", label: "Dispatch Only", description: "Today's dispatch with prep status" },
 ] as const;
-
-function formatDate(date: string | Date | null) {
-  if (!date) return "Never";
-  return new Date(date).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function getDisplayUrl(token: string) {
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
@@ -152,6 +143,7 @@ function LocationSelect({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function DisplaySettingsPage() {
+  const { formatDateWithTime: formatDate } = useFormatters();
   const canEdit = useCanDo("orgSettings", "update");
   const [createOpen, setCreateOpen] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -325,7 +317,7 @@ export default function DisplaySettingsPage() {
                         )}
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Last seen: {formatDate(t.lastAccessedAt)}
+                          Last seen: {t.lastAccessedAt ? formatDate(t.lastAccessedAt) : "Never"}
                         </span>
                         <span>Created by {t.createdBy.name}</span>
                       </div>

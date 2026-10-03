@@ -19,7 +19,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { useFormatters } from "@/components/providers/format-provider";
 
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
@@ -75,16 +75,16 @@ const statusLabels: Record<string, string> = {
   RETURNED: "Returned",
 };
 
+/** `formatDateDayMonth` is the org-locale-bound I3 role (I3, #1082) —
+ *  replaces a hardcoded-AU-locale date call, which fixed the
+ *  day-before-month order regardless of the org's own country. */
 function formatDateRange(
   start: string | null | undefined,
-  end: string | null | undefined
+  end: string | null | undefined,
+  formatDateDayMonth: (date: Date) => string,
 ) {
   if (!start && !end) return "No dates";
-  const fmt = (d: string) =>
-    new Date(d).toLocaleDateString("en-AU", {
-      day: "numeric",
-      month: "short",
-    });
+  const fmt = (d: string) => formatDateDayMonth(new Date(d));
   if (start && end) return `${fmt(start)} – ${fmt(end)}`;
   if (start) return `From ${fmt(start)}`;
   return `Until ${fmt(end!)}`;
@@ -270,6 +270,7 @@ export default function WarehousePage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const { batchCloseOut } = useWarehouseCloseWrites();
+  const { formatDateLong } = useFormatters();
 
   // Native warehouse landing list (Phase 4 — the version-vector + getProjects
   // server-action path is retired). ONE warehouseList.bundle subscription returns
@@ -423,7 +424,7 @@ export default function WarehousePage() {
     });
   }
 
-  const todayFormatted = format(new Date(), "EEEE, d MMMM");
+  const todayFormatted = formatDateLong(new Date());
   const allSelected =
     returnedProjects.length > 0 &&
     selectedForClose.size === returnedProjects.length;
@@ -856,6 +857,7 @@ function ProjectCard({
   isSelected?: boolean;
   onToggleSelect?: () => void;
 }) {
+  const { formatDateDayMonth } = useFormatters();
   const summary = getPrepSummary(project);
   const isReturned = project.status === "RETURNED";
 
@@ -913,6 +915,7 @@ function ProjectCard({
             {formatDateRange(
               projectWindowOf(project).start as unknown as string | null,
               projectWindowOf(project).end as unknown as string | null,
+              formatDateDayMonth
             )}
           </span>
         </div>

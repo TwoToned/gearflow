@@ -98,6 +98,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useFormatters } from "@/components/providers/format-provider";
 
 
 // "Any role" sentinel for RequestAvailabilityDialog's role Select (work-layer
@@ -120,14 +121,6 @@ interface CrewPanelProps {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Assignment = Record<string, any>;
-
-function formatDate(date: string | null | undefined): string {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-AU", {
-    day: "numeric",
-    month: "short",
-  });
-}
 
 export function CrewPanel({ projectId }: CrewPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
@@ -686,6 +679,7 @@ function AssignmentRow({
   onStatusChange: (status: string) => void;
   onSendOffer?: () => void;
 }) {
+  const { formatDateDayMonth: formatDate } = useFormatters();
   const isMobile = useIsMobile();
 
   const member = a.crewMember as {

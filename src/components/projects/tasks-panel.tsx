@@ -70,6 +70,7 @@ import {
   type ProjectTaskPriority,
   type ProjectTaskRecurrenceFrequency,
 } from "@/lib/project-tasks";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // Re-exported for existing consumers — the type itself now lives in
 // project-tasks.ts (a plain lib module) so use-project-work-data.ts can
@@ -186,16 +187,20 @@ const PRIORITY_DOT: Record<ProjectTaskPriority, string> = {
   HIGH: "bg-t-out",
 };
 
-function dueState(due: string | null): { label: string; overdue: boolean } | null {
+function dueState(
+  due: string | null,
+  formatDateDayMonth: (d: Date) => string,
+): { label: string; overdue: boolean } | null {
   if (!due) return null;
   const d = new Date(due);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const overdue = d < today;
-  return { label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), overdue };
+  return { label: formatDateDayMonth(d), overdue };
 }
 
 export function TasksPanel({ projectId, defaultGroupBy = "status" }: { projectId: string; defaultGroupBy?: TaskGroupBy }) {
+  const { formatDateDayMonth } = useFormatters();
   const [groupBy, setGroupBy] = useState<TaskGroupBy>(defaultGroupBy);
   const writes = useProjectTaskWrites();
   // #1244 — shared with the board/calendar views (one query, per-view is a
@@ -413,7 +418,7 @@ export function TasksPanel({ projectId, defaultGroupBy = "status" }: { projectId
                 </h4>
                 <div className="divide-y divide-line rounded-[var(--r)] border border-line">
                   {list.map((task) => {
-                    const due = dueState(task.dueDate);
+                    const due = dueState(task.dueDate, formatDateDayMonth);
                     const checklist = task.checklist ?? [];
                     const checklistDone = checklist.filter((c) => c.done).length;
                     const assigneeName =

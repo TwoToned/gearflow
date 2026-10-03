@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { useFormatters } from "@/components/providers/format-provider";
 
 interface CallSheetDialogProps {
   projectId: string;
@@ -32,7 +33,6 @@ interface CallSheetDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function formatDateKey(date: Date): string {
   return date.toISOString().split("T")[0];
@@ -44,18 +44,12 @@ function parseDateKey(key: string): Date {
   return new Date(year, month - 1, day);
 }
 
-function formatDisplayDate(dateKey: string): string {
-  const d = parseDateKey(dateKey);
-  const dayName = DAY_NAMES[d.getDay()];
-  const month = d.toLocaleString("en-AU", { month: "short" });
-  return `${dayName} ${d.getDate()} ${month}`;
-}
-
 export function CallSheetDialog({
   projectId,
   open,
   onOpenChange,
 }: CallSheetDialogProps) {
+  const { formatDateWeekdayShort } = useFormatters();
   const [selectAllDays, setSelectAllDays] = useState(true);
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [selectedCrewMemberId, setSelectedCrewMemberId] = useState<string>("all");
@@ -306,7 +300,7 @@ export function CallSheetDialog({
                           onCheckedChange={() => toggleDate(dateKey)}
                         />
                         <span className="text-sm">
-                          {formatDisplayDate(dateKey)}
+                          {formatDateWeekdayShort(parseDateKey(dateKey))}
                         </span>
                         {count > 0 && (
                           <Badge

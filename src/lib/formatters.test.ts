@@ -7,6 +7,8 @@ import {
   documentDueDateText,
   formatDateLong,
   formatDateWithTime,
+  formatDateWeekdayLong,
+  formatCurrencyWhole,
   formatMonthYear,
   formatLabel,
   roundCurrency,
@@ -294,5 +296,28 @@ describe("documentDueDateText \u2014 invoice-only due date", () => {
   });
   it("prints nothing for a quote (it has an expiry, not a due date)", () => {
     expect(documentDueDateText("quote", due, "Australia/Sydney")).toBe("");
+  });
+});
+
+describe("formatDateWeekdayLong / formatCurrencyWhole (I3 second sweep)", () => {
+  const d = new Date("2024-07-15T14:32:00Z");
+  const us = { locale: "en-US", currency: "USD" } as const;
+
+  it("formatDateWeekdayLong has the long weekday + month and no year", () => {
+    const au = formatDateWeekdayLong(d);
+    expect(au).toMatch(/Monday/);
+    expect(au).toMatch(/July/);
+    expect(au).not.toMatch(/2024/);
+  });
+
+  it("formatDateWeekdayLong follows the org locale's day/month order", () => {
+    const out = formatDateWeekdayLong(d, us);
+    expect(out.indexOf("July")).toBeLessThan(out.indexOf("15"));
+  });
+
+  it("formatCurrencyWhole drops the cents and honours the org currency", () => {
+    expect(formatCurrencyWhole(1234.56, us)).toBe("$1,235");
+    expect(formatCurrencyWhole(null)).toBe("\u2014");
+    expect(formatCurrencyWhole(1234.5, { locale: "en-GB", currency: "GBP" })).toMatch(/^£1,23[45]$/);
   });
 });

@@ -1,6 +1,6 @@
 # Settings, Branding & Site Admin
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-08-04 (review quarterly — POLICY.md R-5.5)_
 
 ## Org Settings (`Organization.metadata` JSON)
 ```json
@@ -100,37 +100,80 @@ Beyond `formatDate`'s hardcoded locale (fixed by I2), `date-fns` `format(date,
 "…")` calls were scattered across ~20 files and **contradicted each other at
 the same AU locale** — some screens used day-first ("d MMM"), others
 month-first ("MMM d, yyyy") for the same kind of field. `src/lib/formatters.ts`
-adds four named roles alongside `formatDate` (the "short" role), all built on
+adds six named roles alongside `formatDate` (the "short" role), all built on
 one shared `formatDateWithOptions` (`Intl`-backed, so date order/separator
 comes free per locale — no per-country date logic needed):
 
 - `formatDateDayMonth` — no year (compact range/relative labels)
 - `formatDateLong` — weekday + full month + year (always includes the year;
   some pre-#1082 call sites dropped it inconsistently)
+- `formatDateWeekdayShort` — weekday (short) + day + short month, no year
+  (a date-range endpoint label, e.g. the project wizard's schedule step)
+- `formatDateWeekdayLong` — weekday (long) + day + full month, no year (a
+  schedule/run-sheet day heading)
 - `formatDateWithTime` — the short role + a 24-hour clock, **pinned** with
   `hour12: false` (date-fns's `"HH:mm"` was always 24-hour regardless of
   locale; `Intl`'s default isn't, so it's forced explicitly)
 - `formatMonthYear` — month + year only (calendar headers)
 
-All four are exposed on `useFormatters()` too. Migrated in #1082: the
+All six are exposed on `useFormatters()` too, plus `formatCurrencyWhole` (no cents, for compact cards). Migrated in #1082: the
 concrete month-first-vs-day-first contradiction (`activity/page.tsx`,
 `maintenance/page.tsx` ×2, `maintenance/due/page.tsx` ×2, `dashboard/page.tsx`
 ×2) — the Maintenance section + Activity log were the month-first outliers
-against day-first everywhere else. **Not migrated**: the remaining ~15 inline
-`format()` calls with word-based date tokens (booking calendar, availability
-page, `range-calendar.tsx`, `project-wizard.tsx`, `my-work-section.tsx`) —
-left for incremental follow-up. `"yyyy-MM-dd"`/`"yyyy-MM"` MACHINE formats
-(keys, query params, filenames, ical) are correctly locale-independent and
-were never in scope.
+against day-first everywhere else. Migrated in the follow-up sweep (#1063
+Phase I continuation): the remaining call sites with a real day/month-order
+bug — `booking-calendar.tsx` (month header, day-detail heading, table rows,
+both booking-list panels), `availability/page.tsx` (month header, day-detail
+heading, agenda rows, day cards), `range-calendar.tsx` (month header, now
+takes an optional `locale` prop), `project-wizard.tsx`'s schedule-step range
+summary (via the new `formatDateWeekdayShort` role), `warehouse/page.tsx`'s `formatDateRange` helper
+(was hardcoded `"en-AU"`) and "today" header, and `crew/page.tsx`'s
+dashboard date helper. A handful of call sites with **no real order bug**
+(bare `format(x, "MMMM yyyy")`/`format(day, "EEE")` — no day+month
+combination, so nothing to reorder) were migrated anyway for consistency —
+`formatMonthYear` where a role fit, or `date.toLocaleDateString(config.locale,
+…)` inline for the one bare-weekday badge with no reusable role.
+`"yyyy-MM-dd"`/`"yyyy-MM"` MACHINE formats (keys, query params, filenames,
+`<input type="date">` values, ical) are correctly locale-independent and stay
+out of scope — don't route those through a role.
+
+**Second sweep — newer surfaces.** The same migration reached the surfaces
+added after #1082: the work layer (`work-board-view`, `tasks-panel`,
+`work-calendar-view`, `project-work-rail-section`, `work-composer` via
+`workDatesLabel(…, locale)` / `formatCalendarDate(…, locale)`, the dashboard
+`today-work-list-widget`), the version UI (`versions-panel`, `version-switcher`,
+`version-strip` — the drift amount now goes through `formatCurrency`), the
+project list/board (`project-table`, `project-board` — totals via
+`formatCurrency`/`formatCurrencyWhole`), `services-panel`, `crew-panel`, the
+crew planner, run sheet, call-sheet dialog, client timeline, activity timeline,
+asset checks, test-and-tag, custom-field dates, pull sheet footer, command
+search, account page and display settings. `work-timeline-row.tsx` also dropped
+its hand-rolled Monday-first `startOfWeek` for `date-fns` driven by
+`useOrgWeekStartsOn()` (a second copy of the week-start rule, R-3.1). A helper
+that was a module-level function now takes the role formatter as a parameter or
+is replaced by a `useFormatters()` destructure in its component.
+
+**Not migrated (baselined):** renderers with no React context — e-mail bodies
+(`notification-emails.ts`, `server/notifications.ts`), PDF/call-sheet builders,
+server-action text, the public warehouse display (`/warehouse/display/[token]`,
+no org session) and the printed test-tag label. They need an org locale threaded
+in server-side; the ratchet counts them so the number can only fall.
 
 **The ratchet** (`scripts/date-format-ratchet.sh`, `pnpm run
-date-format-ratchet`, wired into CI's `hygiene` job): counts inline `format(x,
+date-format-ratchet`, wired into CI's `hygiene` job): also counts bare
+`toLocale{Date,Time,}String(undefined | "en-XX", …)` calls (hardcoded AU or
+the viewer's browser locale); counts inline `format(x,
 "…")` calls whose format string contains a word-based month/weekday token
 (`MMM`/`MMMM`/`EEE`/`EEEE` — the exact axis that reorders per locale). The
-count is a ratchet baseline (`.date-format-ratchet-baseline`, currently 15)
-like `any-ratchet`/`knip-ratchet`/`complexity-ratchet` — it can only go down;
-a new inline display-date format string fails CI, forcing new dates through a
-named role instead.
+count is a ratchet baseline (`.date-format-ratchet-baseline`, now **16** —
+the un-migratable server/PDF/e-mail renderers above; the `format()` half is 0) like `any-ratchet`/`knip-ratchet`/
+`complexity-ratchet` — it can only go down; a new inline display-date format
+string fails CI, forcing new dates through a named role instead. The script
+itself had a latent bug at exactly this boundary: `grep | wc -l` under
+`set -o pipefail` aborts the whole script (not just reports 0) when the grep
+finds zero matches, because `wc -l` never receives grep's own "no match" exit
+code — fixed by counting with `grep -c ... || true` instead, so a fully-zeroed
+ratchet reports success rather than failing CI.
 
 `OrgSettings.country` (the field above) is **immutable after creation
 (M6)** — `src/server/settings.ts`'s `updateOrganization` enforces it
@@ -160,6 +203,20 @@ replaces already assumed. Wired into:
   labels were a hardcoded Monday-first array — for a Sunday-starting org the
   header and the day cells would have visibly misaligned. Both now derive
   from the same `weekStartsOn` via `weekdayLabels()`.
+- `booking-calendar.tsx` — same companion bug, same fix: `gridStart`/
+  `gridEnd` and the day-header row (`DAY_HEADERS_MON_FIRST`/
+  `DAY_HEADERS_SUN_FIRST`, picked by `useOrgWeekStartsOn()`) now agree.
+  `BookingCalendar` already read the active org for its data queries, so the
+  hook call is local rather than page-level-then-threaded.
+- `range-calendar.tsx` (`src/components/ui/`, a generic primitive used by
+  `project-wizard.tsx`'s schedule step) — takes `weekStartsOn`/`locale` as
+  **optional props**, defaulting to the pre-#1086 Monday/`en-AU` behaviour
+  for any caller that hasn't threaded the org's hook through yet, rather than
+  reading org context itself. A low-level `ui/` component shouldn't fetch org
+  data directly (that's the page/feature-component's job, same split as
+  `crew/planner/page.tsx` calling the hook and passing the value down); the
+  one current caller (`project-wizard.tsx`) calls `useOrgWeekStartsOn()` +
+  `useFormatters().config.locale` and passes both down.
 
 Address-bias (`AddressInput`'s `countryCode` prop via `useOrgCountry()`) was
 already wired everywhere except `services-panel.tsx`'s delivery/pickup

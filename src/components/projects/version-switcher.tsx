@@ -19,6 +19,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useProjectVersionWrites } from "@/hooks/use-project-version-writes";
 import { useProjectVersion } from "@/components/projects/project-version-context";
 import { VersionsPanel } from "@/components/projects/versions-panel";
+import { useFormatters } from "@/components/providers/format-provider";
 
 /**
  * Project Versioning v2, Phase 5 (#1231, parent #1221, design §5.1) — the
@@ -40,10 +41,6 @@ function stateLabel(isLive: boolean, contentState: "ready" | "missing"): string 
   return contentState === "missing" ? "No content" : "Draft";
 }
 
-function formatShortDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-
 /** `V` opens the Versions panel — skipped while typing or while any
  *  dialog/sheet/menu (Radix content) is already open, per DESIGN.md §4. */
 function useVersionPanelShortcut(onOpen: () => void) {
@@ -63,6 +60,7 @@ function useVersionPanelShortcut(onOpen: () => void) {
 }
 
 export function ProjectVersionSwitcher() {
+  const { formatDateDayMonth: formatShortDate } = useFormatters();
   const { projectId, versions, isLoadingVersions, liveVersion, viewingNumber, isViewingVersion, setViewingNumber, openCompare } =
     useProjectVersion();
   const canPublish = useCanDo("invoice", "publish");
@@ -121,7 +119,7 @@ export function ProjectVersionSwitcher() {
                     v{v.number} · {stateLabel(v.isLive, v.contentState)}
                     {v.label ? ` · ${v.label}` : ""}
                   </span>
-                  <span className="block text-caption text-muted">{formatShortDate(v.createdAt)}</span>
+                  <span className="block text-caption text-muted">{formatShortDate(new Date(v.createdAt))}</span>
                 </span>
               </DropdownMenuItem>
             );

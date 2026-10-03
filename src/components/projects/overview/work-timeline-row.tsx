@@ -8,6 +8,9 @@ import { useProjectDetail } from "@/hooks/use-project-detail";
 import { api } from "../../../../convex/_generated/api";
 import { Panel } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useFormatters } from "@/components/providers/format-provider";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
+import { startOfWeek } from "date-fns";
 
 /**
  * Overview → Timeline row (#1244, design §8.3): "one week strip with rows
@@ -28,23 +31,14 @@ interface DayCell {
   isToday: boolean;
 }
 
-function startOfWeek(d: Date): Date {
-  const day = d.getDay(); // 0 Sun..6 Sat
-  const diff = (day === 0 ? -6 : 1) - day; // Monday-start
-  const start = new Date(d);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() + diff);
-  return start;
-}
-
-function buildWeek(): DayCell[] {
-  const start = startOfWeek(new Date());
+function buildWeek(weekStartsOn: 0 | 1, locale: string): DayCell[] {
+  const start = startOfWeek(new Date(), { weekStartsOn });
   const todayKey = new Date().toISOString().slice(0, 10);
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start);
     d.setDate(d.getDate() + i);
     const key = d.toISOString().slice(0, 10);
-    return { key, label: d.toLocaleDateString(undefined, { weekday: "short", day: "numeric" }), isToday: key === todayKey };
+    return { key, label: d.toLocaleDateString(locale, { weekday: "short", day: "numeric" }), isToday: key === todayKey };
   });
 }
 
@@ -53,7 +47,9 @@ function dayKeyFromMs(ms: number | null | undefined): string | null {
 }
 
 function TimelineTrack({ label, activeDays, dotClassName }: { label: string; activeDays: Set<string>; dotClassName: string }) {
-  const week = useMemo(() => buildWeek(), []);
+  const weekStartsOn = useOrgWeekStartsOn();
+  const { config } = useFormatters();
+  const week = useMemo(() => buildWeek(weekStartsOn, config.locale), [weekStartsOn, config.locale]);
   return (
     <div className="grid grid-cols-[80px_repeat(7,1fr)] items-center gap-1 px-4 py-1.5">
       <span className="text-caption text-muted">{label}</span>
@@ -67,7 +63,9 @@ function TimelineTrack({ label, activeDays, dotClassName }: { label: string; act
 }
 
 export function WorkTimelineRow({ projectId, orgId }: { projectId: string; orgId: string }) {
-  const week = useMemo(() => buildWeek(), []);
+  const weekStartsOn = useOrgWeekStartsOn();
+  const { config } = useFormatters();
+  const week = useMemo(() => buildWeek(weekStartsOn, config.locale), [weekStartsOn, config.locale]);
   const { data: project } = useProjectDetail(projectId);
   const services = useAuthedQuery(api.projectServices.listByProject, { projectId, orgId }) as
     | { date?: number; endDate?: number }[]

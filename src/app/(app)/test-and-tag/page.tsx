@@ -25,11 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-AU");
-}
+import { useFormatters } from "@/components/providers/format-provider";
 
 function daysFromNow(date: string | Date | null | undefined): number {
   if (!date) return 0;
@@ -43,6 +39,7 @@ function formatClass(cls: string) {
 }
 
 export default function TestAndTagPage() {
+  const { formatDate } = useFormatters();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const convex = useConvex();

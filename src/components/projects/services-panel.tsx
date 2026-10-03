@@ -117,6 +117,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -131,23 +132,6 @@ const SERVICE_TYPE_ICONS: Record<ServiceType, typeof Truck> = {
   LABOUR: HardHat,
   MISC: Wrench,
 };
-
-function formatDate(date: string | null | undefined): string {
-  if (!date) return "";
-  return new Date(date).toLocaleDateString("en-AU", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-}
-
-function formatDateLong(date: string): string {
-  return new Date(date).toLocaleDateString("en-AU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -212,6 +196,7 @@ export function ServicesPanel({
   projectEventStartDate,
   projectEventEndDate,
 }: ServicesPanelProps) {
+  const { formatDateWeekdayShort, formatDateWeekdayLong } = useFormatters();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isManagerPlus = useIsManagerPlus();
@@ -324,7 +309,7 @@ export function ServicesPanel({
     setDialogOpen(true);
   }
 
-  const grouped = groupByDate(services as ServiceRow[]);
+  const grouped = groupByDate(services as ServiceRow[], { formatDate: formatDateWeekdayShort, formatDateLong: formatDateWeekdayLong });
   const hasProjectDates = !!(projectLoadInDate || projectLoadOutDate || projectEventStartDate);
   const hasServices = grouped.length > 0;
 
@@ -699,6 +684,7 @@ function ServiceCard({
   onStatusChange: (status: ServiceStatus) => void;
   onCrewMessage: (crewMemberId: string, name: string) => void;
 }) {
+  const { formatDateWeekdayShort: formatDate } = useFormatters();
   const Icon = SERVICE_TYPE_ICONS[service.type];
   const isCancelled = service.status === "CANCELLED";
   const isMultiDay = service.date && service.endDate &&
@@ -957,7 +943,10 @@ function ServiceCard({
 
 // ─── Date Grouping ────────────────────────────────────────────────────────────
 
-function groupByDate(services: ServiceRow[]) {
+function groupByDate(
+  services: ServiceRow[],
+  fmt: { formatDate: (d: string | null | undefined) => string; formatDateLong: (d: string) => string },
+) {
   const groups: { dateLabel: string; dateKey: string; dateLong: string; items: ServiceRow[] }[] = [];
   const map = new Map<string, ServiceRow[]>();
 
@@ -972,9 +961,9 @@ function groupByDate(services: ServiceRow[]) {
       groups.push({ dateLabel: "Unscheduled", dateKey: key, dateLong: "", items });
     } else {
       groups.push({
-        dateLabel: formatDate(items[0].date),
+        dateLabel: fmt.formatDate(items[0].date),
         dateKey: key,
-        dateLong: formatDateLong(key),
+        dateLong: fmt.formatDateLong(key),
         items,
       });
     }

@@ -11,6 +11,7 @@
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useActiveCustomFields } from "@/hooks/use-custom-fields";
 import { SectionHeader } from "@/components/layout/page-layouts";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Def = any;
@@ -20,13 +21,13 @@ interface CustomFieldsDisplayProps {
   values: Record<string, string> | null | undefined;
 }
 
-function formatValue(def: Def, raw: string): string {
+function formatValue(def: Def, raw: string, formatDate: (d: Date) => string): string {
   if (def.fieldType === "BOOLEAN") return raw === "true" ? "Yes" : "No";
   if (def.fieldType === "DATE") {
     const d = new Date(raw);
     return Number.isNaN(d.getTime())
       ? raw
-      : d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+      : formatDate(d);
   }
   return raw;
 }
@@ -35,6 +36,7 @@ export function CustomFieldsDisplay({
   entityType = "ASSET",
   values,
 }: CustomFieldsDisplayProps) {
+  const { formatDate } = useFormatters();
   const { data: activeOrg } = useActiveOrganization();
   const defs = useActiveCustomFields(activeOrg?.id, entityType);
 
@@ -56,7 +58,7 @@ export function CustomFieldsDisplay({
           <div key={def.id} className="flex justify-between gap-2">
             <span className="text-fg-3">{def.label}</span>
             <span className="font-medium t-data text-right">
-              {formatValue(def, vals[def.fieldKey])}
+              {formatValue(def, vals[def.fieldKey], formatDate)}
             </span>
           </div>
         ))}

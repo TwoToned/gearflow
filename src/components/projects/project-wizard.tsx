@@ -11,6 +11,8 @@ import { cn, focusRing, disabledState } from "@/lib/utils";
 import {
   RangeCalendar, DURATION_PRESETS, presetRange, rangeLengthLabel, type DateRange,
 } from "@/components/ui/range-calendar";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
+import { useFormatters } from "@/components/providers/format-provider";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
@@ -131,6 +133,7 @@ export function ProjectWizard({
   /** When present, the wizard runs in EDIT mode for this project. */
   project?: EditableProject;
 }) {
+  const { formatDateDayMonth } = useFormatters();
   const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
   const managerWrites = useProjectManagerWrites();
@@ -592,8 +595,8 @@ export function ProjectWizard({
                 <ReviewRow label="Type" value={typeName} />
                 <ReviewRow label="Managers" value={managerIds.length ? `${managerIds.length} assigned` : undefined} />
                 <ReviewRow label="Project code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />
-                <ReviewRow label="Rental" value={dateRange(v.rentalStartDate, v.rentalEndDate)} />
-                <ReviewRow label="Project window" value={dateRange(v.projectStartDate, v.projectEndDate) || "Same as rental"} />
+                <ReviewRow label="Rental" value={dateRange(formatDateDayMonth, v.rentalStartDate, v.rentalEndDate)} />
+                <ReviewRow label="Project window" value={dateRange(formatDateDayMonth, v.projectStartDate, v.projectEndDate) || "Same as rental"} />
                 <ReviewRow label="Location" value={locationName} />
                 <ReviewRow label="Site contact" value={v.siteContactName} />
                 <ReviewRow label="Tags" value={(v.tags && v.tags.length) ? v.tags.join(", ") : undefined} />
@@ -646,7 +649,7 @@ export function ProjectWizard({
               <SummaryLine label="Name" value={v.name || "—"} />
               <SummaryLine label="Client" value={clientName || "—"} />
               <SummaryLine label="Type" value={typeName || "—"} />
-              <SummaryLine label="Dates" value={dateRange(v.rentalStartDate, v.rentalEndDate) || "—"} />
+              <SummaryLine label="Dates" value={dateRange(formatDateDayMonth, v.rentalStartDate, v.rentalEndDate) || "—"} />
             </div>
           </div>
         </aside>
@@ -707,6 +710,8 @@ function resolveWindowMs(values: {
  */
 function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   const v = form.watch();
+  const weekStartsOn = useOrgWeekStartsOn();
+  const { formatDateWeekdayShort, config } = useFormatters();
   const range: DateRange = {
     start: fromDateStr(v.rentalStartDate),
     end: fromDateStr(v.rentalEndDate),
@@ -728,15 +733,15 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   const lenLabel = rangeLengthLabel(range);
   const summary = range.start
     ? range.end
-      ? `${format(range.start, "EEE d MMM")} → ${format(range.end, "EEE d MMM")}`
-      : `${format(range.start, "EEE d MMM")} — pick an end date`
+      ? `${formatDateWeekdayShort(range.start)} → ${formatDateWeekdayShort(range.end)}`
+      : `${formatDateWeekdayShort(range.start)} — pick an end date`
     : "No dates yet";
 
   const projectLenLabel = rangeLengthLabel(projectRange);
   const projectSummary = projectRange.start
     ? projectRange.end
-      ? `${format(projectRange.start, "EEE d MMM")} → ${format(projectRange.end, "EEE d MMM")}`
-      : `${format(projectRange.start, "EEE d MMM")} — pick an end date`
+      ? `${formatDateWeekdayShort(projectRange.start)} → ${formatDateWeekdayShort(projectRange.end)}`
+      : `${formatDateWeekdayShort(projectRange.start)} — pick an end date`
     : "Same as rental window";
 
   // Soft (non-blocking) hint: a diverging project window is expected to CONTAIN
@@ -790,7 +795,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
 
       {/* Calendar + live summary */}
       <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-        <RangeCalendar value={range} onChange={setRange} />
+        <RangeCalendar value={range} onChange={setRange} weekStartsOn={weekStartsOn} locale={config.locale} />
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
           <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-faint")}>{summary}</span>
           {lenLabel && (
@@ -813,7 +818,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
                 window (e.g. an earlier bump-in or a later strike).
               </p>
               <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-                <RangeCalendar value={projectRange} onChange={setProjectRange} />
+                <RangeCalendar value={projectRange} onChange={setProjectRange} weekStartsOn={weekStartsOn} locale={config.locale} />
                 <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
                   <span className={cn("text-table-cell font-medium", projectRange.start ? "text-ink" : "text-faint")}>
                     {projectSummary}
@@ -901,11 +906,15 @@ function SummaryLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function dateRange(a?: unknown, b?: unknown): string | undefined {
+function dateRange(
+  formatDateDayMonth: (d: Date) => string,
+  a?: unknown,
+  b?: unknown,
+): string | undefined {
   const fmt = (s?: unknown) => {
     if (!s) return null;
     const d = new Date(String(s));
-    return isNaN(d.getTime()) ? null : d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+    return isNaN(d.getTime()) ? null : formatDateDayMonth(d);
   };
   const x = fmt(a), y = fmt(b);
   if (x && y) return `${x} – ${y}`;

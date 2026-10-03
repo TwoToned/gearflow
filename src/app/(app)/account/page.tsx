@@ -51,6 +51,7 @@ import {
   revokeAllOtherSessions,
 } from "@/server/user-profile";
 import { FadeIn } from "@/components/ui/motion";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // ─── Local layout primitives ────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ function describeDevice(ua: string | null | undefined): {
 }
 
 export default function AccountPage() {
+  const { formatMonthYear } = useFormatters();
   const { data: session } = useSession();
   const userId = session?.user?.id;
   const { name: platformName } = usePlatformBranding();
@@ -366,10 +368,7 @@ export default function AccountPage() {
   const displayName = profile?.name || "Your account";
   const nameDirty = nameLoaded && name.trim() !== (profile?.name || "").trim();
   const memberSince = profile?.createdAt
-    ? new Date(profile.createdAt).toLocaleDateString(undefined, {
-        month: "long",
-        year: "numeric",
-      })
+    ? formatMonthYear(new Date(profile.createdAt))
     : null;
   const roleLabel = isSiteAdminRole(profile?.role) ? "Site admin" : "Member";
 

@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn, focusRing } from "@/lib/utils";
 import { getStatusColor } from "@/lib/status-colors";
 import { testTagStatusLabels, equipmentClassLabels, applianceTypeLabels } from "@/lib/status-labels";
+import { useFormatters } from "@/components/providers/format-provider";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -34,16 +35,11 @@ function formatApplianceType(value: string): string {
   return applianceTypeLabels[value] ?? value;
 }
 
-function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "—";
-  const d = new Date(date);
-  return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyItem = Record<string, any>;
 
 function useTestTagColumns(): ColumnDef<AnyItem>[] {
+  const { formatDate } = useFormatters();
   return [
     {
       id: "testTagId",

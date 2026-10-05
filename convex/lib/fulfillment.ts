@@ -1090,12 +1090,15 @@ export async function prepUnit(
             updatedAt: now,
           });
         }
+      } else if (await packSingleGenericIntoContainer(ctx, args)) {
+        // A qty-1 custom/generic line packed into a REAL container got a unit
+        // row carrying `containerId` (membership is per-unit, §3.3) — without
+        // one the warehouse tabs and container labels cannot place it.
       } else {
-        // Single-unit / legacy generic line — whole-line prep (unchanged).
-        // There is no unit row here to carry `containerId` (membership is
-        // per-unit, never on the line — §3.3), and `projectLineItems.containerId`
-        // is reserved for a CONTAINER's own reverse lookup, so this branch
-        // stamps only the widen-step label, same as before #1296.
+        // Single-unit / legacy generic line, no real container — whole-line
+        // prep (unchanged). `projectLineItems.containerId` is reserved for a
+        // CONTAINER's own reverse lookup, so this branch stamps only the
+        // widen-step label, same as before #1296.
         const resolved = args.containerId !== undefined
           ? { label: await containerLabelById(ctx, args.organizationId, args.containerId) }
           : null;
@@ -1112,6 +1115,36 @@ export async function prepUnit(
   // units, so its accessory child lines would otherwise never read PACKED.
   if (!args.assetId) await packParentlessAccessories(ctx, args.organizationId, args.lineItemId);
   await syncLineItemRollup(ctx, args.lineItemId);
+}
+
+/** Qty-1 generic line (custom item, no asset): when it lands in a real container,
+ *  back it with one unit row so `containerId` exists. Returns false (caller keeps
+ *  the label-only whole-line path) when no real container is involved. */
+async function packSingleGenericIntoContainer(
+  ctx: Ctx,
+  args: { organizationId: string; lineItemId: string; containerId?: string | null },
+): Promise<boolean> {
+  const existing = await lineUnits(ctx, args.lineItemId);
+  const resolved = await resolveContainerForWrite(ctx, args, existing.length === 0);
+  if (!resolved?.containerId) return false;
+  const now = Date.now();
+  const patch = {
+    status: "CONFIRMED" as const,
+    prepStatus: "PACKED" as const,
+    containerId: resolved.containerId,
+    prepContainer: resolved.label,
+    updatedAt: now,
+  };
+  const unit = existing[0];
+  if (unit) {
+    if (unit.status !== "CHECKED_OUT") await ctx.db.patch(unit._id, patch);
+  } else {
+    await ctx.db.insert("projectLineItemUnits", {
+      id: createId(), organizationId: args.organizationId, lineItemId: args.lineItemId,
+      ordinal: nextOrdinal(existing), quantity: 1, returnedQuantity: 0, createdAt: now, ...patch,
+    });
+  }
+  return true;
 }
 
 /** Pack the accessory child lines of a bulk/untagged parent once the WHOLE parent

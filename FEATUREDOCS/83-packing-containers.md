@@ -164,11 +164,12 @@ other doc-type consumers without dedicated coverage.
 
 A small label to print and tape to each case, so what is inside is obvious
 without opening it. `DocumentType`s `"container-label"` and `"kit-label"`
-(`src/lib/react-pdf/container-label-document.tsx`), reachable from the project
-page's Documents menu ("Container labels", "Kit labels") or
+(`src/lib/react-pdf/container-label-document.tsx`), reachable from the Documents menu on the project page and on the
+warehouse page ("Container labels", "Kit labels") or
 `/api/documents/[projectId]?type=container-label|kit-label`. Add
 `&labelId=<container id | kit line item id>` to print just one.
 
+- **One case at a time.** On the warehouse page, Container labels is a submenu: "All containers" or any single container by name (`labelId`). Ad hoc (CUSTOM) containers are ordinary `projectContainers` rows, so they appear and print the same way, just with no asset tag.
 - **Layout.** Docket styling (org colour title, tinted contents band), full page
   width so contents run in two columns: wider rather than taller. Header carries
   client, project and rental/event dates. No QR code, no "packed by".

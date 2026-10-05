@@ -276,6 +276,12 @@ differently on the platform nobody tested.
 | `src/components/scanner/camera-scanner-dialog.tsx` | The full-screen viewport UI. |
 | `src/components/scanner/scan-button.tsx` | The trigger; the ONE "open camera, hand back a value". |
 
+**White-on-black linear labels need the explicit invert pass.** ZXing's `tryInvert` does not reach
+linear symbologies in the shipped build (the Two Toned Code 39 tags are white bars on black), so
+`decodeImageData` retries a no-result frame on a luminance-inverted copy. Round-trip tests in
+`decoder.test.ts` pin Code 39 and Code 128; don't drop the second pass because `tryInvert` "looks
+sufficient".
+
 **The decoder binary is self-hosted.** `zxing-wasm` would otherwise fetch ~930
 KiB from jsDelivr at first decode — a scanner that opens the camera and silently
 never decodes, on flaky warehouse wifi or behind an egress proxy. `pnpm run

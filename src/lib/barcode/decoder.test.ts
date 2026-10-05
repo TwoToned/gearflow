@@ -138,6 +138,23 @@ describe("decodeImageData — behaviour under the scanner's options", () => {
     expect(results[0]?.text).toBe("A-1042");
   }, 30_000);
 
+  it.each([
+    ["Code39", "TTP00030"],
+    ["Code128", "TTP00030"],
+  ])("reads an INVERTED linear %s (white-on-black asset tag)", async (format, text) => {
+    // ZXing's tryInvert does not cover linear codes in the shipped build; the
+    // explicit second pass in decodeImageData is what makes this pass.
+    const written = await writeBarcode(text, { format: format as "Code39" | "Code128" });
+    const image = toImageData(written.symbol!, 4);
+    for (let i = 0; i < image.data.length; i += 4) {
+      image.data[i] = 255 - image.data[i]!;
+      image.data[i + 1] = 255 - image.data[i + 1]!;
+      image.data[i + 2] = 255 - image.data[i + 2]!;
+    }
+    const results = await decodeImageData(image);
+    expect(results[0]?.text).toBe(text);
+  }, 30_000);
+
   it("returns nothing for a blank frame rather than throwing", async () => {
     // The pump calls this ~8x/second at whatever the camera is pointed at.
     // An empty frame is the common case, not an error.

@@ -98,6 +98,7 @@ import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { ContainerRail } from "@/components/warehouse/container-rail";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
+import { AccessoryMoveContext } from "@/components/warehouse/kit-child-rows";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
@@ -123,6 +124,7 @@ import {
   buildContainerGroups,
   resolveSelectionToUnitIds,
   isMoveableAtDeployStage,
+  resolveAccessoryUnitIds,
   isMoveableAtReturnStage,
   isMoveableAtDeprepStage,
   keysForGroupEntries,
@@ -1760,6 +1762,29 @@ function WarehouseProjectPage({
     }
   };
 
+  // Move ONE accessory (all or some of its units) without its parent.
+  const [accessoryToMove, setAccessoryToMove] = useState<LineItem | null>(null);
+  const accessoryUnitIds = useMemo(
+    () => (accessoryToMove ? resolveAccessoryUnitIds(accessoryToMove) : []),
+    [accessoryToMove],
+  );
+
+  const handleConfirmAccessoryMove = async (toContainerId: string | null, quantity: number) => {
+    if (!accessoryToMove) return;
+    const unitIds = resolveAccessoryUnitIds(accessoryToMove, quantity);
+    if (unitIds.length === 0) return;
+    setMoveIsPending(true);
+    try {
+      const { moved } = await containerWrites.moveUnits(unitIds, toContainerId);
+      toast.success(`Moved ${moved} item${moved === 1 ? "" : "s"}`);
+      setAccessoryToMove(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to move");
+    } finally {
+      setMoveIsPending(false);
+    }
+  };
+
   // Build all selectable keys for pick/prep
   const allPrepKeys = useMemo(() => selectionKeysForEntries(groupedPrep), [groupedPrep]);
 
@@ -2886,6 +2911,7 @@ function WarehouseProjectPage({
         </div>
       </FadeIn>
 
+      <AccessoryMoveContext.Provider value={setAccessoryToMove}>
       <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="pick-prep">
@@ -2966,8 +2992,18 @@ function WarehouseProjectPage({
           onOpenChange={(open) => !open && setMoveDialogFor(null)}
           unitCount={moveDialogUnitIds.length}
           containers={realContainers}
-          onConfirm={handleConfirmMove}
+          onConfirm={(id) => handleConfirmMove(id)}
           pending={moveIsPending}
+        />
+        <MoveToContainerDialog
+          open={accessoryToMove !== null}
+          onOpenChange={(open) => !open && setAccessoryToMove(null)}
+          unitCount={accessoryUnitIds.length}
+          containers={realContainers}
+          onConfirm={handleConfirmAccessoryMove}
+          pending={moveIsPending}
+          allowPartial
+          title={accessoryToMove?.model?.name || accessoryToMove?.description || "accessory"}
         />
 
         {/* Deploy Tab */}
@@ -3143,6 +3179,7 @@ function WarehouseProjectPage({
           <CloseOutTab projectId={projectId} onChanged={refetchProject} />
         </TabsContent>
       </Tabs>
+      </AccessoryMoveContext.Provider>
 
       {/* Kit Verification Confirmation */}
       {kitConfirm && (

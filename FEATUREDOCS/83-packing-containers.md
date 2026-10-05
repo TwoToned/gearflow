@@ -292,6 +292,17 @@ Landed so far:
   `ContainerRail` — the rail always mirrors live prep state with exactly one
   chip active; this dialog starts with nothing chosen each time it opens).
 
+- **Move one accessory (after prep)**: each packed accessory row (Pick/Deploy/
+  Return/De-prep tables) has its own "Move" button, independent of its parent
+  (Move-to… on a parent still moves the whole group). It opens the same
+  `MoveToContainerDialog` with `allowPartial`, so you can move "3 of 8 batteries"
+  to a different case than the beltpacks. Units resolve via
+  `resolveAccessoryUnitIds` (`warehouse-types.ts`: packed or out, never
+  cancelled; first N for a partial move) and go through `moveUnits`. The button
+  reaches every render path via `AccessoryMoveContext` (`kit-child-rows.tsx`),
+  provided by the warehouse page. Desktop table rows only — the mobile cards
+  are whole-row tap targets, so no button yet.
+
 - **Deploy container (D4)**: a "Deploy container" button on each container's
   header in the Deploy tab (desktop table + mobile card, both render paths)
   selects every one of that container's entries

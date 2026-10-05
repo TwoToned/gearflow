@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, createContext, useContext } from "react";
 import {
   ChevronRight,
   Container,
   CircleCheck,
   Circle,
+  Package,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,31 @@ import { focusRing } from "@/lib/utils";
 import type { LineItem } from "./warehouse-types";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanVerifyCard, ScanGroupCard } from "./scan-card";
+import { resolveAccessoryUnitIds } from "./warehouse-types";
+
+/** Provided by the warehouse page so every accessory row, in any tab, can open
+ *  "move this accessory to another container" without threading a callback
+ *  through each tab's several render paths. Null = no move action. */
+export const AccessoryMoveContext = createContext<((accessory: LineItem) => void) | null>(null);
+
+function MoveAccessoryButton({ child }: { child: LineItem }) {
+  const onMove = useContext(AccessoryMoveContext);
+  if (!onMove || resolveAccessoryUnitIds(child).length === 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onMove(child);
+      }}
+      aria-label={`Move ${child.model?.name || child.description || "accessory"} to another container`}
+      className={`inline-flex min-h-8 items-center gap-1 rounded-[var(--r)] border border-line px-2 text-xs text-muted hover:bg-elev ${focusRing}`}
+    >
+      <Package className="h-3 w-3" />
+      Move
+    </button>
+  );
+}
 
 export function KitChildRows({
   kitChildren,
@@ -97,7 +123,10 @@ export function KitChildRows({
                     <Badge status="neutral">Kit</Badge>
                   )}
                   {child.childKind === "ACCESSORY" && (
-                    <Badge status="neutral">Accessory</Badge>
+                    <>
+                      <Badge status="neutral">Accessory</Badge>
+                      <MoveAccessoryButton child={child} />
+                    </>
                   )}
                   {nestedKitPartial && (
                     <Badge status="warn">Partial</Badge>

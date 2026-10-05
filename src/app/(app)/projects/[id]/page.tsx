@@ -475,6 +475,8 @@ export default function ProjectDetailPage({
                         { label: "Pull slip", apiType: "pull-slip" },
                         { label: "Delivery docket", apiType: "delivery-docket" },
                         { label: "Return sheet", apiType: "return-sheet" },
+                        { label: "Container labels", apiType: "container-label" },
+                        { label: "Kit labels", apiType: "kit-label" },
                       ] as const).map(({ label, apiType }) => (
                         <DropdownMenuItem
                           key={apiType}

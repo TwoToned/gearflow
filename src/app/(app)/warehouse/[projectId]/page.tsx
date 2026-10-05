@@ -99,6 +99,7 @@ import { ContainerRail } from "@/components/warehouse/container-rail";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
 import { AccessoryMoveContext } from "@/components/warehouse/kit-child-rows";
+import { relocateAccessories, takeRelocatedSelection } from "@/components/warehouse/relocate-accessories";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
@@ -201,6 +202,12 @@ export default function WarehouseProjectPageWrapper({
 }
 
 /** The model/asset-tag half of a scan-prep queue entry. */
+/** Reversing a relocated accessory's stage isn't supported yet — say so instead
+ *  of silently dropping it from the selection. */
+function warnRelocatedSkipped(count: number) {
+  if (count > 0) toast.info("Accessories in a separate container can't be moved back a stage yet — they were skipped.");
+}
+
 function scanQueueIdentity(li: LineItem | undefined) {
   return {
     modelId: li?.modelId ?? undefined,
@@ -875,9 +882,11 @@ function WarehouseProjectPage({
     fireKits: (kitIds: string[]) => void,
   ) => {
     if (ids.size === 0) return;
+    const { rest, unitIds: relocatedIds } = takeRelocatedSelection(ids, placed.relocatedById);
+    warnRelocatedSkipped(relocatedIds.length);
     const qtyMap = new Map<string, number>();
     const kitIds = new Set<string>();
-    for (const key of ids) {
+    for (const key of rest) {
       const lineItemId = key.includes(":") ? key.split(":")[0] : key;
       const li = lineItems.find((l) => l.id === lineItemId);
       if (li && li.kitId && !li.isKitChild) {
@@ -1595,6 +1604,10 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
+  // Accessory units packed into a different container than their parent are
+  // lifted out into their own lines (relocate-accessories.ts) so every stage
+  // list, container section and Move-to… sees them where they physically are.
+  const placed = relocateAccessories(lineItems);
   // NEW_STOCK sale items — a separate, SKU-picked checklist alongside the
   // asset-tag/scan equipment tree above (2026-08 warehouse sales-prep split).
   const saleItemsToPrep = project ? (project.saleItemsToPrep || []) as SaleItemToPrep[] : [];
@@ -1672,7 +1685,7 @@ function WarehouseProjectPage({
 
   // Filter out kit children and container line items — they show under their parent row / auto-managed.
   // Sub-hire children (isKitChild + isSubhire) pass through as regular individual items.
-  const equipmentItems = lineItems.filter((item) => {
+  const equipmentItems = placed.items.filter((item) => {
     if (item.type !== "EQUIPMENT") return false;
     if (item.isContainerLineItem) return false;
     if (item.isKitChild && isInternalStockLine(item.subHireId)) return false; // real kit children stay hidden
@@ -1746,11 +1759,13 @@ function WarehouseProjectPage({
   const [moveIsPending, setMoveIsPending] = useState(false);
 
   const moveDialogUnitIds = useMemo(() => {
-    if (moveDialogFor === "deploy") return resolveSelectionToUnitIds(selectedOut, lineItems, isMoveableAtDeployStage);
-    if (moveDialogFor === "deprep") return resolveSelectionToUnitIds(selectedDeprep, lineItems, isMoveableAtDeprepStage);
-    if (moveDialogFor === "return") return resolveSelectionToUnitIds(selectedIn, lineItems, isMoveableAtReturnStage);
+    // `placed.items`, not `lineItems`: a parent moves only the accessories still
+    // under it, and a relocated accessory line moves on its own.
+    if (moveDialogFor === "deploy") return resolveSelectionToUnitIds(selectedOut, placed.items, isMoveableAtDeployStage);
+    if (moveDialogFor === "deprep") return resolveSelectionToUnitIds(selectedDeprep, placed.items, isMoveableAtDeprepStage);
+    if (moveDialogFor === "return") return resolveSelectionToUnitIds(selectedIn, placed.items, isMoveableAtReturnStage);
     return [];
-  }, [moveDialogFor, selectedOut, selectedDeprep, selectedIn, lineItems]);
+  }, [moveDialogFor, selectedOut, selectedDeprep, selectedIn, placed.items]);
 
   const handleConfirmMove = async (toContainerId: string | null) => {
     const unitIds = moveDialogUnitIds;
@@ -2228,12 +2243,27 @@ function WarehouseProjectPage({
     return false;
   }
 
+  // A relocated accessory (packed in a different container than its parent) is
+  // actioned from its own row by unit id — the parent's cascade deliberately
+  // leaves it alone (convex/lib/accessoryRelocation.ts).
+  const stageRelocated = (unitIds: string[], to: "DEPLOY" | "RETURN" | "DEPREP", returnCondition?: "GOOD" | "DAMAGED" | "MISSING") => {
+    if (unitIds.length === 0) return;
+    const verb = { DEPLOY: "Deployed", RETURN: "Returned", DEPREP: "De-prepped" }[to];
+    warehouseWrites
+      .stageAccessoryUnits(projectId, unitIds, to, returnCondition)
+      .then(() => toast.success(`${verb} ${unitIds.length} accessor${unitIds.length === 1 ? "y" : "ies"}`))
+      .catch((e) => showError(e));
+  };
+
   const handleCheckOutSelected = async () => {
+    const { rest: outKeys, unitIds: relocatedOut } = takeRelocatedSelection(selectedOut, placed.relocatedById);
+    stageRelocated(relocatedOut, "DEPLOY");
+    if (relocatedOut.length > 0) setSelectedOut(new Set(outKeys));
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
     const kitLineItemIds: string[] = [];
 
-    for (const key of selectedOut) {
+    for (const key of outKeys) {
       if (key.includes(":")) {
         const lineItemId = key.split(":")[0];
         bulkQtyMap.set(lineItemId, (bulkQtyMap.get(lineItemId) || 0) + 1);
@@ -2330,9 +2360,11 @@ function WarehouseProjectPage({
   // otherwise deprep straight back into inventory. Drives the De-prep tab.
   const handleDeprep = (ids: Set<string>) => {
     if (ids.size === 0) return;
+    const { rest, unitIds: relocatedDeprep } = takeRelocatedSelection(ids, placed.relocatedById);
+    stageRelocated(relocatedDeprep, "DEPREP");
     const bulkDeprepMap = new Map<string, number>();
     const directIds: string[] = [];
-    ids.forEach((id) => {
+    rest.forEach((id) => {
       if (id.includes(":")) {
         const lineItemId = id.split(":")[0];
         bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
@@ -2604,10 +2636,13 @@ function WarehouseProjectPage({
   };
 
   const handleReturnSelected = () => {
+    const { rest: inKeys, unitIds: relocatedIn } = takeRelocatedSelection(selectedIn, placed.relocatedById);
+    stageRelocated(relocatedIn, "RETURN", returnCondition as "GOOD" | "DAMAGED" | "MISSING");
+    if (relocatedIn.length > 0) setSelectedIn(new Set(inKeys));
     const qtyMap = new Map<string, number>();
     const kitIds: string[] = [];
 
-    for (const key of selectedIn) {
+    for (const key of inKeys) {
       const lineItemId = key.includes(":") ? key.split(":")[0] : key;
       const li = lineItems.find((l) => l.id === lineItemId);
       if (li && li.kitId && !li.isKitChild) {

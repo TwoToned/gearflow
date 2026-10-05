@@ -58,6 +58,7 @@ export function useWarehouseWrites() {
   const forceReturnKitM = useMutation(api.warehouseWrites.forceReturnKit);
   const forceReturnKitsM = useMutation(api.warehouseWrites.forceReturnKits);
   const bulkForceReturnAssetsM = useMutation(api.warehouseWrites.bulkForceReturnAssets);
+  const stageAccessoryUnitsM = useMutation(api.warehouseWrites.stageAccessoryUnits);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -86,6 +87,20 @@ export function useWarehouseWrites() {
   };
 
   return {
+    /** Deploy / return / de-prep SPECIFIC accessory units — a relocated accessory
+     *  (packed in a different container than its parent) is actioned from its own
+     *  row, never through the parent's cascade. */
+    stageAccessoryUnits: (
+      projectId: string,
+      unitIds: string[],
+      to: "DEPLOY" | "RETURN" | "DEPREP",
+      returnCondition?: ReturnCondition,
+    ) =>
+      stageAccessoryUnitsM({
+        orgId: requireOrg(), projectId, unitIds, to, returnCondition,
+        auditId: createId(), now: Date.now(), actor: actor(),
+      }),
+
     // ── PR-C: checkout keystone ──────────────────────────────────────────────────
     checkOutItems: async (
       projectId: string,

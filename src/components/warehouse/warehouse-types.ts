@@ -167,8 +167,36 @@ export function accessoryChildrenOf(item: LineItem): LineItem[] {
 /** An accessory parent whose OWN gear is already packed (or already out), so only
  *  its accessories are left to prep — the Pick/Prep buttons key off this. */
 function parentAlreadyPrepped(item: LineItem): boolean {
-  if (!isAccessoryParent(item) || isBulkItem(item)) return false;
+  if (!isAccessoryParent(item)) return false;
+  if (isBulkItem(item)) return multiQtyParentFullyPrepped(item);
   return item.prepStatus === "PACKED" || item.status === "CHECKED_OUT" || item.status === "RETURNED";
+}
+
+/** Units of a multi-quantity line that carry their own serialised asset (one per
+ *  scanned/assigned handheld). A genuine bulk pool has none — its units are
+ *  keyed by `bulkAssetId`. */
+function taggedUnits(item: LineItem) {
+  return (item.units ?? []).filter((u) => u.assetId && u.status !== "CANCELLED");
+}
+
+/** A multi-quantity SERIALISED accessory parent whose every ordered unit is
+ *  already assigned and packed (or out) — only its accessories are left. The
+ *  line has no line-level asset, so `isBulkItem` is true for it, yet each unit
+ *  still has its own accessories to pack. */
+function multiQtyParentFullyPrepped(item: LineItem): boolean {
+  const tagged = taggedUnits(item);
+  if (tagged.length === 0 || bulkUnpackedRemaining(item) > 0) return false;
+  return tagged.every((u) => u.prepStatus === "PACKED" || u.status === "CHECKED_OUT" || u.status === "RETURNED");
+}
+
+/** Parent assets of an accessory parent that are packed and so can have their
+ *  accessories prepped on their own: the line's own asset, or each packed
+ *  serialised unit of a multi-quantity line. */
+export function packedParentAssetIds(item: LineItem): string[] {
+  if (item.assetId) return item.prepStatus === "PACKED" ? [item.assetId] : [];
+  return taggedUnits(item)
+    .filter((u) => u.prepStatus === "PACKED" && u.status !== "CHECKED_OUT" && u.status !== "RETURNED")
+    .map((u) => u.assetId as string);
 }
 
 /** One accessory the operator is asked to confirm when a parent is scanned for prep. */

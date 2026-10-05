@@ -673,3 +673,21 @@ path) routes through `routeScanPrep` in `warehouse/[projectId]/page.tsx`:
    is page-session state, changeable via the "Checks:" toggle above the container
    rail. Accessory-only preps never need checks and always run immediately.
 Deploy scans already gate accessories via `openAccessoryGateIfNeeded`.
+
+## Accessories already on the line are opted in; multi-quantity parents
+Two fixes from a job where 11 IMX6A headsets were scanned in and their Sennheiser
+Micon Adapters never packed:
+
+- **An accessory line that exists is an opt-in.** `resolveLineAccessoryPlan`
+  takes `presentBulkIds` (the bulk accessory child lines already on the parent line)
+  and treats an OPTIONAL model accessory in that set as included unless
+  `plan.excluded` lists it. Before, an OPTIONAL accessory with a child line but no
+  `plan.added` entry (the model's tier was flipped after the line was built) expanded
+  to nothing at prep, so the child line had zero units and stayed `PENDING`, which
+  also blocked Deploy. `expandAccessoriesForAsset` passes it for every parent unit.
+- **Multi-quantity serialised parents** (qty > 1, no line-level asset — `isBulkItem`
+  is true) now take part in the Pick/Prep gating. Once every ordered unit is packed
+  (`multiQtyParentFullyPrepped`), normal **Prep** is off (it re-opened the asset
+  picker) and **Prep accessories only** is on; the handler sends one `accessoriesOnly`
+  entry per packed unit (`packedParentAssetIds`). The scan-time accessory prompt is
+  still serialised-single-asset only.

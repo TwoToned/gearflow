@@ -110,6 +110,7 @@ import {
   modelDisplayName,
   isKitParent,
   isAccessoryParent,
+  packedParentAssetIds,
   prepActionAvailability,
   scanAccessoryOptions,
   accessoryChildrenOf,
@@ -2536,10 +2537,15 @@ function WarehouseProjectPage({
     try {
       await ensureContainerIfNeeded();
       const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId: string | null; accessoriesOnly: true }> = [];
+      const seen = new Set<string>();
       for (const key of selectedPrep) {
         const li = lineItems.find((l) => l.id === key.split(":")[0]);
-        if (li?.assetId && isAccessoryParent(li) && !items.some((i) => i.lineItemId === li.id)) {
-          items.push({ lineItemId: li.id, assetId: li.assetId, prepContainer: selectedContainer || null, containerId: activeContainerId, accessoriesOnly: true });
+        if (!li || !isAccessoryParent(li) || seen.has(li.id)) continue;
+        seen.add(li.id);
+        // One entry per packed parent asset — a multi-quantity line has no
+        // line-level asset, so its accessories are packed per unit.
+        for (const assetId of packedParentAssetIds(li)) {
+          items.push({ lineItemId: li.id, assetId, prepContainer: selectedContainer || null, containerId: activeContainerId, accessoriesOnly: true });
         }
       }
       if (items.length === 0) {

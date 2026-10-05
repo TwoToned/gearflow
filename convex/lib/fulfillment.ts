@@ -949,22 +949,40 @@ export async function prepUnit(
      *  container one layer up, in checkRecordOps.ts). */
     containerId?: string | null;
     includeAccessoryIds?: Set<string> | null;
+    /** Pack ONLY the accessories of an already-packed parent: the parent unit is
+     *  left untouched (status, container) and `containerId` applies to the
+     *  accessories alone, so they can live in a different box than the parent. */
+    accessoriesOnly?: boolean;
   },
 ): Promise<void> {
   const now = Date.now();
+  if (args.accessoriesOnly && !args.assetId) {
+    // Bulk / untagged parent: no per-asset accessory units; this just re-runs the
+    // whole-parent-packed rollup for its accessory lines.
+    await packParentlessAccessories(ctx, args.organizationId, args.lineItemId);
+    await syncLineItemRollup(ctx, args.lineItemId);
+    return;
+  }
   if (args.assetId) {
-    const { id, created } = await ensureSerialisedUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, assetId: args.assetId });
-    const resolved = await resolveContainerForWrite(ctx, args, created);
-    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    // Never re-prep a unit that is already OUT — flipping it back to CONFIRMED
-    // would silently un-deploy it with no asset/availability change.
-    if (u && u.status !== "CHECKED_OUT") {
-      await ctx.db.patch(u._id, {
-        status: "CONFIRMED",
-        prepStatus: "PACKED",
-        ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
-        updatedAt: now,
-      });
+    let resolved: Awaited<ReturnType<typeof resolveContainerForWrite>>;
+    if (args.accessoriesOnly) {
+      const parentUnit = (await lineUnits(ctx, args.lineItemId)).find((un) => un.assetId === args.assetId);
+      if (!parentUnit || parentUnit.prepStatus !== "PACKED") throw new ConvexError("Prep the item before prepping its accessories");
+      resolved = await resolveContainerForWrite(ctx, args, false);
+    } else {
+      const { id, created } = await ensureSerialisedUnit(ctx, { organizationId: args.organizationId, lineItemId: args.lineItemId, assetId: args.assetId });
+      resolved = await resolveContainerForWrite(ctx, args, created);
+      const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+      // Never re-prep a unit that is already OUT — flipping it back to CONFIRMED
+      // would silently un-deploy it with no asset/availability change.
+      if (u && u.status !== "CHECKED_OUT") {
+        await ctx.db.patch(u._id, {
+          status: "CONFIRMED",
+          prepStatus: "PACKED",
+          ...(resolved ? { containerId: resolved.containerId, prepContainer: resolved.label } : {}),
+          updatedAt: now,
+        });
+      }
     }
     await expandAccessoriesForAsset(ctx, {
       organizationId: args.organizationId,

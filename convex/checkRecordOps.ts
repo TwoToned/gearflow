@@ -160,6 +160,7 @@ export const prepItems = mutation({
         containerId: v.optional(v.union(v.string(), v.null())),
         prepContainer: v.optional(v.union(v.string(), v.null())),
         includeAccessoryIds: v.optional(v.array(v.string())),
+        accessoriesOnly: v.optional(v.boolean()),
       }),
     ),
     now: v.number(),
@@ -188,6 +189,7 @@ export const prepItems = mutation({
         quantity: item.quantity,
         containerId,
         includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
+        accessoriesOnly: item.accessoriesOnly,
       });
       touched.add(item.lineItemId);
     }

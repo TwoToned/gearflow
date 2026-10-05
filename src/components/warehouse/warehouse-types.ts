@@ -164,6 +164,31 @@ export function accessoryChildrenOf(item: LineItem): LineItem[] {
   return (item.childLineItems ?? []).filter((c) => c.childKind === "ACCESSORY");
 }
 
+/** An accessory parent whose OWN gear is already packed (or already out), so only
+ *  its accessories are left to prep — the Pick/Prep buttons key off this. */
+function parentAlreadyPrepped(item: LineItem): boolean {
+  if (!isAccessoryParent(item) || isBulkItem(item)) return false;
+  return item.prepStatus === "PACKED" || item.status === "CHECKED_OUT" || item.status === "RETURNED";
+}
+
+/** Which Pick/Prep actions the current selection allows. Normal Prep (with or
+ *  without accessories) would re-prep an already-packed parent, so it is off as
+ *  soon as one is selected; "accessories only" needs EVERY selection to be one. */
+export function prepActionAvailability(selectedKeys: Iterable<string>, lineItems: LineItem[]): {
+  canPrep: boolean;
+  canPrepAccessoriesOnly: boolean;
+} {
+  const byId = new Map(lineItems.map((l) => [l.id, l]));
+  let total = 0;
+  let alreadyPrepped = 0;
+  for (const key of selectedKeys) {
+    total++;
+    const li = byId.get(key.split(":")[0]);
+    if (li && parentAlreadyPrepped(li)) alreadyPrepped++;
+  }
+  return { canPrep: total > 0 && alreadyPrepped === 0, canPrepAccessoriesOnly: total > 0 && alreadyPrepped === total };
+}
+
 // Sub-hire group parents have childLineItems but no kitId
 export function isGroupParent(item: LineItem) {
   return !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0;

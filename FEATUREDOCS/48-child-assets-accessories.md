@@ -364,6 +364,34 @@ what every existing query keys off.
    wired through `prepItemDirect`/`prepItemsBatch`/the check-item queue for
    other callers, it's just never populated by the removed UI now (always
    `undefined` ⇒ "include all", the documented default).
+   **"Prep without accessories" (Pick/Prep tab).** A second button beside Prep packs
+   the selected parents only, passing `includeAccessoryIds: []` through
+   `handlePrepSelected({ withoutAccessories: true })` (ready serialised lines, direct
+   and check-queue paths; the asset-picker and bulk paths still pack in full). Use
+   case: EW-DX beltpacks prepped now, default batteries still charging. The accessory
+   lines stay unpacked, so the parent remains in Pick/Prep (stage membership is own
+   state OR any child's); a later plain **Prep** on the same line re-runs `prepUnit`,
+   which is idempotent for the parent and packs the accessories. Pinned by
+   `convex/prepAccessoryRollup.test.ts`.
+   **"Prep accessories only" + separate containers.** For an already-packed parent,
+   **Prep accessories only** (Pick/Prep tab) calls `prepItems` with
+   `accessoriesOnly: true`: `prepUnit` leaves the parent unit untouched (status,
+   container, `updatedAt`) and the active container rail selection applies to the
+   accessories alone. So: prep the beltpacks with the Pelican selected, then select
+   the battery box and run Prep accessories only. It refuses a parent that isn't
+   packed yet ("Prep the item before prepping its accessories"). Serialised parents
+   only; a bulk/untagged parent just re-runs the accessory rollup. Not yet built:
+   a partial-quantity prompt for bulk accessories.
+   **Button gating + deploy across boxes.** `prepActionAvailability`
+   (`warehouse-types.ts`) decides the Pick/Prep buttons: once a selected accessory
+   parent is already packed (or out), **Prep** and **Prep without accessories** are
+   disabled and only **Prep accessories only** works; a mixed selection enables
+   neither (select them separately). Deploy is container-agnostic per unit, so a
+   parent in the Pelican and accessories in the battery box deploy together; the
+   container roll-up (`syncContainersForLines`, `warehouseOps.ts`) now also scans
+   accessory children's units, otherwise the battery box would never flip to
+   CHECKED_OUT (previously it assumed accessories share the parent's box). Pinned
+   by `convex/prepAccessoryRollup.test.ts` ("deploy-all … two different boxes").
 4. **PDFs** — accessories render indented under the parent, gated by the same
    `showKitChildren` flag as kit children (2026-07-27 — previously always-on
    regardless of the flag). An accessory parent is detected by "top-level

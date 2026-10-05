@@ -169,6 +169,8 @@ export async function prepItemsBatch(
     /** #1296 — wins over `prepContainer` per item, see `prepItemDirect`. */
     containerId?: string | null;
     includeAccessoryIds?: string[];
+    /** Pack only the accessories of an already-packed parent (parent untouched). */
+    accessoriesOnly?: boolean;
   }>
 ) {
   const { organizationId, userId, userName } = await requirePermission(
@@ -231,7 +233,7 @@ export async function prepItemsBatch(
         entityType: "asset",
         entityId: item.lineItemId,
         entityName: line?.model?.name || "Line item",
-        summary: "Prepped item (no checks required)",
+        summary: item.accessoriesOnly ? "Prepped accessories" : "Prepped item (no checks required)",
         projectId,
         assetId: item.assetId || line?.assetId || undefined,
       };

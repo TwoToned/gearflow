@@ -58,6 +58,9 @@ export interface PickPrepTabProps {
   selectedPrep: Set<string>;
   setSelectedPrep: (s: Set<string>) => void;
   selectedPrepCount: number;
+  /** False once a selected parent is already packed — only its accessories are left. */
+  canPrep: boolean;
+  canPrepAccessoriesOnly: boolean;
   allPrepKeys: string[];
 
   // Data
@@ -78,7 +81,8 @@ export interface PickPrepTabProps {
   toggleExpanded: (key: string) => void;
 
   // Actions
-  handlePrepSelected: () => void;
+  handlePrepSelected: (opts?: { withoutAccessories?: boolean }) => void;
+  handlePrepAccessoriesOnly: () => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -109,6 +113,8 @@ export function PickPrepTab({
   selectedPrep,
   setSelectedPrep,
   selectedPrepCount,
+  canPrep,
+  canPrepAccessoriesOnly,
   allPrepKeys,
   pickPrepItems,
   groupedPrep,
@@ -120,6 +126,7 @@ export function PickPrepTab({
   expandedGroups,
   toggleExpanded,
   handlePrepSelected,
+  handlePrepAccessoriesOnly,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -158,14 +165,31 @@ export function PickPrepTab({
                 Items that need to be picked and prepped.
                 {selectedContainer && <span className="ml-1 text-ink-2 font-medium">&rarr; {selectedContainer}</span>}
               </p>
-              <Button
-                onClick={handlePrepSelected}
-                disabled={selectedPrepCount === 0 || scanMutationIsPending}
-                loading={scanMutationIsPending}
-                className="shrink-0"
-              >
-                Prep{selectedPrepCount > 0 ? ` (${selectedPrepCount})` : ""}
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="line"
+                  onClick={() => handlePrepSelected({ withoutAccessories: true })}
+                  disabled={!canPrep || scanMutationIsPending}
+                  title="Pack the selected gear but leave its accessories (e.g. batteries still charging) to prep later"
+                >
+                  Prep without accessories
+                </Button>
+                <Button
+                  variant="line"
+                  onClick={handlePrepAccessoriesOnly}
+                  disabled={!canPrepAccessoriesOnly || scanMutationIsPending}
+                  title="Pack only the accessories of already-prepped gear, into the selected container"
+                >
+                  Prep accessories only
+                </Button>
+                <Button
+                  onClick={() => handlePrepSelected()}
+                  disabled={!canPrep || scanMutationIsPending}
+                  loading={scanMutationIsPending}
+                >
+                  Prep{selectedPrepCount > 0 ? ` (${selectedPrepCount})` : ""}
+                </Button>
+              </div>
             </div>
         </div>
 

@@ -257,7 +257,7 @@ test.describe("harness: primary revenue path", () => {
       // happened in CI (the "Prepped" tab click itself was unprotected).
       await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Pick/ }));
       await clickRacingAssignDialog(page, page.locator("table thead").getByRole("checkbox"));
-      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Prep/ }));
+      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Prep( \(\d+\))?$/ }));
       await resolveAssignAssetsDialogIfPresent(page);
 
       await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Prepped/ }));

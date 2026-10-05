@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import {
   isAccessoryParent,
+  prepActionAvailability,
   accessoryChildrenOf,
   isInPickPrepStage,
   isInPreppedStage,
@@ -401,5 +402,24 @@ describe("bulk accessory parent — accessory state must not be hidden by the bu
       { prepStatus: "PACKED" },
     );
     expect(isInPreppedStage(item)).toBe(true);
+  });
+});
+
+describe("prepActionAvailability — Pick/Prep button gating", () => {
+  const acc = { id: "c1", isKitChild: true, childKind: "ACCESSORY" as const, parentLineItemId: "p1", prepStatus: "PENDING" as const };
+  const parent = (id: string, prepStatus: LineItem["prepStatus"]) => line({ id, prepStatus, childLineItems: [line(acc)] });
+  const plain = line({ id: "plain", prepStatus: "PENDING" });
+
+  test("unprepped parent → normal prep only", () => {
+    expect(prepActionAvailability(["p1"], [parent("p1", "PENDING")])).toEqual({ canPrep: true, canPrepAccessoriesOnly: false });
+  });
+  test("packed parent → accessories only", () => {
+    expect(prepActionAvailability(["p1"], [parent("p1", "PACKED")])).toEqual({ canPrep: false, canPrepAccessoriesOnly: true });
+  });
+  test("mixed selection → neither (select them separately)", () => {
+    expect(prepActionAvailability(["p1", "plain"], [parent("p1", "PACKED"), plain])).toEqual({ canPrep: false, canPrepAccessoriesOnly: false });
+  });
+  test("nothing selected → neither", () => {
+    expect(prepActionAvailability([], [plain])).toEqual({ canPrep: false, canPrepAccessoriesOnly: false });
   });
 });

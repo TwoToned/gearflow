@@ -55,4 +55,100 @@ describe("prep cascades PACKED onto accessory child lines", () => {
     expect(children.length).toBeGreaterThan(0);
     for (const c of children) expect(c.prepStatus).toBe("PACKED");
   });
+  test("prep with includeAccessoryIds [] packs the parent only; a later prep packs the accessories", async () => {
+    const t = makeT();
+    await seed(t);
+    const prep = (includeAccessoryIds?: string[]) =>
+      t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {
+        organizationId: ORG, projectId: "p1",
+        items: [{ lineItemId: "L1", assetId: "a1", ...(includeAccessoryIds ? { includeAccessoryIds } : {}) }],
+        now: NOW, actor: { userId: USER, userName: "Alice" },
+      });
+    const accessoryUnits = () =>
+      t.run(async (ctx) => {
+        const kids = (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect())
+          .filter((c) => c.childKind === "ACCESSORY");
+        const units = [];
+        for (const k of kids) units.push(...(await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", k.id)).collect()));
+        return units;
+      });
+    const parentPacked = () =>
+      t.run(async (ctx) => (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => u.prepStatus));
+
+    await prep([]);
+    expect(await parentPacked()).toEqual(["PACKED"]);
+    expect((await accessoryUnits()).filter((u) => u.prepStatus === "PACKED")).toHaveLength(0);
+
+    await prep();
+    const after = await accessoryUnits();
+    expect(after.length).toBeGreaterThan(0);
+    for (const u of after) expect(u.prepStatus).toBe("PACKED");
+  });
+  test("accessoriesOnly packs accessories into their own container without touching the parent", async () => {
+    const t = makeT();
+    await seed(t);
+    const run = (item: Record<string, unknown>) =>
+      t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {
+        organizationId: ORG, projectId: "p1", items: [{ lineItemId: "L1", assetId: "a1", ...item }] as never,
+        now: NOW, actor: { userId: USER, userName: "Alice" },
+      });
+    const units = (lineId: string) => t.run(async (ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineId)).collect());
+
+    // Not prepped yet → refused.
+    await expect(run({ accessoriesOnly: true })).rejects.toThrow(/Prep the item/);
+
+    await run({ includeAccessoryIds: [], containerId: "pelican" });
+    const [parentBefore] = await units("L1");
+    expect(parentBefore.containerId).toBe("pelican");
+
+    await run({ accessoriesOnly: true, containerId: "battery-box" });
+    const [parentAfter] = await units("L1");
+    expect(parentAfter.containerId).toBe("pelican");
+    expect(parentAfter.updatedAt).toBe(parentBefore.updatedAt);
+    const kids = await t.run(async (ctx) =>
+      (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect()).filter((c) => c.childKind === "ACCESSORY"));
+    expect(kids.length).toBeGreaterThan(0);
+    for (const k of kids) for (const u of await units(k.id)) {
+      expect(u.prepStatus).toBe("PACKED");
+      expect(u.containerId).toBe("battery-box");
+    }
+  });
+  test("deploy-all carries parent and accessories out of two different boxes and flips both containers", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      for (const [id, li] of [["pelican", "CL1"], ["battery-box", "CL2"]] as const) {
+        await ctx.db.insert("projectLineItems", { id: li, organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", isContainerLineItem: true, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("projectContainers", { id, organizationId: ORG, projectId: "p1", kind: "CUSTOM", label: id, lineItemId: li, createdAt: NOW, updatedAt: NOW } as never);
+      }
+    });
+    const prep = (item: Record<string, unknown>) =>
+      t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {
+        organizationId: ORG, projectId: "p1", items: [{ lineItemId: "L1", assetId: "a1", ...item }] as never,
+        now: NOW, actor: { userId: USER, userName: "Alice" },
+      });
+    await prep({ includeAccessoryIds: [], containerId: "pelican" });
+    await prep({ accessoriesOnly: true, containerId: "battery-box" });
+
+    await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, items: [{ lineItemId: "L1", assetId: "a1" }], includeAccessories: true, now: NOW,
+    });
+    const state = await t.run(async (ctx) => {
+      const kids = (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect()).filter((c) => c.childKind === "ACCESSORY");
+      const kidUnits = [];
+      for (const k of kids) kidUnits.push(...(await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", k.id)).collect()));
+      const lines = await ctx.db.query("projectLineItems").collect();
+      return {
+        parent: (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => u.status),
+        kids: kidUnits.map((u) => u.status),
+        pelican: lines.find((l) => l.id === "CL1")?.status,
+        batteryBox: lines.find((l) => l.id === "CL2")?.status,
+      };
+    });
+    expect(state.parent).toEqual(["CHECKED_OUT"]);
+    expect(state.kids.length).toBeGreaterThan(0);
+    for (const s of state.kids) expect(s).toBe("CHECKED_OUT");
+    expect(state.pelican).toBe("CHECKED_OUT");
+    expect(state.batteryBox).toBe("CHECKED_OUT");
+  });
 });

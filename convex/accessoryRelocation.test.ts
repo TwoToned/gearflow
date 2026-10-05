@@ -204,3 +204,78 @@ describe("stageAccessoryUnits", () => {
     expect((await accUnit(t, "a1"))?.status).not.toBe("RETURNED");
   });
 });
+
+describe("moving a relocated accessory back a stage, and acting before/after the parent", () => {
+  const stage = (t: T, unitIds: string[], to: "DEPLOY" | "RETURN" | "DEPREP" | "UNDEPLOY" | "UNRETURN" | "UNDEPREP", n: string) =>
+    user(t).mutation(api.warehouseWrites.stageAccessoryUnits, {
+      orgId: ORG, projectId: "p1", unitIds, to, auditId: `audit-${n}`, now: NOW, actor: ACTOR,
+    });
+  const unitsOf = (t: T, id: string) =>
+    t.run(async (ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).first());
+
+  test("Deployed → Prepped → Pick, and Returned → Deployed → De-prepped → Re-packed", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    const id = await relocateAntenna1(t);
+
+    await stage(t, [id], "DEPLOY", "1");
+    await stage(t, [id], "UNDEPLOY", "2"); // Deployed → Prepped
+    expect((await unitsOf(t, id))?.status).toBe("CONFIRMED");
+    expect((await unitsOf(t, id))?.prepStatus).toBe("PACKED");
+    expect(await asset(t, "c1")).toBe("AVAILABLE");
+
+    await stage(t, [id], "DEPLOY", "3");
+    await stage(t, [id], "RETURN", "4");
+    await stage(t, [id], "UNRETURN", "5"); // Returned → Deployed
+    expect((await unitsOf(t, id))?.status).toBe("CHECKED_OUT");
+    expect(await asset(t, "c1")).toBe("CHECKED_OUT");
+
+    await stage(t, [id], "RETURN", "6");
+    await stage(t, [id], "DEPREP", "7");
+    expect((await unitsOf(t, id))?.prepStatus).toBe("PENDING");
+    await stage(t, [id], "UNDEPREP", "8"); // De-prepped → Returned
+    expect((await unitsOf(t, id))?.prepStatus).toBe("PACKED");
+    expect((await unitsOf(t, id))?.status).toBe("RETURNED");
+  });
+
+  test("a packed-and-waiting accessory can be taken off prep on its own (Move to Pick)", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    const id = await relocateAntenna1(t);
+    await stage(t, [id], "DEPREP", "1");
+    expect(await unitsOf(t, id)).toBeNull(); // unit row gone, like deprepItem
+    expect((await accUnit(t, "a2"))?.status).toBe("CONFIRMED"); // the other accessory is untouched
+  });
+
+  test("moving the parents back leaves a relocated accessory where it is", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    const id = await relocateAntenna1(t);
+    await deployL1(t);
+    await stage(t, [id], "DEPLOY", "1");
+
+    await svc(t).mutation(api.warehouseOps.undeployItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW,
+      items: [{ lineItemId: "L1", assetId: "a1", quantity: 1 }],
+    });
+    expect(await asset(t, "a1")).toBe("AVAILABLE");
+    expect(await asset(t, "c1")).toBe("CHECKED_OUT"); // still out in the Battery Box
+  });
+
+  test("an accessory can be deployed before its parent, and the parent's deploy then skips it without error", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    const early = (await accUnit(t, "a2"))!.id; // NOT relocated — still in the parent's Pelican
+    await stage(t, [early], "DEPLOY", "1");
+    expect(await asset(t, "c2")).toBe("CHECKED_OUT");
+    expect(await asset(t, "a2")).toBe("AVAILABLE");
+
+    await deployL1(t); // cascades only what is still waiting
+    expect(await asset(t, "a2")).toBe("CHECKED_OUT");
+    expect((await accUnit(t, "a2"))?.status).toBe("CHECKED_OUT");
+  });
+});

@@ -60038,7 +60038,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "ae03ffbbccbacf91",
+    "argsSha": "7997a4f54993c174",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -61521,7 +61521,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a9d5ba742879a9e5",
+    "argsSha": "207c458ccf37a9ab",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

@@ -225,6 +225,9 @@ async function deprepItemInner(
   } else {
     const removeCount = Math.min(a.quantity, prepped.length);
     const removedParentAssetIds: string[] = [];
+    // Accessories packed in a different container than their parent keep their own
+    // stage (accessoryRelocation.ts) — resolved BEFORE the parent units are deleted.
+    const parentContainerOf = parentContainerResolver(prepped);
     for (let i = 0; i < removeCount; i++) {
       if (prepped[i].assetId) removedParentAssetIds.push(prepped[i].assetId!);
       await ctx.db.delete(prepped[i]._id);
@@ -233,7 +236,7 @@ async function deprepItemInner(
       const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
       for (const child of accChildren) {
         const accUnits = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
-          .filter((u) => u.status !== "CHECKED_OUT" && u.parentUnitAssetId && removedParentAssetIds.includes(u.parentUnitAssetId));
+          .filter((u) => u.status !== "CHECKED_OUT" && u.parentUnitAssetId && removedParentAssetIds.includes(u.parentUnitAssetId) && !isRelocatedAccessoryUnit(u, parentContainerOf(u)));
         for (const u of accUnits) await ctx.db.delete(u._id);
       }
       for (const child of accChildren) {

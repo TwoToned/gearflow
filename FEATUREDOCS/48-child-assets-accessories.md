@@ -392,6 +392,9 @@ what every existing query keys off.
    accessory children's units, otherwise the battery box would never flip to
    CHECKED_OUT (previously it assumed accessories share the parent's box). Pinned
    by `convex/prepAccessoryRollup.test.ts` ("deploy-all … two different boxes").
+   The Pick/Prep action buttons wrap on narrow screens (they used to run off the
+   edge on mobile), and the Pick/Prep tab no longer shows the "Recent" scan strip
+   (Deploy and Return keep theirs).
 4. **PDFs** — accessories render indented under the parent, gated by the same
    `showKitChildren` flag as kit children (2026-07-27 — previously always-on
    regardless of the flag). An accessory parent is detected by "top-level

@@ -194,6 +194,19 @@ export default function WarehouseProjectPageWrapper({
   );
 }
 
+/** The model/asset-tag half of a scan-prep queue entry. */
+function scanQueueIdentity(li: LineItem | undefined) {
+  return {
+    modelId: li?.modelId ?? undefined,
+    assetTag: scanQueueTag(li),
+    bulkAssetId: li?.bulkAssetId || undefined,
+  };
+}
+
+function scanQueueTag(li: LineItem | undefined) {
+  return li?.asset?.assetTag || li?.bulkAsset?.assetTag || "";
+}
+
 function WarehouseProjectPage({
   params,
 }: {
@@ -925,66 +938,74 @@ function WarehouseProjectPage({
     else void proceedScanPrep(prompt.target, { includeAccessoryIds: d.accessoryIds, accessoriesOnly: true });
   }
 
+  function scanQueueItem(target: ScanPrepTarget, name: string, opts: ScanPrepOpts): CheckQueueItem {
+    const li = lineItems.find((l) => l.id === target.lineItemId);
+    return {
+      ...scanQueueIdentity(li),
+      context: "PREP",
+      assetName: name,
+      lineItemId: target.lineItemId,
+      assetId: target.assetId || li?.assetId || "",
+      ...(opts.includeAccessoryIds ? { includeAccessoryIds: opts.includeAccessoryIds } : {}),
+    };
+  }
+
+  async function prepScanAccessoriesOnly(target: ScanPrepTarget, name: string, opts: ScanPrepOpts) {
+    await prepItemsBatch(projectId, [{
+      lineItemId: target.lineItemId,
+      assetId: target.assetId || undefined,
+      prepContainer: selectedContainer || null,
+      containerId: activeContainerId,
+      includeAccessoryIds: opts.includeAccessoryIds,
+      accessoriesOnly: true,
+    }]);
+    clearAccessoryVerification([target.lineItemId]);
+    scanFeedback.play("success", { label: name, outcome: "Accessories prepped" });
+    toast.success(`Accessories prepped: ${name}`);
+  }
+
+  async function prepScanDirect(target: ScanPrepTarget, name: string, opts: ScanPrepOpts) {
+    // No check items — prep directly (set prepStatus=PACKED, no deploy)
+    await prepItemDirect(projectId, target.lineItemId, target.assetId || undefined, undefined, selectedContainer || null, opts.includeAccessoryIds, activeContainerId);
+    scanFeedback.play("success", { label: name, outcome: "Prepped" });
+    toast.success(`Prepped: ${name}`);
+  }
+
+  // Returns true when the scan was fully handled by a dialog/queue and the
+  // caller should stop; false when it should be prepped directly.
+  function deferScanPrep(target: ScanPrepTarget, name: string, opts: ScanPrepOpts, needsCheck: boolean, mode: ScanCheckMode) {
+    if (needsCheck && mode === "ask") {
+      setScanModePrompt({ target, opts, name });
+      return true;
+    }
+    const queueItem = scanQueueItem(target, name, opts);
+    if (mode === "batch") {
+      setScanBatch((prev) => [...prev, { ...queueItem, needsCheck }]);
+      scanFeedback.play("info", { label: name, outcome: needsCheck ? "Queued for checks" : "Queued" });
+      return true;
+    }
+    if (needsCheck) {
+      // Pull item first, then open the check form (prep flow)
+      pullItem(projectId, target.lineItemId).catch(() => {});
+      setCheckFormData(queueItem);
+      setCheckFormOpen(true);
+      return true;
+    }
+    return false;
+  }
+
   async function proceedScanPrep(target: ScanPrepTarget, opts: ScanPrepOpts, modeOverride?: ScanCheckMode) {
     const li = lineItems.find((l) => l.id === target.lineItemId);
     const name = target.assetName || (li ? modelDisplayName(li) : "Asset");
     try {
       await ensureContainerIfNeeded();
       if (opts.accessoriesOnly) {
-        await prepItemsBatch(projectId, [{
-          lineItemId: target.lineItemId,
-          assetId: target.assetId || undefined,
-          prepContainer: selectedContainer || null,
-          containerId: activeContainerId,
-          includeAccessoryIds: opts.includeAccessoryIds,
-          accessoriesOnly: true,
-        }]);
-        clearAccessoryVerification([target.lineItemId]);
-        scanFeedback.play("success", { label: name, outcome: "Accessories prepped" });
-        toast.success(`Accessories prepped: ${name}`);
-        scanFocus();
-        invalidate();
-        return;
+        await prepScanAccessoriesOnly(target, name, opts);
+      } else {
+        const needsCheck = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) }) && !!li?.modelId;
+        const deferred = deferScanPrep(target, name, opts, needsCheck, modeOverride ?? scanCheckMode);
+        if (!deferred) await prepScanDirect(target, name, opts);
       }
-
-      const needsCheck = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) }) && !!li?.modelId;
-      const mode = modeOverride ?? scanCheckMode;
-      if (needsCheck && mode === "ask") {
-        setScanModePrompt({ target, opts, name });
-        return;
-      }
-
-      const queueItem: CheckQueueItem = {
-        context: "PREP",
-        modelId: li?.modelId ?? undefined,
-        assetTag: li?.asset?.assetTag || li?.bulkAsset?.assetTag || "",
-        assetName: name,
-        lineItemId: target.lineItemId,
-        assetId: target.assetId || li?.assetId || "",
-        bulkAssetId: li?.bulkAssetId || undefined,
-        ...(opts.includeAccessoryIds ? { includeAccessoryIds: opts.includeAccessoryIds } : {}),
-      };
-
-      if (mode === "batch") {
-        setScanBatch((prev) => [...prev, { ...queueItem, needsCheck }]);
-        scanFeedback.play("info", { label: name, outcome: needsCheck ? "Queued for checks" : "Queued" });
-        scanFocus();
-        return;
-      }
-
-      if (needsCheck) {
-        // Pull item first, then open the check form (prep flow)
-        pullItem(projectId, target.lineItemId).catch(() => {});
-        setCheckFormData(queueItem);
-        setCheckFormOpen(true);
-        scanFocus();
-        return;
-      }
-
-      // No check items — prep directly (set prepStatus=PACKED, no deploy)
-      await prepItemDirect(projectId, target.lineItemId, target.assetId || undefined, undefined, selectedContainer || null, opts.includeAccessoryIds, activeContainerId);
-      scanFeedback.play("success", { label: name, outcome: "Prepped" });
-      toast.success(`Prepped: ${name}`);
       scanFocus();
       invalidate();
     } catch (e) {

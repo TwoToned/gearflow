@@ -32,7 +32,7 @@ import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
 import { ScanHistoryStrip } from "./scan-history-strip";
-import type { ScanCheckMode } from "./scan-prep-dialogs";
+import { ScanModeBar, type ScanCheckMode } from "./scan-prep-dialogs";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
@@ -166,37 +166,13 @@ export function PickPrepTab({
                 />
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-ui-text">
-              <span className="text-muted">Checks:</span>
-              <Button
-                size="sm"
-                variant={scanCheckMode === "inline" ? "primary" : "line"}
-                onClick={() => onScanCheckModeChange("inline")}
-              >
-                As I scan
-              </Button>
-              <Button
-                size="sm"
-                variant={scanCheckMode === "batch" ? "primary" : "line"}
-                onClick={() => onScanCheckModeChange("batch")}
-              >
-                Bulk after scanning
-              </Button>
-              {scanCheckMode === "ask" && <span className="text-muted">Asked on the first scan that needs checks</span>}
-            </div>
-            {scanBatchNames.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 rounded-[var(--r)] ring-1 ring-line px-3 py-2">
-                <span className="text-ui-text text-ink flex-1 min-w-0 truncate">
-                  {scanBatchNames.length} scanned: {scanBatchNames.join(", ")}
-                </span>
-                <Button size="sm" variant="line" onClick={onClearScanBatch}>
-                  Clear
-                </Button>
-                <Button size="sm" onClick={onFinishScanBatch}>
-                  Finish &amp; run checks ({scanBatchNames.length})
-                </Button>
-              </div>
-            )}
+            <ScanModeBar
+              mode={scanCheckMode}
+              onModeChange={onScanCheckModeChange}
+              batchNames={scanBatchNames}
+              onFinish={onFinishScanBatch}
+              onClear={onClearScanBatch}
+            />
             <ContainerRail
               containers={containers}
               activeContainerId={activeContainerId}

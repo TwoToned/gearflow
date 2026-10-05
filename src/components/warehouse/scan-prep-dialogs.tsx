@@ -146,3 +146,46 @@ export function ScanCheckModeDialog({
     </Dialog>
   );
 }
+
+/** Checks-mode toggle plus the held "bulk after scanning" batch. */
+export function ScanModeBar({
+  mode,
+  onModeChange,
+  batchNames,
+  onFinish,
+  onClear,
+}: {
+  mode: ScanCheckMode;
+  onModeChange: (m: ScanCheckMode) => void;
+  batchNames: string[];
+  onFinish: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2 text-ui-text">
+        <span className="text-muted">Checks:</span>
+        <Button size="sm" variant={mode === "inline" ? "primary" : "line"} onClick={() => onModeChange("inline")}>
+          As I scan
+        </Button>
+        <Button size="sm" variant={mode === "batch" ? "primary" : "line"} onClick={() => onModeChange("batch")}>
+          Bulk after scanning
+        </Button>
+        {mode === "ask" && <span className="text-muted">Asked on the first scan that needs checks</span>}
+      </div>
+      {batchNames.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--r)] ring-1 ring-line px-3 py-2">
+          <span className="text-ui-text text-ink flex-1 min-w-0 truncate">
+            {batchNames.length} scanned: {batchNames.join(", ")}
+          </span>
+          <Button size="sm" variant="line" onClick={onClear}>
+            Clear
+          </Button>
+          <Button size="sm" onClick={onFinish}>
+            Finish &amp; run checks ({batchNames.length})
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}

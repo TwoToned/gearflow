@@ -166,7 +166,7 @@ export function accessoryChildrenOf(item: LineItem): LineItem[] {
 
 /** An accessory parent whose OWN gear is already packed (or already out), so only
  *  its accessories are left to prep — the Pick/Prep buttons key off this. */
-export function parentAlreadyPrepped(item: LineItem): boolean {
+function parentAlreadyPrepped(item: LineItem): boolean {
   if (!isAccessoryParent(item) || isBulkItem(item)) return false;
   return item.prepStatus === "PACKED" || item.status === "CHECKED_OUT" || item.status === "RETURNED";
 }

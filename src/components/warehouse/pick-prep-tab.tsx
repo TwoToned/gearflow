@@ -31,9 +31,7 @@ import { KitChildRows, MobileKitChildCards, BulkAccessoryRows, MobileBulkAccesso
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
-import { ScanHistoryStrip } from "./scan-history-strip";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
-import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
 
 export interface PickPrepTabProps {
   // Scan state
@@ -43,7 +41,6 @@ export interface PickPrepTabProps {
   handleScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   scanMutationMutate: (value: string) => void;
   scanMutationIsPending: boolean;
-  scanHistoryEntries: ScanHistoryRecord[];
 
   // Container state (#1296) — the rail replaces the old free-text/creatable
   // picker; `selectedContainer` is still read for the "&rarr; Case 12" label,
@@ -104,7 +101,6 @@ export function PickPrepTab({
   handleScanKeyDown,
   scanMutationMutate,
   scanMutationIsPending,
-  scanHistoryEntries,
   selectedContainer,
   containers,
   activeContainerId,
@@ -136,7 +132,6 @@ export function PickPrepTab({
     <TabsContent value="pick-prep">
       <div className="space-y-4 pt-4">
         <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] py-4 px-4 space-y-3">
-            <ScanHistoryStrip entries={scanHistoryEntries} />
             <div className="flex items-center gap-2">
               <div className="flex-1">
                 <AssetTagInput
@@ -165,7 +160,7 @@ export function PickPrepTab({
                 Items that need to be picked and prepped.
                 {selectedContainer && <span className="ml-1 text-ink-2 font-medium">&rarr; {selectedContainer}</span>}
               </p>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="line"
                   onClick={() => handlePrepSelected({ withoutAccessories: true })}

@@ -2759,7 +2759,6 @@ function WarehouseProjectPage({
           handleScanKeyDown={handleScanKeyDown}
           scanMutationMutate={(v) => scanMutation.mutate(v)}
           scanMutationIsPending={scanMutation.isPending}
-          scanHistoryEntries={scanFeedback.entries}
           selectedContainer={selectedContainer}
           containers={realContainers}
           activeContainerId={activeContainerId}

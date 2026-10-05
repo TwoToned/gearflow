@@ -696,7 +696,9 @@ Micon Adapters never packed:
 An accessory unit packed into another container (see
 [FEATUREDOCS/83](./83-packing-containers.md#warehouse-ui-phase-2-1299--in-progress),
 "Relocated accessories") is no longer carried by its parent's deploy / return /
-de-prep cascade: it ships with its own container and is actioned from its own
-row (`warehouseWrites.stageAccessoryUnits`). The rule is
+de-prep cascade (or their reversals): it ships with its own container and is
+actioned from its own row (`warehouseWrites.stageAccessoryUnits`, which also
+moves it back a stage). Any accessory — nested or relocated — can also be
+selected and actioned on its own, before or after its parent. The rule is
 `convex/lib/accessoryRelocation.ts`. Loose (unpacked) accessories still travel
 with the parent exactly as above.

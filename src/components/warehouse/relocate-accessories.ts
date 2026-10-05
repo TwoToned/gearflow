@@ -120,7 +120,16 @@ export interface RelocationResult {
   items: LineItem[];
   /** Synthetic lines by id — the key space the selection handlers route on. */
   relocatedById: Map<string, LineItem>;
+  /** Accessory lines still nested under a parent (after trimming), by line id. */
+  nestedById: Map<string, LineItem>;
 }
+
+// Selection keys for accessories, alongside a line's own bare id / `id:idx`.
+// "~" (not ":") so they never collide with the bulk positional separator.
+/** A whole nested accessory line. */
+export const accessoryKey = (lineId: string) => `acc${SEP}${lineId}`;
+/** One unit of a nested accessory line (its expandable sub-row). */
+export const accessoryUnitKey = (unitId: string) => `accu${SEP}${unitId}`;
 
 /** Split one accessory line into the units that stay under the parent and the
  *  relocated groups, in a stable order. */
@@ -145,6 +154,7 @@ function splitAccessory(parent: LineItem, accessory: LineItem, parentContainerOf
 /** Pull relocated accessory units out from under their parents. */
 export function relocateAccessories(lineItems: LineItem[]): RelocationResult {
   const relocatedById = new Map<string, LineItem>();
+  const nestedById = new Map<string, LineItem>();
   const items: LineItem[] = [];
 
   for (const item of lineItems) {
@@ -161,39 +171,68 @@ export function relocateAccessories(lineItems: LineItem[]): RelocationResult {
       synthetic.push(...relocated);
       return stay.length > 0 ? [remainderOf(child, stay)] : [];
     });
-    if (synthetic.length === 0) {
-      items.push(item);
-      continue;
+    const placedParent = synthetic.length === 0 ? item : { ...item, childLineItems: children };
+    for (const child of placedParent.childLineItems ?? []) {
+      if (child.childKind === "ACCESSORY") nestedById.set(child.id, child);
     }
     for (const s of synthetic) relocatedById.set(s.id, s);
-    items.push({ ...item, childLineItems: children }, ...synthetic);
+    items.push(placedParent, ...synthetic);
   }
-  return { items, relocatedById };
+  return { items, relocatedById, nestedById };
+}
+
+/** A nested accessory's units, unless its parent is selected too — the parent's
+ *  own cascade already carries them, so naming them again would action a unit twice. */
+function unlessParentSelected(child: LineItem, units: Unit[], selectedLineIds: ReadonlySet<string>): Unit[] {
+  return selectedLineIds.has(child.parentLineItemId ?? "") ? [] : units;
+}
+
+function nestedUnitKeyUnits(unitId: string, placed: RelocationResult, selected: ReadonlySet<string>): Unit[] {
+  for (const child of placed.nestedById.values()) {
+    const unit = child.units?.find((u) => u.id === unitId);
+    if (unit) return unlessParentSelected(child, [unit], selected);
+  }
+  return [];
+}
+
+/** The units a selection key names for an accessory, or null when the key is
+ *  not an accessory key (an ordinary line / kit / container key). */
+function accessoryKeyUnits(key: string, placed: RelocationResult, selected: ReadonlySet<string>): Unit[] | null {
+  const [head, idx] = key.split(":");
+  const synthetic = placed.relocatedById.get(head);
+  if (synthetic) {
+    const units = synthetic.units ?? [];
+    return idx === undefined ? units : units.slice(Number(idx), Number(idx) + 1);
+  }
+  const [kind, id] = head.split(SEP);
+  const child = kind === "acc" ? placed.nestedById.get(id) : undefined;
+  if (child) return unlessParentSelected(child, child.units ?? [], selected);
+  return kind === "accu" ? nestedUnitKeyUnits(id, placed, selected) : null;
 }
 
 /**
- * Split a selection into the relocated accessory unit ids it names and the keys
- * that are ordinary lines. A relocated line is selected like any other: a bare
- * id (single / serialized) names all its units, a positional `id:idx` (bulk)
- * names that one unit — the index is into the line's own `units`, which the
- * bulk rows render in order.
+ * Split a selection into the accessory unit ids it names and the keys that are
+ * ordinary lines. An accessory is a normal asset on the job that may nest under
+ * a parent, so it is selected and actioned on its own: a relocated line by its
+ * synthetic id (bare = every unit, positional `id:idx` = that unit), a nested
+ * accessory by `accessoryKey` / `accessoryUnitKey`. `isRelevant` keeps only the
+ * units the current stage can act on. When the parent is selected as well, its
+ * own cascade covers a nested accessory, so that key is dropped rather than
+ * actioning the same unit twice.
  */
-export function takeRelocatedSelection(
+export function takeAccessorySelection(
   keys: Iterable<string>,
-  relocatedById: ReadonlyMap<string, LineItem>,
+  placed: RelocationResult,
+  isRelevant: (u: Unit) => boolean,
 ): { rest: string[]; unitIds: string[] } {
+  const all = [...keys];
+  const selectedLineIds = new Set(all.map((k) => k.split(":")[0]));
   const rest: string[] = [];
   const unitIds = new Set<string>();
-  for (const key of keys) {
-    const [lineId, idx] = key.split(":");
-    const group = relocatedById.get(lineId);
-    if (!group) {
-      rest.push(key);
-      continue;
-    }
-    const units = group.units ?? [];
-    if (idx === undefined) units.forEach((u) => unitIds.add(u.id));
-    else if (units[Number(idx)]) unitIds.add(units[Number(idx)].id);
+  for (const key of all) {
+    const units = accessoryKeyUnits(key, placed, selectedLineIds);
+    if (units === null) rest.push(key);
+    else units.filter(isRelevant).forEach((u) => unitIds.add(u.id));
   }
   return { rest, unitIds: [...unitIds] };
 }

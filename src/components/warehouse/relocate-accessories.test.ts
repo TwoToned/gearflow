@@ -10,7 +10,7 @@ import {
   isMoveableAtDeployStage,
   type LineItem,
 } from "./warehouse-types";
-import { isRelocatedLineId, relocateAccessories, takeRelocatedSelection } from "./relocate-accessories";
+import { accessoryKey, accessoryUnitKey, isRelocatedLineId, relocateAccessories, takeAccessorySelection } from "./relocate-accessories";
 
 type Unit = NonNullable<LineItem["units"]>[number];
 
@@ -128,27 +128,40 @@ describe("relocateAccessories", () => {
   });
 });
 
-describe("takeRelocatedSelection", () => {
-  const two = line({ id: "x", quantity: 1 });
-  void two;
+describe("takeAccessorySelection", () => {
+  const all = () => true;
   const { handhelds } = job();
   const batt = handhelds.childLineItems![0];
   const many = { ...handhelds, childLineItems: [{ ...batt, units: [
     unit({ id: "x1", parentUnitAssetId: "a1", containerId: "BATT" }),
     unit({ id: "x2", parentUnitAssetId: "a2", containerId: "BATT" }),
+    unit({ id: "x3", parentUnitAssetId: "a1", containerId: "PELICAN" }), // stays nested
   ] }] };
-  const { items, relocatedById } = relocateAccessories([many]);
-  const id = items[1].id;
+  const placed = relocateAccessories([many]);
+  const id = placed.items[1].id;
 
-  test("a bare key names every unit; a positional key names that one unit; other keys pass through", () => {
-    expect(takeRelocatedSelection([id], relocatedById).unitIds).toEqual(["x1", "x2"]);
-    expect(takeRelocatedSelection([`${id}:1`], relocatedById).unitIds).toEqual(["x2"]);
-    expect(takeRelocatedSelection(["hh", `${id}:0`, "other:2"], relocatedById)).toEqual({ rest: ["hh", "other:2"], unitIds: ["x1"] });
+  test("a relocated line: bare key names every unit, positional names one; other keys pass through", () => {
+    expect(takeAccessorySelection([id], placed, all).unitIds).toEqual(["x1", "x2"]);
+    expect(takeAccessorySelection([`${id}:1`], placed, all).unitIds).toEqual(["x2"]);
+    expect(takeAccessorySelection(["other", `${id}:0`, "other:2"], placed, all)).toEqual({ rest: ["other", "other:2"], unitIds: ["x1"] });
   });
 
-  test("Move-to… on the parent moves only what is still co-located; the relocated line moves on its own", () => {
-    const parentOnly = resolveSelectionToUnitIds(new Set(["hh"]), items, isMoveableAtDeployStage);
-    expect(parentOnly.sort()).toEqual(["hu1", "hu2"]); // no batteries — they're in the Battery Box
-    expect(resolveSelectionToUnitIds(new Set([id]), items, isMoveableAtDeployStage).sort()).toEqual(["x1", "x2"]);
+  test("a nested accessory is selectable on its own — whole line or one unit", () => {
+    expect(takeAccessorySelection([accessoryKey("batt")], placed, all).unitIds).toEqual(["x3"]);
+    expect(takeAccessorySelection([accessoryUnitKey("x3")], placed, all).unitIds).toEqual(["x3"]);
+  });
+
+  test("when the parent is selected too, its own cascade covers the nested accessory", () => {
+    expect(takeAccessorySelection(["hh", accessoryKey("batt"), accessoryUnitKey("x3")], placed, all)).toEqual({ rest: ["hh"], unitIds: [] });
+  });
+
+  test("only units the stage can act on are kept", () => {
+    const outOnly = (u: { status: string }) => u.status === "CHECKED_OUT";
+    expect(takeAccessorySelection([id], placed, outOnly).unitIds).toEqual([]);
+  });
+
+  test("Move-to… on the parent moves only what is still under it; a relocated line moves on its own", () => {
+    expect(resolveSelectionToUnitIds(new Set(["hh"]), placed.items, isMoveableAtDeployStage).sort()).toEqual(["hu1", "hu2", "x3"]);
+    expect(resolveSelectionToUnitIds(new Set([id]), placed.items, isMoveableAtDeployStage).sort()).toEqual(["x1", "x2"]);
   });
 });

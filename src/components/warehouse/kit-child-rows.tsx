@@ -6,10 +6,10 @@ import {
   Container,
   CircleCheck,
   Circle,
-  Package,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   TableCell,
   TableRow,
@@ -19,29 +19,66 @@ import { focusRing } from "@/lib/utils";
 import type { LineItem } from "./warehouse-types";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanVerifyCard, ScanGroupCard } from "./scan-card";
-import { resolveAccessoryUnitIds } from "./warehouse-types";
+import { accessoryKey, accessoryUnitKey } from "./relocate-accessories";
 
-/** Provided by the warehouse page so every accessory row, in any tab, can open
- *  "move this accessory to another container" without threading a callback
- *  through each tab's several render paths. Null = no move action. */
-export const AccessoryMoveContext = createContext<((accessory: LineItem) => void) | null>(null);
+/** Provided by the warehouse page, per tab, so every nested accessory row can be
+ *  selected on its own (Deploy / Return / De-prep / Move to…) without threading
+ *  the tab's selection through each render path. Null = rows aren't selectable. */
+export const AccessorySelectionContext = createContext<{
+  selected: ReadonlySet<string>;
+  toggle: (key: string) => void;
+} | null>(null);
 
-function MoveAccessoryButton({ child }: { child: LineItem }) {
-  const onMove = useContext(AccessoryMoveContext);
-  if (!onMove || resolveAccessoryUnitIds(child).length === 0) return null;
+/** Selection checkbox + per-unit expansion for a nested ACCESSORY row. */
+function AccessorySelect({ child, expanded, onToggleExpand }: { child: LineItem; expanded: boolean; onToggleExpand: () => void }) {
+  const sel = useContext(AccessorySelectionContext);
+  if (!sel) return null;
+  const name = child.model?.name || child.description || "accessory";
+  const hasUnits = (child.units?.length ?? 0) > 1;
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onMove(child);
-      }}
-      aria-label={`Move ${child.model?.name || child.description || "accessory"} to another container`}
-      className={`inline-flex min-h-8 items-center gap-1 rounded-[var(--r)] border border-line px-2 text-xs text-muted hover:bg-elev ${focusRing}`}
-    >
-      <Package className="h-3 w-3" />
-      Move
-    </button>
+    <span className="mr-1 inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <Checkbox
+        checked={sel.selected.has(accessoryKey(child.id))}
+        onCheckedChange={() => sel.toggle(accessoryKey(child.id))}
+        aria-label={`Select ${name}`}
+      />
+      {hasUnits && (
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={expanded}
+          aria-label={expanded ? `Hide ${name} units` : `Show ${name} units`}
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-[var(--r)] ${focusRing}`}
+        >
+          <ChevronRight className={`h-3.5 w-3.5 text-muted transition-transform ${expanded ? "rotate-90" : ""}`} />
+        </button>
+      )}
+    </span>
+  );
+}
+
+/** One selectable row per unit of an expanded nested accessory. */
+function AccessoryUnitRows({ child }: { child: LineItem }) {
+  const sel = useContext(AccessorySelectionContext);
+  if (!sel) return null;
+  return (
+    <>
+      {(child.units ?? []).map((u, i) => (
+        <TableRow key={u.id} className="bg-paper-2/30">
+          <TableCell className="text-center">
+            <Checkbox
+              checked={sel.selected.has(accessoryUnitKey(u.id))}
+              onCheckedChange={() => sel.toggle(accessoryUnitKey(u.id))}
+              aria-label={`Select unit ${i + 1}`}
+            />
+          </TableCell>
+          <TableCell className="pl-20 text-table-cell text-muted">Unit {i + 1}</TableCell>
+          <TableCell className="t-mono text-muted">{u.asset?.assetTag ?? u.bulkAsset?.assetTag ?? "—"}</TableCell>
+          <TableCell className="text-center tabular-nums">{u.quantity ?? 1}</TableCell>
+          <TableCell />
+        </TableRow>
+      ))}
+    </>
   );
 }
 
@@ -118,16 +155,18 @@ export function KitChildRows({
                     <ChevronRight className={`h-3.5 w-3.5 text-muted transition-transform ${nestedExpanded ? "rotate-90" : ""}`} />
                   )}
                   {isNestedKit && <Container className="h-3.5 w-3.5 text-muted" />}
+                  {child.childKind === "ACCESSORY" && (
+                    <AccessorySelect
+                      child={child}
+                      expanded={expandedGroups.has(`acc-units-${child.id}`)}
+                      onToggleExpand={() => toggleExpanded(`acc-units-${child.id}`)}
+                    />
+                  )}
                   <span>{child.model?.name || child.description || "Item"}</span>
                   {isNestedKit && (
                     <Badge status="neutral">Kit</Badge>
                   )}
-                  {child.childKind === "ACCESSORY" && (
-                    <>
-                      <Badge status="neutral">Accessory</Badge>
-                      <MoveAccessoryButton child={child} />
-                    </>
-                  )}
+                  {child.childKind === "ACCESSORY" && <Badge status="neutral">Accessory</Badge>}
                   {nestedKitPartial && (
                     <Badge status="warn">Partial</Badge>
                   )}
@@ -146,6 +185,7 @@ export function KitChildRows({
                 }
               </TableCell>
             </TableRow>
+            {child.childKind === "ACCESSORY" && expandedGroups.has(`acc-units-${child.id}`) && <AccessoryUnitRows child={child} />}
             {isNestedKit && nestedExpanded && filteredGrandchildren.map((nested) => {
               const nestedVerified = verifiedKitItems.has(nested.id);
               return (

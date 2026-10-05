@@ -653,3 +653,23 @@ only lists CHECKED_OUT parents.
   the Qty column shows the parent quantity on every tab/viewport.
 - Pick hides already-packed accessories (`accessoryChildrenForStage`), and a successful prep clears
   that line's accessory ids from the shared `verifiedKitItems`, so Deploy verification starts fresh.
+
+## Scan-to-prep: accessory confirm + check mode (Pick/Prep tab)
+Scanning a parent (barcode input or camera, PC or mobile — same `scanMutation`
+path) routes through `routeScanPrep` in `warehouse/[projectId]/page.tsx`:
+
+1. **Accessory confirm.** If the parent has unpacked accessories on the job
+   (`scanAccessoryOptions`, `warehouse-types.ts`; serialised parents only),
+   `ScanAccessoryDialog` lists them pre-ticked — tick what is physically with it.
+   Actions: **Prep with N accessories** (all ticked = no narrowing; a subset sends
+   `includeAccessoryIds`), **Prep without accessories** (`includeAccessoryIds: []`),
+   or **Discard scan**. A parent that is already packed offers **Prep accessories
+   only** instead (`accessoriesOnly`), same server modes as the buttons above.
+   Scanning an accessory itself still says "scan the parent".
+2. **Check mode.** When a scan needs a check form, the first time asks
+   (`ScanCheckModeDialog`) **Check as I go** (form opens now) or **Bulk after
+   scanning** (scan is held in `scanBatch`; **Finish & run checks** feeds the
+   existing `startCheckQueue`, no-check scans prep in the same batch). The choice
+   is page-session state, changeable via the "Checks:" toggle above the container
+   rail. Accessory-only preps never need checks and always run immediately.
+Deploy scans already gate accessories via `openAccessoryGateIfNeeded`.

@@ -31,11 +31,18 @@ import { KitChildRows, MobileKitChildCards, BulkAccessoryRows, MobileBulkAccesso
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
+import { ScanModeBar, type ScanCheckMode } from "./scan-prep-dialogs";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 
 export interface PickPrepTabProps {
   // Scan state
   scanInputRef: React.RefObject<HTMLInputElement | null>;
+  /** Whether scans needing a check form open it now (inline) or are held (batch). */
+  scanCheckMode: ScanCheckMode;
+  onScanCheckModeChange: (m: ScanCheckMode) => void;
+  scanBatchNames: string[];
+  onFinishScanBatch: () => void;
+  onClearScanBatch: () => void;
   scanValue: string;
   setScanValue: (v: string) => void;
   handleScanKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -96,6 +103,11 @@ export interface PickPrepTabProps {
 
 export function PickPrepTab({
   scanInputRef,
+  scanCheckMode,
+  onScanCheckModeChange,
+  scanBatchNames,
+  onFinishScanBatch,
+  onClearScanBatch,
   scanValue,
   setScanValue,
   handleScanKeyDown,
@@ -149,6 +161,13 @@ export function PickPrepTab({
                 />
               </div>
             </div>
+            <ScanModeBar
+              mode={scanCheckMode}
+              onModeChange={onScanCheckModeChange}
+              batchNames={scanBatchNames}
+              onFinish={onFinishScanBatch}
+              onClear={onClearScanBatch}
+            />
             <ContainerRail
               containers={containers}
               activeContainerId={activeContainerId}

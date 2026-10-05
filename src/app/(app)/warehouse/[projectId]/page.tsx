@@ -76,6 +76,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -2804,6 +2807,28 @@ function WarehouseProjectPage({
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=return-sheet`, "_blank")}>
                 Return sheet
+              </DropdownMenuItem>
+              {/* One label per case: `labelId` is the container id. Ad hoc
+                  (CUSTOM) containers are ordinary projectContainers rows, so
+                  they list here like any other. */}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Container labels</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=container-label`, "_blank")}>
+                    All containers
+                  </DropdownMenuItem>
+                  {realContainers.map((c) => (
+                    <DropdownMenuItem
+                      key={c.id}
+                      onClick={() => window.open(`/api/documents/${projectId}?type=container-label&labelId=${encodeURIComponent(c.id)}`, "_blank")}
+                    >
+                      {c.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=kit-label`, "_blank")}>
+                Kit labels
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -691,3 +691,12 @@ Micon Adapters never packed:
   picker) and **Prep accessories only** is on; the handler sends one `accessoriesOnly`
   entry per packed unit (`packedParentAssetIds`). The scan-time accessory prompt is
   still serialised-single-asset only.
+
+## Accessories packed in a different container than their parent
+An accessory unit packed into another container (see
+[FEATUREDOCS/83](./83-packing-containers.md#warehouse-ui-phase-2-1299--in-progress),
+"Relocated accessories") is no longer carried by its parent's deploy / return /
+de-prep cascade: it ships with its own container and is actioned from its own
+row (`warehouseWrites.stageAccessoryUnits`). The rule is
+`convex/lib/accessoryRelocation.ts`. Loose (unpacked) accessories still travel
+with the parent exactly as above.

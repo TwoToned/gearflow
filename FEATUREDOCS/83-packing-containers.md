@@ -292,16 +292,35 @@ Landed so far:
   `ContainerRail` — the rail always mirrors live prep state with exactly one
   chip active; this dialog starts with nothing chosen each time it opens).
 
-- **Move one accessory (after prep)**: each packed accessory row (Pick/Deploy/
-  Return/De-prep tables) has its own "Move" button, independent of its parent
-  (Move-to… on a parent still moves the whole group). It opens the same
-  `MoveToContainerDialog` with `allowPartial`, so you can move "3 of 8 batteries"
-  to a different case than the beltpacks. Units resolve via
-  `resolveAccessoryUnitIds` (`warehouse-types.ts`: packed or out, never
-  cancelled; first N for a partial move) and go through `moveUnits`. The button
-  reaches every render path via `AccessoryMoveContext` (`kit-child-rows.tsx`),
-  provided by the warehouse page. Desktop table rows only — the mobile cards
-  are whole-row tap targets, so no button yet.
+- **Relocated accessories** — an accessory is a normal asset on the job that
+  happens to nest under a parent. Once some of its units are packed into a
+  DIFFERENT container than the parent's ("batteries into the Battery Box"), they
+  are *relocated*: they ship with THAT container, not the parent.
+  - **One rule, two consumers** — `convex/lib/accessoryRelocation.ts`
+    (`isRelocatedAccessoryUnit` / `parentContainerResolver`; pure, shared by the
+    server and `src/`). Loose units (no container) never count as relocated.
+  - **Server** — the parent's deploy (`checkoutAccessoryChildren`), return
+    (`checkinAccessoryChildren`) and return-check de-prep
+    (`completeCheckAndDeprepLineCore`) cascades skip relocated units. They are
+    actioned by unit id through `warehouseWrites.stageAccessoryUnits`
+    (`to: DEPLOY | RETURN | DEPREP`, optional `returnCondition`; all-or-nothing,
+    every id validated as a live unit of an ACCESSORY line on the project;
+    `high` danger). The container's own line flips with its contents as usual.
+  - **UI** — `relocate-accessories.ts` runs on the line list BEFORE the stage
+    filters: each (accessory, container, stage) group becomes its own synthetic
+    line (`reloc~…` id, one stage so its status/quantities are true), the parent
+    is trimmed to what's still under it. Every tab, container section, selection,
+    "Deploy container" and Move-to… therefore sees it where it physically is with
+    no tab special-casing. `takeRelocatedSelection` routes a selection's
+    relocated keys to the unit mutation in the Deploy, Return and De-prep
+    handlers. Move-to… on a parent moves only what is still under it.
+  - **Still open** — moving a relocated accessory *back a stage* (Move to
+    Pick/Prepped/Deployed) is skipped with a toast; parent un-prep still deletes
+    accessory units tied to the removed parent unit; the Pick-tab "Move" button
+    on a nested accessory row (`AccessoryMoveContext`) is desktop-table only.
+  - Move one accessory (or "3 of 8") into another case: the **Move** button on a
+    packed accessory row opens `MoveToContainerDialog` with `allowPartial`
+    (`resolveAccessoryUnitIds`).
 
 - **Deploy container (D4)**: a "Deploy container" button on each container's
   header in the Deploy tab (desktop table + mobile card, both render paths)

@@ -149,6 +149,7 @@ function containerHeaderRow(
     containerTag: container.tag ?? null,
     containerDescription: container.description ?? null,
     containerDepth: depth,
+    containerParentId: container.parentContainerId ?? null,
     containerItemCount: directMembers.length + directChildHeaderCount,
   };
 }
@@ -228,8 +229,8 @@ function emitContainerSection(
 
   for (const e of sectionMembers.sort(byCategoryThenKit)) {
     const { _containerId, _topId, ...rest } = e;
-    void _containerId; void _topId;
-    out.push({ ...rest, groupName: sectionName, containerDepth: depthOf(e._containerId, byId) + 1 });
+    void _topId;
+    out.push({ ...rest, containerId: _containerId, groupName: sectionName, containerDepth: depthOf(e._containerId, byId) + 1 });
   }
   return out;
 }

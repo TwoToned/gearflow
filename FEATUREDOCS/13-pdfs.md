@@ -393,6 +393,7 @@ Two vendor boundaries, one per pipeline (POLICY.md R-8.10.1):
 | `src/lib/pdfme/generate-pdf.ts` | Orchestrator. `generatePdf()` (5 project doc types): build data → `renderReactPdfTemplate()` (#1156). `generateCallSheetPdf()` and `generateTestTagReport()` for the two doc families that keep their own pdfme builders. |
 | `src/lib/react-pdf/render.tsx` | `renderReactPdfTemplate()` — the single react-pdf render-export call site (#1156) |
 | `src/lib/react-pdf/{quote,invoice,packing-list,return-sheet,delivery-docket}-document.tsx` | The 5 project doc types' react-pdf component trees — each composes its own layout directly in JSX (columns, checkboxes, status filter) rather than reading a shared schema |
+| `src/lib/react-pdf/container-label-document.tsx` | Container / kit labels (`container-label`, `kit-label`) — small tape-on labels, not a paginated table, so they sit outside the 5-type regression suite. See FEATUREDOCS/83 |
 | `src/lib/react-pdf/components/` | Shared react-pdf pieces (`line-items-table.tsx`, `header.tsx`, `totals-block.tsx`, `details-row.tsx`, `signature-line.tsx`, `draft-watermark.tsx`, `footer.tsx`, `rich-text.tsx`, `checkbox.tsx`) |
 | `src/lib/react-pdf/regression.test.tsx` | The standing regression harness for the react-pdf pipeline (#1155) — pagination invariants across all 5 doc types |
 | `src/lib/react-pdf/pdf-test-utils.ts` | `renderPdfPages()` — render+extract test helper (`pdf-parse` page-wise text), shared by the regression suite and the full-pipeline integration tests below |

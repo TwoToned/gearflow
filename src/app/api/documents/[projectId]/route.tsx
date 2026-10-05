@@ -26,6 +26,8 @@ const typeMap: Record<string, ProjectDocumentType> = {
   "return-sheet": "return-sheet",
   "delivery-docket": "delivery-docket",
   manifest: "manifest",
+  "container-label": "container-label",
+  "kit-label": "kit-label",
 };
 
 /** Client-facing finance docs — reachable here ONLY as a watermarked preview. */
@@ -53,24 +55,33 @@ function resolveInvoicePreviewStampedDates(
   return { documentDate, invoiceDueDate };
 }
 
+/** Query params the route reads, parsed in one place so `GET` stays flat. */
+function readDocumentParams(url: URL) {
+  const q = url.searchParams;
+  return {
+    type: q.get("type") || "quote",
+    preview: q.get("preview") === "1",
+    // Which SPECIFIC invoice this preview is for — without it, `generatePdf`
+    // falls back to the live project total/breakdown, which is only correct
+    // for a FULL invoice (bug fix: a DEPOSIT/BALANCE/CREDIT invoice needs its
+    // own snapshot, not the whole project's). Passed through unconditionally
+    // below — `buildDocumentData` only reads it for `docType: "invoice"`, so
+    // it's a harmless no-op on any other type, not worth its own branch here.
+    invoiceId: q.get("invoiceId") || undefined,
+    // `container-label` / `kit-label` only: print one container / kit instead
+    // of all of them. A no-op for every other type.
+    labelId: q.get("labelId") || undefined,
+    previewInvoiceDateParam: q.get("invoiceDate"),
+    previewDueDateParam: q.get("dueDate"),
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const url = new URL(request.url);
-  const type = url.searchParams.get("type") || "quote";
-  const preview = url.searchParams.get("preview") === "1";
-  // Which SPECIFIC invoice this preview is for — without it, `generatePdf`
-  // falls back to the live project total/breakdown, which is only correct
-  // for a FULL invoice (bug fix: a DEPOSIT/BALANCE/CREDIT invoice needs its
-  // own snapshot, not the whole project's). Passed through unconditionally
-  // below — `buildDocumentData` only reads it for `docType: "invoice"`, so
-  // it's a harmless no-op on any other type, not worth its own branch here.
-  const invoiceId = url.searchParams.get("invoiceId") || undefined;
-  const previewInvoiceDateParam = url.searchParams.get("invoiceDate");
-  const previewDueDateParam = url.searchParams.get("dueDate");
-
+  const { type, preview, invoiceId, labelId, previewInvoiceDateParam, previewDueDateParam } = readDocumentParams(new URL(request.url));
   let session;
   try {
     session = await requireOrganization();
@@ -112,6 +123,7 @@ export async function GET(
       draftPreview: preview && PREVIEW_ONLY_TYPES.has(docType),
       invoiceId,
       stampedDates,
+      labelId,
     });
     const filename = `${docType}-${projectId}.pdf`;
     return new NextResponse(Buffer.from(pdf), {

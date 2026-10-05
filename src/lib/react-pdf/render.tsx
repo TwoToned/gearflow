@@ -13,7 +13,8 @@
  * hands the already-built `DocumentData` straight to this function, which
  * just picks the matching component tree and lets react-pdf paginate.
  */
-import { renderToBuffer } from "@react-pdf/renderer";
+import type { ReactElement } from "react";
+import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
 import type { DocumentData } from "@/lib/pdfme/types";
 import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
 import { QuoteDocument } from "./quote-document";
@@ -22,32 +23,34 @@ import { PackingListDocument } from "./packing-list-document";
 import { ReturnSheetDocument } from "./return-sheet-document";
 import { DeliveryDocketDocument } from "./delivery-docket-document";
 import { ManifestDocument } from "./manifest-document";
+import { ContainerLabelDocument } from "./container-label-document";
 
 export interface RenderReactPdfOptions {
   /** Stamp the "DRAFT PREVIEW — NOT SENT" banner on every page. Quote/invoice
    *  only — see `document-layouts.ts`'s `DRAFT_PREVIEW_SUBTITLE` map. */
   draftPreview?: boolean;
+  /** Container/kit labels only — print just this container id / kit line item id. */
+  labelId?: string;
 }
+
+type Renderer = (data: DocumentData, options: { draftPreview: boolean; labelId?: string }) => ReactElement<DocumentProps>;
+
+// A lookup (not a switch) keeps this function's branching flat as doc types grow.
+const RENDERERS: Record<ProjectDocumentType, Renderer> = {
+  quote: (data, o) => <QuoteDocument data={data} draftPreview={o.draftPreview} />,
+  invoice: (data, o) => <InvoiceDocument data={data} draftPreview={o.draftPreview} />,
+  "packing-list": (data) => <PackingListDocument data={data} />,
+  "return-sheet": (data) => <ReturnSheetDocument data={data} />,
+  "delivery-docket": (data) => <DeliveryDocketDocument data={data} />,
+  manifest: (data) => <ManifestDocument data={data} />,
+  "container-label": (data, o) => <ContainerLabelDocument data={data} kind="container" labelId={o.labelId} />,
+  "kit-label": (data, o) => <ContainerLabelDocument data={data} kind="kit" labelId={o.labelId} />,
+};
 
 export async function renderReactPdfTemplate(
   docType: ProjectDocumentType,
   data: DocumentData,
   options?: RenderReactPdfOptions,
 ): Promise<Uint8Array> {
-  const draftPreview = options?.draftPreview ?? false;
-
-  switch (docType) {
-    case "quote":
-      return renderToBuffer(<QuoteDocument data={data} draftPreview={draftPreview} />);
-    case "invoice":
-      return renderToBuffer(<InvoiceDocument data={data} draftPreview={draftPreview} />);
-    case "packing-list":
-      return renderToBuffer(<PackingListDocument data={data} />);
-    case "return-sheet":
-      return renderToBuffer(<ReturnSheetDocument data={data} />);
-    case "delivery-docket":
-      return renderToBuffer(<DeliveryDocketDocument data={data} />);
-    case "manifest":
-      return renderToBuffer(<ManifestDocument data={data} />);
-  }
+  return renderToBuffer(RENDERERS[docType](data, { draftPreview: options?.draftPreview ?? false, labelId: options?.labelId }));
 }

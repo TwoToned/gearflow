@@ -21,7 +21,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { renderToBuffer } from "@react-pdf/renderer";
-import { DOCUMENT_LAYOUTS } from "@/lib/pdfme/document-layouts";
+import { DOCUMENT_LAYOUTS, LABEL_DOCUMENT_TYPES, type LabelDocumentType } from "@/lib/pdfme/document-layouts";
 import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
 import type { DocumentData } from "@/lib/pdfme/types";
 import { QuoteDocument } from "./quote-document";
@@ -33,11 +33,15 @@ import { ManifestDocument } from "./manifest-document";
 import { renderPdfPages } from "./pdf-test-utils";
 import { makeSpikeData, makeLongLineItemList, makeNoTailDropFixture, makeTrailingGroupFixture, makeLongSingleGroupFixture } from "./fixture";
 
-const PROJECT_DOC_TYPES = Object.keys(DOCUMENT_LAYOUTS) as ProjectDocumentType[];
+type PagedDocType = Exclude<ProjectDocumentType, LabelDocumentType>;
+// Label sheets have their own suite (container-label-document.test.tsx).
+const PROJECT_DOC_TYPES = (Object.keys(DOCUMENT_LAYOUTS) as ProjectDocumentType[]).filter(
+  (t): t is PagedDocType => !LABEL_DOCUMENT_TYPES.has(t),
+);
 
 type PdfElement = Parameters<typeof renderToBuffer>[0];
 
-const DOC_COMPONENTS: Record<ProjectDocumentType, (data: DocumentData) => PdfElement> = {
+const DOC_COMPONENTS: Record<PagedDocType, (data: DocumentData) => PdfElement> = {
   quote: (data) => <QuoteDocument data={data} />,
   invoice: (data) => <InvoiceDocument data={data} />,
   "packing-list": (data) => <PackingListDocument data={data} />,
@@ -46,7 +50,7 @@ const DOC_COMPONENTS: Record<ProjectDocumentType, (data: DocumentData) => PdfEle
   manifest: (data) => <ManifestDocument data={data} />,
 };
 
-const DOC_TITLES: Record<ProjectDocumentType, string> = {
+const DOC_TITLES: Record<PagedDocType, string> = {
   quote: "QUOTE",
   invoice: "TAX INVOICE",
   "packing-list": "PULL SLIP",
@@ -184,7 +188,7 @@ describe.each(["quote", "invoice"] as const)("draft-preview watermark — %s", (
 // old pdfme-composer layout registry, deleted with #1156's cutover). Only
 // QuoteDocument/InvoiceDocument render a T&Cs block at all (see their own
 // component trees) — hardcode the same two doc types directly.
-const DOC_TYPES_WITH_TERMS: ProjectDocumentType[] = ["quote", "invoice"];
+const DOC_TYPES_WITH_TERMS: PagedDocType[] = ["quote", "invoice"];
 
 describe.each(DOC_TYPES_WITH_TERMS)("termsAndConditions forceNewPage — %s", (docType) => {
   it("terms & conditions start on their own fresh page, never sharing a page with earlier content", async () => {

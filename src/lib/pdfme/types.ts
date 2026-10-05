@@ -20,7 +20,9 @@ export type DocumentType =
   | "return-sheet"
   | "delivery-docket"
   | "call-sheet"
-  | "manifest";
+  | "manifest"
+  | "container-label"
+  | "kit-label";
 
 export type TestTagReportType =
   | "tt-register"
@@ -171,6 +173,9 @@ export interface DocumentLineItem {
   /** Nesting depth (0 = top-level container, 1 = packed inside another, …) —
    *  documents indent one level per depth (D1, §4.1). */
   containerDepth?: number;
+  /** A container header row's own parent container (null = top level) — lets
+   *  the container-label builder list a nested box under the one it's in. */
+  containerParentId?: string | null;
   /** Count of DIRECT member rows under this container header (top-level
    *  items and nested container headers alike — not a recursive total). */
   containerItemCount?: number;

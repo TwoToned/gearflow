@@ -160,6 +160,39 @@ above); they're presentational additions layered onto the existing
 keep it reviewable and to avoid touching those shared primitives' several
 other doc-type consumers without dedicated coverage.
 
+## Container & kit labels
+
+A small label to print and tape to each case, so what is inside is obvious
+without opening it. `DocumentType`s `"container-label"` and `"kit-label"`
+(`src/lib/react-pdf/container-label-document.tsx`), reachable from the project
+page's Documents menu ("Container labels", "Kit labels") or
+`/api/documents/[projectId]?type=container-label|kit-label`. Add
+`&labelId=<container id | kit line item id>` to print just one.
+
+- **Layout.** Docket styling (org colour title, tinted contents band), full page
+  width so contents run in two columns: wider rather than taller. Header carries
+  client, project and rental/event dates. No QR code, no "packed by".
+- **Data.** `src/lib/pdfme/container-labels.ts` is pure and runs on the rows
+  `structureLineItemsByContainer` already produced (`byContainer: true` in
+  `DOCUMENT_LAYOUTS`). That step now stamps `containerId` on every placed row
+  and `containerParentId` on container headers; the label builder relies on both.
+- **Accessories** print as `+ 8x Name`, quantity only, **never an asset tag**.
+- **Accessory in a different case than its parent.** Membership is per unit, so
+  the label reads the ACCESSORY child's own units. The parent's line keeps a
+  `to <case>` pointer; the receiving case lists "accessory of <parent>, packed in
+  <parent's case>". Units unpacked or in the parent's own case stay under the
+  parent. An accessory counts once, in the case it physically sits in. (KIT
+  children still move with the kit, per D3.)
+- **Kits** are not containers, so a kit label is its own document: one per kit
+  line on the job (a kit parent), titled with the kit's name and asset tag,
+  listing members with their tags and noting the case it is packed in.
+- **Nested cases** appear as a line inside the case they are packed in.
+- Bulk lines show quantity only (no tag). A label too tall for a page is allowed
+  to break across pages; otherwise each label is kept whole.
+- Not done: a per-chip "Print label" button on the warehouse container rail
+  (use `labelId` meanwhile), and the agent/API document types
+  (`AGENT_DOCUMENT_TYPES`).
+
 ## Warehouse UI (phase 2, #1299 — in progress)
 
 Landed so far:

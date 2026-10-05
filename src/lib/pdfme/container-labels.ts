@@ -19,7 +19,7 @@ import type { DocumentLineItem } from "./types";
 
 type Unit = NonNullable<DocumentLineItem["units"]>[number];
 
-export interface LabelAccessory {
+interface LabelAccessory {
   qty: number;
   name: string;
   /** Label of the case this accessory travels in, when it is NOT the parent's. */

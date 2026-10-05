@@ -173,7 +173,7 @@ test.describe("harness: project versioning v2", () => {
       await page.getByRole("link", { name: "Warehouse" }).click();
       await page.getByRole("tab", { name: /^Pick/ }).click();
       await page.locator("table thead").getByRole("checkbox").click();
-      await page.getByRole("button", { name: /^Prep/ }).click();
+      await page.getByRole("button", { name: /^Prep( \(\d+\))?$/ }).click();
       await page.getByRole("tab", { name: /^Prepped/ }).click();
       await page.locator("table thead").getByRole("checkbox").click();
       await page.getByRole("button", { name: /^Deploy/ }).click();

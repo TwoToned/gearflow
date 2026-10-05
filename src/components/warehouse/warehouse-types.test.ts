@@ -2,6 +2,7 @@ import { describe, test, expect } from "vitest";
 import {
   isAccessoryParent,
   prepActionAvailability,
+  packedParentAssetIds,
   scanAccessoryOptions,
   accessoryChildrenOf,
   isInPickPrepStage,
@@ -422,6 +423,31 @@ describe("prepActionAvailability — Pick/Prep button gating", () => {
   });
   test("nothing selected → neither", () => {
     expect(prepActionAvailability([], [plain])).toEqual({ canPrep: false, canPrepAccessoriesOnly: false });
+  });
+});
+
+describe("multi-quantity serialised accessory parent (no line-level asset)", () => {
+  const acc = line({ id: "c1", isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "p1", prepStatus: "PENDING" });
+  const unit = (n: number, prepStatus: string | null, status = "CONFIRMED") => ({
+    id: `u${n}`, ordinal: n, assetId: `a${n}`, bulkAssetId: null, quantity: 1, status, prepStatus, asset: null, bulkAsset: null,
+  });
+  const parent = (units: ReturnType<typeof unit>[], quantity = 3) =>
+    line({ id: "p1", quantity, prepStatus: "PACKED", units, childLineItems: [acc] });
+
+  test("every unit packed → accessories only, not normal prep (no asset-picker re-ask)", () => {
+    const p = parent([unit(1, "PACKED"), unit(2, "PACKED"), unit(3, "PACKED")]);
+    expect(prepActionAvailability(["p1:0"], [p])).toEqual({ canPrep: false, canPrepAccessoriesOnly: true });
+  });
+  test("units still to pick → normal prep stays available", () => {
+    const p = parent([unit(1, "PACKED"), unit(2, "PACKED")]);
+    expect(prepActionAvailability(["p1:0"], [p])).toEqual({ canPrep: true, canPrepAccessoriesOnly: false });
+  });
+  test("packedParentAssetIds lists each packed, undeployed unit's asset", () => {
+    const p = parent([unit(1, "PACKED"), unit(2, "PACKED", "CHECKED_OUT"), unit(3, "PENDING")]);
+    expect(packedParentAssetIds(p)).toEqual(["a1"]);
+  });
+  test("a single-asset line returns its own asset once packed", () => {
+    expect(packedParentAssetIds(line({ id: "p1", assetId: "a9", prepStatus: "PACKED" }))).toEqual(["a9"]);
   });
 });
 

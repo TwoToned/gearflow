@@ -71,4 +71,49 @@ describe("multi-qty parent with a bulk accessory child line", () => {
     for (const a of ["a1", "a2", "a3"]) await prep(t, a, { accessoriesOnly: true });
     expect((await child(t))?.prepStatus).toBe("PACKED");
   });
+  test("check-and-pack scan flow (completeCheckAndPack) packs the accessory line", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "admin" });
+      await ctx.db.insert("users", { id: USER, name: "Alice", email: "a@x.com" });
+      await ctx.db.insert("checkItems", { id: "ci1", organizationId: ORG, label: "Visual", type: "PASS_FAIL", createdAt: NOW, updatedAt: NOW });
+    });
+    let n = 0;
+    for (const a of ["a1", "a2", "a3"]) {
+      n++;
+      await t.withIdentity({ subject: USER, orgId: ORG, role: "admin" }).mutation(api.checkRecordWrites.completeCheckAndPack, {
+        orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: a,
+        checks: [{ recordId: `r${n}`, checkItemId: "ci1", result: "PASS" as const }],
+        maintenancePlan: [], incidentPlan: [], auditId: `au${n}`, now: NOW, actor: { userId: USER, userName: "Alice" },
+      });
+    }
+    expect((await childUnits(t)).map((u) => u.prepStatus)).toEqual(["PACKED", "PACKED", "PACKED"]);
+    expect((await child(t))?.prepStatus).toBe("PACKED");
+  });
+  test("an OPTIONAL model accessory already on the line (no plan entry) is expanded and packed", async () => {
+    const t = makeT();
+    await seed(t);
+    // The model's tier is OPTIONAL now, but the line was built with the accessory
+    // (child line says DEFAULT) and carries no accessoryPlan.
+    await t.run(async (ctx) => {
+      const mba = await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", "m1")).first();
+      await ctx.db.patch(mba!._id, { inclusion: "OPTIONAL" });
+    });
+    for (const a of ["a1", "a2", "a3"]) await prep(t, a);
+    expect((await childUnits(t)).map((u) => u.prepStatus)).toEqual(["PACKED", "PACKED", "PACKED"]);
+    expect((await child(t))?.prepStatus).toBe("PACKED");
+  });
+  test("an OPTIONAL accessory the plan excludes stays unpacked", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      const mba = await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", "m1")).first();
+      await ctx.db.patch(mba!._id, { inclusion: "OPTIONAL" });
+      const l = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "L1")).unique();
+      await ctx.db.patch(l!._id, { accessoryPlan: { added: [], excluded: ["ba1"], excludedReasons: [] } });
+    });
+    await prep(t, "a1");
+    expect(await childUnits(t)).toHaveLength(0);
+  });
 });

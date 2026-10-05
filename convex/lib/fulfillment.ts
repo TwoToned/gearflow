@@ -440,12 +440,19 @@ async function modelName(ctx: Ctx, modelId: string | null | undefined): Promise<
  * template quantity). Asset-level still wins `bulkAssetId` conflicts with the
  * model, same as before. `plan` absent/null ⇒ template behaviour (every
  * DEFAULT, no OPTIONALs) — existing lines with no plan are unaffected.
+ *
+ * `presentBulkIds` — bulk accessories that ALREADY have a child line on this
+ * parent line. An accessory line the PM kept on the job is an opt-in even when
+ * the plan has no `added` entry (the model's tier may have been flipped to
+ * OPTIONAL after the line was built); without it prep would expand nothing for
+ * that line and strand it unpacked forever. `plan.excluded` still wins.
  */
 export async function resolveLineAccessoryPlan(
   ctx: Ctx,
   organizationId: string,
   assetId: string,
   plan: AccessoryPlan | null | undefined,
+  presentBulkIds?: ReadonlySet<string>,
 ): Promise<AccessoryProfile> {
   const asset = await assetDocByCuid(ctx, assetId);
   if (!asset || asset.organizationId !== organizationId) return { serialised: [], bulks: [] };
@@ -476,8 +483,8 @@ export async function resolveLineAccessoryPlan(
     const inclusion = m.inclusion ?? "DEFAULT";
     if (inclusion === "DEFAULT") {
       if (excluded.has(m.bulkAssetId)) continue; // PM deselected this default for this line
-    } else if (!added.has(m.bulkAssetId)) {
-      continue; // OPTIONAL, not opted into by this line's plan
+    } else if (!added.has(m.bulkAssetId) && !(presentBulkIds?.has(m.bulkAssetId) && !excluded.has(m.bulkAssetId))) {
+      continue; // OPTIONAL, not opted into by this line's plan or already on the line
     }
     const quantity = added.get(m.bulkAssetId)?.quantityPerParent ?? m.quantity;
     const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", m.bulkAssetId)).unique();
@@ -506,7 +513,12 @@ export async function expandAccessoriesForAsset(
   if (!line || line.organizationId !== organizationId || line.childKind) return [];
   const plan = (line.accessoryPlan as AccessoryPlan | undefined) ?? null;
 
-  const fullProfile = await resolveLineAccessoryPlan(ctx, organizationId, assetId, plan);
+  const existing = await accessoryChildrenOf(ctx, organizationId, lineItemId);
+  // A bulk accessory line already on this parent counts as opted in (see
+  // resolveLineAccessoryPlan), so prep/checkout expand and pack it.
+  const presentBulkIds = new Set(existing.filter((e) => e.bulkAssetId && e.status !== "CANCELLED").map((e) => e.bulkAssetId as string));
+
+  const fullProfile = await resolveLineAccessoryPlan(ctx, organizationId, assetId, plan, presentBulkIds);
   const profile: AccessoryProfile = includeAccessoryIds
     ? {
         serialised: fullProfile.serialised.filter((s) => includeAccessoryIds.has(s.assetId)),
@@ -525,14 +537,13 @@ export async function expandAccessoriesForAsset(
   }
   const profiles = new Map<string, AccessoryProfile>([[assetId, profile]]);
   for (const aid of parentAssetIds) {
-    if (!profiles.has(aid)) profiles.set(aid, await resolveLineAccessoryPlan(ctx, organizationId, aid, plan));
+    if (!profiles.has(aid)) profiles.set(aid, await resolveLineAccessoryPlan(ctx, organizationId, aid, plan, presentBulkIds));
   }
   const bulkDemand = new Map<string, number>();
   for (const p of profiles.values()) {
     for (const b of p.bulks) bulkDemand.set(b.bulkAssetId, (bulkDemand.get(b.bulkAssetId) ?? 0) + b.quantity);
   }
 
-  const existing = await accessoryChildrenOf(ctx, organizationId, lineItemId);
   const existingByAsset = new Map(existing.filter((e) => e.assetId).map((e) => [e.assetId as string, e.id]));
   const existingBulk = new Map(existing.filter((e) => e.bulkAssetId).map((e) => [e.bulkAssetId as string, e.id]));
 

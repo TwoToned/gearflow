@@ -382,6 +382,16 @@ what every existing query keys off.
    packed yet ("Prep the item before prepping its accessories"). Serialised parents
    only; a bulk/untagged parent just re-runs the accessory rollup. Not yet built:
    a partial-quantity prompt for bulk accessories.
+   **Button gating + deploy across boxes.** `prepActionAvailability`
+   (`warehouse-types.ts`) decides the Pick/Prep buttons: once a selected accessory
+   parent is already packed (or out), **Prep** and **Prep without accessories** are
+   disabled and only **Prep accessories only** works; a mixed selection enables
+   neither (select them separately). Deploy is container-agnostic per unit, so a
+   parent in the Pelican and accessories in the battery box deploy together; the
+   container roll-up (`syncContainersForLines`, `warehouseOps.ts`) now also scans
+   accessory children's units, otherwise the battery box would never flip to
+   CHECKED_OUT (previously it assumed accessories share the parent's box). Pinned
+   by `convex/prepAccessoryRollup.test.ts` ("deploy-all … two different boxes").
 4. **PDFs** — accessories render indented under the parent, gated by the same
    `showKitChildren` flag as kit children (2026-07-27 — previously always-on
    regardless of the flag). An accessory parent is detected by "top-level

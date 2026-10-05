@@ -58,6 +58,9 @@ export interface PickPrepTabProps {
   selectedPrep: Set<string>;
   setSelectedPrep: (s: Set<string>) => void;
   selectedPrepCount: number;
+  /** False once a selected parent is already packed — only its accessories are left. */
+  canPrep: boolean;
+  canPrepAccessoriesOnly: boolean;
   allPrepKeys: string[];
 
   // Data
@@ -110,6 +113,8 @@ export function PickPrepTab({
   selectedPrep,
   setSelectedPrep,
   selectedPrepCount,
+  canPrep,
+  canPrepAccessoriesOnly,
   allPrepKeys,
   pickPrepItems,
   groupedPrep,
@@ -164,7 +169,7 @@ export function PickPrepTab({
                 <Button
                   variant="line"
                   onClick={() => handlePrepSelected({ withoutAccessories: true })}
-                  disabled={selectedPrepCount === 0 || scanMutationIsPending}
+                  disabled={!canPrep || scanMutationIsPending}
                   title="Pack the selected gear but leave its accessories (e.g. batteries still charging) to prep later"
                 >
                   Prep without accessories
@@ -172,14 +177,14 @@ export function PickPrepTab({
                 <Button
                   variant="line"
                   onClick={handlePrepAccessoriesOnly}
-                  disabled={selectedPrepCount === 0 || scanMutationIsPending}
+                  disabled={!canPrepAccessoriesOnly || scanMutationIsPending}
                   title="Pack only the accessories of already-prepped gear, into the selected container"
                 >
                   Prep accessories only
                 </Button>
                 <Button
                   onClick={() => handlePrepSelected()}
-                  disabled={selectedPrepCount === 0 || scanMutationIsPending}
+                  disabled={!canPrep || scanMutationIsPending}
                   loading={scanMutationIsPending}
                 >
                   Prep{selectedPrepCount > 0 ? ` (${selectedPrepCount})` : ""}

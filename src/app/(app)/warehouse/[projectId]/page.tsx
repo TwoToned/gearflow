@@ -100,6 +100,7 @@ import {
   modelDisplayName,
   isKitParent,
   isAccessoryParent,
+  prepActionAvailability,
   accessoryChildrenOf,
   collectAllVerifiableIds,
   isInPickPrepStage,
@@ -1634,6 +1635,7 @@ function WarehouseProjectPage({
   const allInKeys = useMemo(() => selectionKeysForEntries(groupedIn), [groupedIn]);
 
   const selectedPrepCount = selectedPrep.size;
+  const prepActions = prepActionAvailability(selectedPrep, lineItems);
   const selectedOutCount = selectedOut.size;
   const selectedDeprepCount = selectedDeprep.size;
   const selectedInCount = selectedIn.size;
@@ -2766,6 +2768,8 @@ function WarehouseProjectPage({
           selectedPrep={selectedPrep}
           setSelectedPrep={setSelectedPrep}
           selectedPrepCount={selectedPrepCount}
+          canPrep={prepActions.canPrep}
+          canPrepAccessoriesOnly={prepActions.canPrepAccessoriesOnly}
           allPrepKeys={allPrepKeys}
           pickPrepItems={pickPrepItems}
           groupedPrep={groupedPrep}

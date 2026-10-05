@@ -113,4 +113,42 @@ describe("prep cascades PACKED onto accessory child lines", () => {
       expect(u.containerId).toBe("battery-box");
     }
   });
+  test("deploy-all carries parent and accessories out of two different boxes and flips both containers", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      for (const [id, li] of [["pelican", "CL1"], ["battery-box", "CL2"]] as const) {
+        await ctx.db.insert("projectLineItems", { id: li, organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", isContainerLineItem: true, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("projectContainers", { id, organizationId: ORG, projectId: "p1", kind: "CUSTOM", label: id, lineItemId: li, createdAt: NOW, updatedAt: NOW } as never);
+      }
+    });
+    const prep = (item: Record<string, unknown>) =>
+      t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {
+        organizationId: ORG, projectId: "p1", items: [{ lineItemId: "L1", assetId: "a1", ...item }] as never,
+        now: NOW, actor: { userId: USER, userName: "Alice" },
+      });
+    await prep({ includeAccessoryIds: [], containerId: "pelican" });
+    await prep({ accessoriesOnly: true, containerId: "battery-box" });
+
+    await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, items: [{ lineItemId: "L1", assetId: "a1" }], includeAccessories: true, now: NOW,
+    });
+    const state = await t.run(async (ctx) => {
+      const kids = (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect()).filter((c) => c.childKind === "ACCESSORY");
+      const kidUnits = [];
+      for (const k of kids) kidUnits.push(...(await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", k.id)).collect()));
+      const lines = await ctx.db.query("projectLineItems").collect();
+      return {
+        parent: (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => u.status),
+        kids: kidUnits.map((u) => u.status),
+        pelican: lines.find((l) => l.id === "CL1")?.status,
+        batteryBox: lines.find((l) => l.id === "CL2")?.status,
+      };
+    });
+    expect(state.parent).toEqual(["CHECKED_OUT"]);
+    expect(state.kids.length).toBeGreaterThan(0);
+    for (const s of state.kids) expect(s).toBe("CHECKED_OUT");
+    expect(state.pelican).toBe("CHECKED_OUT");
+    expect(state.batteryBox).toBe("CHECKED_OUT");
+  });
 });

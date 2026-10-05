@@ -53,8 +53,8 @@ function scanLog(ctx: Ctx, doc: Record<string, unknown>) {
  * checkout/return path (build plan phase 1c: "called ONCE at the end of
  * checkOutItems/checkInItems/checkOutKit/checkInKit cores"). Collects every
  * distinct `containerId` carried by the given lines' units (a line touched by
- * this batch is enough — accessory children inherit the SAME containerId
- * onto their own units, so scanning the parent lines already covers them),
+ * this batch plus its accessory children — accessories normally inherit the
+ * parent's containerId but can be packed into their own box),
  * then asks `syncContainerStatuses` (fulfillment.ts) to flip each container's
  * OWN line item; a flip on an ASSET-kind container also flips its asset here
  * (setAssetsStatus lives in this file, so fulfillment.ts can't call it itself
@@ -71,6 +71,14 @@ async function syncContainersForLines(
   for (const lineId of lineIds) {
     for (const u of await lineUnits(ctx, lineId)) {
       if (u.containerId) containerIds.add(u.containerId);
+    }
+    // Accessories can be packed into a DIFFERENT box than their parent
+    // ("Prep accessories only"), so scan the accessory children's own units too.
+    for (const child of await childLines(ctx, lineId, organizationId)) {
+      if (child.childKind !== "ACCESSORY") continue;
+      for (const u of await lineUnits(ctx, child.id)) {
+        if (u.containerId) containerIds.add(u.containerId);
+      }
     }
   }
   if (containerIds.size === 0) return;

@@ -333,7 +333,7 @@ function WarehouseProjectPage({
   };
 
   // Kit verification confirmation dialog
-  const [kitConfirm, setKitConfirm] = useState<{
+  type KitConfirmState = {
     action: "deploy" | "return";
     kitName: string;
     kitId: string;
@@ -341,7 +341,14 @@ function WarehouseProjectPage({
     verifiedCount: number;
     totalCount: number;
     verifiedIds: string[];
-  } | null>(null);
+  };
+  const [kitConfirm, setKitConfirm] = useState<KitConfirmState | null>(null);
+  // Further unverified kits from the same selection, and kits held back while
+  // another check queue is running. The dialog is single-slot and "Prep All"
+  // restarts the shared check queue, so these wait their turn rather than
+  // clobbering the rest of the selection.
+  const kitConfirmBacklogRef = useRef<KitConfirmState[]>([]);
+  const closeKitConfirm = () => setKitConfirm(kitConfirmBacklogRef.current.shift() ?? null);
 
   // Accessory checkout gate (issue #794 follow-up) — soft-blocks Deploy when a
   // parent's DEFAULT accessories aren't packed, and asks "why" for missing
@@ -492,6 +499,8 @@ function WarehouseProjectPage({
     setCheckFormData(null);
     setCheckQueue([]);
     setCheckQueueIndex(0);
+    // Unverified-kit prompts held back while this queue ran can open now.
+    if (kitConfirmBacklogRef.current.length > 0) closeKitConfirm();
 
     // Return focus to the appropriate scan input so barcode scanners flow uninterrupted.
     // Wait a frame for the Sheet to release its focus trap before we steal it back.
@@ -1929,6 +1938,7 @@ function WarehouseProjectPage({
       // flow) are collected and prepped in ONE batch call after the loop, instead
       // of firing one prepKitChildren round-trip per kit.
       const directPrepKits: Array<{ id: string; name: string }> = [];
+      const unverifiedKitConfirms: KitConfirmState[] = [];
       for (const kitItemId of kitLineItemIds) {
         const li = lineItems.find((l) => l.id === kitItemId);
         if (li?.kitId) {
@@ -1937,8 +1947,8 @@ function WarehouseProjectPage({
           const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
 
           if (allIds.length > 0 && verifiedIds.length < allIds.length) {
-            // Not fully verified — prompt the user
-            setKitConfirm({
+            // Not fully verified — prompt the user (after the rest of the selection)
+            unverifiedKitConfirms.push({
               action: "deploy",
               kitName: li.kit?.name || li.description || "Kit",
               kitId: li.kitId,
@@ -2062,6 +2072,11 @@ function WarehouseProjectPage({
 
       // Start check queue if any items need checks
       const allChecks = [...readyCheckQueue, ...bulkCheckQueue];
+      if (unverifiedKitConfirms.length > 0) {
+        kitConfirmBacklogRef.current.push(...unverifiedKitConfirms);
+        // No check form pending → open now; otherwise finishCheckQueue opens it.
+        if (allChecks.length === 0) closeKitConfirm();
+      }
       if (allChecks.length > 0) {
         // Don't include already-prepped items in directItems — they were prepped above
         startCheckQueue(allChecks);
@@ -3183,7 +3198,7 @@ function WarehouseProjectPage({
 
       {/* Kit Verification Confirmation */}
       {kitConfirm && (
-        <Dialog open={true} onOpenChange={() => setKitConfirm(null)}>
+        <Dialog open={true} onOpenChange={() => closeKitConfirm()}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>
@@ -3196,7 +3211,7 @@ function WarehouseProjectPage({
               items verified. You can {kitConfirm.action === "deploy" ? "prep" : "return"} only the verified items, or {kitConfirm.action === "deploy" ? "prep" : "return"} everything.
             </p>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="line" size="sm" onClick={() => setKitConfirm(null)}>
+              <Button variant="line" size="sm" onClick={() => closeKitConfirm()}>
                 Cancel
               </Button>
               {kitConfirm.verifiedCount > 0 && (
@@ -3226,7 +3241,7 @@ function WarehouseProjectPage({
                         .then(() => toast.success(`Returned ${kitConfirm.verifiedCount} verified items`))
                         .catch(() => {});
                     }
-                    setKitConfirm(null);
+                    closeKitConfirm();
                   }}
                 >
                   {kitConfirm.action === "deploy" ? "Prep" : "Return"} Verified ({kitConfirm.verifiedCount})
@@ -3242,14 +3257,19 @@ function WarehouseProjectPage({
                     : false;
                   if (!started) {
                     if (kitConfirm.action === "deploy") {
-                      // No checks — prep all items
-                      toast.success(`Kit prepped: ${kitConfirm.kitName}`);
-                      invalidate();
+                      // No checks — prep every kit member
+                      prepKitsBatch(projectId, [kitConfirm.parentLineItemId])
+                        .then((res) => {
+                          if (res.errors.length > 0) toast.error(`Kit skipped: ${kitConfirm.kitName}`);
+                          else toast.success(`Kit prepped: ${kitConfirm.kitName}`);
+                          invalidate();
+                        })
+                        .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
                     } else {
                       kitCheckInMutation.mutate({ kitId: kitConfirm.kitId, returnCondition: rc });
                     }
                   }
-                  setKitConfirm(null);
+                  closeKitConfirm();
                 }}
               >
                 {kitConfirm.action === "deploy" ? "Prep" : "Return"} All ({kitConfirm.totalCount})

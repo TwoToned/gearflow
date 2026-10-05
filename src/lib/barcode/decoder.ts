@@ -30,6 +30,7 @@
 import {
   prepareZXingModule,
   readBarcodes,
+  type ReaderOptions,
   type ReadResult,
   type ZXingModuleOverrides,
 } from "zxing-wasm/reader";
@@ -100,13 +101,38 @@ export function loadDecoder(): Promise<unknown> {
  */
 export async function decodeImageData(image: ImageData): Promise<ReadResult[]> {
   await loadDecoder();
-  return readBarcodes(image, {
+  const options: ReaderOptions = {
     formats: [...SCANNER_FORMATS],
     tryHarder: true,
     tryRotate: true,
+    // Covers inverted 2D symbols only — see `invertedCopy` for linear codes.
     tryInvert: true,
     tryDownscale: true,
     maxNumberOfSymbols: 1,
     returnErrors: false,
-  });
+  };
+  const direct = await readBarcodes(image, options);
+  if (direct.length > 0) return direct;
+  // A frame with nothing in it costs a second pass; a white-on-black linear
+  // label (flight-case tags) would otherwise never read at all.
+  return readBarcodes(invertedCopy(image), options);
+}
+
+/**
+ * Luminance-inverted copy of a frame.
+ *
+ * ZXing's `tryInvert` does not reach linear symbologies in the shipped build:
+ * a white-on-black Code 39 / Code 128 label (e.g. the Two Toned tags) decodes
+ * fine when inverted by hand and never with `tryInvert` alone — verified by the
+ * round-trip tests in `decoder.test.ts`. Hence the explicit second pass.
+ */
+function invertedCopy(image: ImageData): ImageData {
+  const data = new Uint8ClampedArray(image.data);
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 255 - data[i];
+    data[i + 1] = 255 - data[i + 1];
+    data[i + 2] = 255 - data[i + 2];
+  }
+  // Node (tests) has no ImageData constructor; the decoder reads only these fields.
+  return { data, width: image.width, height: image.height, colorSpace: image.colorSpace } as ImageData;
 }

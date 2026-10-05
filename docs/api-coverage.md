@@ -23,8 +23,8 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 447 | 312 | 133 | 1 | 1 |
-| Mutations | 802 | 303 | 492 | 0 | 7 |
-| **Total** | **1249** | **615** | **625** | **1** | **8** |
+| Mutations | 804 | 303 | 493 | 0 | 8 |
+| **Total** | **1251** | **615** | **626** | **1** | **9** |
 
 <!-- reachability-floor: 615 -->
 
@@ -106,7 +106,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `testTagAuditorTokens` | 7 |
 | `users` | 5 |
 | `warehouseDashboardTokens` | 7 |
-| `warehouseOps` | 24 |
+| `warehouseOps` | 25 |
 | `webhooks` | 14 |
 | `wooCommerceIntegrations` | 8 |
 | `wooCommerceOrderLogs` | 7 |

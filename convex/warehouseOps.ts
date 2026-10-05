@@ -15,7 +15,10 @@ import {
   returnLineUnits,
   checkinAccessoryChildren,
   syncContainerStatuses,
+  returnAccessoryUnits,
+  loadAccessoryUnits,
 } from "./lib/fulfillment";
+import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
@@ -184,29 +187,16 @@ async function checkOutGenericUnits(
   return true;
 }
 
-/** Cascade checkout to a parent line's accessory children (per parent unit / whole line).
- *  `includeAccessoryIds`, when given, narrows to only those accessories (by assetId or
- *  bulkAssetId) — the warehouse verified-set / partial-deploy escape hatch (issue #794).
- *  Absent ⇒ every not-yet-deployed accessory unit in scope cascades (today's behaviour). */
-async function checkoutAccessoryChildren(
-  ctx: Ctx,
-  p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; includeAccessoryIds?: Set<string> | null; now: number },
-): Promise<{ assetsTouched: string[] }> {
-  const children = (
-    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
-    await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", p.parentLineItemId)).collect()
-  ).filter((c) => c.organizationId === p.organizationId && c.childKind === "ACCESSORY");
-  if (children.length === 0) return { assetsTouched: [] };
+type AccessoryUnitRow = Awaited<ReturnType<typeof lineUnits>>[number];
 
-  const units: Array<{ _id: import("./_generated/dataModel").Id<"projectLineItemUnits">; assetId?: string; bulkAssetId?: string; status?: string }> = [];
-  for (const child of children) {
-    for (const u of await lineUnits(ctx, child.id)) {
-      if (u.status === "CHECKED_OUT") continue;
-      if (p.parentUnitAssetId && u.parentUnitAssetId !== p.parentUnitAssetId) continue;
-      if (p.includeAccessoryIds && !p.includeAccessoryIds.has(u.assetId ?? u.bulkAssetId ?? "")) continue;
-      units.push(u);
-    }
-  }
+/** Deploy accessory unit rows: T&T gate, skip non-deployable assets, flip to
+ *  CHECKED_OUT, scan log. The body shared by the parent cascade and the
+ *  unit-level deploy of a relocated accessory. Returns the assets touched. */
+async function deployAccessoryUnitRows(
+  ctx: Ctx,
+  units: AccessoryUnitRow[],
+  p: { organizationId: string; projectId: string; userId: string; projectLocationId: string | null; now: number; note: string },
+): Promise<string[]> {
   // Gate the accessory units actually flipping now (unit-scoped, like the source).
   await assertTestTagAllowsCheckout(ctx, p.organizationId, {
     assetIds: units.map((u) => u.assetId).filter((x): x is string => !!x),
@@ -222,17 +212,50 @@ async function checkoutAccessoryChildren(
     if (accAsset && NON_DEPLOYABLE_ASSET_STATUSES.has(accAsset.status as string)) continue;
     await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
     if (u.assetId) {
-      const asset = accAsset;
-      if (asset) {
-        await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
-        await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
+      if (accAsset) {
+        await ctx.db.patch(accAsset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+        await bumpAssetCounters(ctx, accAsset.organizationId, accAsset, { isActive: accAsset.isActive, status: "CHECKED_OUT" });
       }
       assetsTouched.push(u.assetId);
-      await scanLog(ctx, { organizationId: p.organizationId, assetId: u.assetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: "Accessory — moved with parent" });
+      await scanLog(ctx, { organizationId: p.organizationId, assetId: u.assetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.note });
     } else if (u.bulkAssetId) {
-      await scanLog(ctx, { organizationId: p.organizationId, bulkAssetId: u.bulkAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: "Accessory — moved with parent" });
+      await scanLog(ctx, { organizationId: p.organizationId, bulkAssetId: u.bulkAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.note });
     }
   }
+  return assetsTouched;
+}
+
+/** Cascade checkout to a parent line's accessory children (per parent unit / whole line).
+ *  `includeAccessoryIds`, when given, narrows to only those accessories (by assetId or
+ *  bulkAssetId) — the warehouse verified-set / partial-deploy escape hatch (issue #794).
+ *  Absent ⇒ every not-yet-deployed accessory unit in scope cascades (today's behaviour). */
+async function checkoutAccessoryChildren(
+  ctx: Ctx,
+  p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; includeAccessoryIds?: Set<string> | null; now: number },
+): Promise<{ assetsTouched: string[] }> {
+  const children = (
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
+    await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", p.parentLineItemId)).collect()
+  ).filter((c) => c.organizationId === p.organizationId && c.childKind === "ACCESSORY");
+  if (children.length === 0) return { assetsTouched: [] };
+
+  // Accessories packed into a DIFFERENT container than their parent ship with
+  // that container (`deployAccessoryUnits`), never silently with the parent.
+  const parentContainerOf = parentContainerResolver(await lineUnits(ctx, p.parentLineItemId));
+  const units: AccessoryUnitRow[] = [];
+  for (const child of children) {
+    for (const u of await lineUnits(ctx, child.id)) {
+      if (u.status === "CHECKED_OUT") continue;
+      if (p.parentUnitAssetId && u.parentUnitAssetId !== p.parentUnitAssetId) continue;
+      if (p.includeAccessoryIds && !p.includeAccessoryIds.has(u.assetId ?? u.bulkAssetId ?? "")) continue;
+      if (isRelocatedAccessoryUnit(u, parentContainerOf(u))) continue;
+      units.push(u);
+    }
+  }
+  const assetsTouched = await deployAccessoryUnitRows(ctx, units, {
+    organizationId: p.organizationId, projectId: p.projectId, userId: p.userId,
+    projectLocationId: p.projectLocationId, now: p.now, note: "Accessory — moved with parent",
+  });
   for (const child of children) await syncLineItemRollup(ctx, child.id);
   return { assetsTouched };
 }
@@ -958,6 +981,75 @@ export const checkinItems = mutation({
   handler: async (ctx, a) => {
     await requireService(ctx);
     return checkinItemsCore(ctx, a);
+  },
+});
+
+// ── Relocated accessories: stage a SPECIFIC set of accessory units ───────────
+// An accessory packed into a different container than its parent (see
+// `lib/accessoryRelocation.ts`) is a normal asset on a job: it deploys, returns
+// and de-preps from its own row, not through the parent's cascade.
+
+export type StageAccessoryUnitsArgs = {
+  organizationId: string;
+  projectId: string;
+  userId: string;
+  unitIds: string[];
+  to: "DEPLOY" | "RETURN" | "DEPREP";
+  now: number;
+};
+
+/** Core unit-level stage change for ACCESSORY units. All-or-nothing: every id is
+ *  validated (org, project, accessory line, right stage) before any write.
+ *  Shared by the requireService mutation + the browser-direct write. */
+export async function stageAccessoryUnitsCore(ctx: Ctx, a: StageAccessoryUnitsArgs): Promise<{ updatedLineIds: string[] }> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+  if (!project || project.organizationId !== a.organizationId) throw new ConvexError("Project not found");
+  const scope = { organizationId: a.organizationId, projectId: a.projectId, unitIds: a.unitIds };
+
+  let lineIds: string[];
+  if (a.to === "DEPLOY") {
+    const byLine = await loadAccessoryUnits(
+      ctx, scope,
+      (u) => u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.status !== "CANCELLED" && u.prepStatus === "PACKED",
+      "isn't packed and waiting, so it can't be deployed",
+    );
+    await deployAccessoryUnitRows(ctx, [...byLine.values()].flat(), {
+      organizationId: a.organizationId, projectId: a.projectId, userId: a.userId,
+      projectLocationId: project.locationId ?? null, now: a.now, note: "Accessory — deployed from its own container",
+    });
+    for (const lineId of byLine.keys()) await syncLineItemRollup(ctx, lineId);
+    lineIds = [...byLine.keys()];
+  } else if (a.to === "RETURN") {
+    const res = await returnAccessoryUnits(ctx, {
+      ...scope, returnCondition: "GOOD", userId: a.userId,
+      defaultLocationId: await defaultLocationId(ctx, a.organizationId), now: a.now,
+    });
+    lineIds = res.lineIds;
+  } else {
+    const byLine = await loadAccessoryUnits(
+      ctx, scope,
+      (u) => u.status === "RETURNED" && u.prepStatus === "PACKED",
+      "isn't returned and still packed, so it can't be de-prepped",
+    );
+    for (const u of [...byLine.values()].flat()) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
+    for (const lineId of byLine.keys()) await syncLineItemRollup(ctx, lineId);
+    lineIds = [...byLine.keys()];
+  }
+
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, lineIds);
+  return { updatedLineIds: lineIds };
+}
+
+export const stageAccessoryUnits = mutation({
+  args: {
+    organizationId: v.string(), projectId: v.string(), userId: v.string(),
+    unitIds: v.array(v.string()),
+    to: v.union(v.literal("DEPLOY"), v.literal("RETURN"), v.literal("DEPREP")),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    return stageAccessoryUnitsCore(ctx, a);
   },
 });
 

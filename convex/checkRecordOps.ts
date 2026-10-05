@@ -4,6 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup, resolveOrCreateContainerByLabel } from "./lib/fulfillment";
 import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
+import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 
 /**
  * Check-records prep/return — Convex port of the line-item/unit writes in
@@ -296,6 +297,11 @@ export async function completeCheckAndDeprepLineCore(
   }
 
   const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
+  // Accessories packed into a different container than their parent are
+  // de-prepped from their own rows (warehouseOps.stageAccessoryUnits), not here.
+  const parentContainerOf = parentContainerResolver(
+    await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect(),
+  );
   for (const child of accChildren) {
     let include = true;
     if (resolvedAssetId) {
@@ -308,7 +314,7 @@ export async function completeCheckAndDeprepLineCore(
     }
     if (include) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: a.now });
     const units = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
-      .filter((u) => !resolvedAssetId || u.parentUnitAssetId === resolvedAssetId);
+      .filter((u) => (!resolvedAssetId || u.parentUnitAssetId === resolvedAssetId) && !isRelocatedAccessoryUnit(u, parentContainerOf(u)));
     for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
   }
   return { id: a.lineItemId };

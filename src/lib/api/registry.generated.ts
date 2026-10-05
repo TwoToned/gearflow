@@ -59991,6 +59991,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "warehouseOps.stageAccessoryUnits",
+    "module": "warehouseOps",
+    "fn": "stageAccessoryUnits",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "returnCondition",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "to",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "unitIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7997a4f54993c174",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "warehouseOps.syncContainersBatch",
     "module": "warehouseOps",
     "fn": "syncContainersBatch",
@@ -61407,6 +61464,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "warehouseWrites.stageAccessoryUnits",
+    "module": "warehouseWrites",
+    "fn": "stageAccessoryUnits",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "returnCondition",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "to",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "unitIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "207c458ccf37a9ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -64266,10 +64385,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1249,
+  total: 1251,
   agentReachable: 615,
   queries: 447,
-  mutations: 802,
+  mutations: 804,
   agentReachableQueries: 312,
   agentReachableMutations: 303,
 } as const;

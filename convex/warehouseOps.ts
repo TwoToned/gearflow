@@ -15,7 +15,10 @@ import {
   returnLineUnits,
   checkinAccessoryChildren,
   syncContainerStatuses,
+  returnAccessoryUnits,
+  loadAccessoryUnits,
 } from "./lib/fulfillment";
+import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
@@ -184,29 +187,16 @@ async function checkOutGenericUnits(
   return true;
 }
 
-/** Cascade checkout to a parent line's accessory children (per parent unit / whole line).
- *  `includeAccessoryIds`, when given, narrows to only those accessories (by assetId or
- *  bulkAssetId) — the warehouse verified-set / partial-deploy escape hatch (issue #794).
- *  Absent ⇒ every not-yet-deployed accessory unit in scope cascades (today's behaviour). */
-async function checkoutAccessoryChildren(
-  ctx: Ctx,
-  p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; includeAccessoryIds?: Set<string> | null; now: number },
-): Promise<{ assetsTouched: string[] }> {
-  const children = (
-    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
-    await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", p.parentLineItemId)).collect()
-  ).filter((c) => c.organizationId === p.organizationId && c.childKind === "ACCESSORY");
-  if (children.length === 0) return { assetsTouched: [] };
+type AccessoryUnitRow = Awaited<ReturnType<typeof lineUnits>>[number];
 
-  const units: Array<{ _id: import("./_generated/dataModel").Id<"projectLineItemUnits">; assetId?: string; bulkAssetId?: string; status?: string }> = [];
-  for (const child of children) {
-    for (const u of await lineUnits(ctx, child.id)) {
-      if (u.status === "CHECKED_OUT") continue;
-      if (p.parentUnitAssetId && u.parentUnitAssetId !== p.parentUnitAssetId) continue;
-      if (p.includeAccessoryIds && !p.includeAccessoryIds.has(u.assetId ?? u.bulkAssetId ?? "")) continue;
-      units.push(u);
-    }
-  }
+/** Deploy accessory unit rows: T&T gate, skip non-deployable assets, flip to
+ *  CHECKED_OUT, scan log. The body shared by the parent cascade and the
+ *  unit-level deploy of a relocated accessory. Returns the assets touched. */
+async function deployAccessoryUnitRows(
+  ctx: Ctx,
+  units: AccessoryUnitRow[],
+  p: { organizationId: string; projectId: string; userId: string; projectLocationId: string | null; now: number; note: string },
+): Promise<string[]> {
   // Gate the accessory units actually flipping now (unit-scoped, like the source).
   await assertTestTagAllowsCheckout(ctx, p.organizationId, {
     assetIds: units.map((u) => u.assetId).filter((x): x is string => !!x),
@@ -222,17 +212,50 @@ async function checkoutAccessoryChildren(
     if (accAsset && NON_DEPLOYABLE_ASSET_STATUSES.has(accAsset.status as string)) continue;
     await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
     if (u.assetId) {
-      const asset = accAsset;
-      if (asset) {
-        await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
-        await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
+      if (accAsset) {
+        await ctx.db.patch(accAsset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+        await bumpAssetCounters(ctx, accAsset.organizationId, accAsset, { isActive: accAsset.isActive, status: "CHECKED_OUT" });
       }
       assetsTouched.push(u.assetId);
-      await scanLog(ctx, { organizationId: p.organizationId, assetId: u.assetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: "Accessory — moved with parent" });
+      await scanLog(ctx, { organizationId: p.organizationId, assetId: u.assetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.note });
     } else if (u.bulkAssetId) {
-      await scanLog(ctx, { organizationId: p.organizationId, bulkAssetId: u.bulkAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: "Accessory — moved with parent" });
+      await scanLog(ctx, { organizationId: p.organizationId, bulkAssetId: u.bulkAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.note });
     }
   }
+  return assetsTouched;
+}
+
+/** Cascade checkout to a parent line's accessory children (per parent unit / whole line).
+ *  `includeAccessoryIds`, when given, narrows to only those accessories (by assetId or
+ *  bulkAssetId) — the warehouse verified-set / partial-deploy escape hatch (issue #794).
+ *  Absent ⇒ every not-yet-deployed accessory unit in scope cascades (today's behaviour). */
+async function checkoutAccessoryChildren(
+  ctx: Ctx,
+  p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; includeAccessoryIds?: Set<string> | null; now: number },
+): Promise<{ assetsTouched: string[] }> {
+  const children = (
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
+    await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", p.parentLineItemId)).collect()
+  ).filter((c) => c.organizationId === p.organizationId && c.childKind === "ACCESSORY");
+  if (children.length === 0) return { assetsTouched: [] };
+
+  // Accessories packed into a DIFFERENT container than their parent ship with
+  // that container (`deployAccessoryUnits`), never silently with the parent.
+  const parentContainerOf = parentContainerResolver(await lineUnits(ctx, p.parentLineItemId));
+  const units: AccessoryUnitRow[] = [];
+  for (const child of children) {
+    for (const u of await lineUnits(ctx, child.id)) {
+      if (u.status === "CHECKED_OUT") continue;
+      if (p.parentUnitAssetId && u.parentUnitAssetId !== p.parentUnitAssetId) continue;
+      if (p.includeAccessoryIds && !p.includeAccessoryIds.has(u.assetId ?? u.bulkAssetId ?? "")) continue;
+      if (isRelocatedAccessoryUnit(u, parentContainerOf(u))) continue;
+      units.push(u);
+    }
+  }
+  const assetsTouched = await deployAccessoryUnitRows(ctx, units, {
+    organizationId: p.organizationId, projectId: p.projectId, userId: p.userId,
+    projectLocationId: p.projectLocationId, now: p.now, note: "Accessory — moved with parent",
+  });
   for (const child of children) await syncLineItemRollup(ctx, child.id);
   return { assetsTouched };
 }
@@ -961,6 +984,147 @@ export const checkinItems = mutation({
   },
 });
 
+// ── Relocated accessories: stage a SPECIFIC set of accessory units ───────────
+// An accessory packed into a different container than its parent (see
+// `lib/accessoryRelocation.ts`) is a normal asset on a job: it deploys, returns
+// and de-preps from its own row, not through the parent's cascade.
+
+export const accessoryStageOpValidator = v.union(
+  v.literal("DEPLOY"), v.literal("RETURN"), v.literal("DEPREP"),
+  v.literal("UNDEPLOY"), v.literal("UNRETURN"), v.literal("UNDEPREP"),
+);
+
+export type AccessoryStageOp = "DEPLOY" | "RETURN" | "DEPREP" | "UNDEPLOY" | "UNRETURN" | "UNDEPREP";
+
+export type StageAccessoryUnitsArgs = {
+  organizationId: string;
+  projectId: string;
+  userId: string;
+  unitIds: string[];
+  to: AccessoryStageOp;
+  /** RETURN only — defaults to GOOD, like the Return tab's selector. */
+  returnCondition?: "GOOD" | "DAMAGED" | "MISSING";
+  now: number;
+};
+
+type StageScope = { organizationId: string; projectId: string; unitIds: string[] };
+type StageCtx = { a: StageAccessoryUnitsArgs; scope: StageScope; projectLocationId: string | null };
+
+const notDone = (u: AccessoryUnitRow) => u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.status !== "CANCELLED";
+
+async function stageDeploy(ctx: Ctx, { a, scope, projectLocationId }: StageCtx): Promise<string[]> {
+  const byLine = await loadAccessoryUnits(ctx, scope, (u) => notDone(u) && u.prepStatus === "PACKED", "isn't packed and waiting, so it can't be deployed");
+  await deployAccessoryUnitRows(ctx, [...byLine.values()].flat(), {
+    organizationId: a.organizationId, projectId: a.projectId, userId: a.userId,
+    projectLocationId, now: a.now, note: "Accessory — deployed from its own container",
+  });
+  for (const lineId of byLine.keys()) await syncLineItemRollup(ctx, lineId);
+  return [...byLine.keys()];
+}
+
+async function stageReturn(ctx: Ctx, { a, scope }: StageCtx): Promise<string[]> {
+  const res = await returnAccessoryUnits(ctx, {
+    ...scope, returnCondition: a.returnCondition ?? "GOOD", userId: a.userId,
+    defaultLocationId: await defaultLocationId(ctx, a.organizationId), now: a.now,
+  });
+  return res.lineIds;
+}
+
+/** De-prep, by the unit's own stage: a RETURNED unit is de-prepped back into
+ *  inventory (kept as job history); a packed-and-waiting one is taken off prep
+ *  (the unit row goes, like `deprepItem`) and returns to Pick. */
+async function stageDeprep(ctx: Ctx, { a, scope }: StageCtx): Promise<string[]> {
+  const byLine = await loadAccessoryUnits(
+    ctx, scope,
+    (u) => u.prepStatus === "PACKED" && u.status !== "CHECKED_OUT" && u.status !== "CANCELLED",
+    "is out or not packed, so it can't be de-prepped",
+  );
+  for (const [lineId, units] of byLine) {
+    for (const u of units) {
+      if (u.status === "RETURNED") await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
+      else await ctx.db.delete(u._id);
+    }
+    await resetEmptiedAccessoryLine(ctx, lineId, a.now);
+    await syncLineItemRollup(ctx, lineId);
+  }
+  return [...byLine.keys()];
+}
+
+/** With no units left the rollup falls back to the line's CURRENT values, so an
+ *  emptied accessory line would stay PACKED — reset it like `deprepItem` does. */
+async function resetEmptiedAccessoryLine(ctx: Ctx, lineId: string, now: number): Promise<void> {
+  if ((await lineUnits(ctx, lineId)).length > 0) return;
+  const line = await lineByCuid(ctx, lineId);
+  if (line && line.status !== "CHECKED_OUT" && line.status !== "RETURNED" && line.status !== "CANCELLED") {
+    await ctx.db.patch(line._id, { prepStatus: "PENDING", status: "CONFIRMED", updatedAt: now });
+  }
+}
+
+/** Reverse a stage by flipping the named units back (Deployed→Prepped / Returned→Deployed). */
+async function stageFlipBack(ctx: Ctx, { a, scope, projectLocationId }: StageCtx): Promise<string[]> {
+  const undeploy = a.to === "UNDEPLOY";
+  const byLine = await loadAccessoryUnits(
+    ctx, scope, (u) => u.status === (undeploy ? "CHECKED_OUT" : "RETURNED"),
+    undeploy ? "isn't deployed, so it can't be moved back to Prepped" : "isn't returned, so it can't be moved back to Deployed",
+  );
+  const defLoc = undeploy ? await defaultLocationId(ctx, a.organizationId) : projectLocationId;
+  for (const [lineId, units] of byLine) {
+    await flipLineUnits(ctx, {
+      organizationId: a.organizationId, lineItemId: lineId, fromStatus: undeploy ? "CHECKED_OUT" : "RETURNED",
+      toStatus: undeploy ? "CONFIRMED" : "CHECKED_OUT", toPrepStatus: undeploy ? "PACKED" : undefined,
+      resetReturnedQty: !undeploy, assetStatus: undeploy ? "AVAILABLE" : "CHECKED_OUT",
+      locationId: defLoc, clearLoc: undeploy, onlyUnitIds: new Set(units.map((u) => u.id)), now: a.now,
+    });
+    await syncLineItemRollup(ctx, lineId);
+  }
+  return [...byLine.keys()];
+}
+
+/** De-prepped → Returned: re-pack. The line's own prepStatus is set directly
+ *  (the rollup never re-promotes a returned unit to PACKED — gearflow#797). */
+async function stageUndeprep(ctx: Ctx, { a, scope }: StageCtx): Promise<string[]> {
+  const byLine = await loadAccessoryUnits(
+    ctx, scope, (u) => u.status === "RETURNED" && u.prepStatus !== "PACKED", "isn't de-prepped, so it can't be re-packed",
+  );
+  for (const [lineId, units] of byLine) {
+    for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PACKED", updatedAt: a.now });
+    const line = await lineByCuid(ctx, lineId);
+    if (line) await ctx.db.patch(line._id, { prepStatus: "PACKED", updatedAt: a.now });
+  }
+  return [...byLine.keys()];
+}
+
+const STAGE_HANDLERS: Record<AccessoryStageOp, (ctx: Ctx, sc: StageCtx) => Promise<string[]>> = {
+  DEPLOY: stageDeploy, RETURN: stageReturn, DEPREP: stageDeprep,
+  UNDEPLOY: stageFlipBack, UNRETURN: stageFlipBack, UNDEPREP: stageUndeprep,
+};
+
+/** Core unit-level stage change for ACCESSORY units. All-or-nothing: every id is
+ *  validated (org, project, accessory line, right stage) before any write.
+ *  Shared by the requireService mutation + the browser-direct write. */
+export async function stageAccessoryUnitsCore(ctx: Ctx, a: StageAccessoryUnitsArgs): Promise<{ updatedLineIds: string[] }> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+  if (!project || project.organizationId !== a.organizationId) throw new ConvexError("Project not found");
+  const scope = { organizationId: a.organizationId, projectId: a.projectId, unitIds: a.unitIds };
+  const lineIds = await STAGE_HANDLERS[a.to](ctx, { a, scope, projectLocationId: project.locationId ?? null });
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, lineIds);
+  return { updatedLineIds: lineIds };
+}
+
+export const stageAccessoryUnits = mutation({
+  args: {
+    organizationId: v.string(), projectId: v.string(), userId: v.string(),
+    unitIds: v.array(v.string()),
+    to: accessoryStageOpValidator,
+    returnCondition: v.optional(v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING"))),
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    return stageAccessoryUnitsCore(ctx, a);
+  },
+});
+
 // ── Move-back (reverse a stage) ──────────────────────────────────────────────
 // Every warehouse stage's primary button advances gear one step; these mutations
 // are the inverse (Deployed→Prepped, Returned→Deployed, De-prepped→Returned).
@@ -1016,10 +1180,14 @@ async function flipLineUnits(
     onlyAssetId?: string;
     /** Accessory scope: only flip units whose parent unit is one of these assets. */
     parentAssetIds?: string[];
+    /** Only flip these specific units (a relocated accessory actioned on its own). */
+    onlyUnitIds?: Set<string>;
+    /** Skip units for which this is true (relocated accessories on a parent's cascade). */
+    exclude?: (u: AccessoryUnitRow) => boolean;
   },
 ): Promise<{ flipped: number; assetIds: string[]; bulkFlips: Array<{ bulkAssetId: string; quantity: number }> }> {
   const units = (await lineUnits(ctx, p.lineItemId))
-    .filter((u) => unitMatchesFlip(u, p))
+    .filter((u) => unitMatchesFlip(u, p) && (!p.onlyUnitIds || p.onlyUnitIds.has(u.id)) && !p.exclude?.(u))
     .sort((a, b) => a.ordinal - b.ordinal);
   const toFlip = p.want != null ? units.slice(0, Math.max(0, Math.min(p.want, units.length))) : units;
   const assetIds: string[] = [];
@@ -1057,10 +1225,13 @@ async function reverseAccessoryChildren(
   p: { organizationId: string; parentLineItemId: string; fromStatus: string; toStatus: "CONFIRMED" | "CHECKED_OUT"; toPrepStatus?: "PACKED"; resetReturnedQty?: boolean; parentAssetIds?: string[]; assetStatus: string; locationId: string | null; clearLoc: boolean; now: number },
 ): Promise<void> {
   const children = (await childLines(ctx, p.parentLineItemId, p.organizationId)).filter((c) => c.childKind === "ACCESSORY");
+  // Accessories packed in a different container are reversed from their own rows.
+  const parentContainerOf = parentContainerResolver(await lineUnits(ctx, p.parentLineItemId));
   for (const child of children) {
     await flipLineUnits(ctx, {
       organizationId: p.organizationId, lineItemId: child.id,
       fromStatus: p.fromStatus, toStatus: p.toStatus, toPrepStatus: p.toPrepStatus,
+      exclude: (u) => isRelocatedAccessoryUnit(u, parentContainerOf(u)),
       resetReturnedQty: p.resetReturnedQty, parentAssetIds: p.parentAssetIds,
       assetStatus: p.assetStatus, locationId: p.locationId, clearLoc: p.clearLoc, now: p.now,
     });

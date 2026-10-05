@@ -36,6 +36,9 @@ import {
   forceReturnKitCore,
   forceReturnKitsBatchCore,
   defaultLocationId,
+  stageAccessoryUnitsCore,
+  accessoryStageOpValidator,
+  type AccessoryStageOp,
 } from "./warehouseOps";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { getKitByCuid } from "./lib/kits";
@@ -1097,6 +1100,71 @@ export const checkOutItems = mutation({
   },
 });
 
+// ─── stageAccessoryUnits — deploy / return / de-prep SPECIFIC accessory units.
+// An accessory packed into a different container than its parent ships with that
+// container, so it is actioned from its own row (see lib/accessoryRelocation.ts);
+// the parent's deploy/return/de-prep cascades deliberately leave it alone.
+// Permission follows the direction: RETURN is check_in, the rest check_out. ───
+const STAGE_UNITS_MAX = 500;
+/** Same permission the line-level twin of each op needs: returning and undeploying are check_in. */
+const STAGE_PERMISSION: Record<AccessoryStageOp, "check_in" | "check_out"> = {
+  DEPLOY: "check_out", RETURN: "check_in", DEPREP: "check_out",
+  UNDEPLOY: "check_in", UNRETURN: "check_out", UNDEPREP: "check_out",
+};
+const STAGE_VERB: Record<AccessoryStageOp, string> = {
+  DEPLOY: "Deployed", RETURN: "Returned", DEPREP: "De-prepped",
+  UNDEPLOY: "Moved back to Prepped", UNRETURN: "Moved back to Deployed", UNDEPREP: "Re-packed",
+};
+export const stageAccessoryUnits = mutation({
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    unitIds: v.array(v.string()),
+    to: accessoryStageOpValidator,
+    returnCondition: v.optional(returnCond), // RETURN only; defaults to GOOD
+    auditId: v.string(),
+    now: v.number(),
+    actor: actorValidator,
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    assertArrayMax(a.unitIds, "unitIds", STAGE_UNITS_MAX);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", STAGE_PERMISSION[a.to]);
+    const actor = await resolveActor(ctx, a.actor);
+    if (a.to === "DEPLOY") {
+      await assertNoBlockingCommentsInMutation(ctx, a.orgId, a.projectId, { actionLabel: "check out items" });
+    }
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+
+    const res = await stageAccessoryUnitsCore(ctx, {
+      organizationId: a.orgId, projectId: a.projectId, userId: actor.userId,
+      unitIds: a.unitIds, to: a.to, returnCondition: a.returnCondition, now: a.now,
+    });
+
+    const verb = STAGE_VERB[a.to];
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.orgId,
+      action: a.to === "RETURN" ? "CHECK_IN" : a.to === "DEPLOY" ? "CHECK_OUT" : "UPDATE",
+      entityType: "projectLineItem",
+      entityId: res.updatedLineIds[0] ?? a.projectId,
+      entityName: "Accessories",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `${verb} ${a.unitIds.length} accessory unit${a.unitIds.length === 1 ? "" : "s"} from their own container`,
+      projectId: a.projectId,
+      createdAt: a.now,
+    });
+
+    const trigger = a.to === "DEPLOY" ? "ALL_CHECKED_OUT" : a.to === "RETURN" ? "ALL_RETURNED" : null;
+    const autoAdvance = trigger
+      ? await maybeAutoAdvanceProjectStatus(ctx, { orgId: a.orgId, projectId: a.projectId, trigger, actor, now: a.now })
+      : null;
+    return { ...res, ...autoAdvanceFields(autoAdvance) };
+  },
+});
+
 /** Bound the checkout-override reason (issue #794 follow-up) — mirrors
  *  lineItemWrites.ts's assertAccessoryPlanFields reason bound. */
 function assertCheckoutOverrideFields(skipped: { accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }[]): void {
@@ -1348,6 +1416,8 @@ export const agentOps: AgentOpsAnnotations = {
   // NEW_STOCK sale-item pick checklist toggle — no stock/asset movement (the sale
   // stock deduction already happened when the line was added), no audit row.
   setSalePicked: { danger: "low" },
+  // Physical deploy / return / de-prep of specific accessory units (gear leaves or comes back).
+  stageAccessoryUnits: { danger: "high" },
   // Rolls up a container's own status/asset flag from its (already-moved) contents.
   syncContainersBatch: { danger: "medium" },
   undeployItems: { danger: "high" }, // physical un-deploy (Deployed -> Prepped)

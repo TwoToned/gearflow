@@ -292,16 +292,48 @@ Landed so far:
   `ContainerRail` — the rail always mirrors live prep state with exactly one
   chip active; this dialog starts with nothing chosen each time it opens).
 
-- **Move one accessory (after prep)**: each packed accessory row (Pick/Deploy/
-  Return/De-prep tables) has its own "Move" button, independent of its parent
-  (Move-to… on a parent still moves the whole group). It opens the same
-  `MoveToContainerDialog` with `allowPartial`, so you can move "3 of 8 batteries"
-  to a different case than the beltpacks. Units resolve via
-  `resolveAccessoryUnitIds` (`warehouse-types.ts`: packed or out, never
-  cancelled; first N for a partial move) and go through `moveUnits`. The button
-  reaches every render path via `AccessoryMoveContext` (`kit-child-rows.tsx`),
-  provided by the warehouse page. Desktop table rows only — the mobile cards
-  are whole-row tap targets, so no button yet.
+- **Relocated accessories** — an accessory is a normal asset on the job that
+  happens to nest under a parent. Once some of its units are packed into a
+  DIFFERENT container than the parent's ("batteries into the Battery Box"), they
+  are *relocated*: they ship with THAT container, not the parent.
+  - **One rule, two consumers** — `convex/lib/accessoryRelocation.ts`
+    (`isRelocatedAccessoryUnit` / `parentContainerResolver`; pure, shared by the
+    server and `src/`). Loose units (no container) never count as relocated.
+  - **Server** — the parent's deploy (`checkoutAccessoryChildren`), return
+    (`checkinAccessoryChildren`), return-check de-prep
+    (`completeCheckAndDeprepLineCore`) and its reversals (`reverseAccessoryChildren`,
+    `deprepItemInner`) skip relocated units. Accessories are actioned by unit id
+    through `warehouseWrites.stageAccessoryUnits`
+    (`to: DEPLOY | RETURN | DEPREP | UNDEPLOY | UNRETURN | UNDEPREP`, optional
+    `returnCondition`; all-or-nothing, every id validated as a live unit of an
+    ACCESSORY line on the project in the right stage; `high` danger; permission
+    follows the line-level twin). `DEPREP` de-preps a RETURNED unit and takes a
+    packed-and-waiting one off prep (the unit row goes, like `deprepItem`). The
+    container's own line flips with its contents as usual.
+  - **Any accessory is actionable on its own**, relocated or not — before or after
+    its parent. A parent's own cascade only touches units still in its stage, so
+    an accessory already deployed/returned independently is skipped, not
+    double-actioned.
+  - **UI** — `relocate-accessories.ts` runs on the line list BEFORE the stage
+    filters: each (accessory, container, stage) group becomes its own synthetic
+    line (`reloc~…` id, one stage so its status/quantities are true), the parent
+    is trimmed to what's still under it. Every tab, container section, selection,
+    "Deploy container" and Move-to… sees it where it physically is with no tab
+    special-casing. A nested accessory row has its own checkbox (and a chevron to
+    per-unit sub-rows for a partial selection) via `AccessorySelectionContext`
+    (`kit-child-rows.tsx`, provided per tab by the page). `takeAccessorySelection`
+    routes the accessory keys of a selection (`reloc~…`, `acc~<line>`,
+    `accu~<unit>`) to the unit mutation in the Deploy, Return, De-prep and
+    move-back handlers; if the parent is selected too its own cascade covers a
+    nested accessory, so that key is dropped. Move-to… uses the same selection,
+    so an accessory moves with the ordinary **Move to…** button — there is no
+    accessory-specific move button. A parent's Move-to… moves only what is still
+    under it.
+  - **Still open** — parent un-prep of an accessory *parent* still deletes the
+    accessory units tied to the removed parent unit that sit in the parent's own
+    container; no accessory selection on the mobile card list (whole-row tap
+    targets); the De-prepped tab's "Move to Returned" re-packs a relocated row by
+    unit but a nested accessory still goes with its parent's re-pack.
 
 - **Deploy container (D4)**: a "Deploy container" button on each container's
   header in the Deploy tab (desktop table + mobile card, both render paths)

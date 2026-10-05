@@ -545,20 +545,6 @@ export function isMoveableAtDeprepStage(u: Unit): boolean {
   return u.status === "RETURNED" && u.prepStatus === "PACKED";
 }
 
-/** An accessory unit that is physically packed (or out) and so has a container
- *  to move — any stage, unlike the per-tab predicates above. */
-export function isMovableAccessoryUnit(u: Unit): boolean {
-  return u.status !== "CANCELLED" && (u.prepStatus === "PACKED" || u.status === "CHECKED_OUT");
-}
-
-/** Unit ids of ONE accessory line that can be moved — the accessory moves on
- *  its own, never with its parent. `quantity` caps it for a partial move
- *  ("3 of the 8 batteries"); omitted = all of them. */
-export function resolveAccessoryUnitIds(accessory: LineItem, quantity?: number): string[] {
-  const ids = (accessory.units ?? []).filter(isMovableAccessoryUnit).map((u) => u.id);
-  return quantity === undefined ? ids : ids.slice(0, Math.max(0, quantity));
-}
-
 /**
  * Resolve a Deploy/Return/De-prep tab's selection — the SAME key format
  * `handleCheckOutSelected`/`handlePrepSelected` already parse: a bare

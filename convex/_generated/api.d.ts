@@ -109,6 +109,7 @@ import type * as kitMedia from "../kitMedia.js";
 import type * as kitSerializedItems from "../kitSerializedItems.js";
 import type * as kitWrites from "../kitWrites.js";
 import type * as kits from "../kits.js";
+import type * as lib_accessoryRelocation from "../lib/accessoryRelocation.js";
 import type * as lib_agentArgs from "../lib/agentArgs.js";
 import type * as lib_agentOps from "../lib/agentOps.js";
 import type * as lib_allocation from "../lib/allocation.js";
@@ -430,6 +431,7 @@ declare const fullApi: ApiFromModules<{
   kitSerializedItems: typeof kitSerializedItems;
   kitWrites: typeof kitWrites;
   kits: typeof kits;
+  "lib/accessoryRelocation": typeof lib_accessoryRelocation;
   "lib/agentArgs": typeof lib_agentArgs;
   "lib/agentOps": typeof lib_agentOps;
   "lib/allocation": typeof lib_allocation;

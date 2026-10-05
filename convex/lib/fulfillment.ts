@@ -25,6 +25,7 @@ import {
 } from "./lineItemUnits";
 import { bumpAssetCounters } from "./counters";
 import { resolveLiveVersionIdForProject, versionRows } from "./versionScope";
+import { isRelocatedAccessoryUnit, parentContainerResolver } from "./accessoryRelocation";
 
 type Ctx = MutationCtx;
 
@@ -372,36 +373,118 @@ export async function checkinAccessoryChildren(
   },
 ): Promise<{ assetsTouched: string[] }> {
   const returnedAssetId = args.returnedAssetId ?? null;
-  const assetStatus = assetStatusFromReturnCondition(args.returnCondition);
   const now = Date.now();
 
   const children = await accessoryChildrenOf(ctx, args.organizationId, args.parentLineItemId);
   if (children.length === 0) return { assetsTouched: [] };
 
+  // Accessories packed into a DIFFERENT container than their parent are returned
+  // from their own rows (`returnAccessoryUnits`), never swept back with the parent.
+  const parentContainerOf = parentContainerResolver(await lineUnits(ctx, args.parentLineItemId));
   const assetsTouched: string[] = [];
   for (const child of children) {
     const units = (await lineUnits(ctx, child.id)).filter(
       (u) =>
         u.status === "CHECKED_OUT" &&
-        (returnedAssetId ? u.parentUnitAssetId === returnedAssetId : true),
+        (returnedAssetId ? u.parentUnitAssetId === returnedAssetId : true) &&
+        !isRelocatedAccessoryUnit(u, parentContainerOf(u)),
     );
-    for (const u of units) {
-      await ctx.db.patch(u._id, {
-        status: "RETURNED",
-        returnedAt: now,
-        returnedById: args.userId,
-        returnCondition: args.returnCondition,
-        ...(u.bulkAssetId ? { returnedQuantity: u.quantity ?? 0 } : {}),
-        updatedAt: now,
-      });
-      if (u.assetId) {
-        await setAssetStatus(ctx, u.assetId, assetStatus, args.defaultLocationId);
-        assetsTouched.push(u.assetId);
-      }
-    }
+    assetsTouched.push(
+      ...(await returnAccessoryUnitRows(ctx, units, {
+        returnCondition: args.returnCondition, userId: args.userId, defaultLocationId: args.defaultLocationId, now,
+      })),
+    );
     await syncLineItemRollup(ctx, child.id);
   }
   return { assetsTouched };
+}
+
+type AccessoryUnitRow = Awaited<ReturnType<typeof lineUnits>>[number];
+
+/** Flip deployed accessory unit rows to RETURNED and restore their assets —
+ *  the body shared by the parent cascade and the unit-level return. */
+async function returnAccessoryUnitRows(
+  ctx: Ctx,
+  units: AccessoryUnitRow[],
+  args: { returnCondition: "GOOD" | "DAMAGED" | "MISSING"; userId: string; defaultLocationId: string | null; now: number },
+): Promise<string[]> {
+  const assetStatus = assetStatusFromReturnCondition(args.returnCondition);
+  const assetsTouched: string[] = [];
+  for (const u of units) {
+    await ctx.db.patch(u._id, {
+      status: "RETURNED",
+      returnedAt: args.now,
+      returnedById: args.userId,
+      returnCondition: args.returnCondition,
+      ...(u.bulkAssetId ? { returnedQuantity: u.quantity ?? 0 } : {}),
+      updatedAt: args.now,
+    });
+    if (u.assetId) {
+      await setAssetStatus(ctx, u.assetId, assetStatus, args.defaultLocationId);
+      assetsTouched.push(u.assetId);
+    }
+  }
+  return assetsTouched;
+}
+
+/**
+ * Return specific accessory units from THEIR OWN row (a relocated accessory —
+ * see `accessoryRelocation.ts`). Every id must be a CHECKED_OUT unit of an
+ * ACCESSORY child line on `projectId`; anything else is rejected before any
+ * write so the batch is all-or-nothing. Returns the child lines touched.
+ */
+export async function returnAccessoryUnits(
+  ctx: Ctx,
+  args: {
+    organizationId: string;
+    projectId: string;
+    unitIds: string[];
+    returnCondition: "GOOD" | "DAMAGED" | "MISSING";
+    userId: string;
+    defaultLocationId: string | null;
+    now: number;
+  },
+): Promise<{ lineIds: string[]; assetsTouched: string[] }> {
+  const byLine = await loadAccessoryUnits(ctx, args, (u) => u.status === "CHECKED_OUT", "is not deployed, so it can't be returned");
+  const assetsTouched: string[] = [];
+  for (const [lineId, units] of byLine) {
+    assetsTouched.push(...(await returnAccessoryUnitRows(ctx, units, args)));
+    await syncLineItemRollup(ctx, lineId);
+  }
+  return { lineIds: [...byLine.keys()], assetsTouched };
+}
+
+/**
+ * Load + validate accessory units by id, grouped by child line. Rejects a unit
+ * that is missing, in another org/project, not on an ACCESSORY child line, or
+ * for which `isEligible` is false.
+ */
+export async function loadAccessoryUnits(
+  ctx: Ctx,
+  args: { organizationId: string; projectId: string; unitIds: string[] },
+  isEligible: (u: AccessoryUnitRow) => boolean,
+  ineligibleReason: string,
+): Promise<Map<string, AccessoryUnitRow[]>> {
+  const byLine = new Map<string, AccessoryUnitRow[]>();
+  const lineOk = new Map<string, boolean>();
+  for (const unitId of new Set(args.unitIds)) {
+    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).first();
+    if (!u || u.organizationId !== args.organizationId) throw new ConvexError("Accessory unit not found");
+    if (!lineOk.has(u.lineItemId)) lineOk.set(u.lineItemId, await isAccessoryLineOnProject(ctx, args, u.lineItemId));
+    if (!lineOk.get(u.lineItemId)) throw new ConvexError("Accessory unit not found on this project");
+    if (!isEligible(u)) throw new ConvexError(`An accessory unit ${ineligibleReason}`);
+    byLine.set(u.lineItemId, [...(byLine.get(u.lineItemId) ?? []), u]);
+  }
+  return byLine;
+}
+
+async function isAccessoryLineOnProject(
+  ctx: Ctx,
+  args: { organizationId: string; projectId: string },
+  lineItemId: string,
+): Promise<boolean> {
+  const line = await lineDocByCuid(ctx, lineItemId);
+  return !!line && line.organizationId === args.organizationId && line.projectId === args.projectId && line.childKind === "ACCESSORY";
 }
 
 type AccessoryProfile = {

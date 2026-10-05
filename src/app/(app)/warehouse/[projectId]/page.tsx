@@ -33,7 +33,7 @@ import {
   lookupAssetForScan,
   getAvailableAssetsForModels,
 } from "@/server/warehouse";
-import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
+import { useWarehouseWrites, type AccessoryStageOp } from "@/hooks/use-warehouse-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
 import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -98,7 +98,8 @@ import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { ContainerRail } from "@/components/warehouse/container-rail";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
-import { AccessoryMoveContext } from "@/components/warehouse/kit-child-rows";
+import { AccessorySelectionContext } from "@/components/warehouse/kit-child-rows";
+import { isRelocatedLineId, relocateAccessories, takeAccessorySelection } from "@/components/warehouse/relocate-accessories";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
 import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
@@ -124,7 +125,6 @@ import {
   buildContainerGroups,
   resolveSelectionToUnitIds,
   isMoveableAtDeployStage,
-  resolveAccessoryUnitIds,
   isMoveableAtReturnStage,
   isMoveableAtDeprepStage,
   keysForGroupEntries,
@@ -201,6 +201,11 @@ export default function WarehouseProjectPageWrapper({
 }
 
 /** The model/asset-tag half of a scan-prep queue entry. */
+const ACCESSORY_STAGE_DONE: Record<AccessoryStageOp, string> = {
+  DEPLOY: "Deployed", RETURN: "Returned", DEPREP: "De-prepped",
+  UNDEPLOY: "Moved back to Prepped:", UNRETURN: "Moved back to Deployed:", UNDEPREP: "Re-packed",
+};
+
 function scanQueueIdentity(li: LineItem | undefined) {
   return {
     modelId: li?.modelId ?? undefined,
@@ -867,17 +872,47 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
+  // An accessory is a normal asset on the job that may nest under a parent, so
+  // it is actioned on its own — before or after the parent, in a different
+  // container, or with it. Selected accessories (relocated rows and nested
+  // accessory rows) go through the unit-level stage mutation; everything else in
+  // the selection is returned for the line / kit paths.
+  const stageAccessories = (
+    unitIds: string[],
+    to: AccessoryStageOp,
+    returnCondition?: "GOOD" | "DAMAGED" | "MISSING",
+  ) => {
+    if (unitIds.length === 0) return;
+    warehouseWrites
+      .stageAccessoryUnits(projectId, unitIds, to, returnCondition)
+      .then(() => toast.success(`${ACCESSORY_STAGE_DONE[to]} ${unitIds.length} accessor${unitIds.length === 1 ? "y" : "ies"}`))
+      .catch((e) => showError(e));
+  };
+  const takeAccessoryStage = (
+    keys: Iterable<string>,
+    to: AccessoryStageOp,
+    isRelevant: (u: NonNullable<LineItem["units"]>[number]) => boolean,
+    returnCondition?: "GOOD" | "DAMAGED" | "MISSING",
+  ): string[] => {
+    const { rest, unitIds } = takeAccessorySelection(keys, placed, isRelevant);
+    stageAccessories(unitIds, to, returnCondition);
+    return rest;
+  };
+
   // Parse a selection set (bulk `id:idx` keys, plain line ids, kit parents) into
   // per-line quantities + kit ids, then fire the given item/kit reverse mutations.
   const moveBackSelection = (
     ids: Set<string>,
+    accessoryOp: "UNDEPLOY" | "UNRETURN",
+    isRelevant: (u: NonNullable<LineItem["units"]>[number]) => boolean,
     fireItems: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) => void,
     fireKits: (kitIds: string[]) => void,
   ) => {
     if (ids.size === 0) return;
+    const rest = takeAccessoryStage(ids, accessoryOp, isRelevant);
     const qtyMap = new Map<string, number>();
     const kitIds = new Set<string>();
-    for (const key of ids) {
+    for (const key of rest) {
       const lineItemId = key.includes(":") ? key.split(":")[0] : key;
       const li = lineItems.find((l) => l.id === lineItemId);
       if (li && li.kitId && !li.isKitChild) {
@@ -898,12 +933,12 @@ function WarehouseProjectPage({
 
   // Deployed → Prepped
   const handleUndeploy = (ids: Set<string>) => {
-    moveBackSelection(ids, (items) => undeployMutation.mutate(items), (kitIds) => undeployKitsMutation.mutate(kitIds));
+    moveBackSelection(ids, "UNDEPLOY", isMoveableAtReturnStage, (items) => undeployMutation.mutate(items), (kitIds) => undeployKitsMutation.mutate(kitIds));
     setSelectedIn(new Set());
   };
   // Returned → Deployed
   const handleUnreturn = (ids: Set<string>) => {
-    moveBackSelection(ids, (items) => unreturnMutation.mutate(items), (kitIds) => unreturnKitsMutation.mutate(kitIds));
+    moveBackSelection(ids, "UNRETURN", isMoveableAtDeprepStage, (items) => unreturnMutation.mutate(items), (kitIds) => unreturnKitsMutation.mutate(kitIds));
     setSelectedDeprep(new Set());
   };
 
@@ -1595,6 +1630,10 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
+  // Accessory units packed into a different container than their parent are
+  // lifted out into their own lines (relocate-accessories.ts) so every stage
+  // list, container section and Move-to… sees them where they physically are.
+  const placed = relocateAccessories(lineItems);
   // NEW_STOCK sale items — a separate, SKU-picked checklist alongside the
   // asset-tag/scan equipment tree above (2026-08 warehouse sales-prep split).
   const saleItemsToPrep = project ? (project.saleItemsToPrep || []) as SaleItemToPrep[] : [];
@@ -1672,7 +1711,7 @@ function WarehouseProjectPage({
 
   // Filter out kit children and container line items — they show under their parent row / auto-managed.
   // Sub-hire children (isKitChild + isSubhire) pass through as regular individual items.
-  const equipmentItems = lineItems.filter((item) => {
+  const equipmentItems = placed.items.filter((item) => {
     if (item.type !== "EQUIPMENT") return false;
     if (item.isContainerLineItem) return false;
     if (item.isKitChild && isInternalStockLine(item.subHireId)) return false; // real kit children stay hidden
@@ -1746,11 +1785,18 @@ function WarehouseProjectPage({
   const [moveIsPending, setMoveIsPending] = useState(false);
 
   const moveDialogUnitIds = useMemo(() => {
-    if (moveDialogFor === "deploy") return resolveSelectionToUnitIds(selectedOut, lineItems, isMoveableAtDeployStage);
-    if (moveDialogFor === "deprep") return resolveSelectionToUnitIds(selectedDeprep, lineItems, isMoveableAtDeprepStage);
-    if (moveDialogFor === "return") return resolveSelectionToUnitIds(selectedIn, lineItems, isMoveableAtReturnStage);
+    // Accessory keys (relocated rows, nested accessory rows) name their own
+    // units; everything else resolves against `placed.items`, so a parent moves
+    // only the accessories still under it.
+    const resolve = (keys: Set<string>, isRelevant: Parameters<typeof resolveSelectionToUnitIds>[2]) => {
+      const { rest, unitIds } = takeAccessorySelection(keys, placed, isRelevant);
+      return [...new Set([...unitIds, ...resolveSelectionToUnitIds(new Set(rest), placed.items, isRelevant)])];
+    };
+    if (moveDialogFor === "deploy") return resolve(selectedOut, isMoveableAtDeployStage);
+    if (moveDialogFor === "deprep") return resolve(selectedDeprep, isMoveableAtDeprepStage);
+    if (moveDialogFor === "return") return resolve(selectedIn, isMoveableAtReturnStage);
     return [];
-  }, [moveDialogFor, selectedOut, selectedDeprep, selectedIn, lineItems]);
+  }, [moveDialogFor, selectedOut, selectedDeprep, selectedIn, placed.items]);
 
   const handleConfirmMove = async (toContainerId: string | null) => {
     const unitIds = moveDialogUnitIds;
@@ -1764,29 +1810,6 @@ function WarehouseProjectPage({
       else if (forTab === "deprep") setSelectedDeprep(new Set());
       else setSelectedIn(new Set());
       setMoveDialogFor(null);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to move");
-    } finally {
-      setMoveIsPending(false);
-    }
-  };
-
-  // Move ONE accessory (all or some of its units) without its parent.
-  const [accessoryToMove, setAccessoryToMove] = useState<LineItem | null>(null);
-  const accessoryUnitIds = useMemo(
-    () => (accessoryToMove ? resolveAccessoryUnitIds(accessoryToMove) : []),
-    [accessoryToMove],
-  );
-
-  const handleConfirmAccessoryMove = async (toContainerId: string | null, quantity: number) => {
-    if (!accessoryToMove) return;
-    const unitIds = resolveAccessoryUnitIds(accessoryToMove, quantity);
-    if (unitIds.length === 0) return;
-    setMoveIsPending(true);
-    try {
-      const { moved } = await containerWrites.moveUnits(unitIds, toContainerId);
-      toast.success(`Moved ${moved} item${moved === 1 ? "" : "s"}`);
-      setAccessoryToMove(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to move");
     } finally {
@@ -2229,11 +2252,13 @@ function WarehouseProjectPage({
   }
 
   const handleCheckOutSelected = async () => {
+    const outKeys = takeAccessoryStage(selectedOut, "DEPLOY", isMoveableAtDeployStage);
+    if (outKeys.length !== selectedOut.size) setSelectedOut(new Set(outKeys));
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
     const kitLineItemIds: string[] = [];
 
-    for (const key of selectedOut) {
+    for (const key of outKeys) {
       if (key.includes(":")) {
         const lineItemId = key.split(":")[0];
         bulkQtyMap.set(lineItemId, (bulkQtyMap.get(lineItemId) || 0) + 1);
@@ -2330,9 +2355,12 @@ function WarehouseProjectPage({
   // otherwise deprep straight back into inventory. Drives the De-prep tab.
   const handleDeprep = (ids: Set<string>) => {
     if (ids.size === 0) return;
+    // "Move to Pick" (packed and waiting) and "Deprep" (returned) share this
+    // handler; the server's DEPREP does the right one for each unit's own stage.
+    const rest = takeAccessoryStage(ids, "DEPREP", (u) => isMoveableAtDeployStage(u) || isMoveableAtDeprepStage(u));
     const bulkDeprepMap = new Map<string, number>();
     const directIds: string[] = [];
-    ids.forEach((id) => {
+    rest.forEach((id) => {
       if (id.includes(":")) {
         const lineItemId = id.split(":")[0];
         bulkDeprepMap.set(lineItemId, (bulkDeprepMap.get(lineItemId) || 0) + 1);
@@ -2604,10 +2632,12 @@ function WarehouseProjectPage({
   };
 
   const handleReturnSelected = () => {
+    const inKeys = takeAccessoryStage(selectedIn, "RETURN", isMoveableAtReturnStage, returnCondition as "GOOD" | "DAMAGED" | "MISSING");
+    if (inKeys.length !== selectedIn.size) setSelectedIn(new Set(inKeys));
     const qtyMap = new Map<string, number>();
     const kitIds: string[] = [];
 
-    for (const key of selectedIn) {
+    for (const key of inKeys) {
       const lineItemId = key.includes(":") ? key.split(":")[0] : key;
       const li = lineItems.find((l) => l.id === lineItemId);
       if (li && li.kitId && !li.isKitChild) {
@@ -2926,7 +2956,6 @@ function WarehouseProjectPage({
         </div>
       </FadeIn>
 
-      <AccessoryMoveContext.Provider value={setAccessoryToMove}>
       <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="pick-prep">
@@ -3007,21 +3036,12 @@ function WarehouseProjectPage({
           onOpenChange={(open) => !open && setMoveDialogFor(null)}
           unitCount={moveDialogUnitIds.length}
           containers={realContainers}
-          onConfirm={(id) => handleConfirmMove(id)}
+          onConfirm={handleConfirmMove}
           pending={moveIsPending}
-        />
-        <MoveToContainerDialog
-          open={accessoryToMove !== null}
-          onOpenChange={(open) => !open && setAccessoryToMove(null)}
-          unitCount={accessoryUnitIds.length}
-          containers={realContainers}
-          onConfirm={handleConfirmAccessoryMove}
-          pending={moveIsPending}
-          allowPartial
-          title={accessoryToMove?.model?.name || accessoryToMove?.description || "accessory"}
         />
 
         {/* Deploy Tab */}
+        <AccessorySelectionContext.Provider value={{ selected: selectedOut, toggle: (key) => toggleSelection(selectedOut, setSelectedOut, key) }}>
         <DeployTab
           deployScanInputRef={deployScanInputRef}
           deployScanValue={deployScanValue}
@@ -3053,8 +3073,10 @@ function WarehouseProjectPage({
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
         />
+        </AccessorySelectionContext.Provider>
 
         {/* De-prep Tab — returned gear, run return checks, back to inventory */}
+        <AccessorySelectionContext.Provider value={{ selected: selectedDeprep, toggle: (key) => toggleSelection(selectedDeprep, setSelectedDeprep, key) }}>
         <DeployTab
           mode="deprep"
           deployScanInputRef={deployScanInputRef}
@@ -3089,8 +3111,10 @@ function WarehouseProjectPage({
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
         />
+        </AccessorySelectionContext.Provider>
 
         {/* Return Tab */}
+        <AccessorySelectionContext.Provider value={{ selected: selectedIn, toggle: (key) => toggleSelection(selectedIn, setSelectedIn, key) }}>
         <ReturnTab
           returnScanInputRef={returnScanInputRef}
           returnScanValue={returnScanValue}
@@ -3124,6 +3148,7 @@ function WarehouseProjectPage({
           toggleAll={toggleAll}
           renderGroupHeader={renderGroupHeader}
         />
+        </AccessorySelectionContext.Provider>
 
         {/* De-prepped Tab — terminal stage, read-only: gear back in inventory */}
         <TabsContent value="deprepped">
@@ -3170,7 +3195,9 @@ function WarehouseProjectPage({
                           <Button
                             variant="line"
                             size="sm"
-                            onClick={() => undeprepMutation.mutate(item.id)}
+                            onClick={() => (isRelocatedLineId(item.id)
+                              ? stageAccessories((item.units ?? []).map((u) => u.id), "UNDEPREP")
+                              : undeprepMutation.mutate(item.id))}
                             disabled={undeprepMutation.isPending}
                           >
                             <Undo2 className="mr-1.5 h-4 w-4" />
@@ -3194,7 +3221,6 @@ function WarehouseProjectPage({
           <CloseOutTab projectId={projectId} onChanged={refetchProject} />
         </TabsContent>
       </Tabs>
-      </AccessoryMoveContext.Provider>
 
       {/* Kit Verification Confirmation */}
       {kitConfirm && (

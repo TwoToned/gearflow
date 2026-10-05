@@ -22,14 +22,8 @@ export interface MoveToContainerDialogProps {
    *  `resolveSelectionToUnitIds`) — 0 disables Move. */
   unitCount: number;
   containers: ContainerRailItem[];
-  /** Called with the chosen container (null = Loose) and, when `unitCount` > 1
-   *  and `allowPartial` is set, how many of the units to move. */
-  onConfirm: (containerId: string | null, quantity: number) => void;
+  onConfirm: (containerId: string | null) => void;
   pending?: boolean;
-  /** Let the operator move only some of the units (accessory moves). */
-  allowPartial?: boolean;
-  /** Heading override, e.g. the accessory's name. */
-  title?: string;
 }
 
 function ContainerOption({
@@ -95,48 +89,24 @@ export function MoveToContainerDialog({
   containers,
   onConfirm,
   pending,
-  allowPartial,
-  title,
 }: MoveToContainerDialogProps) {
   const [targetId, setTargetId] = useState<string | null | undefined>(undefined);
-  const [qty, setQty] = useState(unitCount);
 
   useEffect(() => {
-    if (open) {
-      setTargetId(undefined);
-      setQty(unitCount);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when (re)opened
+    if (open) setTargetId(undefined);
   }, [open]);
-
-  const moveQty = allowPartial ? Math.min(Math.max(qty, 1), unitCount) : unitCount;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{title ? `Move ${title}` : "Move to…"}</DialogTitle>
+          <DialogTitle>Move to…</DialogTitle>
           <DialogDescription>
             {unitCount === 0
               ? "Nothing in your selection can be moved right now."
-              : `Move ${moveQty} item${moveQty === 1 ? "" : "s"} into a different container.`}
+              : `Move ${unitCount} item${unitCount === 1 ? "" : "s"} into a different container.`}
           </DialogDescription>
         </DialogHeader>
-
-        {allowPartial && unitCount > 1 && (
-          <label className="flex items-center justify-between gap-3 text-ui-text">
-            How many (of {unitCount})?
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={unitCount}
-              value={qty}
-              onChange={(e) => setQty(Number(e.target.value) || 1)}
-              className={cn("h-9 w-20 rounded-[var(--r)] border border-line bg-card px-2 text-right tabular-nums", focusRing)}
-            />
-          </label>
-        )}
 
         <div role="radiogroup" aria-label="Move to container" className="max-h-64 space-y-1.5 overflow-y-auto">
           <ContainerOption label="Loose" dashed selected={targetId === null} onClick={() => setTargetId(null)} />
@@ -157,7 +127,7 @@ export function MoveToContainerDialog({
           </Button>
           <Button
             variant="primary"
-            onClick={() => targetId !== undefined && onConfirm(targetId, moveQty)}
+            onClick={() => targetId !== undefined && onConfirm(targetId)}
             disabled={pending || unitCount === 0 || targetId === undefined}
             loading={pending}
           >

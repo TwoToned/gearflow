@@ -383,3 +383,7 @@ Phase 5 (narrow + retire the legacy `prepContainer` string field and
 non-stable label-keyed ops, #1302). Phase 6 (container labels/printing, a
 bulk-tub picker, client PO reference) is explicitly deferred per the design
 doc's own decisions (D2, Q11, Q14) — out of scope for "feature complete" here.
+
+## Custom / untagged qty-1 lines in a container
+
+Container membership is per-unit (`projectLineItemUnits.containerId`). A qty-1 custom item has no asset, so `prepUnit` used to patch only the legacy `prepContainer` label and create no unit. The Deploy/Return tabs then bucketed it as `label:…` next to its neighbours' `id:…` (one case rendered as two sections), and the container label PDF treated it as Loose. `packSingleGenericIntoContainer` (`convex/lib/fulfillment.ts`) now backs it with one qty-1 unit carrying `containerId` whenever a real container is resolved. Regression: `convex/prepContainer.repro.test.ts`.

@@ -129,6 +129,31 @@ describe("prepContainer unit/line split (defect #1, §1.5) — fixed", () => {
     expect((await containerById(t, "c1"))?.updatedAt).toBeDefined();
   });
 
+  test("a qty-1 custom item (no asset) packed into a container gets a unit carrying containerId", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "custom1", organizationId: ORG, projectId: "p1", versionId: V1, lineageId: "custom1", type: "EQUIPMENT",
+        isCustomItem: true, description: "16 Way Battery Charger",
+        quantity: 1, sortOrder: 2, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PENDING",
+        createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1",
+      items: [{ lineItemId: "custom1", containerId: "c1" }],
+      now: NOW,
+    });
+
+    // Without a unit row the warehouse tabs bucket it by label (a 2nd "C1"
+    // section) and the container label PDF never lists it.
+    const unit = await unitByLine(t, "custom1");
+    expect(unit?.containerId).toBe("c1");
+    expect((await lineById(t, "custom1"))?.prepStatus).toBe("PACKED");
+  });
+
   test("a content unit's containerId defaults from the line's plannedContainerId when prep gives no signal at all", async () => {
     const t = makeT();
     await seed(t);

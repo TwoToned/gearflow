@@ -1110,6 +1110,7 @@ export const stageAccessoryUnits = mutation({
     projectId: v.string(),
     unitIds: v.array(v.string()),
     to: v.union(v.literal("DEPLOY"), v.literal("RETURN"), v.literal("DEPREP")),
+    returnCondition: v.optional(returnCond), // RETURN only; defaults to GOOD
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -1127,7 +1128,7 @@ export const stageAccessoryUnits = mutation({
 
     const res = await stageAccessoryUnitsCore(ctx, {
       organizationId: a.orgId, projectId: a.projectId, userId: actor.userId,
-      unitIds: a.unitIds, to: a.to, now: a.now,
+      unitIds: a.unitIds, to: a.to, returnCondition: a.returnCondition, now: a.now,
     });
 
     const verb = { DEPLOY: "Deployed", RETURN: "Returned", DEPREP: "De-prepped" }[a.to];

@@ -995,6 +995,8 @@ export type StageAccessoryUnitsArgs = {
   userId: string;
   unitIds: string[];
   to: "DEPLOY" | "RETURN" | "DEPREP";
+  /** RETURN only — defaults to GOOD, like the Return tab's selector. */
+  returnCondition?: "GOOD" | "DAMAGED" | "MISSING";
   now: number;
 };
 
@@ -1021,7 +1023,7 @@ export async function stageAccessoryUnitsCore(ctx: Ctx, a: StageAccessoryUnitsAr
     lineIds = [...byLine.keys()];
   } else if (a.to === "RETURN") {
     const res = await returnAccessoryUnits(ctx, {
-      ...scope, returnCondition: "GOOD", userId: a.userId,
+      ...scope, returnCondition: a.returnCondition ?? "GOOD", userId: a.userId,
       defaultLocationId: await defaultLocationId(ctx, a.organizationId), now: a.now,
     });
     lineIds = res.lineIds;
@@ -1045,6 +1047,7 @@ export const stageAccessoryUnits = mutation({
     organizationId: v.string(), projectId: v.string(), userId: v.string(),
     unitIds: v.array(v.string()),
     to: v.union(v.literal("DEPLOY"), v.literal("RETURN"), v.literal("DEPREP")),
+    returnCondition: v.optional(v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING"))),
     now: v.number(),
   },
   handler: async (ctx, a) => {

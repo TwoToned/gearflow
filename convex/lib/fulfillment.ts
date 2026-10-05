@@ -470,20 +470,21 @@ export async function loadAccessoryUnits(
   for (const unitId of new Set(args.unitIds)) {
     const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).first();
     if (!u || u.organizationId !== args.organizationId) throw new ConvexError("Accessory unit not found");
-    if (!lineOk.has(u.lineItemId)) {
-      const line = await lineDocByCuid(ctx, u.lineItemId);
-      lineOk.set(
-        u.lineItemId,
-        !!line && line.organizationId === args.organizationId && line.projectId === args.projectId && line.childKind === "ACCESSORY",
-      );
-    }
+    if (!lineOk.has(u.lineItemId)) lineOk.set(u.lineItemId, await isAccessoryLineOnProject(ctx, args, u.lineItemId));
     if (!lineOk.get(u.lineItemId)) throw new ConvexError("Accessory unit not found on this project");
     if (!isEligible(u)) throw new ConvexError(`An accessory unit ${ineligibleReason}`);
-    const rows = byLine.get(u.lineItemId) ?? [];
-    rows.push(u);
-    byLine.set(u.lineItemId, rows);
+    byLine.set(u.lineItemId, [...(byLine.get(u.lineItemId) ?? []), u]);
   }
   return byLine;
+}
+
+async function isAccessoryLineOnProject(
+  ctx: Ctx,
+  args: { organizationId: string; projectId: string },
+  lineItemId: string,
+): Promise<boolean> {
+  const line = await lineDocByCuid(ctx, lineItemId);
+  return !!line && line.organizationId === args.organizationId && line.projectId === args.projectId && line.childKind === "ACCESSORY";
 }
 
 type AccessoryProfile = {

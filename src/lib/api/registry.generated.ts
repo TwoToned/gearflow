@@ -60017,6 +60017,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "returnCondition",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "to",
         "optional": false,
         "type": "union"
@@ -60033,7 +60038,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "ad0074f906959c4c",
+    "argsSha": "ae03ffbbccbacf91",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -61500,6 +61505,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "returnCondition",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "to",
         "optional": false,
         "type": "union"
@@ -61511,7 +61521,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b8164bcb8a4ed975",
+    "argsSha": "a9d5ba742879a9e5",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

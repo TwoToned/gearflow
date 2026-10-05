@@ -299,9 +299,7 @@ export async function completeCheckAndDeprepLineCore(
   const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
   // Accessories packed into a different container than their parent are
   // de-prepped from their own rows (warehouseOps.stageAccessoryUnits), not here.
-  const parentContainerOf = parentContainerResolver(
-    await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect(),
-  );
+  const parentContainerOf = parentContainerResolver(await lineUnits(ctx, a.lineItemId));
   for (const child of accChildren) {
     let include = true;
     if (resolvedAssetId) {

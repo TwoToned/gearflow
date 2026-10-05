@@ -171,6 +171,30 @@ function parentAlreadyPrepped(item: LineItem): boolean {
   return item.prepStatus === "PACKED" || item.status === "CHECKED_OUT" || item.status === "RETURNED";
 }
 
+/** One accessory the operator is asked to confirm when a parent is scanned for prep. */
+export interface ScanAccessoryOption {
+  id: string;
+  name: string;
+  optional: boolean;
+  /** Identities `includeAccessoryIds` narrows by (assetId / bulkAssetId). */
+  assetIds: string[];
+}
+
+/** Accessories of a scanned parent that still need packing (not cancelled, out,
+ *  returned or already packed). Empty for bulk parents — a partial-quantity
+ *  accessory prompt isn't built, so they keep the roll-up-everything behaviour. */
+export function scanAccessoryOptions(item: LineItem): ScanAccessoryOption[] {
+  if (!isAccessoryParent(item) || isBulkItem(item)) return [];
+  return accessoryChildrenOf(item)
+    .filter((c) => c.status !== "CANCELLED" && c.status !== "CHECKED_OUT" && c.status !== "RETURNED" && c.prepStatus !== "PACKED")
+    .map((c) => ({
+      id: c.id,
+      name: c.model?.name || c.description || "Accessory",
+      optional: c.accessoryInclusion === "OPTIONAL",
+      assetIds: accessoryAssetIds([c]),
+    }));
+}
+
 /** Which Pick/Prep actions the current selection allows. Normal Prep (with or
  *  without accessories) would re-prep an already-packed parent, so it is off as
  *  soon as one is selected; "accessories only" needs EVERY selection to be one. */

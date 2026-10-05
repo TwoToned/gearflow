@@ -2,6 +2,7 @@ import { describe, test, expect } from "vitest";
 import {
   isAccessoryParent,
   prepActionAvailability,
+  scanAccessoryOptions,
   accessoryChildrenOf,
   isInPickPrepStage,
   isInPreppedStage,
@@ -421,5 +422,17 @@ describe("prepActionAvailability — Pick/Prep button gating", () => {
   });
   test("nothing selected → neither", () => {
     expect(prepActionAvailability([], [plain])).toEqual({ canPrep: false, canPrepAccessoriesOnly: false });
+  });
+});
+
+describe("scanAccessoryOptions — accessories to confirm on a prep scan", () => {
+  const acc = (id: string, over: Partial<LineItem> = {}) =>
+    ({ id, isKitChild: true, childKind: "ACCESSORY" as const, parentLineItemId: "p1", prepStatus: "PENDING" as const, ...over });
+  test("lists unpacked accessories only", () => {
+    const parent = line({ id: "p1", childLineItems: [line(acc("a1")), line(acc("a2", { prepStatus: "PACKED" })), line(acc("a3", { status: "CANCELLED" }))] });
+    expect(scanAccessoryOptions(parent).map((o) => o.id)).toEqual(["a1"]);
+  });
+  test("no accessories → empty", () => {
+    expect(scanAccessoryOptions(line({ id: "x" }))).toEqual([]);
   });
 });

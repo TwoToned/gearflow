@@ -83,6 +83,13 @@ import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
+import {
+  ScanAccessoryDialog,
+  ScanCheckModeDialog,
+  type ScanAccessoryDecision,
+  type ScanAccessoryPromptData,
+  type ScanCheckMode,
+} from "@/components/warehouse/scan-prep-dialogs";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { ContainerRail } from "@/components/warehouse/container-rail";
@@ -101,6 +108,7 @@ import {
   isKitParent,
   isAccessoryParent,
   prepActionAvailability,
+  scanAccessoryOptions,
   accessoryChildrenOf,
   collectAllVerifiableIds,
   isInPickPrepStage,
@@ -395,6 +403,18 @@ function WarehouseProjectPage({
   const [checkQueueDirectItems, setCheckQueueDirectItems] = useState<
     Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string; includeAccessoryIds?: string[] }>
   >([]);
+
+  // --- Scan-prep options ---
+  // Whether a scan that needs a check form opens it now ("inline") or is held
+  // until the operator finishes scanning ("batch"). "ask" = not chosen yet.
+  const [scanCheckMode, setScanCheckMode] = useState<ScanCheckMode>("ask");
+  type ScanPrepTarget = { lineItemId: string; assetId?: string | null; assetName?: string | null };
+  type ScanPrepOpts = { includeAccessoryIds?: string[]; accessoriesOnly?: boolean };
+  const [scanAccessoryPrompt, setScanAccessoryPrompt] = useState<{ target: ScanPrepTarget; data: ScanAccessoryPromptData } | null>(null);
+  const [scanModePrompt, setScanModePrompt] = useState<{ target: ScanPrepTarget; opts: ScanPrepOpts; name: string } | null>(null);
+  // Scans held for "bulk after scanning": needsCheck entries become the check
+  // queue, the rest are prepped in one batch call when the operator finishes.
+  const [scanBatch, setScanBatch] = useState<Array<CheckQueueItem & { needsCheck: boolean }>>([]);
 
   // Start processing a check queue — opens the form for the first item
   function startCheckQueue(queue: CheckQueueItem[], directItems: Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string; includeAccessoryIds?: string[] }> = []) {
@@ -868,6 +888,136 @@ function WarehouseProjectPage({
     onError: (e) => showError(e),
   });
 
+  // --- Scan prep routing ---
+  // 1) a parent with accessories on the job asks which ones are with it,
+  // 2) then the scan is prepped now, run through the check form, or held for the
+  //    "bulk after scanning" batch, per `scanCheckMode`.
+  function scanFocus() {
+    setScanValue("");
+    scanInputRef.current?.focus();
+  }
+
+  function routeScanPrep(target: ScanPrepTarget) {
+    const li = lineItems.find((l) => l.id === target.lineItemId);
+    if (target.assetId && scanBatch.some((b) => b.lineItemId === target.lineItemId && b.assetId === target.assetId)) {
+      scanFeedback.play("exception", { label: target.assetName || "Asset", outcome: "Already scanned" });
+      toast.info(`${target.assetName || "Asset"} is already in this scan batch`);
+      scanFocus();
+      return;
+    }
+    if (li) {
+      const options = scanAccessoryOptions(li);
+      if (options.length > 0) {
+        setScanAccessoryPrompt({
+          target,
+          data: { parentName: modelDisplayName(li), parentPrepped: prepActionAvailability([li.id], [li]).canPrepAccessoriesOnly, options },
+        });
+        return;
+      }
+    }
+    void proceedScanPrep(target, {});
+  }
+
+  function decideScanAccessories(prompt: { target: ScanPrepTarget }, d: ScanAccessoryDecision) {
+    setScanAccessoryPrompt(null);
+    if (d.kind === "without") void proceedScanPrep(prompt.target, { includeAccessoryIds: [] });
+    else if (d.kind === "with") void proceedScanPrep(prompt.target, { includeAccessoryIds: d.accessoryIds });
+    else void proceedScanPrep(prompt.target, { includeAccessoryIds: d.accessoryIds, accessoriesOnly: true });
+  }
+
+  async function proceedScanPrep(target: ScanPrepTarget, opts: ScanPrepOpts, modeOverride?: ScanCheckMode) {
+    const li = lineItems.find((l) => l.id === target.lineItemId);
+    const name = target.assetName || (li ? modelDisplayName(li) : "Asset");
+    try {
+      await ensureContainerIfNeeded();
+      if (opts.accessoriesOnly) {
+        await prepItemsBatch(projectId, [{
+          lineItemId: target.lineItemId,
+          assetId: target.assetId || undefined,
+          prepContainer: selectedContainer || null,
+          containerId: activeContainerId,
+          includeAccessoryIds: opts.includeAccessoryIds,
+          accessoriesOnly: true,
+        }]);
+        clearAccessoryVerification([target.lineItemId]);
+        scanFeedback.play("success", { label: name, outcome: "Accessories prepped" });
+        toast.success(`Accessories prepped: ${name}`);
+        scanFocus();
+        invalidate();
+        return;
+      }
+
+      const needsCheck = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) }) && !!li?.modelId;
+      const mode = modeOverride ?? scanCheckMode;
+      if (needsCheck && mode === "ask") {
+        setScanModePrompt({ target, opts, name });
+        return;
+      }
+
+      const queueItem: CheckQueueItem = {
+        context: "PREP",
+        modelId: li?.modelId ?? undefined,
+        assetTag: li?.asset?.assetTag || li?.bulkAsset?.assetTag || "",
+        assetName: name,
+        lineItemId: target.lineItemId,
+        assetId: target.assetId || li?.assetId || "",
+        bulkAssetId: li?.bulkAssetId || undefined,
+        ...(opts.includeAccessoryIds ? { includeAccessoryIds: opts.includeAccessoryIds } : {}),
+      };
+
+      if (mode === "batch") {
+        setScanBatch((prev) => [...prev, { ...queueItem, needsCheck }]);
+        scanFeedback.play("info", { label: name, outcome: needsCheck ? "Queued for checks" : "Queued" });
+        scanFocus();
+        return;
+      }
+
+      if (needsCheck) {
+        // Pull item first, then open the check form (prep flow)
+        pullItem(projectId, target.lineItemId).catch(() => {});
+        setCheckFormData(queueItem);
+        setCheckFormOpen(true);
+        scanFocus();
+        return;
+      }
+
+      // No check items — prep directly (set prepStatus=PACKED, no deploy)
+      await prepItemDirect(projectId, target.lineItemId, target.assetId || undefined, undefined, selectedContainer || null, opts.includeAccessoryIds, activeContainerId);
+      scanFeedback.play("success", { label: name, outcome: "Prepped" });
+      toast.success(`Prepped: ${name}`);
+      scanFocus();
+      invalidate();
+    } catch (e) {
+      scanFeedback.play("error", { label: name, outcome: e instanceof Error ? e.message : "Failed to prep" });
+      showError(e);
+    }
+  }
+
+  // "Bulk after scanning" — run every held check, then prep the no-check scans.
+  function finishScanBatch() {
+    if (scanBatch.length === 0) return;
+    const queue = scanBatch.filter((b) => b.needsCheck).map(({ needsCheck: _n, ...q }) => q);
+    const direct = scanBatch.filter((b) => !b.needsCheck);
+    setScanBatch([]);
+    if (queue.length > 0) {
+      startCheckQueue(queue, direct.map((b) => ({ lineItemId: b.lineItemId, assetId: b.assetId || undefined, includeAccessoryIds: b.includeAccessoryIds })));
+      return;
+    }
+    prepItemsBatch(projectId, direct.map((b) => ({
+      lineItemId: b.lineItemId,
+      assetId: b.assetId || undefined,
+      prepContainer: selectedContainer || null,
+      containerId: activeContainerId,
+      includeAccessoryIds: b.includeAccessoryIds,
+    })))
+      .then(() => {
+        clearAccessoryVerification(direct.map((b) => b.lineItemId));
+        toast.success(`Prepped ${direct.length} item${direct.length === 1 ? "" : "s"}`);
+        invalidate();
+      })
+      .catch((e) => showError(e, { fallbackTitle: "Prep failed" }));
+  }
+
   // --- Scan mutations ---
   const scanMutation = useServerMutation({
     mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
@@ -973,46 +1123,7 @@ function WarehouseProjectPage({
       }
 
       if (result.found && result.lineItemId) {
-        // Ensure container asset is on project before prepping
-        await ensureContainerIfNeeded();
-
-        // Check if model has check items — if so, open check form for prep
-        const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
-        const hasChecks = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(matchedLi) });
-
-        if (hasChecks && matchedLi?.modelId) {
-          // Pull item first, then open check form (prep flow)
-          pullItem(projectId, result.lineItemId).catch(() => {});
-          setCheckFormData({
-            context: "PREP",
-            modelId: matchedLi.modelId,
-            assetTag: matchedLi.asset?.assetTag || matchedLi.bulkAsset?.assetTag || "",
-            assetName: result.assetName || modelDisplayName(matchedLi),
-            lineItemId: result.lineItemId,
-            assetId: result.assetId || matchedLi.assetId || "",
-            bulkAssetId: matchedLi.bulkAssetId || undefined,
-          });
-          setCheckFormOpen(true);
-          setScanValue("");
-          scanInputRef.current?.focus();
-        } else {
-          // No check items — prep directly (set prepStatus=PACKED, no deploy)
-          prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
-            .then(() => {
-              scanFeedback.play("success", { label: result.assetName || "Asset", outcome: "Prepped" });
-              toast.success(`Prepped: ${result.assetName || "Asset"}`);
-              setScanValue("");
-              scanInputRef.current?.focus();
-              invalidate();
-            })
-            .catch((e) => {
-              scanFeedback.play("error", {
-                label: result.assetName || "Asset",
-                outcome: e instanceof Error ? e.message : "Failed to prep",
-              });
-              showError(e);
-            });
-        }
+        routeScanPrep({ lineItemId: result.lineItemId, assetId: result.assetId, assetName: result.assetName });
       } else if (result.found && !result.lineItemId) {
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
           // Asset found but not on this project — resolved but needs a decision
@@ -2754,6 +2865,11 @@ function WarehouseProjectPage({
         {/* Pick/Prep Tab */}
         <PickPrepTab
           scanInputRef={scanInputRef}
+          scanCheckMode={scanCheckMode}
+          onScanCheckModeChange={setScanCheckMode}
+          scanBatchNames={scanBatch.map((b) => b.assetName)}
+          onFinishScanBatch={finishScanBatch}
+          onClearScanBatch={() => setScanBatch([])}
           scanValue={scanValue}
           setScanValue={setScanValue}
           handleScanKeyDown={handleScanKeyDown}
@@ -3202,6 +3318,34 @@ function WarehouseProjectPage({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {scanAccessoryPrompt && (
+        <ScanAccessoryDialog
+          key={scanAccessoryPrompt.target.lineItemId + (scanAccessoryPrompt.target.assetId ?? "")}
+          prompt={scanAccessoryPrompt.data}
+          onDecide={(d) => decideScanAccessories(scanAccessoryPrompt, d)}
+          onDiscard={() => {
+            setScanAccessoryPrompt(null);
+            scanFeedback.play("info", { label: scanAccessoryPrompt.data.parentName, outcome: "Scan discarded" });
+            scanFocus();
+          }}
+        />
+      )}
+      {scanModePrompt && (
+        <ScanCheckModeDialog
+          itemName={scanModePrompt.name}
+          onChoose={(mode) => {
+            const { target, opts } = scanModePrompt;
+            setScanModePrompt(null);
+            setScanCheckMode(mode);
+            void proceedScanPrep(target, opts, mode);
+          }}
+          onDiscard={() => {
+            setScanModePrompt(null);
+            scanFocus();
+          }}
+        />
       )}
 
       {/* Add to Project Prompt */}

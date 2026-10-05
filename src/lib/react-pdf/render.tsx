@@ -22,11 +22,14 @@ import { PackingListDocument } from "./packing-list-document";
 import { ReturnSheetDocument } from "./return-sheet-document";
 import { DeliveryDocketDocument } from "./delivery-docket-document";
 import { ManifestDocument } from "./manifest-document";
+import { ContainerLabelDocument } from "./container-label-document";
 
 export interface RenderReactPdfOptions {
   /** Stamp the "DRAFT PREVIEW — NOT SENT" banner on every page. Quote/invoice
    *  only — see `document-layouts.ts`'s `DRAFT_PREVIEW_SUBTITLE` map. */
   draftPreview?: boolean;
+  /** Container/kit labels only — print just this container id / kit line item id. */
+  labelId?: string;
 }
 
 export async function renderReactPdfTemplate(
@@ -49,5 +52,9 @@ export async function renderReactPdfTemplate(
       return renderToBuffer(<DeliveryDocketDocument data={data} />);
     case "manifest":
       return renderToBuffer(<ManifestDocument data={data} />);
+    case "container-label":
+      return renderToBuffer(<ContainerLabelDocument data={data} kind="container" labelId={options?.labelId} />);
+    case "kit-label":
+      return renderToBuffer(<ContainerLabelDocument data={data} kind="kit" labelId={options?.labelId} />);
   }
 }

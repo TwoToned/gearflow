@@ -26,6 +26,8 @@ const typeMap: Record<string, ProjectDocumentType> = {
   "return-sheet": "return-sheet",
   "delivery-docket": "delivery-docket",
   manifest: "manifest",
+  "container-label": "container-label",
+  "kit-label": "kit-label",
 };
 
 /** Client-facing finance docs — reachable here ONLY as a watermarked preview. */
@@ -68,6 +70,9 @@ export async function GET(
   // below — `buildDocumentData` only reads it for `docType: "invoice"`, so
   // it's a harmless no-op on any other type, not worth its own branch here.
   const invoiceId = url.searchParams.get("invoiceId") || undefined;
+  // `container-label` / `kit-label` only: print one container / kit instead of
+  // all of them. A no-op for every other type.
+  const labelId = url.searchParams.get("labelId") || undefined;
   const previewInvoiceDateParam = url.searchParams.get("invoiceDate");
   const previewDueDateParam = url.searchParams.get("dueDate");
 
@@ -112,6 +117,7 @@ export async function GET(
       draftPreview: preview && PREVIEW_ONLY_TYPES.has(docType),
       invoiceId,
       stampedDates,
+      labelId,
     });
     const filename = `${docType}-${projectId}.pdf`;
     return new NextResponse(Buffer.from(pdf), {

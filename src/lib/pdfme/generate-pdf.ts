@@ -54,6 +54,9 @@ export interface ProjectPdfOptions {
    * `buildDocumentData`'s `quoteId` option.
    */
   quoteId?: string;
+  /** `container-label` / `kit-label` only — print just this container id / kit
+   *  line item id instead of every one on the job. */
+  labelId?: string;
 }
 
 /**
@@ -81,7 +84,7 @@ export async function generatePdf(
     quoteId: options?.quoteId,
   });
 
-  return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview });
+  return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview, labelId: options?.labelId });
 }
 
 /**

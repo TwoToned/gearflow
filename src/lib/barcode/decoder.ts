@@ -30,6 +30,7 @@
 import {
   prepareZXingModule,
   readBarcodes,
+  type ReaderOptions,
   type ReadResult,
   type ZXingModuleOverrides,
 } from "zxing-wasm/reader";
@@ -100,7 +101,7 @@ export function loadDecoder(): Promise<unknown> {
  */
 export async function decodeImageData(image: ImageData): Promise<ReadResult[]> {
   await loadDecoder();
-  const options = {
+  const options: ReaderOptions = {
     formats: [...SCANNER_FORMATS],
     tryHarder: true,
     tryRotate: true,
@@ -109,7 +110,7 @@ export async function decodeImageData(image: ImageData): Promise<ReadResult[]> {
     tryDownscale: true,
     maxNumberOfSymbols: 1,
     returnErrors: false,
-  } as const;
+  };
   const direct = await readBarcodes(image, options);
   if (direct.length > 0) return direct;
   // A frame with nothing in it costs a second pass; a white-on-black linear

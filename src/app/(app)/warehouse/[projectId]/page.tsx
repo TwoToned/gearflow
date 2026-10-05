@@ -1639,7 +1639,11 @@ function WarehouseProjectPage({
   const selectedInCount = selectedIn.size;
 
   // --- Prep selected items (for manual selection without scanner) ---
-  const handlePrepSelected = async () => {
+  // `withoutAccessories` packs the parents only (`includeAccessoryIds: []`);
+  // their accessories stay in Pick/Prep (an accessory parent remains in the
+  // stage while any child is unpacked) and a later plain Prep packs them.
+  const handlePrepSelected = async (opts?: { withoutAccessories?: boolean }) => {
+    const accessoryNarrow = opts?.withoutAccessories ? { includeAccessoryIds: [] as string[] } : {};
     try {
       // If prepping into a container asset, ensure it's on the project
       await ensureContainerIfNeeded();
@@ -1843,6 +1847,7 @@ function WarehouseProjectPage({
         quantity?: number;
         prepContainer?: string | null;
         containerId?: string | null;
+        includeAccessoryIds?: string[];
       }> = [];
       for (const bi of bulkNoCheckItems) {
         directPrepItems.push({
@@ -1868,6 +1873,7 @@ function WarehouseProjectPage({
             lineItemId: item.lineItemId,
             assetId: li.assetId || "",
             bulkAssetId: li.bulkAssetId || undefined,
+            ...accessoryNarrow,
           });
         } else {
           readyNoCheckItems.push(item);
@@ -1883,6 +1889,7 @@ function WarehouseProjectPage({
           quantity: item.quantity,
           prepContainer: selectedContainer || null,
           containerId: activeContainerId,
+          ...accessoryNarrow,
         });
       }
       if (directPrepItems.length > 0) {

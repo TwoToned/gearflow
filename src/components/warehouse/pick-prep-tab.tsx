@@ -78,7 +78,7 @@ export interface PickPrepTabProps {
   toggleExpanded: (key: string) => void;
 
   // Actions
-  handlePrepSelected: () => void;
+  handlePrepSelected: (opts?: { withoutAccessories?: boolean }) => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -158,14 +158,23 @@ export function PickPrepTab({
                 Items that need to be picked and prepped.
                 {selectedContainer && <span className="ml-1 text-ink-2 font-medium">&rarr; {selectedContainer}</span>}
               </p>
-              <Button
-                onClick={handlePrepSelected}
-                disabled={selectedPrepCount === 0 || scanMutationIsPending}
-                loading={scanMutationIsPending}
-                className="shrink-0"
-              >
-                Prep{selectedPrepCount > 0 ? ` (${selectedPrepCount})` : ""}
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="line"
+                  onClick={() => handlePrepSelected({ withoutAccessories: true })}
+                  disabled={selectedPrepCount === 0 || scanMutationIsPending}
+                  title="Pack the selected gear but leave its accessories (e.g. batteries still charging) to prep later"
+                >
+                  Prep without accessories
+                </Button>
+                <Button
+                  onClick={() => handlePrepSelected()}
+                  disabled={selectedPrepCount === 0 || scanMutationIsPending}
+                  loading={scanMutationIsPending}
+                >
+                  Prep{selectedPrepCount > 0 ? ` (${selectedPrepCount})` : ""}
+                </Button>
+              </div>
             </div>
         </div>
 

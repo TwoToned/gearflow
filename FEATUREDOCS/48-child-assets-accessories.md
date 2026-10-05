@@ -364,6 +364,15 @@ what every existing query keys off.
    wired through `prepItemDirect`/`prepItemsBatch`/the check-item queue for
    other callers, it's just never populated by the removed UI now (always
    `undefined` ⇒ "include all", the documented default).
+   **"Prep without accessories" (Pick/Prep tab).** A second button beside Prep packs
+   the selected parents only, passing `includeAccessoryIds: []` through
+   `handlePrepSelected({ withoutAccessories: true })` (ready serialised lines, direct
+   and check-queue paths; the asset-picker and bulk paths still pack in full). Use
+   case: EW-DX beltpacks prepped now, default batteries still charging. The accessory
+   lines stay unpacked, so the parent remains in Pick/Prep (stage membership is own
+   state OR any child's); a later plain **Prep** on the same line re-runs `prepUnit`,
+   which is idempotent for the parent and packs the accessories. Pinned by
+   `convex/prepAccessoryRollup.test.ts`.
 4. **PDFs** — accessories render indented under the parent, gated by the same
    `showKitChildren` flag as kit children (2026-07-27 — previously always-on
    regardless of the flag). An accessory parent is detected by "top-level

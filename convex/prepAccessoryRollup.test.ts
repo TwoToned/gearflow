@@ -113,7 +113,7 @@ describe("prep cascades PACKED onto accessory child lines", () => {
       expect(u.containerId).toBe("battery-box");
     }
   });
-  test("deploy-all carries parent and accessories out of two different boxes and flips both containers", async () => {
+  test("deploy-all: the parent ships with its own box; accessories in another box ship with THAT box, and each container flips", async () => {
     const t = makeT();
     await seed(t);
     await t.run(async (ctx) => {
@@ -133,22 +133,35 @@ describe("prep cascades PACKED onto accessory child lines", () => {
     await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkoutItems, {
       organizationId: ORG, projectId: "p1", userId: USER, items: [{ lineItemId: "L1", assetId: "a1" }], includeAccessories: true, now: NOW,
     });
-    const state = await t.run(async (ctx) => {
+    const readState = () => t.run(async (ctx) => {
       const kids = (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect()).filter((c) => c.childKind === "ACCESSORY");
       const kidUnits = [];
       for (const k of kids) kidUnits.push(...(await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", k.id)).collect()));
       const lines = await ctx.db.query("projectLineItems").collect();
       return {
         parent: (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => u.status),
+        kidIds: kidUnits.map((u) => u.id),
         kids: kidUnits.map((u) => u.status),
         pelican: lines.find((l) => l.id === "CL1")?.status,
         batteryBox: lines.find((l) => l.id === "CL2")?.status,
       };
     });
+
+    // The parent's deploy leaves accessories packed in a DIFFERENT box alone
+    // (accessoryRelocation.ts) — they ship with their own box.
+    let state = await readState();
     expect(state.parent).toEqual(["CHECKED_OUT"]);
     expect(state.kids.length).toBeGreaterThan(0);
-    for (const s of state.kids) expect(s).toBe("CHECKED_OUT");
+    for (const s of state.kids) expect(s).not.toBe("CHECKED_OUT");
     expect(state.pelican).toBe("CHECKED_OUT");
+    expect(state.batteryBox).not.toBe("CHECKED_OUT");
+
+    // "Deploy all" = the parent's row plus the relocated accessory row.
+    await t.withIdentity(SERVICE).mutation(api.warehouseOps.stageAccessoryUnits, {
+      organizationId: ORG, projectId: "p1", userId: USER, unitIds: state.kidIds, to: "DEPLOY", now: NOW,
+    });
+    state = await readState();
+    for (const s of state.kids) expect(s).toBe("CHECKED_OUT");
     expect(state.batteryBox).toBe("CHECKED_OUT");
   });
 });

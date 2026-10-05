@@ -45,7 +45,7 @@ describe("MoveToContainerDialog smoke", () => {
     const moveButton = screen.getByRole("button", { name: "Move" });
     expect((moveButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(moveButton);
-    expect(onConfirm).toHaveBeenCalledWith("c1");
+    expect(onConfirm).toHaveBeenCalledWith("c1", 2);
   });
 
   it("picking Loose confirms with null", () => {
@@ -55,7 +55,7 @@ describe("MoveToContainerDialog smoke", () => {
     );
     fireEvent.click(screen.getByText("Loose"));
     fireEvent.click(screen.getByRole("button", { name: "Move" }));
-    expect(onConfirm).toHaveBeenCalledWith(null);
+    expect(onConfirm).toHaveBeenCalledWith(null, 2);
   });
 
   it("Cancel calls onOpenChange(false) without confirming", () => {

@@ -13,6 +13,7 @@ import {
   resolveItemContainerId,
   buildContainerGroups,
   resolveSelectionToUnitIds,
+  resolveAccessoryUnitIds,
   isMoveableAtDeployStage,
   isMoveableAtReturnStage,
   isMoveableAtDeprepStage,
@@ -460,5 +461,26 @@ describe("scanAccessoryOptions — accessories to confirm on a prep scan", () =>
   });
   test("no accessories → empty", () => {
     expect(scanAccessoryOptions(line({ id: "x" }))).toEqual([]);
+  });
+});
+
+describe("resolveAccessoryUnitIds (move one accessory on its own)", () => {
+  const acc = line({
+    id: "batt",
+    childKind: "ACCESSORY",
+    units: [
+      unit({ id: "u1", status: "CONFIRMED", prepStatus: "PACKED" }),
+      unit({ id: "u2", status: "CONFIRMED", prepStatus: "PACKED" }),
+      unit({ id: "u3", status: "CONFIRMED", prepStatus: "PENDING" }),
+      unit({ id: "u4", status: "CANCELLED", prepStatus: "PACKED" }),
+    ],
+  });
+
+  test("only packed, live units — never the parent's", () => {
+    expect(resolveAccessoryUnitIds(acc)).toEqual(["u1", "u2"]);
+  });
+
+  test("quantity caps a partial move", () => {
+    expect(resolveAccessoryUnitIds(acc, 1)).toEqual(["u1"]);
   });
 });

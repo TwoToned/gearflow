@@ -373,6 +373,15 @@ what every existing query keys off.
    state OR any child's); a later plain **Prep** on the same line re-runs `prepUnit`,
    which is idempotent for the parent and packs the accessories. Pinned by
    `convex/prepAccessoryRollup.test.ts`.
+   **"Prep accessories only" + separate containers.** For an already-packed parent,
+   **Prep accessories only** (Pick/Prep tab) calls `prepItems` with
+   `accessoriesOnly: true`: `prepUnit` leaves the parent unit untouched (status,
+   container, `updatedAt`) and the active container rail selection applies to the
+   accessories alone. So: prep the beltpacks with the Pelican selected, then select
+   the battery box and run Prep accessories only. It refuses a parent that isn't
+   packed yet ("Prep the item before prepping its accessories"). Serialised parents
+   only; a bulk/untagged parent just re-runs the accessory rollup. Not yet built:
+   a partial-quantity prompt for bulk accessories.
 4. **PDFs** — accessories render indented under the parent, gated by the same
    `showKitChildren` flag as kit children (2026-07-27 — previously always-on
    regardless of the flag). An accessory parent is detected by "top-level

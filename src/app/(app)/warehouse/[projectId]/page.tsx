@@ -2392,6 +2392,34 @@ function WarehouseProjectPage({
       .catch((e) => showError(e));
   };
 
+  // Pack ONLY the accessories of already-prepped parents. The parent is not
+  // re-prepped, and the active container applies to the accessories alone — so
+  // batteries can go in the battery box while the beltpacks sit in the pelican.
+  const handlePrepAccessoriesOnly = async () => {
+    try {
+      await ensureContainerIfNeeded();
+      const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId: string | null; accessoriesOnly: true }> = [];
+      for (const key of selectedPrep) {
+        const li = lineItems.find((l) => l.id === key.split(":")[0]);
+        if (li?.assetId && isAccessoryParent(li) && !items.some((i) => i.lineItemId === li.id)) {
+          items.push({ lineItemId: li.id, assetId: li.assetId, prepContainer: selectedContainer || null, containerId: activeContainerId, accessoriesOnly: true });
+        }
+      }
+      if (items.length === 0) {
+        toast.error("Select prepped items that have accessories");
+        return;
+      }
+      await prepItemsBatch(projectId, items);
+      clearAccessoryVerification(items.map((i) => i.lineItemId));
+      setSelectedPrep(new Set());
+      toast.success("Accessories prepped");
+      invalidate();
+    } catch (e) {
+      showError(e, { fallbackTitle: "Accessory prep failed" });
+      invalidate();
+    }
+  };
+
   const handleReturnSelected = () => {
     const qtyMap = new Map<string, number>();
     const kitIds: string[] = [];
@@ -2749,6 +2777,7 @@ function WarehouseProjectPage({
           expandedGroups={expandedGroups}
           toggleExpanded={toggleExpanded}
           handlePrepSelected={handlePrepSelected}
+          handlePrepAccessoriesOnly={handlePrepAccessoriesOnly}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}

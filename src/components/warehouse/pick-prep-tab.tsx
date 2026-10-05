@@ -79,6 +79,7 @@ export interface PickPrepTabProps {
 
   // Actions
   handlePrepSelected: (opts?: { withoutAccessories?: boolean }) => void;
+  handlePrepAccessoriesOnly: () => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -120,6 +121,7 @@ export function PickPrepTab({
   expandedGroups,
   toggleExpanded,
   handlePrepSelected,
+  handlePrepAccessoriesOnly,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -166,6 +168,14 @@ export function PickPrepTab({
                   title="Pack the selected gear but leave its accessories (e.g. batteries still charging) to prep later"
                 >
                   Prep without accessories
+                </Button>
+                <Button
+                  variant="line"
+                  onClick={handlePrepAccessoriesOnly}
+                  disabled={selectedPrepCount === 0 || scanMutationIsPending}
+                  title="Pack only the accessories of already-prepped gear, into the selected container"
+                >
+                  Prep accessories only
                 </Button>
                 <Button
                   onClick={() => handlePrepSelected()}

@@ -84,4 +84,33 @@ describe("prep cascades PACKED onto accessory child lines", () => {
     expect(after.length).toBeGreaterThan(0);
     for (const u of after) expect(u.prepStatus).toBe("PACKED");
   });
+  test("accessoriesOnly packs accessories into their own container without touching the parent", async () => {
+    const t = makeT();
+    await seed(t);
+    const run = (item: Record<string, unknown>) =>
+      t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {
+        organizationId: ORG, projectId: "p1", items: [{ lineItemId: "L1", assetId: "a1", ...item }] as never,
+        now: NOW, actor: { userId: USER, userName: "Alice" },
+      });
+    const units = (lineId: string) => t.run(async (ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineId)).collect());
+
+    // Not prepped yet → refused.
+    await expect(run({ accessoriesOnly: true })).rejects.toThrow(/Prep the item/);
+
+    await run({ includeAccessoryIds: [], containerId: "pelican" });
+    const [parentBefore] = await units("L1");
+    expect(parentBefore.containerId).toBe("pelican");
+
+    await run({ accessoriesOnly: true, containerId: "battery-box" });
+    const [parentAfter] = await units("L1");
+    expect(parentAfter.containerId).toBe("pelican");
+    expect(parentAfter.updatedAt).toBe(parentBefore.updatedAt);
+    const kids = await t.run(async (ctx) =>
+      (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect()).filter((c) => c.childKind === "ACCESSORY"));
+    expect(kids.length).toBeGreaterThan(0);
+    for (const k of kids) for (const u of await units(k.id)) {
+      expect(u.prepStatus).toBe("PACKED");
+      expect(u.containerId).toBe("battery-box");
+    }
+  });
 });

@@ -115,14 +115,9 @@ function Line({ line, color }: { line: LabelLine; color: string }) {
         ) : null}
         <Tags tags={line.tags} />
         {line.accessories.map((a) => (
-          <View key={`${a.name}-${a.elsewhereIn ?? "here"}`} style={{ flexDirection: "row", alignItems: "center", marginTop: "1mm", paddingLeft: "3mm" }}>
+          <View key={a.name} style={{ flexDirection: "row", alignItems: "center", marginTop: "1mm", paddingLeft: "3mm" }}>
             <Text style={{ fontSize: 8, color, fontFamily: "Helvetica-Bold", marginRight: "1mm" }}>+</Text>
             <Text style={{ fontSize: 8, color: COLORS.childText }}>{a.qty}x {a.name}</Text>
-            {a.elsewhereIn ? (
-              <Text style={{ fontSize: 7, fontFamily: "Helvetica-Bold", color, borderWidth: 0.6, borderColor: color, paddingHorizontal: "1.2mm", marginLeft: "2mm" }}>
-                to {a.elsewhereIn}
-              </Text>
-            ) : null}
           </View>
         ))}
       </View>

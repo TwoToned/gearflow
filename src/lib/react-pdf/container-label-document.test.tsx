@@ -27,11 +27,12 @@ const lav = li({ id: "lav", childKind: "ACCESSORY", isKitChild: true, model: { n
 const items = [li({ id: "p", model: { name: "EW-DX SK" }, quantity: 1, units: [unit("p1", "TTP00017", "c1")], childLineItems: [lav] })];
 
 describe("ContainerLabelDocument", () => {
-  it("prints client, project, container names, tags and the accessory pointers both ways", async () => {
+  it("prints client, project, container names and tags; an accessory in another case is listed only there", async () => {
     const { fullText } = await renderPdfPages(<ContainerLabelDocument data={data(items)} />);
-    for (const s of ["Titan AV Case", "Pelican 1450", "Rahul Ganguly", "Rahul Ganguly Dry Hire", "TTP00017", "EW-DX SK", "to Pelican 1450", "accessory of EW-DX SK, packed in Titan AV Case"]) {
+    for (const s of ["Titan AV Case", "Pelican 1450", "Rahul Ganguly", "Rahul Ganguly Dry Hire", "TTP00017", "EW-DX SK", "accessory of EW-DX SK, packed in Titan AV Case"]) {
       expect(fullText).toContain(s);
     }
+    expect(fullText).not.toContain("to Pelican 1450"); // the parent's label carries no pointer
   });
 
   it("prints only the requested container when labelId is given", async () => {

@@ -87,6 +87,18 @@ jobs:
       # COOLIFY_DEV_DEPLOY_WEBHOOK = the dev app's Coolify deploy webhook URL.
       # COOLIFY_TOKEN is shared with the prod workflow.
       - name: Trigger Coolify deploy (dev)
+        env:
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_DEV_DEPLOY_WEBHOOK }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
-          curl -fsSL --retry 3 -X POST "${{ secrets.COOLIFY_DEV_DEPLOY_WEBHOOK }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
+          # Capture status + headers + body so a failure says WHO rejected it
+          # (Cloudflare HTML challenge vs Coolify JSON) instead of a bare 403.
+          status=$(curl -sS --retry 3 -X POST "$COOLIFY_WEBHOOK" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -D /tmp/coolify.headers -o /tmp/coolify.body -w '%{http_code}')
+          echo "Coolify responded HTTP $status"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            grep -i -E '^(server|cf-ray|content-type):' /tmp/coolify.headers || true
+            head -c 600 /tmp/coolify.body; echo
+            exit 1
+          fi

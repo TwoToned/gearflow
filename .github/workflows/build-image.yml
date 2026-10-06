@@ -117,9 +117,21 @@ jobs:
 
       # Tell Coolify to pull the new image and redeploy. This is Coolify's
       # "Deploy Webhook (auth required)" API endpoint (app → Webhooks):
-      #   COOLIFY_DEPLOY_WEBHOOK = https://coolify.rvlt.app/api/v1/deploy?uuid=...&force=false
+      #   COOLIFY_DEPLOY_WEBHOOK = https://coolify.qubered.com/api/v1/deploy?uuid=...&force=false
       #   COOLIFY_TOKEN          = a Coolify API token (Coolify → Keys & Tokens → API)
       - name: Trigger Coolify deploy
+        env:
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
-          curl -fsSL --retry 3 -X POST "${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
+          # Capture status + headers + body so a failure says WHO rejected it
+          # (Cloudflare HTML challenge vs Coolify JSON) instead of a bare 403.
+          status=$(curl -sS --retry 3 -X POST "$COOLIFY_WEBHOOK" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            -D /tmp/coolify.headers -o /tmp/coolify.body -w '%{http_code}')
+          echo "Coolify responded HTTP $status"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            grep -i -E '^(server|cf-ray|content-type):' /tmp/coolify.headers || true
+            head -c 600 /tmp/coolify.body; echo
+            exit 1
+          fi

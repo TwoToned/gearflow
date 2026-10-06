@@ -8,10 +8,11 @@
  *  - **Accessories print quantity only, never an asset tag.** They are
  *    consumables-grade add-ons; the tag belongs to the parent they travel with.
  *  - **An accessory can travel in a different case than its parent.** Container
- *    membership is per unit, so we read the ACCESSORY child's own units. The
- *    parent's line keeps a "to <case>" pointer and that case lists the
- *    accessory as "accessory of <parent>, packed in <parent's case>". Anything
- *    unpacked or in the parent's own case stays under the parent.
+ *    membership is per unit, so we read the ACCESSORY child's own units. Only
+ *    the case it is physically in lists it, as "accessory of <parent>, packed
+ *    in <parent's case>" — the parent's label does NOT mention it (no pointer
+ *    to the other case). Anything unpacked or in the parent's own case stays
+ *    under the parent.
  *    (`structure-line-items-by-container.ts` deliberately keeps a kit's KIT
  *    children with the kit; this splitting is for ACCESSORY children only.)
  */
@@ -22,8 +23,6 @@ type Unit = NonNullable<DocumentLineItem["units"]>[number];
 interface LabelAccessory {
   qty: number;
   name: string;
-  /** Label of the case this accessory travels in, when it is NOT the parent's. */
-  elsewhereIn?: string;
 }
 
 export interface LabelLine {
@@ -50,7 +49,7 @@ export interface ContainerLabel {
   packedIn: string | null;
   lines: LabelLine[];
   /** Everything physical packed in this box (accessories included; an accessory
-   *  pointing at another case counts there, not here). */
+   *  packed in another case counts there, not here). */
   itemCount: number;
 }
 
@@ -91,14 +90,14 @@ function accessoriesOf(li: DocumentLineItem): DocumentLineItem[] {
 }
 
 function countItems(lines: LabelLine[]): number {
-  return lines.reduce((sum, l) => sum + l.qty + l.accessories.reduce((s, a) => s + (a.elsewhereIn ? 0 : a.qty), 0), 0);
+  return lines.reduce((sum, l) => sum + l.qty + l.accessories.reduce((s, a) => s + a.qty, 0), 0);
 }
 
 type Incoming = { containerId: string; line: LabelLine };
 
-/** Splits one parent's ACCESSORY children by the case each unit sits in:
- *  what stays with the parent, plus pointers for what travels elsewhere (and
- *  the matching `incoming` line the receiving case must list). */
+/** Splits one parent's ACCESSORY children by the case each unit sits in: what
+ *  stays with the parent, and the `incoming` line the receiving case must list
+ *  for what travels elsewhere (the parent's own label omits those). */
 function placeAccessories(
   row: DocumentLineItem,
   home: string,
@@ -109,14 +108,12 @@ function placeAccessories(
   for (const child of accessoriesOf(row)) {
     const { byContainer, unassigned } = splitAccessory(child);
     let stays = unassigned;
-    const away: LabelAccessory[] = [];
     for (const [cid, qty] of byContainer) {
       const elsewhereIn = cid === home ? undefined : labelById.get(cid);
       if (!elsewhereIn) {
         stays += qty;
         continue;
       }
-      away.push({ qty, name: itemName(child), elsewhereIn });
       incoming.push({
         containerId: cid,
         line: {
@@ -129,7 +126,6 @@ function placeAccessories(
       });
     }
     if (stays > 0) accessories.push({ qty: stays, name: itemName(child) });
-    accessories.push(...away);
   }
   return { accessories, incoming };
 }

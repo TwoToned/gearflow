@@ -48,7 +48,7 @@ describe("buildContainerLabels", () => {
     expect(JSON.stringify(line.accessories)).not.toContain("LAV1");
   });
 
-  it("points an accessory packed in another case both ways", () => {
+  it("lists an accessory packed in another case only in that case — the parent's label omits it", () => {
     const lav = li({
       id: "lav", childKind: "ACCESSORY", isKitChild: true, model: { name: "Lav mic" }, quantity: 3,
       units: [unit("l1", null, "c-pel"), unit("l2", null, "c-pel"), unit("l3", null, "c-titan")],
@@ -58,11 +58,8 @@ describe("buildContainerLabels", () => {
       [titan, pelican],
     );
     const [titanLabel, pelLabel] = buildContainerLabels(rows);
-    expect(titanLabel.lines[0].accessories).toEqual([
-      { qty: 1, name: "Lav mic" },
-      { qty: 2, name: "Lav mic", elsewhereIn: "Pelican 1450" },
-    ]);
-    // 1 parent + 1 accessory stays here; the 2 travelling count in Pelican, once.
+    expect(titanLabel.lines[0].accessories).toEqual([{ qty: 1, name: "Lav mic" }]);
+    // 1 parent + 1 accessory stays here; the 2 packed in Pelican count there, once.
     expect([titanLabel.itemCount, pelLabel.itemCount]).toEqual([3 + 1, 2]);
     expect(pelLabel.lines).toEqual([
       { qty: 2, name: "Lav mic", tags: [], accessories: [], accessoryOf: { parentName: "EW-DX SK", parentContainerLabel: "Titan AV Case" } },

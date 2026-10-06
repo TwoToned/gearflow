@@ -179,9 +179,9 @@ warehouse page ("Container labels", "Kit labels") or
   and `containerParentId` on container headers; the label builder relies on both.
 - **Accessories** print as `+ 8x Name`, quantity only, **never an asset tag**.
 - **Accessory in a different case than its parent.** Membership is per unit, so
-  the label reads the ACCESSORY child's own units. The parent's line keeps a
-  `to <case>` pointer; the receiving case lists "accessory of <parent>, packed in
-  <parent's case>". Units unpacked or in the parent's own case stay under the
+  the label reads the ACCESSORY child's own units. Only the case it is physically
+  in lists it ("accessory of <parent>, packed in <parent's case>"); the parent's
+  label does not mention it at all (no "to <case>" pointer). Units unpacked or in the parent's own case stay under the
   parent. An accessory counts once, in the case it physically sits in. (KIT
   children still move with the kit, per D3.)
 - **Kits** are not containers, so a kit label is its own document: one per kit

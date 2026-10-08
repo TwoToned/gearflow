@@ -260,9 +260,9 @@ export async function buildDocumentData(
      */
     previewVersionId?: string;
     /**
-     * `docType: "quote"` only — print the billable services as ONE combined
-     * "Services" row (sum of their line totals) instead of one row each.
-     * Presentation only: the totals block is untouched. Stamped on the quote
+     * `docType: "quote"` only — print the billable services like a rolled-up
+     * category: every service listed, no per-service money, and the "Services"
+     * header carrying the combined price. Presentation only: totals untouched. Stamped on the quote
      * at send (`quotes.combineServices`); a draft preview passes it directly.
      */
     combineServices?: boolean;
@@ -682,9 +682,12 @@ export async function buildDocumentData(
       )
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-    const combine = docType === "quote" && !!options?.combineServices && billableServices.length > 1;
-    const combinedTotal = combine ? billableServices.reduce((sum, s) => sum + Number(s.lineTotal), 0) : 0;
-    for (const svc of combine ? [] : billableServices) {
+    // "Combine services" reuses the category-rollup presentation (see
+    // src/lib/category-pricing-display.ts): every service still lists, its own
+    // money cells are blank, and the "Services" section header prints the one
+    // "Combined price" (derived as sum(lineTotal) at render — never stored).
+    const combine = docType === "quote" && !!options?.combineServices;
+    for (const svc of billableServices) {
       lineItems.push({
         id: `svc-${svc.id}`,
         description: svc.title,
@@ -705,29 +708,7 @@ export async function buildDocumentData(
         model: null,
         asset: null,
         bulkAsset: null,
-      } as DocumentLineItem);
-    }
-    if (combine) {
-      lineItems.push({
-        id: "svc-combined",
-        description: "Services",
-        quantity: 1,
-        checkedOutQuantity: 0,
-        unitPrice: combinedTotal,
-        pricingType: "FLAT",
-        duration: 1,
-        discount: null,
-        lineTotal: combinedTotal,
-        groupName: "Services",
-        categoryName: "Services",
-        groupTitle: null,
-        isGroupRow: false,
-        isOptional: false,
-        notes: null,
-        status: "CONFIRMED",
-        model: null,
-        asset: null,
-        bulkAsset: null,
+        ...(combine ? { rollupCategory: true, priceHidden: true } : {}),
       } as DocumentLineItem);
     }
   }

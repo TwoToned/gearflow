@@ -493,7 +493,7 @@ function SendQuoteForm({
             checked={combineServices}
             onChange={(e) => onCombineServicesChange(e.target.checked)}
           />
-          <span>Show services as one combined cost — a single &ldquo;Services&rdquo; line instead of one per service. Totals are unchanged.</span>
+          <span>Show services as one combined cost — each service still lists, but without its own price; the &ldquo;Services&rdquo; heading carries the combined price. Totals are unchanged.</span>
         </label>
 
         <SendQuoteSummaryOrNote targetVersion={targetVersion} subtotal={subtotal} taxAmount={taxAmount} total={total} />

@@ -743,7 +743,7 @@ rolled back for a render failure — the money is frozen either way.
 | Header **Documents ▾** | Warehouse artifacts only. "Quote / proposal" and "Invoice" are gone — that dropdown was the rogue path. |
 | `/api/documents/[projectId]?type=quote` | 400 without `preview=1`; with it, requires `invoice:read` and stamps DRAFT PREVIEW — NOT SENT on every page. |
 | `…?type=quote&preview=1&versionId=` | Draft preview of a specific (non-live) project version: that version's own rows + freshly computed totals (`financeArtifacts.versionPreviewContext`, service-gated). |
-| `…?type=quote&preview=1&combineServices=1` | Preview with services printed as one combined "Services" line. |
+| `…?type=quote&preview=1&combineServices=1` | Preview with services printed rolled-up (listed, unpriced, combined price on the heading). |
 
 Permissions: `invoice:read` to download or preview, `invoice:publish` to
 generate/retry a quote artifact, `invoice:issue` for an invoice one — the same
@@ -1720,8 +1720,10 @@ duplicated here.
 ## Document presentation options (send-time)
 
 - **`quotes.combineServices`** — stamped at send (Send dialog checkbox). The quote PDF
-  prints billable services as ONE "Services" row (sum of their line totals) instead of
-  one row each. Presentation only; totals are unchanged. Applies when ≥2 services bill.
+  prints billable services like a rolled-up category (FEATUREDOCS/74): every service
+  still lists, its own price is blank, and the "Services" heading carries the
+  "Combined price" (derived `sum(lineTotal)`, never stored). Presentation only; totals
+  are unchanged.
 - **Capped-rate wording** — a line priced by the weekly cap never prints
   "charged as N wk (capped)" on any document (`breakdownLabel` returns ""); the line
   total already states the charge. The in-app equipment table still shows it.

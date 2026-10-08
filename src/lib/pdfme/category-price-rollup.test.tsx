@@ -303,4 +303,23 @@ describe("category price rollup — rendered quote", () => {
     expect(fullText).toContain("3,400");
     expect(fullText).not.toContain(ROLLUP_SUBTOTAL_LABEL);
   });
+
+  // The shape `buildDocumentData` stamps on the appended service rows when a
+  // quote is sent with "combine services" — no category exists for them, so
+  // they carry the rollup markers directly.
+  it("renders combined services: every service listed, no per-service price, one combined price", async () => {
+    const services = [
+      line({ id: "svc-1", description: "Lighting Technician", lineTotal: 777, groupName: "Services", categoryName: "Services", rollupCategory: true, priceHidden: true }),
+      line({ id: "svc-2", description: "Rigging Crew", lineTotal: 1111, groupName: "Services", categoryName: "Services", rollupCategory: true, priceHidden: true }),
+    ];
+    const data = makeSpikeData({ line_items: services, total_items: services.length });
+    const { fullText } = await renderPdfPages(<QuoteDocument data={data} />);
+
+    expect(fullText).toContain("Lighting Technician");
+    expect(fullText).toContain("Rigging Crew");
+    expect(fullText).not.toContain("777");
+    expect(fullText).not.toContain("1,111");
+    expect(fullText).toContain(ROLLUP_SUBTOTAL_LABEL);
+    expect(fullText).toContain("1,888");
+  });
 });

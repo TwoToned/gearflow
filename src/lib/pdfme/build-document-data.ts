@@ -253,6 +253,20 @@ export async function buildDocumentData(
      */
     quoteId?: string;
     /**
+     * DRAFT PREVIEW of a specific project version (`docType: "quote"`, no
+     * `quoteId`): renders THAT version's own rows and freshly computed totals
+     * (`financeArtifacts.versionPreviewContext`) instead of the live project's.
+     * Ignored when `quoteId` is set — a sent quote's frozen snapshot wins.
+     */
+    previewVersionId?: string;
+    /**
+     * `docType: "quote"` only — print the billable services as ONE combined
+     * "Services" row (sum of their line totals) instead of one row each.
+     * Presentation only: the totals block is untouched. Stamped on the quote
+     * at send (`quotes.combineServices`); a draft preview passes it directly.
+     */
+    combineServices?: boolean;
+    /**
      * #1296 build plan phase 3b — bucket line items by container first
      * (`structureLineItems`'s `byContainer` mode) instead of the flat
      * category/kit grouping. Comes from `DOCUMENT_LAYOUTS[docType].
@@ -333,7 +347,15 @@ export async function buildDocumentData(
           quoteId: options.quoteId,
           orgId: organizationId,
         })
-      : null;
+      : docType === "quote" && options?.previewVersionId
+        ? await (
+            await getConvexClient()
+          ).query(api.financeArtifacts.versionPreviewContext, {
+            projectId,
+            versionId: options.previewVersionId,
+            orgId: organizationId,
+          })
+        : null;
   let effectiveProjectScalars = projectScalars;
   if (quoteContext?.versionId) {
     const version = await (
@@ -660,7 +682,9 @@ export async function buildDocumentData(
       )
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-    for (const svc of billableServices) {
+    const combine = docType === "quote" && !!options?.combineServices && billableServices.length > 1;
+    const combinedTotal = combine ? billableServices.reduce((sum, s) => sum + Number(s.lineTotal), 0) : 0;
+    for (const svc of combine ? [] : billableServices) {
       lineItems.push({
         id: `svc-${svc.id}`,
         description: svc.title,
@@ -677,6 +701,29 @@ export async function buildDocumentData(
         isGroupRow: false,
         isOptional: false,
         notes: svc.description || null,
+        status: "CONFIRMED",
+        model: null,
+        asset: null,
+        bulkAsset: null,
+      } as DocumentLineItem);
+    }
+    if (combine) {
+      lineItems.push({
+        id: "svc-combined",
+        description: "Services",
+        quantity: 1,
+        checkedOutQuantity: 0,
+        unitPrice: combinedTotal,
+        pricingType: "FLAT",
+        duration: 1,
+        discount: null,
+        lineTotal: combinedTotal,
+        groupName: "Services",
+        categoryName: "Services",
+        groupTitle: null,
+        isGroupRow: false,
+        isOptional: false,
+        notes: null,
         status: "CONFIRMED",
         model: null,
         asset: null,

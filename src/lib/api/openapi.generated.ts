@@ -35849,6 +35849,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "combineServices": {
+                        "type": "boolean"
+                      },
                       "id": {
                         "type": "string"
                       },

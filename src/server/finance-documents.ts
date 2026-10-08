@@ -81,6 +81,7 @@ export async function generateQuoteArtifact(quoteId: string): Promise<ArtifactRe
     // row + frozen money snapshot, not always the live project's. See
     // `build-document-data.ts`'s `quoteId` option doc.
     quoteId,
+    combineServices: quote.combineServices,
   });
 
   const fileName = quoteArtifactFileName(quote.projectNumber, quote.version);

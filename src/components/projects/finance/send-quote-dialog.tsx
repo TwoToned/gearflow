@@ -119,6 +119,7 @@ export function SendQuoteDialog({
   const [recipientContactId, setRecipientContactId] = useState("");
   const [notes, setNotes] = useState("");
   const [labelOnDocument, setLabelOnDocument] = useState(false);
+  const [combineServices, setCombineServices] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<SentState | null>(null);
@@ -136,6 +137,7 @@ export function SendQuoteDialog({
     setRecipientContactId("");
     setNotes("");
     setLabelOnDocument(false);
+    setCombineServices(false);
     setError(null);
     setSent(null);
     setStatusMoved(false);
@@ -158,6 +160,7 @@ export function SendQuoteDialog({
           recipientContactId: recipientContactId || undefined,
           notes: notes || undefined,
           labelOnDocument,
+          combineServices,
         },
         targetVersion?.id,
       );
@@ -218,6 +221,8 @@ export function SendQuoteDialog({
             targetVersion={targetVersion ?? null}
             currentLabel={currentLabel}
             labelOnDocument={labelOnDocument}
+            combineServices={combineServices}
+            onCombineServicesChange={setCombineServices}
             onLabelOnDocumentChange={setLabelOnDocument}
             projectId={projectId}
             clientId={clientId}
@@ -260,6 +265,8 @@ interface SendQuoteFormProps {
   /** #1233 (Phase 6) UI follow-up — see `SendQuoteDialogProps.targetVersion`. */
   targetVersion: SendQuoteTargetVersion | null;
   currentLabel?: string;
+  combineServices: boolean;
+  onCombineServicesChange: (value: boolean) => void;
   labelOnDocument: boolean;
   onLabelOnDocumentChange: (value: boolean) => void;
   projectId: string;
@@ -351,19 +358,15 @@ function SendQuoteSummaryOrNote({
   );
 }
 
-/** #1233 (Phase 6) UI follow-up — `/api/documents/[projectId]?preview=1` (the
- *  sanctioned preview path, CLAUDE.md) always renders the LIVE project's
- *  current content; it has no `versionId` arg (unlike the SENT-artifact
- *  render, which does via `quoteId`). Offering it while targeting a non-live
- *  version would silently preview the WRONG version's figures under a
- *  "preview" label, so it renders nothing then rather than a preview that
- *  would lie. Split out (rather than an inline `&&`) for the same
- *  complexity-budget reason as the two components above. */
-function PreviewDraftButton({ projectId, isLiveTarget }: { projectId: string; isLiveTarget: boolean }) {
-  if (!isLiveTarget) return null;
+/** Draft preview (`/api/documents/[projectId]?preview=1`, the sanctioned
+ *  preview path, CLAUDE.md). A non-live target passes its `versionId` so the
+ *  render uses THAT version's rows and freshly computed totals, never the live
+ *  project's. Split out for complexity-budget reasons (R-3.6). */
+function PreviewDraftButton({ projectId, versionId, combineServices }: { projectId: string; versionId?: string; combineServices?: boolean }) {
+  const suffix = (versionId ? `&versionId=${encodeURIComponent(versionId)}` : "") + (combineServices ? "&combineServices=1" : "");
   return (
     <Button type="button" asChild variant="line">
-      <a href={`/api/documents/${projectId}?type=quote&preview=1`} target="_blank" rel="noopener noreferrer">
+      <a href={`/api/documents/${projectId}?type=quote&preview=1${suffix}`} target="_blank" rel="noopener noreferrer">
         <Eye className="h-3.5 w-3.5" /> Preview draft
       </a>
     </Button>
@@ -382,6 +385,8 @@ function SendQuoteForm({
   currentLabel,
   labelOnDocument,
   onLabelOnDocumentChange,
+  combineServices,
+  onCombineServicesChange,
   projectId,
   clientId,
   quoteDateStr,
@@ -481,6 +486,16 @@ function SendQuoteForm({
           </label>
         )}
 
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={combineServices}
+            onChange={(e) => onCombineServicesChange(e.target.checked)}
+          />
+          <span>Show services as one combined cost — a single &ldquo;Services&rdquo; line instead of one per service. Totals are unchanged.</span>
+        </label>
+
         <SendQuoteSummaryOrNote targetVersion={targetVersion} subtotal={subtotal} taxAmount={taxAmount} total={total} />
 
         {error && (
@@ -498,7 +513,7 @@ function SendQuoteForm({
         <Button type="button" variant="line" onClick={onCancel} disabled={sending}>
           Cancel
         </Button>
-        <PreviewDraftButton projectId={projectId} isLiveTarget={!targetVersion} />
+        <PreviewDraftButton projectId={projectId} versionId={targetVersion?.id} combineServices={combineServices} />
         <Button type="button" loading={sending} onClick={onSend}>
           {sendButtonLabel(targetVersion)}
         </Button>

@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 447 | 312 | 133 | 1 | 1 |
+| Queries | 448 | 312 | 134 | 1 | 1 |
 | Mutations | 804 | 303 | 493 | 0 | 8 |
-| **Total** | **1251** | **615** | **626** | **1** | **9** |
+| **Total** | **1252** | **615** | **627** | **1** | **9** |
 
 <!-- reachability-floor: 615 -->
 
@@ -77,7 +77,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `clientXeroWrites` | 2 |
 | `crewShifts` | 9 |
 | `emails` | 1 |
-| `financeArtifacts` | 4 |
+| `financeArtifacts` | 5 |
 | `followUpPush` | 3 |
 | `followUpTick` | 1 |
 | `globalSearch` | 1 |
@@ -140,6 +140,7 @@ fails the build otherwise.
 | `fileUploads.isReferencedByMedia` | Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment). |
 | `financeArtifacts.invoiceArtifactContext` | Same as quoteArtifactContext: SERVICE-gated by design (module docstring), exposes pdfFileId into the deliberately-closed finance-document subsystem; non-sensitive fields are already agent-reachable via invoices.ts. |
 | `financeArtifacts.quoteArtifactContext` | Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain. |
+| `financeArtifacts.versionPreviewContext` | SERVICE-gated like every function in this module (no agent escape hatch); feeds only the session-gated draft-preview render. |
 | `globalSearch.search` | Cross-resource search spans multiple RBAC domains; needs per-result-type scope design, not a single blanket resource. |
 | `kitBulkItems.listByAddedById` | Cross-org GDPR-cascade lookup by addedById with no org filter at all — an internal user-delete helper, not a real read surface. |
 | `maintenanceRecordAssets.listByAssetIds` | Batch join across caller-supplied assetIds with no per-id org check — would need a verify-and-filter redesign to scope safely. |

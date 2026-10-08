@@ -20504,6 +20504,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain."
   },
   {
+    "operation": "financeArtifacts.versionPreviewContext",
+    "module": "financeArtifacts",
+    "fn": "versionPreviewContext",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0ef6a48335d35485",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "SERVICE-gated like every function in this module (no agent escape hatch); feeds only the session-gated draft-preview render."
+  },
+  {
     "operation": "financeOrg.bundle",
     "module": "financeOrg",
     "fn": "bundle",
@@ -45969,6 +46006,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "combineServices",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -46020,7 +46062,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "25d73492dc11bab2",
+    "argsSha": "4921d91aa8723f9d",
     "returnsSha": "9a3571d9d35bce15",
     "stability": "tracks-app",
     "summary": null,
@@ -64385,9 +64427,9 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1251,
+  total: 1252,
   agentReachable: 615,
-  queries: 447,
+  queries: 448,
   mutations: 804,
   agentReachableQueries: 312,
   agentReachableMutations: 303,

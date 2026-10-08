@@ -742,6 +742,8 @@ rolled back for a render failure — the money is frozen either way.
 | Invoice row | Same three states, keyed on `issuedAt` instead of `sentAt`. |
 | Header **Documents ▾** | Warehouse artifacts only. "Quote / proposal" and "Invoice" are gone — that dropdown was the rogue path. |
 | `/api/documents/[projectId]?type=quote` | 400 without `preview=1`; with it, requires `invoice:read` and stamps DRAFT PREVIEW — NOT SENT on every page. |
+| `…?type=quote&preview=1&versionId=` | Draft preview of a specific (non-live) project version: that version's own rows + freshly computed totals (`financeArtifacts.versionPreviewContext`, service-gated). |
+| `…?type=quote&preview=1&combineServices=1` | Preview with services printed as one combined "Services" line. |
 
 Permissions: `invoice:read` to download or preview, `invoice:publish` to
 generate/retry a quote artifact, `invoice:issue` for an invoice one — the same
@@ -1713,3 +1715,15 @@ duplicated here.
   "Org-level Finance section" above); date-range was left out because the six
   sections don't share one meaningful date field (validity vs. rental end vs.
   due date) and a single control would misrepresent at least one section.
+
+
+## Document presentation options (send-time)
+
+- **`quotes.combineServices`** — stamped at send (Send dialog checkbox). The quote PDF
+  prints billable services as ONE "Services" row (sum of their line totals) instead of
+  one row each. Presentation only; totals are unchanged. Applies when ≥2 services bill.
+- **Capped-rate wording** — a line priced by the weekly cap never prints
+  "charged as N wk (capped)" on any document (`breakdownLabel` returns ""); the line
+  total already states the charge. The in-app equipment table still shows it.
+- **Draft preview for non-live versions** — the quote rail (viewing vN) and the Send
+  dialog offer "Preview draft" for vN, same as v1.

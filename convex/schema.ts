@@ -2804,6 +2804,9 @@ export default defineSchema({
     // not yet consumed by the render pipeline in this phase).
     label: v.optional(v.string()),
     labelOnDocument: v.optional(v.boolean()),
+    // Stamped at send: print the project's services as ONE combined "Services"
+    // line instead of one row per service. Presentation only — totals are the same.
+    combineServices: v.optional(v.boolean()),
     // Send (the freeze moment)
     quoteDate: v.optional(v.number()),
     validUntil: v.optional(v.number()),

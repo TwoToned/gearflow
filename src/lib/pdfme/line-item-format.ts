@@ -38,11 +38,14 @@ export function discountCellText(item: DocumentLineItem): string {
 }
 
 /** Formatted breakdown label for a line, or "" when there's nothing to show
- *  (no stored breakdown, malformed JSON, or a manually-priced line). */
+ *  (no stored breakdown, malformed JSON, a manually-priced line, or a capped one). */
 export function breakdownLabel(item: DocumentLineItem, config: TablePluginConfig): string {
   if (!item.priceBreakdown || !config.showPricing) return "";
   const parsed = parsePriceBreakdown(item.priceBreakdown);
-  return parsed ? formatPriceBreakdown(parsed) : "";
+  // A capped line ("charged as 1 wk (capped)") never prints on a document — the
+  // line total already says what was charged; the wording only confused clients.
+  if (!parsed || parsed.capped) return "";
+  return formatPriceBreakdown(parsed);
 }
 
 /** Internal docs (packing-list, return-sheet, delivery-docket) always show the

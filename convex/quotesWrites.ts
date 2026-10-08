@@ -419,6 +419,7 @@ interface QuoteSendFields {
   recalledById: undefined;
   recallReason: undefined;
   labelOnDocument: boolean | undefined;
+  combineServices: boolean | undefined;
   updatedAt: number;
 }
 
@@ -551,6 +552,8 @@ export const sendNative = mutation({
      *  question about what the other options were. Ignored (never stamped)
      *  when the revision has no `label` set — there is nothing to print. */
     labelOnDocument: v.optional(v.boolean()),
+    /** Print the services as one combined line on the document (presentation only). */
+    combineServices: v.optional(v.boolean()),
     /** #1233 (Phase 6) — the REAL `projectVersions` row to quote from.
      *  Additive-only: omitted ⇒ the project's live version, byte-identical
      *  to every pre-Phase-6 call site. Validated against `project` (same
@@ -561,7 +564,7 @@ export const sendNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, args) => {
-    const { id, organizationId, projectId, quoteDate, validityDays, recipientContactId, notes, labelOnDocument, versionId, auditId, now } = args;
+    const { id, organizationId, projectId, quoteDate, validityDays, recipientContactId, notes, labelOnDocument, combineServices, versionId, auditId, now } = args;
     const actor = await guardQuoteWrite(ctx, organizationId, args.actor);
 
     assertStrLen(notes, "notes", NOTES_BOUNDS);
@@ -618,6 +621,7 @@ export const sendNative = mutation({
       // requested doesn't ask for the tail sentence, and stamping this
       // without a label to print would be dead metadata (design §4.4).
       labelOnDocument: labelOnDocument && existing?.label ? true : undefined,
+      combineServices: combineServices ? true : undefined,
       updatedAt: now,
     };
     await persistSentQuoteRow(ctx, { project, existing, quoteId, organizationId, projectId, revision, isLive, actor, now, sendFields });
@@ -1339,6 +1343,7 @@ export const quoteSendFields = {
   recipientContactId: v.optional(v.string()),
   notes: v.optional(v.string()),
   labelOnDocument: v.optional(v.boolean()),
+  combineServices: v.optional(v.boolean()),
 };
 export const quoteRecallFields = { reason: v.string() };
 export const quoteAcceptFields = {

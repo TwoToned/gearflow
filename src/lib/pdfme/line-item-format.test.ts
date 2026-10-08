@@ -197,11 +197,11 @@ describe("breakdownLabel (#943)", () => {
     expect(breakdownLabel(item, config({ showPricing: true }))).toBe("1 wk @ $100.00");
   });
 
-  it("formats the capped-week label distinctly from the uncapped breakdown", () => {
+  it("never prints the capped-week label", () => {
     const item = lineItem({
       priceBreakdown: JSON.stringify({ weeks: 1, days: 0, weeklyRate: 100, dailyRate: 20, capped: true }),
     });
-    expect(breakdownLabel(item, config({ showPricing: true }))).toBe("charged as 1 wk (capped)");
+    expect(breakdownLabel(item, config({ showPricing: true }))).toBe("");
   });
 
   it("shows both weeks-and-days terms when both are non-zero", () => {

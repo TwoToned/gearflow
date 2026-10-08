@@ -166,6 +166,20 @@ export const quoteArtifactContext = query({
   },
 });
 
+/** A version's money, computed fresh from its own rows (no snapshot exists for a draft). */
+async function computeVersionMoney(ctx: QueryCtx, projectId: string, orgId: string, versionId: string) {
+  const bundle = await loadTotalsBundle(ctx, projectId, orgId, await resolveOrgDefaultTaxRate(ctx, orgId), versionId);
+  if (!bundle) return resolveQuoteArtifactMoney(null);
+  const totals = computeTotals(bundle);
+  return {
+    subtotal: totals.subtotal,
+    discountPercent: Number(bundle.project.discountPercent) || 0,
+    discountAmount: totals.discountAmount,
+    taxAmount: totals.taxAmount,
+    total: totals.total,
+  };
+}
+
 /**
  * DRAFT PREVIEW context for a specific (possibly non-live) project version —
  * the same money shape `quoteArtifactContext` returns, but computed FRESH from
@@ -180,19 +194,10 @@ export const versionPreviewContext = query({
     await requireService(ctx);
     const project = await requireProjectInOrg(ctx, projectId, orgId);
     const version = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", versionId)).first();
-    if (!version || version.organizationId !== orgId || version.projectId !== project.id) {
+    if (version?.organizationId !== orgId || version.projectId !== project.id) {
       throw new ConvexError("projectVersions not found: " + versionId);
     }
-    const bundle = await loadTotalsBundle(ctx, project.id, orgId, await resolveOrgDefaultTaxRate(ctx, orgId), versionId);
-    const totals = bundle ? computeTotals(bundle) : null;
-    return {
-      versionId,
-      subtotal: totals?.subtotal ?? 0,
-      discountPercent: Number(bundle?.project.discountPercent) || 0,
-      discountAmount: totals?.discountAmount ?? 0,
-      taxAmount: totals?.taxAmount ?? 0,
-      total: totals?.total ?? 0,
-    };
+    return { versionId, ...(await computeVersionMoney(ctx, project.id, orgId, versionId)) };
   },
 });
 

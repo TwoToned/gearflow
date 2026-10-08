@@ -621,7 +621,7 @@ export const sendNative = mutation({
       // requested doesn't ask for the tail sentence, and stamping this
       // without a label to print would be dead metadata (design §4.4).
       labelOnDocument: labelOnDocument && existing?.label ? true : undefined,
-      combineServices: combineServices ? true : undefined,
+      combineServices,
       updatedAt: now,
     };
     await persistSentQuoteRow(ctx, { project, existing, quoteId, organizationId, projectId, revision, isLive, actor, now, sendFields });

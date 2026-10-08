@@ -14,7 +14,7 @@ import { getLocationMap } from "@/lib/locations-read";
 import { getSupplierMap } from "@/lib/suppliers-read";
 import { buildDocumentLineItemData } from "@/lib/project-line-item-read";
 import { getProjectByIdMapped } from "@/lib/projects-read";
-import { getProjectServicesByOrg } from "@/lib/project-services-read";
+import { getProjectServicesForVersion } from "@/lib/project-services-read";
 import {
   getAssignmentsByProject,
   getShiftsByAssignmentIds,
@@ -661,22 +661,15 @@ export async function buildDocumentData(
   // line(s) — those already ARE the whole invoice; appending the project's
   // live services here would silently show more than that invoice bills for.
   //
-  // #1233 (Phase 6) — KNOWN, DOCUMENTED GAP: `getProjectServicesByOrg` is
-  // NOT version-aware (it predates versioning entirely and filters by
-  // `projectId` only), so a quote rendered for a NON-live version still
-  // shows the project's LIVE services here, not that version's own. This
-  // matches FEATUREDOCS/78's existing "Labour/Services were never threaded
-  // onto versionId" gap (Phase 5) — equipment/groups/categories above ARE
-  // fully version-scoped via `buildDocumentLineItemData`'s `versionId`, only
-  // this services append is not. Closing it means wiring
-  // `projectServices.listByProject`'s OWN already-version-aware `versionId`
-  // arg through here too — left for the same follow-up that wires the
-  // Labour tab, not attempted in this phase.
+  // Version-scoped: a project with more than one version holds a COPY of every
+  // service per version, so the services come from the version this document
+  // represents (the quote's own / the previewed version; the live version when
+  // neither is set) — never the org-wide list, which returned each service once
+  // per version.
   if (usesLiveBreakdown) {
-    const billableServices = (await getProjectServicesByOrg(organizationId))
+    const billableServices = (await getProjectServicesForVersion(organizationId, projectId, quoteContext?.versionId ?? undefined))
       .filter(
         (s) =>
-          s.projectId === projectId &&
           s.status !== "CANCELLED" &&
           Number(s.lineTotal) > 0,
       )

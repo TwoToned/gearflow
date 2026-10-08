@@ -416,6 +416,35 @@ describe("projectGroupsWrites.deleteGroupNative", () => {
     });
   });
 
+  // Regression: deleting a group while working in a NON-live version must
+  // release THAT version's lines. The delete used to read only the LIVE
+  // version's lines, so v2's members kept a dangling groupId — hidden in the
+  // equipment tab, but resurfacing on the quote as ungrouped items.
+  test("a group in a non-live version releases its own version's lines (not the live version's)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t); // live version v-p1-org_1
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: "v2", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      // v1 (live) has its own group + line with the same lineage; they must be untouched.
+      await ctx.db.insert("projectGroups", { id: "g1-v1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0, versionId: "v-p1-org_1", lineageId: "g1" });
+      await ctx.db.insert("projectLineItems", { id: "li1-v1", organizationId: ORG, projectId: "p1", groupId: "g1-v1", categoryId: "cat1", quantity: 1, lineTotal: 20, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: "v-p1-org_1", lineageId: "li1" });
+      // v2 (non-live) copy of the same group + line.
+      await ctx.db.insert("projectGroups", { id: "g1-v2", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0, versionId: "v2", lineageId: "g1" });
+      await ctx.db.insert("projectLineItems", { id: "li1-v2", organizationId: ORG, projectId: "p1", groupId: "g1-v2", categoryId: "cat1", quantity: 1, lineTotal: 20, isKitChild: false, isCustomItem: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: "v2", lineageId: "li1" });
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.deleteGroupNative, { id: "g1-v2", orgId: ORG, now: NOW, actor: ACTOR, auditId: "log1" });
+    expect(res.movedLineItems).toBe(1);
+    await t.run(async (ctx) => {
+      const v2Line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1-v2")).first();
+      expect(v2Line?.groupId).toBeUndefined(); // released, categoryId kept
+      expect(v2Line?.categoryId).toBe("cat1");
+      const v1Line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1-v1")).first();
+      expect(v1Line?.groupId).toBe("g1-v1"); // live version untouched
+      expect(await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1-v1")).first()).not.toBeNull();
+    });
+  });
+
   test("cross-org group is rejected", async () => {
     const t = makeT();
     await member(t, "member");

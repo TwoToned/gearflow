@@ -21,6 +21,23 @@ export async function getProjectServicesByOrg(
 }
 
 /**
+ * One project's services for ONE version — `versionId` omitted means the live
+ * version. Use this (never `getProjectServicesByOrg` + a `projectId` filter) for
+ * anything that renders or prices a single version's content: a project with
+ * more than one version holds a copy of every service per version, so the
+ * org-wide list returns each service once per version.
+ */
+export async function getProjectServicesForVersion(
+  orgId: string,
+  projectId: string,
+  versionId?: string,
+): Promise<ConvexProjectService[]> {
+  return await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.projectServices.listByProject, { orgId, projectId, versionId }),
+  );
+}
+
+/**
  * Sum of `lineTotal` over a project's non-CANCELLED, CHARGED services — a service
  * bills iff it has an actual charge (`lineTotal` is null/0 until a unitPrice is
  * typed or a crew charge rate auto-prices it). Org-scoped Convex `list` is

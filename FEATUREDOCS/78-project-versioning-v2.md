@@ -1525,3 +1525,21 @@ once the backfill is proven complete in prod; and closing the remaining 32
 version-scope-ratchet sites (Phase 2's "What's deferred") with real
 join-filtering. See `docs/designs/project-versioning-v2.md` for the full
 plan (not yet merged to `main`).
+
+## Quote documents: services and group deletes are version-scoped
+
+Two bugs on a project with a non-live version (found on a v2 draft quote):
+
+- **Services printed twice.** A project holds a COPY of every `projectServices`
+  row per version, and the document pipeline read the org-wide `projectServices.list`
+  filtered by `projectId` only — so each service came back once per version.
+  `buildDocumentData` now reads `getProjectServicesForVersion`
+  (`projectServices.listByProject`) for the version the document represents (the
+  quote's own, or the previewed `versionId`; the live version when neither is set).
+  Never use the org-wide list + a `projectId` filter to render or price one version.
+- **A deleted group's items came back on the quote.** `deleteGroupNative` released
+  the group's lines by reading the LIVE version's lines, so deleting a group in a
+  non-live version left that version's lines with a dangling `groupId`: hidden in
+  the equipment tab (no group to nest under) but still billed and still printed
+  (as ungrouped items). It now releases the lines of the group's OWN version.
+  Lines orphaned BEFORE this fix keep their dangling `groupId` until repaired.

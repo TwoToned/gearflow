@@ -157,10 +157,8 @@ describe("ProjectQuoteRail — viewing a non-live version (#1233 UI follow-up)",
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("heading", { name: /send v2.s quote/i })).toBeTruthy();
-    // #987 — the sanctioned preview path always renders the LIVE project;
-    // offering it here would silently preview the WRONG version's figures
-    // under a "preview" label, so it must be absent, not just re-pointed.
-    expect(within(dialog).queryByRole("link", { name: /preview draft/i })).toBeNull();
+    // The preview must be scoped to the target version, never the live project.
+    expect(within(dialog).getByRole("link", { name: /preview draft/i }).getAttribute("href")).toContain("versionId=pv2");
     // No new render/regeneration path either — the pre-send "Summary" figures
     // are omitted rather than shown under the live project's own numbers.
     expect(within(dialog).queryByText("Summary")).toBeNull();

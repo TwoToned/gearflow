@@ -149,10 +149,11 @@ describe("SendQuoteDialog — targetVersion (non-live send, #1233 UI follow-up)"
     expect(screen.queryByText(/send quote v1\b/i)).toBeNull();
   });
 
-  it("never offers the live-only preview link (it always renders the LIVE project, #987)", async () => {
+  it("previews the TARGET version's draft via versionId, never the live project", async () => {
     render(<SendQuoteDialog {...baseProps} targetVersion={TARGET_VERSION} />);
     await screen.findByRole("heading", { name: /send v7.s quote/i });
-    expect(screen.queryByRole("link", { name: /preview draft/i })).toBeNull();
+    const link = screen.getByRole("link", { name: /preview draft/i });
+    expect(link.getAttribute("href")).toContain("versionId=pv7");
   });
 
   it("does not print the live project's own totals under a 'Summary' heading for a different version", async () => {

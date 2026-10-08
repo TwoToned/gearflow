@@ -104,6 +104,7 @@ export function useQuoteWrites() {
         recipientContactId: parsed.recipientContactId || undefined,
         notes: parsed.notes || undefined,
         labelOnDocument: parsed.labelOnDocument || undefined,
+        combineServices: parsed.combineServices || undefined,
         versionId,
         actor: actor(),
         auditId: createId(),

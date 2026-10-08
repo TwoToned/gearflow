@@ -4,6 +4,8 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireService } from "./lib/auth";
 import { effectiveQuoteStatus, quoteLabel, requireQuoteInOrg } from "./lib/quoteState";
+import { loadTotalsBundle, computeTotals } from "./lib/recalc";
+import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -152,6 +154,7 @@ export const quoteArtifactContext = query({
       // reads these to build the header's version suffix.
       customLabel: quote.label ?? null,
       labelOnDocument: quote.labelOnDocument ?? false,
+      combineServices: quote.combineServices ?? false,
       pdfFileId: quote.pdfFileId ?? null,
       // `sentAt || publishedAt` — a pre-#986 row the backfill hasn't reached
       // still counts as sent (convex/lib/quoteState.ts normalises the same way).
@@ -160,6 +163,41 @@ export const quoteArtifactContext = query({
       validUntil: quote.validUntil ?? null,
       ...money,
     };
+  },
+});
+
+/** A version's money, computed fresh from its own rows (no snapshot exists for a draft). */
+async function computeVersionMoney(ctx: QueryCtx, projectId: string, orgId: string, versionId: string) {
+  const bundle = await loadTotalsBundle(ctx, projectId, orgId, await resolveOrgDefaultTaxRate(ctx, orgId), versionId);
+  if (!bundle) return resolveQuoteArtifactMoney(null);
+  const totals = computeTotals(bundle);
+  return {
+    subtotal: totals.subtotal,
+    discountPercent: Number(bundle.project.discountPercent) || 0,
+    discountAmount: totals.discountAmount,
+    taxAmount: totals.taxAmount,
+    total: totals.total,
+  };
+}
+
+/**
+ * DRAFT PREVIEW context for a specific (possibly non-live) project version —
+ * the same money shape `quoteArtifactContext` returns, but computed FRESH from
+ * that version's own rows (`loadTotalsBundle`/`computeTotals`, the path
+ * `quotesWrites.buildQuoteSnapshot` freezes at send, R-3.1) because a draft has
+ * no snapshot yet. Lets `/api/documents/[projectId]?preview=1&versionId=` show
+ * v2's figures rather than the live version's under a "preview" label.
+ */
+export const versionPreviewContext = query({
+  args: { projectId: v.string(), versionId: v.string(), orgId: v.string() },
+  handler: async (ctx, { projectId, versionId, orgId }) => {
+    await requireService(ctx);
+    const project = await requireProjectInOrg(ctx, projectId, orgId);
+    const version = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", versionId)).first();
+    if (version?.organizationId !== orgId || version.projectId !== project.id) {
+      throw new ConvexError("projectVersions not found: " + versionId);
+    }
+    return { versionId, ...(await computeVersionMoney(ctx, project.id, orgId, versionId)) };
   },
 });
 
@@ -282,6 +320,10 @@ export const agentOps: AgentOpsAnnotations = {
     agentAccess: "denied",
     reason:
       "Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain.",
+  },
+  versionPreviewContext: {
+    agentAccess: "denied",
+    reason: "SERVICE-gated like every function in this module (no agent escape hatch); feeds only the session-gated draft-preview render.",
   },
   invoiceArtifactContext: {
     agentAccess: "denied",

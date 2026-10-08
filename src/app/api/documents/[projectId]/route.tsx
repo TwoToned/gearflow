@@ -68,6 +68,10 @@ function readDocumentParams(url: URL) {
     // below — `buildDocumentData` only reads it for `docType: "invoice"`, so
     // it's a harmless no-op on any other type, not worth its own branch here.
     invoiceId: q.get("invoiceId") || undefined,
+    // Draft-preview a specific (non-live) project version's quote.
+    versionId: q.get("versionId") || undefined,
+    // Draft preview only: print services as one combined line.
+    combineServices: q.get("combineServices") === "1" ? true : undefined,
     // `container-label` / `kit-label` only: print one container / kit instead
     // of all of them. A no-op for every other type.
     labelId: q.get("labelId") || undefined,
@@ -81,7 +85,7 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const { type, preview, invoiceId, labelId, previewInvoiceDateParam, previewDueDateParam } = readDocumentParams(new URL(request.url));
+  const { type, preview, invoiceId, versionId, combineServices, labelId, previewInvoiceDateParam, previewDueDateParam } = readDocumentParams(new URL(request.url));
   let session;
   try {
     session = await requireOrganization();
@@ -122,6 +126,8 @@ export async function GET(
     const pdf = await generatePdf(projectId, organizationId, docType, {
       draftPreview: preview && PREVIEW_ONLY_TYPES.has(docType),
       invoiceId,
+      previewVersionId: preview ? versionId : undefined,
+      combineServices: preview ? combineServices : undefined,
       stampedDates,
       labelId,
     });

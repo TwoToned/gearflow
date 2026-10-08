@@ -54,6 +54,10 @@ export interface ProjectPdfOptions {
    * `buildDocumentData`'s `quoteId` option.
    */
   quoteId?: string;
+  /** Draft-preview a specific project version — see `buildDocumentData`'s `previewVersionId`. */
+  previewVersionId?: string;
+  /** Quote only — one combined "Services" row. See `buildDocumentData`'s `combineServices`. */
+  combineServices?: boolean;
   /** `container-label` / `kit-label` only — print just this container id / kit
    *  line item id instead of every one on the job. */
   labelId?: string;
@@ -82,6 +86,8 @@ export async function generatePdf(
     versionSuffix: options?.versionSuffix,
     invoiceId: options?.invoiceId,
     quoteId: options?.quoteId,
+    previewVersionId: options?.previewVersionId,
+    combineServices: options?.combineServices,
   });
 
   return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview, labelId: options?.labelId });

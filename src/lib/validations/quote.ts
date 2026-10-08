@@ -40,6 +40,8 @@ const quoteBaseSchema = z.object({
   /** #1080/#1097 — "Print this label on the document" checkbox at send. Off
    *  by default (see `quoteSetLabelSchema`'s docstring for why). */
   labelOnDocument: z.boolean().optional(),
+  /** Print services as one combined line on the document. Presentation only. */
+  combineServices: z.boolean().optional(),
 });
 
 /** Send — freezes the revision. */
@@ -49,6 +51,7 @@ export const quoteSendSchema = quoteBaseSchema.pick({
   validityDays: true,
   recipientContactId: true,
   labelOnDocument: true,
+  combineServices: true,
 });
 
 /** Recall — un-send. Reuses #793's 10-character justification floor: this

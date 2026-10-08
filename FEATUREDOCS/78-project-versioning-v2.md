@@ -1543,3 +1543,9 @@ Two bugs on a project with a non-live version (found on a v2 draft quote):
   the equipment tab (no group to nest under) but still billed and still printed
   (as ungrouped items). It now releases the lines of the group's OWN version.
   Lines orphaned BEFORE this fix keep their dangling `groupId` until repaired.
+
+**Repairing already-orphaned lines:** `scripts/convex-repair-orphaned-group-lines.ts`
+(`convex/repairOrphanedGroupLines.ts`, SERVICE-only). Dry-run by default — lists every
+line whose `groupId` points at a missing group; `--apply` clears `groupId` only (the line
+keeps its category and price, so no recalc) and the line reappears as a standalone item.
+Idempotent.

@@ -23,8 +23,8 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 448 | 312 | 134 | 1 | 1 |
-| Mutations | 804 | 303 | 493 | 0 | 8 |
-| **Total** | **1252** | **615** | **627** | **1** | **9** |
+| Mutations | 805 | 303 | 494 | 0 | 8 |
+| **Total** | **1253** | **615** | **628** | **1** | **9** |
 
 <!-- reachability-floor: 615 -->
 
@@ -98,6 +98,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `pendingSSOApprovals` | 5 |
 | `projectNumberSequences` | 7 |
 | `projectVersionsWrites` | 1 |
+| `repairOrphanedGroupLines` | 1 |
 | `siteSettings` | 9 |
 | `subHireGroups` | 8 |
 | `subHireItems` | 7 |

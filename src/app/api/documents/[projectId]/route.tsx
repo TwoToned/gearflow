@@ -71,7 +71,7 @@ function readDocumentParams(url: URL) {
     // Draft-preview a specific (non-live) project version's quote.
     versionId: q.get("versionId") || undefined,
     // Draft preview only: print services as one combined line.
-    combineServices: q.get("combineServices") === "1",
+    combineServices: q.get("combineServices") === "1" ? true : undefined,
     // `container-label` / `kit-label` only: print one container / kit instead
     // of all of them. A no-op for every other type.
     labelId: q.get("labelId") || undefined,

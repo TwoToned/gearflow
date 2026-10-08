@@ -14,7 +14,7 @@ import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { upsertSlotForLineItem } from "./categorySlotsWrites";
-import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
+import { resolveVersionId, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -543,9 +543,12 @@ export const deleteGroupNative = mutation({
     if (!deleteGroupProject) throw new ConvexError("Project not found");
     // Delete is structural — never gated.
 
-    // Lines in this group. LIVE-ONLY (#1228). Clear groupId only (keep
+    // Lines in this group — in the GROUP'S OWN version, not necessarily the live
+    // one: deleting a group while working in a non-live version must release that
+    // version's lines, or they keep a dangling groupId (hidden in the equipment tab,
+    // yet resurfacing on the quote as ungrouped items). Clear groupId only (keep
     // categoryId so items land standalone in the same category).
-    const lines = (await liveRows(ctx, deleteGroupProject, "projectLineItems")).filter(
+    const lines = (await versionRows(ctx, "projectLineItems", resolveVersionId(deleteGroupProject, group.versionId))).filter(
       (li) => li.organizationId === a.orgId && li.groupId === a.id,
     );
     for (const li of lines) {

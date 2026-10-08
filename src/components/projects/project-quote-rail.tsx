@@ -289,7 +289,6 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   return (
     <div className="space-y-2">
       <QuoteRailHeader
-        projectId={projectId}
         revision={revision}
         liveRevision={liveRevision}
         hasOpenDraft={hasOpenDraft}
@@ -412,9 +411,7 @@ function QuoteRailHeader({
   creatingNextVersion,
   viewingVersion,
   viewedVersionQuoteWritable,
-  projectId,
 }: {
-  projectId: string;
   revision: number;
   liveRevision: number;
   hasOpenDraft: boolean;
@@ -430,20 +427,9 @@ function QuoteRailHeader({
       <CanDo resource="invoice" action="publish">
         {viewingVersion ? (
           viewedVersionQuoteWritable && (
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="line" size="sm" asChild>
-                <a
-                  href={`/api/documents/${projectId}?type=quote&preview=1&versionId=${encodeURIComponent(viewingVersion.id)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Eye className="h-3.5 w-3.5" /> Preview v{viewingVersion.number} draft
-                </a>
-              </Button>
-              <Button type="button" variant="line" size="sm" onClick={onSend}>
-                <Send className="h-3.5 w-3.5" /> Send v{viewingVersion.number}&rsquo;s quote
-              </Button>
-            </div>
+            <Button type="button" variant="line" size="sm" onClick={onSend}>
+              <Send className="h-3.5 w-3.5" /> Send v{viewingVersion.number}&rsquo;s quote
+            </Button>
           )
         ) : hasOpenDraft ? (
           // #1080/#1097 — sends whatever is LIVE, not necessarily the

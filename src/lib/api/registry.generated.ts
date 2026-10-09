@@ -46129,6 +46129,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "repairOrphanedGroupLines.repairOrphanedGroupLinesPage",
+    "module": "repairOrphanedGroupLines",
+    "fn": "repairOrphanedGroupLinesPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "d90af9161df204a9",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "reservationConflicts.projectConflicts",
     "module": "reservationConflicts",
     "fn": "projectConflicts",
@@ -64427,10 +64464,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1252,
+  total: 1253,
   agentReachable: 615,
   queries: 448,
-  mutations: 804,
+  mutations: 805,
   agentReachableQueries: 312,
   agentReachableMutations: 303,
 } as const;

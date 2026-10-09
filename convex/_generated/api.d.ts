@@ -262,6 +262,7 @@ import type * as pushSubscriptions from "../pushSubscriptions.js";
 import type * as pushSubscriptionsWrites from "../pushSubscriptionsWrites.js";
 import type * as quotes from "../quotes.js";
 import type * as quotesWrites from "../quotesWrites.js";
+import type * as repairOrphanedGroupLines from "../repairOrphanedGroupLines.js";
 import type * as reservationConflicts from "../reservationConflicts.js";
 import type * as returnsLookup from "../returnsLookup.js";
 import type * as returnsWrites from "../returnsWrites.js";
@@ -584,6 +585,7 @@ declare const fullApi: ApiFromModules<{
   pushSubscriptionsWrites: typeof pushSubscriptionsWrites;
   quotes: typeof quotes;
   quotesWrites: typeof quotesWrites;
+  repairOrphanedGroupLines: typeof repairOrphanedGroupLines;
   reservationConflicts: typeof reservationConflicts;
   returnsLookup: typeof returnsLookup;
   returnsWrites: typeof returnsWrites;

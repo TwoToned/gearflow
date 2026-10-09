@@ -604,6 +604,9 @@ function ParentDescriptionCell({
         <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note, marginTop: "0.5mm" }}>via {item.supplierName}</Text>
       )}
       {display.breakdown && <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note, marginTop: "0.5mm" }}>{display.breakdown}</Text>}
+      {item.fromKitName && (
+        <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note, marginTop: "0.5mm" }}>accessory of {item.fromKitName}</Text>
+      )}
       {item.notes && config.showNotes && <RichText text={item.notes} fontSize={FONT_SIZE.note} color={COLORS.note} />}
     </View>
   );

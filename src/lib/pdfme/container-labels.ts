@@ -155,6 +155,17 @@ export function buildContainerLabels(structured: DocumentLineItem[]): ContainerL
     const home = homeContainerId(row);
     const bucket = home ? linesById.get(home) : undefined;
     if (!home || !bucket) continue;
+    if (row.fromKitName) {
+      // Already hoisted into this case by structureLineItemsByContainer.
+      bucket.push({
+        qty: row.quantity,
+        name: itemName(row),
+        tags: [],
+        accessories: [],
+        accessoryOf: { parentName: row.fromKitName, parentContainerLabel: row.fromContainerLabel ?? "another case" },
+      });
+      continue;
+    }
     const placed = placeAccessories(row, home, labelById);
     incoming.push(...placed.incoming);
     bucket.push(parentLine(row, placed.accessories));

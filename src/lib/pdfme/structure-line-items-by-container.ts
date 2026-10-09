@@ -195,6 +195,39 @@ function placeLineIntoContainers(
   }));
 }
 
+/** Splits one ACCESSORY child by container: the units sitting in a DIFFERENT
+ *  known container become hoisted entries (one per receiving container); the
+ *  rest stay nested (`kept`, null when nothing stays). */
+function splitAccessoryChild(
+  c: DocumentLineItem,
+  parent: PlacedEntry,
+  parentName: string,
+  byId: Map<string, ContainerForStructuring>,
+): { kept: DocumentLineItem | null; hoisted: PlacedEntry[] } {
+  if (c.childKind !== "ACCESSORY") return { kept: c, hoisted: [] };
+  const away = (c.units ?? []).filter((u) => u.containerId && u.containerId !== parent._containerId && byId.has(u.containerId));
+  if (away.length === 0) return { kept: c, hoisted: [] };
+  const awayByContainer = new Map<string, UnitList>();
+  for (const u of away) awayByContainer.set(u.containerId!, [...(awayByContainer.get(u.containerId!) ?? []), u]);
+  const hoisted = [...awayByContainer].map(([cid, units]): PlacedEntry => ({
+    ...c,
+    id: `${c.id}__c-${cid}`,
+    units,
+    quantity: units.length,
+    checkedOutQuantity: units.filter((u) => u.status === "CHECKED_OUT").length,
+    isKitChild: false,
+    childKind: null,
+    fromKitName: parentName,
+    fromContainerLabel: parent._containerId ? (byId.get(parent._containerId)?.label ?? null) : null,
+    _containerId: cid,
+    _topId: topLevelAncestorId(cid, byId),
+  }));
+  const stayQty = c.quantity - away.length;
+  if (stayQty <= 0) return { kept: null, hoisted };
+  const stays = (c.units ?? []).filter((u) => !away.includes(u));
+  return { kept: { ...c, units: stays, quantity: stayQty, checkedOutQuantity: stays.filter((u) => u.status === "CHECKED_OUT").length }, hoisted };
+}
+
 /** An ACCESSORY child can be packed in a different case than its parent
  *  (AA batteries in the battery box, the mic in the Pelican). Container
  *  membership is per unit, so hoist the units sitting in another KNOWN
@@ -206,41 +239,21 @@ function hoistRelocatedAccessories(
   entries: PlacedEntry[],
   byId: Map<string, ContainerForStructuring>,
 ): PlacedEntry[] {
-  const out: PlacedEntry[] = [];
-  for (const e of entries) {
-    const accessories = (e.childLineItems ?? []).filter((c) => c.childKind === "ACCESSORY");
-    if (accessories.length === 0) { out.push(e); continue; }
-    const parentName = e.model?.name ?? e.description ?? e.kit?.name ?? "Item";
-    const hoisted: PlacedEntry[] = [];
-    const kept = (e.childLineItems ?? []).flatMap((c) => {
-      if (c.childKind !== "ACCESSORY") return [c];
-      const away = (c.units ?? []).filter((u) => u.containerId && u.containerId !== e._containerId && byId.has(u.containerId));
-      if (away.length === 0) return [c];
-      const awayByContainer = new Map<string, UnitList>();
-      for (const u of away) awayByContainer.set(u.containerId!, [...(awayByContainer.get(u.containerId!) ?? []), u]);
-      for (const [cid, units] of awayByContainer) {
-        hoisted.push({
-          ...c,
-          id: `${c.id}__c-${cid}`,
-          units,
-          quantity: units.length,
-          checkedOutQuantity: units.filter((u) => u.status === "CHECKED_OUT").length,
-          isKitChild: false,
-          childKind: null,
-          fromKitName: parentName,
-          fromContainerLabel: e._containerId ? (byId.get(e._containerId)?.label ?? null) : null,
-          _containerId: cid,
-          _topId: topLevelAncestorId(cid, byId),
-        });
-      }
-      const stays = (c.units ?? []).filter((u) => !away.includes(u));
-      const stayQty = c.quantity - away.length;
-      if (stayQty <= 0) return [];
-      return [{ ...c, units: stays, quantity: stayQty, checkedOutQuantity: stays.filter((u) => u.status === "CHECKED_OUT").length }];
-    });
-    out.push({ ...e, childLineItems: kept }, ...hoisted);
+  return entries.flatMap((e) => hoistFromEntry(e, byId));
+}
+
+function hoistFromEntry(e: PlacedEntry, byId: Map<string, ContainerForStructuring>): PlacedEntry[] {
+  const children = e.childLineItems ?? [];
+  if (!children.some((c) => c.childKind === "ACCESSORY")) return [e];
+  const parentName = e.model?.name ?? e.description ?? e.kit?.name ?? "Item";
+  const kept: DocumentLineItem[] = [];
+  const hoisted: PlacedEntry[] = [];
+  for (const c of children) {
+    const r = splitAccessoryChild(c, e, parentName, byId);
+    if (r.kept) kept.push(r.kept);
+    hoisted.push(...r.hoisted);
   }
-  return out;
+  return [{ ...e, childLineItems: kept }, ...hoisted];
 }
 
 /** Emits one top-level container's whole section: its own header, every

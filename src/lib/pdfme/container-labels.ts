@@ -142,6 +142,25 @@ function nestedCaseLine(h: DocumentLineItem): LabelLine {
   return { qty: 1, name: h.description ?? "Container", tags: h.containerTag ? [h.containerTag] : [], accessories: [] };
 }
 
+/** An accessory row `structureLineItemsByContainer` already hoisted into the
+ *  case it is packed in. */
+function hoistedAccessoryLine(row: DocumentLineItem): LabelLine {
+  return {
+    qty: row.quantity,
+    name: itemName(row),
+    tags: [],
+    accessories: [],
+    accessoryOf: { parentName: row.fromKitName ?? "", parentContainerLabel: row.fromContainerLabel ?? "another case" },
+  };
+}
+
+function placeParent(row: DocumentLineItem, home: string, labelById: Map<string, string>, incoming: Incoming[]): LabelLine {
+  if (row.fromKitName) return hoistedAccessoryLine(row);
+  const placed = placeAccessories(row, home, labelById);
+  incoming.push(...placed.incoming);
+  return parentLine(row, placed.accessories);
+}
+
 /** One label per container, in the manifest's container order. */
 export function buildContainerLabels(structured: DocumentLineItem[]): ContainerLabel[] {
   const headers = structured.filter((r) => r.isContainerRow);
@@ -155,20 +174,9 @@ export function buildContainerLabels(structured: DocumentLineItem[]): ContainerL
     const home = homeContainerId(row);
     const bucket = home ? linesById.get(home) : undefined;
     if (!home || !bucket) continue;
-    if (row.fromKitName) {
-      // Already hoisted into this case by structureLineItemsByContainer.
-      bucket.push({
-        qty: row.quantity,
-        name: itemName(row),
-        tags: [],
-        accessories: [],
-        accessoryOf: { parentName: row.fromKitName, parentContainerLabel: row.fromContainerLabel ?? "another case" },
-      });
-      continue;
-    }
-    const placed = placeAccessories(row, home, labelById);
-    incoming.push(...placed.incoming);
-    bucket.push(parentLine(row, placed.accessories));
+    // A `fromKitName` row was already hoisted into this case by
+    // structureLineItemsByContainer.
+    bucket.push(placeParent(row, home, labelById, incoming));
   }
   for (const { containerId, line } of incoming) linesById.get(containerId)?.push(line);
   for (const h of headers) {

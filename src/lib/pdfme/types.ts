@@ -183,6 +183,9 @@ export interface DocumentLineItem {
    *  prints once, under its actual container, with a note back to the kit
    *  (D3) — this is that kit's name. */
   fromKitName?: string | null;
+  /** For a hoisted ACCESSORY row (`fromKitName` = its parent): the label of the
+   *  case the parent is packed in, for "accessory of X, packed in Y". */
+  fromContainerLabel?: string | null;
   // Relations
   model: {
     name: string;

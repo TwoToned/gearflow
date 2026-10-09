@@ -419,3 +419,14 @@ doc's own decisions (D2, Q11, Q14) — out of scope for "feature complete" here.
 ## Custom / untagged qty-1 lines in a container
 
 Container membership is per-unit (`projectLineItemUnits.containerId`). A qty-1 custom item has no asset, so `prepUnit` used to patch only the legacy `prepContainer` label and create no unit. The Deploy/Return tabs then bucketed it as `label:…` next to its neighbours' `id:…` (one case rendered as two sections), and the container label PDF treated it as Loose. `packSingleGenericIntoContainer` (`convex/lib/fulfillment.ts`) now backs it with one qty-1 unit carrying `containerId` whenever a real container is resolved. Regression: `convex/prepContainer.repro.test.ts`.
+
+## Accessories packed in a different case than their parent
+
+Container membership is per unit, so an ACCESSORY child (e.g. AA batteries of an
+EW-DX in a Pelican) can sit in another case (the battery box).
+`structureLineItemsByContainer` (`hoistRelocatedAccessories`) hoists those units out
+of the parent's `childLineItems` into their own row in the receiving case
+(`fromKitName` = parent, `fromContainerLabel` = the parent's case), so the
+manifest / delivery docket / return sheet list them where they physically are,
+with an "accessory of X" note. Unassigned or same-case units stay nested under the
+parent. `container-labels.ts` reads the hoisted rows for the same output as before.

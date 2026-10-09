@@ -195,6 +195,67 @@ function placeLineIntoContainers(
   }));
 }
 
+/** Splits one ACCESSORY child by container: the units sitting in a DIFFERENT
+ *  known container become hoisted entries (one per receiving container); the
+ *  rest stay nested (`kept`, null when nothing stays). */
+function splitAccessoryChild(
+  c: DocumentLineItem,
+  parent: PlacedEntry,
+  parentName: string,
+  byId: Map<string, ContainerForStructuring>,
+): { kept: DocumentLineItem | null; hoisted: PlacedEntry[] } {
+  if (c.childKind !== "ACCESSORY") return { kept: c, hoisted: [] };
+  const away = (c.units ?? []).filter((u) => u.containerId && u.containerId !== parent._containerId && byId.has(u.containerId));
+  if (away.length === 0) return { kept: c, hoisted: [] };
+  const awayByContainer = new Map<string, UnitList>();
+  for (const u of away) awayByContainer.set(u.containerId!, [...(awayByContainer.get(u.containerId!) ?? []), u]);
+  const hoisted = [...awayByContainer].map(([cid, units]): PlacedEntry => ({
+    ...c,
+    id: `${c.id}__c-${cid}`,
+    units,
+    quantity: units.length,
+    checkedOutQuantity: units.filter((u) => u.status === "CHECKED_OUT").length,
+    isKitChild: false,
+    childKind: null,
+    fromKitName: parentName,
+    fromContainerLabel: parent._containerId ? (byId.get(parent._containerId)?.label ?? null) : null,
+    _containerId: cid,
+    _topId: topLevelAncestorId(cid, byId),
+  }));
+  const stayQty = c.quantity - away.length;
+  if (stayQty <= 0) return { kept: null, hoisted };
+  const stays = (c.units ?? []).filter((u) => !away.includes(u));
+  return { kept: { ...c, units: stays, quantity: stayQty, checkedOutQuantity: stays.filter((u) => u.status === "CHECKED_OUT").length }, hoisted };
+}
+
+/** An ACCESSORY child can be packed in a different case than its parent
+ *  (AA batteries in the battery box, the mic in the Pelican). Container
+ *  membership is per unit, so hoist the units sitting in another KNOWN
+ *  container out of the parent's `childLineItems` into their own entry in
+ *  that container ("accessory of <parent>"). Mirrors container-labels.ts's
+ *  `placeAccessories`; unassigned / same-case / unknown-container units stay
+ *  nested under the parent. */
+function hoistRelocatedAccessories(
+  entries: PlacedEntry[],
+  byId: Map<string, ContainerForStructuring>,
+): PlacedEntry[] {
+  return entries.flatMap((e) => hoistFromEntry(e, byId));
+}
+
+function hoistFromEntry(e: PlacedEntry, byId: Map<string, ContainerForStructuring>): PlacedEntry[] {
+  const children = e.childLineItems ?? [];
+  if (!children.some((c) => c.childKind === "ACCESSORY")) return [e];
+  const parentName = e.model?.name ?? e.description ?? e.kit?.name ?? "Item";
+  const kept: DocumentLineItem[] = [];
+  const hoisted: PlacedEntry[] = [];
+  for (const c of children) {
+    const r = splitAccessoryChild(c, e, parentName, byId);
+    if (r.kept) kept.push(r.kept);
+    hoisted.push(...r.hoisted);
+  }
+  return [{ ...e, childLineItems: kept }, ...hoisted];
+}
+
 /** Emits one top-level container's whole section: its own header, every
  *  nested container's header (indented), then its items sorted by
  *  category/kit. All rows share `top.label` as `groupName` so
@@ -243,7 +304,10 @@ export function structureLineItemsByContainer(
   // A container line item is the box itself — a GEAR row, never one of its
   // own contents (it's the header now, matching structureLineItems' rule).
   const gearLines = rawLineItems.filter((li) => !li.isKitChild && !li.isContainerLineItem);
-  const entries: PlacedEntry[] = gearLines.flatMap((li) => placeLineIntoContainers(li, byId));
+  const entries: PlacedEntry[] = hoistRelocatedAccessories(
+    gearLines.flatMap((li) => placeLineIntoContainers(li, byId)),
+    byId,
+  );
 
   const structured: DocumentLineItem[] = [];
   const topLevel = containers

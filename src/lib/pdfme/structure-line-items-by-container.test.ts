@@ -190,3 +190,29 @@ describe("structureLineItemsByContainer", () => {
     expect(headers[0].containerTag ?? null).toBeNull();
   });
 });
+
+describe("structureLineItemsByContainer — relocated accessories", () => {
+  it("lists an accessory under the case it is actually packed in, not its parent's", () => {
+    const containers = [
+      makeContainer({ id: "pel", label: "Pelican 1500", sortOrder: 0 }),
+      makeContainer({ id: "bat", label: "Battery box", sortOrder: 1 }),
+    ];
+    const raw = [
+      makeLineItem({
+        id: "ew", description: "EW-DX", units: [unit("u-ew", "pel")],
+        childLineItems: [
+          makeLineItem({ id: "aa", description: "AA batteries", quantity: 4, isKitChild: true, childKind: "ACCESSORY",
+            units: [unit("a1", "bat"), unit("a2", "bat"), unit("a3", "pel"), unit("a4", "pel")] }),
+        ],
+      }),
+    ];
+    const out = structureLineItemsByContainer(raw, containers);
+    const ew = out.find((r) => r.id === "ew")!;
+    expect(ew.childLineItems?.[0].quantity).toBe(2);
+    const moved = out.find((r) => r.id === "aa__c-bat")!;
+    expect(moved.groupName).toBe("Battery box");
+    expect(moved.quantity).toBe(2);
+    expect(moved.fromKitName).toBe("EW-DX");
+    expect(moved.fromContainerLabel).toBe("Pelican 1500");
+  });
+});

@@ -951,6 +951,22 @@ rule. It cites this repo's own sources (`convex/lib/projectAutoStatus.ts`,
 in any of those is a change to the skill in the same PR — same rule as a
 FEATUREDOC (R-5.2/R-5.3).
 
+## API/MCP consumer skill (`/rvlt-flow-api`)
+
+`.claude/skills/rvlt-flow-api/` is the **integrator-facing** sibling: the wire
+contract an external agent needs to connect to Flow over `/api/v1/mcp` or
+`/api/v1/ops/{operation}` — connect recipes (OAuth, bearer, stdio proxy), the
+envelope (`args`/`idempotencyKey`/`confirm`), scopes + presets, the confirm
+gate, the error-code table, limits, the 21 curated tools with their args, and
+`references/operations.md` mapping common jobs to non-curated operations. It
+is written to be handed to Claude or any other agent **outside this repo**, so
+it must stay self-contained (no repo-path cross-references in the body). Its
+sources are `src/lib/api/{errors,dispatcher,arg-normalizer,whoami}.ts`,
+`src/lib/api/mcp/curated-tool-defs.ts`, `src/lib/api-key-presets.ts`,
+`convex/lib/rateLimits.ts` and the generated registry — a change to any of
+those (a new error code, a preset change, a curated tool, a renamed arg) is a
+change to this skill in the same PR, same rule as FEATUREDOCS/56.
+
 ## gstack
 
 **Always use `/browse` from gstack for web browsing. Never use `mcp__Claude_in_Chrome__*` tools.**

@@ -92,6 +92,18 @@
 > deletions. **The `ApiKey` backend is kept dormant** (Prisma model + Convex
 > table both exist — see FEATUREDOCS/03) so reinstating is cheap.
 
+> **Consumer-facing skill added 2026-10-14** — `.claude/skills/rvlt-flow-api/`
+> (`SKILL.md` + `references/operations.md`) is the hand-off document for an
+> external agent connecting over this surface: connect recipes, the envelope,
+> scopes/presets, the confirm gate, the error table, limits, every curated tool
+> with its args, and a job → operation finder for the non-curated surface. It is
+> derived from the same sources this doc describes (`errors.ts`,
+> `dispatcher.ts`, `arg-normalizer.ts`, `curated-tool-defs.ts`,
+> `api-key-presets.ts`, `rateLimits.ts`, the generated registry) and must be
+> updated in the same PR as any of them — see CLAUDE.md "API/MCP consumer skill".
+> The operator-side counterpart (domain rules, not wire contract) remains
+> `.claude/skills/rvlt-flow/`.
+
 ## Reinstatement blueprint
 
 **Plan of record (2026-07-28):**

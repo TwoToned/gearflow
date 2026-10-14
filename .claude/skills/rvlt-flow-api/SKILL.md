@@ -63,10 +63,17 @@ You can do only what BOTH allow. Presets an admin picks from:
 | `finance_reader` | reads incl. quotes/invoices | **yes** |
 | `full_agent` | reads + all non-destructive writes | yes |
 
-**No preset grants** `*:delete`, `invoice:void`, `warehouse:check_out`,
+**No preset grants** `*:delete`, `invoice:void`, `invoice:record_payment`,
+`invoice:void_payment`, `invoice:xero_manage`, `warehouse:check_out`,
 `warehouse:check_in`, `project:allow_overbook`, `project:unlock_session`,
 `warehouse:revert_agent_window`, org settings or member management. Each is a
 deliberate per-key grant. If you need one, say so plainly and name the scope.
+`full_agent` DOES carry `invoice:create/update/publish/issue/xero_push`, so
+sending a quote or issuing an invoice is in reach (still `high` danger, still
+confirm-gated). `warehouse_operator`'s extra `warehouse:scan` covers only
+ad-hoc check records; staging, reserving and dispatching all need
+`warehouse:check_out`, which no preset has — a key on that preset cannot move
+gear. Confirm with `whoami.scopes`, not the preset name.
 
 A key flagged `noFinancials` has cost/margin fields redacted on every read
 (model purchase/replacement cost, crew rates, `get_project_financials`
@@ -105,7 +112,11 @@ Error: `{ "error": { "code", "category", "retryable", "message", "recovery": { "
 Act on `recovery.action`; quote `requestId` when reporting an `internal` error.
 
 Dates and times are **epoch milliseconds** everywhere (`rentalStartDate`,
-`startMs`, `rangeStart`, `paidAt`, …). Money is a plain number in the org's
+`startMs`, `rangeStart`, `paidAt`, …) — never ISO strings. For a date-only
+field send 00:00:00 UTC of that calendar day (`Date.parse("2026-10-14")` =
+`1791936000000`), which is what the app's own forms send; quote and invoice
+dates are then normalised server-side to the org's calendar day. For a range
+query send the real instants you mean. Money is a plain number in the org's
 currency. Ids are 24-char cuids.
 
 ## Three gates you WILL hit
@@ -134,7 +145,7 @@ active privileged arg (e.g. `allowOverbook: true`).
 | Code | Who can fix it | What to say |
 |---|---|---|
 | `MISSING_SCOPE` (`requiredScope` set) | An org admin, by adding that scope to the key | "The key needs `warehouse:check_out`." |
-| `FORBIDDEN` | Nobody via the key — the acting user's role lacks it | "You don't have permission to do this; someone with the manager role would." |
+| `FORBIDDEN` | Nobody via the key — the acting user's role lacks it | "Your role doesn't include this; someone whose role has `<resource:action>` needs to do it." (`whoami.permissions` shows what the acting user's role holds.) |
 
 Never report `FORBIDDEN` as "I need more access". Widening the key changes
 nothing.
@@ -148,13 +159,18 @@ unless the key holds `project:allow_overbook` (no preset has it).
 
 ## Error codes
 
+`retryable` is the server's flag and means "not permanently dead", never
+"re-send blindly": do `recovery.action` first (confirm, unlock, split, wait),
+then re-send. A `no` means the identical call will never succeed.
+
 | Category | Code | Retryable | Do |
 |---|---|---|---|
 | auth | `MISSING_CREDENTIALS`, `INVALID_KEY` | no | Fix the header / key |
 | auth | `KEY_INACTIVE`, `KEY_EXPIRED` | no | Admin issues a new key (or OAuth refresh) |
 | auth | `ORG_KILL_SWITCH`, `ORG_ARCHIVED` | no | API is off for the org — stop, tell the human |
 | scope | `MISSING_SCOPE` | no | Admin adds `requiredScope` |
-| permission | `FORBIDDEN`, `FORBIDDEN_UNLOCK_PRICING`, `AGENT_READ_NOT_MIGRATED` | no | Escalate to a person with the role; `list_operations` for the last |
+| permission | `FORBIDDEN`, `FORBIDDEN_UNLOCK_PRICING` | no | Escalate to a person whose role has it |
+| permission | `AGENT_READ_NOT_MIGRATED` | no | This read isn't open to keys; pick an equivalent from `list_operations` |
 | gate | `CONFIRMATION_REQUIRED` | yes | Confirm flow above |
 | gate | `PRICING_LOCKED` | yes | Pricing is frozen (quote sent). An admin/manager/PM clears it via `projectPricingLockWrites.unlockPricingNative` (high, confirm) — propose, don't bypass |
 | gate | `BLOCKING_COMMENTS` | no | Unresolved blocking comments on the job; a human resolves them in the app |
@@ -182,8 +198,10 @@ unless the key holds `project:allow_overbook` (no preset has it).
 ## Curated MCP tools (stable, additive-only)
 
 Namespace `rvlt_flow.v1.*`; most clients show them as `rvlt_flow_v1_<name>`.
-These 21 wrap one registry operation each and are the only part of the surface
-with a compatibility promise. Prefer them.
+Nineteen wrap one registry operation each; `whoami` and `get_project_document`
+have no registry operation (so `describe_operation` cannot describe them —
+their args are below). These 21 are the only part of the surface with a
+compatibility promise. Prefer them.
 
 | Tool | Operation | Danger | Scope | Key args |
 |---|---|---|---|---|
@@ -191,7 +209,7 @@ with a compatibility promise. Prefer them.
 | `search_assets` | `assets.list` | read | `asset:read` | none — returns ALL assets; filter client-side (or use `assets.listPage` via `call_operation` for `search`/`statusIn`/`page`) |
 | `get_asset` | `assets.getById` | read | `asset:read` | `id` |
 | `check_availability` | `availability.calendarData` | read | `project:read` | `startMs`, `endMs` |
-| `list_projects` | `projects.listPage` | read | `project:read` | `search?`, `statusIn?[]`, `typeIn?[]`, `page?` (1-based), `pageSize?` (25), `sortBy?`, `sortOrder?` |
+| `list_projects` | `projects.listPage` | read | `project:read` | `search?` (name, job number, location), `statusIn?[]`, `typeIn?[]`, `page?` (1-based), `pageSize?` (default 25), `sortBy?`, `sortOrder?` → `{ items, total, page, pageSize, totalPages }` |
 | `get_project` | `projectDetail.bundle` | read | `project:read` | `projectId` — the workhorse: dates, client, status, line items |
 | `create_project` | `projectWrites.createNative` | medium | `project:create` | `name` (only required), `clientId?`, `type?`, `status?`, `rentalStartDate?`/`rentalEndDate?` (chargeable), `projectStartDate?`/`projectEndDate?` (gear-committed), `locationId?`, `projectManagerId?` |
 | `add_line_items` | `lineItemWrites.addNative` | medium | `project:manage_line_items`, `asset:update` | `projectId`, `fields{ quantity, modelId? \| assetId? \| bulkAssetId?, type?, unitPrice?, pricingType?, discount?, isOptional?, notes?, categoryId?, groupId? }`, `includeAccessories` (bool), `allowOverbook` (send `false`) |
@@ -199,7 +217,7 @@ with a compatibility promise. Prefer them.
 | `release_items` | `warehouseWrites.undeprepLine` | **high** | `warehouse:check_out` | `projectId`, `lineItemId` |
 | `swap_asset` | `projectLineItems.swapLineItemAsset` | medium | `project:manage_line_items` | `lineItemId`, `newAssetId` — find candidates with `reservationConflicts.swapCandidates` first |
 | `stage_pick_list` | `warehouseWrites.syncContainersBatch` | medium | `warehouse:check_out` | `projectId`, `containerNames[]` |
-| `dispatch_gear` | `warehouseWrites.checkOutItems` | **high** | `warehouse:check_out` | `projectId`, `items[{ lineItemId, assetId?, quantity?, notes? }]`, `includeAccessories`, `auditIds[]` (send `[]`) |
+| `dispatch_gear` | `warehouseWrites.checkOutItems` | **high** | `warehouse:check_out` | `projectId`, `items[{ lineItemId, assetId?, quantity?, notes?, includeAccessoryIds?[] }]`, `includeAccessories`, `auditIds[]` (send `[]`) |
 | `receive_gear` | `warehouseWrites.checkInItems` | **high** | `warehouse:check_in` | `projectId`, `items[{ lineItemId, assetId?, quantity?, returnCondition: GOOD\|DAMAGED\|MISSING }]`, `auditIds[]` |
 | `list_crew` | `crewMembers.list` | read | `crew:read` | none |
 | `assign_crew` | `crewAssignmentsWrites.createNative` | medium | `crew:create` | `projectId`, `crewMemberId`, `startDate?`, `endDate?`, `crewRoleId?`, `phase?`, `status?`, `rateOverride?` |
@@ -212,15 +230,18 @@ with a compatibility promise. Prefer them.
 Plus three discovery tools: `list_operations` (`resource?`, `kind?`, `cursor?`,
 `limit?`), `describe_operation` (`operation`), `call_operation`.
 
-**Documents.** `docType` is one of `packing-list` (pick slip), `return-sheet`,
-`delivery-docket`, `manifest` — each rendered fresh from today's state, need
-`project:read` — or `quote` / `invoice` — the **frozen** sent/issued PDF, never
-re-rendered, need `invoice:read`. An unsent quote returns a watermarked draft
-preview; an un-issued invoice is `NOT_FOUND`. The MCP tool returns
-`{ url, fileName, contentType, docType, status }`; fetch `url` (short-lived, no
-auth) for the bytes. REST: `GET /api/v1/documents/{projectId}?type=<docType>`
-streams `application/pdf` directly. Never tell anyone a quote or invoice can be
-"regenerated".
+**Documents.** `docType` is one of `packing-list` (warehouse pick slip, kits
+exploded), `return-sheet`, `delivery-docket`, `manifest` (client-facing:
+everything on site, container by container, then loose) — each rendered fresh
+from today's state, need `project:read` — or `quote` / `invoice` — the
+**frozen** sent/issued PDF, never re-rendered, need `invoice:read`. An unsent
+quote returns a watermarked draft preview; an un-issued invoice is `NOT_FOUND`.
+The MCP tool returns `{ url, fileName, contentType, docType, status }` with
+`status` one of `live | draft-preview | sent | issued`; fetch `url` (short-lived
+storage link, no auth) promptly for the bytes, or hand it to the user if your
+client cannot fetch. REST: `GET /api/v1/documents/{projectId}?type=<docType>`
+streams `application/pdf` directly (`X-Document-Status` header carries the
+status). Never tell anyone a quote or invoice can be "regenerated".
 
 ## Everything else: discover, describe, call
 
@@ -229,10 +250,12 @@ Anything not curated is `stability: tracks-app` — it follows the app's
 internals and may change shape between releases.
 
 ```
-list_operations { resource: "invoice" }          → names + kind + scopes
+list_operations { resource?: "invoice", kind?: "mutation", cursor?: 0, limit?: 50 }
+    → { data: [{ operation, kind, resource, action, scopePairs, args, injectedArgs, requiresIdempotencyKey }], total, cursor, nextCursor }
+      (cursor is a numeric offset; limit max 200; page until nextCursor is null)
 describe_operation { operation: "invoicesWrites.issueNative" }
-                                                  → args, injectedArgs, requiresIdempotencyKey, danger, errors
-call_operation { operation, args, idempotencyKey, confirm? }
+    → the same fields plus possibleErrorCodes
+call_operation { operation, args, idempotencyKey (required for mutations), confirm? }
 ```
 
 Always `describe_operation` before a non-curated call; never guess an arg
@@ -247,7 +270,7 @@ backfills, API-key management) are unreachable by construction, and
 
 **REST shortcuts** (same dispatcher, same envelope): `GET /api/v1/projects`,
 `GET /api/v1/projects/{id}`, `GET /api/v1/assets`, `GET /api/v1/clients`,
-`POST /api/v1/projects/{id}/line-items` (body `{ args: { fields, includeAccessories, allowOverbook }, idempotencyKey }`).
+`POST /api/v1/projects/{id}/line-items` (body `{ args: { fields, includeAccessories, allowOverbook }, idempotencyKey }` — `projectId` comes from the path and overrides any sent in `args`). The three `GET` list aliases take no query params and return everything; use `*.listPage` via `/ops` for paging and search.
 Also `GET /api/v1/whoami`, `GET /api/v1/operations[/{operation}]`,
 `GET /api/v1/openapi.json` (unauthenticated), `GET /llms.txt`, and the
 public reference page `https://flow.rvlt.app/docs/api`. Every `/api/v1`
@@ -263,11 +286,14 @@ prompts exist: `weekly_availability_sweep`, `prep_sheet_review`,
   building (defaults to the rental window). Availability reads the gear
   window; pricing reads the rental window. Line items inherit the project's
   dates — there are no per-line dates on `add_line_items`.
-- **Status moves itself.** Quote sent → `QUOTED`, accepted/invoiced →
-  `AWAITING_PAYMENT`, paid → `CONFIRMED`, first pack → `PREPPING`, last item
-  out → `CHECKED_OUT`, last item back → `RETURNED`. `updateStatusNative` is
-  `high` danger; diagnose the missing event before forcing a status. Never
-  move a job to `COMPLETED` or `INVOICED` by automation.
+- **Status moves itself.** Quote sent (`quotesWrites.sendNative`) → `QUOTED`;
+  client accepts (`quotesWrites.markAcceptedNative`) or an invoice is issued →
+  `AWAITING_PAYMENT`; paid in full (`paymentsWrites.recordNative`, or Xero
+  sync) → `CONFIRMED`; first pack → `PREPPING`; last item out → `CHECKED_OUT`;
+  last item back → `RETURNED`. So "the client said yes" is
+  `markAcceptedNative`, not a status edit. `projectWrites.updateStatusNative`
+  is `high` danger; record the missing event instead of forcing a status.
+  Never move a job to `COMPLETED` or `INVOICED` by automation.
 - **Statuses:** `ENQUIRY, QUOTING, QUOTED, AWAITING_PAYMENT, CONFIRMED,
   PREPPING, CHECKED_OUT, ON_SITE, RETURNED, COMPLETED, INVOICED, CANCELLED`.
   `AWAITING_PAYMENT` and later hard-hold stock. Say "deployed" for

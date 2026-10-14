@@ -1,7 +1,8 @@
 # Operation finder — beyond the curated tools
 
 Operation names are `<module>.<fn>`. Call them with
-`call_operation { operation, args, idempotencyKey?, confirm? }` (MCP) or
+`call_operation { operation, args, idempotencyKey, confirm? }` (MCP;
+`idempotencyKey` is required for every mutation, omitted for reads) or
 `POST /api/v1/ops/<module>.<fn>` (REST). Everything here is
 `stability: tracks-app`: **run `describe_operation` before calling** — the
 arg lists below are a map, not the contract, and the live schema wins.
@@ -98,6 +99,7 @@ RESERVED, SOLD`. Conditions: `NEW, GOOD, FAIR, POOR, DAMAGED`.
 | Empty a container | `warehouseWrites.clearPrepContainer` | L | `warehouse:check_out` | `projectId`, `containerName` |
 | Commit a unit to a line (curated `reserve_items`) | `warehouseWrites.reassignLineItemUnit` | M | `warehouse:check_out` | `projectId`, `unitId`, `targetLineItemId` |
 | Un-prep a line (curated `release_items`) | `warehouseWrites.undeprepLine` | **H** | `warehouse:check_out` | `projectId`, `lineItemId` |
+| Ad-hoc check record on a unit (the one `warehouse:scan` write) | `checkRecordWrites.saveAdHocCheck` | M | `warehouse:scan` | `assetId`, `bulkAssetId?`, `checks`, `incidentPlan`, `maintenancePlan` — describe first |
 | Check out loose lines (curated `dispatch_gear`) | `warehouseWrites.checkOutItems` | **H** | `warehouse:check_out` | `projectId`, `items[{ lineItemId, assetId?, quantity?, notes?, includeAccessoryIds?[] }]`, `includeAccessories`, `auditIds[]` |
 | Check out a kit / kits | `warehouseWrites.checkOutKit` / `.checkOutKitsBatch` | **H** | `warehouse:check_out` | `projectId`, `kitId` / `kitIds[]`, `auditIds[]` |
 | Add-and-dispatch in one go | `warehouseWrites.quickAddAndCheckOut` | M | `warehouse:check_out` | `projectId`, `modelId`, `assetId?`, `bulkAssetId?`, `quantity?`, `prepContainer?` |
@@ -138,12 +140,12 @@ The sent PDF is retrievable with `get_project_document { docType: "quote" }`.
 | Credit note | `invoicesWrites.createCreditNative` | M | `invoice:create` | `creditForInvoiceId`, `notes?` |
 | Void | `invoicesWrites.voidNative` | **H** | `invoice:void` | `id`, `reason` — no preset grants void |
 | Delete a draft | `invoicesWrites.deleteDraftNative` | **H** | `invoice:delete` | `id` |
-| Record a payment | `paymentsWrites.recordNative` | **H** | `invoice:record_payment` | `invoiceId`, `amount`, `method`, `paidAt`, `reference?`, `notes?` |
-| Void a payment | `paymentsWrites.voidNative` | **H** | `invoice:void_payment` | `id`, `reason` |
+| Record a payment | `paymentsWrites.recordNative` | **H** | `invoice:record_payment` | `invoiceId`, `amount`, `method` (BANK_TRANSFER\|CARD\|CASH\|CHEQUE\|OTHER), `paidAt`, `reference?`, `notes?` — no preset grants this scope |
+| Void a payment | `paymentsWrites.voidNative` | **H** | `invoice:void_payment` | `id`, `reason` — no preset grants this scope |
 
-"Paid" is `invoices.paymentStatus`, which already folds in Xero-synced
-payments. Do not sum `payments` rows yourself to decide whether a client has
-paid.
+"Paid" is `invoices.paymentStatus` (`UNPAID | PARTIALLY_PAID | PAID`), which
+already folds in Xero-synced payments. Do not sum `payments` rows yourself to
+decide whether a client has paid.
 
 ## Clients & suppliers
 
@@ -160,6 +162,9 @@ paid.
 | Log a call / email / note | `clientTimelineWrites.logCallNative` / `.logEmailNative` / `.addNoteNative` | L | `client:update` | `clientId`, `note` |
 | Set / complete the next step | `clientTimelineWrites.setNextStepNative` / `.completeNextStepNative` | M | `client:update` | `clientId`, `title`, `dueDate`, `notes?`, `projectId?` / `workItemId`, `outcome` |
 | Suppliers | `suppliers.list` / `.listPage` / `.detail` / `.subhiresPage` / `.assetsPage` | read | `supplier:read` | — / filters / `id` / `supplierId`, `page`, `pageSize` |
+| Create / edit a supplier | `suppliersWrites.createNative` / `.updateNative` | M | `supplier:create` / `supplier:update` | `name`, `contactName?`, `email?`, `phone?`, `address?`, `website?`, `accountNumber?`, `paymentTerms?`, `defaultLeadTime?`, `tags?[]`, `notes?` (+ `id` on update) |
+| Supplier purchase orders | `supplierOrdersWrites.createNative` / `.updateNative` (**H**) | M | `supplier:create` / `supplier:update` | `supplierId`, `orderNumber`, `type`, `orderDate?`, `expectedDate?`, `projectId?`, `status?`, `notes?` |
+| Lines on a supplier order | `supplierOrderItemsWrites.addSupplierOrderItemNative` / `.updateSupplierOrderItemNative` | M | `supplier:update` | `orderId`, `description`, `quantity`, `unitPrice`, `modelId?`, `assetId?`, `notes?` (+ `itemId` on update) |
 
 ## Crew
 
@@ -186,7 +191,10 @@ SETUP, REHEARSAL, FULL_DURATION`.
 | List / by job / one | `subHires.list` / `.listByProject` / `.getById` | read | `subHire:read` | — / `projectId` / `id` |
 | Create an order | `subHiresWrites.createSubHireNative` | M | `subHire:create` | `supplierId`, `projectId?`, `hireStart?`, `hireEnd?`, `supplierReference?`, `showOnDocs` |
 | Add a line | `subHiresWrites.addSubHireItemNative` | M | `subHire:update` | `subHireId`, `description`, `quantity`, `duration`, `pricingType`, `unitCost`, `unitCharge`, `discount`, `modelId?` |
-| Edit order / line / status | `subHiresWrites.updateSubHireNative` / `.updateSubHireItemNative` / `.updateSubHireStatusNative` (**H**) | M | `subHire:update` | describe first |
+| Edit the order | `subHiresWrites.updateSubHireNative` | M | `subHire:update` | `id`, `supplierId`, `showOnDocs`, `projectId?`, `hireStart?`, `hireEnd?`, `supplierReference?`, `notes?` |
+| Edit a line | `subHiresWrites.updateSubHireItemNative` | M | `subHire:update` | `itemId`, `description`, `quantity`, `duration`, `pricingType`, `unitCost`, `unitCharge`, `discount`, `modelId?`, `notes?` |
+| Change status | `subHiresWrites.updateSubHireStatusNative` | **H** | `subHire:update` | `id`, `status` |
+| Remove a line | `subHiresWrites.removeSubHireItemNative` | **H** | `subHire:update` | `itemId` |
 | Payment status | `subHiresWrites.updateSubHirePaymentStatusNative` | M | `subHire:update` | `id`, `paymentStatus` (UNPAID\|PARTIALLY_PAID\|PAID) |
 
 Sub-hire statuses: `DRAFT, CONFIRMED, ON_HIRE, RETURNED, CANCELLED`.

@@ -17,6 +17,7 @@ import { logActivity } from "@/lib/activity-log";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { DEFAULT_SSO_SETTINGS, type OrgSSOSettings, type SSOGroupMapping } from "@/lib/sso-types";
 import { env } from "@/env";
+import { ssoOidcConfigPatchSchema, type SsoOidcConfigPatch } from "@/lib/validations/sso";
 import { readOrgSettingsBlob, saveOrgSettings } from "@/lib/org-settings-read";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { DANGEROUS_OBJECT_KEYS } from "@/lib/safe-object-key";
@@ -173,12 +174,14 @@ export async function deleteSSOProvider(providerId: string) {
  * Directly patch the sso_provider oidcConfig JSON.
  * Used for toggling userInfoEndpoint (to force ID token usage)
  * since Better Auth's mergeOIDCConfig uses ?? and can't null-out fields.
+ * Also rotates clientId/clientSecret: Better Auth treats a clientId change as an
+ * identity-boundary change and rejects it while linked accounts exist, which
+ * blocks renewing an expired app registration. Issuer + endpoints are untouched,
+ * so the trust anchor stays the same IdP.
  */
-export async function patchProviderOidcConfig(
-  providerId: string,
-  patch: { useIdTokenOnly?: boolean },
-) {
-  const { organizationId } = await requirePermission("orgSettings", "update");
+export async function patchProviderOidcConfig(providerId: string, rawPatch: SsoOidcConfigPatch) {
+  const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
+  const patch = ssoOidcConfigPatchSchema.parse(rawPatch);
 
   const provider = await prisma.ssoProvider.findFirst({
     where: { providerId, organizationId },
@@ -186,29 +189,8 @@ export async function patchProviderOidcConfig(
   if (!provider || !provider.oidcConfig) throw new Error("OIDC provider not found");
 
   const config = JSON.parse(provider.oidcConfig);
-
-  if (patch.useIdTokenOnly) {
-    // If required endpoints are missing (e.g. from a previous toggle), re-discover them
-    if (!config.tokenEndpoint || !config.jwksEndpoint || !config.authorizationEndpoint) {
-      try {
-        const issuer = config.issuer || provider.issuer;
-        const discoveryUrl = `${issuer}/.well-known/openid-configuration`;
-        // Cache policy (R-9.9): no-cache — fetched once per SSO-config save (not a hot
-        // path). OIDC discovery docs are cacheable (respect their Cache-Control) if this
-        // ever moves onto a request path.
-        const res = await fetchWithTimeout(discoveryUrl);
-        const disc = await res.json();
-        config.authorizationEndpoint = disc.authorization_endpoint;
-        config.tokenEndpoint = disc.token_endpoint;
-        config.jwksEndpoint = disc.jwks_uri;
-      } catch {
-        // Discovery failed — endpoints stay as-is, login will trigger discovery at runtime
-      }
-    }
-    // Remove userInfoEndpoint so Better Auth falls back to ID token
-    delete config.userInfoEndpoint;
-    config.overrideUserInfo = true;
-  }
+  applyCredentialPatch(config, patch);
+  if (patch.useIdTokenOnly) await forceIdTokenMode(config, provider.issuer);
 
   await prisma.ssoProvider.update({
     where: { id: provider.id },
@@ -216,7 +198,53 @@ export async function patchProviderOidcConfig(
   });
   invalidateOrgLoginInfoCache();
 
+  if (patch.clientId || patch.clientSecret) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "sso_provider",
+      entityId: provider.id,
+      entityName: provider.issuer,
+      summary: `Rotated SSO credentials (${rotatedFieldsLabel(patch)}) for ${provider.issuer}`,
+    });
+  }
+
   return { success: true };
+}
+
+function applyCredentialPatch(config: Record<string, unknown>, patch: SsoOidcConfigPatch) {
+  if (patch.clientId) config.clientId = patch.clientId;
+  if (patch.clientSecret) config.clientSecret = patch.clientSecret;
+}
+
+function rotatedFieldsLabel(patch: SsoOidcConfigPatch) {
+  return [patch.clientId && "client ID", patch.clientSecret && "client secret"]
+    .filter(Boolean)
+    .join(" + ");
+}
+
+/** Drop userInfoEndpoint so Better Auth reads claims from the ID token. */
+async function forceIdTokenMode(config: Record<string, unknown>, fallbackIssuer: string) {
+  // If required endpoints are missing (e.g. from a previous toggle), re-discover them
+  if (!config.tokenEndpoint || !config.jwksEndpoint || !config.authorizationEndpoint) {
+    try {
+      const issuer = (config.issuer as string) || fallbackIssuer;
+      // Cache policy (R-9.9): no-cache — fetched once per SSO-config save (not a hot
+      // path). OIDC discovery docs are cacheable (respect their Cache-Control) if this
+      // ever moves onto a request path.
+      const res = await fetchWithTimeout(`${issuer}/.well-known/openid-configuration`);
+      const disc = await res.json();
+      config.authorizationEndpoint = disc.authorization_endpoint;
+      config.tokenEndpoint = disc.token_endpoint;
+      config.jwksEndpoint = disc.jwks_uri;
+    } catch {
+      // Discovery failed — endpoints stay as-is, login will trigger discovery at runtime
+    }
+  }
+  delete config.userInfoEndpoint;
+  config.overrideUserInfo = true;
 }
 
 // ─── Provider Meta (display name, icon — stored in org metadata) ─────────────

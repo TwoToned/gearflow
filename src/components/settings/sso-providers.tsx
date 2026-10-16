@@ -284,12 +284,8 @@ function EditProviderForm({
 
       if (provider.type === "oidc") {
         const oidcUpdate: Record<string, unknown> = {};
-        if (oidcClientId !== (provider.oidcConfig?.clientId as string || "")) {
-          oidcUpdate.clientId = oidcClientId;
-        }
-        if (oidcClientSecret) {
-          oidcUpdate.clientSecret = oidcClientSecret;
-        }
+        // clientId/clientSecret are rotated via patchProviderOidcConfig below —
+        // Better Auth rejects a clientId change while linked accounts exist.
         // Email claim mapping (e.g. "preferred_username" for Microsoft Entra)
         const currentMapping = (provider.oidcConfig?.mapping as Record<string, string> | undefined)?.email || "";
         if (oidcEmailClaim !== currentMapping) {
@@ -317,7 +313,12 @@ function EditProviderForm({
 
       // 2. Always ensure ID token mode is on (userinfo endpoints are unreliable across IdPs)
       if (provider.type === "oidc") {
-        await patchProviderOidcConfig(provider.providerId, { useIdTokenOnly: true });
+        const clientIdChanged = oidcClientId !== ((provider.oidcConfig?.clientId as string) || "");
+        await patchProviderOidcConfig(provider.providerId, {
+          useIdTokenOnly: true,
+          ...(clientIdChanged && { clientId: oidcClientId }),
+          ...(oidcClientSecret && { clientSecret: oidcClientSecret }),
+        });
       }
 
       // 3. Update display meta (name + icon) via server action

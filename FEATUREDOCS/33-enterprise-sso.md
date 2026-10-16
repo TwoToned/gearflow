@@ -109,7 +109,7 @@ Six card sections:
 | `approveSSOUser(id, role?)` | `requirePermission("orgMembers", "create")` | Approve + create member |
 | `rejectSSOUser(id, note?)` | `requirePermission("orgMembers", "create")` | Reject + email |
 | `updateSSOProviderMeta(id, meta)` | `requirePermission("orgSettings", "update")` | Update provider display name/icon |
-| `patchProviderOidcConfig(id, patch)` | `requirePermission("orgSettings", "update")` | Direct DB patch for ID token mode |
+| `patchProviderOidcConfig(id, patch)` | `requirePermission("orgSettings", "update")` | Direct DB patch for ID token mode **and OIDC credential rotation** (`clientId`/`clientSecret`, Zod-validated, audit-logged) |
 | `getOrgLoginInfo(orgSlug)` | None (public) | Org info for login page |
 
 **`getOrgLoginInfo` is cached (#804):** it is a public, pre-auth action hit on every
@@ -125,7 +125,7 @@ can take up to 60s to appear on the login page.
 ## Provider Registration
 SSO provider CRUD uses Better Auth's built-in API endpoints from the client (`authClient.sso.register()`), not server actions. SP Metadata (ACS URL, Metadata URL, OIDC Redirect) is displayed in the provider form for IdP configuration.
 
-Provider editing uses `updateBetterAuthProvider()` helper (calls `/api/auth/sso/update-provider`) for issuer, domain, secrets, and claim mapping. Display metadata (name, icon) is stored separately in org metadata via `updateSSOProviderMeta()`.
+Provider editing uses `updateBetterAuthProvider()` helper (calls `/api/auth/sso/update-provider`) for issuer, domain, and claim mapping. **Client ID / secret are rotated via `patchProviderOidcConfig`, not Better Auth**: its update-provider treats a `clientId` change as an identity-boundary change and returns "Cannot change SSO provider identity fields while linked accounts exist", which would make an expired app registration impossible to renew. Issuer and endpoints stay on the guarded Better Auth path. Display metadata (name, icon) is stored separately in org metadata via `updateSSOProviderMeta()`.
 
 ## OIDC Claim Mapping & ID Token Mode
 

@@ -30,6 +30,19 @@ export const ssoOidcProviderSchema = z.object({
   organizationId: z.string().optional(),
 });
 
+/**
+ * Patch of an existing OIDC provider's stored config. Credentials are rotated
+ * here rather than through Better Auth's update-provider, which refuses any
+ * `clientId` change once a user has linked an account to the provider.
+ */
+export const ssoOidcConfigPatchSchema = z.object({
+  useIdTokenOnly: z.boolean().optional(),
+  clientId: ssoOidcProviderSchema.shape.clientId.optional(),
+  clientSecret: ssoOidcProviderSchema.shape.clientSecret.optional(),
+});
+
+export type SsoOidcConfigPatch = z.infer<typeof ssoOidcConfigPatchSchema>;
+
 export const ssoSamlProviderSchema = z.object({
   providerId: z.string().min(1, "Provider ID is required"),
   issuer: z.string().min(1, "Entity ID is required"),

@@ -17,6 +17,7 @@ import { logActivity } from "@/lib/activity-log";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { DEFAULT_SSO_SETTINGS, type OrgSSOSettings, type SSOGroupMapping } from "@/lib/sso-types";
 import { env } from "@/env";
+import { ssoOidcConfigPatchSchema, type SsoOidcConfigPatch } from "@/lib/validations/sso";
 import { readOrgSettingsBlob, saveOrgSettings } from "@/lib/org-settings-read";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { DANGEROUS_OBJECT_KEYS } from "@/lib/safe-object-key";
@@ -173,12 +174,14 @@ export async function deleteSSOProvider(providerId: string) {
  * Directly patch the sso_provider oidcConfig JSON.
  * Used for toggling userInfoEndpoint (to force ID token usage)
  * since Better Auth's mergeOIDCConfig uses ?? and can't null-out fields.
+ * Also rotates clientId/clientSecret: Better Auth treats a clientId change as an
+ * identity-boundary change and rejects it while linked accounts exist, which
+ * blocks renewing an expired app registration. Issuer + endpoints are untouched,
+ * so the trust anchor stays the same IdP.
  */
-export async function patchProviderOidcConfig(
-  providerId: string,
-  patch: { useIdTokenOnly?: boolean },
-) {
-  const { organizationId } = await requirePermission("orgSettings", "update");
+export async function patchProviderOidcConfig(providerId: string, rawPatch: SsoOidcConfigPatch) {
+  const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
+  const patch = ssoOidcConfigPatchSchema.parse(rawPatch);
 
   const provider = await prisma.ssoProvider.findFirst({
     where: { providerId, organizationId },
@@ -186,6 +189,9 @@ export async function patchProviderOidcConfig(
   if (!provider || !provider.oidcConfig) throw new Error("OIDC provider not found");
 
   const config = JSON.parse(provider.oidcConfig);
+
+  if (patch.clientId) config.clientId = patch.clientId;
+  if (patch.clientSecret) config.clientSecret = patch.clientSecret;
 
   if (patch.useIdTokenOnly) {
     // If required endpoints are missing (e.g. from a previous toggle), re-discover them
@@ -215,6 +221,21 @@ export async function patchProviderOidcConfig(
     data: { oidcConfig: JSON.stringify(config) },
   });
   invalidateOrgLoginInfoCache();
+
+  if (patch.clientId || patch.clientSecret) {
+    await logActivity({
+      organizationId,
+      userId,
+      userName,
+      action: "UPDATE",
+      entityType: "sso_provider",
+      entityId: provider.id,
+      entityName: provider.issuer,
+      summary: `Rotated SSO credentials (${[patch.clientId && "client ID", patch.clientSecret && "client secret"]
+        .filter(Boolean)
+        .join(" + ")}) for ${provider.issuer}`,
+    });
+  }
 
   return { success: true };
 }

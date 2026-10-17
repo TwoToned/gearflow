@@ -15,7 +15,8 @@
  * scope for this migration (FEATUREDOCS/13-pdfs.md).
  */
 import { buildDocumentData } from "./build-document-data";
-import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
+import { DOCUMENT_LAYOUTS, type LabelDocumentType, type ProjectDocumentType } from "./document-layouts";
+import { buildLabelIndex, type LabelIndexEntry } from "./container-labels";
 import { renderPdfTemplate } from "./pdf-render";
 import { renderReactPdfTemplate } from "@/lib/react-pdf/render";
 import { getTtReportBuilder } from "./templates";
@@ -58,7 +59,7 @@ export interface ProjectPdfOptions {
   previewVersionId?: string;
   /** Quote only — one combined "Services" row. See `buildDocumentData`'s `combineServices`. */
   combineServices?: boolean;
-  /** `container-label` / `kit-label` only — print just this container id / kit
+  /** `container-label` / `kit-label` / `item-label` only — print just this container id / kit
    *  line item id instead of every one on the job. */
   labelId?: string;
 }
@@ -91,6 +92,26 @@ export async function generatePdf(
   });
 
   return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview, labelId: options?.labelId });
+}
+
+const LABEL_KIND = { "container-label": "container", "kit-label": "kit", "item-label": "item" } as const;
+
+/**
+ * The labels a label document would print, as `{ id, title, tag }` — what the
+ * "print one" menus list. Built by the same builders the PDF uses (same
+ * structured rows), so a menu can never offer a label that won't print.
+ */
+export async function listLabelIndex(
+  projectId: string,
+  organizationId: string,
+  docType: LabelDocumentType,
+): Promise<LabelIndexEntry[]> {
+  const layout = DOCUMENT_LAYOUTS[docType];
+  const data = await buildDocumentData(projectId, organizationId, docType, undefined, {
+    expandProjectGroups: layout.expandProjectGroups,
+    byContainer: layout.byContainer,
+  });
+  return buildLabelIndex(LABEL_KIND[docType], data.line_items);
 }
 
 /**

@@ -160,16 +160,24 @@ above); they're presentational additions layered onto the existing
 keep it reviewable and to avoid touching those shared primitives' several
 other doc-type consumers without dedicated coverage.
 
-## Container & kit labels
+## Container, kit & item labels
 
 A small label to print and tape to each case, so what is inside is obvious
 without opening it. `DocumentType`s `"container-label"` and `"kit-label"`
-(`src/lib/react-pdf/container-label-document.tsx`), reachable from the Documents menu on the project page and on the
-warehouse page ("Container labels", "Kit labels") or
-`/api/documents/[projectId]?type=container-label|kit-label`. Add
-`&labelId=<container id | kit line item id>` to print just one.
+(`src/lib/react-pdf/container-label-document.tsx`) and `"item-label"`
+(`src/lib/react-pdf/item-label-document.tsx`), reachable from the Documents menu on the project page and on the
+warehouse page ("Container labels", "Kit labels", "Item labels") or
+`/api/documents/[projectId]?type=container-label|kit-label|item-label`. Add
+`&labelId=<container id | kit line item id | item label id>` to print just one,
+or `&list=1` to get the printable labels as JSON (`{ labels: [{ id, title, tag }] }`)
+instead of a PDF.
 
-- **One case at a time.** On the warehouse page, Container labels is a submenu: "All containers" or any single container by name (`labelId`). Ad hoc (CUSTOM) containers are ordinary `projectContainers` rows, so they appear and print the same way, just with no asset tag.
+- **One label at a time.** Kit and item labels are submenus too
+  (`src/components/documents/label-submenu.tsx`): "All …" plus one entry per label,
+  fetched via `list=1` when the submenu first opens. The list is built by the same
+  builders as the PDF (`buildLabelIndex`, `generate-pdf.ts`'s `listLabelIndex`), so
+  the menu can't offer a label that won't print and the client keeps no second
+  copy of "which lines are kits / loose items". On the warehouse page, Container labels is a submenu: "All containers" or any single container by name (`labelId`). Ad hoc (CUSTOM) containers are ordinary `projectContainers` rows, so they appear and print the same way, just with no asset tag.
 - **Layout.** Docket styling (org colour title, tinted contents band), full page
   width so contents run in two columns: wider rather than taller. Header carries
   client, project and rental/event dates. No QR code, no "packed by".
@@ -187,10 +195,24 @@ warehouse page ("Container labels", "Kit labels") or
 - **Kits** are not containers, so a kit label is its own document: one per kit
   line on the job (a kit parent), titled with the kit's name and asset tag,
   listing members with their tags and noting the case it is packed in.
+- **Item labels** are for gear that isn't in a case or a kit (a drum shield, a
+  stand, a hired-in desk): the same header and client/project/dates blocks, the
+  one item in the contents band, and a QR of its asset tag (vector, drawn by
+  `components/qr-code.tsx`; same payload as the asset page's QR, round-trip
+  tested through the scanner's decoder). Built by `buildItemLabels` from the
+  "Loose" rows only — kits (own label), containers, services/labour/sales,
+  Project Group wrappers and cancelled lines never get one. Four shapes, one layout:
+  - **Serialised** — one label per physical unit (own tag + QR), so each is
+    scannable. The line's accessories print on the first of them only (an
+    accessory isn't tied to one unit's label).
+  - **Bulk** — one label per line: quantity up front, the pool's tag + QR.
+  - **Custom** — no inventory record, so no tag and no QR; quantity carries it.
+  - **Sub-hired** — same, plus `Sub-hire · <supplier>` in the header subtitle.
 - **Nested cases** appear as a line inside the case they are packed in.
 - Bulk lines show quantity only (no tag). A label too tall for a page is allowed
   to break across pages; otherwise each label is kept whole.
-- Not done: a per-chip "Print label" button on the warehouse container rail
+- Not done: item labels for gear packed in a case (the case label lists it), a
+  per-chip "Print label" button on the warehouse container rail
   (use `labelId` meanwhile), and the agent/API document types
   (`AGENT_DOCUMENT_TYPES`).
 

@@ -55,6 +55,7 @@ import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { LabelSubmenu } from "@/components/documents/label-submenu";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
@@ -471,8 +472,6 @@ export default function ProjectDetailPage({
                         { label: "Pull slip", apiType: "pull-slip" },
                         { label: "Delivery docket", apiType: "delivery-docket" },
                         { label: "Return sheet", apiType: "return-sheet" },
-                        { label: "Container labels", apiType: "container-label" },
-                        { label: "Kit labels", apiType: "kit-label" },
                       ] as const).map(({ label, apiType }) => (
                         <DropdownMenuItem
                           key={apiType}
@@ -481,6 +480,9 @@ export default function ProjectDetailPage({
                           {label}
                         </DropdownMenuItem>
                       ))}
+                      <LabelSubmenu projectId={id} apiType="container-label" label="Container labels" allLabel="All containers" emptyLabel="No containers on this job" />
+                      <LabelSubmenu projectId={id} apiType="kit-label" label="Kit labels" allLabel="All kits" emptyLabel="No kits on this job" />
+                      <LabelSubmenu projectId={id} apiType="item-label" label="Item labels" allLabel="All loose items" emptyLabel="No loose items on this job" />
                       <DropdownMenuItem onClick={() => setCallSheetOpen(true)}>
                         Call sheet
                       </DropdownMenuItem>

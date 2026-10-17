@@ -36,12 +36,12 @@ export function splitColumns(lines: LabelLine[]): [LabelLine[], LabelLine[]] {
   return [left, lines.slice(i)];
 }
 
-function joinDates(start: string, end: string): string {
+export function joinDates(start: string, end: string): string {
   if (start && end) return `${start} - ${end}`;
   return start || end;
 }
 
-function Block({ caption, children, flex = 1 }: { caption: string; children: React.ReactNode; flex?: number }) {
+export function Block({ caption, children, flex = 1 }: { caption: string; children: React.ReactNode; flex?: number }) {
   return (
     <View style={{ flex, backgroundColor: COLORS.headerBg, borderWidth: 0.5, borderColor: "#e2e2e2", paddingVertical: "2mm", paddingHorizontal: "3mm" }}>
       <Text style={{ fontSize: 7, color: "#777777", fontFamily: "Helvetica-Bold", marginBottom: "0.8mm" }}>{caption}</Text>
@@ -65,10 +65,9 @@ function logoFor(data: DocumentData): { mode: "logo" | "icon" | "none"; image: s
   return { mode, image: null };
 }
 
-function LabelHeader({ data, label, color }: { data: DocumentData; label: ContainerLabel; color: string }) {
+export function LabelHeader({ data, title, subtitle, color }: { data: DocumentData; title: string; subtitle: string; color: string }) {
   const { mode, image } = logoFor(data);
   const showOrgName = (data.org_branding?.showOrgNameOnDocuments ?? true) && !!data.org_name && !(mode === "logo" && image);
-  const sub = subtitleFor(label);
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
       <View style={{ flexDirection: "row", alignItems: "center", maxWidth: "45%" }}>
@@ -81,8 +80,8 @@ function LabelHeader({ data, label, color }: { data: DocumentData; label: Contai
         ) : null}
       </View>
       <View style={{ alignItems: "flex-end", maxWidth: "55%" }}>
-        <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color, textAlign: "right" }}>{label.title}</Text>
-        <Text style={{ fontSize: 9, color: COLORS.label, marginTop: "1mm", textAlign: "right" }}>{sub}</Text>
+        <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color, textAlign: "right" }}>{title}</Text>
+        <Text style={{ fontSize: 9, color: COLORS.label, marginTop: "1mm", textAlign: "right" }}>{subtitle}</Text>
         <Text style={{ fontSize: 9, color: COLORS.label, textAlign: "right" }}>
           {[`Job ${data.project_number}`, data.document_date].filter(Boolean).join(" · ")}
         </Text>
@@ -135,7 +134,7 @@ function SingleLabel({ data, label, color }: { data: DocumentData; label: Contai
       wrap={weight > KEEP_WHOLE_MAX_WEIGHT}
       style={{ borderWidth: 0.6, borderStyle: "dashed", borderColor: "#999999", paddingVertical: "5mm", paddingHorizontal: "6mm", marginBottom: "5mm" }}
     >
-      <LabelHeader data={data} label={label} color={color} />
+      <LabelHeader data={data} title={label.title} subtitle={subtitleFor(label)} color={color} />
       <View style={{ flexDirection: "row", marginTop: "4mm" }}>
         <Block caption="Client">
           <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold" }}>{data.client_name || "-"}</Text>

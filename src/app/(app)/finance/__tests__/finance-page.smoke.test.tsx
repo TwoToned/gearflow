@@ -26,9 +26,6 @@ const BUNDLE = {
     { quoteId: "q1", version: 2, status: "SENT", validUntil: 3 * 86_400_000, daysLeft: 3, total: 5000, project: PROJECT_A },
   ],
   neverSent: [],
-  confirmedUninvoiced: [
-    { project: PROJECT_B, rentalEndDate: 5 * 86_400_000, total: 3000 },
-  ],
   depositDue: [],
   outstanding: [
     { invoiceId: "inv1", invoiceNumber: "INV-1", kind: "FULL", total: 3000, paymentStatus: "UNPAID", issuedAt: 0, dueDate: 10 * 86_400_000, project: PROJECT_B },
@@ -44,6 +41,10 @@ vi.mock("@/hooks/use-native-org-finance", async () => {
   };
 });
 
+vi.mock("@/hooks/use-quote-writes", () => ({
+  useQuoteWrites: () => ({ acknowledgeExpired: vi.fn() }),
+}));
+
 import FinancePage from "../page";
 
 describe("FinancePage smoke", () => {
@@ -51,7 +52,7 @@ describe("FinancePage smoke", () => {
     render(<FinancePage />);
     expect(screen.getByText("Finance")).toBeTruthy();
     expect(screen.getAllByText(/P-1 v2/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/P-2 — Small Gig/)).toBeTruthy();
+    expect(screen.getByText(/Small Gig/)).toBeTruthy();
     expect(screen.getByText(/INV-1/)).toBeTruthy();
   });
 
@@ -66,7 +67,7 @@ describe("FinancePage smoke", () => {
     const input = screen.getByPlaceholderText("Filter by client…");
     fireEvent.change(input, { target: { value: "Beta" } });
     expect(screen.queryByText(/P-1 v2/)).toBeNull();
-    expect(screen.getByText(/P-2 — Small Gig/)).toBeTruthy();
+    expect(screen.getByText(/Small Gig/)).toBeTruthy();
   });
 });
 
@@ -78,7 +79,7 @@ describe("FinancePage smoke — all-clear state", () => {
       return {
         ...actual,
         useNativeOrgFinance: () => ({
-          data: { quotesOut: [], expiring: [], neverSent: [], confirmedUninvoiced: [], depositDue: [], outstanding: [], capped: false },
+          data: { quotesOut: [], expiring: [], neverSent: [], depositDue: [], outstanding: [], capped: false },
           isLoading: false,
         }),
       };

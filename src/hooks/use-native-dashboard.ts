@@ -192,7 +192,6 @@ export interface NativeOrgFinanceCounts {
   quotesOutCount: number;
   expiringCount: number;
   neverSentCount: number;
-  confirmedUninvoicedCount: number;
   depositDueCount: number;
   outstandingCount: number;
 }

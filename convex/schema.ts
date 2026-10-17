@@ -2822,6 +2822,10 @@ export default defineSchema({
     declinedAt: v.optional(v.number()),
     declinedById: v.optional(v.string()),
     declineReason: v.optional(v.string()),
+    // A human dismissed this EXPIRED quote from the org Finance board (it also
+    // drops off by itself a week after `validUntil`). Display-only — never
+    // changes the quote's status; see `financeOrg.ts`.
+    expiredAcknowledgedAt: v.optional(v.number()),
     // Recall (un-send; the artifact is retained, never deleted)
     recalledAt: v.optional(v.number()),
     recalledById: v.optional(v.string()),

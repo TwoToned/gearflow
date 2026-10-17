@@ -974,17 +974,16 @@ until 25 Aug (3 days left)" in warn inside `QUOTE_EXPIRING_SOON_DAYS`, "Expired
 ## Org-level Finance section (#992 — Phase F of #985)
 
 Every finance surface up to this point is per-project — there was no way to ask
-"which quotes are sitting unanswered", "what expires this week", or "which
-confirmed jobs never got invoiced" without opening projects one at a time. A
-`/finance` nav item (sidebar, `invoice` resource, green hue) renders six
+"which quotes are sitting unanswered" or "what expires this week" without
+opening projects one at a time. A
+`/finance` nav item (sidebar, `invoice` resource, green hue) renders five
 bounded sections in `convex/financeOrg.ts`'s single `bundle` query:
 
 | Section | Definition |
 |---|---|
-| Quotes out | `effectiveStatus === "SENT"`, oldest (longest outstanding) first |
-| Expiring | `SENT`/`EXPIRED` with `validUntil` inside `QUOTE_EXPIRING_SOON_DAYS` (7, `convex/lib/quoteDates.ts` — the SAME threshold the per-project Finance tab uses, R-3.1), including already-expired |
+| Quotes out | `effectiveStatus === "SENT"`, oldest (longest outstanding) first. Quotes on a `CANCELLED` job are excluded (derived from the project on read, so cancel and delete can't diverge) |
+| Expiring | `SENT`/`EXPIRED` with `validUntil` inside `QUOTE_EXPIRING_SOON_DAYS` (7, `convex/lib/quoteDates.ts` — the SAME threshold the per-project Finance tab uses, R-3.1), including already-expired. Excluded: quotes on a `CANCELLED` job; an expired quote once acknowledged (`quotes.expiredAcknowledgedAt`, set by `quotesWrites.acknowledgeExpiredNative` — display-only, status stays `EXPIRED`) or more than `EXPIRED_QUOTE_VISIBLE_DAYS` (7) after `validUntil` |
 | Never sent | `DRAFT` revisions on active (non-template, non-`CANCELLED`) projects |
-| Confirmed but uninvoiced | Project status `CONFIRMED` or later (excluding `CANCELLED`) with zero `ISSUED` invoices |
 | Deposit due | Same CONFIRMED-or-later candidate set, client `paymentProfile === "DEPOSIT_BALANCE"`, no `ISSUED` `DEPOSIT` invoice — the per-project nudge chip (`project-finance-panel.tsx`) lifted to org scope |
 | Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); Xero-side payments are read back at most hourly by the Xero payment sync (FEATUREDOCS/82) |
 
@@ -995,7 +994,7 @@ split as `overbookingBoard.ts`) does a small, fixed number of reads: a capped
 `organizationId_status` index scan per raw quote status (`SENT`, the legacy
 `PUBLISHED`, `DRAFT`), one capped scan per CONFIRMED-or-later project status
 (same idiom as `dashboardStats.ts`'s `OPEN_MAINTENANCE_STATUSES` loop), one
-capped `ISSUED`-invoice scan that feeds Outstanding, Confirmed-uninvoiced AND
+capped `ISSUED`-invoice scan that feeds Outstanding AND
 Deposit-due simultaneously, then a referenced-only fan-out for any project/
 client not already in scope. `SECTION_CAP` (200, exported for tests) is a
 defensive ceiling, not the boundedness mechanism itself — each bucket is

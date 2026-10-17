@@ -40,7 +40,6 @@ export interface OrgFinanceNeverSentRow {
 
 export interface OrgFinanceProjectRow {
   project: OrgFinanceProjectRef;
-  rentalEndDate?: number | null;
   depositPercent?: number;
   total: number;
 }
@@ -60,7 +59,6 @@ export interface OrgFinanceBundle {
   quotesOut: OrgFinanceQuoteRow[];
   expiring: OrgFinanceExpiringRow[];
   neverSent: OrgFinanceNeverSentRow[];
-  confirmedUninvoiced: OrgFinanceProjectRow[];
   depositDue: OrgFinanceProjectRow[];
   outstanding: OrgFinanceInvoiceRow[];
   capped: boolean;

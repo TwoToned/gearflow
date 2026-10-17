@@ -20571,7 +20571,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "The org's chaseable finance rows: quotes out, expiring, never sent, confirmed-uninvoiced, deposit due, outstanding.",
+    "summary": "The org's chaseable finance rows: quotes out, expiring, never sent, deposit due, outstanding.",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -20608,7 +20608,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Cheap counts for the six financeOrg.bundle sections, for a dashboard chip.",
+    "summary": "Cheap counts for the financeOrg.bundle sections, for a dashboard chip.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -45695,6 +45695,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "quotesWrites.acknowledgeExpiredNative",
+    "module": "quotesWrites",
+    "fn": "acknowledgeExpiredNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5cb77faf3d5db168",
+    "returnsSha": "a9efc1b31e93fd3f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "quotesWrites.deleteRecalledNative",
     "module": "quotesWrites",
     "fn": "deleteRecalledNative",
@@ -64464,10 +64516,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1253,
-  agentReachable: 615,
+  total: 1254,
+  agentReachable: 616,
   queries: 448,
-  mutations: 805,
+  mutations: 806,
   agentReachableQueries: 312,
-  agentReachableMutations: 303,
+  agentReachableMutations: 304,
 } as const;

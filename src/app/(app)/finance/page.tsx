@@ -7,9 +7,9 @@ import {
   Send,
   AlertTriangle,
   FileQuestion,
-  Receipt,
   Wallet,
   CircleDollarSign,
+  Check,
 } from "lucide-react";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -21,6 +21,9 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { quoteStatusIntent, intentToBadgeStatus } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { useQuoteWrites } from "@/hooks/use-quote-writes";
 import {
   useNativeOrgFinance,
   type OrgFinanceBundle,
@@ -110,9 +113,20 @@ function QuotesOutSection({ rows }: { rows: OrgFinanceQuoteRow[] }) {
 }
 
 function ExpiringSection({ rows }: { rows: OrgFinanceExpiringRow[] }) {
+  const quoteWrites = useQuoteWrites();
+  const acknowledge = async (e: React.MouseEvent, quoteId: string) => {
+    // The row is a link into the project — acknowledging must not navigate.
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await quoteWrites.acknowledgeExpired(quoteId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't acknowledge that quote");
+    }
+  };
   return (
     <div className={TILE}>
-      <SectionHeader icon={AlertTriangle} title="Expiring" subtitle="Valid until within 7 days, or already expired" count={rows.length} pillClass={HARD_PILL} />
+      <SectionHeader icon={AlertTriangle} title="Expiring" subtitle="Valid until within 7 days, or expired in the last 7 days" count={rows.length} pillClass={HARD_PILL} />
       {rows.length === 0 ? (
         <p className="t-micro text-faint">Nothing expiring soon.</p>
       ) : (
@@ -132,6 +146,11 @@ function ExpiringSection({ rows }: { rows: OrgFinanceExpiringRow[] }) {
                   {r.status === "EXPIRED" ? "Expired" : r.daysLeft != null && r.daysLeft <= 0 ? "Expires today" : `${r.daysLeft}d left`}
                 </Badge>
                 <span className="text-[14px] font-medium tabular-nums text-ink">{formatCurrency(r.total)}</span>
+                {r.status === "EXPIRED" && (
+                  <Button type="button" variant="ghost" size="sm" onClick={(e) => acknowledge(e, r.quoteId)}>
+                    <Check className="mr-1 h-3.5 w-3.5" /> Acknowledge
+                  </Button>
+                )}
               </div>
             </RowShell>
           ))}
@@ -157,32 +176,6 @@ function NeverSentSection({ rows }: { rows: OrgFinanceNeverSentRow[] }) {
                 </p>
                 <p className="t-micro text-faint">
                   {r.project.clientName ?? "No client"} · {r.project.status ?? "—"}
-                </p>
-              </div>
-              <span className="shrink-0 text-[14px] font-medium tabular-nums text-ink">{formatCurrency(r.total)}</span>
-            </RowShell>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ConfirmedUninvoicedSection({ rows }: { rows: OrgFinanceProjectRow[] }) {
-  return (
-    <div className={TILE}>
-      <SectionHeader icon={Receipt} title="Confirmed but uninvoiced" subtitle="Confirmed jobs with no issued invoice" count={rows.length} pillClass={HARD_PILL} />
-      {rows.length === 0 ? (
-        <p className="t-micro text-faint">Every confirmed job has an invoice out.</p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {rows.map((r) => (
-            <RowShell key={r.project.id} href={financeTabHref(r.project.id)}>
-              <div className="min-w-0">
-                <p className="truncate text-[14px] font-medium text-ink">{r.project.projectNumber} — {r.project.name}</p>
-                <p className="t-micro text-faint">
-                  {r.project.clientName ?? "No client"} · {r.project.status ?? "—"}
-                  {r.rentalEndDate ? ` · ends ${formatDate(new Date(r.rentalEndDate))}` : ""}
                 </p>
               </div>
               <span className="shrink-0 text-[14px] font-medium tabular-nums text-ink">{formatCurrency(r.total)}</span>
@@ -267,7 +260,7 @@ function AllClearState() {
       <FlowMascot className="h-12 w-12" eyeColor="var(--ok)" />
       <div>
         <p className="text-[15px] font-medium text-ink">Nothing to chase.</p>
-        <p className="t-micro text-muted">No quotes out, nothing expiring, nothing unsent, and every job is invoiced.</p>
+        <p className="t-micro text-muted">No quotes out, nothing expiring, and nothing unsent.</p>
       </div>
     </div>
   );
@@ -278,7 +271,6 @@ function totalRowCount(data: OrgFinanceBundle): number {
     data.quotesOut.length +
     data.expiring.length +
     data.neverSent.length +
-    data.confirmedUninvoiced.length +
     data.depositDue.length +
     data.outstanding.length
   );
@@ -310,7 +302,6 @@ export default function FinancePage() {
       quotesOut: data.quotesOut.filter((r) => matchesClient(r.project.clientName, clientQuery)),
       expiring: data.expiring.filter((r) => matchesClient(r.project.clientName, clientQuery)),
       neverSent: data.neverSent.filter((r) => matchesClient(r.project.clientName, clientQuery)),
-      confirmedUninvoiced: data.confirmedUninvoiced.filter((r) => matchesClient(r.project.clientName, clientQuery)),
       depositDue: data.depositDue.filter((r) => matchesClient(r.project.clientName, clientQuery)),
       outstanding: data.outstanding.filter((r) => matchesClient(r.project.clientName, clientQuery)),
     };
@@ -334,7 +325,6 @@ export default function FinancePage() {
             <QuotesOutSection rows={filtered.quotesOut} />
             <ExpiringSection rows={filtered.expiring} />
             <NeverSentSection rows={filtered.neverSent} />
-            <ConfirmedUninvoicedSection rows={filtered.confirmedUninvoiced} />
             <DepositDueSection rows={filtered.depositDue} />
             <OutstandingSection rows={filtered.outstanding} />
           </div>

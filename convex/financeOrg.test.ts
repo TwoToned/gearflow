@@ -81,8 +81,9 @@ async function seedCoreFixture(t: T) {
       id: "Q_draft_cancelled", organizationId: ORG, projectId: "P_draft_cancelled", version: 1, status: "DRAFT", snapshot: null, createdAt: NOW - 1 * DAY,
     });
 
-    // P_uninvoiced: CONFIRMED, full-upfront client, no invoice at all —
-    // "Confirmed but uninvoiced".
+    // P_uninvoiced: CONFIRMED, full-upfront client, no invoice at all — the
+    // old "Confirmed but uninvoiced" section is gone; it must not surface
+    // anywhere on the board.
     await ctx.db.insert("projects", {
       id: "P_uninvoiced", organizationId: ORG, projectNumber: "P-UNINV", name: "No invoice yet", status: "CONFIRMED",
       clientId: "cli_full", isTemplate: false, total: 3000, rentalEndDate: NOW + 5 * DAY, createdAt: NOW, updatedAt: NOW, revision: 1,
@@ -96,8 +97,7 @@ async function seedCoreFixture(t: T) {
     });
 
     // P_deposit_paid: DEPOSIT_BALANCE client, deposit already ISSUED — must NOT
-    // surface in "Deposit due" (but is fully invoiced by kind, not FULL/BALANCE,
-    // so also absent from confirmed-uninvoiced since it HAS an issued invoice).
+    // surface in "Deposit due".
     await ctx.db.insert("projects", {
       id: "P_deposit_paid", organizationId: ORG, projectNumber: "P-DEPOK", name: "Deposit invoiced", status: "CONFIRMED",
       clientId: "cli_deposit", isTemplate: false, total: 6000, createdAt: NOW, updatedAt: NOW, revision: 1,
@@ -118,8 +118,33 @@ async function seedCoreFixture(t: T) {
       kind: "FULL", status: "ISSUED", paymentStatus: "UNPAID", invoiceNumber: "INV-2",
       issuedAt: NOW - 3 * DAY, dueDate: NOW + 11 * DAY, subtotal: 9000, taxAmount: 0, total: 9000,
     });
-    // Also gives P_outstanding an ISSUED invoice, so it must NOT appear in
-    // "confirmed but uninvoiced" alongside P_uninvoiced.
+
+    // P_cancelled_quote: a still-SENT quote on a CANCELLED job — dead, must not
+    // show as "out" or "expiring".
+    await ctx.db.insert("projects", {
+      id: "P_cancelled_quote", organizationId: ORG, projectNumber: "P-CQ", name: "Cancelled with quote", status: "CANCELLED",
+      clientId: "cli_full", isTemplate: false, total: 800, createdAt: NOW, updatedAt: NOW, revision: 1,
+    });
+    await ctx.db.insert("quotes", {
+      id: "Q_cancelled", organizationId: ORG, projectId: "P_cancelled_quote", version: 1, status: "SENT",
+      sentAt: NOW - 5 * DAY, validUntil: NOW + 2 * DAY, snapshot: { total: 800 }, createdAt: NOW - 5 * DAY,
+    });
+
+    // Expired quotes: fresh (shows), acknowledged (hidden), stale > 7 days (hidden).
+    for (const [suffix, extra, expiredDaysAgo] of [
+      ["fresh", {}, 2],
+      ["acked", { expiredAcknowledgedAt: NOW - DAY }, 2],
+      ["stale", {}, 9],
+    ] as const) {
+      await ctx.db.insert("projects", {
+        id: `P_exp_${suffix}`, organizationId: ORG, projectNumber: `P-EXP-${suffix}`, name: `Expired ${suffix}`, status: "QUOTED",
+        clientId: "cli_full", isTemplate: false, total: 100, createdAt: NOW, updatedAt: NOW, revision: 1,
+      });
+      await ctx.db.insert("quotes", {
+        id: `Q_exp_${suffix}`, organizationId: ORG, projectId: `P_exp_${suffix}`, version: 1, status: "SENT",
+        sentAt: NOW - 30 * DAY, validUntil: NOW - expiredDaysAgo * DAY, snapshot: { total: 100 }, createdAt: NOW - 30 * DAY, ...extra,
+      });
+    }
 
     // NOISE: a different org entirely — every one of its rows must never surface
     // under ORG's bundle (R-8.4.3 cross-org check).
@@ -157,7 +182,6 @@ describe("financeOrg.bundle", () => {
       ...result.quotesOut.map((r) => r.project.id),
       ...result.expiring.map((r) => r.project.id),
       ...result.neverSent.map((r) => r.project.id),
-      ...result.confirmedUninvoiced.map((r) => r.project.id),
       ...result.depositDue.map((r) => r.project.id),
       ...result.outstanding.map((r) => r.project.id),
     ];
@@ -184,7 +208,7 @@ describe("financeOrg.bundle", () => {
     const t = makeT();
     await seedCoreFixture(t);
     const result = await t.withIdentity(asUser).query(api.financeOrg.bundle, { orgId: ORG, now: NOW });
-    expect(result.expiring.map((r) => r.quoteId)).toEqual(["Q_sent"]);
+    expect(result.expiring.map((r) => r.quoteId)).toEqual(["Q_exp_fresh", "Q_sent"]);
     // Q_accepted's validUntil is 10 days out and it isn't SENT anyway.
     expect(result.expiring.map((r) => r.quoteId)).not.toContain("Q_accepted");
   });
@@ -197,15 +221,42 @@ describe("financeOrg.bundle", () => {
     expect(result.neverSent.map((r) => r.quoteId)).not.toContain("Q_draft_cancelled");
   });
 
-  test("confirmedUninvoiced: only the CONFIRMED project with zero issued invoices", async () => {
+  test("a SENT quote on a CANCELLED job is neither out nor expiring", async () => {
     const t = makeT();
     await seedCoreFixture(t);
     const result = await t.withIdentity(asUser).query(api.financeOrg.bundle, { orgId: ORG, now: NOW });
-    const ids = result.confirmedUninvoiced.map((r) => r.project.id);
-    expect(ids).toContain("P_uninvoiced");
-    expect(ids).toContain("P_deposit_due"); // no invoice issued at all yet either
-    expect(ids).not.toContain("P_outstanding"); // has an ISSUED invoice
-    expect(ids).not.toContain("P_deposit_paid"); // has an ISSUED invoice
+    expect(result.quotesOut.map((r) => r.quoteId)).not.toContain("Q_cancelled");
+    expect(result.expiring.map((r) => r.quoteId)).not.toContain("Q_cancelled");
+  });
+
+  test("expired quotes drop off once acknowledged or a week after expiry", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    const result = await t.withIdentity(asUser).query(api.financeOrg.bundle, { orgId: ORG, now: NOW });
+    const ids = result.expiring.map((r) => r.quoteId);
+    expect(ids).toContain("Q_exp_fresh");
+    expect(ids).not.toContain("Q_exp_acked");
+    expect(ids).not.toContain("Q_exp_stale");
+  });
+
+  test("acknowledgeExpiredNative stamps the quote and removes it from Expiring", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    await t.withIdentity(asUser).mutation(api.quotesWrites.acknowledgeExpiredNative, {
+      id: "Q_exp_fresh", organizationId: ORG, actor: { userId: USER, userName: "U" }, auditId: "aud_ack", now: NOW,
+    });
+    const result = await t.withIdentity(asUser).query(api.financeOrg.bundle, { orgId: ORG, now: NOW });
+    expect(result.expiring.map((r) => r.quoteId)).not.toContain("Q_exp_fresh");
+  });
+
+  test("acknowledgeExpiredNative rejects a quote that has not expired", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.quotesWrites.acknowledgeExpiredNative, {
+        id: "Q_sent", organizationId: ORG, actor: { userId: USER, userName: "U" }, auditId: "aud_ack2", now: NOW,
+      }),
+    ).rejects.toThrow();
   });
 
   test("depositDue: DEPOSIT_BALANCE client with no issued DEPOSIT invoice, excluding one already issued", async () => {
@@ -237,7 +288,6 @@ describe("financeOrg.bundle", () => {
       quotesOutCount: bundle.quotesOut.length,
       expiringCount: bundle.expiring.length,
       neverSentCount: bundle.neverSent.length,
-      confirmedUninvoicedCount: bundle.confirmedUninvoiced.length,
       depositDueCount: bundle.depositDue.length,
       outstandingCount: bundle.outstanding.length,
     });
@@ -253,14 +303,14 @@ describe("financeOrg.expiringForNotifications", () => {
       t.withIdentity(asUser).query(api.financeOrg.expiringForNotifications, { orgId: ORG, now: NOW }),
     ]);
     expect(notif.map((r) => r.quoteId)).toEqual(bundle.expiring.map((r) => r.quoteId));
-    expect(notif.map((r) => r.quoteId)).toEqual(["Q_sent"]);
+    expect(notif.map((r) => r.quoteId)).toEqual(["Q_exp_fresh", "Q_sent"]);
   });
 
   test("flat row shape carries projectId/projectNumber/clientName rather than a nested project object", async () => {
     const t = makeT();
     await seedCoreFixture(t);
     const notif = await t.withIdentity(asUser).query(api.financeOrg.expiringForNotifications, { orgId: ORG, now: NOW });
-    expect(notif).toEqual([
+    expect(notif.filter((r) => r.quoteId === "Q_sent")).toEqual([
       expect.objectContaining({
         quoteId: "Q_sent",
         projectId: "P_sent",

@@ -92,7 +92,6 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
     quotesOutCount: 0,
     expiringCount: 0,
     neverSentCount: 0,
-    confirmedUninvoicedCount: 0,
     depositDueCount: 0,
     outstandingCount: 0,
   }),

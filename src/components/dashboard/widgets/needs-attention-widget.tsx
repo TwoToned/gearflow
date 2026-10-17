@@ -36,7 +36,6 @@ function NeedsAttention({
     quotesOutCount: number;
     expiringCount: number;
     neverSentCount: number;
-    confirmedUninvoicedCount: number;
     depositDueCount: number;
     outstandingCount: number;
   };

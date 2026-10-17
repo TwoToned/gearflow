@@ -124,7 +124,8 @@ export async function GET(
     organizationId,
     assignments: myRawAssignments.flatMap((a) => {
       const p = projectById.get(a.projectId);
-      if (!p) return [];
+      // A cancelled job drops off the crew calendar entirely.
+      if (!p || p.status === "CANCELLED") return [];
       return [
         {
           id: a.id,
@@ -237,7 +238,7 @@ export async function GET(
   // on it.
   for (const pid of pmProjectIds) {
     const project = projectById.get(pid);
-    if (!project) continue;
+    if (!project || project.status === "CANCELLED") continue;
 
     const window = getProjectWindow(project);
     if (window.start == null) continue; // no dates set — nothing to show

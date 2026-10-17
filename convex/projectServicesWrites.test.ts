@@ -247,6 +247,58 @@ describe("updateServiceNative", () => {
     expect(asgs[0].crewRoleId).toBe("cr2");   // role patched
   });
 
+  test("moving the service's date/times moves the linked crew's assignment AND its scheduled shifts", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedCrew(t);
+    const D1 = 1_800_000_000_000;
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, type: "BUMP_IN", date: D1, endDate: D1 + DAY,
+      startTime: "08:00", endTime: "16:00", crew: [{ id: "a1", crewMemberId: "cm1" }], now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    // Two shifts on the assignment: one on a day that stays (with a note), one that falls away.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewShifts", { id: "sh1", assignmentId: "a1", date: D1, callTime: "08:00", endTime: "16:00", notes: "use dock B", status: "SCHEDULED" });
+      await ctx.db.insert("crewShifts", { id: "sh2", assignmentId: "a1", date: D1 + DAY, callTime: "08:00", endTime: "16:00", status: "SCHEDULED" });
+    });
+
+    // Bump In moves to a single day starting an hour later.
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.updateServiceNative, {
+      id: "s1", orgId: ORG, ...baseInput, type: "BUMP_IN", date: D1, endDate: D1,
+      startTime: "09:00", endTime: "17:00", now: NOW + 1, actor: ACTOR, auditId: "logu",
+    });
+
+    const [asg] = await asgsForService(t, "s1");
+    expect(asg.startTime).toBe("09:00");
+    expect(asg.endTime).toBe("17:00");
+    const shifts = await t.run(async (ctx) => ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", "a1")).collect());
+    expect(shifts).toHaveLength(1);
+    expect(shifts[0]).toMatchObject({ id: "sh1", callTime: "09:00", endTime: "17:00", notes: "use dock B" });
+  });
+
+  test("an unrelated save leaves the crew's own per-assignment times alone", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedCrew(t);
+    const D1 = 1_800_000_000_000;
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, date: D1, startTime: "08:00", endTime: "16:00",
+      crew: [{ id: "a1", crewMemberId: "cm1" }], now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    await t.run(async (ctx) => {
+      const a = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      await ctx.db.patch(a!._id, { startTime: "07:30" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.updateServiceNative, {
+      id: "s1", orgId: ORG, ...baseInput, title: "Renamed", date: D1, startTime: "08:00", endTime: "16:00",
+      now: NOW + 1, actor: ACTOR, auditId: "logu",
+    });
+    const [asg] = await asgsForService(t, "s1");
+    expect(asg.startTime).toBe("07:30");
+  });
+
   test("empty crew reconcile removes all", async () => {
     const t = makeT();
     await seedService(t);

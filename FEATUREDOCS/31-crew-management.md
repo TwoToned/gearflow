@@ -555,6 +555,7 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   `SUMMARY:"{project name} (Project Manager)"`, `UID:pm-project-{projectId}@gearflow`.
   This is purely additive — it doesn't replace or dedupe against any
   shift/assignment events the same project may also produce.
+- **Cancelled jobs drop off.** Feeds are computed live, so an assignment or PM event whose project is `CANCELLED` is simply not emitted (personal feed, org crew feed `/api/calendar/[token]/crew`, and the per-assignment `.ics` download, which 404s). A deleted project has no rows at all. Calendar clients remove the events on their next poll.
 - Token can be regenerated (invalidates old URL) or feed can be disabled
 - **Response caching:** `Cache-Control: private, max-age=300` (changed 2026-07-25, R-8.9.3 finding #862 — was `no-cache, no-store, must-revalidate`). Calendar clients (Google/Apple/Outlook) already poll a feed URL on their own multi-minute-to-hourly cadence, not per user action, so a short cache window is safe and avoids re-running the full `getByIcalToken` + assignments + shifts + per-project-lookup chain on every external poll. This is deliberately narrower than the sibling no-cache token-feed routes (`/api/warehouse/display/[token]`, `/api/auditor/[token]`) — those are live status views that must stay uncached; only this feed's pull-based, client-controlled refresh cadence justifies caching.
 
@@ -733,3 +734,12 @@ DRAFT → SUBMITTED → APPROVED → EXPORTED
 
 ## Future Phases (not yet implemented)
 - Phase 7: Crew portal
+
+### Service schedule → crew schedule sync
+A service's date / start / end / scheduled time is the schedule of every crew assignment linked
+to it. `projectServicesWrites.updateServiceNative` now pushes a *changed* schedule onto each
+linked assignment (`startDate/endDate/startTime/endTime`, `estimatedCost` recomputed, service
+cost/charge rolled up) and re-times the assignment's `SCHEDULED` `crewShifts` (a shift on a
+surviving day keeps its own location/notes; new days get a shift; dropped days lose theirs; worked
+or cancelled shifts and shift-less assignments are untouched). An unrelated save (rename, price)
+does not rewrite crew times — only an actual schedule change does.

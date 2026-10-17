@@ -104,6 +104,99 @@ function deriveCrewTimes(
   return { crewStart: null, crewEnd: null };
 }
 
+// ─── Service → crew schedule sync ─────────────────────────────────────────────
+// A service's date / times ARE the schedule of every crew assignment linked to
+// it (`insertServiceAssignment` copies them in at add time). Without this, moving
+// a Bump In left the crew's assignment and shift rows on the old times.
+
+interface ServiceSchedule {
+  date: number | undefined;
+  endDate: number | undefined;
+  startTime: string | undefined;
+  endTime: string | undefined;
+  scheduledTime: string | undefined;
+}
+
+function scheduleOf(s: ServiceSchedule): ServiceSchedule {
+  return { date: s.date, endDate: s.endDate, startTime: s.startTime, endTime: s.endTime, scheduledTime: s.scheduledTime };
+}
+
+function scheduleChanged(before: ServiceSchedule, after: ServiceSchedule): boolean {
+  const b = scheduleOf(before);
+  const a = scheduleOf(after);
+  return (Object.keys(b) as (keyof ServiceSchedule)[]).some((k) => (b[k] ?? null) !== (a[k] ?? null));
+}
+
+/**
+ * Re-time one assignment's SCHEDULED shifts to the new window. A shift on a day
+ * that still exists keeps its own location/notes (only the times move); new days
+ * get a fresh shift; SCHEDULED shifts on days that dropped out are removed.
+ * Shifts in any other status (worked / cancelled) are history and stay put.
+ * An assignment with no shifts stays shift-less — shifts are opt-in per assignment.
+ */
+async function resyncAssignmentShifts(
+  ctx: MutationCtx,
+  assignmentId: string,
+  startDate: number | undefined,
+  endDate: number | undefined,
+  callTime: string | null,
+  endTime: string | null,
+): Promise<void> {
+  const shifts = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", assignmentId)).collect();
+  if (shifts.length === 0) return;
+  const scheduled = shifts.filter((sh) => (sh.status ?? "SCHEDULED") === "SCHEDULED");
+  const wanted = new Set<number>();
+  if (startDate != null && endDate != null) {
+    for (let d = startDate; d <= endDate; d += 86400000) wanted.add(d);
+  }
+  const haveDates = new Set<number>(shifts.map((sh) => sh.date));
+  for (const sh of scheduled) {
+    if (!wanted.has(sh.date)) {
+      await ctx.db.delete(sh._id);
+      continue;
+    }
+    await ctx.db.patch(sh._id, { callTime: callTime ?? undefined, endTime: endTime ?? undefined });
+  }
+  for (const d of wanted) {
+    if (haveDates.has(d)) continue;
+    await ctx.db.insert("crewShifts", {
+      id: createId(), assignmentId, date: d,
+      ...(callTime ? { callTime } : {}), ...(endTime ? { endTime } : {}), status: "SCHEDULED",
+    });
+  }
+}
+
+/** Push a changed service schedule onto every linked assignment (+ its shifts, + cost). */
+async function syncServiceCrewSchedule(
+  ctx: MutationCtx,
+  service: { id: string; type: string },
+  orgId: string,
+  next: ServiceSchedule,
+  now: number,
+): Promise<void> {
+  const { crewStart, crewEnd } = deriveCrewTimes(next.startTime, next.endTime, next.scheduledTime, service.type);
+  const assignments = (
+    await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", service.id)).collect()
+  ).filter((r) => r.organizationId === orgId);
+  for (const asg of assignments) {
+    const { crewMember, crewRole } = await rateInputs(ctx, orgId, asg.crewMemberId, asg.crewRoleId);
+    const { rate, rateType } = resolveRate(asg.rateOverride, asg.rateType ?? null, crewMember, crewRole);
+    const estimatedCost = calculateEstimatedCost(rate, rateType, next.date ?? null, next.endDate ?? null, asg.estimatedHours ?? null);
+    const patch: Record<string, unknown> = {
+      startDate: next.date, endDate: next.endDate,
+      startTime: crewStart ?? undefined, endTime: crewEnd ?? undefined,
+      estimatedCost, updatedAt: now,
+    };
+    await ctx.db.patch(asg._id, patch);
+    await bumpCountersForTable(ctx, "crewAssignments", asg, { ...asg, ...patch });
+    await resyncAssignmentShifts(ctx, asg.id, next.date, next.endDate, crewStart, crewEnd);
+  }
+  if (assignments.length > 0) {
+    await recalcServiceCostFromCrew(ctx, service.id, orgId, now);
+    await recalcServiceChargeFromCrew(ctx, service.id, orgId, now);
+  }
+}
+
 // Shared service-input args (create + update). Dates are epoch-ms; the hook parses
 // with projectServiceSchema, converts Date→ms, null lat/long→omit, ""pricingType→omit.
 const serviceInputArgs = {
@@ -667,6 +760,18 @@ export const updateServiceNative = mutation({
     const patch: Record<string, unknown> = { ...set };
     for (const k of clear) patch[k] = undefined;
     await ctx.db.patch(existing._id, patch);
+
+    // Moved the service's date / times → move the linked crew's assignments and
+    // shifts with it (before the crew reconcile below, which then only has to
+    // add/remove people).
+    const nextSchedule: ServiceSchedule = {
+      date: serviceDate ?? undefined, endDate: serviceEndDate ?? undefined,
+      startTime: fields.startTime ?? undefined, endTime: fields.endTime ?? undefined,
+      scheduledTime: fields.scheduledTime ?? undefined,
+    };
+    if (scheduleChanged(existing, nextSchedule)) {
+      await syncServiceCrewSchedule(ctx, { id: existing.id, type: fields.type }, a.orgId, nextSchedule, a.now);
+    }
 
     // Clean up any legacy linked line item (cascade delete + clear lineItemId).
     if (existing.lineItemId) {

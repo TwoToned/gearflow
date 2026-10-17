@@ -3569,6 +3569,9 @@ export default defineSchema({
   // signal never hides it from another. Pruned after 90 days of the
   // underlying sourceKey producing no signal (same pattern as
   // notificationDismissals).
+  // DEPRECATED (2026-10) — the work layer was removed; nothing reads or writes this table.
+  // Kept only because Convex rejects a schema push that drops a table still holding data.
+  // Drop it after a data-wipe migration (FEATUREDOCS/50).
   workSignalStates: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -3590,6 +3593,9 @@ export default defineSchema({
   // DEFAULT_CONFIRMED_TEMPLATES (convex/lib/workTemplateSeeding.ts), which is
   // itself literally the design doc's five worked examples. The table exists now
   // so that future UI has somewhere to write without another schema change.
+  // DEPRECATED (2026-10) — the work layer was removed; nothing reads or writes this table.
+  // Kept only because Convex rejects a schema push that drops a table still holding data.
+  // Drop it after a data-wipe migration (FEATUREDOCS/50).
   workTemplates: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -3806,6 +3812,9 @@ export default defineSchema({
   // scan filtering client-side. `organizationId` is denormalised from the
   // work item at link time (not a foreign-key-only join) so every read here
   // is org-checked without a second lookup — same posture as `workSignalStates`.
+  // DEPRECATED (2026-10) — the work layer was removed; nothing reads or writes this table.
+  // Kept only because Convex rejects a schema push that drops a table still holding data.
+  // Drop it after a data-wipe migration (FEATUREDOCS/50).
   workItemLinks: defineTable({
     id: v.string(),
     organizationId: v.string(),

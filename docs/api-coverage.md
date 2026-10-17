@@ -28,8 +28,6 @@ convention:
 
 <!-- reachability-floor: 597 -->
 
-_Floor lowered 616 → 597 (2026-10): the work layer / client timeline / pipeline were removed, taking their agent-reachable operations (`pipeline.*`, `clientTimeline*`, `workItemLinks*`, `workSignalStatesWrites.*`, the follow-up outcome / watcher / subtask / work-count task ops, `dashboardLists.needsYou`) with them. Deliberate, not a regression._
-
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
 diff — that is the whole mechanism. Raising it happens naturally as Phase 5

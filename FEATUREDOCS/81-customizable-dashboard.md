@@ -5,19 +5,14 @@
 Per explicit product-owner sign-off, reverses the "no widget boards" decision
 DESIGN.md's "Dashboard Layout" section used to record — see that section for
 the dated rationale. `/dashboard` is now a per-user, drag-and-resize widget board built on
-`react-grid-layout`; three of Today's widgets are selectable onto it.
+`react-grid-layout`.
 
-**Update (D10C, 2026-09-21, DESIGN.md §16):** `/today` (FEATUREDOCS/79) is
-now HIDDEN — it redirects to `/dashboard`, which is the app's landing page
-again on both desktop and mobile. This board is what made that safe: anyone
-who wants Today's personal-agenda view adds its three widgets (still in the
-catalog below, still not in the default layout) to their own board instead
-of visiting a separate page.
-
-**Update (follow-up automation, 2026-09-23, FEATUREDOCS/82):** `todayWorkList` is now in
-`DEFAULT_DASHBOARD_LAYOUT`, directly under the setup checklists — it is where automated
-quote follow-ups land, so a default board without it would hide them (design D3). The day
-rail and needs-you rail stay catalog-only. Existing saved boards are not rewritten.
+**Update (2026-10, work layer removed):** `/today` and the three Today widgets
+(`todayWorkList` / `todayDayRail` / `todayNeedsYouRail`) are gone; a simple `myTasks` widget
+(`MyTasksWidget` — the first few of the caller's open tasks, linking to `/my-tasks`) replaced
+`todayWorkList` in `DEFAULT_DASHBOARD_LAYOUT`. Saved boards that still hold a removed kind are
+filtered out at render time (`dashboard-grid.tsx`) instead of crashing; existing boards are
+otherwise not rewritten.
 
 ## What it is
 
@@ -33,7 +28,7 @@ recognizable on it even with an emptied board.
 ## Widget catalog — zero new backend reads (R-3.1)
 
 Every v1 widget is a thin extraction of JSX/logic that already rendered on
-`/dashboard` or `/today`, into its own file under
+`/dashboard`, into its own file under
 `src/components/dashboard/widgets/`, reusing the exact same data hooks:
 
 | Widget kind | Source | Extracted from |
@@ -45,9 +40,7 @@ Every v1 widget is a thin extraction of JSX/logic that already rendered on
 | `recentActivity` | `useNativeActivity` | dashboard Zone 3 |
 | `finishSetupChecklist` | `<FinishSetupChecklist bare>` | dashboard (C6, #1104) |
 | `activationChecklist` | `<ActivationChecklist bare>` | dashboard (D1, #1105) |
-| `todayWorkList` | `<TodayWorkListWidget>` | `/today`'s Overdue/Today/Triage/Later list — **in the default layout** since follow-up automation |
-| `todayDayRail` | `<TodayDayRailWidget>` | `/today`'s "Your day" rail |
-| `todayNeedsYouRail` | `<TodayNeedsYouRailWidget>` | `/today`'s "Needs you" rail |
+| `myTasks` | `<MyTasksWidget>` | The caller's open tasks (first 6), linking to `/my-tasks` — **in the default layout** |
 
 The registry (`src/lib/dashboard-widgets.ts`) is the single source of truth
 for `{ title, description, component, defaultSize, minSize, maxSize }` per
@@ -57,41 +50,15 @@ original order/size) and `DASHBOARD_WIDGET_ORDER` (the "Add widget" popover's
 listing order). A widget kind is a singleton per board (`id === kind`) — v1's
 widgets take no per-instance config.
 
-### `/today` now shares its implementation with the board, not a copy
+### `bare` checklists
 
-`TodayWorkListWidget` / `TodayDayRailWidget` / `TodayNeedsYouRailWidget`
-(`src/components/dashboard/widgets/`) hold the ENTIRE work-list/rail
-implementation (bucketing, peek, quick-add, keyboard shortcuts, snooze/
-re-offer). `/today/page.tsx` renders these same three components as fixed
-page furniture; the dashboard board renders them as grid cells. There is
-exactly one implementation of each (R-3.1) — before this feature,
-`/today/page.tsx` held all of this inline. The one seam: the work list's
-Overdue/Today/Triage/Later bucket state feeds `/today`'s "Nothing on fire."
-greeting subtitle via an `onStatusChange` callback prop (unused when the
-widget is hosted on the dashboard board) rather than a second computation of
-the same booleans.
-
-`<TodayDayRail>`/`<TodayNeedsYouRail>` (the presentational rail components)
-and `<FinishSetupChecklist>`/`<ActivationChecklist>` each gained a `bare`
+`<FinishSetupChecklist>`/`<ActivationChecklist>` each gained a `bare`
 prop: `bare` skips the component's own outer card/title (the shared
 `<DashboardCard>` shell supplies both when hosted on the board) while
 keeping every other behavior — including `FinishSetupChecklist`/
 `ActivationChecklist`'s own "Dismiss" action, which is a DIFFERENT, org-wide
 "done showing me this" bit (`orgActivationDismissals`/`orgSetupDismissals`)
-from removing the widget from just this one board. `TodayDayRail`/
-`TodayNeedsYouRail`'s OWN `bare` prop default is `false` (their direct
-`/today/page.tsx` consumer wants the card); the `TodayDayRailWidget`/
-`TodayNeedsYouRailWidget` wrappers (which the registry hosts via the fixed
-`{ orgId }` signature — no room to pass `bare` through) default IT to `true`,
-and `/today/page.tsx` passes `bare={false}` explicitly through the wrapper to
-opt back into its own card. Getting these two defaults backwards (hardcoding
-`bare` in the wrapper regardless of host) silently drops `/today`'s own card
-+ heading — caught by a regression test in `today-rails.smoke.test.tsx` /
-`page.smoke.test.tsx` asserting "Your day"/"Needs you" still render there.
-The bare/non-bare branch itself lives in ONE place,
-`src/components/today/today-rail-shell.tsx`'s `<RailShell>` — not
-duplicated inline in both rail components (which is also what keeps each
-rail's own cyclomatic complexity under the R-3.6 threshold).
+from removing the widget from just this one board.
 
 **Known limitation:** a self-hiding widget (`finishSetupChecklist`/
 `activationChecklist`, which render nothing once dismissed or complete)
@@ -199,10 +166,3 @@ add/remove on mobile (a plain click), just not drag-reorder or resize.
   updated for the board: mocks `useDashboardLayout` to a fixed
   `DEFAULT_DASHBOARD_LAYOUT` and re-asserts the same DOM-order/no-duplicate-
   My-work/single-blocker-surface invariants the pre-widget-board page had.
-- `src/app/(app)/today/__tests__/page.smoke.test.tsx` — same hook mocks
-  resolve into the extracted widget components now, PLUS a regression
-  assertion that the day/needs-you rails still render with their own
-  card + heading on `/today` (non-bare) — see the `bare`-defaults note above.
-- `src/components/today/__tests__/today-rails.smoke.test.tsx` — added
-  bare-vs-non-bare heading assertions for both rails (the identical
-  regression, at the presentational-component layer).

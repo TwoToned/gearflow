@@ -62,10 +62,6 @@ schema (`assigned`, `comment_reply`, `due_soon`, `overdue`) are reserved for the
 work-layer program's later phases (`docs/designs/work-layer.md` §10.2) — no
 writer emits them yet.
 
-**Phase 0.5 (#1242, FEATUREDOCS/79):** Today's Triage bucket is a second
-consumer of `listForMe` (polled one-shot, not the bell's live subscription) —
-a mention now surfaces in two places: the bell, and Today's work list.
-
 ### In-app bell
 - **Bell dropdown** (`src/components/layout/notifications.tsx`): reads the
   stored `notifications` table above via `useNotifications()` — mentions only,
@@ -89,7 +85,7 @@ a mention now surfaces in two places: the bell, and Today's work list.
 - `pending_invitation` notifications are intentionally NOT re-emailed by the cron (Better Auth's organization plugin already emails the invite link on creation). The flag exists for consistency in the bell-dropdown view.
 - Day-bucketed aggregate keys (e.g. `crew-pending-offers:2026-05-14`) ensure aggregate notifications email at most once per day. `quote_expiring` is bucketed differently — `quote-expiring:{quoteId}:{soon|expired}`, not per-day — deliberately: a quote should nudge at most **twice** in its life (once when the window opens, once when it lapses), not once a day for a week straight.
 
-- **Follow-up automation rides the same cron + ledger (FEATUREDOCS/82).** The route also runs, per tick: the **Xero payment sync** (before everything else, so an invoice paid in Xero overnight has closed its chase before the brief is built), the **morning brief** (`sendFollowUpBriefs`, one email per person per business day from 07:00 org time; per-user flag `followUpBrief`, default ON; key `follow-up-brief:<org>:<user>:<date>`), and the **urgent push** (`sendUrgentFollowUpPushes`; keys `follow-up-push:<org>:<task>:<rung>` and `follow-up-push-day:<org>:<user>:<date>:<slot>`, claimed atomically by `convex/followUpPush.ts` `claimPush`). Each is best-effort against the others.
+- **The Xero payment sync rides the same cron** (before the other sweeps, so an invoice paid in Xero overnight is already settled) — see FEATUREDOCS/66 "Xero payment sync". (The morning follow-up brief and urgent push that used to ride it were removed with the follow-up engine.)
 
 ### Dedupe strategy
 `NotificationEmailLog` row per `(userId, notificationKey)`. Rows older than 30 days are GC'd by `pruneStaleNotificationEmailLogs()` (run at the end of each cron tick) so even keys that vanish from the active set eventually fall out.

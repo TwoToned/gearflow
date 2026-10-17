@@ -170,17 +170,6 @@ export function ProjectBoard() {
   const blockingCounts = useAuthedQuery(api.collaboration.listBlockingForProjects, blockingArgs) as
     | Record<string, number>
     | undefined;
-  // #1244 — "9/14 work · 1 overdue" per card. Batched over every visible
-  // project id, bounded per-project (see workCountsForProjects's own
-  // comment on why this isn't an org-wide collect).
-  const workCountsArgs = useMemo(
-    () => (orgId && ids.length > 0 ? { orgId, projectIds: ids, now } : ("skip" as const)),
-    [orgId, ids, now],
-  );
-  const workCounts = useAuthedQuery(api.projectTasks.workCountsForProjects, workCountsArgs) as
-    | Record<string, { done: number; total: number; overdue: number }>
-    | undefined;
-
   const byStage = useMemo(() => {
     const m = new Map<string, AnyProject[]>();
     for (const s of STAGES) m.set(s.key, []);
@@ -241,7 +230,6 @@ export function ProjectBoard() {
         byStage={byStage}
         issueFlags={issueFlags}
         blockingCounts={blockingCounts}
-        workCounts={workCounts}
         now={now}
         advancing={advancing}
         confirmChecking={confirmGate.checking}
@@ -312,7 +300,6 @@ function BoardBody({
   byStage,
   issueFlags,
   blockingCounts,
-  workCounts,
   now,
   advancing,
   confirmChecking,
@@ -327,7 +314,6 @@ function BoardBody({
   byStage: Map<string, AnyProject[]>;
   issueFlags: Record<string, { hasOverbooked: boolean; hasReducedStock: boolean }> | undefined;
   blockingCounts: Record<string, number> | undefined;
-  workCounts: Record<string, { done: number; total: number; overdue: number }> | undefined;
   now: number;
   advancing: string | null;
   confirmChecking: boolean;
@@ -344,7 +330,6 @@ function BoardBody({
         byStage={byStage}
         issueFlags={issueFlags}
         blockingCounts={blockingCounts}
-        workCounts={workCounts}
         now={now}
         advancing={advancing}
         confirmChecking={confirmChecking}
@@ -357,7 +342,6 @@ function BoardBody({
             live={false}
             issues={null}
             blocking={0}
-            work={workCounts?.[activeProject.id] ?? null}
             rot={rotTint(activeProject, now)}
             advancing={false}
             overlay
@@ -379,7 +363,6 @@ function BoardColumnsGrid({
   byStage,
   issueFlags,
   blockingCounts,
-  workCounts,
   now,
   advancing,
   confirmChecking,
@@ -387,7 +370,6 @@ function BoardColumnsGrid({
   byStage: Map<string, AnyProject[]>;
   issueFlags: Record<string, { hasOverbooked: boolean; hasReducedStock: boolean }> | undefined;
   blockingCounts: Record<string, number> | undefined;
-  workCounts: Record<string, { done: number; total: number; overdue: number }> | undefined;
   now: number;
   advancing: string | null;
   confirmChecking: boolean;
@@ -411,7 +393,6 @@ function BoardColumnsGrid({
                   live={!!stage.live}
                   issues={issueFlags?.[p.id] ?? null}
                   blocking={blockingCounts?.[p.id] ?? 0}
-                  work={workCounts?.[p.id] ?? null}
                   rot={rotTint(p, now)}
                   advancing={advancing === p.id || confirmChecking}
                 />
@@ -455,7 +436,6 @@ function ProjectCard({
   live,
   issues,
   blocking,
-  work,
   rot,
   advancing,
   overlay,
@@ -465,7 +445,6 @@ function ProjectCard({
   live: boolean;
   issues: { hasOverbooked: boolean; hasReducedStock: boolean } | null;
   blocking: number;
-  work: { done: number; total: number; overdue: number } | null;
   rot: "amber" | "red" | null;
   advancing: boolean;
   overlay?: boolean;
@@ -510,11 +489,6 @@ function ProjectCard({
           {total && <span className={cn("text-[11px] font-semibold tabular-nums", hueText[hue])}>{total}</span>}
         </div>
       </div>
-      {work && work.total > 0 && (
-        <p className="mt-1.5 t-micro text-muted">
-          {work.done}/{work.total} work{work.overdue > 0 ? <span className="text-t-out"> · {work.overdue} overdue</span> : null}
-        </p>
-      )}
     </>
   );
 

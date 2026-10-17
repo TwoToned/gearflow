@@ -985,7 +985,7 @@ bounded sections in `convex/financeOrg.ts`'s single `bundle` query:
 | Expiring | `SENT`/`EXPIRED` with `validUntil` inside `QUOTE_EXPIRING_SOON_DAYS` (7, `convex/lib/quoteDates.ts` — the SAME threshold the per-project Finance tab uses, R-3.1), including already-expired. Excluded: quotes on a `CANCELLED` job; an expired quote once acknowledged (`quotes.expiredAcknowledgedAt`, set by `quotesWrites.acknowledgeExpiredNative` — display-only, status stays `EXPIRED`) or more than `EXPIRED_QUOTE_VISIBLE_DAYS` (7) after `validUntil` |
 | Never sent | `DRAFT` revisions on active (non-template, non-`CANCELLED`) projects |
 | Deposit due | Same CONFIRMED-or-later candidate set, client `paymentProfile === "DEPOSIT_BALANCE"`, no `ISSUED` `DEPOSIT` invoice — the per-project nudge chip (`project-finance-panel.tsx`) lifted to org scope |
-| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); Xero-side payments are read back at most hourly by the Xero payment sync (FEATUREDOCS/82) |
+| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); Xero-side payments are read back at most hourly by the Xero payment sync (Xero payment sync, below) |
 
 ### Perf — bounded, not a per-project loop (the #942 lesson)
 
@@ -1690,7 +1690,7 @@ duplicated here.
 ## Deferred (not built in this PR)
 
 - ~~**Xero payment-status poll.**~~ Built by follow-up automation phase 2
-  (FEATUREDOCS/82): `src/server/xero-payment-sync.ts` on the notification
+  (Xero payment sync, below): `src/server/xero-payment-sync.ts` on the notification
   cron, invoice-level (Status / AmountPaid / AmountCredited / AmountDue) rather
   than Payments, merged with Flow-recorded payments as max(Flow, Xero) — never
   overwriting them.
@@ -1728,3 +1728,17 @@ duplicated here.
   total already states the charge. The in-app equipment table still shows it.
 - **Draft preview for non-live versions** — the quote rail (viewing vN) and the Send
   dialog offer "Preview draft" for vN, same as v1.
+
+### Xero payment sync (invoice payment state read-back)
+
+Read-only, invoice-level: for every Flow invoice pushed to Xero and not yet settled, read
+`Status` / `AmountPaid` / `AmountCredited` / `AmountDue` (`fetchXeroInvoiceStates`, batches of
+40, `summaryOnly=true`) — never just Payments, since voids, credit-note allocations and
+overpayments made in Xero never appear as one. Stored on the invoice as `xeroStatus`,
+`xeroAmountPaid`, `xeroAmountCredited`, `xeroAmountDue`, `xeroCheckedAt`;
+`recomputeInvoicePaymentState` reads **max(Flow paid, Xero paid)** so a payment recorded in both
+counts once. Runs from the notification cron (`src/server/xero-payment-sync.ts`, at most hourly
+per org via `xeroIntegrations.paymentsSyncedAt`) and on demand from **Settings → Xero →
+Payments → Check now**. Token refresh is serialised by a lease on `xeroIntegrations`
+(`tokenLeaseHolder`/`tokenLeaseUntil`, `src/lib/xero-token.ts`) so the sync and an invoice push
+can't both spend the same rotating refresh token.

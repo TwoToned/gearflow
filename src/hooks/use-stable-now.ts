@@ -16,20 +16,19 @@ import { useState } from "react";
  *
  * ```tsx
  * // BROKEN — the page is stuck on "Loading…" forever.
- * const cards = useAuthedQuery(api.pipeline.forOrg, { orgId, now: Date.now() });
+ * const cards = useAuthedQuery(api.dashboardLists.upcoming, { orgId, now: Date.now() });
  * ```
  *
  * Render evaluates `Date.now()` → subscribe → result arrives → re-render →
  * `Date.now()` is a different millisecond → new key → the result is `undefined`
  * again → subscribe → … The query never settles, so a `result === undefined`
  * loading branch renders forever (and a `return null` branch never appears at
- * all). This is what broke `/clients/pipeline` and the client page's next-step
- * banner (#1245).
+ * all). This shipped twice (#1245) before the lint rule below existed.
  *
  * ```tsx
  * // CORRECT
  * const now = useStableNow();
- * const cards = useAuthedQuery(api.pipeline.forOrg, { orgId, now });
+ * const cards = useAuthedQuery(api.dashboardLists.upcoming, { orgId, now });
  * ```
  *
  * A `no-restricted-syntax` rule in `eslint.config.mjs` fails the build on a

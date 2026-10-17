@@ -23,7 +23,7 @@ are omitted because you never send them. Danger: `L`/`M`/`H`; `H` needs
 | Everything (unpaginated) | `projects.list` | read | `project:read` | — |
 | Several by id | `projects.listByIds` | read | `project:read` | `ids[]` |
 | Readiness checks (gear / conflicts / crew / services / pricing) | `projectReadiness.forProject` | read | `project:read` | `projectId` |
-| Dashboard lists | `dashboardLists.home` / `.upcoming` / `.blocking` / `.needsYou` / `.pendingCrewOffers` | read | `project:read` | — |
+| Dashboard lists | `dashboardLists.home` / `.upcoming` / `.blocking` / `.pendingCrewOffers` | read | `project:read` | — |
 | Create | `projectWrites.createNative` | M | `project:create` | `name`, `clientId?`, `type?`, `status?`, `rentalStartDate?`, `rentalEndDate?`, `projectStartDate?`, `projectEndDate?`, `locationId?`, `projectManagerId?`, `description?`, `tags?[]`, notes fields |
 | Edit fields | `projectWrites.updateNative` | M | `project:update` | `id`, `set{…}` (send `null`/`""` in `set` to clear; `clear[]` is synthesised) |
 | Edit a notes field only | `projectWrites.updateNotesNative` | L | `project:update` | `id`, `field`, `notes` |
@@ -158,9 +158,6 @@ decide whether a client has paid.
 | Archive | `clientWrites.archiveNative` / `.archiveManyNative` | **H** | `client:update` | `id` / `items[]` |
 | Contacts on a client | `clientContacts.forClient` | read | `client:read` | `clientId` |
 | Add / edit / remove a contact | `clientContactWrites.addNative` / `.updateNative` / `.removeNative` (**H**) | M | `client:update` | `clientId`, `name?`, `email?`, `phone?`, `role?`, `isPrimary?` / + `contactId` |
-| Client timeline (calls, emails, notes) | `clientTimeline.forClient` / `.nextStep` | read | `client:read` | `clientId`, `limit?` |
-| Log a call / email / note | `clientTimelineWrites.logCallNative` / `.logEmailNative` / `.addNoteNative` | L | `client:update` | `clientId`, `note` |
-| Set / complete the next step | `clientTimelineWrites.setNextStepNative` / `.completeNextStepNative` | M | `client:update` | `clientId`, `title`, `dueDate`, `notes?`, `projectId?` / `workItemId`, `outcome` |
 | Suppliers | `suppliers.list` / `.listPage` / `.detail` / `.subhiresPage` / `.assetsPage` | read | `supplier:read` | — / filters / `id` / `supplierId`, `page`, `pageSize` |
 | Create / edit a supplier | `suppliersWrites.createNative` / `.updateNative` | M | `supplier:create` / `supplier:update` | `name`, `contactName?`, `email?`, `phone?`, `address?`, `website?`, `accountNumber?`, `paymentTerms?`, `defaultLeadTime?`, `tags?[]`, `notes?` (+ `id` on update) |
 | Supplier purchase orders | `supplierOrdersWrites.createNative` / `.updateNative` (**H**) | M | `supplier:create` / `supplier:update` | `supplierId`, `orderNumber`, `type`, `orderDate?`, `expectedDate?`, `projectId?`, `status?`, `notes?` |
@@ -209,19 +206,16 @@ Sub-hire statuses: `DRAFT, CONFIRMED, ON_HIRE, RETURNED, CANCELLED`.
 
 Statuses: `SCHEDULED, AWAITING_PARTS, IN_PROGRESS, QA, COMPLETED, CANCELLED`.
 
-## Tasks & follow-ups (work layer)
+## Tasks
 
 | Job | Operation | Kind | Scope | Args |
 |---|---|---|---|---|
 | Tasks on a job | `projectTasks.listByProject` / `.listByProjectWithRelations` | read | `work:read` or `project:read` | `projectId` |
 | My open tasks (as the acting user) | `projectTasks.myOpenTasks` | read | `work:read` or `project:read` | — |
-| Create / edit | `projectTasksWrites.createNative` / `.updateNative` | M | `work:update` or `project:update` | `title`, `projectId?`, `dueDate?`, `assigneeUserId?`, `assigneeCrewId?`, `priority?`, `status?`, `checklist?` |
-| Record a follow-up outcome | `projectTasksWrites.recordFollowUpOutcomeNative` | M | `work:update` or `project:update` | `id`, `outcome`, `note?`, `nextDate?` |
+| Create / edit | `projectTasksWrites.createNative` / `.updateNative` | M | `work:update` or `project:update` | `title`, `projectId`, `dueDate?`, `assigneeUserId?`, `assigneeCrewId?`, `priority?`, `status?` |
 | Delete | `projectTasksWrites.deleteNative` | **H** | `work:update` or `project:update` | `id` |
 
-A task with `automation` set belongs to the follow-up engine. Edit it through
-the normal update (the server records your change against the automation);
-deleting it is a soft close and the engine may recreate it.
+Tasks are a plain list — nothing creates, moves or closes one automatically.
 
 ## Personal scope (`self:*`)
 

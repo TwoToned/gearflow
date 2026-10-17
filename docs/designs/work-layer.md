@@ -1,3 +1,5 @@
+> **REMOVED (2026-10).** The work layer (Today, Triage, follow-up engine, client timeline / next step / pipeline) was cut back to a basic per-project task list + `/my-tasks`. This document is a historical record only — nothing here is live. See FEATUREDOCS/50.
+
 # Work layer — tasks, project management, client relationships, time
 
 > _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **APPROVED** 2026-09-16 (office-hours, decisions D1–D5) · Review quarterly (POLICY.md R-5.5)_

@@ -11,9 +11,7 @@ import { UpcomingProjectsWidget } from "@/components/dashboard/widgets/upcoming-
 import { RecentActivityWidget } from "@/components/dashboard/widgets/recent-activity-widget";
 import { FinishSetupChecklistWidget } from "@/components/dashboard/widgets/finish-setup-checklist-widget";
 import { ActivationChecklistWidget } from "@/components/dashboard/widgets/activation-checklist-widget";
-import { TodayWorkListWidget } from "@/components/dashboard/widgets/today-work-list-widget";
-import { TodayDayRailWidget } from "@/components/dashboard/widgets/today-day-rail-widget";
-import { TodayNeedsYouRailWidget } from "@/components/dashboard/widgets/today-needs-you-rail-widget";
+import { MyTasksWidget } from "@/components/dashboard/widgets/my-tasks-widget";
 
 /**
  * The customizable dashboard's widget catalog (see DESIGN.md's
@@ -38,9 +36,7 @@ export type DashboardWidgetKind =
   | "recentActivity"
   | "finishSetupChecklist"
   | "activationChecklist"
-  | "todayWorkList"
-  | "todayDayRail"
-  | "todayNeedsYouRail";
+  | "myTasks";
 
 interface DashboardWidgetGeometry {
   w: number;
@@ -186,31 +182,12 @@ export const DASHBOARD_WIDGET_REGISTRY: Record<DashboardWidgetKind, DashboardWid
     defaultSize: { w: 6, h: 6 },
     minSize: { w: 3, h: 4 },
   },
-  todayWorkList: {
-    kind: "todayWorkList",
-    title: "Work list",
-    description: "Your Overdue/Today/Triage/Later tasks and mentions, from Today.",
-    component: TodayWorkListWidget,
-    // Multiple bucket headers + quick-add + rows — inherently open-ended
-    // like Today's own page; default is already generous, min just needs
-    // enough for quick-add plus a visible bucket or two.
-    defaultSize: { w: 8, h: 8 },
-    minSize: { w: 4, h: 6 },
-  },
-  todayDayRail: {
-    kind: "todayDayRail",
-    title: "Your day",
-    description: "Today's shifts and scheduled services, from Today.",
-    component: TodayDayRailWidget,
-    defaultSize: { w: 4, h: 5 },
-    minSize: { w: 3, h: 4 },
-  },
-  todayNeedsYouRail: {
-    kind: "todayNeedsYouRail",
-    title: "Needs you",
-    description: "Declined/stale crew offers and expiring quotes on jobs you manage, from Today.",
-    component: TodayNeedsYouRailWidget,
-    defaultSize: { w: 4, h: 5 },
+  myTasks: {
+    kind: "myTasks",
+    title: "My tasks",
+    description: "Your open tasks across every job.",
+    component: MyTasksWidget,
+    defaultSize: { w: 6, h: 6 },
     minSize: { w: 3, h: 4 },
   },
 };
@@ -227,9 +204,7 @@ export const DASHBOARD_WIDGET_ORDER: DashboardWidgetKind[] = [
   "recentActivity",
   "finishSetupChecklist",
   "activationChecklist",
-  "todayWorkList",
-  "todayDayRail",
-  "todayNeedsYouRail",
+  "myTasks",
 ];
 
 function widget(kind: DashboardWidgetKind, x: number, y: number): DashboardLayoutWidget {
@@ -240,18 +215,14 @@ function widget(kind: DashboardWidgetKind, x: number, y: number): DashboardLayou
 /**
  * The default board — everything from the pre-widget-board `/dashboard` at its
  * existing order/size (CLAUDE.md: "everything from the current /dashboard at
- * its current position/size"), plus the personal work list (`todayWorkList`)
- * directly under the setup checklists. Follow-up automation (design D3,
- * docs/designs/follow-up-automation.md §8.6) made that list where automated
- * quote follow-ups land, so a board without it would hide them — this
- * reverses the earlier "don't pre-place Today's widgets" call for the work
- * list only. The day rail and needs-you rail stay catalog-only. An existing
- * saved board is not rewritten; "Add widget" or "Reset to default" brings it in.
+ * its current position/size"), plus the basic `myTasks` list under the setup
+ * checklists. An existing saved board is not rewritten; "Add widget" or "Reset
+ * to default" brings it in.
  */
 export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutWidget[] = [
   widget("finishSetupChecklist", 0, 0),
   widget("activationChecklist", 6, 0),
-  widget("todayWorkList", 0, 6),
+  widget("myTasks", 0, 6),
   widget("onTheFloorNow", 0, 14),
   widget("needsAttention", 0, 19),
   widget("statActiveJobs", 0, 22),

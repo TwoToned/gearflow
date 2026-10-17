@@ -14,7 +14,6 @@ import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { resolveOrgQuoteConfig, resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
-import { reconcileFollowUps } from "./lib/followUpReconcile";
 import { computeValidUntil, startOfDayInTimezone, QUOTE_VALIDITY_BOUNDS } from "./lib/quoteDates";
 import { loadTotalsBundle, computeTotals } from "./lib/recalc";
 import { resolveWriteVersionId, requireLiveVersionId } from "./lib/versionScope";
@@ -650,8 +649,6 @@ export const sendNative = mutation({
         orgId: organizationId, projectId, trigger: "QUOTE_SENT", actor, now,
       }),
     );
-    // Follow-up automation (design §8.2) — once, after the send + status move landed.
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId, now });
 
     return {
       id: quoteId,
@@ -764,7 +761,6 @@ export const recallNative = mutation({
       projectId: project.id,
       createdAt: now,
     });
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId: project.id, now });
 
     return { id: quote.id, version: quote.version, restoredQuoteId };
   },
@@ -1256,7 +1252,6 @@ export const markAcceptedNative = mutation({
         orgId: organizationId, projectId: project.id, trigger: "QUOTE_ACCEPTED", actor, now,
       }),
     );
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId: project.id, now });
 
     return {
       id: quote.id,
@@ -1321,7 +1316,6 @@ export const markDeclinedNative = mutation({
       projectId: project.id,
       createdAt: now,
     });
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId: project.id, now });
 
     return { id: quote.id, version: quote.version, offerStatusChange: "CANCELLED" as const };
   },

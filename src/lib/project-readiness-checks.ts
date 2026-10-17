@@ -24,7 +24,7 @@
  * clean. `unknown` — the check could not run, and says so rather than
  * reporting a false all-clear.
  */
-export type ReadinessSeverity = "blocking" | "warning" | "pass" | "unknown";
+type ReadinessSeverity = "blocking" | "warning" | "pass" | "unknown";
 
 export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "services" | "pricing" | "packing";
 

@@ -10,8 +10,8 @@ import { createCipheriv, createECDH, createPrivateKey, hkdfSync, randomBytes, si
  * lines). Keys are the formats `scripts/generate-vapid-keys.mts` prints: the
  * raw 65-byte public point and the raw 32-byte private scalar, base64url.
  *
- * Server-only. The first sender is follow-up automation's urgent nudge
- * (`src/server/follow-up-push.ts`, FEATUREDOCS/82).
+ * Server-only. No feature currently sends pushes (the follow-up engine, the
+ * first sender, was removed); the subscription side and this sender stay.
  */
 
 export interface PushTarget {

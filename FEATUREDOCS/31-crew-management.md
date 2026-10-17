@@ -454,20 +454,12 @@ their own glyph on the block). `plannerData` also stops leaking
 `responseToken` (the single-use offer-respond bearer credential) into its
 payload — the same redaction `projectCrew` already does.
 
-**Triage: declined + unanswered offers, one-key actions.** The derived signal
-itself already existed as of Phase 1 (`dashboardLists.needsYou`, an indexed,
-per-PM-managed-project read — never a scan — computing `declinedCrew` and
-`staleOffers` against `crewAssignments.by_projectId`, minus a human's stored
-decision in `workSignalStates`). Phase 4 closes two gaps: (1) the "> 48h"
-staleness threshold is now `resolveCrewOfferStaleHours` (`convex/lib/orgSettings.ts`),
-an org setting (`OrgSettings.crewTime.unansweredOfferHours`, default 48,
-Settings → Crew & time) resolved server-side, replacing the hardcoded
-constant; (2) `TodayNeedsYouRail` gains **Re-offer** (calls the EXISTING
-`sendCrewOffer` server action — mints a fresh token, sends the offer email,
-no second offer path) and **Find cover** (a `/crew/planner?role=<id>&
-avail=AVAILABLE&week=<ms>` deep link — the planner reads these to land on the
-assignment's own week, pre-filtered to its role and to free crew via a new
-"Free" availability filter option).
+**Unanswered-offer threshold.** The "> 48h" staleness threshold is
+`resolveCrewOfferStaleHours` (`convex/lib/orgSettings.ts`), an org setting
+(`OrgSettings.crewTime.unansweredOfferHours`, default 48, Settings → Crew & time) resolved
+server-side; it drives the offer nudge email. (The Today "Needs you" Triage rail with
+Re-offer / Find cover actions, and `dashboardLists.needsYou`, were removed with the work layer.
+The planner still accepts `/crew/planner?role=&avail=AVAILABLE&week=` deep links.)
 
 **Request availability… (bulk, first-come fill).** `CrewPanel` gains a
 "Request availability…" action (`RequestAvailabilityDialog`) — pick a

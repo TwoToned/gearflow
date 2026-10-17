@@ -40,7 +40,7 @@ export interface PrimaryDateRange {
 }
 
 /** Dates arrive as Date (Prisma), epoch ms (Convex), or ISO string (JSON). */
-export type DateLike = Date | number | string | null | undefined;
+type DateLike = Date | number | string | null | undefined;
 
 interface ProjectDates {
   projectStartDate?: DateLike;

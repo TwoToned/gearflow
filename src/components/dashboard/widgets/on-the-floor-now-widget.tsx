@@ -1,8 +1,7 @@
 "use client";
 // Extracted from dashboard/page.tsx's Zone 1 ("On the floor now") — same
 // hooks, same JSX, unchanged logic (R-3.1). An org-wide warehouse view (what's
-// out right now), not personal work — see FEATUREDOCS/79's note on why this
-// stayed on Dashboard when the personal "My work" zone moved to Today.
+// out right now), not personal work.
 
 import Link from "next/link";
 import { useNativeHome } from "@/hooks/use-native-dashboard";

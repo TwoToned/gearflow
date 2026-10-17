@@ -9,7 +9,7 @@ import { refreshXeroAccessToken } from "@/lib/xero-client";
 
 /**
  * Xero access tokens, one refresh at a time (follow-up automation phase 2,
- * FEATUREDOCS/82). Xero rotates the refresh token on EVERY use and invalidates
+ * FEATUREDOCS/66). Xero rotates the refresh token on EVERY use and invalidates
  * the old one, so two concurrent refreshes — a user pushing an invoice while
  * the payment sync runs — would each persist a token the other already spent,
  * and the org's connection would silently die. Every caller goes through this

@@ -117,14 +117,12 @@ interface ServiceSchedule {
   scheduledTime: string | undefined;
 }
 
-function scheduleOf(s: ServiceSchedule): ServiceSchedule {
+function scheduleOf(s: { date?: number; endDate?: number; startTime?: string; endTime?: string; scheduledTime?: string }): ServiceSchedule {
   return { date: s.date, endDate: s.endDate, startTime: s.startTime, endTime: s.endTime, scheduledTime: s.scheduledTime };
 }
 
 function scheduleChanged(before: ServiceSchedule, after: ServiceSchedule): boolean {
-  const b = scheduleOf(before);
-  const a = scheduleOf(after);
-  return (Object.keys(b) as (keyof ServiceSchedule)[]).some((k) => (b[k] ?? null) !== (a[k] ?? null));
+  return (Object.keys(before) as (keyof ServiceSchedule)[]).some((k) => (before[k] ?? null) !== (after[k] ?? null));
 }
 
 /**
@@ -769,7 +767,7 @@ export const updateServiceNative = mutation({
       startTime: fields.startTime ?? undefined, endTime: fields.endTime ?? undefined,
       scheduledTime: fields.scheduledTime ?? undefined,
     };
-    if (scheduleChanged(existing, nextSchedule)) {
+    if (scheduleChanged(scheduleOf(existing), nextSchedule)) {
       await syncServiceCrewSchedule(ctx, { id: existing.id, type: fields.type }, a.orgId, nextSchedule, a.now);
     }
 

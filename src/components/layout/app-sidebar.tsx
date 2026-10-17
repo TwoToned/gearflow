@@ -10,6 +10,7 @@ import {
   Boxes,
   FolderOpen,
   Users,
+  ListChecks,
   MapPin,
   Wrench,
   BarChart3,
@@ -30,7 +31,6 @@ import {
   Undo2,
   Landmark,
   PackagePlus,
-  GitBranch,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -149,12 +149,8 @@ const RAIL: RailItem[] = [
 
 // Secondary destinations — own group at the bottom (expanded) / "More" flyout (rail).
 const MORE: SubItem[] = [
+  { title: "My tasks", url: "/my-tasks", icon: ListChecks, resource: "project" },
   { title: "Clients", url: "/clients", icon: Users, resource: "client" },
-  // #1245 — the client relationship layer's pipeline view. A separate MORE
-  // entry rather than nested under Clients: SubItem (unlike RailItem) has no
-  // `subs` of its own, so "Clients → Pipeline" is expressed as two adjacent
-  // rows in the same group rather than a sub-menu.
-  { title: "Pipeline", url: "/clients/pipeline", icon: GitBranch, resource: "client" },
   { title: "Suppliers", url: "/suppliers", icon: Truck, resource: "supplier" },
   { title: "Locations", url: "/locations", icon: MapPin, resource: "location" },
   { title: "Activity Log", url: "/activity", icon: ScrollText, resource: "reports" },

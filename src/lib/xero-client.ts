@@ -548,7 +548,7 @@ const INVOICE_IDS_PER_REQUEST = 40;
 
 /**
  * Invoice-level payment state for the Flow-pushed invoices (follow-up
- * automation phase 2, FEATUREDOCS/82): Status, AmountPaid, AmountCredited,
+ * automation phase 2, FEATUREDOCS/66): Status, AmountPaid, AmountCredited,
  * AmountDue. Read-only; batched by `IDs`. `summaryOnly=true` keeps Xero from
  * returning line items we don't need.
  */

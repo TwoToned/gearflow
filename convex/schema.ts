@@ -2942,7 +2942,7 @@ export default defineSchema({
     xeroInvoiceId: v.optional(v.string()),
     xeroSyncStatus: v.optional(enums.XeroSyncStatus),
     lastSyncError: v.optional(v.string()),
-    // Xero payment sync (follow-up automation phase 2, FEATUREDOCS/82) — the
+    // Xero payment sync (Xero payment sync, FEATUREDOCS/66) — the
     // invoice-level truth read back from Xero, which owns reconciliation:
     // Xero's own Status (DRAFT/SUBMITTED/AUTHORISED/PAID/VOIDED/DELETED) and
     // its AmountPaid/AmountCredited/AmountDue. `paymentsWrites`'s recompute
@@ -3161,7 +3161,7 @@ export default defineSchema({
     cacheRefreshedAt: v.optional(v.number()),
     cacheError: v.optional(v.string()),
     lastSyncError: v.optional(v.string()),
-    // Refresh-token lease (FEATUREDOCS/82): Xero rotates the refresh token on
+    // Refresh-token lease (FEATUREDOCS/66): Xero rotates the refresh token on
     // every use, so two concurrent refreshes (a user push + the payment sync)
     // would race and persist a dead token. Every refresh holds this lease.
     tokenLeaseHolder: v.optional(v.string()),
@@ -3376,7 +3376,7 @@ export default defineSchema({
     dueSoon: v.optional(v.boolean()),
     overdue: v.optional(v.boolean()),
     quoteExpiring: v.optional(v.boolean()),
-    followUpBrief: v.optional(v.boolean()),
+    followUpBrief: v.optional(v.boolean()), // DEPRECATED (follow-up engine removed) — never read or written
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
@@ -3499,8 +3499,8 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     // — Phase 1 additions (design §10.1) —
-    kind: v.optional(enums.ProjectTaskKind), // absent = "task"
-    stage: v.optional(enums.ProjectTaskStage),
+    kind: v.optional(v.string()), // DEPRECATED (work layer removed) — never written
+    stage: v.optional(v.string()), // DEPRECATED (work layer removed) — never written
     // One level of subtasks — replaces `checklist`. A child inherits
     // projectId/organizationId from its parent and has no stage/sourceKey.
     parentId: v.optional(v.string()),
@@ -3529,7 +3529,7 @@ export default defineSchema({
     // Never set on a subtask (recurrence is a top-level-task concept, same as
     // stage) — the next occurrence is a NEW top-level row, created only when
     // the current one is marked DONE (Todoist model), never pre-generated.
-    recurrence: v.optional(enums.ProjectTaskRecurrence),
+    recurrence: v.optional(v.any()), // DEPRECATED (work layer removed) — never written
     // Org member ids who watch this item — added/removed via
     // watchNative/unwatchNative. Bounded (fieldGuards) the same way `tags` is.
     // Notification-on-activity for watchers is a documented follow-up
@@ -3540,7 +3540,7 @@ export default defineSchema({
     // ONLY on rows the follow-up engine owns (convex/lib/followUpReconcile.ts).
     // Its presence is what makes a row "automated": human closes/edits of such
     // a row go back through the reconciler.
-    automation: v.optional(enums.FollowUpAutomation),
+    automation: v.optional(v.any()), // DEPRECATED (follow-up engine removed) — never written
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -3594,7 +3594,7 @@ export default defineSchema({
     id: v.string(),
     organizationId: v.string(),
     title: v.string(),
-    stage: enums.ProjectTaskStage,
+    stage: v.string(),
     triggerStatus: v.string(), // a projects.status value; only "CONFIRMED" is wired so far
     // Offsets are relative to project start/end (§8.2) or the moment the
     // template seeds ("trigger") — e.g. an admin task due shortly after
@@ -3810,7 +3810,7 @@ export default defineSchema({
     id: v.string(),
     organizationId: v.string(),
     workItemId: v.string(), // projectTasks.id
-    entityType: enums.WorkItemLinkEntityType,
+    entityType: v.string(),
     entityId: v.string(),
     createdAt: v.number(),
   })

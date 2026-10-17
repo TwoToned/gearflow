@@ -35,7 +35,6 @@ const ALL_ON = {
   flaggedAsset: true,
   incidentReport: true,
   quoteExpiring: true,
-  followUpBrief: true,
 };
 
 function makeT() {

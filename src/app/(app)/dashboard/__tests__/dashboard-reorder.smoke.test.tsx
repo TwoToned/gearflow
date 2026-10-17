@@ -8,10 +8,8 @@
 // items in `widgets.map()` order regardless of their absolute CSS position.
 // The personal "My work" zone (tasks-due block + per-project blocker
 // badges, formerly MyWorkSection) stays GONE — its replacement is the
-// `todayWorkList` widget, which IS in DEFAULT_DASHBOARD_LAYOUT since follow-up
-// automation (design D3) but is filtered out of this test's fixed layout: it
-// needs its own session/Convex mocks and has its own smoke tests
-// (src/app/(app)/today/__tests__/page.smoke.test.tsx). "On the floor now" (an org-wide live-jobs view, not a personal work
+// `myTasks` widget, which IS in DEFAULT_DASHBOARD_LAYOUT but is filtered out of
+// this test's fixed layout: it needs its own session/Convex mocks. "On the floor now" (an org-wide live-jobs view, not a personal work
 // list) stays and renders ahead of the Org-risk zone. Blockers still surface
 // exactly once, via the needs-attention chip.
 import React from "react";
@@ -19,7 +17,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DEFAULT_DASHBOARD_LAYOUT } from "@/lib/dashboard-widgets";
 
-const ORG_WIDE_LAYOUT = DEFAULT_DASHBOARD_LAYOUT.filter((w) => w.kind !== "todayWorkList");
+const ORG_WIDE_LAYOUT = DEFAULT_DASHBOARD_LAYOUT.filter((w) => w.kind !== "myTasks");
 
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
@@ -159,11 +157,8 @@ describe("DashboardPage reorder (smoke)", () => {
   });
 });
 
-describe("DEFAULT_DASHBOARD_LAYOUT (follow-up automation, design D3)", () => {
-  it("pre-places the personal work list, where automated follow-ups land", () => {
-    expect(DEFAULT_DASHBOARD_LAYOUT.map((w) => w.kind)).toContain("todayWorkList");
-    // the day rail and needs-you rail stay catalog-only
-    expect(DEFAULT_DASHBOARD_LAYOUT.map((w) => w.kind)).not.toContain("todayDayRail");
-    expect(DEFAULT_DASHBOARD_LAYOUT.map((w) => w.kind)).not.toContain("todayNeedsYouRail");
+describe("DEFAULT_DASHBOARD_LAYOUT", () => {
+  it("pre-places the basic my-tasks list", () => {
+    expect(DEFAULT_DASHBOARD_LAYOUT.map((w) => w.kind)).toContain("myTasks");
   });
 });

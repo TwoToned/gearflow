@@ -28,40 +28,6 @@ const makeT = () => {
 };
 type T = ReturnType<typeof makeT>;
 
-const taskSort = (t: T, id: string) =>
-  t.run(async (ctx) => (await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique())?.sortOrder);
-
-describe("projectTasks.reorderMany — bulk drag-reorder, per-item org re-check", () => {
-  test("sets sortOrder = index for in-org rows, skips a cross-org id", async () => {
-    const t = makeT();
-    await t.run(async (ctx) => {
-      await ctx.db.insert("projectTasks", { id: "t_a", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 9 });
-      await ctx.db.insert("projectTasks", { id: "t_b", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 9 });
-      await ctx.db.insert("projectTasks", { id: "t_x", organizationId: OTHER, projectId: "p9", title: "X", sortOrder: 9 });
-    });
-    // Desired display order: b, a — and a cross-org id that must be ignored.
-    await t.withIdentity(SERVICE).mutation(api.projectTasks.reorderMany, {
-      orgId: ORG,
-      orderedIds: ["t_b", "t_a", "t_x"],
-      now: NOW,
-    });
-    expect(await taskSort(t, "t_b")).toBe(0); // in-org, index 0
-    expect(await taskSort(t, "t_a")).toBe(1); // in-org, index 1
-    expect(await taskSort(t, "t_x")).toBe(9); // cross-org, untouched
-  });
-
-  test("a non-service token cannot call it", async () => {
-    const t = makeT();
-    await expect(
-      t.withIdentity({ subject: "u1", orgId: ORG }).mutation(api.projectTasks.reorderMany, {
-        orgId: ORG,
-        orderedIds: ["t_a"],
-        now: NOW,
-      }),
-    ).rejects.toThrow(/server/i);
-  });
-});
-
 describe("customFieldDefinitions.reorderMany — {id,sortOrder} pairs, per-item org re-check", () => {
   const cfSort = (t: T, id: string) =>
     t.run(async (ctx) => (await ctx.db.query("customFieldDefinitions").withIndex("by_cuid", (q) => q.eq("id", id)).unique())?.sortOrder);

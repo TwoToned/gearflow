@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
 import { requirePermission } from "@/lib/org-context";
-import { generatePdf } from "@/lib/pdfme/generate-pdf";
-import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
+import { generatePdf, listLabelIndex } from "@/lib/pdfme/generate-pdf";
+import { LABEL_DOCUMENT_TYPES, type LabelDocumentType, type ProjectDocumentType } from "@/lib/pdfme/document-layouts";
 
 /**
  * Warehouse document rendering — pull slip, delivery docket, return sheet.
@@ -28,6 +28,7 @@ const typeMap: Record<string, ProjectDocumentType> = {
   manifest: "manifest",
   "container-label": "container-label",
   "kit-label": "kit-label",
+  "item-label": "item-label",
 };
 
 /** Client-facing finance docs — reachable here ONLY as a watermarked preview. */
@@ -72,9 +73,12 @@ function readDocumentParams(url: URL) {
     versionId: q.get("versionId") || undefined,
     // Draft preview only: print services as one combined line.
     combineServices: q.get("combineServices") === "1" ? true : undefined,
-    // `container-label` / `kit-label` only: print one container / kit instead
+    // `container-label` / `kit-label` / `item-label` only: print one container / kit / item instead
     // of all of them. A no-op for every other type.
     labelId: q.get("labelId") || undefined,
+    // Label types only: return the printable labels as JSON (for the menus)
+    // instead of a PDF.
+    list: q.get("list") === "1",
     previewInvoiceDateParam: q.get("invoiceDate"),
     previewDueDateParam: q.get("dueDate"),
   };
@@ -85,7 +89,7 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   const { projectId } = await params;
-  const { type, preview, invoiceId, versionId, combineServices, labelId, previewInvoiceDateParam, previewDueDateParam } = readDocumentParams(new URL(request.url));
+  const { type, preview, invoiceId, versionId, combineServices, labelId, list, previewInvoiceDateParam, previewDueDateParam } = readDocumentParams(new URL(request.url));
   let session;
   try {
     session = await requireOrganization();
@@ -115,6 +119,16 @@ export async function GET(
       await requirePermission("invoice", "read");
     } catch {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
+  if (list && LABEL_DOCUMENT_TYPES.has(docType)) {
+    try {
+      const labels = await listLabelIndex(projectId, organizationId, docType as LabelDocumentType);
+      return NextResponse.json({ labels });
+    } catch (error) {
+      logger.error("Label list failed", { error: error });
+      return NextResponse.json({ error: "Label list failed" }, { status: 500 });
     }
   }
 

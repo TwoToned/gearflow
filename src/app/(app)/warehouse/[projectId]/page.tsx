@@ -24,6 +24,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { LabelSubmenu } from "@/components/documents/label-submenu";
 import { showError } from "@/lib/show-error";
 import { focusRing } from "@/lib/utils";
 import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/warehouse-check-policy";
@@ -2903,9 +2904,9 @@ function WarehouseProjectPage({
                   ))}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
-              <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=kit-label`, "_blank")}>
-                Kit labels
-              </DropdownMenuItem>
+              <LabelSubmenu projectId={projectId} apiType="kit-label" label="Kit labels" allLabel="All kits" emptyLabel="No kits on this job" />
+              {/* Loose gear only (not in a case or a kit): serialised, bulk, custom and sub-hired. */}
+              <LabelSubmenu projectId={projectId} apiType="item-label" label="Item labels" allLabel="All loose items" emptyLabel="No loose items on this job" />
             </DropdownMenuContent>
           </DropdownMenu>
           {/* Desktop: View Project button */}

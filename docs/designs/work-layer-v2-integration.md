@@ -1,3 +1,5 @@
+> **REMOVED (2026-10).** The work layer (Today, Triage, follow-up engine, client timeline / next step / pipeline) was cut back to a basic per-project task list + `/my-tasks`. This document is a historical record only — nothing here is live. See FEATUREDOCS/50.
+
 # Work layer v2 — integration pass
 
 > _Owner: Jayden Nawotka · Drafted 2026-09-19 · Status: **P1 + the rail shipped** (see the

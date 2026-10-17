@@ -368,7 +368,8 @@ async function buildCrewOverviewFeed(
     const roleName = (a.crewRoleId ? crewRoleMap.get(a.crewRoleId)?.name : null) || "Crew";
     const shifts = shiftsByAssignment.get(a.id) ?? [];
     const project = projectMap.get(a.projectId);
-    if (!project) continue;
+    // A cancelled job drops off the crew feed entirely.
+    if (!project || project.status === "CANCELLED") continue;
     const loc = project.locationId ? locationMap.get(project.locationId) : null;
     const location = [loc?.name, loc?.address]
       .filter(Boolean)

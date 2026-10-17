@@ -2,7 +2,7 @@ import type { XeroInvoiceState } from "@/lib/xero-client";
 
 /**
  * Map Xero's invoice states back onto the Flow invoices that were pushed
- * (follow-up automation phase 2, FEATUREDOCS/82). Pure — unit-tested. A Flow
+ * (Xero payment sync, FEATUREDOCS/66). Pure — unit-tested. A Flow
  * invoice Xero didn't return (deleted there, or a stale id) is skipped rather
  * than guessed at; missing amounts read as 0.
  */

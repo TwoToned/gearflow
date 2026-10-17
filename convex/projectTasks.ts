@@ -1,9 +1,7 @@
 import { v, ConvexError } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
-import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isMemberAuth } from "./lib/auth";
-import * as enums from "./lib/validators";
+import { requireOrgReadFor, requireOrgReadDocFor, getAuthContext, isMemberAuth } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 // Work-or-project RBAC transition (#1243): task reads were gated on `project:read`
@@ -32,13 +30,10 @@ async function requireWorkOrProjectOrgReadDoc(
 }
 
 /**
- * Thin CRUD for ProjectTask (Convex table "projectTasks"). GENERATED — Phase 2/5.
- *
- * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
- * SERVICE token (service-only mirror/read helpers; the browser-direct write path with RBAC +
- * validation + audit enforced inside Convex lives in the *Writes.ts mutations — see FEATUREDOCS/54). Org-scoped reads
- * accept the service token OR a user token scoped to the same org. Lookups use the
- * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
+ * Reads for the basic project task list (Convex table "projectTasks"). Writes
+ * live in `projectTasksWrites.ts` (browser-direct, RBAC + audit inside Convex).
+ * Org-scoped reads accept the service token OR a user token scoped to the same
+ * org. Lookups use the cuid (`id`) via by_cuid. See FEATUREDOCS/50.
  */
 
 export const getById = query({
@@ -55,35 +50,10 @@ export const listByProject = query({
   handler: async (ctx, { projectId, orgId }) => {
     await requireWorkOrProjectOrgRead(ctx, orgId);
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
-    // Subtasks (parentId set) are excluded — this is a flat top-level list; a subtask
-    // only ever renders nested under its parent (Phase 1, #1243).
     return (await ctx.db
       .query("projectTasks")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect()).filter((r) => r.organizationId === orgId && !r.parentId);
-  },
-});
-
-/**
- * A task's subtasks (Phase 1, #1243) — the one level `parentId` enables. Sorted
- * sortOrder→createdAt, same convention as `listByProjectWithRelations`. Org-checked
- * against the PARENT (by_parentId is global — a subtask always inherits its
- * parent's organizationId, so checking the parent's org is equivalent to checking
- * each child's, and avoids re-fetching the parent doc for every caller).
- */
-export const listSubtasks = query({
-  args: { parentId: v.string(), orgId: v.string() },
-  handler: async (ctx, { parentId, orgId }) => {
-    await requireWorkOrProjectOrgRead(ctx, orgId);
-    const rows = (await ctx.db.query("projectTasks").withIndex("by_parentId", (q) => q.eq("parentId", parentId)).collect())
-      .filter((t) => t.organizationId === orgId); // by_parentId is global → org re-check
-    rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
-    return rows.map((t) => ({
-      id: t.id,
-      title: t.title,
-      status: t.status ?? "TODO",
-      completedAt: t.completedAt ?? null,
-    }));
+      .collect()).filter((r) => r.organizationId === orgId);
   },
 });
 
@@ -129,7 +99,7 @@ export const listByProjectWithRelations = query({
     await requireWorkOrProjectOrgRead(ctx, orgId);
     const rows = (
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-    ).filter((t) => t.organizationId === orgId && !t.parentId); // by_projectId is global → org re-check; subtasks render nested, never as flat siblings
+    ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
     rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
 
     const out = [];
@@ -161,19 +131,10 @@ export const listByProjectWithRelations = query({
         status: t.status ?? "TODO",
         priority: t.priority ?? "NORMAL",
         dueDate: t.dueDate != null ? new Date(t.dueDate).toISOString() : null,
-        // #tae40e — the span's opening end, same ISO shape as dueDate so the
-        // consumer slices both to YYYY-MM-DD the same way.
-        startDate: t.startDate != null ? new Date(t.startDate).toISOString() : null,
-        checklist: t.checklist ?? null,
         assigneeUserId: t.assigneeUserId ?? null,
         assigneeCrewId: t.assigneeCrewId ?? null,
         assigneeUser,
         assigneeCrew,
-        // #1244 — the Work tab's stage columns/grouping and recurrence badge.
-        stage: t.stage ?? null,
-        followUp: followUpView(t),
-        recurrence: t.recurrence ?? null,
-        watcherUserIds: t.watcherUserIds ?? [],
         sortOrder: t.sortOrder ?? 0,
       });
     }
@@ -205,19 +166,7 @@ type MyOpenTaskDoc = {
   dueDate?: number;
   assigneeUserId?: string;
   assigneeCrewId?: string;
-  parentId?: string;
-  stage?: string;
-  automation?: Doc<"projectTasks">["automation"];
 };
-
-/** The slice of an automated follow-up the UI shows (design §8.7): why the row
- *  exists, which rung, whether it's urgent, and the quote it chases. Null for
- *  every human-created row. */
-function followUpView(t: { automation?: Doc<"projectTasks">["automation"] }) {
-  const a = t.automation;
-  if (!a) return null;
-  return { ruleKey: a.ruleKey, rung: a.rung, why: a.why, urgent: a.urgent, subjectId: a.subjectId };
-}
 
 async function resolveCrewIdsForUser(ctx: QueryCtx, userId: string, orgId: string): Promise<string[]> {
   // by_userId is global — a person can hold crew records in more than one org
@@ -243,7 +192,6 @@ async function collectMyOpenTasks(
   const byId = new Map<string, MyOpenTaskDoc>();
   const keep = (r: MyOpenTaskDoc) => {
     if (r.organizationId !== orgId) return; // global index — org re-check
-    if (r.parentId) return; // subtasks render nested under their parent, never as a standalone Today row
     byId.set(r.id, r);
   };
   for (const status of OPEN_TASK_STATUSES) {
@@ -321,8 +269,6 @@ function serializeMyOpenTask(
     projectNumber: project.projectNumber,
     assigneeUserId: t.assigneeUserId ?? null,
     assigneeCrewId: t.assigneeCrewId ?? null,
-    stage: t.stage ?? null,
-    followUp: followUpView(t),
   };
 }
 
@@ -343,221 +289,11 @@ export const myOpenTasks = query({
   },
 });
 
-export const create = mutation({
-  args: {
-    id: v.string(),
-    organizationId: v.string(),
-    projectId: v.string(),
-    title: v.string(),
-    description: v.optional(v.string()),
-    status: v.optional(enums.ProjectTaskStatus),
-    priority: v.optional(enums.ProjectTaskPriority),
-    dueDate: v.optional(v.number()),
-    sortOrder: v.optional(v.number()),
-    checklist: v.optional(v.any()),
-    assigneeUserId: v.optional(v.string()),
-    assigneeCrewId: v.optional(v.string()),
-    createdById: v.optional(v.string()),
-    completedAt: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    await requireService(ctx);
-    return await ctx.db.insert("projectTasks", args);
-  },
-});
-
-export const createIfMissing = mutation({
-  args: {
-    id: v.string(),
-    organizationId: v.string(),
-    projectId: v.string(),
-    title: v.string(),
-    description: v.optional(v.string()),
-    status: v.optional(enums.ProjectTaskStatus),
-    priority: v.optional(enums.ProjectTaskPriority),
-    dueDate: v.optional(v.number()),
-    sortOrder: v.optional(v.number()),
-    checklist: v.optional(v.any()),
-    assigneeUserId: v.optional(v.string()),
-    assigneeCrewId: v.optional(v.string()),
-    createdById: v.optional(v.string()),
-    completedAt: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    await requireService(ctx);
-    const existing = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
-    if (existing) return { _id: existing._id, created: false };
-    const _id = await ctx.db.insert("projectTasks", args);
-    return { _id, created: true };
-  },
-});
-
-export const update = mutation({
-  args: {
-    id: v.string(),
-    patch: v.object({
-      organizationId: v.optional(v.string()),
-      projectId: v.optional(v.string()),
-      title: v.optional(v.string()),
-      description: v.optional(v.string()),
-      status: v.optional(enums.ProjectTaskStatus),
-      priority: v.optional(enums.ProjectTaskPriority),
-      dueDate: v.optional(v.number()),
-      sortOrder: v.optional(v.number()),
-      checklist: v.optional(v.any()),
-      assigneeUserId: v.optional(v.string()),
-      assigneeCrewId: v.optional(v.string()),
-      createdById: v.optional(v.string()),
-      completedAt: v.optional(v.number()),
-      createdAt: v.optional(v.number()),
-      updatedAt: v.optional(v.number()),
-    }),
-  },
-  handler: async (ctx, { id, patch }) => {
-    await requireService(ctx);
-    const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!doc) throw new ConvexError("projectTasks not found: " + id);
-    const safePatch = { ...patch };
-    delete safePatch.organizationId;
-    await ctx.db.patch(doc._id, safePatch);
-    return doc._id;
-  },
-});
-
-export const remove = mutation({
-  args: { id: v.string() },
-  handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!doc) throw new ConvexError("projectTasks not found: " + id);
-    await ctx.db.delete(doc._id);
-  },
-});
-
-// ─── Bulk (multi-select) operations ────────────────────────────────────────
-// One mutation round-trip for an N-task bulk action instead of one server→Convex
-// call per row. Org-scoped per row (by_cuid is global); foreign rows skipped.
-
-/** Bulk-apply a shared patch to N tasks. `patch` carries the resolved shared
- *  fields (status / priority / dueDate ms / assignee); the DONE completedAt stamp
- *  is derived per row against its own current status. */
-export const updateMany = mutation({
-  args: { ids: v.array(v.string()), orgId: v.string(), patch: v.any(), now: v.number() },
-  handler: async (ctx, { ids, orgId, patch, now }) => {
-    await requireService(ctx);
-    const p = patch as Record<string, unknown>;
-    const projectIds = new Set<string>();
-    let updated = 0;
-    let skipped = 0;
-    for (const id of ids) {
-      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
-      const applied: Record<string, unknown> = { ...p, updatedAt: now };
-      delete applied.organizationId;
-      delete applied.id;
-      if (p.status !== undefined && p.status !== doc.status) {
-        applied.completedAt = p.status === "DONE" ? now : null;
-      }
-      await ctx.db.patch(doc._id, applied);
-      if (doc.projectId) projectIds.add(doc.projectId);
-      updated++;
-    }
-    return { updated, skipped, projectIds: [...projectIds] };
-  },
-});
-
-/** Bulk-delete N tasks in one pass. */
-export const removeMany = mutation({
-  args: { ids: v.array(v.string()), orgId: v.string() },
-  handler: async (ctx, { ids, orgId }) => {
-    await requireService(ctx);
-    const projectIds = new Set<string>();
-    let deleted = 0;
-    let skipped = 0;
-    for (const id of ids) {
-      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-      if (!doc || doc.organizationId !== orgId) { skipped++; continue; }
-      await ctx.db.delete(doc._id);
-      if (doc.projectId) projectIds.add(doc.projectId);
-      deleted++;
-    }
-    return { deleted, skipped, projectIds: [...projectIds] };
-  },
-});
-
-/**
- * Atomic drag-reorder: assign sortOrder = index for each id in `orderedIds`, in ONE
- * mutation round-trip (was a server loop firing one `update` per task). Per-item org
- * re-check: by_cuid is a GLOBAL index, so without the `doc.organizationId === orgId`
- * skip a caller could reorder another org's tasks (mirrors reorderLineItems' guard).
- */
-export const reorderMany = mutation({
-  args: { orgId: v.string(), orderedIds: v.array(v.string()), now: v.number() },
-  handler: async (ctx, { orgId, orderedIds, now }) => {
-    await requireService(ctx);
-    for (let index = 0; index < orderedIds.length; index++) {
-      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", orderedIds[index])).unique();
-      if (doc && doc.organizationId === orgId) await ctx.db.patch(doc._id, { sortOrder: index, updatedAt: now });
-    }
-  },
-});
-
-const WORK_COUNTS_MAX_PROJECTS = 300;
-
-/**
- * Per-project work counts for the revived project board (#1244, design §8.3:
- * "Cards show '9/14 work · 1 overdue'"). ONE batched query over N project
- * ids — same shape `collaboration.listBlockingForProjects` already
- * established for the board's blocking-comment badge — NOT an org-wide
- * `projectTasks` collect: each project's tasks are fetched via
- * `by_organizationId_projectId`, so every read is bounded by ONE project's
- * own task count (which is what makes this a "bounded-by-domain" read per
- * collect-ratchet.mjs's own carve-out, not the org-wide/no-index hazard
- * shape the R-9.8 ratchet tracks) rather than the whole org's `projectTasks`
- * table, which is a genuinely growing, transaction-scale table (unlike
- * `projects`/`clients`, which the board's existing R-8.3.3 exception already
- * covers as catalog-scale).
- */
-export const workCountsForProjects = query({
-  args: { orgId: v.string(), projectIds: v.array(v.string()), now: v.number() },
-  handler: async (ctx, { orgId, projectIds, now }) => {
-    await requireWorkOrProjectOrgRead(ctx, orgId);
-    const ids = [...new Set(projectIds)].slice(0, WORK_COUNTS_MAX_PROJECTS);
-    const out: Record<string, { done: number; total: number; overdue: number }> = {};
-    await Promise.all(
-      ids.map(async (projectId) => {
-        const rows = await ctx.db
-          .query("projectTasks")
-          .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
-          .collect();
-        let done = 0;
-        let total = 0;
-        let overdue = 0;
-        for (const t of rows) {
-          if (t.parentId) continue; // subtasks don't count toward the card's own total
-          if (t.status === "CANCELLED") continue;
-          total++;
-          if (t.status === "DONE") done++;
-          else if (t.dueDate != null && t.dueDate < now) overdue++;
-        }
-        out[projectId] = { done, total, overdue };
-      }),
-    );
-    return out;
-  },
-});
-
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
   getById: { summary: "Get one project task by id.", danger: "low", mcpTier: 1 },
   listByProject: { summary: "List tasks belonging to one project.", danger: "low", mcpTier: 1 },
   assignees: { summary: "List people (org members + crew) a task can be assigned to.", danger: "low", mcpTier: 2 },
-  listByProjectWithRelations: { summary: "List a project's tasks with assignee joins, sorted for the task board.", danger: "low", mcpTier: 1 },
+  listByProjectWithRelations: { summary: "List a project's tasks with assignee joins, in list order.", danger: "low", mcpTier: 1 },
   myOpenTasks: { summary: "List the caller's own open (TODO/IN_PROGRESS) tasks across all projects in an org.", danger: "low", mcpTier: 2 },
-  listSubtasks: { summary: "List a task's subtasks (one level).", danger: "low", mcpTier: 2 },
-  workCountsForProjects: { summary: "Batched done/total/overdue task counts for a set of projects (project board cards).", danger: "low", mcpTier: 3 },
 };

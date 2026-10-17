@@ -11,7 +11,6 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus, revertAutoAdvanceByTrigger } from "./lib/projectAutoStatus";
-import { reconcileFollowUps } from "./lib/followUpReconcile";
 
 /**
  * Payment write mutations (#1055) — browser-direct, standard 4-guard shape,
@@ -45,7 +44,7 @@ function round(v: number): number {
 
 /** Recompute `amountPaid`/`paymentStatus` from this invoice's own non-voided
  *  payments AND the invoice-level truth the Xero payment sync reads back
- *  (FEATUREDOCS/82), and patch the invoice row — called from inside the same
+ *  (FEATUREDOCS/66), and patch the invoice row — called from inside the same
  *  mutation that just wrote/voided a payment or applied a sync, so the two can
  *  never drift apart.
  *
@@ -96,7 +95,6 @@ export async function settleInvoicePaymentState(
           }),
         )
       : null;
-  await reconcileFollowUps(ctx, { orgId: invoice.organizationId, projectId: invoice.projectId, now });
   return autoStatus;
 }
 
@@ -259,8 +257,6 @@ export const voidNative = mutation({
       projectId: invoice.projectId,
       createdAt: now,
     });
-    // A voided payment can re-open an invoice chase (FEATUREDOCS/82).
-    await reconcileFollowUps(ctx, { orgId, projectId: invoice.projectId, now });
 
     return { id };
   },

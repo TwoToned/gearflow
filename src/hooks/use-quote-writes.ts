@@ -51,6 +51,7 @@ export function useQuoteWrites() {
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
   const deleteRecalledM = useMutation(api.quotesWrites.deleteRecalledNative);
   const setLabelM = useMutation(api.quotesWrites.setQuoteLabelNative);
+  const acknowledgeExpiredM = useMutation(api.quotesWrites.acknowledgeExpiredNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -191,6 +192,17 @@ export function useQuoteWrites() {
         id: quoteId,
         organizationId: org,
         reason: parsed.reason,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Dismiss an expired quote from the org Finance board's Expiring list. */
+    acknowledgeExpired: async (quoteId: string): Promise<{ id: string; version: number }> => {
+      return await acknowledgeExpiredM({
+        id: quoteId,
+        organizationId: requireOrg(),
         actor: actor(),
         auditId: createId(),
         now: Date.now(),

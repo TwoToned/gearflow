@@ -1,13 +1,11 @@
 "use server";
 
 /**
- * Xero payment sync — the fetch half (follow-up automation phase 2,
- * FEATUREDOCS/82, design §8.5). For every org with a live Xero connection, read
+ * Xero payment sync — the fetch half (FEATUREDOCS/66). For every org with a live Xero connection, read
  * back the invoice-level state (Status / AmountPaid / AmountCredited / AmountDue)
  * of the Flow invoices it pushed that Flow doesn't yet know are settled, and
  * hand it to the service-only `xeroPaymentSync.applyXeroInvoiceStates`, which
- * recomputes `paymentStatus`, fires PAYMENT_SETTLED on a full settlement and
- * reconciles follow-ups.
+ * recomputes `paymentStatus`, and fires PAYMENT_SETTLED on a full settlement.
  *
  * Rides the notification cron (`/api/cron/notifications`), throttled per org to
  * once an hour via `xeroIntegrations.paymentsSyncedAt`. `syncXeroPaymentsNow`

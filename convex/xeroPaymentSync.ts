@@ -5,8 +5,7 @@ import { collectCapped } from "./lib/pagination";
 import { settleInvoicePaymentState } from "./paymentsWrites";
 
 /**
- * Xero payment sync — the Convex side (follow-up automation phase 2,
- * FEATUREDOCS/82, design §8.5). The Xero client and token vault live in `src/`
+ * Xero payment sync — the Convex side (FEATUREDOCS/66). The Xero client and token vault live in `src/`
  * (Convex can't import them), so the fetch runs in a Next route driven by the
  * notification cron (`src/server/xero-payment-sync.ts`); these SERVICE-only
  * functions are what it calls. No user or agent token reaches any of them.
@@ -16,7 +15,7 @@ import { settleInvoicePaymentState } from "./paymentsWrites";
  * credit-note allocations and overpayments made in Xero never appear as a
  * Payment. `paymentsWrites.recomputeInvoicePaymentState` folds it into
  * `paymentStatus`; `settleInvoicePaymentState` then runs the same
- * auto-status + follow-up reconcile a hand-recorded payment does.
+ * auto-status a hand-recorded payment does.
  */
 
 const MAX_INVOICES_PER_ORG = 500;

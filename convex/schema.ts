@@ -2822,6 +2822,10 @@ export default defineSchema({
     declinedAt: v.optional(v.number()),
     declinedById: v.optional(v.string()),
     declineReason: v.optional(v.string()),
+    // A human dismissed this EXPIRED quote from the org Finance board (it also
+    // drops off by itself a week after `validUntil`). Display-only — never
+    // changes the quote's status; see `financeOrg.ts`.
+    expiredAcknowledgedAt: v.optional(v.number()),
     // Recall (un-send; the artifact is retained, never deleted)
     recalledAt: v.optional(v.number()),
     recalledById: v.optional(v.string()),
@@ -2938,7 +2942,7 @@ export default defineSchema({
     xeroInvoiceId: v.optional(v.string()),
     xeroSyncStatus: v.optional(enums.XeroSyncStatus),
     lastSyncError: v.optional(v.string()),
-    // Xero payment sync (follow-up automation phase 2, FEATUREDOCS/82) — the
+    // Xero payment sync (Xero payment sync, FEATUREDOCS/66) — the
     // invoice-level truth read back from Xero, which owns reconciliation:
     // Xero's own Status (DRAFT/SUBMITTED/AUTHORISED/PAID/VOIDED/DELETED) and
     // its AmountPaid/AmountCredited/AmountDue. `paymentsWrites`'s recompute
@@ -3157,7 +3161,7 @@ export default defineSchema({
     cacheRefreshedAt: v.optional(v.number()),
     cacheError: v.optional(v.string()),
     lastSyncError: v.optional(v.string()),
-    // Refresh-token lease (FEATUREDOCS/82): Xero rotates the refresh token on
+    // Refresh-token lease (FEATUREDOCS/66): Xero rotates the refresh token on
     // every use, so two concurrent refreshes (a user push + the payment sync)
     // would race and persist a dead token. Every refresh holds this lease.
     tokenLeaseHolder: v.optional(v.string()),
@@ -3372,7 +3376,7 @@ export default defineSchema({
     dueSoon: v.optional(v.boolean()),
     overdue: v.optional(v.boolean()),
     quoteExpiring: v.optional(v.boolean()),
-    followUpBrief: v.optional(v.boolean()),
+    followUpBrief: v.optional(v.boolean()), // DEPRECATED (follow-up engine removed) — never read or written
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
@@ -3495,8 +3499,8 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     // — Phase 1 additions (design §10.1) —
-    kind: v.optional(enums.ProjectTaskKind), // absent = "task"
-    stage: v.optional(enums.ProjectTaskStage),
+    kind: v.optional(v.string()), // DEPRECATED (work layer removed) — never written
+    stage: v.optional(v.string()), // DEPRECATED (work layer removed) — never written
     // One level of subtasks — replaces `checklist`. A child inherits
     // projectId/organizationId from its parent and has no stage/sourceKey.
     parentId: v.optional(v.string()),
@@ -3525,7 +3529,7 @@ export default defineSchema({
     // Never set on a subtask (recurrence is a top-level-task concept, same as
     // stage) — the next occurrence is a NEW top-level row, created only when
     // the current one is marked DONE (Todoist model), never pre-generated.
-    recurrence: v.optional(enums.ProjectTaskRecurrence),
+    recurrence: v.optional(v.any()), // DEPRECATED (work layer removed) — never written
     // Org member ids who watch this item — added/removed via
     // watchNative/unwatchNative. Bounded (fieldGuards) the same way `tags` is.
     // Notification-on-activity for watchers is a documented follow-up
@@ -3536,7 +3540,7 @@ export default defineSchema({
     // ONLY on rows the follow-up engine owns (convex/lib/followUpReconcile.ts).
     // Its presence is what makes a row "automated": human closes/edits of such
     // a row go back through the reconciler.
-    automation: v.optional(enums.FollowUpAutomation),
+    automation: v.optional(v.any()), // DEPRECATED (follow-up engine removed) — never written
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -3565,6 +3569,9 @@ export default defineSchema({
   // signal never hides it from another. Pruned after 90 days of the
   // underlying sourceKey producing no signal (same pattern as
   // notificationDismissals).
+  // DEPRECATED (2026-10) — the work layer was removed; nothing reads or writes this table.
+  // Kept only because Convex rejects a schema push that drops a table still holding data.
+  // Drop it after a data-wipe migration (FEATUREDOCS/50).
   workSignalStates: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -3586,11 +3593,14 @@ export default defineSchema({
   // DEFAULT_CONFIRMED_TEMPLATES (convex/lib/workTemplateSeeding.ts), which is
   // itself literally the design doc's five worked examples. The table exists now
   // so that future UI has somewhere to write without another schema change.
+  // DEPRECATED (2026-10) — the work layer was removed; nothing reads or writes this table.
+  // Kept only because Convex rejects a schema push that drops a table still holding data.
+  // Drop it after a data-wipe migration (FEATUREDOCS/50).
   workTemplates: defineTable({
     id: v.string(),
     organizationId: v.string(),
     title: v.string(),
-    stage: enums.ProjectTaskStage,
+    stage: v.string(),
     triggerStatus: v.string(), // a projects.status value; only "CONFIRMED" is wired so far
     // Offsets are relative to project start/end (§8.2) or the moment the
     // template seeds ("trigger") — e.g. an admin task due shortly after
@@ -3802,11 +3812,14 @@ export default defineSchema({
   // scan filtering client-side. `organizationId` is denormalised from the
   // work item at link time (not a foreign-key-only join) so every read here
   // is org-checked without a second lookup — same posture as `workSignalStates`.
+  // DEPRECATED (2026-10) — the work layer was removed; nothing reads or writes this table.
+  // Kept only because Convex rejects a schema push that drops a table still holding data.
+  // Drop it after a data-wipe migration (FEATUREDOCS/50).
   workItemLinks: defineTable({
     id: v.string(),
     organizationId: v.string(),
     workItemId: v.string(), // projectTasks.id
-    entityType: enums.WorkItemLinkEntityType,
+    entityType: v.string(),
     entityId: v.string(),
     createdAt: v.number(),
   })

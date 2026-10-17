@@ -126,7 +126,7 @@ export function useNativeActivity(orgId: string | undefined) {
   return useAuthedQuery(api.dashboardActivity.bundle, enabled ? { orgId: orgId! } : "skip");
 }
 
-export interface NativeMyOpenTask {
+interface NativeMyOpenTask {
   id: string;
   title: string;
   status: "TODO" | "IN_PROGRESS" | "DONE";
@@ -140,16 +140,12 @@ export interface NativeMyOpenTask {
   projectNumber: string;
   assigneeUserId: string | null;
   assigneeCrewId: string | null;
-  stage: string | null;
-  /** Set only on rows the follow-up engine owns (follow-up automation §8.7). */
-  followUp: { ruleKey: string; rung: number; why: string; urgent: boolean; subjectId: string } | null;
 }
 
 /**
  * projectTasks.myOpenTasks: this user's open tasks across every project (direct +
  * crew assignment) plus personal tasks with no project, sorted overdue → due asc →
- * undated last → priority, bounded to 100. Backs `TodayWorkListWidget`
- * (`/today` and `/my-tasks` both now just redirect to `/dashboard` — D10C).
+ * undated last → priority, bounded to 100. Backs `MyTasksWidget` and `/my-tasks`.
  * Minute-bucketed `now`, same convention as the rest of this file (queries
  * can't read the clock).
  */
@@ -192,7 +188,6 @@ export interface NativeOrgFinanceCounts {
   quotesOutCount: number;
   expiringCount: number;
   neverSentCount: number;
-  confirmedUninvoicedCount: number;
   depositDueCount: number;
   outstandingCount: number;
 }

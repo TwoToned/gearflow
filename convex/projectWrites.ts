@@ -17,8 +17,6 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getKitByCuid } from "./lib/kits";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
-import { maybeSeedWorkTemplates } from "./lib/workTemplateSeeding";
-import { reconcileFollowUps } from "./lib/followUpReconcile";
 import {
   assertPricingUnlocked,
   crossesIntoSnapshotStatus,
@@ -237,16 +235,6 @@ export const updateStatusNative = mutation({
         // swallow — mirrors src/server/projects.ts `void emitWebhookEvent(...)`.
       }
     }
-
-    // #1243 Phase 1: seed work-item templates on an actual transition INTO
-    // CONFIRMED — mirrors the pricing-lock/snapshot guards above (never on a
-    // re-save that's already CONFIRMED, never on a revert away from it).
-    if (from !== status && status === "CONFIRMED") {
-      await maybeSeedWorkTemplates(ctx, { orgId, projectId: id, triggerStatus: status, actor, now });
-    }
-    // Follow-up automation (design §8.2): a status move can end a quote loop
-    // (cancelled) or turn it into a housekeeping item (job went ahead).
-    if (from !== status) await reconcileFollowUps(ctx, { orgId, projectId: id, now });
 
     return { id };
   },

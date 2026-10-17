@@ -45,7 +45,7 @@ export async function GET(
       getShiftsByAssignmentIds([assignment.id]),
     ]);
 
-    if (!project) {
+    if (!project || project.status === "CANCELLED") {
       return NextResponse.json(
         { error: "Assignment not found" },
         { status: 404 }

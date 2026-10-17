@@ -60,8 +60,7 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
-  // Web Push (#1244 subscription side; follow-up automation's urgent push is
-  // the first sender, FEATUREDOCS/82). All three optional: unset = no push is
+  // Web Push (#1244 subscription side; no sender is wired up right now). All three optional: unset = no push is
   // sent. The public key is also inlined client-side as NEXT_PUBLIC_*.
   NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),

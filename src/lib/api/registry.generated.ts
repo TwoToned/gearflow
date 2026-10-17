@@ -4455,43 +4455,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "backfillChecklistSubtasks.backfillChecklistSubtasksPage",
-    "module": "backfillChecklistSubtasks",
-    "fn": "backfillChecklistSubtasksPage",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "apply",
-        "optional": false,
-        "type": "boolean"
-      },
-      {
-        "name": "cursor",
-        "optional": false,
-        "type": "union"
-      },
-      {
-        "name": "numItems",
-        "optional": true,
-        "type": "number"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "4a4d51d7dca5806e",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "backfillClientContacts.backfillClientContactsPage",
     "module": "backfillClientContacts",
     "fn": "backfillClientContactsPage",
@@ -11218,375 +11181,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "clientTimeline.forClient",
-    "module": "clientTimeline",
-    "fn": "forClient",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": "client",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "client",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "clientId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "limit",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "2a27a2217aa2add7",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "The unified activity timeline for a client (quotes, invoices, comments, logged touches, work done).",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "clientTimeline.nextStep",
-    "module": "clientTimeline",
-    "fn": "nextStep",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": "client",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "client",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "clientId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "2b940a4d0e8d1234",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "A client's soonest open next-step and whether one is currently required.",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "clientTimelineWrites.addNoteNative",
-    "module": "clientTimelineWrites",
-    "fn": "addNoteNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "work",
-    "action": "create",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "create"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "clientId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "note",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "0db7c1b30c30ef62",
-    "returnsSha": "bcde375ebd4cbacf",
-    "stability": "tracks-app",
-    "summary": "Add a free-text note to a client's timeline.",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "clientTimelineWrites.completeNextStepNative",
-    "module": "clientTimelineWrites",
-    "fn": "completeNextStepNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "work",
-    "action": "create",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "create"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "outcome",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "workItemId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "1e5412018b646688",
-    "returnsSha": "bcde375ebd4cbacf",
-    "stability": "tracks-app",
-    "summary": "Complete a client's next step with a one-line outcome.",
-    "danger": "medium",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "clientTimelineWrites.logCallNative",
-    "module": "clientTimelineWrites",
-    "fn": "logCallNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "work",
-    "action": "create",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "create"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "clientId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "note",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "0db7c1b30c30ef62",
-    "returnsSha": "bcde375ebd4cbacf",
-    "stability": "tracks-app",
-    "summary": "Log a call with a client (a record, not a channel — Flow never calls out).",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "clientTimelineWrites.logEmailNative",
-    "module": "clientTimelineWrites",
-    "fn": "logEmailNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "work",
-    "action": "create",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "create"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "clientId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "note",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "0db7c1b30c30ef62",
-    "returnsSha": "bcde375ebd4cbacf",
-    "stability": "tracks-app",
-    "summary": "Log an email exchanged with a client outside Flow.",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "clientTimelineWrites.setNextStepNative",
-    "module": "clientTimelineWrites",
-    "fn": "setNextStepNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "work",
-    "action": "create",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "create"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "clientId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "dueDate",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "notes",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "projectId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "title",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "c74354f6a60f74c2",
-    "returnsSha": "8b114161049d5d20",
-    "stability": "tracks-app",
-    "summary": "Set a client's next follow-up step with a due date.",
-    "danger": "medium",
-    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19572,43 +19166,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "dashboardLists.needsYou",
-    "module": "dashboardLists",
-    "fn": "needsYou",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "3a029b11cc797978",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "Declined/stale crew offers and expiring quotes on projects the caller manages.",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "dashboardLists.pendingCrewOffers",
     "module": "dashboardLists",
     "fn": "pendingCrewOffers",
@@ -20571,7 +20128,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "The org's chaseable finance rows: quotes out, expiring, never sent, confirmed-uninvoiced, deposit due, outstanding.",
+    "summary": "The org's chaseable finance rows: quotes out, expiring, never sent, deposit due, outstanding.",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -20608,7 +20165,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Cheap counts for the six financeOrg.bundle sections, for a dashboard chip.",
+    "summary": "Cheap counts for the financeOrg.bundle sections, for a dashboard chip.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -20648,154 +20205,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": "Quotes expiring within the notification window, for the quote_expiring bell/email pipeline (#1225).",
     "danger": "low",
     "mcpTier": 3,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "followUpPush.claimPush",
-    "module": "followUpPush",
-    "fn": "claimPush",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "cap",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "dayKey",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "itemKey",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "userId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "d001b8acd27eb8de",
-    "returnsSha": "9ab99d6e685fd481",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "followUpPush.removeGoneSubscription",
-    "module": "followUpPush",
-    "fn": "removeGoneSubscription",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "endpoint",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "76f63599c9121a19",
-    "returnsSha": "bcde375ebd4cbacf",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "followUpPush.subscriptionsForUser",
-    "module": "followUpPush",
-    "fn": "subscriptionsForUser",
-    "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "userId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "bd03b0d0b0393c05",
-    "returnsSha": "9f06f672c51fd67f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "followUpTick.briefForOrg",
-    "module": "followUpTick",
-    "fn": "briefForOrg",
-    "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "dueBy",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "a9b3ec48b81b498d",
-    "returnsSha": "9923de5442f4b073",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -35157,43 +34566,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "pipeline.forOrg",
-    "module": "pipeline",
-    "fn": "forOrg",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "3a029b11cc797978",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "The client pipeline: ENQUIRY/QUOTING/QUOTED/CONFIRMED deals sorted by next-step date, with rotting shading.",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "projectCategories.create",
     "module": "projectCategories",
     "fn": "create",
@@ -43432,210 +42804,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "projectTasks.create",
-    "module": "projectTasks",
-    "fn": "create",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "assigneeCrewId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "assigneeUserId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "checklist",
-        "optional": true,
-        "type": "any"
-      },
-      {
-        "name": "completedAt",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "createdAt",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "createdById",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "description",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "dueDate",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "priority",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "projectId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "sortOrder",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "status",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "title",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "updatedAt",
-        "optional": true,
-        "type": "number"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "41978dae51ea1f78",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.createIfMissing",
-    "module": "projectTasks",
-    "fn": "createIfMissing",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "assigneeCrewId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "assigneeUserId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "checklist",
-        "optional": true,
-        "type": "any"
-      },
-      {
-        "name": "completedAt",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "createdAt",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "createdById",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "description",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "dueDate",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "priority",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "projectId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "sortOrder",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "status",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "title",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "updatedAt",
-        "optional": true,
-        "type": "number"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "41978dae51ea1f78",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "projectTasks.getById",
     "module": "projectTasks",
     "fn": "getById",
@@ -43747,50 +42915,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "List a project's tasks with assignee joins, sorted for the task board.",
+    "summary": "List a project's tasks with assignee joins, in list order.",
     "danger": "low",
     "mcpTier": 1,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.listSubtasks",
-    "module": "projectTasks",
-    "fn": "listSubtasks",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": null,
-    "action": null,
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "read"
-      },
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "parentId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "2882f5628c2ee855",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "List a task's subtasks (one level).",
-    "danger": "low",
-    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -43832,222 +42959,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": "List the caller's own open (TODO/IN_PROGRESS) tasks across all projects in an org.",
     "danger": "low",
     "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.remove",
-    "module": "projectTasks",
-    "fn": "remove",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.removeMany",
-    "module": "projectTasks",
-    "fn": "removeMany",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "ids",
-        "optional": false,
-        "type": "array"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "d37e5fc9f7f8dd0e",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.reorderMany",
-    "module": "projectTasks",
-    "fn": "reorderMany",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orderedIds",
-        "optional": false,
-        "type": "array"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "1aaef5e812b9cdb9",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.update",
-    "module": "projectTasks",
-    "fn": "update",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "patch",
-        "optional": false,
-        "type": "object"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "e61e3d3271d15c05",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.updateMany",
-    "module": "projectTasks",
-    "fn": "updateMany",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "ids",
-        "optional": false,
-        "type": "array"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "patch",
-        "optional": false,
-        "type": "any"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "74b52046b22cdee2",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectTasks.workCountsForProjects",
-    "module": "projectTasks",
-    "fn": "workCountsForProjects",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": null,
-    "action": null,
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "read"
-      },
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "projectIds",
-        "optional": false,
-        "type": "array"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "d814ea23463b290c",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "Batched done/total/overdue task counts for a set of projects (project board cards).",
-    "danger": "low",
-    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -44229,11 +43140,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "checklist",
-        "optional": true,
-        "type": "union"
-      },
-      {
         "name": "description",
         "optional": true,
         "type": "union"
@@ -44249,11 +43155,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "kind",
-        "optional": true,
-        "type": "union"
-      },
-      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -44264,34 +43165,14 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "parentId",
-        "optional": true,
-        "type": "string"
-      },
-      {
         "name": "priority",
         "optional": true,
         "type": "union"
       },
       {
         "name": "projectId",
-        "optional": true,
+        "optional": false,
         "type": "string"
-      },
-      {
-        "name": "recurrence",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "stage",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "startDate",
-        "optional": true,
-        "type": "union"
       },
       {
         "name": "status",
@@ -44302,15 +43183,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "title",
         "optional": false,
         "type": "string"
-      },
-      {
-        "name": "watcherUserIds",
-        "optional": true,
-        "type": "union"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1f8940a0f0963a66",
+    "argsSha": "624b3f7fb9df37ed",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -44376,77 +43252,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "projectTasksWrites.recordFollowUpOutcomeNative",
-    "module": "projectTasksWrites",
-    "fn": "recordFollowUpOutcomeNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": null,
-    "action": null,
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "update"
-      },
-      {
-        "resource": "project",
-        "action": "update"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "nextDate",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "note",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "outcome",
-        "optional": false,
-        "type": "union"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "09b1dd110030af2e",
-    "returnsSha": "8b114161049d5d20",
-    "stability": "tracks-app",
-    "summary": "Record \"no reply\" or \"parked until a date\" on an automated quote follow-up; the engine schedules the next step.",
-    "danger": "medium",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "projectTasksWrites.reorderNative",
     "module": "projectTasksWrites",
     "fn": "reorderNative",
@@ -44493,62 +43298,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "projectTasksWrites.setWatchingNative",
-    "module": "projectTasksWrites",
-    "fn": "setWatchingNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": null,
-    "action": null,
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "update"
-      },
-      {
-        "resource": "project",
-        "action": "update"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "userId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "watching",
-        "optional": false,
-        "type": "boolean"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "4a4d0b1322e3d823",
-    "returnsSha": "5d8911daaa5fe341",
-    "stability": "tracks-app",
-    "summary": "Watch or unwatch a task.",
-    "danger": "low",
-    "mcpTier": 3,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "projectTasksWrites.updateNative",
     "module": "projectTasksWrites",
     "fn": "updateNative",
@@ -44589,11 +43338,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "checklist",
-        "optional": true,
-        "type": "union"
-      },
-      {
         "name": "description",
         "optional": true,
         "type": "union"
@@ -44607,11 +43351,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "id",
         "optional": false,
         "type": "string"
-      },
-      {
-        "name": "kind",
-        "optional": true,
-        "type": "union"
       },
       {
         "name": "now",
@@ -44629,21 +43368,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       },
       {
-        "name": "recurrence",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "stage",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "startDate",
-        "optional": true,
-        "type": "union"
-      },
-      {
         "name": "status",
         "optional": true,
         "type": "union"
@@ -44652,15 +43376,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "title",
         "optional": true,
         "type": "string"
-      },
-      {
-        "name": "watcherUserIds",
-        "optional": true,
-        "type": "union"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fc6dfe0586ae65d7",
+    "argsSha": "f92e9149bb5dab55",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -45691,6 +44410,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": "Project revision state: current draft + live quote.",
     "danger": "low",
     "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "quotesWrites.acknowledgeExpiredNative",
+    "module": "quotesWrites",
+    "fn": "acknowledgeExpiredNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5cb77faf3d5db168",
+    "returnsSha": "a9efc1b31e93fd3f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -57531,11 +56302,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
-        "name": "followUpBrief",
-        "optional": true,
-        "type": "boolean"
-      },
-      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -57607,7 +56373,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "6666044218c4b627",
+    "argsSha": "9fa25dfeb72b2bd9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -57653,11 +56419,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
-        "name": "followUpBrief",
-        "optional": true,
-        "type": "boolean"
-      },
-      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -57729,7 +56490,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "6666044218c4b627",
+    "argsSha": "9fa25dfeb72b2bd9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -57810,7 +56571,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "ea667ab2074fd75f",
+    "returnsSha": "bba2f5516a38df4d",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -57868,7 +56629,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "6f199b74c2e272c9",
+    "argsSha": "a3c5cb78df7c7149",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -57920,7 +56681,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "11195ba12a24af8f",
+    "argsSha": "5f0edc7a83f2e292",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -63479,293 +62240,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "workItemLinks.forEntity",
-    "module": "workItemLinks",
-    "fn": "forEntity",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": "work",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "union"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "a14504de7038b5ab",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "List work items linked to an entity (e.g. a client's follow-ups).",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "workItemLinksWrites.linkNative",
-    "module": "workItemLinksWrites",
-    "fn": "linkNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "work",
-    "action": "update",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "update"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "union"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "workItemId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "cd30d03d0086923a",
-    "returnsSha": "8b114161049d5d20",
-    "stability": "tracks-app",
-    "summary": "Link a work item to another entity (client, quote, asset, ...).",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "workItemLinksWrites.unlinkNative",
-    "module": "workItemLinksWrites",
-    "fn": "unlinkNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "work",
-    "action": "update",
-    "scopePairs": [
-      {
-        "resource": "work",
-        "action": "update"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "c8570d0f01945e1f",
-    "returnsSha": "efde83ecf2efd768",
-    "stability": "tracks-app",
-    "summary": "Remove a work item's link to another entity.",
-    "danger": "low",
-    "mcpTier": 2,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "workSignalStatesWrites.dismissSignalNative",
-    "module": "workSignalStatesWrites",
-    "fn": "dismissSignalNative",
-    "kind": "mutation",
-    "guard": "self",
-    "resource": "self",
-    "action": "write",
-    "scopePairs": [
-      {
-        "resource": "self",
-        "action": "write"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "sourceKey",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "1190e29362f1a17f",
-    "returnsSha": "bcde375ebd4cbacf",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "low",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "workSignalStatesWrites.promoteSignalNative",
-    "module": "workSignalStatesWrites",
-    "fn": "promoteSignalNative",
-    "kind": "mutation",
-    "guard": "self",
-    "resource": "self",
-    "action": "write",
-    "scopePairs": [
-      {
-        "resource": "self",
-        "action": "write"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "assigneeCrewId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "assigneeUserId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "dueDate",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "priority",
-        "optional": true,
-        "type": "union"
-      },
-      {
-        "name": "projectId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "sourceKey",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "title",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "4c29d139e4b59d57",
-    "returnsSha": "8b114161049d5d20",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "medium",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "workSignalStatesWrites.snoozeSignalNative",
-    "module": "workSignalStatesWrites",
-    "fn": "snoozeSignalNative",
-    "kind": "mutation",
-    "guard": "self",
-    "resource": "self",
-    "action": "write",
-    "scopePairs": [
-      {
-        "resource": "self",
-        "action": "write"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "snoozedUntil",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "sourceKey",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "0faf8292b4a182c0",
-    "returnsSha": "bcde375ebd4cbacf",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "low",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "xeroIntegrations.createIfMissing",
     "module": "xeroIntegrations",
     "fn": "createIfMissing",
@@ -64464,10 +62938,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1253,
-  agentReachable: 615,
-  queries: 448,
-  mutations: 805,
-  agentReachableQueries: 312,
-  agentReachableMutations: 303,
+  total: 1223,
+  agentReachable: 597,
+  queries: 439,
+  mutations: 784,
+  agentReachableQueries: 305,
+  agentReachableMutations: 292,
 } as const;

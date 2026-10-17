@@ -148,8 +148,8 @@ prefers the resolved primary contact.
 
 - **Hero**: shows the resolved primary contact (name/email/phone) plus a
   `+N more` badge when the client has additional contacts.
-- **Contacts tab** (moved off the sidebar in #1245, FEATUREDOCS/80 — the page
-  is now Timeline · Projects · Contacts · Work · Notes · Files): the old
+- **Contacts tab** (moved off the sidebar in #1245 — the page
+  is now Projects · Contacts · Notes · Files): the old
   single-contact "Contact" sidebar section is replaced by
   `ClientContactsManager` (`src/components/clients/client-contacts-manager.tsx`)
   — an inline list + add/edit dialogs, same shape as

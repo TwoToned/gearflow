@@ -1,8 +1,6 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { resolveQuoteValidityDays } from "./quoteDates";
 import { resolvePaymentTermsDays } from "./invoiceDates";
-import { resolveRottingDays, DEFAULT_ROTTING_AMBER_DAYS, DEFAULT_ROTTING_ERROR_DAYS } from "./rottingDates";
-import { FOLLOW_UP_BOUNDS, FOLLOW_UP_DEFAULTS, FOLLOW_UP_DEFAULT_CUTOVER_AT, type FollowUpConfig } from "./followUpRules";
 
 /** Org default tax rate from the Convex orgSettings mirror (source of truth; the
  *  Postgres column is deprecated). null when unset. Resolved IN-mutation so browser
@@ -112,35 +110,6 @@ export async function resolveOrgInvoiceConfig(
   };
 }
 
-/** The org's timezone + client-pipeline rotting thresholds (#1245, design
- *  §8.4) — resolved server-side so shading is computed in the ORG's
- *  timezone, never the browser's (R-9.3). `src/lib/org-settings-types.ts`'s
- *  `OrgWorkSettings` is the stored shape; absent keys fall back to the
- *  design doc's 7/14-day defaults. */
-export async function resolveOrgWorkConfig(
-  ctx: MutationCtx | QueryCtx,
-  orgId: string,
-): Promise<{ timezone: string | undefined; rottingAmberDays: number; rottingErrorDays: number }> {
-  const blob = (await loadOrgSettingsBlob(ctx, orgId)) as {
-    timezone?: unknown;
-    work?: { rottingAmberDays?: unknown; rottingErrorDays?: unknown };
-  };
-  const timezone = typeof blob.timezone === "string" && blob.timezone ? blob.timezone : undefined;
-  const amber = resolveRottingDays(
-    typeof blob.work?.rottingAmberDays === "number" ? blob.work.rottingAmberDays : null,
-    DEFAULT_ROTTING_AMBER_DAYS,
-  );
-  const error = resolveRottingDays(
-    typeof blob.work?.rottingErrorDays === "number" ? blob.work.rottingErrorDays : null,
-    DEFAULT_ROTTING_ERROR_DAYS,
-  );
-  // An amber threshold at or past the error threshold would shade every
-  // rotting card straight to "error" with no amber step ever showing —
-  // silently swallow the amber tier instead of erroring on a bad settings
-  // blob. Widening the error threshold by 1 day is the smallest fix that
-  // keeps both tiers meaningful.
-  return { timezone, rottingAmberDays: amber, rottingErrorDays: Math.max(error, amber + 1) };
-}
 
 // ─── Crew-time planner settings (work-layer Phase 4, #1246) ────────────────
 // Mirrors `src/lib/crew-time-settings.ts`'s bounds/default (this module can't
@@ -173,26 +142,4 @@ export async function resolveCrewCallReminderEnabled(ctx: MutationCtx | QueryCtx
   return blob.crewTime?.callReminderEnabled === true;
 }
 
-/** Follow-up automation config (docs/designs/follow-up-automation.md §8.4),
- *  resolved server-side so neither the reconciler nor a browser caller can
- *  spoof it. Absent keys fall back to `FOLLOW_UP_DEFAULTS`; out-of-range values
- *  clamp; `quotesEnabled` is ON unless explicitly `false`. */
-export async function resolveOrgFollowUpConfig(ctx: MutationCtx | QueryCtx, orgId: string): Promise<FollowUpConfig> {
-  const blob = (await loadOrgSettingsBlob(ctx, orgId)) as {
-    timezone?: unknown;
-    followUps?: Record<string, unknown>;
-  };
-  const f = blob.followUps && typeof blob.followUps === "object" ? blob.followUps : {};
-  const clampInt = (raw: unknown, fallback: number, b: { min: number; max: number }) =>
-    typeof raw === "number" && Number.isFinite(raw) ? Math.min(b.max, Math.max(b.min, Math.round(raw))) : fallback;
-  return {
-    quotesEnabled: f.quotesEnabled !== false,
-    invoicesEnabled: f.invoicesEnabled !== false,
-    firstFollowUpBusinessDays: clampInt(f.firstFollowUpBusinessDays, FOLLOW_UP_DEFAULTS.firstFollowUpBusinessDays, FOLLOW_UP_BOUNDS.businessDays),
-    nextFollowUpBusinessDays: clampInt(f.nextFollowUpBusinessDays, FOLLOW_UP_DEFAULTS.nextFollowUpBusinessDays, FOLLOW_UP_BOUNDS.businessDays),
-    decisionLeadDays: clampInt(f.decisionLeadDays, FOLLOW_UP_DEFAULTS.decisionLeadDays, FOLLOW_UP_BOUNDS.decisionLeadDays),
-    cutoverAt: typeof f.cutoverAt === "number" && Number.isFinite(f.cutoverAt) ? f.cutoverAt : FOLLOW_UP_DEFAULT_CUTOVER_AT,
-    timezone: typeof blob.timezone === "string" && blob.timezone ? blob.timezone : undefined,
-  };
-}
 

@@ -20,7 +20,6 @@ import { projectLiveRevision } from "./lib/quoteState";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
-import { reconcileFollowUps } from "./lib/followUpReconcile";
 
 /**
  * Invoice write mutations (WS1 #940) — browser-direct, standard 4-guard shape.
@@ -411,8 +410,6 @@ export const issueNative = mutation({
               orgId, projectId: doc.projectId, trigger: "INVOICE_ISSUED", actor, now,
             }),
           );
-    // Follow-up automation (FEATUREDOCS/82): issuing closes "invoice not raised".
-    await reconcileFollowUps(ctx, { orgId, projectId: doc.projectId, now });
 
     return { id, invoiceNumber, autoStatus };
   },
@@ -485,7 +482,6 @@ export const voidNative = mutation({
       createdAt: now,
     });
 
-    await reconcileFollowUps(ctx, { orgId: orgId, projectId: doc.projectId, now });
     return { id };
   },
 });
@@ -650,7 +646,6 @@ export const deleteDraftNative = mutation({
       createdAt: now,
     });
 
-    await reconcileFollowUps(ctx, { orgId: orgId, projectId: doc.projectId, now });
     return { id };
   },
 });
@@ -743,7 +738,6 @@ export const createCreditNative = mutation({
       createdAt: now,
     });
 
-    await reconcileFollowUps(ctx, { orgId: orgId, projectId: original.projectId, now });
     return { id };
   },
 });

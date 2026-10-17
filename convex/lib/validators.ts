@@ -1,6 +1,4 @@
 import { v } from "convex/values";
-import { WORK_ITEM_STATUSES, WORK_ITEM_PRIORITIES, WORK_ITEM_KINDS, WORK_STAGES, WORK_RECURRENCE_FREQUENCIES, WORK_ITEM_LINK_ENTITY_TYPES } from "./workVocabulary";
-import { FOLLOW_UP_RESOLUTIONS, FOLLOW_UP_RULE_KEYS } from "./followUpRules";
 
 /**
  * Convex validators for the 65 Prisma enums.
@@ -485,48 +483,12 @@ export const CustomFieldType = v.union(
   v.literal("SELECT"),
   v.literal("BOOLEAN"),
 );
-// Work-layer phase 1 (#1243): sourced from workVocabulary.ts, the ONE
-// definition of these unions — do not hand-add a literal here again.
-export const ProjectTaskStatus = v.union(...WORK_ITEM_STATUSES.map((s) => v.literal(s)));
-export const ProjectTaskPriority = v.union(...WORK_ITEM_PRIORITIES.map((p) => v.literal(p)));
-export const ProjectTaskKind = v.union(...WORK_ITEM_KINDS.map((k) => v.literal(k)));
-export const ProjectTaskStage = v.union(...WORK_STAGES.map((s) => v.literal(s)));
-// Work-layer phase 2 (#1244): recurrence, sourced the same way — see
-// workVocabulary.ts's WORK_RECURRENCE_FREQUENCIES.
-export const ProjectTaskRecurrenceFrequency = v.union(...WORK_RECURRENCE_FREQUENCIES.map((f) => v.literal(f)));
-export const ProjectTaskRecurrence = v.object({
-  freq: ProjectTaskRecurrenceFrequency,
-  // weekly only — ISO weekday numbers (0 Sun – 6 Sat). Absent/empty = every 7 days.
-  daysOfWeek: v.optional(v.array(v.number())),
-  // monthly only — 1-31, clamped to the shorter month. Absent = same day as the current due date.
-  dayOfMonth: v.optional(v.number()),
-});
-// Follow-up automation (docs/designs/follow-up-automation.md §8.4): set only on
-// rows the follow-up engine owns. Sourced from followUpRules.ts's unions.
-export const FollowUpResolution = v.union(...FOLLOW_UP_RESOLUTIONS.map((r) => v.literal(r)));
-export const FollowUpAutomation = v.object({
-  ruleKey: v.union(...FOLLOW_UP_RULE_KEYS.map((k) => v.literal(k))),
-  /** The quote/invoice/project the row is currently about. */
-  subjectId: v.string(),
-  /** 1, 2 = chasing; 3 = decision; 0 = housekeeping. */
-  rung: v.number(),
-  /** When this loop started (the send that opened it) — groups a loop's rungs. */
-  loopStartAt: v.number(),
-  /** Push-eligible (the loop's deadline is under a week away). Not a priority. */
-  urgent: v.boolean(),
-  /** Why the row exists, in one line — shown under the title. */
-  why: v.string(),
-  /** Fields a human edited; the reconciler never writes them again. */
-  lockedFields: v.array(v.string()),
-  /** How the row was closed; absent while open. */
-  resolution: v.optional(FollowUpResolution),
-  /** "system" or the userId who closed it. */
-  resolvedBy: v.optional(v.string()),
-  /** A human's chosen date for the NEXT rung (from "no reply — next on…"). */
-  nextDate: v.optional(v.number()),
-});
-// Work-layer phase 3 (#1245): sourced from workVocabulary.ts.
-export const WorkItemLinkEntityType = v.union(...WORK_ITEM_LINK_ENTITY_TYPES.map((t) => v.literal(t)));
+// Basic project-task vocabulary. (Kind / stage / recurrence / follow-up
+// automation / link-entity validators were removed with the work layer — the
+// stored columns are `v.string()`/`v.any()` in schema.ts, kept only so existing
+// rows still validate.)
+export const ProjectTaskStatus = v.union(v.literal("TODO"), v.literal("IN_PROGRESS"), v.literal("DONE"), v.literal("CANCELLED"));
+export const ProjectTaskPriority = v.union(v.literal("LOW"), v.literal("NORMAL"), v.literal("HIGH"));
 
 // ─── WS1 Finance (#940) — Quote/Invoice entities, client payment profiles, Xero ───
 
@@ -566,7 +528,7 @@ export const InvoiceStatus = v.union(
   v.literal("VOID"),
 );
 /** Written by paymentsWrites.ts recordNative/voidNative and the Xero payment sync
- *  (FEATUREDOCS/82), derived from the invoice's own payments plus Xero's reported
+ *  (FEATUREDOCS/66), derived from the invoice's own payments plus Xero's reported
  *  paid/credited amounts — the historical note below predates that sync (
  *  see FEATUREDOCS/66). Vocabulary matches SubHirePaymentStatus (same shape, separate
  *  enum — a different entity). */

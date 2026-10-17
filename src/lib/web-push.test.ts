@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// Web Push sender (FEATUREDOCS/82) — pinned to RFC 8291 Appendix A's worked
+// Web Push sender (FEATUREDOCS/50) — pinned to RFC 8291 Appendix A's worked
 // example, so the encryption is proved against the spec rather than against
 // itself; the VAPID JWT is verified with the public key a push service holds.
 import { describe, it, expect, vi } from "vitest";

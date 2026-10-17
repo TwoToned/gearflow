@@ -14,7 +14,6 @@ import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { resolveOrgQuoteConfig, resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { maybeAutoAdvanceProjectStatus, autoAdvanceStatus } from "./lib/projectAutoStatus";
-import { reconcileFollowUps } from "./lib/followUpReconcile";
 import { computeValidUntil, startOfDayInTimezone, QUOTE_VALIDITY_BOUNDS } from "./lib/quoteDates";
 import { loadTotalsBundle, computeTotals } from "./lib/recalc";
 import { resolveWriteVersionId, requireLiveVersionId } from "./lib/versionScope";
@@ -650,8 +649,6 @@ export const sendNative = mutation({
         orgId: organizationId, projectId, trigger: "QUOTE_SENT", actor, now,
       }),
     );
-    // Follow-up automation (design §8.2) — once, after the send + status move landed.
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId, now });
 
     return {
       id: quoteId,
@@ -764,7 +761,6 @@ export const recallNative = mutation({
       projectId: project.id,
       createdAt: now,
     });
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId: project.id, now });
 
     return { id: quote.id, version: quote.version, restoredQuoteId };
   },
@@ -1256,7 +1252,6 @@ export const markAcceptedNative = mutation({
         orgId: organizationId, projectId: project.id, trigger: "QUOTE_ACCEPTED", actor, now,
       }),
     );
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId: project.id, now });
 
     return {
       id: quote.id,
@@ -1321,9 +1316,51 @@ export const markDeclinedNative = mutation({
       projectId: project.id,
       createdAt: now,
     });
-    await reconcileFollowUps(ctx, { orgId: organizationId, projectId: project.id, now });
 
     return { id: quote.id, version: quote.version, offerStatusChange: "CANCELLED" as const };
+  },
+});
+
+/**
+ * Dismiss an EXPIRED quote from the org Finance board's "Expiring" section.
+ * Display-only: the quote stays EXPIRED (derived), nothing about acceptance or
+ * re-sending changes. Idempotent.
+ */
+export const acknowledgeExpiredNative = mutation({
+  returns: v.object({ id: v.string(), version: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, actor: suppliedActor, auditId, now }) => {
+    const actor = await guardQuoteWrite(ctx, organizationId, suppliedActor);
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+
+    const label = quoteLabel(project.projectNumber, quote.version);
+    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["EXPIRED"], label, "acknowledge");
+    if (quote.expiredAcknowledgedAt != null) return { id: quote.id, version: quote.version };
+
+    await ctx.db.patch(quote._id, { expiredAcknowledgedAt: now, updatedAt: now });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "UPDATE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Acknowledged expired quote ${label}`,
+      details: { version: quote.version },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, version: quote.version };
   },
 });
 
@@ -1363,6 +1400,8 @@ export const agentOps: AgentOpsAnnotations = {
   // Internal metadata only (never printed unless labelOnDocument is also set
   // at send) — same risk class as versions.setLabelNative's own argument.
   setQuoteLabelNative: { danger: "low" },
+  // Display-only dismissal of an expired quote from the Finance board.
+  acknowledgeExpiredNative: { danger: "low" },
   // Genuinely irreversible — the one mutation in this file that deletes
   // storage bytes a client may already hold, not just unlinks/preserves them.
   deleteRecalledNative: { danger: "high" },

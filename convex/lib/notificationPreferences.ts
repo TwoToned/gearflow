@@ -23,7 +23,6 @@ export interface NotificationPreferenceValues {
   flaggedAsset: boolean;
   incidentReport: boolean;
   quoteExpiring: boolean;
-  followUpBrief: boolean;
 }
 
 /** The single source of truth for preference defaults — mirrors the Prisma model. */
@@ -37,7 +36,6 @@ export const NOTIFICATION_PREFERENCE_DEFAULTS: NotificationPreferenceValues = {
   flaggedAsset: true,
   incidentReport: true,
   quoteExpiring: true,
-  followUpBrief: true,
 };
 
 /** A raw Convex row — the nine flags as optionals (plus other columns we ignore). */
@@ -51,7 +49,6 @@ export interface RawPreferenceRow {
   flaggedAsset?: boolean;
   incidentReport?: boolean;
   quoteExpiring?: boolean;
-  followUpBrief?: boolean;
 }
 
 /** Coerce a Convex optional boolean to the Prisma `@default` for that column. */
@@ -78,6 +75,5 @@ export function resolvePreferenceValues(
     flaggedAsset: coerce(raw.flaggedAsset, NOTIFICATION_PREFERENCE_DEFAULTS.flaggedAsset),
     incidentReport: coerce(raw.incidentReport, NOTIFICATION_PREFERENCE_DEFAULTS.incidentReport),
     quoteExpiring: coerce(raw.quoteExpiring, NOTIFICATION_PREFERENCE_DEFAULTS.quoteExpiring),
-    followUpBrief: coerce(raw.followUpBrief, NOTIFICATION_PREFERENCE_DEFAULTS.followUpBrief),
   };
 }

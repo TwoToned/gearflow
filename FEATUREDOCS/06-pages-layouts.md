@@ -58,8 +58,8 @@ already-pending or already-active tab is always a no-op. Regression test:
 | Path | Page |
 |------|------|
 | `/dashboard` | Overview, stats, recent activity, upcoming projects |
-| `/my-tasks` | This user's open tasks (direct + crew assignment) across every project, grouped Overdue/Today/This week/Later |
-| `/finance` | Org-level Finance section (#992) — quotes out, expiring, never sent, confirmed-uninvoiced, deposit due, outstanding; single bounded aggregation, not a per-project loop; see [66-finance-quotes-invoices-xero.md](./66-finance-quotes-invoices-xero.md) |
+| `/my-tasks` | This user's open tasks (direct + crew assignment) across every project — plain list, tick to complete (FEATUREDOCS/50) |
+| `/finance` | Org-level Finance section (#992) — quotes out, expiring, never sent, deposit due, outstanding; single bounded aggregation, not a per-project loop; see [66-finance-quotes-invoices-xero.md](./66-finance-quotes-invoices-xero.md) |
 | `/assets/registry` | Serialized + bulk asset list |
 | `/assets/registry/new` | Create asset(s) |
 | `/assets/registry/[id]` | Asset detail (tabs: info, history, maintenance, media) |

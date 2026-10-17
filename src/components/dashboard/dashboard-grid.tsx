@@ -56,6 +56,9 @@ export function DashboardGrid({
   const visibleWidgets = useMemo(
     () =>
       widgets.filter((w) => {
+        // A saved board can still hold a widget kind that no longer exists
+        // (e.g. the removed Today widgets) — drop it rather than crash.
+        if (!DASHBOARD_WIDGET_REGISTRY[w.kind]) return false;
         if (w.kind === "activationChecklist") return activationVisible;
         if (w.kind === "finishSetupChecklist") return finishSetupVisible;
         return true;

@@ -9,7 +9,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 /**
  * The org-level Finance section (#992, Phase F) — "what's chaseable across
  * every project, without opening them one at a time": quotes out, expiring,
- * never sent, confirmed-but-uninvoiced, deposit due, outstanding.
+ * never sent, deposit due, outstanding.
  *
  * Perf constraint (design doc §6.7, learned from #942's 77%-of-org-I/O
  * incident): this MUST be a bounded, indexed aggregation, never a per-project
@@ -27,16 +27,14 @@ const DAY_MS = 86_400_000;
 
 /** Defensive ceiling per index scan. Each of these buckets is bounded by
  *  BUSINESS STATE, not time — a real org has dozens of SENT quotes or
- *  CONFIRMED-uninvoiced projects at once, not thousands, because rows leave
+ *  CONFIRMED projects at once, not thousands, because rows leave
  *  the bucket the moment they're accepted/invoiced/paid. This cap exists so a
  *  runaway org can never turn the read into an unbounded scan; `capped` in the
  *  response tells the UI (and the regression test) when it was hit. */
 export const SECTION_CAP = 200;
 
 /** Statuses at or after CONFIRMED (excluding CANCELLED) — the candidate set
- *  for "confirmed but uninvoiced" and "deposit due". Includes INVOICED
- *  deliberately: a project marked INVOICED with no actual ISSUED invoice is
- *  exactly the inconsistency this screen exists to surface, not hide. */
+ *  for "deposit due". */
 const CONFIRMED_OR_LATER_STATUSES = [
   "CONFIRMED",
   "PREPPING",
@@ -88,8 +86,8 @@ async function fetchQuotesByRawStatus(ctx: QueryCtx, orgId: string, status: "SEN
 }
 
 /** Projects at CONFIRMED-or-later, one capped scan per status (same idiom as
- *  dashboardStats.ts's OPEN_MAINTENANCE_STATUSES loop) — feeds "confirmed
- *  but uninvoiced" and "deposit due", plus seeds the shared project map. */
+ *  dashboardStats.ts's OPEN_MAINTENANCE_STATUSES loop) — feeds "deposit due",
+ *  plus seeds the shared project map. */
 async function fetchConfirmedOrLaterProjects(ctx: QueryCtx, orgId: string) {
   const projectDocsById = new Map<string, Doc<"projects">>();
   let hitCap = false;
@@ -146,6 +144,24 @@ function groupByProjectId(invoices: Doc<"invoices">[]): Map<string, Doc<"invoice
   return byProjectId;
 }
 
+/** A quote on a cancelled job is dead — the client is no longer being quoted
+ *  for anything, so it must not surface as "out" or "expiring". Derived on read
+ *  from the project (like `EXPIRED`) so cancel and delete paths can't diverge. */
+function isOnCancelledProject(quote: Doc<"quotes">, projectDocsById: Map<string, Doc<"projects">>): boolean {
+  return projectDocsById.get(quote.projectId)?.status === "CANCELLED";
+}
+
+/** How long an unacknowledged expired quote keeps showing on the board. */
+export const EXPIRED_QUOTE_VISIBLE_DAYS = 7;
+
+/** An expired quote drops off the board once a human acknowledged it, or a
+ *  week after it expired — whichever comes first. */
+function isExpiredAndDismissed(quote: Doc<"quotes">, status: string, now: number): boolean {
+  if (status !== "EXPIRED") return false;
+  if (quote.expiredAcknowledgedAt != null) return true;
+  return quote.validUntil != null && now - quote.validUntil > EXPIRED_QUOTE_VISIBLE_DAYS * DAY_MS;
+}
+
 /** Quotes out: SENT, not yet accepted/declined, oldest (longest outstanding) first. */
 function buildQuotesOut(
   liveQuotes: Doc<"quotes">[],
@@ -155,7 +171,7 @@ function buildQuotesOut(
 ) {
   return liveQuotes
     .map((quote) => ({ quote, status: effectiveQuoteStatus(quote, now) }))
-    .filter((r) => r.status === "SENT")
+    .filter((r) => r.status === "SENT" && !isOnCancelledProject(r.quote, projectDocsById))
     .map(({ quote, status }) => {
       const project = projectDocsById.get(quote.projectId);
       if (!project) return null;
@@ -186,6 +202,8 @@ function buildExpiring(
     .filter((r) => {
       if (r.status !== "SENT" && r.status !== "EXPIRED") return false;
       if (r.quote.validUntil == null) return false;
+      if (isOnCancelledProject(r.quote, projectDocsById)) return false;
+      if (isExpiredAndDismissed(r.quote, r.status, now)) return false;
       return r.quote.validUntil - now <= QUOTE_EXPIRING_SOON_DAYS * DAY_MS;
     })
     .map(({ quote, status }) => {
@@ -230,23 +248,6 @@ function buildNeverSent(
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
-}
-
-/** Confirmed but uninvoiced: CONFIRMED+ with no ISSUED (non-void by
- *  definition — VOID is a separate status) invoice at all. */
-function buildConfirmedUninvoiced(
-  projectDocsById: Map<string, Doc<"projects">>,
-  issuedByProjectId: Map<string, Doc<"invoices">[]>,
-  clientsById: Map<string, Doc<"clients">>,
-) {
-  return [...projectDocsById.values()]
-    .filter((p) => CONFIRMED_OR_LATER_SET.has(p.status ?? "") && !issuedByProjectId.get(p.id)?.length)
-    .map((p) => ({
-      project: projectRef(p, clientsById),
-      rentalEndDate: p.rentalEndDate ?? null,
-      total: Number(p.total) || 0,
-    }))
-    .sort((a, b) => (a.rentalEndDate ?? 0) - (b.rentalEndDate ?? 0));
 }
 
 /** Deposit due: DEPOSIT_BALANCE clients whose deposit invoice hasn't issued —
@@ -323,8 +324,8 @@ async function computeFinanceBundle(ctx: QueryCtx, orgId: string, now: number) {
 
   const { projectDocsById, hitCap: confirmedScansHitCap } = await fetchConfirmedOrLaterProjects(ctx, orgId);
 
-  // ── Invoices: one capped ISSUED scan feeds Outstanding, Confirmed-uninvoiced
-  // AND Deposit-due — one read serving three sections, not three reads ──
+  // ── Invoices: one capped ISSUED scan feeds Outstanding AND Deposit-due —
+  // one read serving two sections, not two reads ──
   const issuedInvoices = await ctx.db
     .query("invoices")
     .withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", "ISSUED"))
@@ -350,7 +351,6 @@ async function computeFinanceBundle(ctx: QueryCtx, orgId: string, now: number) {
     quotesOut: buildQuotesOut(liveQuotes, now, projectDocsById, clientsById),
     expiring: buildExpiring(liveQuotes, now, projectDocsById, clientsById),
     neverSent: buildNeverSent(draftQuotes, projectDocsById, clientsById),
-    confirmedUninvoiced: buildConfirmedUninvoiced(projectDocsById, issuedByProjectId, clientsById),
     depositDue: buildDepositDue(projectDocsById, issuedByProjectId, clientsById),
     outstanding: buildOutstanding(issuedInvoices, projectDocsById, clientsById),
     capped,
@@ -422,7 +422,6 @@ export const counts = query({
       quotesOutCount: b.quotesOut.length,
       expiringCount: b.expiring.length,
       neverSentCount: b.neverSent.length,
-      confirmedUninvoicedCount: b.confirmedUninvoiced.length,
       depositDueCount: b.depositDue.length,
       outstandingCount: b.outstanding.length,
     };
@@ -432,11 +431,11 @@ export const counts = query({
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
   bundle: {
-    summary: "The org's chaseable finance rows: quotes out, expiring, never sent, confirmed-uninvoiced, deposit due, outstanding.",
+    summary: "The org's chaseable finance rows: quotes out, expiring, never sent, deposit due, outstanding.",
     danger: "low",
     mcpTier: 2,
   },
-  counts: { summary: "Cheap counts for the six financeOrg.bundle sections, for a dashboard chip.", danger: "low", mcpTier: 3 },
+  counts: { summary: "Cheap counts for the financeOrg.bundle sections, for a dashboard chip.", danger: "low", mcpTier: 3 },
   expiringForNotifications: {
     summary: "Quotes expiring within the notification window, for the quote_expiring bell/email pipeline (#1225).",
     danger: "low",

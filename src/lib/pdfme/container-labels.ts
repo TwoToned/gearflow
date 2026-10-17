@@ -1,5 +1,5 @@
 /**
- * Container & kit labels — the data behind the small tape-on-the-case label
+ * Container, kit & item labels — the data behind the small tape-on-the-case label
  * (FEATUREDOCS/83). Pure: takes the rows `structureLineItemsByContainer`
  * already produced and returns one label model per container (or per kit), so
  * the renderer never re-derives who is packed where.
@@ -226,4 +226,93 @@ export function buildKitLabels(structured: DocumentLineItem[]): ContainerLabel[]
       itemCount: countItems(lines),
     };
   });
+}
+
+/** One printable label for a single loose item — gear that isn't in a case or
+ *  a kit (a drum shield, a stand, a hired-in desk). */
+export interface ItemLabel {
+  /** The line item id, plus `:<tag>` when a serialised line fans out into one
+   *  label per physical unit. */
+  id: string;
+  title: string;
+  /** Model number / category — whatever helps tell similar gear apart. */
+  subtitle: string | null;
+  /** ASSET = serialised, BULK = pooled stock (one tag, many units),
+   *  CUSTOM = no inventory record behind it (an ad-hoc or sub-hired line). */
+  kind: "ASSET" | "BULK" | "CUSTOM";
+  qty: number;
+  /** The scannable asset tag; null when the line has none (custom, sub-hire). */
+  tag: string | null;
+  /** Set on a sub-hired line: who it came from. */
+  supplierName: string | null;
+  accessories: LabelAccessory[];
+}
+
+/** Loose, physical, top-level gear — what an item label is for. Kits have a kit
+ *  label, containers a container label; services/labour/sales never get one. */
+function isLooseItemRow(r: DocumentLineItem): boolean {
+  return (
+    r.groupName === "Loose" &&
+    isParentRow(r) &&
+    !r.kitId &&
+    !r.isGroupRow &&
+    !r.isContainerLineItem &&
+    (r.type ?? "EQUIPMENT") === "EQUIPMENT" &&
+    r.status !== "CANCELLED"
+  );
+}
+
+function bulkTags(row: DocumentLineItem): string[] {
+  const tags = (row.units ?? []).map((u) => u.bulkAsset?.assetTag).filter((t): t is string => !!t);
+  if (tags.length === 0 && row.bulkAsset?.assetTag) tags.push(row.bulkAsset.assetTag);
+  return [...new Set(tags)];
+}
+
+function itemSubtitle(row: DocumentLineItem): string | null {
+  const parts = [row.model?.category?.name, row.model?.modelNumber].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function itemLabelsFor(row: DocumentLineItem): ItemLabel[] {
+  const base = {
+    title: itemName(row),
+    subtitle: itemSubtitle(row),
+    supplierName: row.subHireId != null ? (row.supplierName ?? "") : null,
+    accessories: accessoriesOf(row).map((a) => ({ qty: a.quantity, name: itemName(a) })),
+  };
+  const assetTags = serialisedTags(row.units);
+  if (assetTags.length === 0 && row.asset?.assetTag) assetTags.push(row.asset.assetTag);
+  if (assetTags.length > 0) {
+    // Each physical unit gets its own scannable label; the accessories ride on
+    // the first (an accessory isn't tied to one unit's label).
+    return assetTags.map((tag, i) => ({
+      ...base,
+      id: assetTags.length === 1 ? row.id : `${row.id}:${tag}`,
+      kind: "ASSET" as const,
+      qty: 1,
+      tag,
+      accessories: i === 0 ? base.accessories : [],
+    }));
+  }
+  const pool = bulkTags(row);
+  return [{ ...base, id: row.id, kind: pool.length > 0 ? ("BULK" as const) : ("CUSTOM" as const), qty: row.quantity, tag: pool[0] ?? null }];
+}
+
+/** One label per loose item on the job (serialised units each get their own). */
+export function buildItemLabels(structured: DocumentLineItem[]): ItemLabel[] {
+  return structured.filter(isLooseItemRow).flatMap(itemLabelsFor);
+}
+
+/** Everything the "print one" menus need — id + display name, built by the same
+ *  builders the PDF uses so the menu can never list a label that won't print. */
+export interface LabelIndexEntry {
+  id: string;
+  title: string;
+  tag: string | null;
+}
+
+export function buildLabelIndex(kind: "container" | "kit" | "item", structured: DocumentLineItem[]): LabelIndexEntry[] {
+  if (kind === "item") return buildItemLabels(structured).map((l) => ({ id: l.id, title: l.title, tag: l.tag }));
+  const labels = kind === "kit" ? buildKitLabels(structured) : buildContainerLabels(structured);
+  return labels.map((l) => ({ id: l.id, title: l.title, tag: l.tag }));
 }

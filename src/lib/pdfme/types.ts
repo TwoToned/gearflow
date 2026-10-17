@@ -22,7 +22,8 @@ export type DocumentType =
   | "call-sheet"
   | "manifest"
   | "container-label"
-  | "kit-label";
+  | "kit-label"
+  | "item-label";
 
 export type TestTagReportType =
   | "tt-register"

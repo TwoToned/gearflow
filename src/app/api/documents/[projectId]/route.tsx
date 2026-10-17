@@ -84,6 +84,38 @@ function readDocumentParams(url: URL) {
   };
 }
 
+/** Quote/invoice are reachable here only as a watermarked preview, behind
+ *  `invoice:read`. Returns the refusal to send, or null when the request may proceed. */
+async function checkPreviewOnlyAccess(docType: ProjectDocumentType, preview: boolean): Promise<NextResponse | null> {
+  if (!PREVIEW_ONLY_TYPES.has(docType)) return null;
+  if (!preview) {
+    return NextResponse.json(
+      {
+        error:
+          "Quotes and invoices are served from the Finance tab as stored documents. " +
+          "Use /api/finance/quote/{quoteId}/pdf or add preview=1 for a watermarked draft preview.",
+      },
+      { status: 400 },
+    );
+  }
+  try {
+    await requirePermission("invoice", "read");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return null;
+}
+
+/** `list=1` on a label type: the printable labels as JSON, for the print-one menus. */
+async function labelListResponse(projectId: string, organizationId: string, docType: LabelDocumentType) {
+  try {
+    return NextResponse.json({ labels: await listLabelIndex(projectId, organizationId, docType) });
+  } catch (error) {
+    logger.error("Label list failed", { error: error });
+    return NextResponse.json({ error: "Label list failed" }, { status: 500 });
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
@@ -104,32 +136,11 @@ export async function GET(
     return NextResponse.json({ error: `Unknown document type: ${type}` }, { status: 400 });
   }
 
-  if (PREVIEW_ONLY_TYPES.has(docType)) {
-    if (!preview) {
-      return NextResponse.json(
-        {
-          error:
-            "Quotes and invoices are served from the Finance tab as stored documents. " +
-            "Use /api/finance/quote/{quoteId}/pdf or add preview=1 for a watermarked draft preview.",
-        },
-        { status: 400 },
-      );
-    }
-    try {
-      await requirePermission("invoice", "read");
-    } catch {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
+  const denied = await checkPreviewOnlyAccess(docType, preview);
+  if (denied) return denied;
 
   if (list && LABEL_DOCUMENT_TYPES.has(docType)) {
-    try {
-      const labels = await listLabelIndex(projectId, organizationId, docType as LabelDocumentType);
-      return NextResponse.json({ labels });
-    } catch (error) {
-      logger.error("Label list failed", { error: error });
-      return NextResponse.json({ error: "Label list failed" }, { status: 500 });
-    }
+    return labelListResponse(projectId, organizationId, docType as LabelDocumentType);
   }
 
   const stampedDates = resolveInvoicePreviewStampedDates(preview, docType, previewInvoiceDateParam, previewDueDateParam);

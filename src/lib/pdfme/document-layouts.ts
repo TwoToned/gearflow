@@ -47,10 +47,11 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
   manifest: { expandProjectGroups: true, byContainer: true },
   "container-label": { expandProjectGroups: true, byContainer: true },
   "kit-label": { expandProjectGroups: true, byContainer: true },
+  "item-label": { expandProjectGroups: true, byContainer: true },
 };
 
-/** Label sheets (container / kit): one small tape-on label per box, not a
+/** Label sheets (container / kit / item): one small tape-on label per box, not a
  *  paginated table — no running footer, row table or page furniture. Suites
  *  that assert those (react-pdf/regression.test.tsx) skip them. */
-export type LabelDocumentType = Extract<ProjectDocumentType, "container-label" | "kit-label">;
-export const LABEL_DOCUMENT_TYPES: ReadonlySet<ProjectDocumentType> = new Set<LabelDocumentType>(["container-label", "kit-label"]);
+export type LabelDocumentType = Extract<ProjectDocumentType, "container-label" | "kit-label" | "item-label">;
+export const LABEL_DOCUMENT_TYPES: ReadonlySet<ProjectDocumentType> = new Set<LabelDocumentType>(["container-label", "kit-label", "item-label"]);

@@ -920,7 +920,7 @@ export default function CrewMemberDetailPage({
 
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-page-title font-display font-extrabold tracking-tight text-ink">{fullName}</h1>
+                    <h1 className="t-page-title text-ink">{fullName}</h1>
                     <StatusIndicator
                       category="crewMember"
                       value={member.status}

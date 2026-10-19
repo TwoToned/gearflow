@@ -2851,7 +2851,7 @@ function WarehouseProjectPage({
             <span className="t-mono text-muted">{project.projectNumber}</span>
             <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
           </div>
-          <h1 className="t-title text-ink">{project.name}</h1>
+          <h1 className="t-page-title text-ink">{project.name}</h1>
           {project.client && <p className="text-muted">{project.client.name}</p>}
         </div>
         <div className="flex gap-2">

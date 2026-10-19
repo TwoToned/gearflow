@@ -446,7 +446,7 @@ export default function WarehousePage() {
                 </span>
               )}
             </div>
-            <h1 className="t-title text-ink">The floor</h1>
+            <h1 className="t-page-title text-ink">The floor</h1>
             <p className="t-body text-muted">
               {todayFormatted} — what to prep, deploy, and bring home.
             </p>

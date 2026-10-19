@@ -278,7 +278,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">{location.name}</h1>
+                  <h1 className="t-page-title text-ink truncate">{location.name}</h1>
                   <StatusIndicator category="locationType" value={location.type} label={locationTypeLabels[location.type] || location.type} />
                   {location.isDefault && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-warn-soft px-2.5 py-1 text-badge font-bold text-warn">

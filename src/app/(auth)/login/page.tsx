@@ -185,7 +185,7 @@ function LoginForm() {
   return (
     <AuthShell accent="welcome" annotation="venue's dark, the app isn't.">
       <div className="mb-6">
-        <h1 className="t-title text-ink">
+        <h1 className="t-page-title text-ink">
           {orgName ? `Sign in to ${orgName}` : "Welcome back"}
         </h1>
         <p className="mt-1 text-sm text-muted">

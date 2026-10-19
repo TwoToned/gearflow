@@ -223,7 +223,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
               ) : (
                 <Folder className="h-6 w-6 text-muted" />
               )}
-              <h1 className="t-title text-ink">{category.name}</h1>
+              <h1 className="t-page-title text-ink">{category.name}</h1>
             </div>
             {category.description && (
               <p className="text-caption text-muted mt-1">{category.description}</p>

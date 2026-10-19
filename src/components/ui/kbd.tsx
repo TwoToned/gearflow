@@ -7,16 +7,16 @@ interface KbdProps {
 }
 
 /**
- * Keyboard shortcut badge — displayed inline in buttons and tooltips.
- * Per DESIGN.md: display shortcut hints in button tooltips.
+ * Keyboard shortcut key cap — displayed inline in buttons, tooltips and the shortcuts dialog.
+ * One spec across RVLT (rvlt-designlanguage v1.2.0 §9): Geist Mono at the 11px floor,
+ * --muted on --paper-2, a 1px --line-2 border with a 2px bottom edge, radius 5px.
  */
 export function Kbd({ children, className }: KbdProps) {
   return (
     <kbd
       className={cn(
-        "inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[3px]",
-        "bg-bg-inset px-1 font-mono text-[10px] font-medium text-fg-3",
-        "border border-border",
+        "inline-flex items-center justify-center rounded-[5px] border border-b-2 border-line-2 bg-paper-2 px-1.5",
+        "font-mono text-[11px] text-muted",
         className,
       )}
     >

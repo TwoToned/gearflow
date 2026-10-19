@@ -248,7 +248,7 @@ function QuickTestContent() {
                 <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
-            <h1 className="t-title text-ink">Quick test</h1>
+            <h1 className="t-page-title text-ink">Quick test</h1>
           </div>
           <div className="flex items-center gap-2">
             {/* Session tester picker */}

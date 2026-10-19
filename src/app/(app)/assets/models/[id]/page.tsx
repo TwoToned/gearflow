@@ -346,7 +346,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-title text-ink">{model.name}</h1>
+                  <h1 className="t-page-title text-ink">{model.name}</h1>
                   <Badge status="neutral">
                     {model.assetType === "SERIALIZED" ? "Serialised" : "Bulk"}
                   </Badge>

@@ -443,7 +443,7 @@ export function StepNumbering({
     <AuthShell accent="setup" annotation="every field already has a default.">
       <WizardRail step={4} total={TOTAL_STEPS} />
       <p className="t-annotation text-[13px] text-red">Step 4 of {TOTAL_STEPS} · How you work</p>
-      <h1 className="t-title mt-1 text-ink">Numbering, terms, and where gear lives.</h1>
+      <h1 className="t-page-title mt-1 text-ink">Numbering, terms, and where gear lives.</h1>
       <p className="mt-1 text-sm text-muted">
         The most skippable screen in the wizard — every field below already has a working default.
       </p>

@@ -144,7 +144,7 @@ export function StepTeamGear({
     <AuthShell accent="setup" annotation="the wizard's last stop — the rest is the tour.">
       <WizardRail step={5} total={TOTAL_STEPS} />
       <p className="t-annotation text-[13px] text-red">Step 5 of {TOTAL_STEPS} · Your team &amp; your gear</p>
-      <h1 className="t-title mt-1 text-ink">Bring in your crew, seed your inventory.</h1>
+      <h1 className="t-page-title mt-1 text-ink">Bring in your crew, seed your inventory.</h1>
       <p className="mt-1 text-sm text-muted">
         Both of these can wait — invite people and add gear any time from Settings and Assets.
       </p>

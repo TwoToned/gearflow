@@ -40,7 +40,8 @@
 | Class | Size | Weight | Tracking | Line-height | Usage |
 |-------|------|--------|----------|-------------|-------|
 | `t-display` | 32px | 800 | -0.035em | 1.1 | Page hero moments, BC Alphapipe |
-| `t-title` | 20px | 700 | -0.02em | 1.2 | Page titles, modal titles |
+| `t-page-title` | 24px | 800 | -0.02em | 1.2 | **The page `h1`** — Archivo, every RVLT app (rvlt-designlanguage v1.2.0) |
+| `t-title` | 20px | 700 | -0.02em | 1.2 | Modal, dialog, card and section titles |
 | `t-heading` | 14px | 700 | -0.01em | 1.3 | Section headings |
 | `t-body` | 13.5px | 400 | 0 | 1.55 | Body text |
 | `t-small` | 12px | 500 | 0 | 1.4 | Labels, supplementary |
@@ -67,7 +68,7 @@ The `.t-*` classes in `globals.css` (`t-display`, `t-title`, etc.) are app-level
 ### Type Rules
 - **Absolute font-size floor: 11px.** Never render text smaller. App ramp: 11 / 12 / 13.5 / 14 / 15 / 16 / 18 / 24 / 38px (38px = the one bright hero `Stat` figure only).
 - **§5.2 No ALL-CAPS — sentence case everywhere.** Uppercase / `text-transform: uppercase` is banned. Section labels, overlines, badges, nav headers: sentence case. (Uppercase was the rejected "industrial" misfire.)
-- Page titles: `t-title` (20px/700) or `text-page-title` (24px), never `text-2xl font-bold` scattered inline
+- Page titles: `t-page-title` (24px/800 Archivo) — `PageHeader` and every page `h1`. Never `text-2xl font-bold` scattered inline. `t-title` (20px/700) is for dialogs, cards and sections.
 - Section overlines: `t-overline` (11px/600, sentence case, `muted` color) — or use the `SectionHeader` component
 - Asset tags, IDs, quantity counts: `t-mono` (Geist Mono, `muted`)
 - Annotation moments (empty state captions, handwritten callouts): Kalam only
@@ -78,7 +79,7 @@ The `.t-*` classes in `globals.css` (`t-display`, `t-title`, etc.) are app-level
 ### Approach
 Dark espresso is the default app surface (`--paper: #141210`). Light "Paper" mode (`.light`) is opt-in. The single accent is RVLT red (`--red: #E0363D`).
 
-**Token source of truth:** `globals.css` generated from the RVLT Flow registry (`https://rvlt-labs.github.io/rvlt-designlanguage/r/theme.json`). Do not edit by hand — reinstall via `pnpm dlx shadcn@canary add .../theme.json` when tokens change.
+**Token source of truth:** `globals.css` generated from the RVLT registry (`https://rvlt-labs.github.io/rvlt-designlanguage/r/theme.json`), design language **v1.2.0** — `RVLT-Labs/rvlt-designlanguage` is the master for every RVLT product. Do not edit by hand — reinstall via `pnpm dlx shadcn@canary add .../theme.json` when tokens change.
 
 ### Canonical Token Names (espresso dark `:root`)
 | Token | Value | Tailwind class | Usage |
@@ -120,14 +121,16 @@ Eight named hues assigned to modules. **Red is never a module colour.** Each mod
 
 | Module | Token | Soft fill |
 |--------|-------|-----------|
-| Projects | `--blue` / `bg-blue` | `bg-blue-soft` |
+| Dashboard / Projects | `--blue` / `bg-blue` | `bg-blue-soft` |
 | Crew | `--purple` / `bg-purple` | `bg-purple-soft` |
 | Gear / Assets | `--amber` / `bg-amber` | `bg-amber-soft` |
-| Compliance / T&T | `--teal` / `bg-teal` | `bg-teal-soft` |
+| Warehouse | `--teal` / `bg-teal` | `bg-teal-soft` |
+| Test & Tag | `--teal` / `bg-teal` | `bg-teal-soft` |
 | Maintenance | `--coral` / `bg-coral` | `bg-coral-soft` |
 | Schedule | `--green` / `bg-green` | `bg-green-soft` |
-| Clients/Suppliers | `--pink` / `bg-pink` | *(no soft-fill token)* |
-| Warehouse | `--lime` / `bg-lime` | *(no soft-fill token)* |
+| Finance | `--green` / `bg-green` | `bg-green-soft` |
+
+This table matches `app-sidebar.tsx` (decision 2026-10-19: the code is right). Clients, Suppliers and the other secondary rail items carry no module hue. `--pink` and `--lime` complete the avatar / data-viz set only.
 
 The same hue palette is used for avatar colours (8 deterministic hues, never red). Data-viz series order: blue → amber → green → purple → coral → teal → pink → lime. Red is reserved for threshold indicators only.
 
@@ -161,7 +164,7 @@ Use `PersonAvatar` and `FeaturePatch` components, which encode this rule interna
 - They ARE allowed in: empty states, onboarding moments, zero-state dashboard, positive completions
 
 ### Light Mode ("Paper" — opt-in)
-Add `.light` class to `<html>` to switch. Paper uses `--border: var(--ink)` (full-ink 2px outlines — the RVLT outline aesthetic on light). Same semantic tokens, lighter surface primitives. The app ships dark by default; light mode is available via `ThemeProvider`.
+Add `.light` class to `<html>` to switch. Paper uses `--border: var(--ink)` (full-ink 2px outlines — the RVLT outline aesthetic on light). Same semantic tokens, lighter surface primitives. **Retoned 2026-10-19** so every text pairing passes 4.5:1: `--ok`/`--green` `#007D36`, `--warn` `#9B5F00`, `--rep` `#706857`, `--blue`/`--link` `#2A65D0`, `--muted` `#665E4F`, `--faint` `#756B58`, `--coral` `#C25524`, `--teal` `#0E847C` (white on fill ≥4.5), `--lime` `#73911B` (dark ink on fill ≥4.5). The dark theme is unchanged. The app ships dark by default; light mode is available via `ThemeProvider`.
 
 ## Spacing
 - **Base unit:** 4px
@@ -303,7 +306,7 @@ SVG spot illustrations from `@/components/ui/spot-illustrations`:
 - Minimum 200ms display to avoid flash
 
 ### Page Layout Templates
-- **PageHeader:** `t-title` + optional description + action buttons. No "Manage your X" boilerplate.
+- **PageHeader:** `t-page-title` + optional description + action buttons. No "Manage your X" boilerplate.
 - **ListPageLayout:** PageHeader + filters + DataTable + empty state
 - **DetailPageLayout:** Breadcrumb + header with status + tabs + content
 - **FormPageLayout:** PageHeader + flat form sections
@@ -425,6 +428,7 @@ All status → color intent mappings live in `src/lib/status-colors.ts`. **Never
 - Single-key shortcuts disabled when input/textarea is focused
 - Single-key shortcuts disabled when dialog/modal is open
 - `?` opens shortcuts overlay
+- Key caps render with `Kbd`: Geist Mono 11px, `muted` on `paper-2`, a 1px `line-2` border with a 2px bottom edge, 5px radius — one spec across RVLT (Binder and the registry use the same).
 
 ## §5 Data Visualization
 Inline charts from `@/components/ui/sparkline`:
@@ -467,6 +471,7 @@ Every interactive surface must implement all applicable states. `✓` = required
 
 ### Allowed
 - **Kalam font:** empty state captions, annotation callouts, zero-state onboarding
+- **Albert** (RVLT's character, `rvlt-designlanguage/assets/albert/`): welcome, onboarding, large empty states, success and Mira-style assistant moments, with the state always in live text. The stage-light `FlowMascot` stays Flow's in-app empty-state mark.
 - **Mascot:** true zero-state (no data yet), first-time-user onboarding
 - **Irreverent microcopy:** action button labels, empty state descriptions, page subtitle lines
 - **Punchy operator voice:** tooltips, confirmation messages ("Gear's away"), menu items
@@ -613,7 +618,7 @@ Each hero/section heading has one key word or phrase in solid `--red` text, ofte
 10. **Footer** — 4-col, logo+tagline, Product/Company/Resources columns
 
 ### Feature-patch floating decorations
-Module-colored square icon badges (14-20px radius, soft fill bg + icon) scattered at varying scales around the hero. Same component as the module wayfinding patches — decorative use only here.
+Module-colored square icon badges (14-20px radius, soft fill bg + icon) scattered at varying scales around the hero. Same component as the module wayfinding patches — decorative use only here. Sticker edges use the fixed `--patch-border` (`#FFFDF8`). Tilt: up to ±11° in marketing hero clusters, 2–5° anywhere in the app. For gear art, use the RVLT sticker pack (`rvlt-designlanguage/assets/stickers/`) — never redraw it.
 
 ### Cream tier (pricing highlight)
 Featured pricing tier: `bg-cream text-cream-ink` card, elevated above flanking dark cards. Primary CTA inside is a red `Button` (Halo CTA variant for the hero plan). Kalam annotation in the card.
@@ -651,3 +656,11 @@ Login / register / onboarding follow marketing aesthetics, not app UI rules:
 | 2026-09-16 | Bottom nav: Today replaces Dashboard (D10A, work-layer #1242) | Today becomes the personal landing page; phones have no sidebar and all 5 bottom-nav slots were taken, so it had to take Dashboard's slot. Dashboard moves to the avatar menu; its dashboard "My work" zone is deleted so Today's rows don't render twice |
 | 2026-09-19 | Desktop rail: Dashboard returns to slot one, Today moves to the avatar menu (D10B) | D10A's swap was right for phones and wrong for the rail — the org-wide read is what people reach for from the sidebar. Mobile is unchanged (Today keeps bottom-nav slot one); Today is still the post-login landing page |
 | 2026-09-21 | Today hidden everywhere; Dashboard is the landing page on mobile too (D10C) | The customizable dashboard board (FEATUREDOCS/81) already lets a user add Today's widgets to their own board, so a dedicated page is redundant. `/today`/`/my-tasks` redirect to `/dashboard`; mobile bottom-nav slot one, the sidebar logo, and every post-auth redirect now point at Dashboard on both platforms |
+| 2026-10-19 | Page `h1` = `t-page-title` (24px/800 Archivo) in every RVLT app | RVLT-wide decision (rvlt-designlanguage v1.2.0); `t-title` stays for dialogs/cards/sections |
+| 2026-10-19 | Light "Paper" theme retoned to pass 4.5:1 for all text pairings | Contrast decision; dark theme unchanged |
+| 2026-10-19 | Sticker/patch edge = fixed `--patch-border` `#FFFDF8` | One die-cut cream with the sticker pack; `--cream` stays the text/button cream |
+| 2026-10-19 | One red primary per region; buttons stay pills in Flow (Binder keeps rounded rectangles) | RVLT-wide red rule; button shape is per product |
+| 2026-10-19 | Module hue table corrected to the sidebar code (Warehouse teal, Finance green) | The code was right; the table had drifted |
+| 2026-10-19 | `Kbd` restyled to the shared RVLT key-cap spec at 11px | Its old classes resolved to no token; 11px floor |
+| 2026-10-19 | App icon = the R mark in cream on an RVLT-red tile (PWA icons, favicon, in-app favicon default) | Replaces the pre-rebrand teal "G"; same build as Binder's icon |
+| 2026-10-19 | Albert is RVLT's character; the stage light stays Flow's in-app mascot | Brand decision; Albert pack lives in rvlt-designlanguage |

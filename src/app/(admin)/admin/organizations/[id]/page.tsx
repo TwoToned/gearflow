@@ -202,7 +202,7 @@ export default function AdminOrgDetailPage({
             </Button>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:t-title text-fg truncate">
+                <h1 className="t-page-title text-ink truncate">
                   {isLoading ? "Loading..." : org?.name}
                 </h1>
                 {org?.archivedAt && <Badge status="warn">Archived</Badge>}

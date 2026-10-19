@@ -130,7 +130,7 @@ function EditMaintenanceContent({
           </Breadcrumb>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="t-title text-ink">Edit maintenance record</h1>
+              <h1 className="t-page-title text-ink">Edit maintenance record</h1>
               <p className="t-body text-muted">{r.title as string}</p>
             </div>
             <CanDo resource="maintenance" action="delete">

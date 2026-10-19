@@ -57,7 +57,7 @@ export default function EditProjectPage({
             </BreadcrumbList>
           </Breadcrumb>
           <div>
-            <h1 className="t-title text-ink">Edit project</h1>
+            <h1 className="t-page-title text-ink">Edit project</h1>
             <p className="t-body text-muted">
               <span className="t-mono">{project.projectNumber}</span> &middot; {project.name}
             </p>

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 /**
  * FeaturePatch — module wayfinding icon badge (§9.2 / §10 / §15.5).
  *
- * variant="sticker"  full hue fill + 2px cream border + --sh-stk (feature cards, hero blocks)
+ * variant="sticker"  full hue fill + 2px --patch-border (#FFFDF8) edge + --sh-stk (feature cards, hero blocks)
  * variant="soft"     hue-soft fill + hue-tinted icon (sidebar nav, launcher tiles, active states)
  *
  * Icon is a Lucide glyph passed as children. Sticker uses 2.6px stroke per §9.2.
@@ -30,7 +30,7 @@ const patchVariants = cva(
     variants: {
       variant: {
         sticker:
-          "border-2 border-cream shadow-[var(--sh-stk)] [&_svg]:[stroke-width:2.6] [&_svg]:size-6",
+          "border-2 border-patch-border shadow-[var(--sh-stk)] [&_svg]:[stroke-width:2.6] [&_svg]:size-6",
         soft: "[&_svg]:size-5",
       },
       hue: {

@@ -184,7 +184,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           {orgInitial}
         </div>
         <div className="min-w-0">
-          <h1 className="t-title text-ink truncate">{activeTitle}</h1>
+          <h1 className="t-page-title text-ink truncate">{activeTitle}</h1>
           <p className="t-small text-muted truncate">{activeOrg?.name ?? "Organization"}</p>
         </div>
       </div>

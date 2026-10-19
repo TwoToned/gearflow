@@ -144,7 +144,7 @@ export default function AdminUsersPage() {
     <AdminShell>
       <div className="space-y-6">
         <div>
-          <h1 className="t-title text-fg">Users</h1>
+          <h1 className="t-page-title text-ink">Users</h1>
           <p className="text-fg-3">
             Manage all users across the platform.
           </p>

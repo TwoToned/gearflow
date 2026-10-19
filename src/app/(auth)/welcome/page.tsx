@@ -131,7 +131,7 @@ function ForkHeader({ name }: { name: string | undefined }) {
   return (
     <div className="mb-6">
       {name ? <p className="t-annotation text-[15px] text-red">Welcome, {name.split(" ")[0]}</p> : null}
-      <h1 className="t-title text-ink">What brings you here?</h1>
+      <h1 className="t-page-title text-ink">What brings you here?</h1>
       <p className="mt-1 text-sm text-muted">You can change this later — nothing is locked in.</p>
     </div>
   );
@@ -167,7 +167,7 @@ function JoinView({ onBack }: { onBack: () => void }) {
         Back
       </button>
       <div className="mb-4">
-        <h1 className="t-title text-ink">Join my team</h1>
+        <h1 className="t-page-title text-ink">Join my team</h1>
         <p className="mt-1 text-sm text-muted">Use an invite code, or ask to be let in.</p>
       </div>
       <div className="space-y-4">

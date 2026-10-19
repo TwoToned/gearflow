@@ -79,7 +79,7 @@ function EditLocationContent({ params }: { params: Promise<{ id: string }> }) {
             </BreadcrumbList>
           </Breadcrumb>
           <div>
-            <h1 className="t-title text-ink">Edit location</h1>
+            <h1 className="t-page-title text-ink">Edit location</h1>
             <p className="t-body text-muted">{location.name}</p>
           </div>
           <LocationForm initialData={initialData} />

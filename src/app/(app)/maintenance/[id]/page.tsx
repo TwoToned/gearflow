@@ -134,7 +134,7 @@ function MaintenanceDetailContent({
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-title text-ink">{title}</h1>
+                  <h1 className="t-page-title text-ink">{title}</h1>
                   <StatusIndicator
                     category="maintenance"
                     value={status}

@@ -251,7 +251,7 @@ export function StepBranding({
     <AuthShell accent="setup" annotation="the paper is the proof.">
       <WizardRail step={3} total={TOTAL_STEPS} />
       <p className="t-annotation text-[13px] text-red">Step 3 of {TOTAL_STEPS} · Your brand</p>
-      <h1 className="t-title mt-1 text-ink">What your quotes look like.</h1>
+      <h1 className="t-page-title mt-1 text-ink">What your quotes look like.</h1>
       <p className="mt-1 text-sm text-muted">
         This is the logo that prints on your documents — not the icon shown in the app itself.
       </p>

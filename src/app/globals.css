@@ -5,7 +5,7 @@
 
 /* ----------------------------------------------------------------------------
  * @rvlt/flow-theme — GENERATED from tokens.json. Do not edit by hand.
- * Source of truth: tokens.json  ·  Design spec: DESIGN.md v1.1.1
+ * Source of truth: tokens.json  ·  Design spec: DESIGN.md v1.2.0
  * Tailwind v4 + shadcn convention (direct hex / var() aliases, @theme inline).
  * Dark "espresso" is the default; .light is the opt-in "Paper" alternate.
  * -------------------------------------------------------------------------- */
@@ -82,6 +82,8 @@
   --ring: var(--red);
   --cream: #F5EFE2;
   --cream-ink: #1D1A15;
+  /* fixed sticker/patch die-cut edge (DESIGN.md §9/§10, rvlt-designlanguage v1.2.0) */
+  --patch-border: #FFFDF8;
   --sh-halo: 0 3px 0 var(--red-700), 0 0 28px rgba(224,54,61,.5);
   --sh-cream: 0 3px 0 rgba(0,0,0,.25);
   --sh-cream-press: 0 1px 0 rgba(0,0,0,.25);
@@ -108,30 +110,30 @@
   --elev: #FFFDF8;
   --ink: #1D1A15;
   --ink-2: #4B4539;
-  --muted: #7D7565;
-  --faint: #A89E89;
+  --muted: #665E4F;
+  --faint: #756B58;
   --line: #E4DAC3;
   --line-2: #D8CCB0;
   --red: #C12229;
   --red-700: #9C1B21;
   --red-soft: #FBE7E3;
-  --ok: #2EA65C;
-  --warn: #C98A14;
-  --rep: #8A8270;
+  --ok: #007D36;
+  --warn: #9B5F00;
+  --rep: #706857;
   --t-out: #9C1B21;
   --ok-soft: #E7F5EC;
   --warn-soft: #FBF0D6;
   --rep-soft: #EFE9DC;
   --out-soft: #FBE7E3;
   --amber: #E79A2B;
-  --blue: #2F6BD6;
-  --green: #2EA65C;
+  --blue: #2A65D0;
+  --green: #007D36;
   --purple: #7A5CD0;
   --dark: #241F1A;
-  --coral: #CC5E2E;
-  --teal: #1C8B83;
+  --coral: #C25524;
+  --teal: #0E847C;
   --pink: #C2487E;
-  --lime: #6E8C12;
+  --lime: #73911B;
   --blue-soft: #E2ECFB;
   --amber-soft: #FBF0D6;
   --green-soft: #E7F5EC;
@@ -140,7 +142,7 @@
   --teal-soft: #DBF1EF;
   --scrim: rgba(40,30,15,.45);
   --select: rgba(193,34,41,.16);
-  --link: #2F6BD6;
+  --link: #2A65D0;
   --sh-card: 0 3px 0 var(--line-2);
   --sh-hover: 0 7px 0 var(--line-2);
   --lit: inset 0 1px 0 rgba(255,253,248,.14);
@@ -192,6 +194,7 @@
   --color-select: var(--select);
   --color-cream: var(--cream);
   --color-cream-ink: var(--cream-ink);
+  --color-patch-border: var(--patch-border);
   --color-warehouse-display: var(--warehouse-display-bg);
   --color-gaff-tape: var(--gaff-tape-bg);
   /* shadcn role utilities → bg-primary, text-foreground, border-border, ring-ring… */
@@ -282,6 +285,14 @@
     letter-spacing: -0.035em;
     line-height: 1.1;
     font-family: var(--font-display);
+  }
+  /* the page h1 in every RVLT app (rvlt-designlanguage v1.2.0 §5.5): 24px/800 Archivo */
+  .t-page-title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
   }
   .t-title      { font-size: 20px;   font-weight: 700; letter-spacing: -0.02em;  line-height: 1.2; }
   .t-heading    { font-size: 14px;   font-weight: 700; letter-spacing: -0.01em;  line-height: 1.3; }

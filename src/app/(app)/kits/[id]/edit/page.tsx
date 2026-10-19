@@ -41,7 +41,7 @@ function EditKitContent({ params }: { params: Promise<{ id: string }> }) {
           <span className="text-ink-2">Edit</span>
         </nav>
         <div>
-          <h1 className="t-title text-ink">Edit kit</h1>
+          <h1 className="t-page-title text-ink">Edit kit</h1>
           <p className="t-body text-muted">
             Update details for {kit.assetTag} &mdash; {kit.name}.
           </p>

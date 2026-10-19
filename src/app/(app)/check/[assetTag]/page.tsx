@@ -101,7 +101,7 @@ export default function AdHocCheckPage({
       <div className="mx-auto max-w-xl space-y-6">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h1 className="t-title text-ink">Ad-hoc check</h1>
+            <h1 className="t-page-title text-ink">Ad-hoc check</h1>
             <p className="text-ui-text text-muted mt-1">
               Perform a quality check on an asset outside of a project.
             </p>

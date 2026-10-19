@@ -268,7 +268,7 @@ export function StepOperating({
     <AuthShell accent="setup" annotation="one field fills five.">
       <WizardRail step={2} total={TOTAL_STEPS} />
       <p className="t-annotation text-[13px] text-red">Step 2 of {TOTAL_STEPS} · Where you operate</p>
-      <h1 className="t-title mt-1 text-ink">A few details for your paperwork.</h1>
+      <h1 className="t-page-title mt-1 text-ink">A few details for your paperwork.</h1>
 
       {isLoading && !hydrated ? (
         <div className="flex justify-center py-10">

@@ -416,7 +416,7 @@ export default function AccountPage() {
 
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="t-title truncate text-ink">{displayName}</h1>
+              <h1 className="t-page-title truncate text-ink">{displayName}</h1>
               {isSiteAdminRole(profile?.role) && (
                 <Badge status="overbooked">Site admin</Badge>
               )}

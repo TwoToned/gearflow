@@ -435,7 +435,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
             />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="t-title text-ink">{kit.name || kit.assetTag}</h1>
+                <h1 className="t-page-title text-ink">{kit.name || kit.assetTag}</h1>
                 <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} />
                 <Badge status="neutral" className="t-mono">{kit.assetTag}</Badge>
               </div>

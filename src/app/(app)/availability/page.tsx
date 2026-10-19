@@ -283,7 +283,7 @@ function AvailabilityPage() {
               <p className="t-overline text-muted mb-1">Schedule</p>
               <div className="flex flex-wrap items-center gap-2">
                 {/* The 200px floor plus the 44px month-nav buttons overflows 375px. */}
-                <h1 className="t-title text-ink sm:min-w-[200px]">
+                <h1 className="t-page-title text-ink sm:min-w-[200px]">
                   {format(currentMonth, "MMMM yyyy")}
                 </h1>
                 <div className="flex items-center gap-1">

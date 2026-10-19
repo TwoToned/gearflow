@@ -247,7 +247,7 @@ export default function PullSheetPage({
 
       {/* Print header */}
       <div className="print:mb-6">
-        <h1 className="t-title text-ink print:text-xl">
+        <h1 className="t-page-title text-ink print:text-xl">
           Pull sheet
         </h1>
         <div className="flex items-center gap-3 mt-1">

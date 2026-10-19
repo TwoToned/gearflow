@@ -31,7 +31,7 @@ export default function NewMaintenancePage() {
             </BreadcrumbList>
           </Breadcrumb>
           <div>
-            <h1 className="t-title text-ink">New maintenance record</h1>
+            <h1 className="t-page-title text-ink">New maintenance record</h1>
             <p className="t-body text-muted">
               Log a repair, inspection, or other maintenance work.
             </p>

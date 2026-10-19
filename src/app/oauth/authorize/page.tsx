@@ -29,7 +29,7 @@ export default async function OAuthAuthorizePage({
       <div className="flex min-h-screen items-center justify-center bg-paper px-4">
         <div className="w-full max-w-md rounded-lg bg-bg-surface p-8 text-center surface-ring">
           <XCircle className="mx-auto mb-4 h-10 w-10 text-destructive" />
-          <h1 className="t-title text-ink">Can&apos;t authorize this request</h1>
+          <h1 className="t-page-title text-ink">Can&apos;t authorize this request</h1>
           <p className="mt-2 t-body text-muted">{result.message}</p>
         </div>
       </div>
@@ -42,7 +42,7 @@ export default async function OAuthAuthorizePage({
     <div className="flex min-h-screen items-center justify-center bg-paper px-4">
       <div className="w-full max-w-md rounded-lg bg-bg-surface p-8 surface-ring">
         <ShieldCheck className="mb-4 h-10 w-10 text-red" />
-        <h1 className="t-title text-ink">
+        <h1 className="t-page-title text-ink">
           <span className="font-semibold">{client.name}</span> wants to connect
         </h1>
         <p className="mt-2 t-body text-fg-3">

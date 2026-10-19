@@ -31,7 +31,7 @@ export default function NewLocationPage() {
             </BreadcrumbList>
           </Breadcrumb>
           <div>
-            <h1 className="t-title text-ink">New location</h1>
+            <h1 className="t-page-title text-ink">New location</h1>
             <p className="t-body text-muted">
               Add a new warehouse, venue, or storage location.
             </p>

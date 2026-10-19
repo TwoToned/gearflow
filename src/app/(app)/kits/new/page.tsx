@@ -19,7 +19,7 @@ export default function NewKitPage() {
             <span className="text-ink-2">New kit</span>
           </nav>
           <div>
-            <h1 className="t-title text-ink">New kit</h1>
+            <h1 className="t-page-title text-ink">New kit</h1>
             <p className="t-body text-muted">
               Create a new kit or case to group assets together.
             </p>

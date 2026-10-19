@@ -401,7 +401,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-display text-page-title font-extrabold text-ink truncate">
+                  <h1 className="t-page-title text-ink truncate">
                     {asset.customName || asset.model?.name || "Untitled asset"}
                   </h1>
                   <StatusIndicator category="asset" value={asset.status} label={assetStatusLabels[asset.status] || formatLabel(asset.status)} />

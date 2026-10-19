@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
-  /** Page title — uses t-title (20px/700) */
+  /** Page title — uses t-page-title (24px/800 Archivo, the RVLT page h1) */
   title: string;
   /** Optional description below the title */
   description?: string;
@@ -15,7 +15,7 @@ interface PageHeaderProps {
 /**
  * Consistent page header with title, description, and action buttons.
  *
- * Per DESIGN.md: t-title typography, no "Manage your X directory" boilerplate.
+ * Per DESIGN.md: t-page-title typography, no "Manage your X directory" boilerplate.
  * Right-aligned action buttons on desktop, stacked on mobile.
  */
 export function PageHeader({
@@ -33,9 +33,9 @@ export function PageHeader({
       )}
     >
       <div className="min-w-0 space-y-1">
-        <h1 className="t-title text-fg">{title}</h1>
+        <h1 className="t-page-title text-ink">{title}</h1>
         {description && (
-          <p className="t-body text-fg-3">{description}</p>
+          <p className="t-body text-muted">{description}</p>
         )}
         {meta && <div className="mt-1">{meta}</div>}
       </div>

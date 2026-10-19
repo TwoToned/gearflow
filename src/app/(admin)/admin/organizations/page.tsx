@@ -35,7 +35,7 @@ export default function AdminOrganizationsPage() {
     <AdminShell>
       <div className="space-y-6">
         <div>
-          <h1 className="t-title text-fg">Organizations</h1>
+          <h1 className="t-page-title text-ink">Organizations</h1>
           <p className="text-fg-3">
             Every organization on the platform.
           </p>

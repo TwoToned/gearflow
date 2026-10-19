@@ -343,7 +343,7 @@ export default function ReturnsStationPage() {
               <Undo2 className="h-3.5 w-3.5" />
               Warehouse
             </span>
-            <h1 className="t-title text-ink">Returns</h1>
+            <h1 className="t-page-title text-ink">Returns</h1>
             <p className="t-body text-muted">
               Everything out, org-wide — scan a tag to return it. No project to pick first.
             </p>

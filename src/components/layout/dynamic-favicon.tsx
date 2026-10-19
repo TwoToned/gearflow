@@ -8,6 +8,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrganization } from "@/hooks/use-organization";
 import type { OrgBranding } from "@/lib/org-settings-types";
 import { usePlatformBranding } from "@/lib/use-platform-name";
+import { RVLT_R_PATH } from "@/components/brand/rvlt-mark";
 
 /**
  * Extract inner SVG paths from a Lucide icon by rendering to static markup.
@@ -22,7 +23,20 @@ function getIconPaths(iconName: string): string | null {
   return match?.[1] || null;
 }
 
-function buildFaviconSvg(iconPaths: string | null, color: string, fallbackLetter: string): string {
+function buildFaviconSvg(
+  iconPaths: string | null,
+  color: string,
+  fallbackLetter: string,
+  useRvltMark: boolean,
+): string {
+  // The RVLT Flow app icon (DESIGN.md §19.1): the R mark in cream on the tile colour —
+  // the same build as public/icons. A white-labelled platform keeps its own letter.
+  if (!iconPaths && useRvltMark) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="116" fill="${color}"/>
+      <path fill="#F5EFE2" transform="translate(174 131) scale(0.5543)" d="${RVLT_R_PATH}"/>
+    </svg>`;
+  }
   if (iconPaths) {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
       <rect width="32" height="32" rx="6" fill="${color}"/>
@@ -50,7 +64,8 @@ export function DynamicFavicon() {
   const { data: org } = useOrganization(orgId);
 
   const settings = (org as Record<string, unknown>)?.settings as { branding?: OrgBranding } | undefined;
-  const primaryColor = settings?.branding?.primaryColor || "#0d9488";
+  // Default = RVLT red (DESIGN.md §7); an org branding colour overrides it.
+  const primaryColor = settings?.branding?.primaryColor || "#E0363D";
 
   useEffect(() => {
     const FAVICON_ID = "gearflow-dynamic-favicon";
@@ -70,7 +85,8 @@ export function DynamicFavicon() {
 
     const iconPaths = platformIcon ? getIconPaths(platformIcon) : null;
     const fallbackLetter = platformName.charAt(0).toUpperCase();
-    const svg = buildFaviconSvg(iconPaths, primaryColor, fallbackLetter);
+    const useRvltMark = platformName.startsWith("RVLT");
+    const svg = buildFaviconSvg(iconPaths, primaryColor, fallbackLetter, useRvltMark);
     link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   }, [platformIcon, primaryColor, platformName]);
 

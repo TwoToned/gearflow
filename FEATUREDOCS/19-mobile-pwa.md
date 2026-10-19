@@ -28,7 +28,7 @@ device profiles carry a **coarse pointer**, which is what actually activates the
 window does not.
 
 ## PWA Configuration
-- Manifest: `public/manifest.json` — `display: standalone`, icons 192/384/512, start URL `/dashboard`
+- Manifest: `public/manifest.json` — `display: standalone`, start URL `/dashboard`, espresso `theme_color`/`background_color` (`#141210`). Icons: 192/384/512 (`purpose: any`, the R mark in cream on an RVLT-red rounded tile) + a full-bleed `icon-512-maskable.png`; `apple-touch-icon.png` (180, full-bleed) and `src/app/favicon.ico` use the same artwork. Source SVG: `public/icons/icon.svg` (DESIGN.md §19.1 of rvlt-designlanguage v1.2.0).
 - Service worker via `@ducanh2912/next-pwa`
 - Offline page: `src/app/offline/page.tsx`
 - Meta: `apple-mobile-web-app-capable: yes`, `statusBarStyle: black-translucent`

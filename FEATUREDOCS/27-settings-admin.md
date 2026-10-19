@@ -178,7 +178,7 @@ free once the locale was threaded (I2, #1081).
 - `platformName` — Displayed in sidebar, page titles, emails
 - `platformIcon` — Lucide icon name, rendered via `DynamicIcon`
 - `platformLogo` — Uploaded image URL
-- Dynamic favicon via `DynamicFavicon` component
+- Dynamic favicon via `DynamicFavicon` component — the platform icon on the org's primary colour; with no platform icon an `RVLT…` platform shows the R mark (`RVLT_R_PATH` from `rvlt-mark.tsx`) and a white-labelled one its first letter. The tile defaults to RVLT red `#E0363D` when the org has no branding colour.
 
 ## Client-Side Hooks
 - `usePlatformName()` — Returns platform name string

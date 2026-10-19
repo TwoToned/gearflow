@@ -80,3 +80,14 @@ ran off the top/bottom with no scrollbar, forcing users to zoom out).
 - DropdownMenuLabel must be inside DropdownMenuGroup
 - Use `onMouseDown` with `preventDefault` (not `onClick`) for buttons inside popovers
 - No `AlertDialog` component — use `Dialog` with confirm/cancel buttons instead
+
+## RVLT-wide primitives (rvlt-designlanguage v1.2.0, 2026-10-19)
+- **`Kbd`** (`src/components/ui/kbd.tsx`) — the one key-cap spec shared with Binder and the
+  `@rvlt/flow-theme` registry: Geist Mono **11px**, `text-muted` on `bg-paper-2`, `1px` `border-line-2`
+  with a `2px` bottom edge, `rounded-[5px]`. Replaces the old version whose `bg-bg-inset`/`text-fg-3`
+  classes resolved to no token.
+- **`FeaturePatch`** sticker edge is the fixed `--patch-border` token (`#FFFDF8`, `border-patch-border`)
+  — the same die-cut cream as the sticker pack, not the `--cream` text colour.
+- **Page titles** use the `.t-page-title` composite (Archivo 24px / 800 / -0.02em) — `PageHeader` and
+  every page `h1`. `.t-title` (20px / 700) stays for dialog, card and section titles.
+

@@ -152,7 +152,7 @@ export function ProjectVersionSwitcher() {
           )}
           <DropdownMenuItem onClick={() => closeMenuThen(() => setPanelOpen(true))}>
             <Sparkles className="h-3.5 w-3.5" /> Manage versions…
-            <span className="ml-auto text-caption text-faint">V</span>
+            <span className="ml-auto text-caption text-muted">V</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

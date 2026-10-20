@@ -137,7 +137,7 @@ function EditMaintenanceContent({
               <Button
                 variant="line"
                 size="sm"
-                className="text-t-out hover:border-red hover:bg-red hover:text-white"
+                className="text-t-out hover:border-red hover:bg-primary hover:text-white"
                 disabled={deleteMutation.isPending}
                 onClick={() => setDeleteOpen(true)}
               >

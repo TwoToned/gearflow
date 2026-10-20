@@ -180,7 +180,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     <div className="space-y-6">
       {/* Dynamic header — espresso org monogram (DESIGN.md nav §) + active page + org name */}
       <div className="flex items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-[var(--r)] bg-paper-2 text-base font-bold text-red shadow-[var(--sh-card)]">
+        <div className="flex size-10 items-center justify-center rounded-[var(--r)] bg-paper-2 text-base font-bold text-red-text shadow-[var(--sh-card)]">
           {orgInitial}
         </div>
         <div className="min-w-0">
@@ -203,7 +203,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           <SelectContent>
             {visibleSections.map((section) => (
               <SelectGroup key={section.label}>
-                <SelectLabel className="t-overline text-faint">{section.label}</SelectLabel>
+                <SelectLabel className="t-overline text-muted">{section.label}</SelectLabel>
                 {section.items.map((item) => (
                   <SelectItem key={item.href} value={item.href}>
                     <span className="flex items-center gap-2">
@@ -224,7 +224,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           <div className="space-y-5">
             {visibleSections.map((section) => (
               <div key={section.label} className="space-y-1">
-                <div className="t-overline px-2.5 text-faint">{section.label}</div>
+                <div className="t-overline px-2.5 text-muted">{section.label}</div>
                 <div className="flex flex-col gap-0.5">
                   {section.items.map((item) => {
                     const isActive = activeHref === item.href;
@@ -237,7 +237,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                           "flex items-center gap-2.5 rounded-[var(--r)] px-2.5 py-2 text-[14px] font-medium transition-colors",
                           FOCUS,
                           isActive
-                            ? "bg-red-soft text-red shadow-[var(--sh-card)]"
+                            ? "bg-red-soft text-red-text shadow-[var(--sh-card)]"
                             : "text-ink-2 hover:bg-elev hover:text-ink",
                         )}
                       >

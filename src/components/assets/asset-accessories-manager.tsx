@@ -151,7 +151,7 @@ export function AssetAccessoriesManager({
         <ul className="space-y-1.5">
           {childAssets.map((c) => (
             <li key={c.id} className="flex items-center gap-2 text-ui-text">
-              <span className="text-faint select-none">└─</span>
+              <span className="text-muted select-none">└─</span>
               <span className="t-mono text-ink">{c.assetTag}</span>
               <span className="text-muted">{c.model?.name ?? ""}</span>
               <span className="ml-auto text-badge text-muted">accessory</span>
@@ -162,7 +162,7 @@ export function AssetAccessoriesManager({
           ))}
           {childBulkItems.map((c) => (
             <li key={c.id} className="flex items-center gap-2 text-ui-text">
-              <span className="text-faint select-none">└─</span>
+              <span className="text-muted select-none">└─</span>
               <span className="font-medium text-ink"><span className="t-data tabular-nums">{c.quantity}×</span> {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
               <span className="text-badge text-muted">
                 {c.allocationMode === "DEDICATED" ? "Dedicated" : "Ships-with"}
@@ -175,7 +175,7 @@ export function AssetAccessoriesManager({
           ))}
           {visibleInherited.map((c) => (
             <li key={`inh-${c.id}`} className="flex items-center gap-2 text-ui-text">
-              <span className="text-faint select-none">└─</span>
+              <span className="text-muted select-none">└─</span>
               <span className="font-medium text-ink"><span className="t-data tabular-nums">{c.quantity}×</span> {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
               <span className="text-badge text-muted">From model</span>
               <span className="ml-auto text-badge text-muted">accessory</span>

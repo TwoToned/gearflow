@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn, organization, authClient } from "@/lib/auth-client";
@@ -103,6 +103,14 @@ function LoginForm() {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [regOpen, setRegOpen] = useState(false);
   const [step, setStep] = useState<"email" | "password">(noSso ? "password" : "email");
+  const discovery = useRef(0);
+  const discoveryContext = searchParams.toString();
+  useEffect(() => {
+    discovery.current++;
+    setCheckingSSO(false);
+    if (noSso) setStep("password");
+    return () => { discovery.current++; };
+  }, [noSso, discoveryContext]);
   const [checkingSSO, setCheckingSSO] = useState(false);
   const [orgName, setOrgName] = useState<string | null>(null);
 
@@ -128,9 +136,11 @@ function LoginForm() {
       return;
     }
 
+    const request = ++discovery.current;
     setCheckingSSO(true);
     try {
       const matchingProvider = await resolveSSOProviderForEmail(email);
+      if (request !== discovery.current) return;
       if (matchingProvider) {
         await authClient.signIn.sso({
           providerId: matchingProvider.providerId,
@@ -143,9 +153,10 @@ function LoginForm() {
       // No SSO match (or ambiguous across orgs) — show password form
       setStep("password");
     } catch {
+      if (request !== discovery.current) return;
       setStep("password");
     } finally {
-      setCheckingSSO(false);
+      if (request === discovery.current) setCheckingSSO(false);
     }
   };
 
@@ -222,7 +233,7 @@ function LoginForm() {
             normal login path, just an escape hatch when SSO itself is broken. */}
         {step === "email" && !noSso && (
           <p className="text-center text-xs text-muted">
-            <Link href={noSsoHref(callbackUrl)} className="hover:text-ink hover:underline">
+            <Link href={noSsoHref(callbackUrl)} className="inline-flex min-h-11 items-center rounded px-2 hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-red">
               Trouble with SSO? Sign in with a password instead
             </Link>
           </p>
@@ -234,7 +245,7 @@ function LoginForm() {
             <button
               type="button"
               onClick={() => setStep("email")}
-              className="mb-4 flex items-center gap-1 text-sm text-muted hover:text-ink transition-colors"
+              className="mb-4 flex min-h-11 min-w-11 items-center gap-1 text-sm text-muted hover:text-ink transition-colors"
             >
               <ArrowLeft className="h-3 w-3" />
               Back

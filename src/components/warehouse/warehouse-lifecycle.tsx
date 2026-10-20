@@ -36,7 +36,7 @@ const STAGE_COLOR: Record<
   // prepped — packed and staged
   prepped: { ring: "ring-blue", fill: "bg-blue-soft", text: "text-blue", dot: "bg-blue" },
   // deployed — LIVE / in use on site (DESIGN: red = in-use)
-  deployed: { ring: "ring-red", fill: "bg-red-soft", text: "text-red", dot: "bg-red" },
+  deployed: { ring: "ring-red", fill: "bg-red-soft", text: "text-red-text", dot: "bg-red" },
   // returned — physically back, awaiting de-prep checks
   returned: { ring: "ring-warn", fill: "bg-warn-soft", text: "text-warn", dot: "bg-warn" },
   // deprepped — checked and back in inventory (available again)
@@ -110,7 +110,7 @@ export function WarehouseLifecycle({
                     "flex size-10 shrink-0 items-center justify-center rounded-full text-ui-text font-bold tabular-nums transition-colors",
                     populated
                       ? cn(c.fill, c.text, "ring-2", c.ring)
-                      : "bg-card text-faint ring-1 ring-line",
+                      : "bg-card text-muted ring-1 ring-line",
                     isActive && populated && "ring-2",
                   )}
                   aria-current={isActive ? "step" : undefined}
@@ -126,7 +126,7 @@ export function WarehouseLifecycle({
               <span
                 className={cn(
                   "whitespace-nowrap text-center text-caption",
-                  isActive ? "font-semibold text-ink" : populated ? "text-ink-2" : "text-faint",
+                  isActive ? "font-semibold text-ink" : populated ? "text-ink-2" : "text-muted",
                 )}
               >
                 {s.label}

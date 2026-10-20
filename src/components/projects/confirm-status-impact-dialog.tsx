@@ -56,7 +56,7 @@ export function ConfirmStatusImpactDialog({
                   project {impact.unconfirmedCrewCount === 1 ? "isn't" : "aren't"} confirmed yet.
                 </p>
               )}
-              <p className="t-micro text-faint">This is a heads-up, not a block — you can still confirm.</p>
+              <p className="t-micro text-muted">This is a heads-up, not a block — you can still confirm.</p>
             </div>
           </DialogDescription>
         </DialogHeader>

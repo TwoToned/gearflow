@@ -95,7 +95,7 @@ export function TasksPanel({ projectId }: { projectId: string }) {
       </form>
 
       {tasks.length === 0 ? (
-        <p className="t-micro text-faint">No tasks yet.</p>
+        <p className="t-micro text-muted">No tasks yet.</p>
       ) : (
         <>
           <TaskList tasks={open} onToggle={(t) => run(() => writes.update(t.id, { status: "DONE" }), "Could not update task")} onEdit={setEditing} />
@@ -138,8 +138,8 @@ function TaskList({ tasks, onToggle, onEdit }: { tasks: Task[]; onToggle: (t: Ta
           <li key={t.id} className="flex items-center gap-3 rounded-[var(--r)] border border-line p-3">
             <Checkbox checked={done} onCheckedChange={() => onToggle(t)} aria-label={done ? `Reopen ${t.title}` : `Complete ${t.title}`} />
             <div className="min-w-0 flex-1">
-              <p className={cn("truncate text-[14px] font-medium", done ? "text-faint line-through" : "text-ink")}>{t.title}</p>
-              <p className="t-micro text-faint">
+              <p className={cn("truncate text-[14px] font-medium", done ? "text-muted line-through" : "text-ink")}>{t.title}</p>
+              <p className="t-micro text-muted">
                 {TASK_STATUS_LABELS[t.status]}
                 {t.priority === "HIGH" ? " · High priority" : ""}
                 {who ? ` · ${who}` : ""}

@@ -217,7 +217,7 @@ function AllocationEditor({
                 <td className="px-3 py-2 text-right text-table-cell tabular-nums text-muted">
                   {r.replacementCost != null ? formatCurrency(r.replacementCost) : "—"}
                 </td>
-                <td className="px-3 py-2 text-right text-table-cell tabular-nums text-faint">
+                <td className="px-3 py-2 text-right text-table-cell tabular-nums text-muted">
                   {pct(r.suggestedPercent)}
                 </td>
                 <td className="px-3 py-2">

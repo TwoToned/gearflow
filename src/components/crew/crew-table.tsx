@@ -44,7 +44,7 @@ const columns: ColumnDef<AnyCrewMember>[] = [
           <div className="min-w-0">
             <Link
               href={`/crew/${row.id}`}
-              className={`block truncate font-medium text-table-cell text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+              className={`block truncate font-medium text-table-cell text-ink hover:text-red-text rounded-[var(--r)] ${focusRing}`}
               onClick={(e) => e.stopPropagation()}
             >
               {displayName}

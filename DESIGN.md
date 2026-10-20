@@ -1,3 +1,27 @@
+> **Authority / adoption note (2026-10-20).** This is Flow's historical product
+> composition guide, subordinate to RVLT-Labs/rvlt-designlanguage v1.3.0 at
+> `f1a1825a0e07d9df56b3133151299dcd25216f9c`.
+> Read [canonical authority](https://github.com/RVLT-Labs/rvlt-designlanguage/blob/f1a1825a0e07d9df56b3133151299dcd25216f9c/docs/AUTHORITY.md)
+> and authority.json first: normative rules, explicit §19 product contracts,
+> tokens/contrast, registry public APIs, verified examples, marketing expression.
+> The pinned DESIGN.md and tokens/contrast/registry win over historical recipes
+> below; marketing never overrides app accessibility or component behavior.
+> Semantic adoption: action-red fills under white labels; red-text for red words;
+> input/control-line boundaries; muted readable secondary text; reading copy 16px;
+> real touch targets 44px. Core red remains marks, focus and indicators. Existing
+> loaded brand fonts are verified (F07 rejected); do not replace them.
+>
+> **F19 unresolved upstream contradiction:** §19.1 explicitly permits Flow active
+> sidebar hue text on hue-soft, while §3.8 and AUTHORITY's pending-adoption list
+> require ink labels. Preserve the valid explicit Flow contract pending canonical
+> reconciliation; this is not an established product defect. Keep module hues,
+> pill buttons, stage-light mark and red-active mobile navigation.
+>
+> Offline intake is device-local and scoped to account/organisation/project and
+> operation. Pending is not committed success. Permission checks, fulfillment and
+> durable replay receipts commit atomically on the server. The public offline
+> shell never reads protected data or scan storage.
+
 # Design System — RVLT Flow
 
 ## Product Context
@@ -627,10 +651,10 @@ Featured pricing tier: `bg-cream text-cream-ink` card, elevated above flanking d
 Bottom of page: `bg-red` full-width rounded section, white heading text, cream `Button` CTA, GAFF sticker badge decorative element.
 
 ### GAFF brand mark
-The GAFF tape roll icon (black-and-white round sticker) is a production-industry in-joke used as a brand mark in marketing contexts. Different from the FlowMascot (the robot), which is the app-context empty-state icon. Both are decorative and never used in functional alerts.
+The supplied unchanged gaff-tape-sticker.svg is a production-industry in-joke used as a brand mark in marketing contexts. Different from the FlowMascot (the robot), which is the app-context empty-state icon. Both are decorative and never used in functional alerts.
 
 ### Auth pages
-Login / register / onboarding follow marketing aesthetics, not app UI rules:
+Login / register / onboarding use expressive decorative chrome; app controls, typography and accessibility still follow the pinned normative rules:
 - Split-panel layout: brand side (dark, BC Alphapipe headline) + form side
 - NOT a floating card centered on espresso — that reads as generic SaaS
 

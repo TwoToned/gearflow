@@ -1,7 +1,8 @@
 "use client";
+import { ReviewScanError } from "@/lib/scan-intake";
 // use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
-import { use, useState, useRef, useCallback, useMemo, Suspense } from "react";
+import { use, useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -150,7 +151,9 @@ import { api as convexApi } from "../../../../../convex/_generated/api";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useActiveOrganization } from "@/lib/auth-client";
+import { useDurableScanIntake } from "@/hooks/use-durable-scan-intake";
+import { ScanIntakeStatus } from "@/components/warehouse/scan-intake-status";
+import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { useCurrentRole } from "@/lib/use-permissions";
 import { isInternalStockLine } from "@/lib/warehouse-subhire-filter";
 
@@ -241,6 +244,7 @@ function WarehouseProjectPage({
   const [pickListOpen, setPickListOpen] = useState(false);
   const isMobile = useIsMobile();
   const { data: activeOrg } = useActiveOrganization();
+  const { data: scanSession } = useSession();
   const orgId = activeOrg?.id;
   const wConvex = useConvex();
   const { isAuthenticated: wAuthed } = useConvexAuth();
@@ -347,6 +351,7 @@ function WarehouseProjectPage({
     verifiedCount: number;
     totalCount: number;
     verifiedIds: string[];
+    durableOperationId?: string;
   };
   const [kitConfirm, setKitConfirm] = useState<KitConfirmState | null>(null);
   // Further unverified kits from the same selection, and kits held back while
@@ -360,7 +365,8 @@ function WarehouseProjectPage({
   // parent's DEFAULT accessories aren't packed, and asks "why" for missing
   // OPTIONALs. `pendingCheckOutItems` is the batch waiting on this dialog.
   const [accessoryGate, setAccessoryGate] = useState<{
-    pendingCheckOutItems: Array<{ lineItemId: string; assetId?: string; quantity?: number }>;
+    durableOperationId?: string;
+    pendingCheckOutItems: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>;
     missingDefaults: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }>;
     missingOptionals: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }>;
   } | null>(null);
@@ -373,6 +379,7 @@ function WarehouseProjectPage({
   // PACKED accessories are only partially click-to-verified offers a choice
   // instead of silently cascading everything.
   const [accessoryVerifyConfirm, setAccessoryVerifyConfirm] = useState<{
+    durableOperationId?: string;
     parentLineItemId: string;
     parentAssetId?: string;
     parentName: string;
@@ -1254,299 +1261,84 @@ function WarehouseProjectPage({
     },
   });
 
-  const deployScanMutation = useServerMutation({
-    mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
-    onSuccess: (result, scannedTag) => {
-      // Deploy scan: find matching prepped item and deploy it
-      if (result.found && result.type === "kit") {
-        const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
-        const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
-        if (kitLi && kitLi.prepStatus === "PACKED") {
-          kitCheckOutMutation
-            .mutateAsync(kitResult.kitId)
-            .then((res) => {
-              scanFeedback.play("success", {
-                label: kitResult.assetName,
-                outcome: "Deployed kit",
-                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
-              });
-              toast.success(`Deployed kit: ${kitResult.assetName}`);
-            })
-            .catch((e) =>
-              scanFeedback.play("error", {
-                label: kitResult.assetName,
-                outcome: e instanceof Error ? e.message : "Failed to deploy kit",
-              }),
-            );
-        } else if (kitResult.reason === "already_checked_out") {
-          scanFeedback.play("error", { label: kitResult.assetName, outcome: "Kit already deployed" });
-          toast.error("Kit already deployed");
-        } else {
-          scanFeedback.play("error", { label: kitResult.assetName, outcome: "Kit is not prepped yet" });
-          toast.error("Kit is not prepped yet — prep it first in Pick/Prep");
-        }
-        setDeployScanValue("");
-        deployScanInputRef.current?.focus();
-        return;
-      }
-
-      if (result.found && result.type === "kit_member") {
-        const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetName: string };
-        scanFeedback.play("error", { label: memberResult.assetName, outcome: "Scan the kit barcode to deploy" });
-        toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} — scan the kit barcode to deploy`);
-        setDeployScanValue("");
-        deployScanInputRef.current?.focus();
-        return;
-      }
-
-      if (result.found && result.type === "asset_child") {
-        const r = result as { assetName: string; parentAssetTag: string | null };
-        // Disambiguation needed — scanned an accessory, not its parent.
-        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent to deploy" });
-        toast.error(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to deploy; it moves with the parent.`);
-        setDeployScanValue("");
-        deployScanInputRef.current?.focus();
-        return;
-      }
-
-      if (result.found && result.lineItemId) {
-        const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
-        const scanItems = [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }];
-        if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT" && openAccessoryGateIfNeeded(scanItems)) {
-          // Same accessory gate as the Deploy button — a scan must not bypass it.
-          scanFeedback.play("exception", { label: result.assetName || "Item", outcome: "Check accessories to deploy" });
-        } else if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
-          checkOutMutation
-            .mutateAsync({ items: scanItems })
-            .then((res) => {
-              scanFeedback.play("success", {
-                label: result.assetName || "Item",
-                outcome: "Deployed",
-                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
-              });
-              toast.success(`Deployed: ${result.assetName || "Item"}`);
-            })
-            .catch((e) =>
-              scanFeedback.play("error", {
-                label: result.assetName || "Item",
-                outcome: e instanceof Error ? e.message : "Failed to deploy",
-              }),
-            );
-        } else if (matchedLi?.status === "CHECKED_OUT") {
-          scanFeedback.play("error", { label: result.assetName || "Item", outcome: "Item already deployed" });
-          toast.error("Item already deployed");
-        } else {
-          scanFeedback.play("error", { label: result.assetName || "Item", outcome: "Item is not prepped yet" });
-          toast.error("Item is not prepped yet — prep it first in Pick/Prep");
-        }
-      } else if (result.found && !result.lineItemId) {
-        const outcome = result.reason === "not_on_project" ? "Asset not on this project" : "Cannot deploy this item";
-        scanFeedback.play("error", { label: scannedTag, outcome });
-        toast.error(outcome);
-      } else {
-        // Unknown tag.
-        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
-        toast.error("Asset not found");
-      }
-      setDeployScanValue("");
-      deployScanInputRef.current?.focus();
+  const durableScans = useDurableScanIntake(
+    wAuthed && orgId && scanSession?.user.id ? { orgId, userId: scanSession.user.id, projectId, expectedVersionId: project?.liveVersionId || "" } : null,
+    async operation => {
+      if (!orgId || !scanSession?.user.id) throw new Error("Sign in again before replaying scans");
+      return wConvex.query(convexApi.scanIntake.verifyContext, { orgId, projectId, expectedUserId: scanSession.user.id, operation });
     },
-    onError: (e, scannedTag) => {
-      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
-      showError(e);
-      setDeployScanValue("");
-      deployScanInputRef.current?.focus();
-    },
-  });
-
-  const returnScanMutation = useServerMutation({
-    mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkin"),
-    onSuccess: (result, scannedTag) => {
-      // Handle kit return scans
-      if (result.found && result.type === "kit") {
-        const kitResult = result as { kitId: string; assetName: string; lineItemId: string | null; reason: string | null };
-        if (kitResult.lineItemId && !kitResult.reason) {
-          // Check verification status before returning
-          const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
-          const children = kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [];
-          const allIds = collectAllVerifiableIds(children, "return");
-          const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
-          if (allIds.length > 0 && verifiedIds.length < allIds.length) {
-            setKitConfirm({
-              action: "return",
-              kitName: kitResult.assetName,
-              kitId: kitResult.kitId,
-              parentLineItemId: kitLi?.id || kitResult.lineItemId || "",
-              verifiedCount: verifiedIds.length,
-              totalCount: allIds.length,
-              verifiedIds,
-            });
-            setReturnScanValue("");
-            returnScanInputRef.current?.focus();
-          } else {
-            // Try to start kit check flow; if no checks needed, return directly
-            const started = kitLi ? startKitCheckFlow(kitResult.kitId, kitLi, "RETURN", returnCondition as "GOOD" | "DAMAGED" | "MISSING") : false;
-            if (!started) {
-              kitCheckInMutation
-                .mutateAsync({ kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" })
-                .then((res) => {
-                  scanFeedback.play("success", {
-                    label: kitResult.assetName,
-                    outcome: "Kit returned",
-                    undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
-                  });
-                  toast.success(`Kit returned: ${kitResult.assetName}`);
-                  setReturnScanValue("");
-                  setReturnNotes("");
-                  returnScanInputRef.current?.focus();
-                })
-                .catch((e) =>
-                  scanFeedback.play("error", {
-                    label: kitResult.assetName,
-                    outcome: e instanceof Error ? e.message : "Failed to return kit",
-                  }),
-                );
-            }
+    async (entry, assertCurrent, save) => {
+      if (!entry.expectedVersionId) throw new Error("Saved scan has no project version. Review before recapturing.");
+      if (!entry.effect) {
+        // Raw scan, condition and notes are already durable BEFORE this lookup.
+        const result = await lookupAssetForScan(entry.projectId, entry.raw.trim(), entry.operation === "deploy" ? "checkout" : "checkin");
+        assertCurrent();
+        if (!result.found) throw new Error("Asset not found. Saved for review.");
+        if (result.type === "kit_member") {
+          const member = result as {kitId:string|null;assetId:string|null;assetName:string};
+          const kitLine = lineItems.find(l => l.kitId === member.kitId && !l.isKitChild);
+          if (entry.operation === "return" && kitLine && member.assetId) {
+            const children = (kitLine.childLineItems || []) as LineItem[];
+            const child = children.find(c => c.assetId === member.assetId) || children.flatMap(c => (c.childLineItems || []) as LineItem[]).find(c => c.assetId === member.assetId);
+            if (child) setVerifiedKitItems(prev => new Set(prev).add(child.id));
+            setExpandedGroups(prev => new Set(prev).add(`kit-in-${kitLine.id}`));
+            throw new Error("Verified locally — not returned. Scan the kit barcode to return it.");
           }
-        } else {
-          const messages: Record<string, string> = {
-            not_on_project: "Kit not assigned to this project",
-            not_checked_out: "Kit is not deployed",
-          };
-          const outcome = messages[kitResult.reason as string] || "Cannot return this kit";
-          scanFeedback.play("error", { label: kitResult.assetName, outcome });
-          toast.error(outcome);
-          setReturnScanValue("");
-          returnScanInputRef.current?.focus();
+          throw new Error("Kit member: scan the kit barcode. Saved for review.");
         }
-        return;
-      }
+        if (result.type === "asset_child") throw new Error("Accessory: scan its parent barcode. Saved for review.");
+        if (!result.lineItemId || result.reason) throw new Error(result.reason || "Item is not actionable on this project");
+        const matched = lineItems.find(l => l.id === result.lineItemId);
+        if (!matched) throw new Error("Project data unavailable. Reconnect and review this saved scan.");
+        if (entry.operation === "deploy") {
+          if (matched.prepStatus !== "PACKED" || matched.status === "CHECKED_OUT") throw new Error("Item is not prepped or is already deployed");
 
-      // Handle kit member scans — verify on return too
-      if (result.found && result.type === "kit_member") {
-        const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetId: string | null; assetName: string };
-        const kitOnProject = memberResult.kitId && lineItems.find((li) => li.kitId === memberResult.kitId && !li.isKitChild);
-        if (kitOnProject && memberResult.assetId) {
-          const children = (kitOnProject.childLineItems || []) as LineItem[];
-          const childLi = children.find((c) => c.assetId === memberResult.assetId)
-            || children.flatMap((c) => (c.childLineItems || []) as LineItem[]).find((c) => c.assetId === memberResult.assetId);
-          if (childLi) {
-            setVerifiedKitItems((prev) => {
-              const next = new Set(prev);
-              next.add(childLi.id);
-              return next;
-            });
-          }
-          const kitGroupKey = `kit-in-${kitOnProject.id}`;
-          setExpandedGroups((prev) => {
-            const next = new Set(prev);
-            next.add(kitGroupKey);
-            return next;
-          });
-          scanFeedback.play("success", { label: memberResult.assetName, outcome: "Verified" });
-          toast.success(`Verified: ${memberResult.assetName}`);
-        } else {
-          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this project" });
-          toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
-        setReturnScanValue("");
-        returnScanInputRef.current?.focus();
-        return;
+        if (result.type === "kit") {
+          const kit = result as { kitId:string };
+          const ids = collectAllVerifiableIds((matched.childLineItems || []) as LineItem[], "return");
+          entry.effect = {kitId:kit.kitId, lineItemId:matched.id, ...(entry.operation === "return" && ids.every(id => verifiedKitItems.has(id)) ? {kitDecision:"all" as const} : {})};
+        } else entry.effect = {lineItemId:result.lineItemId,assetId:result.assetId || undefined};
+        // Persist resolved intent before sending, so acknowledgement-loss replay
+        // uses the SAME operation and payload even if a later lookup would differ.
+        save(entry);
       }
-
-      if (result.found && result.type === "asset_child") {
-        const r = result as { assetName: string; parentAssetTag: string | null };
-        // Disambiguation needed — scanned an accessory, not its parent.
-        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent to return" });
-        toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to return; it comes back with the parent.`);
-        setReturnScanValue("");
-        returnScanInputRef.current?.focus();
-        return;
+      if (entry.operation === "deploy" && !entry.effect.kitId && !entry.effect.accessoryDecision &&
+          openAccessoryGateIfNeeded([{lineItemId:entry.effect.lineItemId!,assetId:entry.effect.assetId}],entry.id))
+        throw new ReviewScanError("Review accessories before deploying. Captured scan is saved.");
+      if (entry.operation === "return" && entry.effect.kitId && !entry.effect.kitDecision) {
+        const matched = lineItems.find(l => l.id === entry.effect!.lineItemId);
+        if (!matched) throw new Error("Kit version data unavailable. Return to its captured project version.");
+        const ids = collectAllVerifiableIds((matched.childLineItems || []) as LineItem[], "return");
+        const verifiedIds = ids.filter(id => verifiedKitItems.has(id));
+        setKitConfirm({action:"return",kitName:matched.kit?.name || "Kit",kitId:entry.effect.kitId,parentLineItemId:matched.id,verifiedCount:verifiedIds.length,totalCount:ids.length,verifiedIds,durableOperationId:entry.id});
+        throw new ReviewScanError("Verify kit contents or select Return All. Captured condition and notes are saved.");
       }
-
-      if (result.found && result.lineItemId) {
-        // A return-scan (truck-in) never opens a check form — the return check runs
-        // only at de-prep (shelf-in). transitionNeedsCheck("RETURN", …) returns false
-        // here, so this collapses to the direct check-in below.
-        const matchedLi = lineItems.find((l) => l.id === result.lineItemId);
-        const needsReturnCheck = transitionNeedsCheck("RETURN", {
-          hasCheckItems: lineHasModelChecks(matchedLi),
-          fromDeprep: false,
-        });
-
-        if (needsReturnCheck && matchedLi?.modelId) {
-          // Unpack item first, then open check form
-          unpackItem(projectId, result.lineItemId).catch(() => {});
-          setCheckFormData({
-            context: "RETURN",
-            modelId: matchedLi.modelId,
-            assetTag: matchedLi.asset?.assetTag || matchedLi.bulkAsset?.assetTag || "",
-            assetName: result.assetName || modelDisplayName(matchedLi),
-            lineItemId: result.lineItemId,
-            assetId: result.assetId || matchedLi.assetId || "",
-            bulkAssetId: matchedLi.bulkAssetId || undefined,
-          });
-          setCheckFormOpen(true);
-          setReturnScanValue("");
-          returnScanInputRef.current?.focus();
-        } else {
-          // No check items — direct checkin (existing behavior)
-          checkInMutation
-            .mutateAsync({
-              items: [{
-                lineItemId: result.lineItemId,
-                assetId: result.assetId ?? undefined,
-                returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING",
-                notes: returnNotes || undefined,
-              }],
-            })
-            .then((res) => {
-              scanFeedback.play("success", {
-                label: result.assetName || "Asset",
-                outcome: "Returned",
-                undo: res.scanUndo ? { label: "Undo", run: res.scanUndo } : undefined,
-              });
-              toast.success(`Returned: ${result.assetName || "Asset"}`);
-              setReturnScanValue("");
-              setReturnNotes("");
-              returnScanInputRef.current?.focus();
-            })
-            .catch((e) =>
-              scanFeedback.play("error", {
-                label: result.assetName || "Asset",
-                outcome: e instanceof Error ? e.message : "Failed to return",
-              }),
-            );
-        }
-      } else if (result.found && !result.lineItemId) {
-        const messages: Record<string, string> = {
-          not_checked_out: "Asset is not deployed on this project",
-          not_on_project: "Asset not assigned to this project",
-          already_returned: "All units already returned",
-          already_checked_out: "Already deployed",
-        };
-        // "already_returned" is resolved but needs attention (nothing left to
-        // return), not a hard failure — every other reason here blocks the scan.
-        const outcome = messages[result.reason as string] || "Cannot return this asset";
-        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error", { label: scannedTag, outcome });
-        toast.error(outcome);
-        setReturnScanValue("");
-        returnScanInputRef.current?.focus();
-      } else {
-        // Unknown tag.
-        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
-        toast.error("Asset not found");
-        setReturnScanValue("");
-        returnScanInputRef.current?.focus();
-      }
+      assertCurrent();
+      const ack = await wConvex.mutation(convexApi.scanIntake.commit, {
+        orgId:entry.orgId,projectId:entry.projectId,expectedUserId:entry.userId,
+        expectedVersionId:entry.expectedVersionId,operationId:entry.id,operation:entry.operation,raw:entry.raw,
+        condition:entry.condition,notes:entry.notes,effect:entry.effect,
+      });
+      if (!ack.confirmed) throw new Error("Server acknowledgement missing");
+      try {
+        assertCurrent();
+        scanFeedback.play("success",{label:entry.raw,outcome:entry.operation === "deploy" ? "Deployed — confirmed" : "Returned — confirmed"});
+      } catch { /* Server acknowledgement remains true even if the displayed scope or feedback changes. */ }
     },
-    onError: (e, scannedTag) => {
-      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
-      showError(e);
-      setReturnScanValue("");
-      returnScanInputRef.current?.focus();
-    },
-  });
+  );
+  useEffect(() => {
+    setKitConfirm(null);
+    setAccessoryGate(null);
+    setAccessoryVerifyConfirm(null);
+    kitConfirmBacklogRef.current = [];
+  }, [orgId, projectId, scanSession?.user.id, project?.liveVersionId]);
+  const captureDeployScan = (raw:string) => {
+    if (durableScans.capture("deploy",raw,"GOOD","")) setDeployScanValue("");
+  };
+  const captureReturnScan = (raw:string) => {
+    if (durableScans.capture("return",raw,returnCondition as "GOOD"|"DAMAGED"|"MISSING",returnNotes)) setReturnScanValue("");
+  };
 
   const handleScanKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1572,20 +1364,20 @@ function WarehouseProjectPage({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && deployScanValue.trim()) {
         e.preventDefault();
-        deployScanMutation.mutate(deployScanValue.trim());
+        captureDeployScan(deployScanValue);
       }
     },
-    [deployScanValue, deployScanMutation]
+    [deployScanValue, captureDeployScan]
   );
 
   const handleReturnScanKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && returnScanValue.trim()) {
         e.preventDefault();
-        returnScanMutation.mutate(returnScanValue.trim());
+        captureReturnScan(returnScanValue);
       }
     },
-    [returnScanValue, returnScanMutation]
+    [returnScanValue, captureReturnScan]
   );
 
   // --- Selection helpers ---
@@ -2225,13 +2017,14 @@ function WarehouseProjectPage({
   // `items`, not just the serialized ones.
   function openAccessoryGateIfNeeded(
     items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>,
+    durableOperationId?: string,
   ): boolean {
     const lineIds = items.map((i) => i.lineItemId);
     const { missingDefaults, missingOptionals } = computeMissingAccessories(lineIds);
     if (missingDefaults.length > 0 || missingOptionals.length > 0) {
       setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
       setOptionalSkipReasons({});
-      setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
+      setAccessoryGate({ durableOperationId, pendingCheckOutItems: items, missingDefaults, missingOptionals });
       return true;
     }
 
@@ -2240,6 +2033,7 @@ function WarehouseProjectPage({
       const rest = items.filter((i) => i.lineItemId !== partial.li.id);
       if (rest.length > 0) runCheckOut(rest);
       setAccessoryVerifyConfirm({
+        durableOperationId,
         parentLineItemId: partial.li.id,
         parentAssetId: partial.li.assetId || undefined,
         parentName: modelDisplayName(partial.li),
@@ -2324,7 +2118,7 @@ function WarehouseProjectPage({
     ];
 
     const parentName = missingDefaults[0]?.parentName ?? missingOptionals[0]?.parentName ?? "line item";
-    try {
+    if (!accessoryGate.durableOperationId) try {
       await warehouseWrites.logAccessoryCheckoutOverride(projectId, parentName, skipped);
     } catch {
       // Never let the audit trail write block the actual deploy.
@@ -2349,7 +2143,10 @@ function WarehouseProjectPage({
     setAccessoryGate(null);
     setDefaultOverrideReason("");
     setOptionalSkipReasons({});
-    runCheckOut(narrowedItems);
+    if (accessoryGate.durableOperationId) {
+      const item = narrowedItems[0];
+      durableScans.review(accessoryGate.durableOperationId,{lineItemId:item.lineItemId,assetId:item.assetId,accessoryDecision:"override",includeAccessoryIds:item.includeAccessoryIds,skippedAccessories:skipped});
+    } else runCheckOut(narrowedItems);
   };
 
   // De-prep selected returned items: run return checks where the model has them,
@@ -2957,6 +2754,7 @@ function WarehouseProjectPage({
         </div>
       </FadeIn>
 
+      <ScanIntakeStatus entries={durableScans.entries} error={durableScans.error} unsaved={durableScans.unsaved} retry={durableScans.retry} />
       <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="pick-prep">
@@ -3048,8 +2846,8 @@ function WarehouseProjectPage({
           deployScanValue={deployScanValue}
           setDeployScanValue={setDeployScanValue}
           handleDeployScanKeyDown={handleDeployScanKeyDown}
-          deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
-          deployScanMutationIsPending={deployScanMutation.isPending}
+          deployScanMutationMutate={captureDeployScan}
+          deployScanMutationIsPending={durableScans.busy}
           scanHistoryEntries={scanFeedback.entries}
           selectedOut={selectedOut}
           setSelectedOut={setSelectedOut}
@@ -3084,8 +2882,8 @@ function WarehouseProjectPage({
           deployScanValue={deployScanValue}
           setDeployScanValue={setDeployScanValue}
           handleDeployScanKeyDown={handleDeployScanKeyDown}
-          deployScanMutationMutate={(v) => deployScanMutation.mutate(v)}
-          deployScanMutationIsPending={deployScanMutation.isPending}
+          deployScanMutationMutate={captureDeployScan}
+          deployScanMutationIsPending={durableScans.busy}
           scanHistoryEntries={scanFeedback.entries}
           selectedOut={selectedDeprep}
           setSelectedOut={setSelectedDeprep}
@@ -3121,8 +2919,8 @@ function WarehouseProjectPage({
           returnScanValue={returnScanValue}
           setReturnScanValue={setReturnScanValue}
           handleReturnScanKeyDown={handleReturnScanKeyDown}
-          returnScanMutationMutate={(v) => returnScanMutation.mutate(v)}
-          returnScanMutationIsPending={returnScanMutation.isPending}
+          returnScanMutationMutate={captureReturnScan}
+          returnScanMutationIsPending={durableScans.busy}
           scanHistoryEntries={scanFeedback.entries}
           returnCondition={returnCondition}
           setReturnCondition={setReturnCondition}
@@ -3246,6 +3044,10 @@ function WarehouseProjectPage({
                   variant="line"
                   size="sm"
                   onClick={() => {
+                    if (kitConfirm.durableOperationId) {
+                      if (durableScans.review(kitConfirm.durableOperationId,{kitId:kitConfirm.kitId,lineItemId:kitConfirm.parentLineItemId,kitDecision:"verified",verifiedLineItemIds:kitConfirm.verifiedIds})) closeKitConfirm();
+                      return;
+                    }
                     if (kitConfirm.action === "deploy") {
                       // Prep verified children — ONE batch call (was N round-trips).
                       prepItemsBatch(
@@ -3277,6 +3079,10 @@ function WarehouseProjectPage({
               <Button
                 size="sm"
                 onClick={() => {
+                  if (kitConfirm.durableOperationId) {
+                    if (durableScans.review(kitConfirm.durableOperationId,{kitId:kitConfirm.kitId,lineItemId:kitConfirm.parentLineItemId,kitDecision:"all"})) closeKitConfirm();
+                    return;
+                  }
                   const kitLi = lineItems.find((l) => l.kitId === kitConfirm.kitId && !l.isKitChild);
                   const rc = returnCondition as "GOOD" | "DAMAGED" | "MISSING";
                   const started = kitLi
@@ -3322,7 +3128,7 @@ function WarehouseProjectPage({
                   <ul className="text-ui-text text-muted list-disc pl-5 space-y-0.5">
                     {accessoryGate.missingDefaults.map((d) => (
                       <li key={d.accessoryLineItemId}>
-                        {d.accessoryName} <span className="text-faint">— {d.parentName}</span>
+                        {d.accessoryName} <span className="text-muted">— {d.parentName}</span>
                       </li>
                     ))}
                   </ul>
@@ -3348,7 +3154,7 @@ function WarehouseProjectPage({
                     {accessoryGate.missingOptionals.map((o) => (
                       <div key={o.accessoryLineItemId} className="rounded-[var(--r)] border border-line p-2 space-y-1.5">
                         <p className="text-ui-text text-ink">
-                          {o.accessoryName} <span className="text-faint">— {o.parentName}</span>
+                          {o.accessoryName} <span className="text-muted">— {o.parentName}</span>
                         </p>
                         <Select
                           value={optionalSkipReasons[o.accessoryLineItemId]?.preset ?? "Not needed for this job"}
@@ -3428,7 +3234,11 @@ function WarehouseProjectPage({
                 variant="line"
                 size="sm"
                 onClick={() => {
-                  runCheckOut([{
+                  if (accessoryVerifyConfirm.durableOperationId) durableScans.review(accessoryVerifyConfirm.durableOperationId,{
+                    lineItemId:accessoryVerifyConfirm.parentLineItemId,assetId:accessoryVerifyConfirm.parentAssetId,
+                    accessoryDecision:"verified",includeAccessoryIds:accessoryVerifyConfirm.verifiedAccessoryIds,
+                  });
+                  else runCheckOut([{
                     lineItemId: accessoryVerifyConfirm.parentLineItemId,
                     assetId: accessoryVerifyConfirm.parentAssetId,
                     includeAccessoryIds: accessoryVerifyConfirm.verifiedAccessoryIds,
@@ -3441,7 +3251,10 @@ function WarehouseProjectPage({
               <Button
                 size="sm"
                 onClick={() => {
-                  runCheckOut([{
+                  if (accessoryVerifyConfirm.durableOperationId) durableScans.review(accessoryVerifyConfirm.durableOperationId,{
+                    lineItemId:accessoryVerifyConfirm.parentLineItemId,assetId:accessoryVerifyConfirm.parentAssetId,accessoryDecision:"all",
+                  });
+                  else runCheckOut([{
                     lineItemId: accessoryVerifyConfirm.parentLineItemId,
                     assetId: accessoryVerifyConfirm.parentAssetId,
                   }]);

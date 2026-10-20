@@ -61,7 +61,7 @@ export const DashboardCard = forwardRef<HTMLDivElement, DashboardCardProps>(func
       <div className="flex items-center gap-1.5 border-b border-line px-3.5 py-2.5">
         {editMode && (
           <span
-            className="dashboard-drag-handle -ml-1 flex cursor-grab touch-none items-center rounded p-1 text-faint hover:text-muted active:cursor-grabbing"
+            className="dashboard-drag-handle -ml-1 flex cursor-grab touch-none items-center rounded p-1 text-muted hover:text-muted active:cursor-grabbing"
             aria-hidden
           >
             <GripVertical className="h-3.5 w-3.5" />
@@ -74,7 +74,7 @@ export const DashboardCard = forwardRef<HTMLDivElement, DashboardCardProps>(func
             aria-label={`Remove ${title}`}
             onClick={onRemove}
             className={cn(
-              "touch-target -m-1.5 flex items-center justify-center rounded-full p-1 text-faint hover:text-t-out",
+              "touch-target -m-1.5 flex items-center justify-center rounded-full p-1 text-muted hover:text-t-out",
               focusRing,
             )}
           >

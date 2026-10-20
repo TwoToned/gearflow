@@ -46147,6 +46147,120 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "scanIntake.commit",
+    "module": "scanIntake",
+    "fn": "commit",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "condition",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "effect",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "expectedUserId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "expectedVersionId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "operation",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "operationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "raw",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f290c133ff54ff06",
+    "returnsSha": "6a7b9d249ea542de",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Device-local physical scan replay is bound to the capturing browser user; service and agent tokens are rejected."
+  },
+  {
+    "operation": "scanIntake.verifyContext",
+    "module": "scanIntake",
+    "fn": "verifyContext",
+    "kind": "query",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "expectedUserId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "operation",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "22ebadd4a1a4e62d",
+    "returnsSha": "7cb541e84f226754",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Device-local physical scan replay is bound to the capturing browser user; service and agent tokens are rejected."
+  },
+  {
     "operation": "scanLookup.resolve",
     "module": "scanLookup",
     "fn": "resolve",
@@ -59468,6 +59582,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -59489,7 +59608,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "cf41e1f769652e0e",
+    "argsSha": "e9a7d3427af92d0c",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59644,6 +59763,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -59660,7 +59784,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "0f84ac2ebc9ccfdf",
+    "argsSha": "e19297a50674c75f",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -62938,10 +63062,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1223,
+  total: 1225,
   agentReachable: 597,
-  queries: 439,
-  mutations: 784,
+  queries: 440,
+  mutations: 785,
   agentReachableQueries: 305,
   agentReachableMutations: 292,
 } as const;

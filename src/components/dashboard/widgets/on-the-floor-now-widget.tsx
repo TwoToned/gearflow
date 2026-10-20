@@ -76,7 +76,7 @@ export function OnTheFloorNowWidget({ orgId }: { orgId: string | undefined }) {
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {liveJobs.length > 0 && <LivePulse />}
-          <span className="t-micro text-faint">what&rsquo;s out right now</span>
+          <span className="t-micro text-muted">what&rsquo;s out right now</span>
         </div>
         {liveJobs.length > 0 && <span className="text-[11px] text-muted">{liveJobs.length} live</span>}
       </div>

@@ -355,7 +355,7 @@ export function AppSidebar() {
 
         {moreItems.length > 0 && (
           <div className="mt-2 flex flex-col gap-0.5 border-t border-line pt-2">
-            <span className="t-overline px-2.5 pb-1 text-faint">More</span>
+            <span className="t-overline px-2.5 pb-1 text-muted">More</span>
             {moreItems.map((m) => {
               const active = isWithin(pathname, m.url);
               return (

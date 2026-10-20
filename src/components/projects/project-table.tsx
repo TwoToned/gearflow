@@ -335,7 +335,7 @@ function ProjectBlockingBadge({ count }: { count: number }) {
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger className="inline-flex items-center gap-0.5 rounded-full bg-red-soft px-1.5 py-0.5 text-[11px] font-medium text-red">
+        <TooltipTrigger className="inline-flex items-center gap-0.5 rounded-full bg-red-soft px-1.5 py-0.5 text-[11px] font-medium text-red-text">
           <ShieldAlert className="h-3 w-3" />
           {count}
         </TooltipTrigger>

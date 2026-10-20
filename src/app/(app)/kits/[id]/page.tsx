@@ -472,7 +472,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <Button
                   variant="line"
                   size="sm"
-                  className="border-red/40 text-red hover:bg-red hover:text-white hover:border-red"
+                  className="border-red/40 text-red-text hover:bg-primary hover:text-white hover:border-red"
                   onClick={() => setShowDeleteDialog(true)}
                 >
                   <Trash2 className="h-4 w-4" />

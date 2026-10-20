@@ -49,7 +49,7 @@ export function OverviewScheduleCard({ project }: { project: ProjectContextProje
           ]}
         />
         {rows.length === 0 && (
-          <p className="mt-2 text-caption text-faint">No project window set — same as the rental dates.</p>
+          <p className="mt-2 text-caption text-muted">No project window set — same as the rental dates.</p>
         )}
       </div>
     </Panel>
@@ -104,7 +104,7 @@ export function OverviewLocationCard({ project }: { project: ProjectContextProje
             )}
           </>
         ) : (
-          <p className="text-caption text-faint">No location set</p>
+          <p className="text-caption text-muted">No location set</p>
         )}
         <SiteContact project={project} />
       </div>
@@ -131,7 +131,7 @@ export function OverviewTeamCard({
             {project.client.name}
           </Link>
         ) : (
-          <p className="text-caption text-faint">No client</p>
+          <p className="text-caption text-muted">No client</p>
         )}
         {/* Drop the panel's own trailing divider — the card border already
             closes the section. */}

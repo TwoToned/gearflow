@@ -442,7 +442,7 @@ export function StepNumbering({
   return (
     <AuthShell accent="setup" annotation="every field already has a default.">
       <WizardRail step={4} total={TOTAL_STEPS} />
-      <p className="t-annotation text-[13px] text-red">Step 4 of {TOTAL_STEPS} · How you work</p>
+      <p className="t-annotation text-[13px] text-red-text">Step 4 of {TOTAL_STEPS} · How you work</p>
       <h1 className="t-page-title mt-1 text-ink">Numbering, terms, and where gear lives.</h1>
       <p className="mt-1 text-sm text-muted">
         The most skippable screen in the wizard — every field below already has a working default.
@@ -516,7 +516,7 @@ export function StepNumbering({
  *  purely to keep `StepNumbering`'s own complexity down. */
 function FormatErrorNotice({ message }: { message: string | null }) {
   if (!message) return null;
-  return <p className="text-xs text-red">{message}</p>;
+  return <p className="text-xs text-red-text">{message}</p>;
 }
 
 /** The asset tag prefix/digits fields — split out purely to keep the main

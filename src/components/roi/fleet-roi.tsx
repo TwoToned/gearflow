@@ -137,7 +137,7 @@ export function FleetRoi() {
                   · &ldquo;{r.groupTitle}&rdquo; ({r.gearLineCount} gear line
                   {r.gearLineCount === 1 ? "" : "s"})
                 </span>
-                <span className="text-faint">
+                <span className="text-muted">
                   {r.suggestedPrice != null
                     ? `suggested ${formatCurrency(r.suggestedPrice)}`
                     : "no suggested price"}
@@ -177,7 +177,7 @@ export function FleetRoi() {
             <SelectItem value="all">All time</SelectItem>
           </SelectContent>
         </Select>
-        <span className="ml-auto text-caption text-faint">
+        <span className="ml-auto text-caption text-muted">
           {data.projectsCounted} project{data.projectsCounted === 1 ? "" : "s"} counted
         </span>
       </div>
@@ -232,7 +232,7 @@ export function FleetRoi() {
                       {r.modelName}
                     </Link>
                     {r.manufacturer && (
-                      <span className="ml-2 text-caption text-faint">{r.manufacturer}</span>
+                      <span className="ml-2 text-caption text-muted">{r.manufacturer}</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right text-table-cell tabular-nums text-muted">
@@ -241,7 +241,7 @@ export function FleetRoi() {
                   <td
                     className={cn(
                       "px-3 py-2 text-right text-table-cell tabular-nums",
-                      r.revenue > 0 ? "text-ink" : "text-faint",
+                      r.revenue > 0 ? "text-ink" : "text-muted",
                     )}
                   >
                     {formatCurrency(r.revenue)}

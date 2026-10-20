@@ -489,7 +489,7 @@ export default function CrewMemberDetailPage({
       cell: (a) => (
         <Link
           href={`/projects/${a.project.id}`}
-          className={`font-medium text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+          className={`font-medium text-ink hover:text-red-text rounded-[var(--r)] ${focusRing}`}
         >
           <div className="flex items-center gap-2">
             <Briefcase className="h-3.5 w-3.5 text-muted" />
@@ -902,7 +902,7 @@ export default function CrewMemberDetailPage({
                         <button
                           type="button"
                           aria-label="Remove profile picture"
-                          className={`absolute -top-1 -right-1 rounded-full bg-red text-white p-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:p-2.5 pointer-coarse:opacity-100 ${focusRing}`}
+                          className={`absolute -top-1 -right-1 rounded-full bg-primary text-white p-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:p-2.5 pointer-coarse:opacity-100 ${focusRing}`}
                           onClick={() => removeAvatarMutation.mutate()}
                           title="Remove photo"
                         >
@@ -987,7 +987,7 @@ export default function CrewMemberDetailPage({
                   <CanDo resource="crew" action="delete">
                     <Button
                       variant="line"
-                      className="border-t-out/40 text-t-out hover:bg-red hover:text-white hover:border-red"
+                      className="border-t-out/40 text-t-out hover:bg-primary hover:text-white hover:border-red"
                       onClick={() => setDeleteCrewOpen(true)}
                     >
                       <Trash2 className="size-5" />
@@ -1144,7 +1144,7 @@ export default function CrewMemberDetailPage({
                                     <TableCell>
                                       <Link
                                         href={`/projects/${a.project.id}`}
-                                        className={`font-medium text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+                                        className={`font-medium text-ink hover:text-red-text rounded-[var(--r)] ${focusRing}`}
                                       >
                                         <div className="flex items-center gap-2">
                                           <Briefcase className="h-3.5 w-3.5 text-muted" />
@@ -1751,7 +1751,7 @@ export default function CrewMemberDetailPage({
                       {member.crewRole?.name ? (
                         <span className="font-medium text-ink">{member.crewRole.name}</span>
                       ) : (
-                        <span className="text-faint">{"\u2014"}</span>
+                        <span className="text-muted">{"\u2014"}</span>
                       )}
                     </div>
                     <div className="flex justify-between">
@@ -1759,7 +1759,7 @@ export default function CrewMemberDetailPage({
                       {member.department ? (
                         <span className="font-medium text-ink">{member.department}</span>
                       ) : (
-                        <span className="text-faint">{"\u2014"}</span>
+                        <span className="text-muted">{"\u2014"}</span>
                       )}
                     </div>
                     <div className="flex justify-between">
@@ -1800,7 +1800,7 @@ export default function CrewMemberDetailPage({
                           {`$${Number(member.defaultDayRate).toFixed(2)}`}
                         </span>
                       ) : (
-                        <span className="text-faint">{"\u2014"}</span>
+                        <span className="text-muted">{"\u2014"}</span>
                       )}
                     </div>
                     <div className="flex justify-between">
@@ -1810,7 +1810,7 @@ export default function CrewMemberDetailPage({
                           {`$${Number(member.defaultHourlyRate).toFixed(2)}`}
                         </span>
                       ) : (
-                        <span className="text-faint">{"\u2014"}</span>
+                        <span className="text-muted">{"\u2014"}</span>
                       )}
                     </div>
                     <div className="flex justify-between">
@@ -1820,7 +1820,7 @@ export default function CrewMemberDetailPage({
                           {`${Number(member.overtimeMultiplier)}x`}
                         </span>
                       ) : (
-                        <span className="text-faint">{"\u2014"}</span>
+                        <span className="text-muted">{"\u2014"}</span>
                       )}
                     </div>
                   </div>

@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Adopt canonical RVLT contrast, typography and shared-control accessibility contracts, repair mounted SSO fallback, and use supplied auth artwork.
+- Save warehouse deploy/return scans before lookup, with scoped durable intake, explicit review/retry states and atomic idempotent server receipts. Keep offline fallback non-sensitive and protected data authenticated.
+
 - **Convex write failures (quote accept/send/recall/decline, invoice
   create/issue/void, payments) no longer show a raw Convex exception.** These
   flows caught errors with a bare `e.message`, which for a `ConvexError` is

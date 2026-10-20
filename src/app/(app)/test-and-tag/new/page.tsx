@@ -221,7 +221,7 @@ function NewTestTagAssetInner() {
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-ui-text text-muted">
           <Link href="/test-and-tag" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>Test &amp; tag</Link>
-          <span className="text-faint">/</span>
+          <span className="text-muted">/</span>
           <span className="text-ink">New item</span>
         </div>
         <PageHeader title="New test & tag item" description="Register a new item in the test & tag registry." />
@@ -234,18 +234,18 @@ function NewTestTagAssetInner() {
               <SmartFormPreview>
                 <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
                   <div className="flex items-start gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
                       <ShieldCheck className="h-4 w-4" strokeWidth={1.5} />
                     </div>
                     <div className="min-w-0 flex-1 space-y-1.5">
-                      <p className={cn("text-card-title font-semibold leading-tight", previewDesc ? "text-ink" : "text-faint")}>
+                      <p className={cn("text-card-title font-semibold leading-tight", previewDesc ? "text-ink" : "text-muted")}>
                         {previewDesc || "New item"}
                       </p>
-                      <p className={cn("t-mono text-caption", previewTag ? "text-muted" : "text-faint")}>
+                      <p className={cn("t-mono text-caption", previewTag ? "text-muted" : "text-muted")}>
                         {previewTag || "No tag yet"}
                       </p>
                       <SmartFormPreviewPill>{classLabel}</SmartFormPreviewPill>
-                      <p className={cn("text-caption", intervalMonths ? "text-muted" : "text-faint")}>
+                      <p className={cn("text-caption", intervalMonths ? "text-muted" : "text-muted")}>
                         {intervalMonths
                           ? `Retest every ${intervalMonths} month${intervalMonths === 1 ? "" : "s"}`
                           : "No interval set"}

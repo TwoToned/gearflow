@@ -85,7 +85,7 @@ function SectionLabel({
   return (
     <div className="space-y-1">
       <p className="t-overline text-muted">{label}</p>
-      {description && <p className="t-small text-faint">{description}</p>}
+      {description && <p className="t-small text-muted">{description}</p>}
     </div>
   );
 }
@@ -94,7 +94,7 @@ function SectionLabel({
 function HeroFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <p className="t-overline text-faint">{label}</p>
+      <p className="t-overline text-muted">{label}</p>
       <p className="mt-0.5 truncate text-ui-text font-medium text-ink-2">{value}</p>
     </div>
   );
@@ -501,7 +501,7 @@ export default function AccountPage() {
         <SettingsCard className="p-5 sm:p-6">
           <div className="space-y-1">
             <h3 className="t-heading text-ink">Password</h3>
-            <p className="t-small text-faint">
+            <p className="t-small text-muted">
               Use a strong password you don&apos;t reuse elsewhere.
             </p>
           </div>
@@ -568,7 +568,7 @@ export default function AccountPage() {
                   <h3 className="t-heading text-ink">Two-factor authentication</h3>
                   {profile?.twoFactorEnabled && <Badge status="ok">Enabled</Badge>}
                 </div>
-                <p className="t-small text-faint">
+                <p className="t-small text-muted">
                   {profile?.twoFactorEnabled
                     ? "Your account is protected with an authenticator app."
                     : "Add a TOTP authenticator app for a second sign-in factor."}
@@ -598,7 +598,7 @@ export default function AccountPage() {
             </div>
           </div>
           {!currentPassword && (
-            <p className="mt-3 border-t border-line pt-3 t-small text-faint">
+            <p className="mt-3 border-t border-line pt-3 t-small text-muted">
               Enter your current password above, then{" "}
               {profile?.twoFactorEnabled ? "disable" : "enable"} two-factor.
             </p>
@@ -610,7 +610,7 @@ export default function AccountPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
               <h3 className="t-heading text-ink">Passkeys</h3>
-              <p className="t-small text-faint">
+              <p className="t-small text-muted">
                 Sign in with Touch ID, Face ID, or a security key.
               </p>
             </div>
@@ -627,7 +627,7 @@ export default function AccountPage() {
 
           {passkeys.length === 0 ? (
             <div className="mt-4 rounded-[var(--r)] border border-dashed border-line bg-paper-2/40 px-4 py-6 text-center">
-              <Fingerprint className="mx-auto size-6 text-faint" strokeWidth={1.5} />
+              <Fingerprint className="mx-auto size-6 text-muted" strokeWidth={1.5} />
               <p className="mt-2 t-small text-muted">No passkeys yet</p>
             </div>
           ) : (
@@ -644,7 +644,7 @@ export default function AccountPage() {
                         {pk.name || "Unnamed passkey"}
                       </p>
                       {pk.createdAt && (
-                        <p className="t-micro text-faint">
+                        <p className="t-micro text-muted">
                           Added {new Date(pk.createdAt).toLocaleDateString()}
                         </p>
                       )}
@@ -699,11 +699,11 @@ export default function AccountPage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="t-heading text-ink">Notification preferences</p>
-              <p className="t-small text-faint">
+              <p className="t-small text-muted">
                 Choose which in-app notifications also email you.
               </p>
             </div>
-            <ChevronRight className="size-5 shrink-0 text-faint" />
+            <ChevronRight className="size-5 shrink-0 text-muted" />
           </Link>
         </SettingsCard>
       </section>
@@ -716,7 +716,7 @@ export default function AccountPage() {
         />
         <SettingsCard className="p-5 sm:p-6">
           {sessionsQuery.isLoading ? (
-            <div className="flex items-center gap-2 t-small text-faint">
+            <div className="flex items-center gap-2 t-small text-muted">
               <Loader2 className="size-4 animate-spin" /> Loading sessions…
             </div>
           ) : (
@@ -738,7 +738,7 @@ export default function AccountPage() {
                           </span>
                           {s.isCurrent && <Badge status="ok">This device</Badge>}
                         </div>
-                        <p className="t-micro text-faint">
+                        <p className="t-micro text-muted">
                           {s.ipAddress || "Unknown IP"} ·{" "}
                           {new Date(s.createdAt).toLocaleString()}
                         </p>

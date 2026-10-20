@@ -149,7 +149,7 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
             <section key={category} className="space-y-3">
               <div className="flex items-baseline gap-2 px-1">
                 <span className="t-overline text-muted">{category}</span>
-                <span className="t-mono text-faint">{items.length}</span>
+                <span className="t-mono text-muted">{items.length}</span>
               </div>
               <div className="grid gap-3 grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
                 {items.map((asset) => (
@@ -197,7 +197,7 @@ function AssetCard({ asset }: { asset: AnyAsset }) {
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            <ImageIcon className="h-8 w-8 text-faint" />
+            <ImageIcon className="h-8 w-8 text-muted" />
           </div>
         )}
       </div>
@@ -221,7 +221,7 @@ function AssetCard({ asset }: { asset: AnyAsset }) {
         {(conditionLabel || locationName) && (
           <p className="t-micro truncate text-muted">
             {conditionLabel}
-            {conditionLabel && locationName ? <span className="text-faint"> · </span> : null}
+            {conditionLabel && locationName ? <span className="text-muted"> · </span> : null}
             {locationName}
           </p>
         )}

@@ -23,7 +23,7 @@ const EmptyState = React.forwardRef<
     <FlowMascot className="size-12 text-muted" />
     <div className="flex flex-col gap-1">
       <p className="text-[14px] font-medium text-ink-2">{title}</p>
-      {description ? <p className="text-[12px] text-faint">{description}</p> : null}
+      {description ? <p className="text-[12px] text-muted">{description}</p> : null}
     </div>
     {action}
     {children}

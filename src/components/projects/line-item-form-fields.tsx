@@ -52,7 +52,7 @@ export function Field({
     <div className="space-y-1.5">
       <Label htmlFor={htmlFor}>
         {label}
-        {required && <span className="text-red"> *</span>}
+        {required && <span className="text-red-text"> *</span>}
       </Label>
       {children}
     </div>

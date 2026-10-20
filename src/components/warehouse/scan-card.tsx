@@ -235,7 +235,7 @@ export function ScanContainerHeading({
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-1 pt-2">
-      <div className={`flex items-center gap-1.5 text-caption font-semibold ${muted ? "text-faint" : "text-ink-2"}`}>
+      <div className={`flex items-center gap-1.5 text-caption font-semibold ${muted ? "text-muted" : "text-ink-2"}`}>
         <Container className="h-3.5 w-3.5" />
         {label}
       </div>

@@ -61,7 +61,7 @@ function SectionHeader({
         <h2 className="flex items-center gap-2 t-overline text-muted">
           <Icon className="h-4 w-4" /> {title}
         </h2>
-        <p className="t-micro text-faint">{subtitle}</p>
+        <p className="t-micro text-muted">{subtitle}</p>
       </div>
       {count > 0 && <span className={cn("rounded-full px-2.5 py-1 text-badge font-medium", pillClass)}>{count}</span>}
     </div>
@@ -87,7 +87,7 @@ function QuotesOutSection({ rows }: { rows: OrgFinanceQuoteRow[] }) {
     <div className={TILE}>
       <SectionHeader icon={Send} title="Quotes out" subtitle="Sent, awaiting acceptance — oldest first" count={rows.length} pillClass={SOFT_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">Nothing sitting out with a client.</p>
+        <p className="t-micro text-muted">Nothing sitting out with a client.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
@@ -96,7 +96,7 @@ function QuotesOutSection({ rows }: { rows: OrgFinanceQuoteRow[] }) {
                 <p className="truncate text-[14px] font-medium text-ink">
                   {r.project.projectNumber} v{r.version} — {r.project.name}
                 </p>
-                <p className="t-micro text-faint">
+                <p className="t-micro text-muted">
                   {r.project.clientName ?? "No client"} · Sent {r.sentAt ? formatDate(new Date(r.sentAt)) : "—"}
                 </p>
               </div>
@@ -128,7 +128,7 @@ function ExpiringSection({ rows }: { rows: OrgFinanceExpiringRow[] }) {
     <div className={TILE}>
       <SectionHeader icon={AlertTriangle} title="Expiring" subtitle="Valid until within 7 days, or expired in the last 7 days" count={rows.length} pillClass={HARD_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">Nothing expiring soon.</p>
+        <p className="t-micro text-muted">Nothing expiring soon.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
@@ -137,7 +137,7 @@ function ExpiringSection({ rows }: { rows: OrgFinanceExpiringRow[] }) {
                 <p className="truncate text-[14px] font-medium text-ink">
                   {r.project.projectNumber} v{r.version} — {r.project.name}
                 </p>
-                <p className="t-micro text-faint">
+                <p className="t-micro text-muted">
                   {r.project.clientName ?? "No client"} · Valid until {r.validUntil ? formatDate(new Date(r.validUntil)) : "—"}
                 </p>
               </div>
@@ -165,7 +165,7 @@ function NeverSentSection({ rows }: { rows: OrgFinanceNeverSentRow[] }) {
     <div className={TILE}>
       <SectionHeader icon={FileQuestion} title="Never sent" subtitle="Draft revisions sitting unfinished" count={rows.length} pillClass={SOFT_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">No unsent drafts.</p>
+        <p className="t-micro text-muted">No unsent drafts.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
@@ -174,7 +174,7 @@ function NeverSentSection({ rows }: { rows: OrgFinanceNeverSentRow[] }) {
                 <p className="truncate text-[14px] font-medium text-ink">
                   {r.project.projectNumber} v{r.version} — {r.project.name}
                 </p>
-                <p className="t-micro text-faint">
+                <p className="t-micro text-muted">
                   {r.project.clientName ?? "No client"} · {r.project.status ?? "—"}
                 </p>
               </div>
@@ -192,14 +192,14 @@ function DepositDueSection({ rows }: { rows: OrgFinanceProjectRow[] }) {
     <div className={TILE}>
       <SectionHeader icon={Wallet} title="Deposit due" subtitle="Deposit-balance clients with no deposit invoice issued" count={rows.length} pillClass={SOFT_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">No outstanding deposits.</p>
+        <p className="t-micro text-muted">No outstanding deposits.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
             <RowShell key={r.project.id} href={financeTabHref(r.project.id)}>
               <div className="min-w-0">
                 <p className="truncate text-[14px] font-medium text-ink">{r.project.projectNumber} — {r.project.name}</p>
-                <p className="t-micro text-faint">
+                <p className="t-micro text-muted">
                   {r.project.clientName ?? "No client"} · {r.project.status ?? "—"}
                 </p>
               </div>
@@ -219,7 +219,7 @@ function OutstandingSection({ rows }: { rows: OrgFinanceInvoiceRow[] }) {
     <div className={TILE}>
       <SectionHeader icon={CircleDollarSign} title="Outstanding" subtitle="Issued, unreconciled — not confirmed payment (see note below)" count={rows.length} pillClass={HARD_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">Nothing outstanding.</p>
+        <p className="t-micro text-muted">Nothing outstanding.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
@@ -228,7 +228,7 @@ function OutstandingSection({ rows }: { rows: OrgFinanceInvoiceRow[] }) {
                 <p className="truncate text-[14px] font-medium text-ink">
                   {r.invoiceNumber ?? `${r.kind} invoice`} — {r.project.projectNumber} {r.project.name}
                 </p>
-                <p className="t-micro text-faint">
+                <p className="t-micro text-muted">
                   {r.project.clientName ?? "No client"} · {r.dueDate ? `Due ${formatDate(new Date(r.dueDate))}` : r.issuedAt ? `Issued ${formatDate(new Date(r.issuedAt))}` : "—"}
                 </p>
               </div>

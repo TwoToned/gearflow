@@ -247,7 +247,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
 
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <Label className="flex-none">Asset tag<span className="text-red"> *</span></Label>
+                <Label className="flex-none">Asset tag<span className="text-red-text"> *</span></Label>
                 <Label className="flex-none text-muted">/ Serial number</Label>
               </div>
               <div className="flex gap-2">
@@ -504,20 +504,20 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
 
           {/* Live preview — a mini gear card that fills in as you type */}
           <div className="space-y-2 border-t border-line pt-3">
-            <p className="t-overline text-faint">Preview</p>
+            <p className="t-overline text-muted">Preview</p>
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
               <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
                 {modelImage ? (
                   <AppImage src={modelImage} alt={modelLabel ?? "Asset"} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
                 ) : (
-                  <Package className="h-8 w-8 text-faint" strokeWidth={1.5} />
+                  <Package className="h-8 w-8 text-muted" strokeWidth={1.5} />
                 )}
               </div>
               <div className="space-y-1.5 p-3">
-                <p className={cn("text-card-title font-semibold leading-tight", previewName === "New asset" ? "text-faint" : "text-ink")}>
+                <p className={cn("text-card-title font-semibold leading-tight", previewName === "New asset" ? "text-muted" : "text-ink")}>
                   {previewName}
                 </p>
-                <p className={cn("t-mono text-caption", previewTag ? "text-muted" : "text-faint")}>
+                <p className={cn("t-mono text-caption", previewTag ? "text-muted" : "text-muted")}>
                   {previewTag || "No tag yet"}
                 </p>
                 <div className="pt-0.5">
@@ -575,7 +575,7 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
+      <Label>{label}{required && <span className="text-red-text"> *</span>}</Label>
       {children}
       {hint && !error && <p className="t-micro text-muted">{hint}</p>}
       {error && <p className="t-micro text-t-out">{error}</p>}

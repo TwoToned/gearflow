@@ -345,7 +345,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   <Button
                     variant="line"
                     size="sm"
-                    className="text-t-out hover:border-red hover:bg-red hover:text-white"
+                    className="text-t-out hover:border-red hover:bg-primary hover:text-white"
                     onClick={() => setDeleteOpen(true)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -558,7 +558,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                       )}
                     </div>
                   ) : (
-                    <p className="text-table-cell text-faint">No address set</p>
+                    <p className="text-table-cell text-muted">No address set</p>
                   )}
                 </SidebarSection>
 
@@ -592,7 +592,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                           <Briefcase className="h-3.5 w-3.5" />
                           <span>Out on a project</span>
                         </div>
-                        <span className="t-data font-medium text-red tabular-nums">{here.deployed}</span>
+                        <span className="t-data font-medium text-red-text tabular-nums">{here.deployed}</span>
                       </div>
                     )}
                   </div>
@@ -669,7 +669,7 @@ function HereStat({
         className={cn(
           "font-display font-extrabold leading-none tracking-tight tabular-nums",
           bright ? "text-[24px] text-ink" : "text-[20px]",
-          accent ? "text-red" : bright ? "text-ink" : "text-ink-2",
+          accent ? "text-red-text" : bright ? "text-ink" : "text-ink-2",
         )}
       >
         {figure}

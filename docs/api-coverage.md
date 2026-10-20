@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 439 | 305 | 132 | 1 | 1 |
-| Mutations | 784 | 292 | 484 | 0 | 8 |
-| **Total** | **1223** | **597** | **616** | **1** | **9** |
+| Queries | 440 | 305 | 132 | 1 | 2 |
+| Mutations | 785 | 292 | 484 | 0 | 9 |
+| **Total** | **1225** | **597** | **616** | **1** | **11** |
 
 <!-- reachability-floor: 597 -->
 
@@ -96,6 +96,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `projectNumberSequences` | 7 |
 | `projectVersionsWrites` | 1 |
 | `repairOrphanedGroupLines` | 1 |
+| `scanIntake` | 2 |
 | `siteSettings` | 9 |
 | `subHireGroups` | 8 |
 | `subHireItems` | 7 |
@@ -179,6 +180,8 @@ fails the build otherwise.
 | `projectNumberSequences.getById` | Internal sequence-counter bookkeeping, not a meaningful read for an agent. |
 | `projectNumberSequences.getByOrgAndScopeKey` | Internal sequence-counter bookkeeping, not a meaningful read for an agent. |
 | `revenueAllocation.listProjectIdsPage` | Backfill-only pagination helper for scripts/convex-backfill-revenue-allocation.ts, not a runtime read; a raw project-id enumeration doesn't fit the normal resource/scope model and financial allocation detail is out of scope pending Phase 4's no_financials flag. |
+| `scanIntake.commit` | Device-local physical scan replay is bound to the capturing browser user; service and agent tokens are rejected. |
+| `scanIntake.verifyContext` | Device-local physical scan replay is bound to the capturing browser user; service and agent tokens are rejected. |
 | `siteSettings.checkOrgCreationRateLimit` | Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this. |
 | `siteSettings.getById` | Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this. |
 | `siteSettings.getSingleton` | Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this. |

@@ -5,6 +5,20 @@ import { withPostHogConfig } from "@posthog/nextjs-config";
 const withPWA = withPWAInit({
   dest: "public",
   register: true,
+  // Cache only build-time static assets and the public offline document.
+  cacheOnFrontEndNav: false,
+  aggressiveFrontEndNavCaching: false,
+  cacheStartUrl: false,
+  dynamicStartUrl: false,
+  publicExcludes: ["!sensitive/**"],
+  workboxOptions: {
+    runtimeCaching: [{
+      // NetworkOnly preserves online authentication and never stores documents.
+      // next-pwa attaches its precached /offline fallback only on fetch failure.
+      urlPattern: ({ request, url }) => request.mode === "navigate" && !url.pathname.startsWith("/api/"),
+      handler: "NetworkOnly",
+    }],
+  },
   disable: process.env.NODE_ENV === "development",
   fallbacks: {
     document: "/offline",

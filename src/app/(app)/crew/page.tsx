@@ -930,7 +930,7 @@ function LogTimeDialog({
                     <div
                       className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border ${
                         isSelected
-                          ? "bg-red border-red text-white"
+                          ? "bg-primary border-red text-white"
                           : "border-line-2"
                       }`}
                     >

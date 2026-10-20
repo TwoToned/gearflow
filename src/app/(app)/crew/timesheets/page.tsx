@@ -214,7 +214,7 @@ export default function TimesheetsPage() {
           <PersonAvatar name={`${row.crewMember?.firstName ?? ""} ${row.crewMember?.lastName ?? ""}`.trim()} className="size-7" />
           <Link
             href={`/crew/${row.crewMember?.id}`}
-            className={`text-table-cell font-medium text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+            className={`text-table-cell font-medium text-ink hover:text-red-text rounded-[var(--r)] ${focusRing}`}
             onClick={(e) => e.stopPropagation()}
           >
             {row.crewMember?.firstName} {row.crewMember?.lastName}
@@ -239,7 +239,7 @@ export default function TimesheetsPage() {
         row.assignment ? (
           <Link
             href={`/projects/${row.assignment.project?.id}`}
-            className={`text-table-cell text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+            className={`text-table-cell text-ink hover:text-red-text rounded-[var(--r)] ${focusRing}`}
             onClick={(e) => e.stopPropagation()}
           >
             {row.assignment.project?.projectNumber} —{" "}
@@ -855,7 +855,7 @@ function LogTimeDialog({
                     <div
                       className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border ${
                         isSelected
-                          ? "bg-red border-red text-white"
+                          ? "bg-primary border-red text-white"
                           : "border-line-2"
                       }`}
                     >

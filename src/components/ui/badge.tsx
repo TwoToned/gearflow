@@ -21,8 +21,8 @@ const badgeVariants = cva(
         // (`intentStyles.info.pill` / `.primary.pill`) so a quote's SENT/ACCEPTED
         // state renders in the SAME solid-red-is-live vocabulary DESIGN.md defines,
         // instead of borrowing the unrelated ok/warn/overbooked set.
-        info: "text-blue bg-blue-soft", // sent / in-progress-but-not-live
-        primary: "text-white bg-red", // live/active/in-use — DESIGN.md's solid red
+        info: "text-info bg-blue-soft", // sent / in-progress-but-not-live
+        primary: "text-white bg-primary", // live/active/in-use — DESIGN.md's solid red
       },
     },
     defaultVariants: { status: "neutral" },

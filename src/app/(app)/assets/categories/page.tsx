@@ -233,7 +233,7 @@ function CategoriesContent() {
               <TableRow>
                 <TableCell colSpan={7} className="py-12">
                   <div className="flex flex-col items-center gap-2 text-center">
-                    <FolderOpen className="h-10 w-10 text-faint" />
+                    <FolderOpen className="h-10 w-10 text-muted" />
                     <p className="text-ui-text text-ink-2">{search ? "No matching categories" : "No categories yet"}</p>
                     <p className="text-caption text-muted">
                       {search ? "Try a different search." : "Group your gear by type — audio, lighting, video, staging."}
@@ -261,7 +261,7 @@ function CategoriesContent() {
                       )}
                       <Link
                         href={`/assets/categories/${cat.id}`}
-                        className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
+                        className={cn("font-medium text-ink hover:text-red-text transition-colors rounded-sm", focusRing)}
                       >
                         {cat.name}
                       </Link>
@@ -277,7 +277,7 @@ function CategoriesContent() {
                         {cat._count.models}
                       </Badge>
                     ) : (
-                      <span className="text-faint">0</span>
+                      <span className="text-muted">0</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right hidden sm:table-cell t-data">
@@ -287,7 +287,7 @@ function CategoriesContent() {
                         {cat._count.kits}
                       </Badge>
                     ) : (
-                      <span className="text-faint">0</span>
+                      <span className="text-muted">0</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right hidden md:table-cell t-data text-ink">

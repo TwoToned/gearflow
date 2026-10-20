@@ -121,7 +121,7 @@ export default function AdHocCheckPage({
           </div>
         ) : !lookup?.found ? (
           <div className="flex flex-col items-center justify-center rounded-[var(--r-lg)] border-2 border-dashed border-line py-12 text-muted">
-            <AlertTriangle className="mb-2 h-8 w-8 text-faint" />
+            <AlertTriangle className="mb-2 h-8 w-8 text-muted" />
             <p className="font-medium text-ink">Asset not found</p>
             <p className="mt-1 text-caption">
               No asset with tag <span className="font-mono">{decodedTag}</span> was found in your organization.
@@ -129,7 +129,7 @@ export default function AdHocCheckPage({
           </div>
         ) : lookup.asset!.checkItemCount === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-[var(--r-lg)] border-2 border-dashed border-line py-12 text-muted">
-            <ClipboardCheck className="mb-2 h-8 w-8 text-faint" />
+            <ClipboardCheck className="mb-2 h-8 w-8 text-muted" />
             <p className="font-medium text-ink">No check items assigned</p>
             <p className="mt-1 text-caption text-center px-4">
               The model <span className="font-medium text-ink-2">{lookup.asset!.modelName}</span> has no check items.{" "}

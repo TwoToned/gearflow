@@ -67,7 +67,7 @@ export function AccessorySelectionFields({
 
         {defaultAccessories.length > 0 && (
           <div className="space-y-1.5">
-            <p className="t-micro text-faint">Included</p>
+            <p className="t-micro text-muted">Included</p>
             {defaultAccessories.map((a) => {
               const checked = selection[a.id] ?? true;
               const label = a.modelName ?? a.assetTag;
@@ -104,7 +104,7 @@ export function AccessorySelectionFields({
 
         {optionalAccessories.length > 0 && (
           <div className="space-y-1.5">
-            <p className="t-micro text-faint">Optional</p>
+            <p className="t-micro text-muted">Optional</p>
             {optionalAccessories.map((a) => (
               <label key={a.id} className="flex cursor-pointer items-center gap-2.5">
                 <Checkbox

@@ -5,6 +5,15 @@ import { NextRequest, NextResponse } from "next/server";
 // integrator reads it before they have an account or a key.
 const publicRoutes = ["/login", "/register", "/api/auth", "/api/platform-name", "/api/registration-policy", "/invite", "/two-factor", "/welcome", "/setup", "/pending-approval", "/api/integrations/woocommerce/webhook", "/api/integrations/xero/callback", "/docs/api"];
 
+// Exact public files plus production script names emitted by next-pwa/Workbox.
+// Do not exempt whole directories, extensions, source maps, or private data.
+const publicStaticResources = new Set([
+  "/stickers/gaff-tape-sticker.svg",
+  "/sw.js",
+  "/manifest.json",
+]);
+const generatedPwaScript = /^\/(?:workbox-[0-9a-f]{8}|(?:fallback|worker)-[0-9a-f]{16})\.js$/;
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -23,6 +32,14 @@ export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
   const forwardedRequest = { headers: requestHeaders };
+
+  if (publicStaticResources.has(pathname) || generatedPwaScript.test(pathname)) {
+    return withRequestId(NextResponse.next({ request: forwardedRequest }), requestId);
+  }
+
+  if (pathname === "/offline") {
+    return withRequestId(NextResponse.next({ request: forwardedRequest }), requestId);
+  }
 
   // Allow public routes
   if (publicRoutes.some((route) => pathname.startsWith(route))) {

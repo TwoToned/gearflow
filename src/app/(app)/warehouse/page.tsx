@@ -1,4 +1,5 @@
 "use client";
+import { LifecycleStepper as LabelledLifecycleStepper } from "@/components/ui/stepper";
 // use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
 import { useState, useMemo, useCallback } from "react";
@@ -249,7 +250,7 @@ const urgencyMeta: Record<
   out: {
     label: "Out on site",
     dot: "bg-red",
-    chip: "bg-red-soft text-red",
+    chip: "bg-red-soft text-red-text",
   },
   upcoming: {
     label: "Upcoming",
@@ -469,18 +470,18 @@ export default function WarehousePage() {
                   onChange={(e) => setSearch(e.target.value)}
                   onScan={(scanned) => setSearch(scanned)}
                   showScanButton={false}
-                  className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-20 text-[14px] text-ink placeholder:text-faint"
+                  className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-20 text-[14px] text-ink placeholder:text-muted"
                   autoFocus
                 />
                 {search ? (
                   <button
                     onClick={() => setSearch("")}
-                    className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-[var(--r)] px-2 py-1 text-caption text-faint transition-colors hover:text-ink-2 ${focusRing}`}
+                    className={`absolute right-3 top-1/2 -translate-y-1/2 rounded-[var(--r)] px-2 py-1 text-caption text-muted transition-colors hover:text-ink-2 ${focusRing}`}
                   >
                     Clear
                   </button>
                 ) : (
-                  <span className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 items-center gap-1 text-[11px] text-faint sm:flex">
+                  <span className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 items-center gap-1 text-[11px] text-muted sm:flex">
                     <kbd className="rounded-[6px] border border-line-2 bg-paper px-1.5 py-0.5 font-mono text-[11px] leading-none text-muted">
                       scan
                     </kbd>
@@ -512,7 +513,7 @@ export default function WarehousePage() {
                 <p className="t-micro text-muted">Everything out, org-wide — scan to return, no project to pick first</p>
               </div>
             </div>
-            <ArrowRight className="h-4 w-4 flex-shrink-0 text-faint" />
+            <ArrowRight className="h-4 w-4 flex-shrink-0 text-muted" />
           </Link>
         </FadeIn>
 
@@ -530,7 +531,7 @@ export default function WarehousePage() {
                 icon={<Truck className="h-4 w-4" />}
                 value={deployedCount}
                 label="Deployed"
-                accent="text-red"
+                accent="text-red-text"
               />
               <StatCell
                 icon={<Undo2 className="h-4 w-4" />}
@@ -574,7 +575,7 @@ export default function WarehousePage() {
                 <Button
                   size="sm"
                   variant="line"
-                  className="border-red/60 text-t-out hover:bg-red hover:text-white hover:border-red"
+                  className="border-red/60 text-t-out hover:bg-primary hover:text-white hover:border-red"
                   onClick={() => batchCloseMutation.mutate(Array.from(selectedForClose))}
                   disabled={batchCloseMutation.isPending}
                   loading={batchCloseMutation.isPending}
@@ -696,7 +697,7 @@ function StatCell({
 }) {
   return (
     <div className="bg-card px-4 py-3">
-      <div className={`flex items-center gap-1.5 ${value > 0 ? accent : "text-faint"}`}>
+      <div className={`flex items-center gap-1.5 ${value > 0 ? accent : "text-muted"}`}>
         {icon}
         <span className="t-data text-[24px] font-bold leading-none tracking-[-0.02em] text-ink">
           <AnimatedNumber value={value} />
@@ -741,7 +742,7 @@ function PrepProgress({ summary }: { summary: PrepSummary }) {
     return (
       <div className="flex items-center gap-2">
         <div className="h-1.5 flex-1 rounded-full bg-paper-2" />
-        <span className="t-mono shrink-0 text-faint">No items</span>
+        <span className="t-mono shrink-0 text-muted">No items</span>
       </div>
     );
   }
@@ -773,10 +774,10 @@ function PrepProgress({ summary }: { summary: PrepSummary }) {
             allReturned
               ? "text-ok"
               : allDeployed
-                ? "text-red"
+                ? "text-red-text"
                 : allPacked
                   ? "text-warn"
-                  : "text-faint"
+                  : "text-muted"
           }`}
         >
           {allReturned
@@ -799,33 +800,7 @@ function PrepProgress({ summary }: { summary: PrepSummary }) {
 
 function LifecycleStepper({ status }: { status: string }) {
   const current = currentStageIndex(status);
-  return (
-    <div className="flex items-center gap-1">
-      {LIFECYCLE_STAGES.map((stage, i) => {
-        const done = i < current;
-        const active = i === current;
-        return (
-          <div key={stage.key} className="flex items-center gap-1">
-            <span
-              className={`h-1.5 w-1.5 rounded-full transition-colors ${
-                active
-                  ? "bg-lime ring-2 ring-lime/25"
-                  : done
-                    ? "bg-lime/60"
-                    : "bg-line-2"
-              }`}
-              title={stage.label}
-            />
-            {i < LIFECYCLE_STAGES.length - 1 && (
-              <span
-                className={`h-px w-3 ${done ? "bg-lime/40" : "bg-line-2"}`}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+  return <LabelledLifecycleStepper label="Warehouse lifecycle" className="gap-2" steps={LIFECYCLE_STAGES.map((stage, i) => ({ label: stage.label, state: i < current ? "done" : i === current ? "now" : "future" }))} />;
 }
 
 // ─── Project Card ──────────────────────────────────────────────

@@ -52,7 +52,7 @@ const STAGES: { key: string; label: string; statuses: string[]; hue: Hue; live?:
 ];
 
 const hueDot: Record<Hue, string> = { rep: "bg-rep", blue: "bg-blue", ok: "bg-ok", warn: "bg-warn", red: "bg-red" };
-const hueText: Record<Hue, string> = { rep: "text-rep", blue: "text-blue", ok: "text-ok", warn: "text-warn", red: "text-red" };
+const hueText: Record<Hue, string> = { rep: "text-rep", blue: "text-blue", ok: "text-ok", warn: "text-warn", red: "text-red-text" };
 
 const typeLabels: Record<string, string> = {
   DRY_HIRE: "Dry hire", WET_HIRE: "Wet hire", INSTALLATION: "Install", TOUR: "Tour",
@@ -382,7 +382,7 @@ function BoardColumnsGrid({
           <div className="flex flex-col gap-2">
             {(byStage.get(stage.key) ?? []).length === 0 ? (
               <div className="rounded-[var(--r-lg)] border border-dashed border-line/60 py-6 text-center">
-                <p className="t-micro text-faint">Empty</p>
+                <p className="t-micro text-muted">Empty</p>
               </div>
             ) : (
               (byStage.get(stage.key) ?? []).map((p) => (
@@ -483,7 +483,7 @@ function ProjectCard({
         {client?.name ? <> · {client.name}</> : null}
       </p>
       <div className="mt-2 flex items-center justify-between gap-2">
-        {dl ? <span className={cn("text-[11px] font-medium", toneText[dl.tone])}>{dl.text}</span> : <span className="t-micro text-faint">No dates</span>}
+        {dl ? <span className={cn("text-[11px] font-medium", toneText[dl.tone])}>{dl.text}</span> : <span className="t-micro text-muted">No dates</span>}
         <div className="flex items-center gap-1.5">
           {project.type && <span className="rounded-full border border-line px-1.5 py-0.5 text-[11px] text-muted">{typeLabels[project.type] || project.type}</span>}
           {total && <span className={cn("text-[11px] font-semibold tabular-nums", hueText[hue])}>{total}</span>}

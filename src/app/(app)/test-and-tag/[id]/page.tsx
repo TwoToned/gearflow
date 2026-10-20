@@ -288,7 +288,7 @@ function TestTagDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <Button
                     variant="line"
                     size="sm"
-                    className="border-transparent text-t-out hover:bg-red hover:text-white"
+                    className="border-transparent text-t-out hover:bg-primary hover:text-white"
                     onClick={() => setDeleteOpen(true)}
                     loading={deleteMutation.isPending}
                   >

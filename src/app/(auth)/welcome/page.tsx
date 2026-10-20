@@ -130,7 +130,7 @@ function ForkView({
 function ForkHeader({ name }: { name: string | undefined }) {
   return (
     <div className="mb-6">
-      {name ? <p className="t-annotation text-[15px] text-red">Welcome, {name.split(" ")[0]}</p> : null}
+      {name ? <p className="t-annotation text-[15px] text-red-text">Welcome, {name.split(" ")[0]}</p> : null}
       <h1 className="t-page-title text-ink">What brings you here?</h1>
       <p className="mt-1 text-sm text-muted">You can change this later — nothing is locked in.</p>
     </div>
@@ -227,12 +227,12 @@ function InviteCodeEntry() {
           type="button"
           onClick={handleSubmit}
           disabled={checking || !value.trim()}
-          className="flex-none rounded-[8px] border-2 border-line-2 bg-elev px-3 py-1.5 text-sm font-bold text-ink transition-colors hover:border-red hover:text-red disabled:opacity-50"
+          className="flex-none rounded-[8px] border-2 border-line-2 bg-elev px-3 py-1.5 text-sm font-bold text-ink transition-colors hover:border-red hover:text-red-text disabled:opacity-50"
         >
           {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continue"}
         </button>
       </div>
-      {error ? <p className="mt-2 text-xs text-red">{error}</p> : null}
+      {error ? <p className="mt-2 text-xs text-red-text">{error}</p> : null}
     </div>
   );
 }
@@ -315,7 +315,7 @@ function DomainJoinRequest() {
                 type="button"
                 onClick={() => handleRequest(org.organizationId)}
                 disabled={requested || pendingId === org.organizationId}
-                className="flex-none rounded-[8px] border-2 border-line-2 bg-card px-3 py-1.5 text-xs font-bold text-ink transition-colors hover:border-red hover:text-red disabled:opacity-50"
+                className="flex-none rounded-[8px] border-2 border-line-2 bg-card px-3 py-1.5 text-xs font-bold text-ink transition-colors hover:border-red hover:text-red-text disabled:opacity-50"
               >
                 {pendingId === org.organizationId ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -358,7 +358,7 @@ function ForkCard({
       <span
         className={cn(
           "flex size-[38px] flex-none items-center justify-center rounded-[10px] border-2 shadow-[var(--sh-stk)]",
-          primary ? "border-red text-red" : "border-line-2 text-muted",
+          primary ? "border-red text-red-text" : "border-line-2 text-muted",
         )}
       >
         {icon}
@@ -369,7 +369,7 @@ function ForkCard({
       </span>
       <span
         aria-hidden
-        className={cn("mt-2 flex-none text-[15px]", primary ? "text-red" : "text-faint")}
+        className={cn("mt-2 flex-none text-[15px]", primary ? "text-red-text" : "text-muted")}
       >
         →
       </span>

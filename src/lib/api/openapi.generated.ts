@@ -44978,6 +44978,9 @@ export const OPENAPI_DOCUMENT = {
                       "kitId": {
                         "type": "string"
                       },
+                      "notes": {
+                        "type": "string"
+                      },
                       "projectId": {
                         "type": "string"
                       },
@@ -45229,6 +45232,9 @@ export const OPENAPI_DOCUMENT = {
                     "type": "object",
                     "properties": {
                       "kitId": {
+                        "type": "string"
+                      },
+                      "notes": {
                         "type": "string"
                       },
                       "projectId": {

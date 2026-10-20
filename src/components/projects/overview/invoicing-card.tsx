@@ -137,7 +137,7 @@ function InvoicingCardBody({
 
 function LastIssuedLine({ invoice }: { invoice: InvoiceLike }) {
   return (
-    <p className="mt-3 text-caption text-faint">
+    <p className="mt-3 text-caption text-muted">
       Last: <span className="font-mono text-ink-2">{invoice.invoiceNumber ?? "—"}</span>{" "}
       {invoice.kind.toLowerCase()} issued {invoice.issuedAt ? formatDate(new Date(invoice.issuedAt)) : "—"}
     </p>
@@ -196,7 +196,7 @@ function InvoicingActions({
     <OverviewActions>
       <CanDo resource="invoice" action="create">
         {partialStep.kind === "NONE" && remainingStep.kind === "NONE" ? (
-          hasInvoices && <span className="text-caption text-faint">{partialStep.reason}</span>
+          hasInvoices && <span className="text-caption text-muted">{partialStep.reason}</span>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

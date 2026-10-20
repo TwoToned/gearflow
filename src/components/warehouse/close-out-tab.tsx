@@ -286,7 +286,7 @@ export function CloseOutTab({
           ) : confirmStep === 0 ? (
             <Button
               variant="line"
-              className="text-t-out hover:bg-red hover:text-white hover:border-red"
+              className="text-t-out hover:bg-primary hover:text-white hover:border-red"
               onClick={() => setConfirmStep(1)}
               disabled={closeMutation.isPending}
             >
@@ -308,7 +308,7 @@ export function CloseOutTab({
               <Button
                 variant="line"
                 size="sm"
-                className="text-t-out hover:bg-red hover:text-white hover:border-red"
+                className="text-t-out hover:bg-primary hover:text-white hover:border-red"
                 onClick={() => closeMutation.mutate()}
                 disabled={closeMutation.isPending}
                 loading={closeMutation.isPending}

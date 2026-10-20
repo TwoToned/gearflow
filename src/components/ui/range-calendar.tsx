@@ -102,7 +102,7 @@ export function RangeCalendar({
 
       <div className="grid grid-cols-7 gap-y-1">
         {WEEKDAYS.map((d) => (
-          <div key={d} className="pb-1 text-center text-[11px] font-medium text-faint">{d}</div>
+          <div key={d} className="pb-1 text-center text-[11px] font-medium text-muted">{d}</div>
         ))}
         {days.map((day) => {
           const inMonth = isSameMonth(day, viewMonth);
@@ -132,9 +132,9 @@ export function RangeCalendar({
               <span
                 className={cn(
                   "flex size-9 items-center justify-center rounded-[var(--r)] transition-colors",
-                  !inMonth && "text-faint/50",
+                  !inMonth && "text-muted",
                   inMonth && !inRange && !isEndpoint && "text-ink hover:bg-paper-2",
-                  isEndpoint && "bg-red font-semibold text-white",
+                  isEndpoint && "bg-primary font-semibold text-white",
                   !isEndpoint && isToday(day) && "ring-1 ring-inset ring-line",
                 )}
               >

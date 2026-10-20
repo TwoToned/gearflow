@@ -346,7 +346,7 @@ function AvailabilityPage() {
             <div className="min-w-0 flex-1 space-y-3">
               {/* Legend */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 t-micro text-muted">
-                <span className="text-faint">Busy days</span>
+                <span className="text-muted">Busy days</span>
                 <LegendSwatch className="bg-blue-soft/40 border-blue/30" label="1 project" />
                 <LegendSwatch className="bg-warn-soft/50 border-warn/30" label="2 projects" />
                 <LegendSwatch className="bg-red-soft border-red/40" label="3+ projects" />
@@ -396,7 +396,7 @@ function AvailabilityPage() {
 
                       {selectedProjects.length === 0 ? (
                         <div className="flex flex-col items-center gap-2 py-8 text-center">
-                          <div className="grid size-11 place-items-center rounded-[10px] border-2 border-line-2 text-faint shadow-[var(--sh-card)]">
+                          <div className="grid size-11 place-items-center rounded-[10px] border-2 border-line-2 text-muted shadow-[var(--sh-card)]">
                             <CalendarDays className="size-5" />
                           </div>
                           <p className="t-micro text-muted">Nothing booked this day.</p>
@@ -419,7 +419,7 @@ function AvailabilityPage() {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-2 py-10 text-center">
-                      <div className="grid size-11 place-items-center rounded-[10px] border-2 border-line-2 text-faint shadow-[var(--sh-card)]">
+                      <div className="grid size-11 place-items-center rounded-[10px] border-2 border-line-2 text-muted shadow-[var(--sh-card)]">
                         <CalendarDays className="size-5" />
                       </div>
                       <p className="t-heading text-ink">Pick a day</p>
@@ -565,10 +565,10 @@ function MonthGrid({
                           className={cn(
                             "grid size-[22px] place-items-center rounded-full t-mono text-[12px] leading-none tabular-nums",
                             isToday
-                              ? "bg-red font-semibold text-white"
+                              ? "bg-primary font-semibold text-white"
                               : inMonth
                                 ? "text-ink-2"
-                                : "text-faint",
+                                : "text-muted",
                           )}
                         >
                           {format(day, "d")}
@@ -688,7 +688,7 @@ function AgendaView({
   if (groups.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-[var(--r-lg)] border border-line-2 bg-card py-16 text-center shadow-[var(--sh-card)]">
-        <div className="grid size-11 place-items-center rounded-[10px] border-2 border-line-2 text-faint shadow-[var(--sh-card)]">
+        <div className="grid size-11 place-items-center rounded-[10px] border-2 border-line-2 text-muted shadow-[var(--sh-card)]">
           <CalendarDays className="size-5" />
         </div>
         <div>
@@ -717,7 +717,7 @@ function AgendaView({
               <span
                 className={cn(
                   "grid size-9 shrink-0 flex-col place-items-center rounded-[10px] leading-none",
-                  isToday ? "bg-red text-white" : "bg-elev text-ink",
+                  isToday ? "bg-primary text-white" : "bg-elev text-ink",
                 )}
               >
                 <span className="t-overline">{format(day, "EEE")}</span>
@@ -765,7 +765,7 @@ function AgendaView({
                     </div>
                     <div className="mt-0.5 flex items-center gap-2 t-micro text-muted">
                       {p.clientName && <span className="truncate">{p.clientName}</span>}
-                      <span className="text-faint">·</span>
+                      <span className="text-muted">·</span>
                       <span className="tabular-nums">
                         {format(new Date(p.rentalStartDate), "d MMM")} –{" "}
                         {format(new Date(p.rentalEndDate), "d MMM")}

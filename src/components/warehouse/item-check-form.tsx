@@ -553,11 +553,11 @@ export function ItemCheckForm({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {queueTotal && queueTotal > 1 ? (
-              <span className="shrink-0 rounded-[var(--r)] bg-red-soft px-1.5 py-0.5 text-caption font-semibold text-red tabular-nums">
+              <span className="shrink-0 rounded-[var(--r)] bg-red-soft px-1.5 py-0.5 text-caption font-semibold text-red-text tabular-nums">
                 {queuePosition}/{queueTotal}
               </span>
             ) : null}
-            <span className="t-mono text-red">{assetTag || "—"}</span>
+            <span className="t-mono text-red-text">{assetTag || "—"}</span>
             <span className="text-muted">—</span>
             <span className="truncate text-ink">{assetName}</span>
           </SheetTitle>

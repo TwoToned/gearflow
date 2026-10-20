@@ -156,11 +156,11 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
                   className="size-9 shrink-0"
                 />
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New crew member" ? "text-faint" : "text-ink")}>
+                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New crew member" ? "text-muted" : "text-ink")}>
                     {previewName}
                   </p>
                   <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
-                  <p className={cn("text-caption", rateLine ? "text-muted" : "text-faint")}>
+                  <p className={cn("text-caption", rateLine ? "text-muted" : "text-muted")}>
                     {rateLine || "No rate set"}
                   </p>
                 </div>

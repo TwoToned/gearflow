@@ -462,11 +462,11 @@ export function GroupRow({
                   variant="ghost"
                   size="icon"
                   title={commentBadge?.blocking ? `${commentBadge.blocking} blocking group comment${commentBadge.blocking === 1 ? "" : "s"}` : "Comments"}
-                  className={cn("relative size-8", commentBadge?.blocking && "text-red")}
+                  className={cn("relative size-8", commentBadge?.blocking && "text-red-text")}
                 >
                   <MessageCircle className="h-4 w-4" />
                   {commentBadge?.blocking ? (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-medium text-white">
                       {commentBadge.blocking}
                     </span>
                   ) : commentBadge?.open ? (
@@ -542,7 +542,7 @@ export function GroupRow({
           </LockedField>
         ) : (
           <>
-            {priceVal != null ? formatCurrency(priceVal) : <span className="text-faint">—</span>}
+            {priceVal != null ? formatCurrency(priceVal) : <span className="text-muted">—</span>}
             {discountVal > 0 && (
               <p className="text-micro text-ok">-{formatCurrency(discountVal)} disc.</p>
             )}
@@ -555,12 +555,12 @@ export function GroupRow({
         )}
       </TableCell>
       {showCostColumn && (
-        <TableCell className="text-right whitespace-nowrap t-data text-faint">
+        <TableCell className="text-right whitespace-nowrap t-data text-muted">
           —
         </TableCell>
       )}
       <TableCell className="text-right font-medium whitespace-nowrap t-data">
-        {groupTotal != null ? formatCurrency(groupTotal) : <span className="text-faint">—</span>}
+        {groupTotal != null ? formatCurrency(groupTotal) : <span className="text-muted">—</span>}
       </TableCell>
       <TableCell>
         <div className="flex items-center justify-end gap-0.5 flex-nowrap">
@@ -583,11 +583,11 @@ export function GroupRow({
                   variant="ghost"
                   size="icon"
                   title={commentBadge?.blocking ? `${commentBadge.blocking} blocking group comment${commentBadge.blocking === 1 ? "" : "s"}` : "Comments"}
-                  className={cn("relative size-8", commentBadge?.blocking && "text-red")}
+                  className={cn("relative size-8", commentBadge?.blocking && "text-red-text")}
                 >
                   <MessageCircle className="h-3.5 w-3.5" />
                   {commentBadge?.blocking ? (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-medium text-white">
                       {commentBadge.blocking}
                     </span>
                   ) : commentBadge?.open ? (
@@ -816,7 +816,7 @@ export function SubHireGroupRow({
         ) : charge != null ? (
           formatCurrency(charge)
         ) : (
-          <span className="text-faint">—</span>
+          <span className="text-muted">—</span>
         )}
       </TableCell>
       {showCostColumn && (
@@ -829,12 +829,12 @@ export function SubHireGroupRow({
           ) : cost != null ? (
             formatCurrency(cost)
           ) : (
-            <span className="text-faint">—</span>
+            <span className="text-muted">—</span>
           )}
         </TableCell>
       )}
       <TableCell className="text-right font-medium whitespace-nowrap t-data">
-        {charge != null ? formatCurrency(charge * group.quantity) : <span className="text-faint">—</span>}
+        {charge != null ? formatCurrency(charge * group.quantity) : <span className="text-muted">—</span>}
       </TableCell>
       <TableCell>
         {/* Constrained to the w-32 actions cell (justify-end + flex-nowrap) so
@@ -1619,11 +1619,11 @@ export function LineItemRow({
                         ? `${openComments} open comment${openComments === 1 ? "" : "s"}`
                         : "Comments"
                   }
-                  className={cn("relative size-8", blockingComments > 0 && "text-red")}
+                  className={cn("relative size-8", blockingComments > 0 && "text-red-text")}
                 >
                   <MessageCircle className="h-4 w-4" />
                   {blockingComments > 0 ? (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-medium text-white">
                       {blockingComments}
                     </span>
                   ) : openComments > 0 ? (
@@ -1846,7 +1846,7 @@ export function LineItemRow({
               `text-caption mt-0.5 max-w-[300px] ${indent}`,
               item.notes
                 ? "text-muted"
-                : "text-faint opacity-0 pointer-coarse:opacity-100 transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+                : "text-muted opacity-0 pointer-coarse:opacity-100 transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
             )}
             onSave={(next) => onInlineUpdate(item, { field: "notes", value: next })}
           />
@@ -1949,11 +1949,11 @@ export function LineItemRow({
           // breakdown) or malformed/legacy data (parsePriceBreakdown -> null).
           const breakdown = parsePriceBreakdown(item.priceBreakdown);
           const label = breakdown ? formatPriceBreakdown(breakdown) : "";
-          return label ? <p className="text-micro text-faint">{label}</p> : null;
+          return label ? <p className="text-micro text-muted">{label}</p> : null;
         })()}
       </TableCell>
       {showCostColumn && (
-        <TableCell className="text-right whitespace-nowrap t-data text-faint">
+        <TableCell className="text-right whitespace-nowrap t-data text-muted">
           —
         </TableCell>
       )}
@@ -1986,11 +1986,11 @@ export function LineItemRow({
                       ? `${openComments} open comment${openComments === 1 ? "" : "s"}`
                       : "Comments"
                 }
-                className={cn("relative size-8", blockingComments > 0 && "text-red")}
+                className={cn("relative size-8", blockingComments > 0 && "text-red-text")}
               >
                 <MessageCircle className="h-3.5 w-3.5" />
                 {blockingComments > 0 ? (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red px-0.5 text-[8px] font-medium text-white">
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-medium text-white">
                     {blockingComments}
                   </span>
                 ) : openComments > 0 ? (

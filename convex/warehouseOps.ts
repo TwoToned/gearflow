@@ -473,7 +473,8 @@ async function linesByAsset(ctx: Ctx, assetId: string, organizationId: string) {
 
 async function kitParentLine(ctx: Ctx, projectId: string, organizationId: string, kitId: string) {
   const rows = await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
-  return rows.find((r) => r.projectId === projectId && r.organizationId === organizationId && !r.isKitChild) ?? null;
+  const project = await ctx.db.query("projects").withIndex("by_cuid", q => q.eq("id", projectId)).unique();
+  return rows.find((r) => r.projectId === projectId && r.organizationId === organizationId && r.versionId === project?.liveVersionId && !r.isKitChild) ?? null;
 }
 async function childLines(ctx: Ctx, parentId: string, organizationId: string) {
   // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
@@ -839,7 +840,7 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     await patchKitMemberUnits(ctx, kitLine.id, a.organizationId, ["CHECKED_OUT"], (u) => ({ status: "RETURNED", returnedQuantity: u.quantity ?? 1, returnedAt: a.now, returnedById: a.userId, returnCondition: a.returnCondition }), a.now);
     await cascadeKitAccessoriesIn(ctx, kitLine.id, a.organizationId, { projectId: a.projectId, userId: a.userId, defaultLocationId, returnCondition: a.returnCondition });
 
-    await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: `Kit returned — condition: ${a.returnCondition}` });
+    await scanLog(ctx, { organizationId: a.organizationId, kitId: a.kitId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: `Kit returned — condition: ${a.returnCondition}${a.notes ? ` — ${a.notes}` : ""}` });
     return [a.kitId, ...nestedKitIds];
 }
 
@@ -1348,7 +1349,7 @@ export const undeprepLine = mutation({
 
 /** Deployed → Prepped for a whole kit: reverse checkoutKit. */
 type KitOpArgs = { organizationId: string; projectId: string; userId: string; kitId: string; now: number };
-type KitCheckinArgs = KitOpArgs & { returnCondition: "GOOD" | "DAMAGED" | "MISSING" };
+type KitCheckinArgs = KitOpArgs & { returnCondition: "GOOD" | "DAMAGED" | "MISSING"; notes?: string };
 type KitParentLine = NonNullable<Awaited<ReturnType<typeof kitParentLine>>>;
 
 /** Core of undeployKit for ONE validated kit (parent line found). `defLoc` is passed

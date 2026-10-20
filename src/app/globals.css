@@ -4,8 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ----------------------------------------------------------------------------
- * @rvlt/flow-theme — GENERATED from tokens.json. Do not edit by hand.
- * Source of truth: tokens.json  ·  Design spec: DESIGN.md v1.2.0
+ * @rvlt/flow-theme — adopted tokens plus Flow-local extensions.
+ * Source: rvlt-designlanguage f1a1825 v1.3.0 tokens/contrast; see DESIGN.md authority note.
  * Tailwind v4 + shadcn convention (direct hex / var() aliases, @theme inline).
  * Dark "espresso" is the default; .light is the opt-in "Paper" alternate.
  * -------------------------------------------------------------------------- */
@@ -23,6 +23,10 @@
   --line: #332C24;
   --line-2: #473E32;
   --red: #E0363D;
+  --action-red: #D6323A;
+  --red-text: #EE5A5F;
+  --info: #82A8F3;
+  --control-line: #857A69;
   --red-700: #B21F26;
   --red-soft: rgba(224,54,61,.16);
   --ok: #4FD888;
@@ -69,16 +73,16 @@
   --card-foreground: var(--ink);
   --popover: var(--card);
   --popover-foreground: var(--ink);
-  --primary: var(--red);
+  --primary: var(--action-red);
   --primary-foreground: #fff;
   --secondary: var(--paper-2);
   --secondary-foreground: var(--ink);
   --muted-foreground: var(--muted);
   --accent: var(--elev);
   --accent-foreground: var(--ink);
-  --destructive: var(--red);
+  --destructive: var(--action-red);
   --destructive-foreground: #fff;
-  --input: var(--border);
+  --input: var(--control-line);
   --ring: var(--red);
   --cream: #F5EFE2;
   --cream-ink: #1D1A15;
@@ -115,6 +119,10 @@
   --line: #E4DAC3;
   --line-2: #D8CCB0;
   --red: #C12229;
+  --action-red: #C12229;
+  --red-text: #C12229;
+  --info: #2A65D0;
+  --control-line: var(--ink);
   --red-700: #9C1B21;
   --red-soft: #FBE7E3;
   --ok: #007D36;
@@ -164,6 +172,9 @@
   --color-line: var(--line);
   --color-line-2: var(--line-2);
   --color-red: var(--red);
+  --color-action-red: var(--action-red);
+  --color-red-text: var(--red-text);
+  --color-info: var(--info);
   --color-red-700: var(--red-700);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
@@ -368,7 +379,7 @@
    Touch device optimizations
    ═══════════════════════════════════════════════════════ */
 @media (hover: none) and (pointer: coarse) {
-  button[role="checkbox"] { min-width: 24px; min-height: 24px; }
+  button[role="checkbox"] { min-width: 44px; min-height: 44px; }
   .touch-target { min-height: 44px; min-width: 44px; }
 }
 
@@ -508,3 +519,5 @@ body {
   color: var(--red) !important;
 }
 .designer-shell .pdfme-designer-sidebar-toggle svg { stroke: currentColor !important; }
+
+@layer utilities { .t-reading-body { font-size: 16px; line-height: 1.5; font-weight: 400; } }

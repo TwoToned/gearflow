@@ -244,7 +244,7 @@ export function ClientContactsManager({ clientId, contacts, onChanged }: Props) 
                   type="button"
                   aria-label={c.isPrimary ? `${c.name || "Contact"} is the primary contact` : `Make ${c.name || "this contact"} primary`}
                   onClick={() => !c.isPrimary && setPrimary.mutate(c.id)}
-                  className={cn("mt-0.5 shrink-0 rounded-sm transition-colors", focusRing, c.isPrimary ? "text-red" : "text-faint hover:text-red/60")}
+                  className={cn("mt-0.5 shrink-0 rounded-sm transition-colors", focusRing, c.isPrimary ? "text-red-text" : "text-muted hover:text-red/60")}
                 >
                   <Star className={cn("h-4 w-4", c.isPrimary && "fill-current")} />
                 </button>

@@ -44,7 +44,7 @@ export function MetricLine({ item, showCostColumn }: { item: LineItemData; showC
         </span>
       )}
       {showCostColumn && cost != null && (
-        <span className="t-mono text-caption text-faint">cost {formatCurrency(cost)}</span>
+        <span className="t-mono text-caption text-muted">cost {formatCurrency(cost)}</span>
       )}
       {total != null && (
         <span className="t-mono text-caption font-medium text-ink">{formatCurrency(total)}</span>

@@ -262,7 +262,7 @@ function ChecklistRow({ item }: { item: ChecklistItem }) {
         <span className={item.done ? "text-fg-3 line-through" : "text-ink"}>{item.label}</span>
       </span>
       {!item.done && (
-        <Link href={item.href} className="text-xs font-medium text-red hover:underline">
+        <Link href={item.href} className="text-xs font-medium text-red-text hover:underline">
           Fix it
         </Link>
       )}

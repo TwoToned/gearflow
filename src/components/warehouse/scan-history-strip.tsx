@@ -84,7 +84,7 @@ export function ScanHistoryStrip({ entries }: { entries: ScanHistoryRecord[] }) 
                 <button
                   type="button"
                   onClick={() => void entry.undo?.run()}
-                  className={`t-micro shrink-0 rounded-[var(--r)] px-2 py-1 font-semibold text-red hover:bg-red-soft ${focusRing}`}
+                  className={`t-micro shrink-0 rounded-[var(--r)] px-2 py-1 font-semibold text-red-text hover:bg-red-soft ${focusRing}`}
                 >
                   {entry.undo.label}
                 </button>

@@ -51,10 +51,10 @@ function StatTileBody({
             problem && value ? "text-t-out" : "text-ink"
           }`}
         >
-          {typeof value === "number" ? <AnimatedNumber value={value} /> : <span className="text-faint">&mdash;</span>}
+          {typeof value === "number" ? <AnimatedNumber value={value} /> : <span className="text-muted">&mdash;</span>}
         </p>
       )}
-      <p className="mt-1.5 t-micro text-faint">{sub}</p>
+      <p className="mt-1.5 t-micro text-muted">{sub}</p>
     </Link>
   );
 }
@@ -122,7 +122,7 @@ export function StatGearDeployedWidget({ orgId }: { orgId: string | undefined })
       <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-elev">
         <div className={`h-full rounded-full ${meterHue} transition-all`} style={{ width: `${Math.min(util, 100)}%` }} />
       </div>
-      <p className="mt-1.5 t-micro text-faint">
+      <p className="mt-1.5 t-micro text-muted">
         {util}% of {total} out
       </p>
     </Link>

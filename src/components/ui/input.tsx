@@ -16,7 +16,7 @@ const Input = React.forwardRef<
     ref={ref}
     className={cn(
       "flex min-h-11 w-full rounded-[var(--radius)] border-2 border-input bg-card px-3.5 py-2 text-[16px] text-ink",
-      "placeholder:text-faint",
+      "placeholder:text-muted",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
       "aria-[invalid=true]:border-t-out aria-[invalid=true]:focus-visible:ring-t-out",
       "disabled:cursor-not-allowed disabled:opacity-45",
@@ -35,18 +35,10 @@ Input.displayName = "Input";
 const SearchInput = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement>
->(({ className, ...props }, ref) => (
+>(({ className, type = "search", ...props }, ref) => (
   <div className="relative">
-    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-    <input
-      ref={ref}
-      className={cn(
-        "h-10 w-full rounded-[var(--r)] border-2 border-input bg-card pl-9 pr-3 text-[14px] text-ink placeholder:text-faint",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
-        className,
-      )}
-      {...props}
-    />
+    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+    <Input ref={ref} type={type} className={cn("pl-9", className)} {...props} />
   </div>
 ));
 SearchInput.displayName = "SearchInput";

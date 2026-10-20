@@ -6,8 +6,8 @@
 // the page (per CLAUDE.md's overlay-UI convention) to prove the bypass works
 // end to end, not just that the helper function returns the right string.
 import React from "react";
-import { describe, it, expect, vi, beforeAll } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -83,4 +83,20 @@ describe("login page — ?nosso=1 SSO bypass", () => {
     })) as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("/login?nosso=1&callbackUrl=%2Fprojects%2F123");
   });
+});
+
+afterEach(()=>{cleanup();vi.clearAllMocks();});
+it('cancels mounted provider discovery when password fallback appears',async()=>{
+ currentSearchParams=new URLSearchParams();
+ let resolve!: (value: unknown)=>void;
+ vi.mocked(fetch).mockImplementation(async (url)=>url==='/api/auth/sso/org-lookup' ? await new Promise(r=>{resolve=r;}) as Response : ({ok:true,json:async()=>({policy:'INVITE_ONLY'})} as Response));
+ const {getOrgLoginInfo}=await import('@/server/sso');
+ vi.mocked(getOrgLoginInfo).mockResolvedValue({ssoEnabled:true,providers:[{providerId:'provider',domain:'example.com'}]} as never);
+ const {authClient}=await import('@/lib/auth-client');
+ const {rerender}=render(<LoginPage/>);
+ fireEvent.change(screen.getByLabelText('Email'),{target:{value:'a@example.com'}});
+ fireEvent.click(screen.getByRole('button',{name:'Continue'}));
+ currentSearchParams=new URLSearchParams({nosso:'1'});rerender(<LoginPage/>);
+ await act(async()=>{resolve({ok:true,json:async()=>({orgs:[{orgSlug:'org',hasSSO:true}]})});});
+ expect(screen.getByLabelText('Password')).toBeTruthy();expect(authClient.signIn.sso).not.toHaveBeenCalled();
 });

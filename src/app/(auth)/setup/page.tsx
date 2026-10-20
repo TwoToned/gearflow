@@ -253,7 +253,7 @@ export default function SetupPage() {
   return (
     <AuthShell accent="setup" annotation="first the name — the rest can wait.">
       <WizardRail step={1} total={TOTAL_STEPS} />
-      <p className="t-annotation text-[13px] text-red">Step 1 of {TOTAL_STEPS} · Your company</p>
+      <p className="t-annotation text-[13px] text-red-text">Step 1 of {TOTAL_STEPS} · Your company</p>
       <h1 className="t-page-title mt-1 text-ink">What&apos;s the company called?</h1>
       <p className="mt-1 text-sm text-muted">This goes on every quote, docket and invoice you send.</p>
 
@@ -323,7 +323,7 @@ function SlugStatusBadge({ status }: { status: SlugStatus }) {
         </span>
       )}
       {status === "taken" && (
-        <span className="inline-flex items-center gap-1 font-medium text-red">
+        <span className="inline-flex items-center gap-1 font-medium text-red-text">
           <X className="h-3.5 w-3.5" /> Taken
         </span>
       )}

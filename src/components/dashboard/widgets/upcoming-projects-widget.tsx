@@ -19,7 +19,7 @@ const hueText: Record<Hue, string> = {
   purple: "text-purple",
   coral: "text-coral",
   teal: "text-teal",
-  red: "text-red",
+  red: "text-red-text",
 };
 
 export function UpcomingProjectsWidget({ orgId }: { orgId: string | undefined }) {

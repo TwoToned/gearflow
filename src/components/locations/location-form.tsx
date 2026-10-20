@@ -109,15 +109,15 @@ export function LocationForm({ initialData }: LocationFormProps) {
           <SmartFormPreview>
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
               <div className="flex items-start gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
                   <MapPin className="h-4 w-4" strokeWidth={1.5} />
                 </div>
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New location" ? "text-faint" : "text-ink")}>
+                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New location" ? "text-muted" : "text-ink")}>
                     {previewName}
                   </p>
                   <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
-                  <p className={cn("text-caption", previewAddress ? "text-muted" : "text-faint")}>
+                  <p className={cn("text-caption", previewAddress ? "text-muted" : "text-muted")}>
                     {previewAddress || "No address yet"}
                   </p>
                 </div>

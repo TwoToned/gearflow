@@ -6,15 +6,15 @@
  * eliminating scattered inline color maps across 20+ files.
  *
  * Color intents map to CSS custom properties from DESIGN.md:
- *   success → --success / --success-subtle
- *   warning → --warning / --warning-subtle
- *   error   → --error   / --error-subtle  (tinted red — problem state)
- *   info    → --info    / --info-subtle
- *   neutral → --fg-3    / --bg-inset
- *   primary → --red (solid fill — live/active/in-use state)
+ *   success → --ok / --ok-soft
+ *   warning → --warn / --warn-soft
+ *   error   → --t-out / --out-soft  (tinted red — problem state)
+ *   info    → --info / --blue-soft
+ *   neutral → --rep / --rep-soft
+ *   primary → --action-red (solid fill — live/active/in-use state)
  *
  * Red disambiguation (DESIGN.md §1) — RVLT token names:
- *   primary pill = bg-red text-white                (solid red = LIVE/ACTIVE)
+ *   primary pill = bg-primary text-white                (solid red = LIVE/ACTIVE)
  *   error pill   = bg-out-soft text-t-out            (tinted red = PROBLEM)
  *   --red = #E0363D (primary accent)
  *   --t-out = #F26F73 (overdue/timed-out semantic, lighter red)
@@ -52,8 +52,8 @@ export const intentStyles: Record<ColorIntent, {
   },
   info: {
     dot: "bg-blue",
-    text: "text-blue",
-    pill: "bg-blue-soft text-blue",
+    text: "text-info",
+    pill: "bg-blue-soft text-info",
     bg: "bg-blue-soft",
   },
   neutral: {
@@ -64,8 +64,8 @@ export const intentStyles: Record<ColorIntent, {
   },
   primary: {
     dot: "bg-red",
-    text: "text-red",
-    pill: "bg-red text-white",
+    text: "text-red-text",
+    pill: "bg-primary text-white",
     bg: "bg-red-soft",
   },
 };

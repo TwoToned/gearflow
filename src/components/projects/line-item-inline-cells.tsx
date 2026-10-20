@@ -143,7 +143,7 @@ export function InlineEditableText({
       )}
       title={value || placeholder}
     >
-      {value || <span className="text-faint">{placeholder}</span>}
+      {value || <span className="text-muted">{placeholder}</span>}
     </button>
   );
 }
@@ -312,7 +312,7 @@ export function InlineEditablePercent({ value, disabled, className, onSave }: In
           startEditing();
         }}
         className={cn(
-          "rounded-sm px-1 -mx-1 text-micro text-faint opacity-0 pointer-coarse:opacity-100 transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+          "rounded-sm px-1 -mx-1 text-micro text-muted opacity-0 pointer-coarse:opacity-100 transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
           !disabled && "cursor-text hover:bg-elev hover:text-muted",
           focusRing,
           className,
@@ -447,7 +447,7 @@ export function InlineEditableDiscount({
           startEditing();
         }}
         className={cn(
-          "rounded-sm px-1 -mx-1 text-micro text-faint opacity-0 pointer-coarse:opacity-100 transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+          "rounded-sm px-1 -mx-1 text-micro text-muted opacity-0 pointer-coarse:opacity-100 transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
           !disabled && "cursor-text hover:bg-elev hover:text-muted",
           focusRing,
           className,

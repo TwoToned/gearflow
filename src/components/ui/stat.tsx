@@ -20,7 +20,7 @@ const Stat = React.forwardRef<
     >
       {figure}
     </span>
-    <span className="text-[12px] text-faint">{label}</span>
+    <span className="text-[12px] text-muted">{label}</span>
   </div>
 ));
 Stat.displayName = "Stat";

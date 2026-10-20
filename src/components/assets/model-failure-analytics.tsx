@@ -71,7 +71,7 @@ export function ModelFailureAnalytics({ modelId }: { modelId: string }) {
             <div key={item.checkItemId} className="space-y-1">
               <div className="flex items-center justify-between text-caption">
                 <span className="font-medium text-ink truncate mr-2">{item.label}</span>
-                <span className={cn("shrink-0 tabular-nums", isHigh ? "text-red font-semibold" : "text-muted")}>
+                <span className={cn("shrink-0 tabular-nums", isHigh ? "text-red-text font-semibold" : "text-muted")}>
                   {isHigh && <AlertTriangle className="inline h-3 w-3 mr-0.5 -mt-0.5" />}
                   {pct}% ({item.failCount}/{item.totalChecks})
                 </span>

@@ -1036,7 +1036,7 @@ function ProjectSummaryStrip({
   const { data: serviceData } = useProjectServicesSummary(projectId);
 
   // A faint em-dash for an empty/placeholder metric — calm, not loud.
-  const emptyValue = <span className="text-faint">{"\u2014"}</span>;
+  const emptyValue = <span className="text-muted">{"\u2014"}</span>;
 
   const metrics: {
     label: string;

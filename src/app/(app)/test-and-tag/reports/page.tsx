@@ -227,7 +227,7 @@ export default function TestTagReportsPage() {
             onClick={() => openDialog(config)}
           >
             <div className="flex items-center gap-3 mb-2">
-              <config.icon className="h-5 w-5 text-red" />
+              <config.icon className="h-5 w-5 text-red-text" />
               <h3 className="text-card-title font-semibold text-ink">{config.title}</h3>
             </div>
             <p className="text-ui-text text-muted mb-3">{config.description}</p>
@@ -252,7 +252,7 @@ export default function TestTagReportsPage() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <activeReport.icon className="h-5 w-5 text-red" />
+                  <activeReport.icon className="h-5 w-5 text-red-text" />
                   {activeReport.title}
                 </DialogTitle>
               </DialogHeader>

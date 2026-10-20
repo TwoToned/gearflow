@@ -228,7 +228,7 @@ function OrderHeroCard({
               <CanDo resource="supplier" action="delete">
                 <DropdownMenuItem
                   onClick={onDelete}
-                  className="text-red data-[highlighted]:bg-red data-[highlighted]:text-white"
+                  className="text-red-text data-[highlighted]:bg-primary data-[highlighted]:text-white"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete order
@@ -522,7 +522,7 @@ function InvoiceFile({
 }: { invoice: NonNullable<OrderDetail["invoice"]>; onRemove: () => void; removing: boolean }) {
   return (
     <div className="flex items-center gap-2 rounded-[var(--r)] border border-line bg-paper-2/50 p-2.5">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
         <FileText className="h-4 w-4" strokeWidth={1.5} />
       </div>
       <div className="min-w-0 flex-1">
@@ -554,7 +554,7 @@ function InvoiceFile({
 function HeroStat({ figure, label, muted }: { figure: string; label: string; muted?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5 bg-card p-3">
-      <span className={cn("text-card-title font-bold", muted ? "text-faint" : "text-ink")}>{figure}</span>
+      <span className={cn("text-card-title font-bold", muted ? "text-muted" : "text-ink")}>{figure}</span>
       <span className="t-micro text-muted">{label}</span>
     </div>
   );

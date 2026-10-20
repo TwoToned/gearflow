@@ -2400,7 +2400,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         <div className="mt-6 rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)]">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <div className="flex items-center gap-2">
-              <ArrowLeftRight className="h-4 w-4 text-red" />
+              <ArrowLeftRight className="h-4 w-4 text-red-text" />
               <h3 className="text-card-title font-semibold text-ink">Sub-hire orders</h3>
               <span className="t-mono text-muted">({projectSubHires.length})</span>
             </div>

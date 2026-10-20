@@ -75,7 +75,7 @@ export function AssetChecksTab({ assetId }: { assetId: string }) {
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-[var(--r-lg)] border-2 border-dashed border-border py-12 text-center">
-          <ClipboardCheck className="mb-2 h-8 w-8 text-faint" />
+          <ClipboardCheck className="mb-2 h-8 w-8 text-muted" />
           <p className="text-ui-text font-medium text-ink-2">No check records yet</p>
           <p className="mt-1 text-caption text-muted">
             Check results will appear here after warehouse prep or return.

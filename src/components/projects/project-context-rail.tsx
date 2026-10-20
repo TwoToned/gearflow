@@ -35,7 +35,7 @@ function ScheduleSection({ project }: { project: ProjectContextRailProject }) {
           </span>
         </div>
         {scheduleRows.length === 0 ? (
-          <p className="text-caption text-faint">No project window set — same as rental</p>
+          <p className="text-caption text-muted">No project window set — same as rental</p>
         ) : (
           scheduleRows.map((r) => (
             <div key={r.label} className="flex justify-between gap-2">
@@ -102,7 +102,7 @@ function LocationSection({ project }: { project: ProjectContextRailProject }) {
             )}
           </>
         ) : (
-          <p className="text-caption text-faint">No location set</p>
+          <p className="text-caption text-muted">No location set</p>
         )}
         <SiteContact project={project} />
       </div>
@@ -146,7 +146,7 @@ export function ProjectContextRail({
             {project.client.name}
           </Link>
         ) : (
-          <p className="text-caption text-faint">No client</p>
+          <p className="text-caption text-muted">No client</p>
         )}
         <ProjectManagersPanel projectId={projectId} managers={project.projectManagers ?? []} />
       </SidebarSection>

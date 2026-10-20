@@ -127,7 +127,7 @@ export function StickyTable({
         className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-paper to-transparent md:hidden print:hidden"
       />
       {colCountHint != null && (
-        <span className="absolute right-2 top-2 rounded-[8px] border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[10px] text-faint md:hidden print:hidden">
+        <span className="absolute right-2 top-2 rounded-[8px] border border-line bg-paper-2 px-1.5 py-0.5 font-mono text-[10px] text-muted md:hidden print:hidden">
           ↔ {colCountHint} cols
         </span>
       )}

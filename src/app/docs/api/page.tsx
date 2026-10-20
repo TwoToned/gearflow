@@ -29,7 +29,7 @@ export default function ApiDocsPage() {
   const reachableCount = API_REGISTRY.filter((op) => op.agentReachable).length;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 px-4 py-10 sm:px-6">
+    <main className="mx-auto min-w-0 max-w-4xl space-y-8 [&_code]:[overflow-wrap:anywhere] px-4 py-10 sm:px-6">
       <PageIntro />
       <GettingStartedCards />
       <CompatibilityPolicySection stableCount={stable.length} reachableCount={reachableCount} />
@@ -40,7 +40,7 @@ export default function ApiDocsPage() {
         developer access (OAuth apps, quotas, a marketplace) is designed for but not shipped — see decision
         5.
       </footer>
-    </div>
+    </main>
   );
 }
 
@@ -48,8 +48,8 @@ function PageIntro() {
   return (
     <header className="space-y-2">
       <p className="t-overline text-muted">Developer reference</p>
-      <h1 className="t-title text-ink text-3xl">RVLT Flow Agent API</h1>
-      <p className="t-body text-muted">
+      <h1 className="t-page-title text-ink">RVLT Flow Agent API</h1>
+      <p className="t-reading-body text-muted">
         A REST API and an MCP server over the exact gates a human operator faces in the UI — RBAC, org
         isolation, project locks, overbooking checks — enforced inside the same Convex mutation as the
         write, not re-implemented here. See{" "}
@@ -92,7 +92,7 @@ function GettingStartedCards() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <pre className="overflow-x-auto rounded-md border border-border bg-paper-2 p-3 text-xs">
+          <pre tabIndex={0} role="region" aria-label="MCP configuration" className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red overflow-x-auto rounded-md border border-border bg-paper-2 p-3 text-xs">
             {JSON.stringify(
               {
                 mcpServers: {
@@ -129,7 +129,7 @@ function CompatibilityPolicySection({ stableCount, reachableCount }: { stableCou
   return (
     <section className="space-y-3">
       <h2 className="t-title text-ink text-xl">Compatibility policy</h2>
-      <p className="t-body text-muted">
+      <p className="t-reading-body text-muted">
         Two stability tiers, declared per operation and in the OpenAPI description:
       </p>
       <ul className="list-disc space-y-2 pl-5 text-sm text-muted">
@@ -147,7 +147,7 @@ function CompatibilityPolicySection({ stableCount, reachableCount }: { stableCou
           refactor is not a breaking API change.
         </li>
       </ul>
-      <p className="t-body text-muted">
+      <p className="t-reading-body text-muted">
         Mechanics: the <code>/v1</code> path prefix, the <code>rvlt_flow.v1.*</code> MCP tool namespace,
         versioned webhook events (e.g. <code>project.status_changed.v1</code>), an{" "}
         <code>X-RVLT-Flow-API-Version</code> response header, and an in-band <code>warnings[]</code> array on
@@ -161,14 +161,14 @@ function WebhookEventsSection() {
   return (
     <section className="space-y-3">
       <h2 className="t-title text-ink text-xl">Webhook events</h2>
-      <p className="t-body text-muted">
+      <p className="t-reading-body text-muted">
         Configure endpoints at Settings → Webhooks. Signed, replay-resistant, retried with dedupe.
       </p>
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full table-fixed border-collapse text-sm [&_td]:[overflow-wrap:anywhere]">
         <tbody>
           {WEBHOOK_EVENTS.map((event) => (
             <tr key={event} className="border-b border-border">
-              <td className="whitespace-nowrap py-1.5 pr-4 font-mono text-xs text-ink">{event}</td>
+              <td className="py-1.5 pr-4 font-mono break-words text-xs text-ink">{event}</td>
               <td className="py-1.5 text-muted">{WEBHOOK_EVENT_DESCRIPTIONS[event]}</td>
             </tr>
           ))}
@@ -190,7 +190,7 @@ function CuratedOperationsSection({
   return (
     <section className="space-y-4">
       <h2 className="t-title text-ink text-xl">Curated operations ({stable.length})</h2>
-      <p className="t-body text-muted">
+      <p className="t-reading-body text-muted">
         The hand-picked, additive-only surface — the same operations backing the curated MCP tools. Beyond
         these, <code>GET /operations</code> / the MCP <code>list_operations</code> tool enumerate the full
         agent-reachable surface ({reachableCount} operations).
@@ -200,8 +200,8 @@ function CuratedOperationsSection({
         const snippets = snippetsFor(op);
         return (
           <details key={op.operation} className="rounded-[var(--radius)] border-2 border-border bg-card p-4">
-            <summary className="cursor-pointer select-none">
-              <span className="font-mono text-sm text-ink">{op.operation}</span>{" "}
+            <summary className="cursor-pointer select-none [overflow-wrap:anywhere]">
+              <span className="font-mono break-words text-sm text-ink">{op.operation}</span>{" "}
               <span className="text-xs text-muted">
                 ({op.kind}
                 {op.scopePairs.length ? `, scope: ${op.scopePairs.map((p) => `${p.resource}:${p.action}`).join(" or ")}` : ""})
@@ -224,7 +224,7 @@ function SnippetBlock({ label, code }: { label: string; code: string }) {
   return (
     <div className="space-y-1">
       <p className="text-xs font-medium text-fg-2">{label}</p>
-      <pre className="overflow-x-auto rounded-md border border-border bg-paper-2 p-2.5 text-xs">{code}</pre>
+      <pre tabIndex={0} role="region" aria-label="MCP configuration" className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red overflow-x-auto rounded-md border border-border bg-paper-2 p-2.5 text-xs">{code}</pre>
     </div>
   );
 }

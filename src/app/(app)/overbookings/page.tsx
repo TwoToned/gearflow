@@ -193,7 +193,7 @@ function SectionHeader({ icon: Icon, title, subtitle, count, pillClass }: { icon
         <h2 className="flex items-center gap-2 t-overline text-muted">
           <Icon className="h-4 w-4" /> {title}
         </h2>
-        <p className="t-micro text-faint">{subtitle}</p>
+        <p className="t-micro text-muted">{subtitle}</p>
       </div>
       {count > 0 && (
         <span className={cn("rounded-full px-2.5 py-1 text-badge font-medium", pillClass)}>{count}</span>
@@ -209,7 +209,7 @@ function ProjectLinks({ projects }: { projects: { id: string; name: string; proj
         <Link
           key={p.id}
           href={`/projects/${p.id}`}
-          className={cn("inline-flex items-center gap-1 rounded-[var(--r)] bg-elev px-2 py-0.5 text-caption text-ink-2 hover:text-red", focusRing)}
+          className={cn("inline-flex items-center gap-1 rounded-[var(--r)] bg-elev px-2 py-0.5 text-caption text-ink-2 hover:text-red-text", focusRing)}
         >
           {p.projectNumber} <ExternalLink className="h-3 w-3" />
         </Link>
@@ -239,7 +239,7 @@ function GearSection({
     <div className={TILE}>
       <SectionHeader icon={icon} title={title} subtitle={subtitle} count={rows.length} pillClass={pillClass} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">{emptyLabel}</p>
+        <p className="t-micro text-muted">{emptyLabel}</p>
       ) : (
         <div className="flex flex-col gap-2.5">
           {rows.map((row) => (
@@ -248,7 +248,7 @@ function GearSection({
                 <p className="truncate text-[14px] font-medium text-ink">
                   {row.modelName} <span className={cn("ml-1 rounded-full px-1.5 py-0.5 text-badge", pillClass)}>{row.qty} short</span>
                 </p>
-                <p className="t-micro text-faint">{formatDate(new Date(row.spanStart))} – {formatDate(new Date(row.spanEnd))}</p>
+                <p className="t-micro text-muted">{formatDate(new Date(row.spanStart))} – {formatDate(new Date(row.spanEnd))}</p>
                 <div className="mt-1"><ProjectLinks projects={row.projects} /></div>
               </div>
               {onSubHire && (
@@ -279,7 +279,7 @@ function SaleStockSection({ rows }: { rows: OverbookingSaleStockRow[] }) {
         Manage stock →
       </Link>
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">No sale stock to procure.</p>
+        <p className="t-micro text-muted">No sale stock to procure.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((row) => (
@@ -319,14 +319,14 @@ function MissingCrewSection({ rows }: { rows: OverbookingMissingCrewRow[] }) {
     <div className={TILE}>
       <SectionHeader icon={HardHat} title="Services missing crew" subtitle="Assigned crew (excluding declined) below the required count" count={rows.length} pillClass={HARD_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">Every service in range is fully staffed.</p>
+        <p className="t-micro text-muted">Every service in range is fully staffed.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((row) => (
             <Link key={row.serviceId} href={`/projects/${row.projectId}`} className={cn("flex items-center justify-between rounded-[var(--r)] border border-line p-3 hover:bg-elev", focusRing)}>
               <div className="min-w-0">
                 <p className="truncate text-[14px] font-medium text-ink">{row.title} — {row.projectNumber} {row.projectName}</p>
-                <p className="t-micro text-faint">{row.date ? formatDate(new Date(row.date)) : "No date"}</p>
+                <p className="t-micro text-muted">{row.date ? formatDate(new Date(row.date)) : "No date"}</p>
               </div>
               <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-badge font-medium", HARD_PILL)}>{row.assignedCount}/{row.crewCountRequired}</span>
             </Link>
@@ -342,14 +342,14 @@ function UnconfirmedCrewSection({ rows }: { rows: OverbookingUnconfirmedCrewRow[
     <div className={TILE}>
       <SectionHeader icon={UserCheck} title="Unconfirmed crew" subtitle="Not yet CONFIRMED, on a project starting in range" count={rows.length} pillClass={SOFT_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">Every upcoming assignment is confirmed.</p>
+        <p className="t-micro text-muted">Every upcoming assignment is confirmed.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((row) => (
             <Link key={row.assignmentId} href={`/projects/${row.projectId}`} className={cn("flex items-center justify-between rounded-[var(--r)] border border-line p-3 hover:bg-elev", focusRing)}>
               <div className="min-w-0">
                 <p className="truncate text-[14px] font-medium text-ink">{row.projectNumber} — {row.projectName}</p>
-                <p className="t-micro text-faint">Starts {row.startDate ? formatDate(new Date(row.startDate)) : "—"}</p>
+                <p className="t-micro text-muted">Starts {row.startDate ? formatDate(new Date(row.startDate)) : "—"}</p>
               </div>
               <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-badge font-medium", SOFT_PILL)}>{row.status}</span>
             </Link>
@@ -365,7 +365,7 @@ function DoubleBookingSection({ rows }: { rows: OverbookingDoubleBookingRow[] })
     <div className={TILE}>
       <SectionHeader icon={Users2} title="Crew double-bookings" subtitle="Hard = unavailable block clash · Soft = two overlapping assignments" count={rows.length} pillClass={HARD_PILL} />
       {rows.length === 0 ? (
-        <p className="t-micro text-faint">No crew double-bookings in range.</p>
+        <p className="t-micro text-muted">No crew double-bookings in range.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((row, i) => (
@@ -377,11 +377,11 @@ function DoubleBookingSection({ rows }: { rows: OverbookingDoubleBookingRow[] })
                 </span>
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <Link href={`/projects/${row.a.projectId}`} className={cn("rounded-[var(--r)] bg-elev px-2 py-0.5 text-caption text-ink-2 hover:text-red", focusRing)}>
+                <Link href={`/projects/${row.a.projectId}`} className={cn("rounded-[var(--r)] bg-elev px-2 py-0.5 text-caption text-ink-2 hover:text-red-text", focusRing)}>
                   {row.a.projectNumber} — {row.a.projectName}
                 </Link>
                 {row.b && (
-                  <Link href={`/projects/${row.b.projectId}`} className={cn("rounded-[var(--r)] bg-elev px-2 py-0.5 text-caption text-ink-2 hover:text-red", focusRing)}>
+                  <Link href={`/projects/${row.b.projectId}`} className={cn("rounded-[var(--r)] bg-elev px-2 py-0.5 text-caption text-ink-2 hover:text-red-text", focusRing)}>
                     {row.b.projectNumber} — {row.b.projectName}
                   </Link>
                 )}

@@ -61,7 +61,7 @@ export function SmartFormRail({
 }) {
   return (
     <div>
-      <p className="t-overline text-faint">{eyebrow}</p>
+      <p className="t-overline text-muted">{eyebrow}</p>
       <p className="mt-1 font-hand text-[15px] text-t-out">{tip}</p>
     </div>
   );
@@ -74,7 +74,7 @@ export function SmartFormRail({
 export function SmartFormPreview({ children }: { children: React.ReactNode }) {
   return (
     <div className="space-y-2 border-t border-line pt-3">
-      <p className="t-overline text-faint">Preview</p>
+      <p className="t-overline text-muted">Preview</p>
       {children}
     </div>
   );
@@ -153,7 +153,7 @@ export function SmartFormField({
     <div className="space-y-1.5">
       <Label>
         {label}
-        {required && <span className="text-red"> *</span>}
+        {required && <span className="text-red-text"> *</span>}
       </Label>
       {children}
       {hint && !error && <p className="t-micro text-muted">{hint}</p>}

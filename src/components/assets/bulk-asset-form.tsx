@@ -137,15 +137,15 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
                 {modelImage ? (
                   <AppImage src={modelImage} alt={modelLabel ?? "Bulk stock"} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
                 ) : (
-                  <Layers className="h-8 w-8 text-faint" strokeWidth={1.5} />
+                  <Layers className="h-8 w-8 text-muted" strokeWidth={1.5} />
                 )}
               </div>
               <div className="space-y-1.5 p-3">
                 <div className="flex items-start justify-between gap-2">
-                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New bulk stock" ? "text-faint" : "text-ink")}>
+                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New bulk stock" ? "text-muted" : "text-ink")}>
                     {previewName}
                   </p>
-                  <span className={cn("shrink-0 t-mono text-caption", quantity > 0 ? "text-ink-2" : "text-faint")}>
+                  <span className={cn("shrink-0 t-mono text-caption", quantity > 0 ? "text-ink-2" : "text-muted")}>
                     ×{quantity}
                   </span>
                 </div>

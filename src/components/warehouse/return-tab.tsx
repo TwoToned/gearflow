@@ -196,7 +196,7 @@ export function ReturnTab({
                   id="return-condition"
                   value={returnCondition}
                   onChange={(e) => setReturnCondition(e.target.value)}
-                  className={`flex h-11 rounded-[var(--r)] border-2 border-border bg-transparent px-3 py-1 text-ui-text text-ink ${focusRing}`}
+                  className={`flex h-11 rounded-[var(--r)] border-2 border-input bg-transparent px-3 py-1 text-ui-text text-ink ${focusRing}`}
                 >
                   <option value="GOOD">Good</option>
                   <option value="DAMAGED">Damaged</option>
@@ -264,7 +264,7 @@ export function ReturnTab({
                     ) : returnContainerGroups.some((g) => g.container !== null) && (
                       <TableRow className="bg-paper-2/40">
                         <TableCell colSpan={5} className="py-1.5">
-                          <div className="flex items-center gap-1.5 text-caption font-medium text-faint">
+                          <div className="flex items-center gap-1.5 text-caption font-medium text-muted">
                             <Package className="h-3.5 w-3.5" />
                             No container
                           </div>

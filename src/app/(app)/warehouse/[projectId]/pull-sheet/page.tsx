@@ -66,7 +66,7 @@ function AccessoryChildPullSheetRows({ child }: { child: Record<string, unknown>
       {childQty > 1 && Array.from({ length: childQty }).map((_, i) => (
         <TableRow key={`${child.id}-${i}`}>
           <TableCell className="text-center">
-            <Square className="h-3 w-3 text-faint print:text-black" />
+            <Square className="h-3 w-3 text-muted print:text-black" />
           </TableCell>
           <TableCell className="pl-12">
             <span className="text-caption text-muted">{childName} - {i + 1}</span>
@@ -390,7 +390,7 @@ export default function PullSheetPage({
                               {childQty > 1 && Array.from({ length: childQty }).map((_, i) => (
                                 <TableRow key={`${child.id}-${i}`}>
                                   <TableCell className="text-center">
-                                    <Square className="h-3 w-3 text-faint print:text-black" />
+                                    <Square className="h-3 w-3 text-muted print:text-black" />
                                   </TableCell>
                                   <TableCell className="pl-12">
                                     <span className="text-caption text-muted">{childName} - {i + 1}</span>
@@ -407,7 +407,7 @@ export default function PullSheetPage({
                         {!isKit && qty > 1 && Array.from({ length: qty }).map((_, i) => (
                           <TableRow key={`${item.id}-sub-${i}`}>
                             <TableCell className="text-center">
-                              <Square className="h-3 w-3 text-faint print:text-black" />
+                              <Square className="h-3 w-3 text-muted print:text-black" />
                             </TableCell>
                             <TableCell className="pl-8">
                               <span className="text-caption text-muted">{itemName} - {i + 1}</span>

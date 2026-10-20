@@ -211,14 +211,14 @@ export default function RunsheetPage({
                   {/* Date header */}
                   <div className="mb-3 flex items-center gap-2">
                     {isToday && (
-                      <span className="rounded-full bg-red-soft px-2 py-0.5 text-badge font-bold text-red">
+                      <span className="rounded-full bg-red-soft px-2 py-0.5 text-badge font-bold text-red-text">
                         Today
                       </span>
                     )}
                     <span
                       className={cn(
                         "t-overline",
-                        isToday ? "text-red" : "text-muted"
+                        isToday ? "text-red-text" : "text-muted"
                       )}
                     >
                       {group.dateLong}
@@ -286,8 +286,8 @@ export default function RunsheetPage({
                           {service.crewAssignments.length > 0 && (
                             <div className="mt-3 border-t border-line pt-2.5">
                               <div className="flex items-center gap-1.5 mb-2">
-                                <Users className="h-3 w-3 text-faint" />
-                                <span className="t-overline text-faint">
+                                <Users className="h-3 w-3 text-muted" />
+                                <span className="t-overline text-muted">
                                   Crew ({service.crewAssignments.length})
                                 </span>
                               </div>
@@ -331,7 +331,7 @@ export default function RunsheetPage({
         {/* Site contact */}
         {project?.siteContactName && (
           <div className="mt-6 rounded-[var(--r)] border border-line bg-card p-3.5">
-            <div className="t-overline text-faint mb-2">
+            <div className="t-overline text-muted mb-2">
               Site contact
             </div>
             <p className="text-ui-text font-medium text-ink">{project.siteContactName}</p>

@@ -24,7 +24,7 @@ export function PaybackBar({
     return (
       <div className={cn("flex items-center gap-3", className)}>
         <div className="h-2 flex-1 rounded-full bg-paper-2" />
-        {showLabel && <span className="w-14 text-right text-caption text-faint">—</span>}
+        {showLabel && <span className="w-14 text-right text-caption text-muted">—</span>}
       </div>
     );
   }

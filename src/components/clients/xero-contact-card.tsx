@@ -70,7 +70,7 @@ export function XeroContactCard({ clientId, xeroContactId, xeroContactName }: Xe
     return (
       <div className="space-y-2 text-table-cell">
         <div className="flex items-center gap-1.5 text-fg">
-          <Link2 className="h-3.5 w-3.5 text-faint" />
+          <Link2 className="h-3.5 w-3.5 text-muted" />
           <span className="font-medium">{xeroContactName ?? xeroContactId}</span>
         </div>
         <div className="flex gap-2">
@@ -111,12 +111,12 @@ export function XeroContactCard({ clientId, xeroContactId, xeroContactName }: Xe
       </div>
       {results && (
         <ul className="space-y-1">
-          {results.length === 0 && <li className="text-caption text-faint">No matches.</li>}
+          {results.length === 0 && <li className="text-caption text-muted">No matches.</li>}
           {results.map((r) => (
             <li key={r.ContactID} className="flex items-center justify-between gap-2 rounded-[var(--r)] border border-line px-2 py-1.5 text-table-cell">
               <div className="min-w-0">
                 <p className="truncate font-medium text-fg">{r.Name}</p>
-                {r.EmailAddress && <p className="truncate text-caption text-faint">{r.EmailAddress}</p>}
+                {r.EmailAddress && <p className="truncate text-caption text-muted">{r.EmailAddress}</p>}
               </div>
               <Button
                 type="button"

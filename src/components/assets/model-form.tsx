@@ -164,17 +164,17 @@ export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAss
                 {previewImage ? (
                   <AppImage src={previewImage} alt={previewName} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
                 ) : (
-                  <Package className="h-8 w-8 text-faint" strokeWidth={1.5} />
+                  <Package className="h-8 w-8 text-muted" strokeWidth={1.5} />
                 )}
               </div>
               <div className="space-y-1.5 p-3">
-                <p className={cn("text-card-title font-semibold leading-tight", previewName === "New model" ? "text-faint" : "text-ink")}>
+                <p className={cn("text-card-title font-semibold leading-tight", previewName === "New model" ? "text-muted" : "text-ink")}>
                   {previewName}
                 </p>
                 {categoryLabel && (
                   <SmartFormPreviewPill>{categoryLabel}</SmartFormPreviewPill>
                 )}
-                <p className={cn("text-caption", rateLine ? "text-muted" : "text-faint")}>
+                <p className={cn("text-caption", rateLine ? "text-muted" : "text-muted")}>
                   {rateLine || "No daily rate"}
                 </p>
               </div>

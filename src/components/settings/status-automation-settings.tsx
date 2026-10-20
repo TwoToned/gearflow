@@ -56,7 +56,7 @@ export function StatusAutomationSettings({
             <div className="min-w-0">
               <p className="flex flex-wrap items-center gap-1.5 t-small font-medium text-ink">
                 {label.title}
-                <ArrowRight className="h-3 w-3 shrink-0 text-faint" aria-hidden />
+                <ArrowRight className="h-3 w-3 shrink-0 text-muted" aria-hidden />
                 <span className="text-ink">{label.moves}</span>
               </p>
               <p className="mt-0.5 t-micro text-muted">{label.detail}</p>

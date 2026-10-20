@@ -826,7 +826,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       <ul className="space-y-1 text-table-cell">
                         {model.bulkAccessories.map((c) => (
                           <li key={c.id} className="flex items-center gap-2">
-                            <span className="text-faint select-none">└─</span>
+                            <span className="text-muted select-none">└─</span>
                             <span className="font-medium text-ink">
                               {c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}
                             </span>

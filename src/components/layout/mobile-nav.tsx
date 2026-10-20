@@ -119,7 +119,7 @@ export function MobileNav() {
               className={cn(
                 "flex h-14 flex-1 flex-col items-center justify-center gap-1 rounded-[var(--r)] transition-colors",
                 focusRing,
-                isActive ? "text-red" : "text-faint hover:text-ink-2",
+                isActive ? "text-red" : "text-muted hover:text-ink-2",
               )}
             >
               <item.icon className="size-[22px]" aria-hidden />

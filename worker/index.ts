@@ -59,3 +59,22 @@ self.addEventListener("notificationclick", (event: NotificationEvent) => {
     })(),
   );
 });
+
+// Older next-pwa defaults cached pages/RSC/API responses. The replacement worker
+// must remove those legacy app-owned caches as well as stop writing new ones.
+// Never inspect or copy their responses into the public offline shell.
+self.addEventListener("activate", (event: ExtendableEvent) => {
+  const legacy = new Set([
+    "pages", "pages-rsc", "pages-rsc-prefetch", "apis", "next-data",
+    "start-url", "cross-origin", "static-data-assets", "next-image",
+    "google-fonts-webfonts", "google-fonts-stylesheets", "static-font-assets",
+    "static-image-assets", "next-static-js-assets", "static-audio-assets",
+    "static-video-assets", "static-js-assets", "static-style-assets",
+  ]);
+  event.waitUntil(caches.keys().then(names => Promise.all(
+    names.filter(name => legacy.has(name)).map(name => caches.delete(name)),
+  )));
+});
+
+// Module scope keeps the service-worker `self` declaration separate from lib.webworker.
+export {};

@@ -158,7 +158,7 @@ export function ProjectLifecycle({
             {statuses!.map((s) => (
               <DropdownMenuItem key={s.value} onClick={() => onStatusChange!(s.value)}>
                 <Check
-                  className={cn("h-4 w-4 text-red", s.value !== status && "opacity-0")}
+                  className={cn("h-4 w-4 text-red-text", s.value !== status && "opacity-0")}
                   strokeWidth={3}
                   aria-hidden
                 />
@@ -207,8 +207,8 @@ export function ProjectLifecycle({
                     className={cn(
                       "flex size-10 shrink-0 items-center justify-center rounded-full text-ui-text font-bold transition-colors",
                       state === "done" && "bg-ink text-paper",
-                      state === "current" && "border-2 border-red bg-card text-red",
-                      state === "upcoming" && "border-2 border-line bg-card text-faint",
+                      state === "current" && "border-2 border-red bg-card text-red-text",
+                      state === "upcoming" && "border-2 border-line bg-card text-muted",
                     )}
                     aria-current={state === "current" ? "step" : undefined}
                   >
@@ -220,7 +220,7 @@ export function ProjectLifecycle({
                 <span
                   className={cn(
                     "whitespace-nowrap text-center text-caption",
-                    state === "current" ? "font-semibold text-ink" : state === "done" ? "text-muted" : "text-faint",
+                    state === "current" ? "font-semibold text-ink" : state === "done" ? "text-muted" : "text-muted",
                   )}
                 >
                   {s.label}

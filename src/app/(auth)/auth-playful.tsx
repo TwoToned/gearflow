@@ -34,31 +34,9 @@ import {
   Building2,
 } from "lucide-react";
 
-/* ------------------------------------------------------------------ *
- * GAFF tape-roll sticker — the production-industry in-joke brand mark *
- * (DESIGN.md §17). No SVG asset exists, so this is a tasteful CSS      *
- * roll: concentric rings with a torn-tape tab. Purely decorative.     *
- * ------------------------------------------------------------------ */
+/** Supplied locked artwork, copied unchanged from canonical v1.3.0. */
 function GaffSticker({ className }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        "pointer-events-none relative flex size-[58px] items-center justify-center rounded-full",
-        "bg-gaff-tape text-ink shadow-[var(--sh-stk)] ring-2 ring-ink/15",
-        className,
-      )}
-    >
-      {/* outer ring */}
-      <div className="absolute inset-[6px] rounded-full border-2 border-ink/25" />
-      {/* inner core */}
-      <div className="flex size-[22px] items-center justify-center rounded-full bg-card ring-2 ring-ink/20">
-        <span className="t-annotation text-[9px] leading-none text-muted">GAFF</span>
-      </div>
-      {/* torn tape tab peeling off the roll */}
-      <div className="absolute -right-3 top-1/2 h-3 w-7 -translate-y-1/2 -rotate-6 rounded-r-sm bg-ink/85 [clip-path:polygon(0_0,100%_18%,92%_82%,0_100%)]" />
-    </div>
-  );
+  return <img src="/stickers/gaff-tape-sticker.svg" alt="" aria-hidden="true" width={58} height={58} className={cn("pointer-events-none size-[58px]", className)} />;
 }
 
 /* ------------------------------------------------------------------ *
@@ -76,7 +54,7 @@ function StickerChip({
 }) {
   const tones = {
     cream: "bg-cream text-cream-ink ring-cream-ink/10",
-    red: "bg-red text-primary-foreground ring-red-700/40",
+    red: "bg-primary text-primary-foreground ring-red-700/40",
     ink: "bg-elev text-ink ring-line-2",
   } as const;
   return (
@@ -190,15 +168,15 @@ function BrandCollage() {
         <FeaturePatch hue="green" className="absolute bottom-[20%] left-[8%] rotate-[10deg]">
           <CalendarCheck />
         </FeaturePatch>
-        <FeaturePatch hue="coral" size="sm" className="absolute bottom-[30%] right-[12%] -rotate-[8deg]">
+        <FeaturePatch hue="coral" size="sm" className="absolute bottom-[30%] right-[12%] -rotate-[3deg]">
           <Wrench />
         </FeaturePatch>
 
-        <GaffSticker className="absolute right-[8%] bottom-[14%] rotate-[8deg]" />
+        <GaffSticker className="absolute right-[8%] bottom-[14%] rotate-[3deg]" />
 
-        <DoodleStar className="absolute left-[24%] top-[38%] size-6 -rotate-12 text-red" />
+        <DoodleStar className="absolute left-[24%] top-[38%] size-6 -rotate-12 text-red-text" />
         <DoodleStar className="absolute right-[26%] top-[44%] size-4 rotate-12 text-warn" />
-        <DoodleArrow className="absolute right-[22%] top-[60%] h-9 w-14 rotate-[8deg] text-ink-2/70" />
+        <DoodleArrow className="absolute right-[22%] top-[60%] h-9 w-14 rotate-[3deg] text-ink-2/70" />
 
         <StickerChip tone="red" className="absolute left-[14%] top-[64%] -rotate-[6deg]">
           <Zap className="size-3" /> live & loaded
@@ -226,22 +204,22 @@ function BrandCollage() {
             >
               <Sparkles />
             </FeaturePatch>
-            <DoodleSquiggle className="absolute -bottom-2 left-1 h-3 w-20 text-red" />
+            <DoodleSquiggle className="absolute -bottom-2 left-1 h-3 w-20 text-red-text" />
           </div>
         </FadeIn>
 
         <FadeIn delay={0.1}>
           <p className="t-display max-w-sm text-[30px] leading-[1.12] text-ink">
             Run the show, not the{" "}
-            <span className="text-red">chaos</span>.
+            <span className="text-red-text">chaos</span>.
           </p>
           <p className="mt-3 max-w-sm text-[15px] leading-relaxed text-ink-2">
             Jobs, crew, warehouse and gear — one calm command room for the
             whole production company.
           </p>
-          <p className="t-annotation mt-4 inline-flex items-center gap-2 text-[16px] text-red">
+          <p className="t-annotation mt-4 inline-flex items-center gap-2 text-[16px] text-red-text">
             psst — the roadie&apos;s got your back
-            <DoodleArrow className="h-6 w-9 rotate-[170deg] text-red" />
+            <DoodleArrow className="h-6 w-9 rotate-[170deg] text-red-text" />
           </p>
         </FadeIn>
       </div>
@@ -266,19 +244,19 @@ export function AuthShell({
 }) {
   const cornerSticker =
     accent === "join" ? (
-      <StickerChip tone="red" className="rotate-[8deg]">
+      <StickerChip tone="red" className="rotate-[3deg]">
         <Sparkles className="size-3" /> new here? nice.
       </StickerChip>
     ) : accent === "admin" ? (
-      <StickerChip tone="ink" className="rotate-[8deg]">
+      <StickerChip tone="ink" className="rotate-[3deg]">
         <Zap className="size-3" /> keys to the kingdom
       </StickerChip>
     ) : accent === "setup" ? (
-      <StickerChip tone="red" className="rotate-[8deg]">
+      <StickerChip tone="red" className="rotate-[3deg]">
         <Building2 className="size-3" /> let&apos;s go
       </StickerChip>
     ) : (
-      <StickerChip tone="cream" className="rotate-[8deg]">
+      <StickerChip tone="cream" className="rotate-[3deg]">
         welcome back!
       </StickerChip>
     );
@@ -326,11 +304,11 @@ export function AuthShell({
           </FeaturePatch>
 
           {/* the actual card surface that wraps the (untouched) form */}
-          <div className="rounded-[var(--r-lg)] border-2 border-line-2 bg-card p-6 shadow-[var(--sh-card)] sm:p-8">
+          <div className="rounded-[var(--r-lg)] border-2 border-border bg-card p-6 shadow-[var(--sh-card)] sm:p-8">
             {/* mobile-only mini wordmark (desktop has the collage) */}
             <div className="mb-6 flex items-center justify-between lg:hidden">
               <RvltFlowLogo className="h-6 w-auto" title="RVLT Flow" />
-              <GaffSticker className="size-9 [&_span]:text-[7px]" />
+              <GaffSticker className="size-9" />
             </div>
 
             {children}
@@ -341,7 +319,7 @@ export function AuthShell({
               aria-hidden
               className="t-annotation mt-5 flex items-center justify-center gap-2 text-center text-[15px] text-muted"
             >
-              <DoodleStar className="size-3 text-red" />
+              <DoodleStar className="size-3 text-red-text" />
               {annotation}
             </p>
           ) : null}
@@ -363,12 +341,12 @@ export function HandNudge({
     <span
       aria-hidden
       className={cn(
-        "t-annotation pointer-events-none inline-flex items-center gap-1.5 text-[14px] text-red",
+        "t-annotation pointer-events-none inline-flex items-center gap-1.5 text-[14px] text-red-text",
         className,
       )}
     >
       {children}
-      <DoodleArrow className="h-5 w-8 text-red" />
+      <DoodleArrow className="h-5 w-8 text-red-text" />
     </span>
   );
 }

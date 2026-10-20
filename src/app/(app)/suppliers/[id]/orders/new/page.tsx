@@ -149,11 +149,11 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
               <SmartFormPreview>
                 <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
                   <div className="flex items-start gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
                       <Truck className="h-4 w-4" strokeWidth={1.5} />
                     </div>
                     <div className="min-w-0 flex-1 space-y-1.5">
-                      <p className={cn("text-card-title font-semibold leading-tight", orderRef ? "text-ink" : "text-faint")}>
+                      <p className={cn("text-card-title font-semibold leading-tight", orderRef ? "text-ink" : "text-muted")}>
                         {orderRef || "New order"}
                       </p>
                       <p className="truncate text-caption text-muted">{supplier.name}</p>
@@ -161,7 +161,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
                         <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
                         <StatusIndicator category="supplierOrder" value={v.status ?? "DRAFT"} label={statusLabel} variant="pill" />
                       </div>
-                      <p className={cn("text-caption", expectedDate ? "text-muted" : "text-faint")}>
+                      <p className={cn("text-caption", expectedDate ? "text-muted" : "text-muted")}>
                         {expectedDate ? `Expected ${expectedDate}` : "No expected date"}
                       </p>
                     </div>

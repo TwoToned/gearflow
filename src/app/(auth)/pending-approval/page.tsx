@@ -10,11 +10,11 @@ export default function PendingApprovalPage() {
         <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
           <Clock className="h-6 w-6" />
         </div>
-        <h2 className="t-title">Pending Approval</h2>
-        <p className="text-sm text-fg-3">Your account is awaiting administrator review</p>
+        <h1 className="t-page-title">Pending approval</h1>
+        <p className="t-reading-body text-muted">Your account is awaiting administrator review</p>
       </div>
       <div>
-        <p className="text-sm text-fg-3 text-center">
+        <p className="t-reading-body text-muted text-center">
           You&apos;ve successfully authenticated, but an administrator needs to approve your
           access to this organization. You&apos;ll receive an email notification once your
           request has been reviewed.
@@ -23,7 +23,7 @@ export default function PendingApprovalPage() {
       <div className="mt-6 flex justify-center">
         <Link
           href="/login"
-          className="text-sm text-primary hover:underline"
+          className="text-sm text-red-text hover:underline"
         >
           Back to sign in
         </Link>

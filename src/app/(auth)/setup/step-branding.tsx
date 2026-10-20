@@ -250,7 +250,7 @@ export function StepBranding({
   return (
     <AuthShell accent="setup" annotation="the paper is the proof.">
       <WizardRail step={3} total={TOTAL_STEPS} />
-      <p className="t-annotation text-[13px] text-red">Step 3 of {TOTAL_STEPS} · Your brand</p>
+      <p className="t-annotation text-[13px] text-red-text">Step 3 of {TOTAL_STEPS} · Your brand</p>
       <h1 className="t-page-title mt-1 text-ink">What your quotes look like.</h1>
       <p className="mt-1 text-sm text-muted">
         This is the logo that prints on your documents — not the icon shown in the app itself.
@@ -359,7 +359,7 @@ function LogoUploadField({
                 type="button"
                 onClick={onRemove}
                 aria-label={`Remove ${label.toLowerCase()}`}
-                className="absolute -right-1.5 -top-1.5 rounded-full bg-red p-0.5 text-white shadow-sm"
+                className="absolute -right-1.5 -top-1.5 rounded-full bg-primary p-0.5 text-white shadow-sm"
               >
                 <X className="h-3 w-3" />
               </button>

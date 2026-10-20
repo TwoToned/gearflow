@@ -209,7 +209,7 @@ function MilestoneRow({ item, active }: { item: MilestoneItem; active: boolean }
         <Link
           href={item.href}
           className={cn(
-            "rounded-[var(--r-sm)] bg-red px-2.5 py-1 text-xs font-medium text-white hover:bg-red/90",
+            "rounded-[var(--r-sm)] bg-primary px-2.5 py-1 text-xs font-medium text-white hover:bg-red/90",
             focusRing,
           )}
         >

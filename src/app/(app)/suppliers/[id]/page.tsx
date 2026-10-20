@@ -385,7 +385,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                         <DropdownMenuItem
                           onClick={() => setDeleteOpen(true)}
                           disabled={deleteMutation.isPending}
-                          className="text-red data-[highlighted]:bg-red data-[highlighted]:text-white"
+                          className="text-red-text data-[highlighted]:bg-primary data-[highlighted]:text-white"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           Delete supplier

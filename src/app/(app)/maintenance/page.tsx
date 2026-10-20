@@ -258,8 +258,8 @@ function MaintenanceStatCard({
   accent?: boolean;
   loading?: boolean;
 }) {
-  const figureColor = alert ? "text-t-out" : accent ? "text-red" : "text-ink";
-  const iconColor = alert ? "text-t-out" : accent ? "text-red" : "text-muted";
+  const figureColor = alert ? "text-t-out" : accent ? "text-red-text" : "text-ink";
+  const iconColor = alert ? "text-t-out" : accent ? "text-red-text" : "text-muted";
   return (
     <div
       className={cn(

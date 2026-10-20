@@ -16,12 +16,12 @@ function Toaster(props: ToasterProps) {
           title: "font-semibold text-ink",
           description: "text-muted text-[12.5px]",
           actionButton:
-            "bg-red text-white text-[12px] font-semibold rounded-full px-3 py-1",
+            "bg-primary text-white text-[12px] font-semibold rounded-full px-3 py-1",
           cancelButton:
             "bg-paper-2 text-muted text-[12px] font-semibold rounded-full px-3 py-1 border border-border",
           closeButton:
             "border border-border bg-card text-muted hover:text-ink hover:bg-elev rounded-[6px]",
-          error: "text-red",
+          error: "text-red-text",
           success: "text-ok",
           warning: "text-warn",
           info: "text-blue",

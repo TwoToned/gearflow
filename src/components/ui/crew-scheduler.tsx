@@ -1,242 +1,72 @@
 "use client";
-
 import * as React from "react";
-import { X } from "lucide-react";
+import {cn} from "@/lib/utils";
+import {layoutShifts,formatHour} from "@/lib/scheduler";
+import {PersonAvatar,avatarHue,type AvatarHue} from "@/components/ui/avatar";
 
-import { cn } from "@/lib/utils";
-import { PersonAvatar, avatarHue, type AvatarHue } from "@/components/ui/avatar";
-
-/**
- * CrewScheduler — horizontal Gantt timeline (§15.4c).
- *
- * Layout: sticky name+avatar column on the left; horizontally-scrollable hour track on
- * the right — both move as one container so scroll stays in sync.
- *
- * Shift bars use the 8-colour categorical palette (§3.7). Bar labels follow the on-fill
- * rule: --dark on all hues in dark theme (bright fills); --primary-foreground on most
- * hues in light theme except amber/lime. Clash (overlapping shifts) → bg-out-soft +
- * border-t-out. Open slots → dashed border, no fill.
- *
- * DESIGN.md §15.4c · §3.7 on-fill rule · §9.1 focus-visible.
- */
-
-// ─── types ────────────────────────────────────────────────────────────────────
-
-export interface SchedulerShift {
-  id: string;
-  label: string;
-  startHour: number;
-  endHour: number;
-  /** Falls back to avatarHue(row.name) when omitted. */
-  color?: AvatarHue;
-  /** Renders as a dashed open-call slot (no fill). */
-  isOpen?: boolean;
+interface SchedulerShift {
+ id:string; label:string; startHour:number; endHour:number; color?:AvatarHue; isOpen?:boolean;
 }
-
-export interface SchedulerRow {
-  id: string;
-  name: string;
-  /** Avatar image URL — falls back to initials. */
-  src?: string;
-  shifts: SchedulerShift[];
+interface SchedulerRow { id:string; name:string; src?:string; shifts:SchedulerShift[]; unavailable?:boolean }
+interface CrewSchedulerProps extends React.HTMLAttributes<HTMLDivElement> {
+ rows:SchedulerRow[]; label?:string; startHour?:number; endHour?:number; hourWidth?:number;
+ onShiftClick?:(shift:SchedulerShift,row:SchedulerRow)=>void;
+ /** Consumer changes the selected date and rows together. */
+ onDayChange?:(direction:-1|1)=>void;
 }
-
-export interface CrewSchedulerProps extends React.HTMLAttributes<HTMLDivElement> {
-  rows: SchedulerRow[];
-  /** Day / date label shown in the header name cell, e.g. "Thursday 12 Jun". */
-  label?: string;
-  startHour?: number;
-  endHour?: number;
-  /** Pixel width of one hour column. Determines scroll width. */
-  hourWidth?: number;
-  onShiftClick?: (shift: SchedulerShift, row: SchedulerRow) => void;
-}
-
-// ─── constants & helpers ──────────────────────────────────────────────────────
-
-const NAME_COL = "10rem";
-const ROW_H = 56;
-const BAR_INSET = 6; // top/bottom margin so bars are 44px → ≥44px touch target (§16.8)
-
-// On-fill rule (§3.7): dark theme bright fills → --dark; light theme deeper fills →
-// --primary-foreground, except amber/lime which stay dark on both themes.
-const ON_FILL: Record<AvatarHue, string> = {
-  blue:   "text-dark [.light_&]:text-primary-foreground",
-  amber:  "text-dark",
-  green:  "text-dark [.light_&]:text-primary-foreground",
-  purple: "text-dark [.light_&]:text-primary-foreground",
-  coral:  "text-dark [.light_&]:text-primary-foreground",
-  teal:   "text-dark [.light_&]:text-primary-foreground",
-  pink:   "text-dark [.light_&]:text-primary-foreground",
-  lime:   "text-dark",
-};
-
-const HUE_BG: Record<AvatarHue, string> = {
-  blue: "bg-blue", amber: "bg-amber", green: "bg-green", purple: "bg-purple",
-  coral: "bg-coral", teal: "bg-teal", pink: "bg-pink", lime: "bg-lime",
-};
-
-function getClashIds(shifts: SchedulerShift[]): Set<string> {
-  const ids = new Set<string>();
-  for (let i = 0; i < shifts.length; i++) {
-    for (let j = i + 1; j < shifts.length; j++) {
-      const a = shifts[i], b = shifts[j];
-      if (a.startHour < b.endHour && b.startHour < a.endHour) {
-        ids.add(a.id);
-        ids.add(b.id);
-      }
-    }
-  }
-  return ids;
-}
-
-function fmt(h: number): string {
-  const hh = Math.floor(h);
-  const mm = Math.round((h - hh) * 60);
-  return mm === 0
-    ? `${hh % 12 || 12}${hh < 12 ? "am" : "pm"}`
-    : `${hh % 12 || 12}:${String(mm).padStart(2, "0")}`;
-}
-
-// ─── component ────────────────────────────────────────────────────────────────
-
-function CrewScheduler({
-  rows,
-  label,
-  startHour = 8,
-  endHour = 20,
-  hourWidth = 64,
-  onShiftClick,
-  className,
-  ...props
-}: CrewSchedulerProps) {
-  const hours = Array.from(
-    { length: endHour - startHour + 1 },
-    (_, i) => startHour + i,
-  );
-  const trackW = (endHour - startHour) * hourWidth;
-  const totalW = `calc(${NAME_COL} + ${trackW}px)`;
-
-  return (
-    <div
-      className={cn(
-        "relative w-full overflow-hidden rounded-[var(--radius)] border-2 border-border bg-card text-ink",
-        className,
-      )}
-      {...props}
-    >
-      {/* one scroll container — name col is sticky inside it */}
-      <div className="overflow-x-auto">
-        <div style={{ minWidth: totalW }}>
-
-          {/* ── header row ── */}
-          <div className="flex border-b border-line">
-            <div
-              className="sticky left-0 z-10 flex shrink-0 items-center bg-paper-2 px-3 border-r border-line"
-              style={{ width: NAME_COL, height: ROW_H }}
-            >
-              {label && (
-                <span className="text-[11px] font-bold text-muted truncate">{label}</span>
-              )}
-            </div>
-            {/* hour labels */}
-            <div className="relative flex" style={{ width: trackW }}>
-              {hours.map((h) => (
-                <div
-                  key={h}
-                  className="shrink-0 border-r border-line px-1.5 flex items-center"
-                  style={{ width: hourWidth, height: ROW_H }}
-                >
-                  <span className="text-[11px] font-bold text-faint">{fmt(h)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ── crew rows ── */}
-          {rows.map((row) => {
-            const clashIds = getClashIds(row.shifts);
-            const resolvedColor = (shift: SchedulerShift): AvatarHue =>
-              shift.color ?? avatarHue(row.name);
-
-            return (
-              <div key={row.id} className="flex border-b border-line last:border-b-0">
-                {/* sticky name column */}
-                <div
-                  className="sticky left-0 z-10 flex shrink-0 items-center gap-2 bg-card px-3 border-r border-line"
-                  style={{ width: NAME_COL, height: ROW_H }}
-                >
-                  <PersonAvatar name={row.name} src={row.src} className="size-7 shrink-0" />
-                  <span className="text-[13.5px] font-medium text-ink truncate min-w-0">
-                    {row.name}
-                  </span>
-                </div>
-
-                {/* track lane */}
-                <div className="relative" style={{ width: trackW, height: ROW_H }}>
-                  {/* hour gridlines */}
-                  {hours.map((h) => (
-                    <div
-                      key={h}
-                      className="absolute top-0 bottom-0 border-r border-line"
-                      style={{ left: (h - startHour) * hourWidth }}
-                      aria-hidden="true"
-                    />
-                  ))}
-
-                  {/* shift bars */}
-                  {row.shifts.map((shift) => {
-                    const isClash = clashIds.has(shift.id);
-                    const hue = resolvedColor(shift);
-                    const left = Math.max(0, (shift.startHour - startHour) * hourWidth);
-                    const width = Math.max(
-                      hourWidth * 0.25,
-                      (shift.endHour - shift.startHour) * hourWidth - 4,
-                    );
-
-                    return (
-                      <button
-                        key={shift.id}
-                        type="button"
-                        onClick={() => onShiftClick?.(shift, row)}
-                        className={cn(
-                          "absolute flex items-center overflow-hidden rounded-[8px] px-2",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-1 focus-visible:ring-offset-card",
-                          "motion-safe:transition-[opacity,transform] hover:opacity-90 active:scale-[.98]",
-                          "disabled:cursor-not-allowed disabled:opacity-45",
-                          shift.isOpen
-                            ? "border-2 border-dashed border-muted bg-transparent text-muted"
-                            : isClash
-                              ? "border-2 border-t-out bg-[var(--out-soft)]" /* TODO: use bg-out-soft once --color-out-soft added to @theme inline */
-                              : cn(HUE_BG[hue], ON_FILL[hue]),
-                          !shift.isOpen && isClash && "text-t-out",
-                        )}
-                        style={{
-                          left: left + 2,
-                          width,
-                          top: BAR_INSET,
-                          bottom: BAR_INSET,
-                        }}
-                        aria-label={`${row.name}: ${shift.label} ${fmt(shift.startHour)}–${fmt(shift.endHour)}${isClash ? " (clash)" : ""}`}
-                      >
-                        <span className="text-[12px] font-medium leading-none truncate">
-                          {shift.label}
-                        </span>
-                        {isClash && (
-                          <X className="ml-auto size-4 shrink-0 text-t-out" aria-hidden="true" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-
-        </div>
+const hueBg:Record<AvatarHue,string>={blue:'bg-blue',amber:'bg-amber',green:'bg-green',purple:'bg-purple',coral:'bg-coral',teal:'bg-teal',pink:'bg-pink',lime:'bg-lime'};
+const onFill:Record<AvatarHue,string>={blue:'text-dark [.light_&]:text-primary-foreground',amber:'text-dark',green:'text-dark [.light_&]:text-primary-foreground',purple:'text-dark [.light_&]:text-primary-foreground',coral:'text-dark [.light_&]:text-primary-foreground',teal:'text-dark [.light_&]:text-primary-foreground',pink:'text-dark [.light_&]:text-primary-foreground',lime:'text-dark'};
+const focus='focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-card';
+function CrewScheduler({rows,label='Crew schedule',startHour=8,endHour=20,hourWidth=64,onShiftClick,onDayChange,className,...props}:CrewSchedulerProps) {
+ const end=endHour<=startHour ? endHour+24 : endHour;
+ const trackW=(end-startHour)*hourWidth;
+ function detail(row:SchedulerRow,shift:SchedulerShift,clash:boolean,shiftEnd:number) {
+  return `${row.name}: ${shift.label}, ${formatHour(shift.startHour)} to ${formatHour(shiftEnd)}${clash?', Clash. Review both assignments.':row.unavailable?', Unavailable. Review assignment.':''}${clash&&row.unavailable?', Unavailable':''}${shift.isOpen?', Open call':''}`;
+ }
+ return <section aria-label={label} className={cn('rounded-[var(--radius)] border-2 border-border bg-card text-ink',className)} {...props}>
+  <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line p-3">
+   <h3 className="font-display font-bold">{label}</h3>
+   {onDayChange && <div className="flex gap-2"><button type="button" className={cn('min-h-11 rounded border-2 border-input px-3',focus)} onClick={()=>onDayChange(-1)} aria-label="Previous day">Previous</button><button type="button" className={cn('min-h-11 rounded border-2 border-input px-3',focus)} onClick={()=>onDayChange(1)} aria-label="Next day">Next</button></div>}
+  </header>
+  <div data-scheduler-agenda className="space-y-5 p-3 md:hidden">
+   {rows.map(row=><section key={row.id} aria-label={row.name} className="space-y-2">
+    <h4 className="break-words font-semibold">{row.name}</h4>
+    {row.unavailable && <p className="text-t-out">Unavailable. Reassign any listed calls.</p>}
+    {!row.shifts.length && <p className="text-muted">{row.unavailable?'No assignments':'Available, no assignments'}</p>}
+    {layoutShifts(row.shifts).map(({shift,end:shiftEnd,clash})=><div key={shift.id} className="border-t border-line pt-2">
+     {onShiftClick ? <button type="button" onClick={()=>onShiftClick(shift,row)} className={cn('min-h-11 w-full rounded p-2 text-left',focus)}>
+      <span className="sr-only">{row.name}: </span>
+      <span className="block break-words font-semibold">{shift.label}</span>{" "}<span className="block text-muted">{formatHour(shift.startHour)} to {formatHour(shiftEnd)}</span>
+      {" "}{(clash||row.unavailable) && <span className="block text-t-out">{clash?'Clash. Review both assignments.':'Unavailable. Review assignment.'}</span>}{" "}{clash&&row.unavailable && <span className="block text-t-out">Unavailable. Review assignment.</span>}{" "}{shift.isOpen && <span className="block">Open call</span>}
+     </button> : <p className="break-words py-2">{detail(row,shift,clash,shiftEnd)}</p>}
+    </div>)}
+   </section>)}
+  </div>
+  <div data-scheduler-timeline className="hidden overflow-x-auto md:block" role="region" aria-label="Crew timeline. Short calls also appear in the full assignment list." tabIndex={0}>
+   <div style={{minWidth:`calc(12rem + ${trackW}px)`}}>
+    <div className="flex border-b border-line"><div className="w-48 shrink-0 p-3 text-muted">Crew member</div><div className="relative h-11" style={{width:trackW}}>{Array.from({length:Math.ceil(end-startHour)},(_,i)=><span key={i} className="absolute top-3 text-xs text-muted" style={{left:i*hourWidth}}>{formatHour(startHour+i)}</span>)}</div></div>
+    {rows.map(row=>{
+     const shifts=layoutShifts(row.shifts), lanes=Math.max(1,...shifts.map(s=>s.lane+1));
+     return <div key={row.id} className="flex border-b border-line last:border-0">
+      <div className="sticky left-0 z-10 flex w-48 shrink-0 flex-col justify-center gap-2 border-r border-line bg-card p-3"><div className="flex items-center gap-2"><PersonAvatar name={row.name} src={row.src} className="size-7 shrink-0"/><span className="break-words text-sm">{row.name}</span></div>{row.unavailable&&<span className="text-t-out">Unavailable</span>}</div>
+      <div className="relative" style={{width:trackW,minHeight:lanes*56}}>
+       {shifts.map(({shift,start,end:shiftEnd,lane,clash})=>{
+        const left=Math.max(start,startHour),right=Math.min(shiftEnd,end); if(right<=left)return null;
+        const hue=shift.color??avatarHue(row.name), text=detail(row,shift,clash,shiftEnd);
+        const cls=cn('absolute flex h-11 items-center overflow-hidden rounded border-2 px-2 text-xs font-semibold',focus,clash||row.unavailable?'border-t-out bg-out-soft text-t-out':shift.isOpen?'border-input border-dashed text-ink':cn('border-transparent',hueBg[hue],onFill[hue]));
+        const style={left:(left-startHour)*hourWidth,top:lane*56+6,width:Math.max(1,(right-left)*hourWidth-4)};
+        // A short bar is a visual mark. Its separate full-width assignment button below
+        // provides an accurate target without overlapping adjacent calls.
+        return <div key={shift.id} aria-hidden="true" title={text} className={cls} style={style}>{clash?'Clash: ':''}{shift.label}</div>;
+       })}
       </div>
-    </div>
-  );
+     </div>;
+    })}
+   </div>
+  </div>
+  <details className="hidden border-t border-line p-3 md:block"><summary className={cn('min-h-11 cursor-pointer py-3 font-semibold',focus)}>Full assignment list and clash details</summary>
+   <ul className="space-y-2">{rows.flatMap(row=>layoutShifts(row.shifts).map(({shift,end:shiftEnd,clash})=><li key={`${row.id}-${shift.id}`}>{onShiftClick?<button type="button" className={cn('min-h-11 w-full rounded p-2 text-left',focus)} onClick={()=>onShiftClick(shift,row)}>{detail(row,shift,clash,shiftEnd)}</button>:<p>{detail(row,shift,clash,shiftEnd)}</p>}</li>))}</ul>
+  </details>
+ </section>;
 }
-
-export { CrewScheduler };
+export {CrewScheduler};

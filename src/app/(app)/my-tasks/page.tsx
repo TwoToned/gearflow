@@ -44,7 +44,7 @@ export default function MyTasksPage() {
                 <Checkbox checked={false} onCheckedChange={() => void complete(t.id)} aria-label={`Complete ${t.title}`} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14px] font-medium text-ink">{t.title}</p>
-                  <p className="t-micro text-faint">
+                  <p className="t-micro text-muted">
                     {t.projectId ? (
                       <Link href={`/projects/${t.projectId}?tab=tasks`} className={cn("rounded-sm hover:underline", focusRing)}>
                         {t.projectNumber} · {t.projectName}

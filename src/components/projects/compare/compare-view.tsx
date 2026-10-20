@@ -573,8 +573,8 @@ function VersionPicker({
 function TotalPill({ label, amount, emphasized }: { label: string; amount: number; emphasized?: boolean }) {
   return (
     <div className={cn("flex min-w-[100px] flex-col items-center justify-center rounded-[var(--r)] border border-line-2 px-3 py-2", emphasized ? "bg-red-soft" : "bg-paper-2")}>
-      <span className={cn("font-mono text-caption font-bold tabular-nums", emphasized ? "text-red" : "text-ink")}>{money(amount)}</span>
-      <span className="mt-0.5 text-caption text-faint">{label.split(" ·")[0]}</span>
+      <span className={cn("font-mono text-caption font-bold tabular-nums", emphasized ? "text-red-text" : "text-ink")}>{money(amount)}</span>
+      <span className="mt-0.5 text-caption text-muted">{label.split(" ·")[0]}</span>
     </div>
   );
 }
@@ -717,14 +717,14 @@ function OldNewCell({ oldVal, newVal, state, format }: { oldVal: number | null; 
   if (state === "removed") {
     return (
       <>
-        <span className="text-faint line-through">{fmtOrDash(oldVal, format)}</span> <span className="text-t-out">→ 0</span>
+        <span className="text-muted line-through">{fmtOrDash(oldVal, format)}</span> <span className="text-t-out">→ 0</span>
       </>
     );
   }
   if (DIFFABLE_STATES.has(state) && fieldChanged(oldVal, newVal)) {
     return (
       <>
-        <span className="text-faint line-through">{fmtOrDash(oldVal, format)}</span>{" "}
+        <span className="text-muted line-through">{fmtOrDash(oldVal, format)}</span>{" "}
         <span className="text-warn">→ {fmtOrDash(newVal, format)}</span>
       </>
     );

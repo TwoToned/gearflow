@@ -120,7 +120,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
           <Tooltip>
             <TooltipTrigger
               aria-label="How revenue is attributed"
-              className="text-faint hover:text-muted"
+              className="text-muted hover:text-muted"
             >
               <Info className="h-4 w-4" />
             </TooltipTrigger>

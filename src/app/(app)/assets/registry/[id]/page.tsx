@@ -366,7 +366,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
             {link.maintenanceRecord.result === "PASS" ? "Pass" : formatLabel(link.maintenanceRecord.result)}
           </Badge>
         ) : (
-          <span className="text-faint">{"—"}</span>
+          <span className="text-muted">{"—"}</span>
         ),
     },
   ];
@@ -495,7 +495,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <DropdownMenuItem
                       onClick={() => setDeleteOpen(true)}
                       disabled={deleteMutation.isPending}
-                      className="text-red data-[highlighted]:bg-red data-[highlighted]:text-white"
+                      className="text-red-text data-[highlighted]:bg-primary data-[highlighted]:text-white"
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete
@@ -632,7 +632,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                     {mr.result === "PASS" ? "Pass" : formatLabel(mr.result)}
                                   </Badge>
                                 ) : (
-                                  <span className="text-faint">{"—"}</span>
+                                  <span className="text-muted">{"—"}</span>
                                 )}
                               </TableCell>
                             </TableRow>
@@ -757,7 +757,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     asset.model?.category ? (
                       <span className="font-medium text-ink">{asset.model.category.name}</span>
                     ) : (
-                      <span className="text-faint">Not set</span>
+                      <span className="text-muted">Not set</span>
                     )
                   }
                 />
@@ -825,7 +825,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <span className="font-medium text-ink">{asset.location.name}</span>
                   </div>
                 ) : (
-                  <p className="text-faint">No home location set</p>
+                  <p className="text-muted">No home location set</p>
                 )}
               </div>
 
@@ -860,20 +860,20 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <ul className="space-y-1 text-table-cell">
                           {asset.childAssets.map((c) => (
                             <li key={c.id} className="flex items-center gap-2">
-                              <span className="text-faint select-none">└─</span>
+                              <span className="text-muted select-none">└─</span>
                               <span className="font-medium text-ink">{c.assetTag}</span>
                               <span className="text-muted">{c.model?.name ?? ""}</span>
                             </li>
                           ))}
                           {asset.childBulkItems.map((c) => (
                             <li key={c.id} className="flex items-center gap-2">
-                              <span className="text-faint select-none">└─</span>
+                              <span className="text-muted select-none">└─</span>
                               <span className="font-medium text-ink">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
                             </li>
                           ))}
                           {inherited.map((c: { id: string; quantity: number; bulkAsset: { model: { name: string } | null; assetTag: string } | null }) => (
                             <li key={c.id} className="flex items-center gap-2">
-                              <span className="text-faint select-none">└─</span>
+                              <span className="text-muted select-none">└─</span>
                               <span className="font-medium text-ink">{c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}</span>
                               <span className="text-badge text-muted">from model</span>
                             </li>

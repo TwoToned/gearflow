@@ -55,7 +55,7 @@ function Row({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
-      <span className={cn("text-caption", muted ? "text-faint" : "text-muted")}>{label}</span>
+      <span className={cn("text-caption", muted ? "text-muted" : "text-muted")}>{label}</span>
       <span
         className={cn(
           "tabular-nums",
@@ -93,7 +93,7 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
     return (
       <div className="space-y-2">
         <div className="t-overline text-muted">Operational P&amp;L</div>
-        <p className="text-caption text-faint">Calculating…</p>
+        <p className="text-caption text-muted">Calculating…</p>
       </div>
     );
   }
@@ -122,7 +122,7 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
           </span>
         </div>
         <MarginBar margin={data.netMargin} total={data.total} />
-        <div className="text-right text-caption text-faint tabular-nums">
+        <div className="text-right text-caption text-muted tabular-nums">
           {data.marginPercent.toFixed(0)}% of {formatCurrency(data.total)}
         </div>
       </div>
@@ -156,7 +156,7 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
       <button
         type="button"
         onClick={() => setShowDetail((v) => !v)}
-        className={cn("flex items-center gap-1 rounded-sm text-caption text-faint hover:text-muted", focusRing)}
+        className={cn("flex items-center gap-1 rounded-sm text-caption text-muted hover:text-muted", focusRing)}
       >
         {showDetail ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         {showDetail ? "Hide revenue detail" : "Show revenue detail"}

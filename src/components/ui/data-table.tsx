@@ -13,7 +13,7 @@ import {
   ArrowUpDown,
   Check,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -504,15 +504,15 @@ function FilterPopover({
         variant="line"
         size="sm"
         className={cn(
-          "h-11 gap-1.5 text-xs sm:h-8",
+          "h-11 gap-1.5 text-xs [@media(pointer:fine)]:h-8",
           hasFilter && "border-primary/50 bg-primary/5 text-primary"
         )}
         onClick={() => setOpen(!open)}
       >
-        <ListFilter className="h-3.5 w-3.5" />
+        <ListFilter className="size-4" />
         {column.header}
         {hasFilter && (
-          <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-medium text-white">
+          <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-white">
             {selectedValues.length}
           </span>
         )}
@@ -560,7 +560,7 @@ function FilterPopover({
                     onClick={() => toggleOption(opt.value)}
                   >
                     <div className={cn(
-                      "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                      "flex size-4 shrink-0 items-center justify-center rounded-sm border",
                       isChecked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/30"
                     )}>
                       {isChecked && <Check className="h-2.5 w-2.5" />}
@@ -637,10 +637,10 @@ function ColumnVisibilityPopover<TData>({
         ref={triggerRef}
         variant="line"
         size="sm"
-        className="h-11 gap-1.5 text-xs sm:h-8"
+        className="h-11 gap-1.5 text-xs [@media(pointer:fine)]:h-8"
         onClick={() => setOpen(!open)}
       >
-        <SlidersHorizontal className="h-3.5 w-3.5" />
+        <SlidersHorizontal className="size-4" />
         Columns
       </Button>
       {open && typeof document !== "undefined" &&
@@ -664,7 +664,7 @@ function ColumnVisibilityPopover<TData>({
                   onClick={() => !col.alwaysVisible && onToggle(col.id)}
                 >
                   <div className={cn(
-                    "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                    "flex size-4 shrink-0 items-center justify-center rounded-sm border",
                     isVisible(col) ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/30"
                   )}>
                     {isVisible(col) && <Check className="h-2.5 w-2.5" />}
@@ -937,6 +937,7 @@ export function DataTable<TData>({
                 return (
                   <TableHead
                     key={col.id}
+                    aria-sort={isActive ? sortDirection === "asc" ? "ascending" : "descending" : undefined}
                     className={cn(responsiveClass, alignClass, col.className)}
                     style={col.width ? { width: typeof col.width === "number" ? `${col.width}px` : col.width } : undefined}
                   >
@@ -944,17 +945,17 @@ export function DataTable<TData>({
                       <button
                         type="button"
                         onClick={() => handleSort(sortKey)}
-                        className="inline-flex items-center gap-1 hover:text-ink transition-colors -ml-1 px-1 py-0.5 rounded"
+                        className={cn("inline-flex items-center gap-1 hover:text-ink transition-colors -ml-1 px-1 py-0.5 rounded min-h-11", focusRing)}
                       >
                         {col.header}
                         {isActive ? (
                           sortDirection === "asc" ? (
-                            <ArrowUp className="h-3.5 w-3.5" />
+                            <ArrowUp className="size-4" />
                           ) : (
-                            <ArrowDown className="h-3.5 w-3.5" />
+                            <ArrowDown className="size-4" />
                           )
                         ) : (
-                          <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
+                          <ArrowUpDown className="size-4 opacity-40" />
                         )}
                       </button>
                     ) : (
@@ -1082,7 +1083,7 @@ export function DataTable<TData>({
                   value={pageSize}
                   onChange={(e) => onPageSizeChange(Number(e.target.value))}
                   aria-label="Rows per page"
-                  className="flex h-11 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring sm:h-8"
+                  className="flex h-11 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [@media(pointer:fine)]:h-8"
                 >
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -1101,7 +1102,7 @@ export function DataTable<TData>({
               <Button
                 variant="line"
                 size="sm"
-                className="h-11 flex-1 sm:h-8 sm:flex-none"
+                className="h-11 flex-1 [@media(pointer:fine)]:h-8 sm:flex-none"
                 disabled={page <= 1}
                 onClick={() => onPageChange(page - 1)}
               >
@@ -1110,7 +1111,7 @@ export function DataTable<TData>({
               <Button
                 variant="line"
                 size="sm"
-                className="h-11 flex-1 sm:h-8 sm:flex-none"
+                className="h-11 flex-1 [@media(pointer:fine)]:h-8 sm:flex-none"
                 disabled={page >= totalPages}
                 onClick={() => onPageChange(page + 1)}
               >

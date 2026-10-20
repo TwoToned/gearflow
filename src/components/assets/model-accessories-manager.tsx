@@ -187,7 +187,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
         <ul className="space-y-1.5">
           {bulkAccessories.map((c) => (
             <li key={c.id} className="flex items-center gap-2 text-ui-text">
-              <span className="text-faint select-none">└─</span>
+              <span className="text-muted select-none">└─</span>
               <span className="font-medium text-ink">
                 <span className="t-data tabular-nums">{c.quantity}×</span> {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}
               </span>

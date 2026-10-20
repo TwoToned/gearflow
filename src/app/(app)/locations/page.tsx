@@ -70,7 +70,7 @@ function LocationsDashboardHeader() {
               className={cn(
                 "font-display font-extrabold leading-none tracking-tight tabular-nums",
                 t.bright ? "text-[32px] text-ink" : "text-[28px] text-ink-2",
-                loading && "animate-pulse text-faint",
+                loading && "animate-pulse text-muted",
               )}
             >
               {loading ? "—" : t.figure}

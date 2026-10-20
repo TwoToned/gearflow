@@ -35,7 +35,7 @@ export function PageHeader({
       <div className="min-w-0 space-y-1">
         <h1 className="t-page-title text-ink">{title}</h1>
         {description && (
-          <p className="t-body text-muted">{description}</p>
+          <p className="t-reading-body text-muted">{description}</p>
         )}
         {meta && <div className="mt-1">{meta}</div>}
       </div>

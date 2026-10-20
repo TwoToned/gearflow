@@ -92,14 +92,14 @@ function AdminRegisterForm() {
   return (
     <>
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--r)] bg-red text-primary-foreground shadow-[var(--sh-stk)]">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--r)] bg-primary text-primary-foreground shadow-[var(--sh-stk)]">
           <Shield className="h-5 w-5" />
         </div>
         <h2 className="t-title text-ink">Site admin registration</h2>
         <p className="mt-1 text-sm text-muted">
           Create a site administrator account.
         </p>
-        <Badge className="mx-auto mt-3 bg-red-soft text-red">
+        <Badge className="mx-auto mt-3 bg-red-soft text-red-text">
           Site admin account
         </Badge>
       </div>

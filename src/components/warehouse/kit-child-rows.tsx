@@ -145,7 +145,7 @@ export function KitChildRows({
                 >
                   {isVerified
                     ? <CircleCheck className="h-4 w-4 text-ok" />
-                    : <Circle className="h-4 w-4 text-faint hover:text-muted transition-colors" />
+                    : <Circle className="h-4 w-4 text-muted hover:text-muted transition-colors" />
                   }
                 </button>
               </TableCell>
@@ -200,7 +200,7 @@ export function KitChildRows({
                     >
                       {nestedVerified
                         ? <CircleCheck className="h-4 w-4 text-ok" />
-                        : <Circle className="h-4 w-4 text-faint hover:text-muted transition-colors" />
+                        : <Circle className="h-4 w-4 text-muted hover:text-muted transition-colors" />
                       }
                     </button>
                   </TableCell>

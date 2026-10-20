@@ -53,9 +53,9 @@ export function DateMoveImpactDialog({
                     {row.qty} × {row.modelName} — also booked on {row.projectNumbers.join(", ")}
                   </li>
                 ))}
-                {hiddenCount > 0 && <li className="t-micro text-faint">+{hiddenCount} more</li>}
+                {hiddenCount > 0 && <li className="t-micro text-muted">+{hiddenCount} more</li>}
               </ul>
-              <p className="t-micro text-faint">This is a heads-up, not a block — you can still save.</p>
+              <p className="t-micro text-muted">This is a heads-up, not a block — you can still save.</p>
             </div>
           </DialogDescription>
         </DialogHeader>

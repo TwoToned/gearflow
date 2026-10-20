@@ -303,7 +303,7 @@ export function DeployTab({
                     ) : deployContainerGroups.some((g) => g.container !== null) && (
                       <TableRow className="bg-paper-2/40">
                         <TableCell colSpan={5} className="py-1.5">
-                          <div className="flex items-center gap-1.5 text-caption font-medium text-faint">
+                          <div className="flex items-center gap-1.5 text-caption font-medium text-muted">
                             <Package className="h-3.5 w-3.5" />
                             No container
                           </div>

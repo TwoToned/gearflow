@@ -33,6 +33,12 @@ import * as enums from "./lib/validators";
  * hand-merge that stanza here.
  */
 export default defineSchema({
+  // Offline scan operation receipts commit in the SAME transaction as fulfillment.
+  scanReceipts: defineTable({
+    orgId: v.string(), userId: v.string(), projectId: v.string(), operationId: v.string(),
+    fingerprint: v.string(), confirmedAt: v.number(),
+  }).index("by_orgId_and_userId_and_operationId", ["orgId", "userId", "operationId"]),
+
   // User
   users: defineTable({
     id: v.string(),

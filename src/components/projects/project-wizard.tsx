@@ -427,11 +427,11 @@ export function ProjectWizard({
               >
                 <span className={cn(
                   "flex size-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors",
-                  done ? "bg-red text-white" : active ? "border-2 border-red text-red" : "border-2 border-line text-faint",
+                  done ? "bg-primary text-white" : active ? "border-2 border-red text-red-text" : "border-2 border-line text-muted",
                 )}>
                   {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
                 </span>
-                <span className={cn("text-table-cell font-medium", active ? "text-ink" : done ? "text-ink-2" : "text-faint")}>{s.label}</span>
+                <span className={cn("text-table-cell font-medium", active ? "text-ink" : done ? "text-ink-2" : "text-muted")}>{s.label}</span>
               </button>
               {i < STEPS.length - 1 && <span className={cn("h-px flex-1", done ? "bg-red" : "bg-line")} />}
             </li>
@@ -454,7 +454,7 @@ export function ProjectWizard({
           <h2
             ref={stepHeadingRef}
             tabIndex={-1}
-            className={cn("t-overline mb-4 rounded-[var(--r)] text-faint", focusRing)}
+            className={cn("t-overline mb-4 rounded-[var(--r)] text-muted", focusRing)}
           >
             Step {step + 1}: {STEPS[step].label}
           </h2>
@@ -517,7 +517,7 @@ export function ProjectWizard({
                       return (
                         <span key={id} className="inline-flex items-center gap-1 rounded-full bg-paper-2 px-2 py-0.5 text-[12px] text-ink-2">
                           {m?.label ?? id}
-                          <button type="button" aria-label="Remove manager" onClick={() => setManagerIds((p) => p.filter((x) => x !== id))} className={cn("rounded-full text-faint transition-colors hover:text-ink", focusRing)}><X className="h-3 w-3" /></button>
+                          <button type="button" aria-label="Remove manager" onClick={() => setManagerIds((p) => p.filter((x) => x !== id))} className={cn("rounded-full text-muted transition-colors hover:text-ink", focusRing)}><X className="h-3 w-3" /></button>
                         </span>
                       );
                     })}
@@ -637,12 +637,12 @@ export function ProjectWizard({
               />
             ) : (
               <div>
-                <p className="t-overline text-faint">Step {step + 1} of {STEPS.length}</p>
+                <p className="t-overline text-muted">Step {step + 1} of {STEPS.length}</p>
                 <p className="mt-1 font-hand text-[15px] text-t-out">{STEPS[step].tip}</p>
               </div>
             )}
             <div className="space-y-2 border-t border-line pt-3">
-              <p className="t-overline text-faint">So far</p>
+              <p className="t-overline text-muted">So far</p>
               <SummaryLine label="Name" value={v.name || "—"} />
               <SummaryLine label="Client" value={clientName || "—"} />
               <SummaryLine label="Type" value={typeName || "—"} />
@@ -781,7 +781,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
           <button
             type="button"
             onClick={() => setRange({ start: undefined, end: undefined })}
-            className={cn("rounded-full px-3 py-1 text-table-cell font-medium text-faint transition-colors hover:text-t-out", focusRing)}
+            className={cn("rounded-full px-3 py-1 text-table-cell font-medium text-muted transition-colors hover:text-t-out", focusRing)}
           >
             Clear
           </button>
@@ -792,7 +792,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
       <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
         <RangeCalendar value={range} onChange={setRange} />
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-          <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-faint")}>{summary}</span>
+          <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-muted")}>{summary}</span>
           {lenLabel && (
             <span className="rounded-full bg-red-soft px-2.5 py-0.5 text-[12px] font-semibold text-ink">{lenLabel}</span>
           )}
@@ -804,7 +804,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
         <AccordionItem value="project-window" className="border-line">
           <AccordionTrigger>
             Project window
-            {!projectRange.start && <span className="ml-2 t-micro font-normal text-faint">(same as rental)</span>}
+            {!projectRange.start && <span className="ml-2 t-micro font-normal text-muted">(same as rental)</span>}
           </AccordionTrigger>
           <AccordionContent>
             <div className="space-y-3 pt-1">
@@ -815,7 +815,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
               <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
                 <RangeCalendar value={projectRange} onChange={setProjectRange} />
                 <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-                  <span className={cn("text-table-cell font-medium", projectRange.start ? "text-ink" : "text-faint")}>
+                  <span className={cn("text-table-cell font-medium", projectRange.start ? "text-ink" : "text-muted")}>
                     {projectSummary}
                   </span>
                   <div className="flex items-center gap-2">
@@ -826,7 +826,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
                       <button
                         type="button"
                         onClick={() => setProjectRange({ start: undefined, end: undefined })}
-                        className={cn("rounded-full px-2.5 py-0.5 text-[12px] font-medium text-faint transition-colors hover:text-t-out", focusRing)}
+                        className={cn("rounded-full px-2.5 py-0.5 text-[12px] font-medium text-muted transition-colors hover:text-t-out", focusRing)}
                       >
                         Reset to rental
                       </button>
@@ -835,7 +835,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
                 </div>
               </div>
               {softWarning && (
-                <p className="t-micro text-red" role="status">{softWarning}</p>
+                <p className="t-micro text-red-text" role="status">{softWarning}</p>
               )}
               <div className="space-y-4 pt-1">
                 <MomentRow icon={Truck} label="Project starts" dateName="projectStartDate" timeName="projectStartTime" form={form} />
@@ -875,7 +875,7 @@ function MomentRow({
 function Field({ label, required, hint, error, children }: { label: string; required?: boolean; hint?: string; error?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
+      <Label>{label}{required && <span className="text-red-text"> *</span>}</Label>
       {children}
       {hint && !error && <p className="t-micro text-muted">{hint}</p>}
       {error && <p className="t-micro text-t-out">{error}</p>}
@@ -886,8 +886,8 @@ function Field({ label, required, hint, error, children }: { label: string; requ
 function ReviewRow({ label, value, mono }: { label: string; value?: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5 border-b border-line pb-2">
-      <dt className="t-micro text-faint">{label}</dt>
-      <dd className={cn("text-ui-text", value ? "text-ink" : "text-faint", mono && "font-mono text-caption")}>{value || "Not set"}</dd>
+      <dt className="t-micro text-muted">{label}</dt>
+      <dd className={cn("text-ui-text", value ? "text-ink" : "text-muted", mono && "font-mono text-caption")}>{value || "Not set"}</dd>
     </div>
   );
 }

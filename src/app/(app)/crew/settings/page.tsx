@@ -424,7 +424,7 @@ function RoleFormDialog({
                 <SelectItem value="FLAT">{crewRateTypeLabels.FLAT}</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-faint">Governs both the cost rate and the charge rate below.</p>
+            <p className="text-[11px] text-muted">Governs both the cost rate and the charge rate below.</p>
           </div>
 
           {isManagerPlus ? (
@@ -432,12 +432,12 @@ function RoleFormDialog({
               <div className="space-y-2">
                 <Label htmlFor="role-cost">Cost rate ($){rateUnitSuffix}</Label>
                 <Input id="role-cost" type="number" step="0.01" {...form.register("defaultRate")} placeholder="0.00" />
-                <p className="text-[11px] text-faint">What this role costs the business (internal — not shown to clients).</p>
+                <p className="text-[11px] text-muted">What this role costs the business (internal — not shown to clients).</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role-charge">Charge rate ($){rateUnitSuffix}</Label>
                 <Input id="role-charge" type="number" step="0.01" {...form.register("chargeRate")} placeholder="0.00" />
-                <p className="text-[11px] text-faint">Client-facing rate. Auto-prices labour services once crew are assigned. Leave blank for no auto-pricing.</p>
+                <p className="text-[11px] text-muted">Client-facing rate. Auto-prices labour services once crew are assigned. Leave blank for no auto-pricing.</p>
               </div>
             </div>
           ) : (

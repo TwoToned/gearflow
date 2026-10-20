@@ -520,12 +520,12 @@ export function ServicesPanel({
                 <div className="space-y-2">
                   {/* Date header — red overline chip + extending line (D3) */}
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-red-soft px-2 py-0.5 text-badge font-bold text-red">
+                    <span className="inline-flex items-center rounded-full bg-red-soft px-2 py-0.5 text-badge font-bold text-red-text">
                       {dateLabel}
                     </span>
                     <div className="h-px flex-1 bg-line" />
                     {dateLong && (
-                      <span className="text-caption text-faint">{dateLong}</span>
+                      <span className="text-caption text-muted">{dateLong}</span>
                     )}
                   </div>
 
@@ -1398,7 +1398,7 @@ function CrewRateTableRow({
               className="ml-auto h-7 w-16 text-right text-caption"
             />
           ) : (
-            <span className="text-faint">—</span>
+            <span className="text-muted">—</span>
           )}
         </TableCell>
       )}
@@ -2087,7 +2087,7 @@ function ServiceDialog({
                     />
                   </LockedField>
                   {!svcMoneyLocked && !form.watch("unitPrice") && crewChargeTotalPreview > 0 && (
-                    <p className="text-[11px] text-faint">
+                    <p className="text-[11px] text-muted">
                       Auto from crew: {formatCurrency(crewChargeTotalPreview)}.{" "}
                       <button
                         type="button"
@@ -2123,7 +2123,7 @@ function ServiceDialog({
                 const base = watchUnitPrice > 0 ? watchUnitPrice : crewChargeTotalPreview;
                 const previewCharge = Math.max(0, base - watchDiscount);
                 return (
-                  <p className="text-[11px] text-faint">
+                  <p className="text-[11px] text-muted">
                     {previewCharge > 0
                       ? "Has a charge — will show on quotes, invoices & Xero."
                       : "No charge set — stays internal, won't show on quotes, invoices or Xero."}
@@ -2139,7 +2139,7 @@ function ServiceDialog({
                     {...form.register("chargeRateOverride")}
                     placeholder="0.00"
                   />
-                  <p className="text-[11px] text-faint">
+                  <p className="text-[11px] text-muted">
                     Overrides the crew role&apos;s charge rate for this service&apos;s crew.
                     Leave blank to use the role default{selectedCrewRole?.chargeRate ? ` ($${selectedCrewRole.chargeRate})` : " (none set — no auto-pricing)"}.
                   </p>
@@ -2160,7 +2160,7 @@ function ServiceDialog({
                     <div className="flex h-9 items-center rounded-[var(--r)] border border-line bg-paper-2 px-3 text-ui-text font-medium tabular-nums text-ink">
                       {formatCurrency(crewCostTotal)}
                     </div>
-                    <p className="text-[11px] text-faint">
+                    <p className="text-[11px] text-muted">
                       Auto-calculated from {watchCrew.length} crew member{watchCrew.length === 1 ? "" : "s"}&apos; rates above. Used for margin calculation.
                     </p>
                   </div>
@@ -2175,7 +2175,7 @@ function ServiceDialog({
                         placeholder="0.00"
                       />
                     </LockedField>
-                    <p className="text-[11px] text-faint">
+                    <p className="text-[11px] text-muted">
                       What this service costs you (transport, materials, etc). Assign crew above to auto-calculate labour cost instead.
                     </p>
                   </div>

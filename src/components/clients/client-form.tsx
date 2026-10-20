@@ -105,17 +105,17 @@ export function ClientForm({ initialData }: ClientFormProps) {
           <SmartFormPreview>
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
               <div className="flex items-start gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-faint">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
                   {v.type === "INDIVIDUAL"
                     ? <User className="h-4 w-4" strokeWidth={1.5} />
                     : <Building2 className="h-4 w-4" strokeWidth={1.5} />}
                 </div>
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New client" ? "text-faint" : "text-ink")}>
+                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New client" ? "text-muted" : "text-ink")}>
                     {previewName}
                   </p>
                   <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
-                  <p className={cn("flex items-center gap-1.5 text-caption", primaryContact ? "text-muted" : "text-faint")}>
+                  <p className={cn("flex items-center gap-1.5 text-caption", primaryContact ? "text-muted" : "text-muted")}>
                     <Mail className="h-3 w-3 shrink-0" strokeWidth={1.5} />
                     {primaryContact || "No contact yet"}
                   </p>

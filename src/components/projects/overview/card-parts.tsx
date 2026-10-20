@@ -39,12 +39,12 @@ export function OverviewAmount({
       <span
         className={cn(
           "font-display text-[26px] font-extrabold leading-none tracking-[-0.035em] tabular-nums",
-          value == null ? "text-faint" : tone === "ok" ? "text-ok" : "text-ink",
+          value == null ? "text-muted" : tone === "ok" ? "text-ok" : "text-ink",
         )}
       >
         {value == null ? "—" : formatCurrency(value)}
       </span>
-      {suffix && value != null && <span className="text-caption font-semibold text-faint">{suffix}</span>}
+      {suffix && value != null && <span className="text-caption font-semibold text-muted">{suffix}</span>}
     </p>
   );
 }

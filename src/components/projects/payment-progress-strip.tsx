@@ -70,7 +70,7 @@ function PaymentProgressItem({ step }: { step: PaymentStep }) {
       <span
         className={cn(
           "t-small",
-          step.state === "pending" ? "text-faint" : step.state === "current" ? "text-ink" : "text-ink-2",
+          step.state === "pending" ? "text-muted" : step.state === "current" ? "text-ink" : "text-ink-2",
           step.state === "current" && "font-medium",
         )}
       >
@@ -88,5 +88,5 @@ function StepGlyph({ state }: { state: PaymentStep["state"] }) {
   if (state === "current") {
     return <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-warn motion-reduce:animate-none" aria-label="Waiting" />;
   }
-  return <CircleDashed className="h-3.5 w-3.5 shrink-0 text-faint" aria-label="Not yet" />;
+  return <CircleDashed className="h-3.5 w-3.5 shrink-0 text-muted" aria-label="Not yet" />;
 }

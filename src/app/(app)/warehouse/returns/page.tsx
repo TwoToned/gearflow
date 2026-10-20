@@ -371,11 +371,11 @@ export default function ReturnsStationPage() {
                   if (e.key === "Enter") void handleScan(scanValue);
                 }}
                 disabled={scanning}
-                className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-24 text-[14px] text-ink placeholder:text-faint"
+                className="h-12 rounded-[var(--r)] border-line-2 bg-paper-2 pl-12 pr-24 text-[14px] text-ink placeholder:text-muted"
                 autoFocus
               />
               {scanning && (
-                <Loader2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-faint" />
+                <Loader2 className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-muted" />
               )}
             </div>
             {/* The returns desk works a trolley at a time, so the camera stays
@@ -509,7 +509,7 @@ export default function ReturnsStationPage() {
                               {line.kitAssetTag ? ` — kit ${line.kitAssetTag}` : ""}
                             </p>
                           </div>
-                          <ChevronDown className={`h-4 w-4 text-faint transition-transform ${expandedLine === line.lineItemId ? "rotate-180" : ""}`} />
+                          <ChevronDown className={`h-4 w-4 text-muted transition-transform ${expandedLine === line.lineItemId ? "rotate-180" : ""}`} />
                         </button>
                         {line.scannable && (
                           <Button
@@ -554,7 +554,7 @@ export default function ReturnsStationPage() {
                           {!lineUnits[line.lineItemId] ? (
                             <Skeleton className="h-6 w-32" />
                           ) : lineUnits[line.lineItemId].length === 0 ? (
-                            <p className="t-micro text-faint">No serials recorded for this line.</p>
+                            <p className="t-micro text-muted">No serials recorded for this line.</p>
                           ) : (
                             <div className="flex flex-wrap gap-1.5">
                               {lineUnits[line.lineItemId].map((u) => (
@@ -593,7 +593,7 @@ export default function ReturnsStationPage() {
                     onClick={() => void resolveAssetDeployment(disambiguation, dep)}
                   >
                     <span>{dep.projectName} ({dep.projectNumber})</span>
-                    <ArrowRight className="h-4 w-4 text-faint" />
+                    <ArrowRight className="h-4 w-4 text-muted" />
                   </button>
                 ))}
               {disambiguation?.kind === "kit" &&
@@ -605,7 +605,7 @@ export default function ReturnsStationPage() {
                     onClick={() => void resolveKitDeployment(disambiguation, dep)}
                   >
                     <span>{dep.projectName} ({dep.projectNumber})</span>
-                    <ArrowRight className="h-4 w-4 text-faint" />
+                    <ArrowRight className="h-4 w-4 text-muted" />
                   </button>
                 ))}
               {disambiguation?.kind === "bulk" &&

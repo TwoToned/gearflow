@@ -178,7 +178,7 @@ export const checkInItems = mutation({
         entityName: `Line item ${item.lineItemId}`,
         userId: actor.userId,
         userName: actor.userName,
-        summary: `Checked in item on project (condition: ${item.returnCondition})`,
+        summary: `Checked in item on project (condition: ${item.returnCondition})${item.notes ? ` — ${item.notes}` : ""}`,
         projectId: a.projectId,
         createdAt: a.now,
       });
@@ -546,7 +546,7 @@ export const unreturnKitsBatch = mutation({
 // checkInKit — whole-kit return (singular). Parity: checkInKit. warehouse:check_in.
 // ─────────────────────────────────────────────────────────────────────────────
 export const checkInKit = mutation({
-  args: { orgId: v.string(), projectId: v.string(), kitId: v.string(), returnCondition: returnCond, auditId: v.string(), now: v.number(), actor: actorValidator },
+  args: { orgId: v.string(), projectId: v.string(), kitId: v.string(), returnCondition: returnCond, notes: v.optional(v.string()), auditId: v.string(), now: v.number(), actor: actorValidator },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
@@ -557,7 +557,7 @@ export const checkInKit = mutation({
     await requireKitInOrg(ctx, a.kitId, a.orgId);
 
     const res = await checkinKitFull(ctx, {
-      organizationId: a.orgId, projectId: a.projectId, userId: actor.userId, kitId: a.kitId, returnCondition: a.returnCondition, now: a.now,
+      organizationId: a.orgId, projectId: a.projectId, userId: actor.userId, kitId: a.kitId, returnCondition: a.returnCondition, notes: a.notes, now: a.now,
     });
 
     await writeActivityLog(ctx, {
@@ -569,7 +569,7 @@ export const checkInKit = mutation({
       entityName: `Kit ${a.kitId}`,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Checked in kit (condition: ${a.returnCondition})`,
+      summary: `Checked in kit (condition: ${a.returnCondition})${a.notes ? ` — ${a.notes}` : ""}`,
       projectId: a.projectId,
       kitId: a.kitId,
       createdAt: a.now,
@@ -1226,7 +1226,7 @@ export const logAccessoryCheckoutOverride = mutation({
 // ─── checkOutKit — whole-kit deploy (singular). Parity: checkOutKit server action.
 // warehouse:check_out. Blocking gate + single audit. ────────────────────────────────
 export const checkOutKit = mutation({
-  args: { orgId: v.string(), projectId: v.string(), kitId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  args: { orgId: v.string(), projectId: v.string(), kitId: v.string(), notes: v.optional(v.string()), auditId: v.string(), now: v.number(), actor: actorValidator },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
@@ -1251,7 +1251,7 @@ export const checkOutKit = mutation({
       entityName: `Kit ${a.kitId}`,
       userId: actor.userId,
       userName: actor.userName,
-      summary: "Checked out kit with all contents",
+      summary: `Checked out kit with all contents${a.notes ? ` — ${a.notes}` : ""}`,
       projectId: a.projectId,
       kitId: a.kitId,
       createdAt: a.now,

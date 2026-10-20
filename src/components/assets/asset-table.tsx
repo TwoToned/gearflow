@@ -151,7 +151,7 @@ function useAssetColumns(
           return <span className={cn("text-caption font-medium", getStatusColor("asset", "SOLD").text)}>Sold</span>;
         }
         if (row.status === "RETIRED" || row.status === "LOST") {
-          return <span className="text-caption text-faint">&mdash;</span>;
+          return <span className="text-caption text-muted">&mdash;</span>;
         }
         return <span className="text-caption text-muted">Available</span>;
       },
@@ -526,7 +526,7 @@ export function AssetTable() {
         className={cn(
           "rounded-full px-3 py-1.5 text-ui-text font-medium motion-safe:transition-colors",
           focusRing,
-          view === "serialized" ? "bg-red text-primary-foreground" : "text-muted hover:text-ink",
+          view === "serialized" ? "bg-primary text-primary-foreground" : "text-muted hover:text-ink",
         )}
       >
         Serialized
@@ -536,7 +536,7 @@ export function AssetTable() {
         className={cn(
           "rounded-full px-3 py-1.5 text-ui-text font-medium motion-safe:transition-colors",
           focusRing,
-          view === "bulk" ? "bg-red text-primary-foreground" : "text-muted hover:text-ink",
+          view === "bulk" ? "bg-primary text-primary-foreground" : "text-muted hover:text-ink",
         )}
       >
         Bulk

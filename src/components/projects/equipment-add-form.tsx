@@ -763,7 +763,7 @@ function ModeTab({
       className={cn(
         "flex-1 rounded-[10px] px-3 py-1.5 text-ui-text font-medium transition-colors",
         focusRing,
-        active ? "bg-red text-primary-foreground shadow-[var(--sh-stk)]" : "text-ink-2 hover:text-ink",
+        active ? "bg-primary text-primary-foreground shadow-[var(--sh-stk)]" : "text-ink-2 hover:text-ink",
       )}
     >
       {children}

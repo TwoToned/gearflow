@@ -53,8 +53,9 @@ const DialogContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close
         className={cn(
-          "absolute right-4 top-4 rounded-[8px] opacity-70 transition-opacity",
-          "hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
+          "absolute right-3 top-3 grid size-11 place-items-center rounded-full text-muted transition-colors",
+          "after:absolute after:inset-0 after:rounded-none after:content-['']",
+          "hover:bg-paper-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
           "disabled:pointer-events-none disabled:opacity-45 disabled:cursor-not-allowed",
         )}
       >
@@ -108,7 +109,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn("text-[13.5px] text-muted", className)}
+    className={cn("text-[16px] leading-relaxed text-muted", className)}
     {...props}
   />
 ));

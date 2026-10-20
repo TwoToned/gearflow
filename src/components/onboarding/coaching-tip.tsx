@@ -46,7 +46,7 @@ export function CoachingTip({
     if (hideWhenInactive) return null;
     return (
       <div>
-        <p className="t-overline text-faint">{fallbackEyebrow}</p>
+        <p className="t-overline text-muted">{fallbackEyebrow}</p>
         <p className="mt-1 font-hand text-[15px] text-t-out">{fallbackTip}</p>
       </div>
     );
@@ -55,12 +55,12 @@ export function CoachingTip({
   const step = TOUR_CONTENT[milestoneKey];
   return (
     <div>
-      <p className="t-overline text-faint">{step.eyebrow}</p>
+      <p className="t-overline text-muted">{step.eyebrow}</p>
       <p className="mt-1 font-hand text-[15px] text-t-out">{step.tip}</p>
       <button
         type="button"
         onClick={() => setHidden(true)}
-        className={cn("mt-1.5 text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline")}
+        className={cn("mt-1.5 text-[11px] text-muted underline-offset-2 hover:text-muted hover:underline")}
       >
         Hide tips (just this coaching — your &ldquo;Get started&rdquo; checklist stays put)
       </button>

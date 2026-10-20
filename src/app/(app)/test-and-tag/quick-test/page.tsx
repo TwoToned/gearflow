@@ -291,7 +291,7 @@ function QuickTestContent() {
                 className={cn(
                   "pb-2 text-ui-text font-medium border-b-2 transition-colors rounded-t-sm",
                   state.step === s.key
-                    ? "border-red text-red"
+                    ? "border-red text-red-text"
                     : "border-transparent text-muted hover:text-ink-2",
                   focusRing,
                 )}

@@ -152,7 +152,7 @@ export function AddServiceDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="svc-description">Description <span className="text-red">*</span></Label>
+            <Label htmlFor="svc-description">Description <span className="text-red-text">*</span></Label>
             <Input
               id="svc-description"
               {...form.register("description")}

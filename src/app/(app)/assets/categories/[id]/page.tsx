@@ -123,7 +123,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
       cell: (model) => (
         <Link
           href={`/assets/models/${model.id}`}
-          className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
+          className={cn("font-medium text-ink hover:text-red-text transition-colors rounded-sm", focusRing)}
         >
           {model.name}
         </Link>
@@ -159,7 +159,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
       cell: (kit) => (
         <Link
           href={`/kits/${kit.id}`}
-          className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
+          className={cn("font-medium text-ink hover:text-red-text transition-colors rounded-sm", focusRing)}
         >
           {kit.name}
         </Link>
@@ -270,7 +270,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
                     <FolderTree className="h-5 w-5 text-muted" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <span className="text-table-cell font-medium text-ink group-hover:text-red transition-colors">
+                    <span className="text-table-cell font-medium text-ink group-hover:text-red-text transition-colors">
                       {child.name}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -333,7 +333,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
                           <TableCell>
                             <Link
                               href={`/assets/models/${model.id}`}
-                              className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
+                              className={cn("font-medium text-ink hover:text-red-text transition-colors rounded-sm", focusRing)}
                             >
                               {model.name}
                             </Link>
@@ -398,7 +398,7 @@ function CategoryDetailContent({ params }: { params: Promise<{ id: string }> }) 
                           <TableCell>
                             <Link
                               href={`/kits/${kit.id}`}
-                              className={cn("font-medium text-ink hover:text-red transition-colors rounded-sm", focusRing)}
+                              className={cn("font-medium text-ink hover:text-red-text transition-colors rounded-sm", focusRing)}
                             >
                               {kit.name}
                             </Link>

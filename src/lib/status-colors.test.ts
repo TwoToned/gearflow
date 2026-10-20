@@ -91,13 +91,13 @@ describe("status-colors", () => {
       // success
       expect(getStatusColor("asset", "AVAILABLE").text).toBe("text-ok");
       // primary
-      expect(getStatusColor("asset", "CHECKED_OUT").text).toBe("text-red");
+      expect(getStatusColor("asset", "CHECKED_OUT").text).toBe("text-red-text");
       // error
       expect(getStatusColor("asset", "LOST").text).toBe("text-t-out");
       // warning
       expect(getStatusColor("asset", "IN_MAINTENANCE").text).toBe("text-warn");
       // info
-      expect(getStatusColor("asset", "RESERVED").text).toBe("text-blue");
+      expect(getStatusColor("asset", "RESERVED").text).toBe("text-info");
     });
   });
 

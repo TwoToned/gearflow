@@ -633,8 +633,8 @@ export default function CrewPlannerPage() {
                         }`}
                       >
                         <div
-                          className={`text-[10px] font-semibold uppercase-0 ${
-                            isToday ? "text-red" : isWeekend(day) ? "text-faint" : "text-muted"
+                          className={`text-badge font-semibold uppercase-0 ${
+                            isToday ? "text-red-text" : isWeekend(day) ? "text-muted" : "text-muted"
                           }`}
                         >
                           {formatDayOfWeek(day)}
@@ -642,9 +642,9 @@ export default function CrewPlannerPage() {
                         <div
                           className={`mx-auto mt-0.5 flex size-6 items-center justify-center rounded-full text-caption tabular-nums ${
                             isToday
-                              ? "bg-red font-bold text-white"
+                              ? "bg-primary font-bold text-white"
                               : isWeekend(day)
-                                ? "text-faint"
+                                ? "text-muted"
                                 : "text-ink-2"
                           }`}
                         >
@@ -755,7 +755,7 @@ function SummaryTile({
 }) {
   const valueColor =
     tone === "primary"
-      ? "text-red"
+      ? "text-red-text"
       : tone === "ok"
         ? "text-ok"
         : tone === "warn"
@@ -903,7 +903,7 @@ function PlannerRow({
           <div className="min-w-0">
             <Link
               href={`/crew/${member.id}`}
-              className={`block truncate text-table-cell font-semibold text-ink hover:text-red rounded-[var(--r)] ${focusRing}`}
+              className={`block truncate text-table-cell font-semibold text-ink hover:text-red-text rounded-[var(--r)] ${focusRing}`}
             >
               {member.firstName} {member.lastName}
             </Link>
@@ -1069,7 +1069,7 @@ function DayCell({
         >
           {chip && (
             <span
-              className={`inline-flex max-w-full items-center justify-center truncate rounded-[7px] px-1.5 py-1 text-[10px] font-bold leading-none tabular-nums ${
+              className={`inline-flex max-w-full items-center justify-center truncate rounded-[7px] px-1.5 py-1 text-badge font-bold leading-none tabular-nums ${
                 chip.className
               } ${matchesProjectFilter ? "ring-2 ring-red ring-offset-1 ring-offset-card" : ""}`}
             >

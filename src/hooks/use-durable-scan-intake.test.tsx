@@ -129,7 +129,7 @@ it.each(['verify','lookup'] as const)('unmount during deferred %s stops commit a
 });
 it('unmount after commit sent preserves original confirmed receipt, suppresses stale feedback and stops drain',async()=>{
  const {ScanIntake}=await import('@/lib/scan-intake');
- const ack=deferred<boolean>();const commit=vi.fn(()=>ack.promise);const feedback=vi.fn();
+ const ack=deferred<boolean>();const commit=vi.fn((_entry: import('@/lib/scan-intake').SavedScan)=>ack.promise);const feedback=vi.fn();
  const process=vi.fn(async(entry,assertCurrent)=>{
   assertCurrent();
   if(!await commit(entry)) throw new Error('Missing acknowledgement');

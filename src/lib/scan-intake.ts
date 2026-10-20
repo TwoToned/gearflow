@@ -29,6 +29,9 @@ export interface SavedScan extends ScanScope {
 export class ReviewScanError extends Error {}
 export class PendingScanError extends Error {
 }
+function scanFailureMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Scan failed. Review before retrying.';
+}
 type Store = Pick<Storage, 'getItem' | 'setItem' | 'key' | 'length'>;
 const prefix = 'flow.scan.v1:';
 export const sameScanScope = (a: ScanScope, b: ScanScope) => a.orgId === b.orgId && a.userId === b.userId && a.projectId === b.projectId;
@@ -86,7 +89,7 @@ export class ScanIntake {
                 }
                 catch (error) {
                     e.state = error instanceof ReviewScanError ? 'review' : error instanceof PendingScanError ? 'pending' : 'failed';
-                    e.error = error instanceof Error ? error.message : 'Scan failed. Review before retrying.';
+                    e.error = scanFailureMessage(error);
                     this.save(e);
                     changed();
                     if (e.state === 'pending')

@@ -6,6 +6,7 @@
 // transition + in-mutation audit; RBAC deny (viewer); cross-org FK rejection; batch
 // empty-guard + dedupe; and that a spoofed actor.userId is overridden by the verified
 // token subject. The requireService mirrors are covered by kitPerUnit / warehousePageBatch.
+import { readFileSync } from "node:fs";
 import { convexTest } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
@@ -196,6 +197,9 @@ async function coKit(t:T){await t.withIdentity(SERVICE).mutation(api.warehouseOp
 test('kit receipt mutates the live parent when retained older kit rows precede it',async()=>{
  const t=makeT();await member(t,'member');await seedKit(t);
  await t.run(async ctx=>{const p=await ctx.db.query('projects').first();await ctx.db.patch(p!._id,{liveVersionId:'v2'});await ctx.db.insert('projectVersions',{id:'v2',organizationId:ORG,projectId:'p1',number:2,contentState:'ready',createdAt:NOW,createdById:USER});});
+ await t.run(async ctx=>{
+  for(let i=0;i<150;i++) await ctx.db.insert('projectLineItems',baseLine(`kit-distractor-${i}`,{kitId:'k1',organizationId:i%4===0?OTHER:ORG,projectId:i%4===1?'other':'p1',versionId:i%4===2?'old':'v2',isKitChild:i%4===3}));
+ });
  await t.withIdentity(SERVICE).mutation(api.projectLineItems.createKitLineItem,{id:'kl2',organizationId:ORG,projectId:'p1',kitId:'k1',pricingMode:'KIT_PRICE',now:NOW});
  await coKit(t);
  await t.withIdentity(asUser(ORG)).mutation(api.scanIntake.commit,{orgId:ORG,projectId:'p1',expectedUserId:USER,expectedVersionId:'v2',operationId:'live-kit',raw:'KIT-1',operation:'return',condition:'GOOD',notes:'',effect:{kitId:'k1',lineItemId:'kl2',kitDecision:'all'}});
@@ -211,6 +215,7 @@ test.each(['deploy','return'] as const)('same-version duplicate parents reject %
  await t.run(async ctx=>{
   const parent=await ctx.db.query('projectLineItems').withIndex('by_cuid',q=>q.eq('id','kl1')).unique();
   const {_id,_creationTime,...fields}=parent!;
+  for(let i=0;i<150;i++) await ctx.db.insert('projectLineItems',{...fields,id:`other-${i}`,lineageId:`other-${i}`,organizationId:i%3===0?OTHER:ORG,projectId:i%3===1?'other':'p1',versionId:i%3===2?'old':'v-p1'});
   await ctx.db.insert('projectLineItems',{...fields,id:'duplicate-B',lineageId:'duplicate-B'});
   await ctx.db.insert('projectLineItems',{...fields,id:'nested',lineageId:'nested',isKitChild:true,parentLineItemId:'duplicate-B'});
  });
@@ -225,6 +230,7 @@ test('durable accessory decision narrows native checkout and atomically receipts
  await t.run(async ctx=>{
   await ctx.db.insert('projectLineItems',baseLine('li1',{modelId:'m1',assetId:'a1',prepStatus:'PACKED'}));
   await ctx.db.insert('projectLineItemUnits',{id:'u1',organizationId:ORG,lineItemId:'li1',ordinal:0,assetId:'a1',quantity:1,status:'PREPPED',createdAt:NOW,updatedAt:NOW});
+  for(let i=0;i<150;i++) await ctx.db.insert('projectLineItems',baseLine(`unrelated-${i}`,{parentLineItemId:'li1',childKind:'ACCESSORY',versionId:'old',assetId:'a1'}));
   await ctx.db.insert('projectLineItems',baseLine('acc',{modelId:'m1',isKitChild:true,parentLineItemId:'li1',childKind:'ACCESSORY',accessoryInclusion:'DEFAULT'}));
  });
  const args={orgId:ORG,projectId:'p1',expectedUserId:USER,expectedVersionId:versionIdFor('p1',ORG),operationId:'accessory-op',raw:'A-1',operation:'deploy' as const,condition:'GOOD' as const,notes:'captured',effect:{lineItemId:'li1',assetId:'a1',accessoryDecision:'override' as const,includeAccessoryIds:[],skippedAccessories:[{accessoryLineItemId:'acc',tier:'DEFAULT' as const,reason:'Left in warehouse'}]}};
@@ -266,5 +272,38 @@ test('accessory override cannot write notes outside captured parent and version'
  await expect(t.withIdentity(asUser(ORG)).mutation(api.scanIntake.commit,{orgId:ORG,projectId:'p1',expectedUserId:USER,expectedVersionId:versionIdFor('p1',ORG),operationId:'foreign-accessory',raw:'A-1',operation:'deploy',condition:'GOOD',notes:'',effect:{lineItemId:'li1',assetId:'a1',accessoryDecision:'override',includeAccessoryIds:[],skippedAccessories:[{accessoryLineItemId:'foreign',tier:'DEFAULT',reason:'skip'}]}})).rejects.toThrow(/captured parent version/);
  expect((await lineById(t,'foreign'))?.notes).toBeUndefined();
  expect((await assetById(t,'a1'))?.status).toBe('AVAILABLE');
+ expect(await t.run(ctx=>ctx.db.query('scanReceipts').collect())).toHaveLength(0);
+});
+
+
+test("scan validation never materializes unbounded candidate collections", () => {
+ const source = readFileSync(new URL('./scanIntake.ts', import.meta.url), 'utf8');
+ expect(source).not.toMatch(/\.collect\s*\(/);
+});
+
+test.each(['organizationId','projectId','versionId','parentLineItemId','childKind'] as const)('accessory identity checks reject mismatched %s for serial, bulk and skips',async field=>{
+ const t=makeT();await member(t,'member');await seedProject(t);await seedModelAsset(t,ORG,'AVAILABLE');
+ await t.run(async ctx=>{
+  await ctx.db.insert('projectLineItems',baseLine('li1',{assetId:'a1',modelId:'m1',prepStatus:'PACKED'}));
+  await ctx.db.insert('projectLineItems',baseLine('invalid',{parentLineItemId:'li1',childKind:'ACCESSORY',assetId:'serial-other',bulkAssetId:'bulk-other',[field]:field==='childKind'?'KIT':'other'}));
+ });
+ const args={orgId:ORG,projectId:'p1',expectedUserId:USER,expectedVersionId:versionIdFor('p1',ORG),operationId:'scope-test',raw:'A-1',operation:'deploy' as const,condition:'GOOD' as const,notes:''};
+ for(const includeAccessoryIds of [['serial-other'],['bulk-other']])
+  await expect(t.withIdentity(asUser(ORG)).mutation(api.scanIntake.commit,{...args,effect:{lineItemId:'li1',accessoryDecision:'verified',includeAccessoryIds}})).rejects.toThrow(/captured parent version/);
+ await expect(t.withIdentity(asUser(ORG)).mutation(api.scanIntake.commit,{...args,effect:{lineItemId:'li1',accessoryDecision:'override',skippedAccessories:[{accessoryLineItemId:'invalid',tier:'DEFAULT',reason:'skip'}]}})).rejects.toThrow(/captured parent version/);
+ expect(await t.run(ctx=>ctx.db.query('scanReceipts').collect())).toHaveLength(0);
+ expect((await assetById(t,'a1'))?.status).toBe('AVAILABLE');
+ expect((await lineById(t,'invalid'))?.notes).toBeUndefined();
+});
+
+test.each(['assetId','bulkAssetId'] as const)('valid accessory %s after many wrong-scope matches reaches native conflict gate',async field=>{
+ const t=makeT();await member(t,'member');await seedProject(t);await seedModelAsset(t,ORG,'AVAILABLE');
+ await t.run(async ctx=>{
+  await ctx.db.insert('projectLineItems',baseLine('li1',{assetId:'a1',modelId:'m1',prepStatus:'PACKED'}));
+  for(let i=0;i<150;i++) await ctx.db.insert('projectLineItems',baseLine(`distractor-${i}`,{parentLineItemId:'li1',childKind:'ACCESSORY',versionId:'old',[field]:'selected'}));
+  await ctx.db.insert('projectLineItems',baseLine('selected-line',{parentLineItemId:'li1',childKind:'ACCESSORY',[field]:'selected'}));
+  await ctx.db.insert('commentThreads',{orgId:ORG,entityType:'project',entityId:'p1',projectId:'p1',status:'open',isBlocking:true,createdBy:USER,createdByName:'Synthetic',createdAt:NOW,updatedAt:NOW});
+ });
+ await expect(t.withIdentity(asUser(ORG)).mutation(api.scanIntake.commit,{orgId:ORG,projectId:'p1',expectedUserId:USER,expectedVersionId:versionIdFor('p1',ORG),operationId:'valid-accessory',raw:'A-1',operation:'deploy',condition:'GOOD',notes:'',effect:{lineItemId:'li1',accessoryDecision:'verified',includeAccessoryIds:['selected']}})).rejects.toThrow(/blocking comment/i);
  expect(await t.run(ctx=>ctx.db.query('scanReceipts').collect())).toHaveLength(0);
 });

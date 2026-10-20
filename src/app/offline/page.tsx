@@ -1,4 +1,5 @@
 "use client";
+// use-client: The reconnect button invokes the browser reload handler.
 import { WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 

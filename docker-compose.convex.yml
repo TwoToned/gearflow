@@ -25,7 +25,7 @@ name: gearflow-convex
 
 services:
   backend:
-    image: ghcr.io/get-convex/convex-backend:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
+    image: ghcr.io/convex/convex-backend:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
     stop_grace_period: 10s
     stop_signal: SIGINT
     ports:
@@ -68,7 +68,7 @@ services:
       retries: 10
 
   dashboard:
-    image: ghcr.io/get-convex/convex-dashboard:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
+    image: ghcr.io/convex/convex-dashboard:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
     stop_grace_period: 10s
     stop_signal: SIGINT
     ports:

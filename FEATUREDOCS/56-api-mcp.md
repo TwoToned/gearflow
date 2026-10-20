@@ -263,7 +263,11 @@ retention (T-P2), aged out by the daily `api-request-log-retention` cron.
 the SAME registry the operation dispatcher reads, so they can't drift from
 what `/ops/{operation}` actually does. `GET /api/v1/openapi.json` is the one
 deliberately UNAUTHENTICATED `/api/v1` route (it's a schema, not org data);
-`GET /llms.txt` is a static `public/llms.txt` file, not a route. Both
+`GET /llms.txt` is a static `public/llms.txt` file, not a route — but the
+middleware matcher still runs on it, so it is listed in `src/middleware.ts`'s
+`publicRoutes` (until 2026-10-14 it was missing there and production
+redirected it to `/login`, breaking the OAuth metadata's
+`service_documentation` link). Both
 staleness-gated in CI (`pnpm run api:docs:check`), right after the registry
 gate.
 

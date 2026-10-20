@@ -13,8 +13,6 @@ import { register as registerShardedCounter } from "@convex-dev/sharded-counter/
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { evaluateBlockingGate as convexGate } from "./lib/blockingCommentsGate";
-import { evaluateBlockingGate as srcGate } from "@/lib/blocking-comments-gate";
 
 const modules = import.meta.glob("./**/*.ts");
 const ORG = "org_1";
@@ -25,8 +23,6 @@ const asUser = (orgId: string) => ({ subject: USER, orgId });
 // SERVICE identity to drive the createKitLineItem fixture (requireService) in the
 // checkOutKitsBatch partial-success test.
 const SERVICE = { subject: "gearflow-service", svc: true };
-// A deliberately-wrong actor — resolveActor must pin attribution to the token subject.
-const SPOOF = { userId: "attacker_id", userName: "Mallory" };
 
 function makeT() {
   const t = convexTest(schema, modules);
@@ -73,12 +69,8 @@ const unitById = (t: T, id: string) =>
   t.run(async (ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique());
 const assetById = (t: T, id: string) =>
   t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique());
-const kitById = (t: T, id: string) =>
-  t.run(async (ctx) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique());
 const logById = (t: T, id: string) =>
   t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first());
-const projectById = (t: T, id = "p1") =>
-  t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 
 async function seedModelAsset(t: T, orgId = ORG, status: "CHECKED_OUT" | "AVAILABLE" | "IN_MAINTENANCE" | "RETIRED" | "LOST" | "RESERVED" | "SOLD" = "CHECKED_OUT") {
   await t.run(async (ctx) => {

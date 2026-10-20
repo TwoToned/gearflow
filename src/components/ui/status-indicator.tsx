@@ -13,7 +13,7 @@ export interface StatusIndicatorProps extends React.HTMLAttributes<HTMLSpanEleme
 }
 const canonicalIntent: Record<ColorIntent, NonNullable<CanonicalProps['intent']>> = { success: 'ok', warning: 'warn', error: 'overbooked', info: 'neutral', primary: 'neutral', neutral: 'repair' };
 /** Explicit product adapter: domain `primary` still means active red, not registry green live. */
-export function DomainStatusIndicator({ category, value, intent: direct, label, variant = 'dot', size, glow, className, ...props }: StatusIndicatorProps) {
+function DomainStatusIndicator({ category, value, intent: direct, label, variant = 'dot', size, glow, className, ...props }: StatusIndicatorProps) {
     const intent = direct && direct in intentStyles ? direct as ColorIntent : category && value ? getStatusIntent(category, value) : 'neutral';
     const styles = intentStyles[intent];
     return <span {...props} className={cn('inline-flex items-center gap-1.5', variant === 'pill' && cn('rounded-full px-2 py-0.5 text-[11px] font-medium leading-none', styles.pill), className)}>
@@ -26,7 +26,6 @@ export function StatusIndicator(props: StatusIndicatorProps) {
     const domain = props.category || props.variant || !props.intent || ['neutral', 'success', 'warning', 'error', 'info', 'primary'].includes(props.intent);
     return domain ? <DomainStatusIndicator {...props}/> : <CanonicalStatusIndicator {...props as CanonicalProps}/>;
 }
-export { statusIndicatorVariants } from './canonical-status-indicator';
 
 /** Direct canonical API, including canonical neutral semantics. */
 export { CanonicalStatusIndicator };

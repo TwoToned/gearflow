@@ -4,11 +4,11 @@ import {cn} from "@/lib/utils";
 import {layoutShifts,formatHour} from "@/lib/scheduler";
 import {PersonAvatar,avatarHue,type AvatarHue} from "@/components/ui/avatar";
 
-export interface SchedulerShift {
+interface SchedulerShift {
  id:string; label:string; startHour:number; endHour:number; color?:AvatarHue; isOpen?:boolean;
 }
-export interface SchedulerRow { id:string; name:string; src?:string; shifts:SchedulerShift[]; unavailable?:boolean }
-export interface CrewSchedulerProps extends React.HTMLAttributes<HTMLDivElement> {
+interface SchedulerRow { id:string; name:string; src?:string; shifts:SchedulerShift[]; unavailable?:boolean }
+interface CrewSchedulerProps extends React.HTMLAttributes<HTMLDivElement> {
  rows:SchedulerRow[]; label?:string; startHour?:number; endHour?:number; hourWidth?:number;
  onShiftClick?:(shift:SchedulerShift,row:SchedulerRow)=>void;
  /** Consumer changes the selected date and rows together. */

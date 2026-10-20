@@ -89,4 +89,4 @@ function StatusIndicator({
   );
 }
 
-export { StatusIndicator, dotBase as statusIndicatorVariants };
+export { StatusIndicator };

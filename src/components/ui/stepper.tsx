@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
  * state ("Quote, done", "Confirmed, current stage", "Prep, not started"), clickable or not.
  * Vertical timeline on mobile, horizontal on md+ (§16.9a). Rings are clickable when onStepClick is set.
  */
-export type StepState = "done" | "now" | "future";
-export interface Step {
+type StepState = "done" | "now" | "future";
+interface Step {
   label: string;
   state: StepState;
 }

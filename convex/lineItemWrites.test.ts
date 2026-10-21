@@ -1488,6 +1488,57 @@ describe("lineItemWrites.updateAccessoryPlanNative", () => {
     ).rejects.toThrow(/already deployed/i);
   });
 
+  describe("quantity changes rescale accessory children", () => {
+    const patchArgs = (quantity: number) => ({
+      id: "li1", orgId: ORG, entityName: "PAR", allowOverbook: true, actor: ACTOR, auditId: "log-q", now: NOW,
+      set: { quantity, updatedAt: NOW }, clear: [] as string[],
+    });
+    const defChild = async (t: ReturnType<typeof makeT>) => (await children(t)).find((c) => c.bulkAssetId === "ba-def");
+
+    test("patching the quantity DOWN shrinks the accessory (2 → 1 parent ⇒ 4 → 2)", async () => {
+      const t = makeT();
+      await seed(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, patchArgs(1));
+      expect((await defChild(t))?.quantity).toBe(2);
+    });
+
+    test("patching the quantity UP grows the accessory (2 → 5 parents ⇒ 4 → 10)", async () => {
+      const t = makeT();
+      await seed(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, patchArgs(5));
+      expect((await defChild(t))?.quantity).toBe(10);
+    });
+
+    test("a quantity change does NOT pull in catalog accessories added since (that stays an explicit resync)", async () => {
+      const t = makeT();
+      await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("bulkAssets", { id: "ba-new", organizationId: ORG, modelId: "m1", assetTag: "BA-NEW", isActive: true });
+        await ctx.db.insert("modelBulkAccessories", { id: "mba-new", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-new", quantity: 1, addedById: USER });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, patchArgs(1));
+      expect((await children(t)).map((c) => c.bulkAssetId)).toEqual(["ba-def"]);
+    });
+
+    test("a deployed line's accessories are left alone", async () => {
+      const t = makeT();
+      await seed(t, { status: "CHECKED_OUT", checkedOutQuantity: 1 });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, patchArgs(1));
+      expect((await defChild(t))?.quantity).toBe(4);
+    });
+
+    test("a patch that leaves the quantity unchanged doesn't touch the accessory", async () => {
+      const t = makeT();
+      await seed(t);
+      await t.run(async (ctx) => {
+        const c = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "child-def")).unique();
+        await ctx.db.patch(c!._id, { quantity: 7 }); // deliberately out of step
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, { ...patchArgs(2), set: { notes: "n", updatedAt: NOW } });
+      expect((await defChild(t))?.quantity).toBe(7);
+    });
+  });
+
   test("rejects a line that has no model or asset", async () => {
     const t = makeT();
     await member(t, "member");

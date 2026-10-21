@@ -19,7 +19,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
-import { expandAccessoryChildLines, reconcileLineAccessoryChildren, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
+import { expandAccessoryChildLines, reconcileLineAccessoryChildren, rescaleAccessoryChildrenToQuantity, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
   loadModelAvailabilityBundle,
@@ -800,6 +800,8 @@ export const patchNative = mutation({
       }
       await ctx.db.replace(doc._id, merged as typeof rest);
     }
+    // Accessory children ride the parent's quantity (e.g. 6 headsets → 4 headsets).
+    if (newQty !== currentQty) await rescaleAccessoriesOnQuantityChange(ctx, doc._id, currentQty);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -1825,6 +1827,32 @@ async function resyncOneLineAccessories(
   };
 }
 
+/** A parent line's quantity just changed — scale its bulk accessory children to
+ *  match (6 headsets → 4 headsets must take 6 adaptors → 4). No-op for lines that
+ *  aren't eligible (children, custom lines, anything already deployed), and for
+ *  an unchanged quantity. Re-reads the line so it sees the post-write quantity. */
+async function rescaleAccessoriesOnQuantityChange(
+  ctx: MutationCtx,
+  lineDocId: Doc<"projectLineItems">["_id"],
+  previousQuantity: number,
+): Promise<void> {
+  const line = await ctx.db.get(lineDocId);
+  if (!line || (line.quantity ?? 1) === previousQuantity || !isAccessoryResyncEligible(line)) return;
+  await rescaleAccessoryChildrenToQuantity(ctx, {
+    id: line.id,
+    assetId: line.assetId,
+    modelId: line.modelId,
+    quantity: line.quantity ?? 1,
+    categoryId: line.categoryId,
+    groupId: line.groupId,
+    duration: line.duration,
+    pricingType: line.pricingType,
+    organizationId: line.organizationId,
+    projectId: line.projectId,
+    versionId: line.versionId,
+  }, (line.accessoryPlan as AccessoryPlan | undefined) ?? null);
+}
+
 export const resyncProjectAccessoriesNative = mutation({
   returns: v.object({ linesChecked: v.number(), linesUpdated: v.number(), childrenAdded: v.number(), childrenRemoved: v.number() }),
   args: {
@@ -2505,6 +2533,8 @@ export const addLineItemSmartNative = mutation({
           updatedAt: now,
         } as Record<string, unknown>);
         await ctx.db.patch(existing._id, mergeSet);
+        // The merged line grew — its accessory children must grow with it.
+        await rescaleAccessoriesOnQuantityChange(ctx, existing._id, existing.quantity ?? 0);
 
         await writeActivityLog(ctx, {
           id: auditId,

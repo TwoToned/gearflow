@@ -269,10 +269,17 @@ what every existing query keys off.
      assetId, bulk by bulkAssetId (the `(parentLineItemId, bulkAssetId)` unique
      index backstops it), and **reconciles** the office-created model-accessory
      row's quantity to the units actually assigned. So re-scans don't duplicate.
-   **Known limitation:** the quantity-merge path in `addLineItem` (adding the
-   same model again increments an existing line) does not re-scale the accessory
-   child; and changing a line's quantity later doesn't retroactively rescale.
-   Add the full quantity in one go for an exact accessory count.
+   **Quantity changes rescale accessories.** When a parent line's quantity changes —
+   `patchNative` (Edit Item, inline qty) or the merge-into-existing path of
+   `addLineItemSmartNative` — `rescaleAccessoriesOnQuantityChange`
+   (`convex/lineItemWrites.ts`) calls `rescaleAccessoryChildrenToQuantity`
+   (`convex/lib/fulfillment.ts`): each existing bulk accessory child is set to
+   `perParent × quantity` (6 headsets → 4 headsets takes 6 adaptors → 4). It is
+   **rescale-only** — it never inserts or deletes a child, so it can't pull in
+   catalog changes made since the line was added (that stays the explicit
+   "Sync accessories" resync). Skipped for lines that have deployed, same gate as
+   the resync. Tests: `convex/lineItemWrites.test.ts` ("quantity changes rescale
+   accessory children").
    `prepUnit` packs each accessory child's units for the prepped parent asset AND
    re-syncs the child LINE's rollup (`syncLineItemRollup`) — the warehouse tabs
    read `prepStatus` off the child line, so skipping that left accessories

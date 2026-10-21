@@ -996,6 +996,22 @@ export async function reconcileLineAccessoryChildren(ctx: Ctx, parentLine: Recon
   await insertMissingAccessoryChildren(ctx, parentLine, existing, wanted, now);
 }
 
+/**
+ * Rescale-only sibling of `reconcileLineAccessoryChildren`: after a parent line's
+ * QUANTITY changes, bring each existing bulk accessory child's quantity back in line
+ * with `perParent × quantity`. Never inserts or deletes a child — unlike a full
+ * reconcile it must not pull in catalog changes made since the line was added
+ * (FEATUREDOCS/48: that stays an explicit, PM-initiated resync).
+ */
+export async function rescaleAccessoryChildrenToQuantity(ctx: Ctx, parentLine: ReconcileParentLine, plan: AccessoryPlan | null): Promise<void> {
+  const now = Date.now();
+  const wanted = await computeWantedAccessorySet(ctx, parentLine, plan);
+  const existing = await accessoryChildrenOf(ctx, parentLine.organizationId, parentLine.id);
+  for (const child of existing) {
+    if (child.bulkAssetId && wanted.wantBulk.has(child.bulkAssetId)) await rescaleKeptBulkChild(ctx, child, wanted, now);
+  }
+}
+
 /** Look up a container's label (widen-step fallback for `prepContainer` —
  *  #1296). `null`/missing/cross-org → `undefined` (no label to stamp). */
 async function containerLabelById(ctx: Ctx, organizationId: string, containerId: string | null | undefined): Promise<string | undefined> {

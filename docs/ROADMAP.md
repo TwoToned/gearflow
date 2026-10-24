@@ -209,6 +209,17 @@ FEATUREDOCS/65). All five were specced in
 record and a build order. Each shipped independently; none was a prerequisite
 for anything else in Phase 4.
 
+### 4.4 — UX unification: one row, one menu, phone-first warehouse
+**Effort:** XL (6 phases, each its own `/autoplan`) · **Depends on:** 4.1, 4.2 · **Status:** proposed
+Features that landed after the rebrand (accessories v2, packing containers, group
+disclosure, category rollup, sub-hire orders, durable scan intake) each shipped with
+their own row shapes, action menus, stage colours and vocabulary. Design:
+[`docs/designs/ux-unification-2026-10.md`](./designs/ux-unification-2026-10.md) —
+one `LineRow` / `ActionMenu` / stage table across Equipment, Logistics and every
+warehouse surface; Packing and Client views inside Equipment; the warehouse job page
+on one stage filter + one scan pipeline; Scan in the phone bottom nav. Mockups are
+linked from the design doc. Seven decisions (D1–D7) need a yes before phase 0.
+
 ---
 
 ## Continuous tracks

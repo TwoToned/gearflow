@@ -131,7 +131,11 @@ the page's one-queue-entry-per-unit. The tabs count from the unit rows
 (`returnedPackedUnits` / `deprepedQuantity` in `warehouse-types.ts`; `groupItems(…,
 "returned")`), and a line with both packed and de-prepped units appears on both tabs, like a
 partially prepped bulk line across Pick and Prepped. "Move to Returned" (`undeprepLine`)
-re-packs the line's returned units with it. Not split: a bulk-pool row carrying quantity > 1
+re-packs the line's returned units with it. Accessories follow their own parent unit: a
+serialised accessory resets with its parent asset, and a *shared* accessory line (one battery
+line serving every handheld) only leaves the Returned tab once no parent unit still has its
+accessory packed; the Returned tab lists only accessories still packed
+(`accessoryChildrenForStage(…, "returned")`). Not split: a bulk-pool row carrying quantity > 1
 (one unit row), and rows de-prepped before this change (line `PENDING`, stale `PACKED`
 units) — both de-prep as a whole line, as before.
 

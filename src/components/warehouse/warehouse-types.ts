@@ -641,7 +641,9 @@ export function accessoryChildrenForStage(item: LineItem, countStage?: UnitCount
     (c) =>
       c.status !== "CANCELLED" &&
       c.status !== "CHECKED_OUT" &&
-      !(countStage === "prep" && c.prepStatus === "PACKED"),
+      !(countStage === "prep" && c.prepStatus === "PACKED") &&
+      // Returned tab: an accessory de-prepped with its unit has left this stage.
+      !(countStage === "returned" && c.prepStatus !== "PACKED"),
   );
 }
 

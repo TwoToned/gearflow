@@ -188,4 +188,41 @@ describe("direct deprep of a returned accessory parent", () => {
     expect(await prepStatuses()).toEqual(["PENDING", "PENDING"]);
     expect((await line(t, "L3"))?.prepStatus).toBe("PENDING");
   });
+
+  test("a shared bulk accessory line stays packed until its last parent unit is de-prepped", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "admin" });
+      await ctx.db.insert("users", { id: USER, name: "Alice", email: "a@x.com" });
+      await ctx.db.insert("projects", { id: "pA", organizationId: ORG, projectNumber: "pA", name: "pA", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "Handheld", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "mdlB", organizationId: ORG, name: "Battery", createdAt: NOW, updatedAt: NOW });
+      for (const id of ["h1", "h2"]) {
+        await ctx.db.insert("assets", { id, organizationId: ORG, modelId: "mdl1", assetTag: id, status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("assetBulkChildren", { id: `abc-${id}`, organizationId: ORG, parentAssetId: id, bulkAssetId: "bk1", quantity: 1, addedById: USER });
+      }
+      await ctx.db.insert("bulkAssets", { id: "bk1", organizationId: ORG, modelId: "mdlB", assetTag: "BK1", totalQuantity: 10, availableQuantity: 10, isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "L4", organizationId: ORG, projectId: "pA", type: "EQUIPMENT", modelId: "mdl1", quantity: 2, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+    });
+    const items = [{ lineItemId: "L4", assetId: "h1" }, { lineItemId: "L4", assetId: "h2" }];
+    await S(t).mutation(api.checkRecordOps.prepItems, { organizationId: ORG, projectId: "pA", items, now: NOW });
+    await S(t).mutation(api.warehouseOps.checkoutItems, { organizationId: ORG, projectId: "pA", userId: USER, items, includeAccessories: true, now: NOW });
+    await S(t).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "pA", userId: USER, now: NOW,
+      items: [{ lineItemId: "L4", assetId: "h1", returnCondition: "GOOD" }, { lineItemId: "L4", assetId: "h2", returnCondition: "GOOD" }],
+    });
+    const battery = async () => {
+      const kids = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L4")).collect());
+      expect(kids).toHaveLength(1);
+      const us = await t.run(async (ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", kids[0].id)).collect());
+      return { line: kids[0].prepStatus, units: us.map((u) => u.prepStatus).sort() };
+    };
+
+    expect(await battery()).toEqual({ line: "PACKED", units: ["PACKED", "PACKED"] });
+    await deprep(t, "pA", "L4");
+    // One handheld's battery is back in inventory; the other's is still packed.
+    expect(await battery()).toEqual({ line: "PACKED", units: ["PACKED", "PENDING"] });
+    await deprep(t, "pA", "L4");
+    expect(await battery()).toEqual({ line: "PENDING", units: ["PENDING", "PENDING"] });
+  });
 });

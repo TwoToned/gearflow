@@ -372,10 +372,15 @@ async function resetReturnedAccessories(ctx: Ctx, line: ReturnedLine, resolvedAs
         include = true; // shared bulk accessory line
       }
     }
-    if (include) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: now });
-    const units = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
-      .filter((u) => (!resolvedAssetId || u.parentUnitAssetId === resolvedAssetId) && !isRelocatedAccessoryUnit(u, parentContainerOf(u)));
+    const all = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
+      .filter((u) => !isRelocatedAccessoryUnit(u, parentContainerOf(u)));
+    const units = all.filter((u) => !resolvedAssetId || u.parentUnitAssetId === resolvedAssetId);
     for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: now });
+    // A shared accessory line (one battery line for every handheld) serves several
+    // parent units: it only leaves the Returned tab once none of them still has
+    // its accessory packed.
+    const stillPacked = all.some((u) => !units.includes(u) && u.status === "RETURNED" && u.prepStatus === "PACKED");
+    if (include && !stillPacked) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: now });
   }
 }
 

@@ -168,4 +168,17 @@ describe("returned / de-prepped stage counts for a multi-unit line", () => {
     expect(isInDeprepedStage(li)).toBe(false);
     expect(groupItems([li], "deploy", "returned")[0]).toMatchObject({ kind: "bulk-group", unitCount: 2 });
   });
+
+  it("lists only the accessories still packed on the Returned tab once a unit is de-prepped", () => {
+    const accessory = (id: string, prepStatus: string): LineItem => ({
+      ...line(1, []), id, status: "RETURNED", prepStatus, parentLineItemId: "line", isKitChild: true, childKind: "ACCESSORY",
+    } as LineItem);
+    const li: LineItem = {
+      ...returnedLine("PACKED", [returned(1, "PACKED"), returned(2, "PENDING")]),
+      childLineItems: [accessory("acc-1", "PACKED"), accessory("acc-2", "PENDING")],
+    };
+    const entry = groupItems([li], "deploy", "returned")[0];
+    expect(entry).toMatchObject({ kind: "bulk-group", unitCount: 1 });
+    expect((entry as { accessoryChildren?: LineItem[] }).accessoryChildren?.map((c) => c.id)).toEqual(["acc-1"]);
+  });
 });

@@ -126,7 +126,8 @@ describe("direct deprep of a returned accessory parent", () => {
       await ctx.db.insert("users", { id: USER, name: "Alice", email: "a@x.com" });
       await ctx.db.insert("projects", { id: "pA", organizationId: ORG, projectNumber: "pA", name: "pA", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "Handheld", createdAt: NOW, updatedAt: NOW });
-      for (const [id, parent] of [["h1", undefined], ["h2", undefined], ["b1", "h1"], ["b2", "h2"]]) {
+      const handhelds: Array<[string, string | undefined]> = [["h1", undefined], ["h2", undefined], ["b1", "h1"], ["b2", "h2"]];
+      for (const [id, parent] of handhelds) {
         await ctx.db.insert("assets", { id, organizationId: ORG, modelId: "mdl1", assetTag: id, status: "AVAILABLE", isActive: true, ...(parent ? { parentAssetId: parent } : {}), createdAt: NOW, updatedAt: NOW });
       }
       await ctx.db.insert("projectLineItems", { id: "L2", organizationId: ORG, projectId: "pA", type: "EQUIPMENT", modelId: "mdl1", quantity: 2, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });

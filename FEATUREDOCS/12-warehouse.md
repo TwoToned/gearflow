@@ -111,6 +111,16 @@ Fixed by excluding `RETURNED`/`CANCELLED` units from that check in both copies o
 for any returned item whose model has zero check items configured (models with check items
 route through `completeCheckAndDeprepLineCore` instead, which never calls the rollup).
 
+**Second half of the same footgun: a RETURNED line's direct deprep must cascade to its
+accessories.** `isInReturnedStage` keeps an accessory parent on the Returned tab while *any*
+accessory child is `RETURNED` + `PACKED`. `deprepItemInner` used to reset only the parent,
+so a returned item with accessories toasted "Removed 1 from prep", stayed put, and every
+retry was a no-op (nothing prepped left to remove) — worst on a multi-quantity line of one
+model (de-prep 1 of 2). A `RETURNED` line now takes the same reset as the check path:
+`resetReturnedLinePrep` (`convex/checkRecordOps.ts`) is the one body behind both
+`deprepItemInner` and `completeCheckAndDeprepLineCore`, so a retry also heals rows already
+stranded this way. Regression: `convex/deprepReturnedAccessories.test.ts`.
+
 (Internal `TabsTrigger`/`TabsContent` values are unchanged — `pick-prep`, `check-out`,
 `check-in`, `deprep`, `deprepped` — only the visible labels are the stage names.) Items are
 **prepped** (packed) before being **deployed** (checked out), and **de-prepped** (return checks

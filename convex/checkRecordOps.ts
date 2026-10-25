@@ -210,7 +210,17 @@ async function deprepItemInner(
   if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
   if (line.status === "CHECKED_OUT") throw new ConvexError("Item is already deployed — return it first");
 
-  const prepped = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect())
+  // A RETURNED line has no prep to remove (its units are job history) — de-prepping
+  // it is the return-check reset, accessories included. Resetting only the parent
+  // left its RETURNED+PACKED accessories behind, which keeps the parent on the
+  // Returned tab (isInReturnedStage) with every retry a no-op.
+  if (line.status === "RETURNED") {
+    await resetReturnedLinePrep(ctx, line, line.assetId ?? "", a.now);
+    await syncLineItemRollup(ctx, a.lineItemId);
+    return;
+  }
+
+  const prepped =(await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect())
     // Only still-prepped units are deprep-removable. RETURNED units are the
     // "what went out on this job" history (a returned line depreps via
     // completeCheckAndDeprepLine, which never deletes) — excluding them here
@@ -291,18 +301,31 @@ export async function completeCheckAndDeprepLineCore(
   if (line.status !== "RETURNED") throw new ConvexError(`Deprep return check requires RETURNED status (got ${line.status})`);
   if (line.prepStatus !== "PACKED" && line.prepStatus !== "PENDING") throw new ConvexError(`Deprep return check expected prepStatus=PACKED or PENDING (got ${line.prepStatus ?? "null"})`);
 
-  const resolvedAssetId = a.resolvedAssetId || line.assetId || "";
+  await resetReturnedLinePrep(ctx, line, a.resolvedAssetId || line.assetId || "", a.now);
+  return { id: a.lineItemId };
+}
+
+/** Reset a RETURNED line's prepStatus to PENDING (+ clear its legacy assetId) and
+ *  the scoped accessory child lines + units with it. The single body behind both
+ *  the return-check deprep and the no-checks direct deprep, so the two cannot
+ *  disagree about what "de-prepped" means. */
+async function resetReturnedLinePrep(
+  ctx: Ctx,
+  line: NonNullable<Awaited<ReturnType<typeof lineByCuid>>>,
+  resolvedAssetId: string,
+  now: number,
+): Promise<void> {
   if (!line.isKitChild && line.assetId) {
     const { _id, _creationTime, assetId: _a, ...rest } = line;
-    await ctx.db.replace(_id, { ...rest, prepStatus: "PENDING", updatedAt: a.now });
+    await ctx.db.replace(_id, { ...rest, prepStatus: "PENDING", updatedAt: now });
   } else {
-    await ctx.db.patch(line._id, { prepStatus: "PENDING", updatedAt: a.now });
+    await ctx.db.patch(line._id, { prepStatus: "PENDING", updatedAt: now });
   }
 
-  const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");
+  const accChildren = (await childLines(ctx, line.id, line.organizationId)).filter((c) => c.childKind === "ACCESSORY");
   // Accessories packed into a different container than their parent are
   // de-prepped from their own rows (warehouseOps.stageAccessoryUnits), not here.
-  const parentContainerOf = parentContainerResolver(await lineUnits(ctx, a.lineItemId));
+  const parentContainerOf = parentContainerResolver(await lineUnits(ctx, line.id));
   for (const child of accChildren) {
     let include = true;
     if (resolvedAssetId) {
@@ -313,12 +336,11 @@ export async function completeCheckAndDeprepLineCore(
         include = true; // shared bulk accessory line
       }
     }
-    if (include) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: a.now });
+    if (include) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: now });
     const units = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
       .filter((u) => (!resolvedAssetId || u.parentUnitAssetId === resolvedAssetId) && !isRelocatedAccessoryUnit(u, parentContainerOf(u)));
-    for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
+    for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: now });
   }
-  return { id: a.lineItemId };
 }
 
 export const completeCheckAndDeprepLine = mutation({

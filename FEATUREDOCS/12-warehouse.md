@@ -121,6 +121,20 @@ model (de-prep 1 of 2). A `RETURNED` line now takes the same reset as the check 
 `deprepItemInner` and `completeCheckAndDeprepLineCore`, so a retry also heals rows already
 stranded this way. Regression: `convex/deprepReturnedAccessories.test.ts`.
 
+**A line of N units is de-prepped unit by unit.** Two USB DIs on one line used to move to
+De-prepped together because deprep reset the *line*. `deprepReturnedLine`
+(`convex/checkRecordOps.ts`) now resets `count` RETURNED + PACKED units (the scanned asset
+first, then highest ordinal) and only the accessories of those units; the line stays
+`PACKED` — and on the Returned tab — until its last packed unit goes, which is the whole-line
+reset. The check path (`completeCheckAndDeprepLineCore`) de-preps one unit per call, matching
+the page's one-queue-entry-per-unit. The tabs count from the unit rows
+(`returnedPackedUnits` / `deprepedQuantity` in `warehouse-types.ts`; `groupItems(…,
+"returned")`), and a line with both packed and de-prepped units appears on both tabs, like a
+partially prepped bulk line across Pick and Prepped. "Move to Returned" (`undeprepLine`)
+re-packs the line's returned units with it. Not split: a bulk-pool row carrying quantity > 1
+(one unit row), and rows de-prepped before this change (line `PENDING`, stale `PACKED`
+units) — both de-prep as a whole line, as before.
+
 (Internal `TabsTrigger`/`TabsContent` values are unchanged — `pick-prep`, `check-out`,
 `check-in`, `deprep`, `deprepped` — only the visible labels are the stage names.) Items are
 **prepped** (packed) before being **deployed** (checked out), and **de-prepped** (return checks

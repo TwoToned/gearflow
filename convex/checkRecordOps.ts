@@ -215,7 +215,7 @@ async function deprepItemInner(
   // left its RETURNED+PACKED accessories behind, which keeps the parent on the
   // Returned tab (isInReturnedStage) with every retry a no-op.
   if (line.status === "RETURNED") {
-    await resetReturnedLinePrep(ctx, line, line.assetId ?? "", a.now);
+    await deprepReturnedLine(ctx, line, { count: a.quantity, assetId: line.assetId ?? "", now: a.now });
     await syncLineItemRollup(ctx, a.lineItemId);
     return;
   }
@@ -301,27 +301,63 @@ export async function completeCheckAndDeprepLineCore(
   if (line.status !== "RETURNED") throw new ConvexError(`Deprep return check requires RETURNED status (got ${line.status})`);
   if (line.prepStatus !== "PACKED" && line.prepStatus !== "PENDING") throw new ConvexError(`Deprep return check expected prepStatus=PACKED or PENDING (got ${line.prepStatus ?? "null"})`);
 
-  await resetReturnedLinePrep(ctx, line, a.resolvedAssetId || line.assetId || "", a.now);
+  // One call is one checked item (the page queues one per unit), so on a
+  // multi-unit line it de-preps ONE unit — preferring the scanned asset.
+  await deprepReturnedLine(ctx, line, { count: 1, assetId: a.resolvedAssetId || line.assetId || "", now: a.now });
   return { id: a.lineItemId };
+}
+
+type ReturnedLine = NonNullable<Awaited<ReturnType<typeof lineByCuid>>>;
+
+/**
+ * De-prep `count` units of a RETURNED line. A line of N units (two USB DIs on
+ * one line) is de-prepped unit by unit: each de-prepped unit's `prepStatus`
+ * goes PENDING and the line stays PACKED — still on the Returned tab — until
+ * its last packed unit goes, which is the full line reset. The unit rows are
+ * the per-unit truth for the tabs' counts (`returnedPackedUnits`).
+ *
+ * Falls back to the whole-line reset when there is nothing to split: a
+ * single unit, a bulk pool row carrying quantity > 1, or a line that is
+ * already off PACKED (rows de-prepped before units were tracked).
+ */
+async function deprepReturnedLine(
+  ctx: Ctx,
+  line: ReturnedLine,
+  a: { count: number; assetId: string; now: number },
+): Promise<void> {
+  const packed = (await lineUnits(ctx, line.id)).filter((u) => u.status === "RETURNED" && u.prepStatus === "PACKED");
+  const splittable = line.prepStatus === "PACKED" && packed.length > a.count && packed.every((u) => (u.quantity ?? 1) === 1);
+  if (!splittable) {
+    for (const u of packed) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
+    await resetReturnedLinePrep(ctx, line, a.assetId, a.now);
+    return;
+  }
+  // The scanned asset first, then highest ordinal first (LIFO, like prep removal).
+  const ordered = [...packed.filter((u) => u.assetId === a.assetId), ...packed.filter((u) => u.assetId !== a.assetId).sort((x, y) => y.ordinal - x.ordinal)];
+  for (const u of ordered.slice(0, a.count)) {
+    await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
+    // Accessories follow their own parent unit; an untagged unit has none to scope by.
+    if (u.assetId) await resetReturnedAccessories(ctx, line, u.assetId, a.now);
+  }
 }
 
 /** Reset a RETURNED line's prepStatus to PENDING (+ clear its legacy assetId) and
  *  the scoped accessory child lines + units with it. The single body behind both
  *  the return-check deprep and the no-checks direct deprep, so the two cannot
  *  disagree about what "de-prepped" means. */
-async function resetReturnedLinePrep(
-  ctx: Ctx,
-  line: NonNullable<Awaited<ReturnType<typeof lineByCuid>>>,
-  resolvedAssetId: string,
-  now: number,
-): Promise<void> {
+async function resetReturnedLinePrep(ctx: Ctx, line: ReturnedLine, resolvedAssetId: string, now: number): Promise<void> {
   if (!line.isKitChild && line.assetId) {
     const { _id, _creationTime, assetId: _a, ...rest } = line;
     await ctx.db.replace(_id, { ...rest, prepStatus: "PENDING", updatedAt: now });
   } else {
     await ctx.db.patch(line._id, { prepStatus: "PENDING", updatedAt: now });
   }
+  await resetReturnedAccessories(ctx, line, resolvedAssetId, now);
+}
 
+/** Reset a RETURNED parent's accessory child lines + units to PENDING, scoped to
+ *  `resolvedAssetId`'s own accessories (empty = every accessory). */
+async function resetReturnedAccessories(ctx: Ctx, line: ReturnedLine, resolvedAssetId: string, now: number): Promise<void> {
   const accChildren = (await childLines(ctx, line.id, line.organizationId)).filter((c) => c.childKind === "ACCESSORY");
   // Accessories packed into a different container than their parent are
   // de-prepped from their own rows (warehouseOps.stageAccessoryUnits), not here.

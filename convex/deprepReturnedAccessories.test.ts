@@ -12,6 +12,7 @@ import { register as registerShardedCounter } from "@convex-dev/sharded-counter/
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { completeCheckAndDeprepLineCore } from "./checkRecordOps";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -119,7 +120,7 @@ describe("direct deprep of a returned accessory parent", () => {
     await expectFullyDepreped(t, "LA");
   });
 
-  test("1 of 2 of the same model: the line and every unit's accessory reset together", async () => {
+  test("1 of 2 of the same model de-preps one unit and its accessory, then the other", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "admin" });
@@ -140,11 +141,51 @@ describe("direct deprep of a returned accessory parent", () => {
       items: [{ lineItemId: "L2", assetId: "h1", returnCondition: "GOOD" }, { lineItemId: "L2", assetId: "h2", returnCondition: "DAMAGED" }],
     });
 
-    await deprep(t, "pA", "L2");
+    const unitState = async () => {
+      const us = await t.run(async (ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L2")).collect());
+      return Object.fromEntries(us.map((u) => [u.assetId, u.prepStatus]));
+    };
+    const accessoryState = async () => {
+      const kids = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L2")).collect());
+      return Object.fromEntries(kids.map((k) => [k.assetId, k.prepStatus]));
+    };
 
+    // De-prep ONE: the other stays packed on the Returned tab.
+    await deprep(t, "pA", "L2");
+    expect(await unitState()).toEqual({ h1: "PACKED", h2: "PENDING" });
+    expect((await line(t, "L2"))?.prepStatus).toBe("PACKED");
+    expect(await accessoryState()).toEqual({ b1: "PACKED", b2: "PENDING" });
+
+    // De-prep the last: the whole line, accessories included, is off the Returned tab.
+    await deprep(t, "pA", "L2");
+    expect(await unitState()).toEqual({ h1: "PENDING", h2: "PENDING" });
     expect((await line(t, "L2"))?.prepStatus).toBe("PENDING");
-    const kids = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L2")).collect());
-    expect(kids).toHaveLength(2);
-    for (const k of kids) expect(k.prepStatus).toBe("PENDING");
+    expect(await accessoryState()).toEqual({ b1: "PENDING", b2: "PENDING" });
+
+    // Move back to Returned re-packs the units with the line.
+    await S(t).mutation(api.warehouseOps.undeprepLine, { organizationId: ORG, projectId: "pA", lineItemId: "L2", now: NOW });
+    expect(await unitState()).toEqual({ h1: "PACKED", h2: "PACKED" });
+    expect((await line(t, "L2"))?.prepStatus).toBe("PACKED");
+  });
+
+  test("the return-check path de-preps one unit per call too", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pA", organizationId: ORG, projectNumber: "pA", name: "pA", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "USB DI", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "L3", organizationId: ORG, projectId: "pA", type: "EQUIPMENT", modelId: "mdl1", quantity: 2, status: "RETURNED", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW });
+      for (const n of [1, 2]) {
+        await ctx.db.insert("projectLineItemUnits", { id: `u${n}`, organizationId: ORG, lineItemId: "L3", ordinal: n, quantity: 1, returnedQuantity: 1, status: "RETURNED", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW });
+      }
+    });
+    const run = () => t.run(async (ctx) => completeCheckAndDeprepLineCore(ctx, { organizationId: ORG, projectId: "pA", lineItemId: "L3", now: NOW }));
+    const prepStatuses = async () => (await t.run(async (ctx) => ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L3")).collect())).map((u) => u.prepStatus);
+
+    await run();
+    expect((await prepStatuses()).sort()).toEqual(["PACKED", "PENDING"]);
+    expect((await line(t, "L3"))?.prepStatus).toBe("PACKED");
+    await run();
+    expect(await prepStatuses()).toEqual(["PENDING", "PENDING"]);
+    expect((await line(t, "L3"))?.prepStatus).toBe("PENDING");
   });
 });

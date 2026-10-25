@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   bulkUnpackedRemaining,
   bulkPackedWaiting,
+  deprepedQuantity,
+  groupItems,
+  isInDeprepedStage,
+  isInReturnedStage,
+  returnedPackedUnits,
   type LineItem,
 } from "./warehouse-types";
 
@@ -122,5 +127,45 @@ describe("bulk stage counts", () => {
     ]);
     expect(bulkUnpackedRemaining(l)).toBe(6);
     expect(bulkPackedWaiting(l)).toBe(4);
+  });
+});
+
+// De-prepping 1 of 2 returned units must leave the other on the Returned tab
+// (two USB DIs on one line both jumped to De-prepped).
+describe("returned / de-prepped stage counts for a multi-unit line", () => {
+  const returned = (n: number, prepStatus: string) =>
+    unit({ id: `u${n}`, ordinal: n, assetId: `a${n}`, status: "RETURNED", prepStatus });
+  const returnedLine = (prepStatus: string, units: Unit[]): LineItem => ({ ...line(2, units), status: "RETURNED", prepStatus });
+
+  it("counts only the still-packed returned units while the line is PACKED", () => {
+    const li = returnedLine("PACKED", [returned(1, "PACKED"), returned(2, "PENDING")]);
+    expect(returnedPackedUnits(li)).toHaveLength(1);
+    expect(groupItems([li], "deploy", "returned")[0]).toMatchObject({ kind: "bulk-group", unitCount: 1 });
+    expect(isInReturnedStage(li)).toBe(true);
+  });
+
+  it("lists the line on the De-prepped tab for its de-prepped unit while one is still packed", () => {
+    const li = returnedLine("PACKED", [returned(1, "PACKED"), returned(2, "PENDING")]);
+    expect(isInDeprepedStage(li)).toBe(true);
+    expect(deprepedQuantity(li)).toBe(1);
+  });
+
+  it("moves the whole line to De-prepped once the line is off PACKED", () => {
+    const li = returnedLine("PENDING", [returned(1, "PENDING"), returned(2, "PENDING")]);
+    expect(isInReturnedStage(li)).toBe(false);
+    expect(isInDeprepedStage(li)).toBe(true);
+    expect(deprepedQuantity(li)).toBe(2);
+  });
+
+  it("treats rows de-prepped before unit tracking (line PENDING, stale PACKED units) as fully de-prepped", () => {
+    const li = returnedLine("PENDING", [returned(1, "PACKED"), returned(2, "PACKED")]);
+    expect(isInReturnedStage(li)).toBe(false);
+    expect(deprepedQuantity(li)).toBe(2);
+  });
+
+  it("an untouched returned line is not on the De-prepped tab", () => {
+    const li = returnedLine("PACKED", [returned(1, "PACKED"), returned(2, "PACKED")]);
+    expect(isInDeprepedStage(li)).toBe(false);
+    expect(groupItems([li], "deploy", "returned")[0]).toMatchObject({ kind: "bulk-group", unitCount: 2 });
   });
 });

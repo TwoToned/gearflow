@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/table";
 
 import type { LineItem, GroupEntry } from "./warehouse-types";
-import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey, isAccessoryParentPartiallyDeployed } from "./warehouse-types";
+import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey, isAccessoryParentPartiallyDeployed, returnedPackedUnits } from "./warehouse-types";
 import { KitChildRows, BulkAccessoryRows, MobileBulkAccessoryCards } from "./kit-child-rows";
 import { MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
@@ -357,7 +357,9 @@ export function DeployTab({
                     // Per-unit assignments from prep (post-cutover source of
                     // truth). Indexed in display order so the Nth synthetic
                     // row shows the Nth unit's actual asset tag.
-                    const units = entry.item.units ?? [];
+                    // De-prep lists only the returned units still packed — a line of N
+                    // is de-prepped unit by unit, so row idx is the idx-th of those.
+                    const units = isDeprep ? returnedPackedUnits(entry.item) : (entry.item.units ?? []);
                     return (
                       <Fragment key={entry.groupKey}>
                         {renderGroupHeader(

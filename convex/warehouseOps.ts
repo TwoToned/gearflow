@@ -1333,6 +1333,11 @@ export async function undeprepLineCore(ctx: Ctx, a: UndeprepLineArgs): Promise<{
   const line = await lineByCuid(ctx, a.lineItemId);
   if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
   await ctx.db.patch(line._id, { prepStatus: "PACKED", updatedAt: a.now });
+  // The line's units carry the per-unit de-prep state (see deprepReturnedLine) —
+  // re-pack the returned ones with it or the Returned tab counts none of them.
+  for (const u of await lineUnits(ctx, a.lineItemId)) {
+    if (u.status === "RETURNED" && u.prepStatus !== "PACKED") await ctx.db.patch(u._id, { prepStatus: "PACKED", updatedAt: a.now });
+  }
   for (const child of (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY")) {
     await ctx.db.patch(child._id, { prepStatus: "PACKED", updatedAt: a.now });
   }

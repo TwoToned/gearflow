@@ -120,6 +120,9 @@ export function isBulkItem(item: LineItem) {
 // from those rows so a line can appear in Pick AND Prepped at once — the fix
 // for "prep 1 of 10 and all 10 jump to Prepped".
 
+/** Which stage a bulk line's per-unit row count is taken for. */
+export type UnitCountStage = "prep" | "prepped" | "returned" | "depreped";
+
 function unitQty(u: NonNullable<LineItem["units"]>[number]): number {
   return u.quantity ?? 1;
 }
@@ -140,6 +143,26 @@ export function bulkPackedWaiting(item: LineItem): number {
         u.prepStatus === "PACKED",
     )
     .reduce((n, u) => n + unitQty(u), 0);
+}
+
+/** Returned units still packed → the Returned tab's rows. A line of N units is
+ *  de-prepped unit by unit (convex/checkRecordOps.ts `deprepReturnedLine`), so
+ *  this is the per-unit truth while the line itself is still PACKED. */
+export function returnedPackedUnits(item: LineItem): NonNullable<LineItem["units"]> {
+  return (item.units ?? []).filter((u) => u.status === "RETURNED" && u.prepStatus === "PACKED");
+}
+
+/** Returned units already de-prepped on a line that still has some packed. A line
+ *  that is off PACKED entirely is de-prepped as a whole (`deprepedQuantity`). */
+function partlyDeprepedUnits(item: LineItem): NonNullable<LineItem["units"]> {
+  if (item.status !== "RETURNED" || item.prepStatus !== "PACKED") return [];
+  return (item.units ?? []).filter((u) => u.status === "RETURNED" && u.prepStatus !== "PACKED");
+}
+
+/** How many of a RETURNED line's units sit in the De-prepped tab. */
+export function deprepedQuantity(item: LineItem): number {
+  if (item.prepStatus === "PACKED") return partlyDeprepedUnits(item).reduce((n, u) => n + unitQty(u), 0);
+  return item.quantity;
 }
 
 export function modelDisplayName(item: LineItem) {
@@ -405,7 +428,7 @@ function kitReturnedNotPacked(c: LineItem): boolean {
 /** De-prepped: returned gear checked back into inventory. Terminal, read-only. */
 export function isInDeprepedStage(item: LineItem): boolean {
   if (isKitParent(item)) return (item.childLineItems ?? []).some(kitReturnedNotPacked);
-  const ownDeprepped = item.status === "RETURNED" && item.prepStatus !== "PACKED";
+  const ownDeprepped = (item.status === "RETURNED" && item.prepStatus !== "PACKED") || partlyDeprepedUnits(item).length > 0;
   if (!isAccessoryParent(item)) return ownDeprepped;
   return ownDeprepped || accessoryChildrenOf(item).some((c) => c.status === "RETURNED" && c.prepStatus !== "PACKED");
 }
@@ -598,9 +621,14 @@ export function resolveSelectionToUnitIds(
 
 /** Per-unit count of a bulk line that is actionable in a stage: units still to
  *  pick (`prep`), packed-and-waiting (`prepped`), else the whole quantity. */
-function bulkStageUnitCount(item: LineItem, countStage?: "prep" | "prepped"): number {
+function bulkStageUnitCount(item: LineItem, countStage?: UnitCountStage): number {
   if (countStage === "prep") return bulkUnpackedRemaining(item);
   if (countStage === "prepped") return bulkPackedWaiting(item);
+  if (countStage === "returned") {
+    const n = returnedPackedUnits(item).reduce((sum, u) => sum + unitQty(u), 0);
+    return n > 0 ? n : item.quantity; // unit-less legacy row: the whole line
+  }
+  if (countStage === "depreped") return deprepedQuantity(item);
   return item.quantity;
 }
 
@@ -608,12 +636,14 @@ function bulkStageUnitCount(item: LineItem, countStage?: "prep" | "prepped"): nu
  *  cancelled or already-deployed ones; in Pick (`prep`) also never ones already
  *  packed — they have nothing left to verify there (a packed accessory showing
  *  "0/N verified" in Pick was the symptom). */
-export function accessoryChildrenForStage(item: LineItem, countStage?: "prep" | "prepped"): LineItem[] {
+export function accessoryChildrenForStage(item: LineItem, countStage?: UnitCountStage): LineItem[] {
   return accessoryChildrenOf(item).filter(
     (c) =>
       c.status !== "CANCELLED" &&
       c.status !== "CHECKED_OUT" &&
-      !(countStage === "prep" && c.prepStatus === "PACKED"),
+      !(countStage === "prep" && c.prepStatus === "PACKED") &&
+      // Returned tab: an accessory de-prepped with its unit has left this stage.
+      !(countStage === "returned" && c.prepStatus !== "PACKED"),
   );
 }
 
@@ -649,7 +679,7 @@ export function isAccessoryParentPartiallyDeployed(item: LineItem): boolean {
 export function groupItems(
   items: LineItem[],
   mode: "prep" | "deploy" = "prep",
-  countStage?: "prep" | "prepped",
+  countStage?: UnitCountStage,
 ): GroupEntry[] {
   const serializedByModel = new Map<string, LineItem[]>();
   const result: GroupEntry[] = [];

@@ -123,6 +123,7 @@ import {
   isInPreppedStage,
   isInReturnedStage,
   isInDeprepedStage,
+  deprepedQuantity,
   isInCheckedOutStage,
   buildContainerGroups,
   resolveSelectionToUnitIds,
@@ -1542,7 +1543,7 @@ function WarehouseProjectPage({
   const groupedPrep = groupItems(pickPrepItems, "prep", "prep");
   const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");
   // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
-  const groupedDeprep = groupItems(returnedItems, "deploy");
+  const groupedDeprep = groupItems(returnedItems, "deploy", "returned");
 
   // Group deploy items by container for visual sectioning — real containerId
   // preferred over the legacy prepContainer label (buildContainerGroups,
@@ -2985,7 +2986,7 @@ function WarehouseProjectPage({
                         <TableCell className="t-mono text-muted">
                           {item.asset?.assetTag || item.bulkAsset?.assetTag || item.kit?.assetTag || "—"}
                         </TableCell>
-                        <TableCell className="text-center tabular-nums">{item.quantity}</TableCell>
+                        <TableCell className="text-center tabular-nums">{deprepedQuantity(item)}</TableCell>
                         <TableCell>
                           <Badge status="ok" className="bg-ok-soft text-ok">Back in inventory</Badge>
                         </TableCell>

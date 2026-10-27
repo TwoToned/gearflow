@@ -12,10 +12,10 @@ day mode, Warehouse job desktop + phone pack mode + scan sheet, the floor board,
 shell at three widths, and the primitives every surface is built from).
 
 **Clickable prototypes** (state-driven HTML, every action wired, Undo on every write):
-- Job › Equipment: https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC — List / Packing
-  / Client views, inline qty + price + group bundle editing, ⋯ on every row including
-  group members, drag and drop (lines, groups, members, multi-select, packing view
-  with nested cases), the add popover.
+- Job › Equipment: https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC — v2 (§7): the
+  live tab cleaned up with every feature on the row, accessory rows + editor,
+  search-first add, one edit sheet, the shortfall → sub-hire sheet, order rows and
+  the order sheet, plus the earlier inline editing, drag and drop and packing view.
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -307,59 +307,114 @@ field (⌘K / the phone icon) with the existing `@` pages, `/` commands and date
 
 ---
 
-## 7. Job › Equipment
+## 7. Job › Equipment — v2 proposal (prototype 2026-10-27, awaiting a yes)
 
-One list, three **views** (segmented control in the toolbar):
+Same approach as the warehouse: the live tab's structure stays (header, stepper,
+version strip, tab row, context rail, `Add ▾`, one table, hover actions, inline
+cells, checkbox selection + bulk bar, drag and drop) and every feature that landed
+since the rebrand gets a visible, consistent home on the row. Three **views** on
+one toolbar (List · Packing · Client view, §7.3), `Find`, `Filter ▾` (All · Short ·
+Unpriced · Sub-hire · Optional · Hidden on documents · Needs review), ⋯ (Show cost &
+margin, Sync accessories, Sync kits, Expand/Collapse) and `+ Add` (`A`).
 
-- **List** — the operator's editing view. Sections are categories; each section
-  header carries count, a derived subtotal, an availability summary chip (`1 short`)
-  and the rollup state (`Itemised` / `Combined price` pill). Columns: select · Item ·
-  Availability · Qty · Unit · Total · actions; **Cost** is a toolbar toggle. Group
-  rows show the bundle price with "bundle" and a `Suggested $X` ghost when unpriced;
-  members show "in bundle". Kit and accessory children are one level deep;
-  accessories render as a single compact child line (`Accessories · SB900B ×8 · UA844
-  added · ~~4U case~~ client supplies · Edit`) rather than N look-alike kit rows. A
-  sub-hire shows **once** as a group row (`PO-118 · draft · via Scene Change · 18%
-  margin`); the separate "Sub-hire orders" card goes.
-- **Packing** — the same lines grouped by planned container, with a container card
-  per case (kind, tag, nesting, planned vs packed counts) and drag or ⋯ "Move to" to
-  re-plan. Replaces the Packing tab. "Loose" is the last section.
-- **Client view** — exactly what the next quote prints: rollups collapsed, hidden
-  lines gone, disclosed group members listed, prices as the client sees them. The
-  Overview's quote card links here. This is where the invisible toggles in §1.2
-  become checkable.
+### 7.1 The row
+Columns: select · Item · **Availability** (new: `2 of 10 free`, `Short 2`, `External ·
+Scene Change`, `30 to sell`) · Qty · Unit · [Cost · Margin] · Total · actions. The
+Item cell carries the name, the kind tag (Kit · Group · n · Sub-hire · Custom · Sale ·
+new stock / from fleet · Container) and the state the live tab keeps invisible:
+**Optional**, price hidden / `price shown` inside a combined category, `ROI` excluded,
+`Needs review` / `Follow up`, Prepped / Out, the sub-hire order's status pill, `added
+after lock`. The sub-line holds serials assigned, the planned case, the accessory
+summary (`accessories 3 · 1 removed · SB900B → BATT-01`), the sub-hire order
+(`SH-0012 · via Scene Change · 23% margin`), the note and `price set by hand`. One
+contextual primary action: `Sub-hire 2` on a short line, `Confirm order` on a draft
+sub-hire, `Price it` on an unpriced line. Category headers gain count, `n short` /
+`n unpriced` / `Combined price` pills and a derived subtotal; delete asks and offers
+Undo. A pinned **Services on documents** section at the bottom shows the billable
+services with a link to Logistics, so the tab's total matches the quote.
 
-Toolbar: view switch · filter chips with counts (All · Short · Unpriced · Sub-hire ·
-Optional) · text filter · Cost toggle · ⋯ (Sync accessories, Sync kits, Reorder
-categories). Footer: `AddBar` · Group / Category / Container chips · `FooterTotals`
-(Gear · Services · Discount · Total ex GST).
+The ⋯ menu is one list for every kind: Edit (E) · Edit accessories · Serials ·
+kind-specific (kit price / itemised, sale source, open the order) · Sub-hire the
+shortfall · Move to… (M) · Duplicate · Client documents (Show/Hide this price inside
+a rollup, Mark optional) · Reporting (Exclude from ROI) · Collaboration (Needs
+review, Follow up, Comment) · Delete (D, with Undo instead of no confirm).
 
-Row actions (the gear `ActionMenu`): Edit line (E) · Edit accessories · Serials ·
-— · Sub-hire the shortfall (only when short) · Move to… (M) · Duplicate · — · Hide /
-Show price on documents · Hide / Show on documents (group members) · — · Exclude /
-Include in ROI · — · Delete (D). The inline primary action is contextual: `Sub-hire
-2` on a short line, nothing on a healthy one.
+### 7.2 Accessories — the same rows the packer sees
+One row per accessory under its parent (gear lines too, not only kits): included
+circle · name · `×n per unit` · **DEFAULT / OPTIONAL** tag · planned case · qty
+(`per × line qty`) · `no charge` · state (Included / Added / Removed · reason) · ⋯
+(remove with a reason, put back, change the per-unit quantity, pack into a case,
+sync from the catalog). Clicking an included DEFAULT asks for a reason chip
+(Client supplies · Not needed · Out of stock · Other…); the reason prints on the row
+and in the log, exactly as on the floor (§9.5). One **Accessories editor** (from the
+row's `Edit accessories`, the ⋯, or the Edit sheet's own section) lists defaults
+and optionals with the same circles, per-unit steppers and reason fields, plus
+`Sync from catalog`. Optionals not added stay out of the table (`1 optional not
+added` under the rows). An accessory can be planned into a different case from its
+parent, which is what the warehouse then shows under that case.
 
-Inline editing stays on desktop (qty, unit, discount, notes). Phone: full-row tap →
-`RowEditorSheet`. Selection: always-visible checkboxes; phone has a Select mode
-button in the toolbar. Drag-to-reorder stays (long-press on phone).
+### 7.3 Adding — search first, details after
+`+ Add` opens one popover (a sheet on phones): a search box, kind chips (All · Gear ·
+Kits · Sub-hire · Custom · Sale · Templates) and a `to <category or group> ▾`
+target. Results show availability and rate; a model already on the job says
+`already ×4 here → ×5` and **combines** on Enter; an **asset tag** resolves to its
+model with the serial assigned; free text offers `Add “…” as a custom line` and
+`Sub-hire “…”`; Templates add a group with its members; Sale results show the sale
+price. Enter adds one and keeps the popover open; a **Just added** strip holds the
+last four with qty steppers, a `Short n · sub-hire` chip when the add overbooks, and
+`Details` into the Edit sheet. Price, discount, notes, placement and accessories are
+edited after adding (inline or in the sheet), never in the add form. The live
+dialog's five tabs, two modes and three sections go.
 
-Category delete gets a confirmation (it has none today). Dialog titles move to
-sentence case.
+### 7.4 Editing — one sheet, inline first
+Qty, unit price, discount (`10%` or `85`), description (custom lines), notes, member
+qty and sub-hire cost/charge are inline on desktop. The **Edit sheet** is one layout
+for every kind, in sections: Item (qty with live availability, serials + Assign),
+Pricing (unit, charged per day/week/hour/flat, discount $/%, tax override, Xero
+coding), Client documents (show this price in a rollup, optional), Reporting
+(exclude from ROI), Placement (category, group, planned case), Accessories (the
+editor above), Notes. Under the pricing lock the money fields are disabled with a
+`Pricing locked · Unlock` badge; unlocking is logged and offers Undo. Groups get the
+same sheet with bundle price + suggested, discount, members with show-on-documents
+switches. Bulk edit: charged, discount, optional, note, each behind its own switch.
 
-### 7.1 Accessories specifically
-- One entry point: **Edit accessories** on the line (menu or the child line's Edit).
-  The accordion inside Edit item and the standalone plan dialog collapse into one
-  sheet: defaults ticked, optionals unticked, "removed" items struck through with
-  their reason, and "Sync from catalog" per line.
-- The typed-reason gate when unticking a default stays (it is a business rule) but
-  the reason is shown on the row afterwards (`client supplies`).
-- Accessories are visually distinct from kit members: a teal **Accessory** overline
-  on the child line and the parent tag reads `Accessories 3/4`, not a kit badge.
-- The same child line, with verify circles, is what the packer sees (§9), so an
-  accessory looks the same on the quote and on the floor.
+### 7.5 Sub-hires — from shortfall to supplier and back
+- **Shortfall → order in one sheet.** `Sub-hire 2` on a short line opens a sheet
+  prefilled with the model, the shortfall, the job's hire window, the supplier chips
+  (each showing its last cached rate for this model), **cost prefilled from that
+  rate**, **charge prefilled from the line's own rate**, a live margin, and the
+  choice between adding to an open draft order with that supplier or starting a new
+  one. `Keep 2 from stock and sub-hire 2` splits the line. `Show on quote` / `Show as
+  sub-hired` are set here. Submit lands the sub-hire line next to the original with
+  Undo; the live "Sub-hire n units instead" link (closes the dialog, prefills
+  nothing) goes.
+- **On the row**: a sub-hire line or group shows the Sub-hire tag, the order's status
+  pill (Draft · Confirmed · On hire · Returned · Cancelled), `SH-0012 · via
+  supplier · n items · margin`, `External · supplier` in Availability, charge in
+  Unit with cost beneath, and `Confirm order` as its primary action while draft.
+  Members show cost and charge per day with inline edit.
+- **Orders section** (replaces the "Sub-hire orders (n)" card): a pinned section at
+  the end of the table, one row per order: number · supplier · status · PO · paid ·
+  dates · items · cost · charge · margin, the next lifecycle action inline (Confirm
+  order → Mark on hire → Mark returned) and ⋯ (open, add item, status, create PO,
+  payment, attach, duplicate, cancel). `+` starts an order.
+- **Order sheet**: header with the status trail, Cost / Charge / Margin tiles, the
+  items with their placement and quote flags (Edit opens the sub-hire line sheet),
+  `Add an item`, and the paperwork block (Create PO, supplier ref, payment segmented
+  control, files). The sub-hire line sheet carries cost/charge/margin, pricing type,
+  on quote / as sub-hired and placement, and is **not** gated by the pricing lock.
+- **Margin everywhere it matters**: the footer shows sub-hire charge and margin, the
+  Breakdown shows sub-hire charged on and confirmed cost, and `Show cost & margin`
+  adds both columns (only sub-hire rows carry a cost).
 
----
+### 7.6 Phone
+Same list, 56 px rows (name + tags, state sub-line, total, `×qty` tap-to-step, ⋯);
+accessory rows under an expanded parent; tap a row for the Edit sheet as a bottom
+sheet; `+ Add` is the same search sheet; the orders section and services section
+are rows. Menus are sheets without keyboard hints.
+
+**Prototype:** https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC (v13, every flow
+above wired with Undo).
 
 ## 8. Job › Logistics
 

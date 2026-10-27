@@ -18,6 +18,7 @@ shell at three widths, and the primitives every surface is built from).
   the order sheet, plus the earlier inline editing and drag and drop.
 - Logistics: https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf — v2 (§8).
 - Finance: https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY — v2 (§8b).
+- Job › Overview + page header: https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo — v1 (§6b).
 - Tasks & notes (Tasks + Notes + Files merged): https://claude.ai/artifact/BrLBitu3c2V4uixLQbXCNE — v1 (§8c).
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
@@ -309,6 +310,90 @@ Mira moves from a floating button to a top-bar icon on every width. Search is on
 field (⌘K / the phone icon) with the existing `@` pages, `/` commands and date modes.
 
 ---
+
+## 6b. Job › Overview and the page header — v2 proposal (prototype 2026-10-27, awaiting a yes)
+
+Overview is the job's home and the page header is the one thing every tab
+shares, so they are designed together. What is live: a hero with no dates and
+no status pill (status shows only through the stepper), an `Edit` that leaves
+for a four-step wizard page, a lock chip whose "jump to the lock" scrolls to
+an id that no longer exists, a ⋯ status menu with no permission gate, and an
+Overview body of two finance cards, a four-tile money strip and four context
+cards. **The readiness checklist the docs describe was deleted on 2026-10-17
+(commit `6bbdee8`) and never replaced** — the rules module and the Convex
+query survive with no UI consumer. The page's own comments, CLAUDE.md and
+FEATUREDOCS/69 still describe it.
+
+- **Header.** Title row: name · status pill · `Pricing locked` chip (click
+  flashes and scrolls to the strip — one id, fixed) · `1 open issue` (to the
+  warehouse page). Meta line: `v3 · Live ▾` version chip · number · type ·
+  client · **rental dates · days** · PM avatars. Actions: `Comments` (count
+  badge, red when a thread blocks; opens the discussion on Tasks & notes),
+  `Warehouse ↗`, `Documents ▾` (warehouse paperwork + labels + call sheet +
+  timeline, and a pointer to Finance for quote/invoice PDFs — never a live
+  render of those), `Edit`, ⋯ (Runsheet · Duplicate · Save as template ·
+  Cancel; Reactivate / Delete only when cancelled). `Edit` becomes a sheet of
+  the Basics (name, code, type, client, contact, description, tags, discount
+  and tax rate shown locked when pricing is) — the wizard stays for creating a
+  job. **Status is not a field in it**: the wizard's Status select bypasses
+  every gate `updateStatusNative` runs (accepted quote, blocking comments, the
+  confirm snapshot) and goes.
+- **Stepper** keeps the 8 stages and the `Advance to …` / ⋯ `Set status`
+  pair, and shows the sub-status under a two-status stage (`Quote · Quoted`).
+  Every move runs the same gates in the same order: prep/dispatch moves
+  blocked by an unresolved blocking discussion show *why* and a link to it;
+  entering Confirmed runs the confirm-impact preview (`Confirming this job
+  will create a gap` — models that would go hard-overbooked, crew not yet
+  confirmed, "a heads-up, not a block"); Confirmed/Completed take the snapshot
+  and raise the lock, said in the toast. `Awaiting payment` keeps the derived
+  three-step strip (Quote accepted · Invoice sent · Paid) with one line of why
+  it exists. Cancelled replaces the stepper with the off-pipeline notice plus
+  `Set status ▾` and `Delete project…`. The ⋯ menu gets the `project:update`
+  gate the Advance button already has; `Awaiting payment` is spelt from the
+  shared label map (the page's local map misses it).
+- **Version / lock strip** above the tabs, one component, three states, as
+  live: absent; viewing a non-live version (info: draft, editable on Equipment
+  and Finance, "Overview always shows the live job", `Make v2 live` with its
+  dialog, `Back to live`); live and locked (warning: who, when, what is
+  read-only and that structure is not, `Unlock pricing` with the PM/manager
+  gate). `V` opens the version menu; the version chip lists every version with
+  `New version from v3`, `Compare`, `Manage…`.
+- **Readiness comes back as the first card**, computed live from the rules
+  that still exist plus three new rows, each with the action that fixes it on
+  the tab that owns it: gear (short / would be short if a pencilled job
+  confirms / not checked without dates), double-booked assets, services short
+  of crew, crew unconfirmed, unpriced lines, packing, **blocking discussions
+  (prep held)**, **overdue tasks**, **paperwork on file** (risk assessment,
+  PO). Headline is the verdict: `Prep is held · 1 blocker · 5 to sort · 3
+  clear`, `Not ready yet`, or `Ready for prep`; `unknown` never counts as
+  clear. Blockers sort first, clear rows fade.
+- **Money strip answers the four questions**: Job total (quote vN · accepted ·
+  ex GST), Invoiced (kinds · paid), Outstanding or Still to raise (which
+  invoice is due, or that a draft is waiting to be issued), Margin (managers;
+  ⋯ hides it). Replaces Equipment / Services / Crew / Total, which belong on
+  Equipment and Logistics. Draft invoices never count as invoiced.
+- **Quote and Invoicing cards** keep their fields and actions, with the live
+  badges, the drift note, the derived invoicing state (`Deposit paid` added —
+  today a paid deposit reads as `Draft`), `+ Invoice ▾` (partial / remaining
+  balance → draft, issue on Finance), `Record payment` (settling every issued
+  invoice at Awaiting payment auto-confirms with the live toast copy), and a
+  `Finance ↗` link in each header. One invoicing derivation, not two
+  (`deriveInvoicingState` and `computePaymentProgress` disagree on credit
+  notes and drafts today).
+- **Context cards become editable in place**: Schedule (`Edit dates` → the
+  same dates sheet Logistics uses, with "move services and crew calls with
+  the window" and the confirmed-job availability re-check), Location (`Edit`
+  → venue, address, access note, site contact; `Get directions`), Team
+  (client + document contact, PMs with add/remove and the note that a PM can
+  unlock pricing, crew count with unconfirmed → Logistics), Activity (the
+  feed, `All activity`). The facts stay shaped once in `project-context.ts`
+  for the rail on the other tabs.
+- **Phone:** header stacks; the stepper scrolls with the current step centred
+  and `Advance` below it full-width; the lock strip and readiness card are
+  the first screen; a scrolling tab strip under the header; cards stack with
+  the money tiles 2×2.
+
+**Prototype:** https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo
 
 ## 7. Job › Equipment — v2 proposal (prototype 2026-10-27, awaiting a yes)
 

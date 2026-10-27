@@ -1,15 +1,24 @@
 ---
 status: PROPOSED
-updated: 2026-10-24
+updated: 2026-10-27
 ---
 # UX unification — one list, one row, one menu, works on a phone
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-10-24 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-10-27 (review quarterly — POLICY.md R-5.5)_
 
 **Mockups:** https://claude.ai/artifact/HHjfzi1NUL5PEQDQMxM6KU (private canvas, 11
 artboards: Equipment desktop + phone + line editor sheet, Logistics desktop + phone
 day mode, Warehouse job desktop + phone pack mode + scan sheet, the floor board, the
 shell at three widths, and the primitives every surface is built from).
+
+**Clickable prototypes** (state-driven HTML, every action wired, Undo on every write):
+- Job › Equipment: https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC — List / Packing
+  / Client views, inline qty + price + group bundle editing, ⋯ on every row including
+  group members, drag and drop (lines, groups, members, multi-select, packing view
+  with nested cases), the add popover.
+- Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
+  2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
+  scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
 
 This is the second UX pass since the RVLT rebrand (`docs/designs/ux-ui-redesign.md`,
 2026-06). That pass restyled the app and set the design language. Since then
@@ -397,28 +406,59 @@ primary action (Open · Start pack · Chase · Close out), ⋯. The "Actions ▾
 deployed / returned / completed" manual overrides leave the card (they ignore item
 state); they stay in the job ⋯ as an admin action with a confirmation.
 
-### 9.2 The job (`/warehouse/[projectId]`)
-- `DetailHeader` (warehouse variant) · `StageFilter` with counts and a progress bar ·
-  one card holding the `ScanDock`, the `ScanStrip` and **one** table.
-- The table groups by category in **To pick** (with a Shelf column, sorted by shelf
-  walk when the org has locations) and by container from **Prepped** onward. Every row
-  is a `LineRow` with the stage pill and one primary action for the stage (`Prep 8`,
-  `Prep kit`, `Deploy`, `Return`, `De-prep`). Kit members and accessories are child
-  rows with verify circles, on desktop **and** phone (today phones have no accessory
-  selection).
-- The right rail is **Containers**: one card per case (tag, kind, nesting, progress,
-  `Planned:` line, Sealed / Packing / Planned pill, ⋯ with Rename · Move into · Unpack
-  · Print label · Remove) plus Loose, and a **Needs you** list (checks due, shorts,
-  arrivals). The mutations for rename / unpack / remove exist
-  (`use-project-container-writes.ts`) and finally get UI.
-- Planned vs packed is visible on the row (`Planned → VID-04` glyph) and in the rail,
-  and prepping into "Loose" no longer overrides the plan: `containerId` is only sent
-  when the packer chose a case.
-- Condition on return is recorded per row through the scan sheet / row sheet, the same
-  way on the job page and in Returns mode (today it is a global select on one and a
-  post-hoc per-row action on the other).
-- The online pick list's localStorage ticks go; "picked" is the `To pick → Prepped`
+### 9.2 The job (`/warehouse/[projectId]`) — locked 2026-10-27
+The live page's structure stays; the clutter goes. Operators know it and the
+experience is sound, so this is a clean-up, not a re-think (three alternative
+directions were prototyped and rejected — see the prototype link above).
+
+- **Header**: back · number · status pill · truck time + vehicle + dock · title ·
+  `Documents ▾` · `View project ↗` · ⋯ (print pull slip, labels, expand/collapse,
+  admin overrides). The job-level facts stay in the header; nothing else does.
+- **One stage row.** The stepper and the six tabs merge: Pick · Prepped · Deployed ·
+  Returned · De-prepped · Close-out, each a clickable tab carrying its count, with a
+  thin progress bar underneath. No separate non-clickable stepper.
+- **One card** holding, top to bottom: the scan box (camera button beside it; the
+  placeholder names the stage's verb — "Scan or enter asset tag to prep…"), the
+  **result line** for the last scan (tone-coloured left edge, tag, name, what
+  happened, Undo), then two toolbar rows:
+  - **Row 1**: `Checks` segmented control (As I scan · Bulk after, with a `Run checks ·
+    n` button when any are pending) · `Packing into` case chips with packed counts
+    (the active case is the highlighted chip; a sealed case refuses to be active) ·
+    `+ New` · right: the `n need you` chip (filters to shorts, failed checks, missing
+    accessories, damage) · Find.
+  - **Row 2**: the stage's actions, left-aligned like the live page. Pick: **one
+    `Prep ▾` split button** (replaces the three Prep / Prep without accessories /
+    Prep accessories only buttons — §9.5). Prepped: `Deploy all · n` · `Move to…` ·
+    `Move to Pick`. Later stages: `Receive all · n` / `De-prep all · n`.
+- **One table**: select · Item · Asset tag · case · Qty · Status · actions. Pick
+  groups by category (sorted by shelf); Prepped onward groups by **case**, each case
+  header carrying kind, packed count, Sealed / Packing pill, Active pill and a ⋯
+  (seal, make active, print label, unpack everything, remove). The row is a `LineRow`:
+  name, kit tag, planned-case tag, sub-line (serialised/bulk count · shelf · check on
+  prep · short + PO due · accessories summary), one contextual primary action (`Prep
+  8`, `Prep + acc.`, `Pack 2 accessories`, `Deploy 6`, `Receive 2`) and ⋯.
+- **Child rows** under an expanded line: kit members with verify circles, the unit
+  chips (tag · case, tinted by stage, failed checks marked), and one row per
+  accessory (§9.5). A kit scan verifies the member it matched; `Prep` on an
+  unverified kit asks once (Verify first · Prep anyway).
+- **Drag and drop** on the Prepped tab: a line or an accessory row dropped on a case
+  header moves there; dropping a parent takes the accessories that share its case
+  with it; the Loose header takes things out of a case.
+- The containers **right rail is gone**: the case chips in the toolbar and the case
+  headers in the table carry everything it held. Planned vs packed stays visible on
+  the row (`Planned → VID-04` tag on Pick) and prepping into "Loose" no longer
+  overrides the plan (`containerId` only sent when the packer chose a case).
+- Condition on return is recorded per row through the return check / row sheet, the
+  same way on the job page and in Returns mode.
+- The online pick list's localStorage ticks go; "picked" is the `Pick → Prepped`
   transition. The pull-sheet route becomes the print view of the same list.
+- **Scan outcomes, one pipeline**: a tag on this job preps / deploys / receives /
+  de-preps for the current stage; a case tag makes that case active; an already-done
+  unit says so and offers `Move to <active case>` only when it is somewhere else; a
+  tag from another job offers "Add to this job and prep it" (the PM is told);
+  an unknown tag offers type-the-tag or register. Every write lands in the result
+  line with Undo. Scanning a parent with a prep check opens the check inline first
+  ("As I scan") or queues it ("Bulk after").
 
 ### 9.3 Returns station
 Becomes **Returns mode**: the same `ScanDock` with scope Any job, the same `ScanStrip`,
@@ -426,13 +466,66 @@ the same row sheet for condition, and the "Everything out" board rendered with t
 job cards. Single-asset and bulk returns gain Undo because they go through the one
 pipeline. The board subscribes live instead of a manual refresh.
 
-### 9.4 Phone pack mode
-Header with the packer's facts · stage chips · sticky `ScanDock` with the active case
-chip and Check-only toggle · one-line `ScanStrip` · 64 px rows with big `0 / 8` counts
-and a 36 px `Prep` button on the right · `BulkBar` above the bottom nav. A scan opens
-the scan sheet: tag, model, where it sits on the job, the prep check inline (Fail /
-Pass, Pass all), **Pack into** case chips, Where it's been · Swap · Report, and one
-primary `Prep into LX-04`. Offline scans show as neutral strip entries, never silent.
+### 9.4 Phone pack mode — locked 2026-10-27
+The same page, not a different app: phone header (back · title · number · status ·
+truck time · ⋯) · the stage row as one horizontally scrolling strip · the scan box
+with the camera button (camera opens a sheet with the reticle and the stage + active
+case pinned over it) · result line · `Checks` · case chips · `n need you` · the
+stage action. Rows are 60 px: name, kit tag, shelf · planned case · accessories
+summary, a big count, one 36 px primary button (`Prep` / `Pack` / `Deploy` / `Receive`),
+⋯. Prepped groups by case like the desktop table, with relocated accessories as
+their own rows. Tapping a row opens the **row sheet**: status + case tags, name, tags
+and count, **accessories first** (one line each with tier, state, case and a `Pack` /
+`Move` / `Pack anyway` button), `Pack into` case chips, the unit chips, `More…`, and
+one primary action. `BulkBar` above the bottom nav when anything is selected.
+Offline scans show as neutral result-line entries, never silent.
+
+### 9.5 Accessories on the floor — locked 2026-10-27
+The prep-with / prep-without / accessories-only trio was the messiest part of the
+live page. The rule set that replaces it:
+
+- **An accessory is a row under its parent**, never a modifier on the parent's
+  button. Each row shows: verify circle (empty · half when partly packed · tick ·
+  struck when skipped · ✕ when missing) · name · `×n per unit` · tier tag
+  **DEFAULT** / **OPTIONAL** · `added` when the PM added it · case column (`not with
+  parent` when it sits in a different case) · qty (`7/12` while split) · state pill ·
+  one action · ⋯. Vocabulary: **To pick · Packed · In BATT-01 · Out · Back ·
+  Missing · Skipped · reason**.
+- **One `Prep ▾` button**, context-aware. Parent still to pick: `Prep n + accessories`
+  (default) / `Parent only · accessories stay to pick` / `Choose which…`. Parent
+  already packed: `Pack accessories with the parent` (into the parent's case) / `…
+  into the active case` / `Choose which…` / `Unpack parent`. The row's own primary
+  button is the same default (`Prep + acc.`, then `Pack 2 accessories`).
+- **Scanning an accessory packs it** into the active case and the result line says
+  which parent it rides with and `n of m packed`. A bulk accessory's bin barcode asks
+  how many. An accessory can live in a different case from its parent (batteries in
+  the battery box) — the row says so, the Prepped tab lists it under that case as
+  `accessory of <parent> · parent in LX-04`, and it still deploys and returns with
+  the parent.
+- **Scanning a parent packs its accessories silently** unless something is split or
+  skipped; then one sheet lists each accessory with where it is and Pack / Later /
+  Pack anyway / Keep, plus **"Remember for the next n <units>"** so a six-beltpack
+  line asks once. `Parent only` is the sheet's secondary action.
+- **Skipping** a DEFAULT accessory on the floor needs a reason chip (Still charging ·
+  Out of stock · Client supplies · Not needed); the reason prints on the row and in
+  the activity log. `Pack anyway` reverses an office skip and keeps the note in the
+  log.
+- **Deploy gate**, only when an accessory is unpacked or skipped: a checklist, one
+  row per accessory, `Pack now` / `Leave`; a DEFAULT left behind asks why (same
+  chips, `Other…` with a note); packed accessories read "deploys with the parent ·
+  nothing to do"; unverified ones are one line in the footer, not a block.
+- **Return check**, only when accessories went out: tick what came back (`All back`
+  shortcut); anything unticked is reported missing on that parent, shows as a
+  `Missing` state on the row and on the close-out summary with "charge the client?".
+- **Cascade**: deploy / receive / de-prep move the parent's accessories with it
+  whatever case they are in; unpacking a parent leaves its accessories where they are
+  and says so.
+- The footer carries the accessory tally separately: `accessories: 30 packed · 11 to
+  pick · 1 skipped`.
+
+Open on this (§12, D8–D10): bulk accessory verification on count vs per scan,
+whether managers skip the reason or get it prefilled, and whether "remember" is per
+job or per session.
 
 ---
 
@@ -459,7 +552,7 @@ Each phase is one `/autoplan`. Nothing here changes a Convex schema except 2c.
 | 2a | Equipment tab on the primitives | List view, section subtotals, glyphs, one sub-hire row, accessories as one child line + one editor, AddBar, totals footer, phone row sheet, category-delete confirm | M |
 | 2b | Packing view + Client view | Packing tab → view; container cards with rename/move/unpack; Client view = document structuring applied in the tab | M |
 | 2c | Plan-honouring prep | `containerId` only sent when chosen; `Planned →` glyph in the warehouse; a test that a planned line preps into its planned case when the packer has no active case | S |
-| 3 | Warehouse job page | `StageFilter` replaces tabs + stepper; one table; `ScanDock`/`ScanStrip`; one scan pipeline with Undo + tone for every result; containers rail; phone pack mode + scan sheet; delete the localStorage pick list; the Returned-tab chip bug | L |
+| 3 | Warehouse job page | Stage row replaces tabs + stepper; one card, one table (category on Pick, case from Prepped); `ScanDock` + result line; one scan pipeline with Undo + tone for every result; case chips + case headers replace the rail; accessory rows + `Prep ▾` + scan sheet + deploy gate + return check (§9.5); phone pack mode + row sheet; delete the localStorage pick list; the Returned-tab chip bug | L |
 | 4 | The floor + Returns mode | Board, cards, scope-aware scan dock, live returns board, Undo on all returns, `scanLookup.resolve` wired | M |
 | 5 | Logistics | Dates on the page with linked re-timing, three lanes, crew from the call, money once, runsheet → phone day mode, sub-hire transport rows | L |
 | 6 | Shell | Bottom nav with Scan + More sheet, Mira to the top bar, real breadcrumb trail, DataTable lists on the primitives, Settings in More | M |
@@ -484,6 +577,9 @@ the recommended option.
 | D5 | Mira moves to the top bar | Yes | Keep the floating button, raise it above the bulk bar |
 | D6 | Manual "Mark deployed / returned / completed" leave the floor cards | Yes, into the job ⋯ with a confirm | Keep on the card |
 | D7 | "Projects" → "Jobs" in every label (routes unchanged) | Yes — the bottom nav and "New job" already say it | Rename the bottom nav to Projects |
+| D8 | Bulk accessories (batteries, pouches) verify on **count** at the bin barcode, not one scan per unit | Yes — they carry no tag; the bin barcode + "how many" is one scan | Per-unit scan of a shared bin code |
+| D9 | Managers deploying with a DEFAULT accessory left behind get the reason **prefilled** from the office note, still editable | Yes — one tap, still logged | Managers skip the reason entirely (today's `logAccessoryCheckoutOverride` behaviour) |
+| D10 | "Remember for the next n" on the scan sheet is scoped to the **job** | Yes — the choice is about this job's gear | Per packer session |
 
 ---
 

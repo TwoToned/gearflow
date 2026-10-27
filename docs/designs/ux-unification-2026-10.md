@@ -18,6 +18,7 @@ shell at three widths, and the primitives every surface is built from).
   the order sheet, plus the earlier inline editing and drag and drop.
 - Logistics: https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf — v2 (§8).
 - Finance: https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY — v2 (§8b).
+- Tasks & notes (Tasks + Notes + Files merged): https://claude.ai/artifact/BrLBitu3c2V4uixLQbXCNE — v1 (§8c).
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -555,6 +556,87 @@ figures after) and gives each thing one shape.
   are bottom sheets.
 
 **Prototype:** https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY
+
+## 8c. Job › Tasks & notes — merging Tasks, Notes and Files (prototype 2026-10-27, awaiting a yes)
+
+Three tabs become one. Today Tasks is a bare list (add box, tick, edit
+dialog; no filters, no inline edits, and the server's bulk and reorder
+mutations have no UI), Notes is three textareas with a Save button each
+(and crew notes print on nothing — the call sheet and runsheet print the
+per-service notes, not the project's), and Files is a drop zone and a row
+list with no category, no uploader or date, no download for anything but
+images and no undo on Remove. None of the three writes to the Activity rail.
+The project-level discussion lives behind a header button nobody finds. The
+merged tab gives each of these a visible home on one screen, keeps every
+field, and adds the obvious missing moves.
+
+- **One tab, `Tasks & notes`**, badge `9/14` as today plus a red count of
+  overdue tasks. Desktop is two columns: tasks then files on the left,
+  notes then discussion on the right. The `?tab=tasks|notes|files` deep
+  links all land here (readiness checks and the My tasks page keep
+  working); phone shows the same four as segments at the top of the tab.
+- **Tasks grouped by when, not by status.** Overdue (red), Today (amber),
+  Tomorrow, This week, Later, No date, then a collapsed `Done · 9 · 1
+  cancelled`. Chips `Open · Mine · Done · All` and a search. The add row
+  sits at the top of the list (title, ↵ to add, `Due ▾` and `Assign ▾`
+  chips to set them before adding). Each row: completion circle, title,
+  `High`/`Low` tag, `In progress ▾` only when it is (To do is the default
+  and needs no label), a one-line description, **link chips**, assignee
+  (avatar, name, `crew` tag, click to reassign), due (click for Today /
+  Tomorrow / load in / show day / load out / pick / clear), ⋯. Every write
+  gets a toast with Undo. Select mode turns the circles into checkboxes
+  and a bulk bar (Assign · Due · Mark done · Delete) uses the existing
+  `bulkUpdate`/`bulkDelete`; a drag grip uses the existing `reorderNative`.
+- **A task can be linked** to a file on this job, a service or an
+  equipment line, so "confirm the PO" points at the PO and "print call
+  sheets" points at Bump in. The link is a chip on the row and shows on
+  the file's row in return. Data: a small `projectTaskLinks` table (or the
+  parked `workItemLinks`), nothing on the task row itself.
+- **Task sheet** keeps every live field (title, description, assignee from
+  team + crew, due, status, priority) and adds the links and a history
+  line (added by · when · done when). Delete asks nothing and offers Undo.
+- **Notes: three cards with their audience on the label**, not in a
+  placeholder: `Client notes · prints on the quote & invoice`, `Crew notes
+  · prints on the call sheet & runsheet`, `Internal notes · only us · never
+  printed`. Save on blur or ⌘↵ with a `Saved · Sam · Thu 6 Nov` /
+  `Unsaved` line and a `136 / 5,000` counter; client notes get a Preview
+  that renders the **bold** / *italic* / bullets the documents print. A
+  version menu (`v3 · live ▾`) shows the notes as captured in an earlier
+  version, read-only, instead of swapping the whole tab. Two behaviour
+  changes ride with this: crew notes actually print at the top of the
+  call sheet and runsheet (today nothing prints them), and note saves
+  record `updatedBy`/`updatedAt` and write an Activity event.
+- **Files: a category per file, who and when, open, download, rename,
+  undo.** The row is thumbnail or type badge, name, a category chip that is
+  a menu (the existing `ProjectMediaType` enum — Floor plan, Site map,
+  Client brief, Risk assessment, Contract · PO, CAD, Photo, Quote, Invoice;
+  today everything is written as `OTHER`), size, uploaded by · when, ⋯
+  (Open, Download, Rename, Change category, Attach to a task, Remove with
+  Undo). Chips `All · Documents · Photos`. The drop strip names the
+  accepted types and the 50 MB cap; phone adds `Take a photo` (camera
+  capture, like the warehouse). **Also on this job** lists, read-only, the
+  files that live on other tabs — the sent quote and issued invoice PDFs,
+  sub-hire attachments, incident photos — each with its origin tag and an
+  open link, so one place answers "what documents do we have for this
+  job" without moving any of them. Removing a file clears any task link to
+  it; a category guess from the file name is editable on the row.
+- **Discussion moves onto the tab.** The project-level comment threads
+  (today the header `Comments` button) render under the notes: compose
+  with `@ Mention ▾` and a `Blocking · holds prep & dispatch` switch,
+  threads with author, age, mentions, the blocking pill, reply count,
+  inline replies and `Resolve` / `Block prep`; resolved threads fold away.
+  Line-item threads stay on their rows on Equipment and are counted here
+  (`On line items · 2 open ↗`). The header keeps a count badge that jumps
+  here. Nothing about who may block or resolve changes.
+- **Readiness** gains two rows the rail can show on every tab: overdue
+  tasks and blocking discussions (prep held). Task, note and file writes
+  start writing `activityEvents` so the Activity rail finally shows them.
+- **Phone:** segments `Tasks 5 · Notes · Files 6 · Discussion 2`; tasks are
+  cards with a big completion circle and a sticky add bar; notes are the
+  same three cards; files get the camera button; the discussion is the
+  same list. The task sheet and every menu are bottom sheets.
+
+**Prototype:** https://claude.ai/artifact/BrLBitu3c2V4uixLQbXCNE
 
 ## 9. Warehouse
 

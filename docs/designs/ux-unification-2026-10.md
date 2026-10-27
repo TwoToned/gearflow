@@ -442,6 +442,21 @@ the service they are on.
   crew` → `Send 2 offers` → `Confirm` → `Confirm`) · ⋯. Lane chips (All ·
   Transport · Site · Labour · Needs crew) and a `needs you` chip (`3 services short
   of crew · 4 offers to send · 1 unanswered`) replace scrolling for problems.
+- **Two new service types: Client pick up and Client drop off.** The client
+  moving the gear themselves is a service like any other, so it gets a row on
+  the timeline, a crew call and a place on the call sheet — today it is a note
+  in someone's head. Both sit in the Transport lane and the add menu groups
+  them under `Client moves it` (next to `We move it` and `On site`). The sheet
+  swaps Where for **Who collects / Who drops off**: the location is fixed to our
+  warehouse counter, the client contact name, phone and vehicle + rego are
+  captured (`Use the site contact` prefills), and the truck time becomes
+  `Client collects at` / `Client drops off at` — the crew window above it is who
+  staffs the counter. Default role Warehouse, 1 needed, no charge (the client
+  is doing the transport; a handling fee can be typed). The warehouse page
+  shows the job as a client collection / client return instead of a truck.
+  Data: two new `projectServices.type` values (`CLIENT_PICKUP`,
+  `CLIENT_DROPOFF`) plus client contact name / phone / vehicle fields on the
+  service; phase derivation treats them as Handover / Return.
 - **Crew from the call.** A service expands to its crew rows (avatar, name,
   preferred / clash tags, phase and window, **status pill as a menu**, rate, `Send
   offer` / `Resend` / `Confirm`, ⋯) and an `Add crew · 1 needed` row. **Pick

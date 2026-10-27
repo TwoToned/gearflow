@@ -413,6 +413,15 @@ dot. Width is capped so the eye has a single line to follow.
 
 ## 7. Job › Equipment — v2 proposal (prototype 2026-10-27, awaiting a yes)
 
+> **Calm pass (2026-10-28).** Applied to this tab's prototype after the home:
+> the Overview header (name · status · lock glyph; number · client · dates;
+> `Documents ▾ · Edit · ⋯`), no card boxes, the toolbar reduced to words with
+> the active view underlined, chips and status pills become a dot and a word,
+> tags become muted text, row buttons become text links, ⋯ appears on hover,
+> section rows lose their background band, green is kept for confirmed /
+> paid dots only and red for shortages and crew gaps. Every control and
+> flow is unchanged.
+
 Same approach as the warehouse: the live tab's structure stays (header, stepper,
 version strip, tab row, context rail, `Add ▾`, one table, hover actions, inline
 cells, checkbox selection + bulk bar, drag and drop) and every feature that landed
@@ -522,6 +531,15 @@ above wired with Undo).
 
 ## 8. Job › Logistics — v2 proposal (prototype 2026-10-27, awaiting a yes)
 
+> **Calm pass (2026-10-28).** Applied to this tab's prototype after the home:
+> the Overview header (name · status · lock glyph; number · client · dates;
+> `Documents ▾ · Edit · ⋯`), no card boxes, the toolbar reduced to words with
+> the active view underlined, chips and status pills become a dot and a word,
+> tags become muted text, row buttons become text links, ⋯ appears on hover,
+> section rows lose their background band, green is kept for confirmed /
+> paid dots only and red for shortages and crew gaps. Every control and
+> flow is unchanged.
+
 The live tab's structure stays (`Add service ▾` by type and template, Generate,
 Import, a date-grouped timeline, the services money summary, the Project crew
 table) and gets the same clean-up as Equipment and the warehouse: the service
@@ -596,6 +614,15 @@ the service they are on.
 **Prototype:** https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf
 
 ## 8b. Job › Finance — v2 proposal (prototype 2026-10-27, awaiting a yes)
+
+> **Calm pass (2026-10-28).** Applied to this tab's prototype after the home:
+> the Overview header (name · status · lock glyph; number · client · dates;
+> `Documents ▾ · Edit · ⋯`), no card boxes, the toolbar reduced to words with
+> the active view underlined, chips and status pills become a dot and a word,
+> tags become muted text, row buttons become text links, ⋯ appears on hover,
+> section rows lose their background band, green is kept for confirmed /
+> paid dots only and red for shortages and crew gaps. Every control and
+> flow is unchanged.
 
 The live tab is a vertical stack with no containers: stale-pricing bar, quote
 rail, invoice ledger, divider, billing row, financial summary, operational P&L.

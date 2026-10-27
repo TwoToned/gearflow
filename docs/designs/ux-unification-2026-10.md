@@ -311,7 +311,7 @@ field (⌘K / the phone icon) with the existing `@` pages, `/` commands and date
 
 ---
 
-## 6b. Job › Overview and the page header — v2 proposal (prototype 2026-10-27, awaiting a yes)
+## 6b. Job › Overview and the page header — v2 proposal (prototype 2026-10-27 · calm revision, awaiting a yes)
 
 Overview is the job's home and the page header is the one thing every tab
 shares, so they are designed together. What is live: a hero with no dates and
@@ -324,22 +324,35 @@ cards. **The readiness checklist the docs describe was deleted on 2026-10-17
 query survive with no UI consumer. The page's own comments, CLAUDE.md and
 FEATUREDOCS/69 still describe it.
 
-- **Header.** Title row: name · status pill · `Pricing locked` chip (click
-  flashes and scrolls to the strip — one id, fixed) · `1 open issue` (to the
-  warehouse page). Meta line: `v3 · Live ▾` version chip · number · type ·
-  client · **rental dates · days** · PM avatars. Actions: `Comments` (count
-  badge, red when a thread blocks; opens the discussion on Tasks & notes),
-  `Warehouse ↗`, `Documents ▾` (warehouse paperwork + labels + call sheet +
+**The home has to be calm.** The first cut put every feature on screen at once
+(three header pills, a nine-row checklist with a button per row, a four-tile
+money strip, two dense finance cards, four context cards) and read as busy.
+The revision keeps every capability but shows the job in one column, in
+prose, with everything else one click away: a sentence of state, the three
+things to sort, two quiet money lines, three facts columns, four lines of
+recent activity. No cards, no tiles, no per-row buttons — hairlines, small
+caps labels and text links. Red appears once (a blocker), amber only as a
+dot. Width is capped so the eye has a single line to follow.
+
+- **Header.** Title row: name · status pill · a small lock glyph when pricing
+  is locked (its menu says who, when, what is read-only, and unlocks). Meta
+  line: number · client · **rental dates · days**. Actions: one primary
+  `Advance to …`, `Documents ▾` (warehouse paperwork + labels + call sheet +
   timeline, and a pointer to Finance for quote/invoice PDFs — never a live
-  render of those), `Edit`, ⋯ (Runsheet · Duplicate · Save as template ·
-  Cancel; Reactivate / Delete only when cancelled). `Edit` becomes a sheet of
+  render of those), `Edit`, ⋯ (Comments & discussion with its blocking count
+  · Warehouse page · Runsheet · Versions · Duplicate · Save as template ·
+  Cancel; Reactivate / Delete only when cancelled). Open incidents and the
+  version are no longer header pills: incidents are a line in the readiness
+  list, the version lives in ⋯ and under `V`. `Edit` becomes a sheet of
   the Basics (name, code, type, client, contact, description, tags, discount
   and tax rate shown locked when pricing is) — the wizard stays for creating a
   job. **Status is not a field in it**: the wizard's Status select bypasses
   every gate `updateStatusNative` runs (accepted quote, blocking comments, the
   confirm snapshot) and goes.
-- **Stepper** keeps the 8 stages and the `Advance to …` / ⋯ `Set status`
-  pair, and shows the sub-status under a two-status stage (`Quote · Quoted`).
+- **Progress** is a thin eight-segment line with tiny labels (done = ink,
+  current = red, upcoming = hairline) and a `Set status ▾` text link under it;
+  on the phone only the current label shows. It keeps the 8 stages and shows
+  the sub-status under a two-status stage (`Quote · quoted`).
   Every move runs the same gates in the same order: prep/dispatch moves
   blocked by an unresolved blocking discussion show *why* and a link to it;
   entering Confirmed runs the confirm-impact preview (`Confirming this job
@@ -351,47 +364,50 @@ FEATUREDOCS/69 still describe it.
   `Set status ▾` and `Delete project…`. The ⋯ menu gets the `project:update`
   gate the Advance button already has; `Awaiting payment` is spelt from the
   shared label map (the page's local map misses it).
-- **Version / lock strip** above the tabs, one component, three states, as
-  live: absent; viewing a non-live version (info: draft, editable on Equipment
-  and Finance, "Overview always shows the live job", `Make v2 live` with its
-  dialog, `Back to live`); live and locked (warning: who, when, what is
-  read-only and that structure is not, `Unlock pricing` with the PM/manager
-  gate). `V` opens the version menu; the version chip lists every version with
-  `New version from v3`, `Compare`, `Manage…`.
-- **Readiness comes back as the first card**, computed live from the rules
-  that still exist plus three new rows, each with the action that fixes it on
-  the tab that owns it: gear (short / would be short if a pencilled job
+- **One quiet strip, only when it matters**: viewing a non-live version
+  (draft, editable on Equipment and Finance, "this page always shows the live
+  job", `Make v2 live` with its dialog, `Back to live`). The pricing lock is
+  the header glyph, not a strip — the amber banner on every tab was the
+  loudest thing on the page and said the same sentence every time. `V` opens
+  the version menu: every version, `New version from v3`, `Compare`,
+  `Manage…`.
+- **Readiness comes back first, as a sentence and a short list**: the
+  headline is the verdict (`Prep is held` / `Not ready for prep yet` / `Ready
+  for prep`), the lead is the blocker in words with one link to fix it, then
+  the three most important things to sort as text rows (`and 3 more ›`
+  expands), and one micro line naming the checks that are clear. Computed live
+  from the rules that still exist plus three new rows, each linking to the tab
+  that owns it: gear (short / would be short if a pencilled job
   confirms / not checked without dates), double-booked assets, services short
   of crew, crew unconfirmed, unpriced lines, packing, **blocking discussions
   (prep held)**, **overdue tasks**, **paperwork on file** (risk assessment,
-  PO). Headline is the verdict: `Prep is held · 1 blocker · 5 to sort · 3
-  clear`, `Not ready yet`, or `Ready for prep`; `unknown` never counts as
-  clear. Blockers sort first, clear rows fade.
-- **Money strip answers the four questions**: Job total (quote vN · accepted ·
-  ex GST), Invoiced (kinds · paid), Outstanding or Still to raise (which
-  invoice is due, or that a draft is waiting to be issued), Margin (managers;
-  ⋯ hides it). Replaces Equipment / Services / Crew / Total, which belong on
-  Equipment and Logistics. Draft invoices never count as invoiced.
-- **Quote and Invoicing cards** keep their fields and actions, with the live
-  badges, the drift note, the derived invoicing state (`Deposit paid` added —
-  today a paid deposit reads as `Draft`), `+ Invoice ▾` (partial / remaining
-  balance → draft, issue on Finance), `Record payment` (settling every issued
-  invoice at Awaiting payment auto-confirms with the live toast copy), and a
-  `Finance ↗` link in each header. One invoicing derivation, not two
-  (`deriveInvoicingState` and `computePaymentProgress` disagree on credit
-  notes and drafts today).
-- **Context cards become editable in place**: Schedule (`Edit dates` → the
-  same dates sheet Logistics uses, with "move services and crew calls with
-  the window" and the confirmed-job availability re-check), Location (`Edit`
-  → venue, address, access note, site contact; `Get directions`), Team
-  (client + document contact, PMs with add/remove and the note that a PM can
-  unlock pricing, crew count with unconfirmed → Logistics), Activity (the
-  feed, `All activity`). The facts stay shaped once in `project-context.ts`
-  for the rail on the other tabs.
-- **Phone:** header stacks; the stepper scrolls with the current step centred
-  and `Advance` below it full-width; the lock strip and readiness card are
-  the first screen; a scrolling tab strip under the header; cards stack with
-  the money tiles 2×2.
+  PO). `unknown` never counts as clear.
+- **Money is two lines, not four tiles and two cards.** Quote: `$23,880 · v3
+  accepted Thu 6 Nov · PO 77812`, the drift note under it (`2 lines added
+  since · +$640 · see what changed ›`), text links `PDF · New version ·
+  Finance ›` (or `Send quote` / `Record accept` when that is the next move).
+  Invoicing: the derived state in words (`Deposit paid · $5,970 of $23,880`,
+  `$17,910 outstanding · INV-0042 due …`, `Nothing invoiced yet`), the next
+  step under it (`Balance $17,910 to raise after bump out`, or a draft waiting
+  to be issued), links `+ Invoice ▾ · Record payment · Finance ›`. Margin is
+  off by default (⋯ shows it). Replaces the Equipment / Services / Crew /
+  Total strip, which belongs on Equipment and Logistics. Draft invoices never
+  count as invoiced; `Deposit paid` is added to the invoicing states (today a
+  paid deposit reads as `Draft`); settling every issued invoice at Awaiting
+  payment auto-confirms with the live toast copy. One invoicing derivation,
+  not two (`deriveInvoicingState` and `computePaymentProgress` disagree on
+  credit notes and drafts today).
+- **Three facts columns, editable in place**: When (rental, load in / load
+  out, `Edit dates` → the same dates sheet Logistics uses, with "move services
+  and crew calls with the window" and the confirmed-job availability
+  re-check), Where (venue, address with `directions`, access note, `Edit` →
+  venue, address, access, site contact), Who (site contact and phone, PMs with
+  `+`, crew count with unconfirmed → Logistics). Then **Recent**: four lines
+  of activity, `All activity ›`, `Discussion ›`. The facts stay shaped once in
+  `project-context.ts` for the rail on the other tabs.
+- **Phone:** the same column at 16 px gutters; a scrolling tab strip under the
+  header; the progress line with only the current label, `Advance` below it
+  full-width; the readiness sentence is the first screen.
 
 **Prototype:** https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo
 
@@ -642,7 +658,7 @@ figures after) and gives each thing one shape.
 
 **Prototype:** https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY
 
-## 8c. Job › Tasks & notes — merging Tasks, Notes and Files (prototype 2026-10-27, awaiting a yes)
+## 8c. Job › Tasks & notes — merging Tasks, Notes and Files (prototype 2026-10-27 · calm revision, awaiting a yes)
 
 Three tabs become one. Today Tasks is a bare list (add box, tick, edit
 dialog; no filters, no inline edits, and the server's bulk and reorder
@@ -655,6 +671,16 @@ The project-level discussion lives behind a header button nobody finds. The
 merged tab gives each of these a visible home on one screen, keeps every
 field, and adds the obvious missing moves.
 
+- **Calm, like the home.** The first cut was four cards each with a toolbar,
+  chips, pills and a button per row. The revision keeps every capability and
+  drops the chrome: four sections with small-caps headings and a count,
+  hairline rows, one text control per heading (`Open ▾`, `Select`, ⋯;
+  `Upload`; `v3 · live ▾`), meta as muted words that are themselves the
+  menus (click the assignee to reassign, the date to re-date, the category to
+  change it), ⋯ only on hover, notes as borderless text that gains a left rule
+  on focus, the add row a bare line, red only on `overdue` and `Blocking`.
+  The header is the Overview's (name · status · lock glyph; number · client ·
+  dates; `Documents ▾ · Edit · ⋯`).
 - **One tab, `Tasks & notes`**, badge `9/14` as today plus a red count of
   overdue tasks. Desktop is two columns: tasks then files on the left,
   notes then discussion on the right. The `?tab=tasks|notes|files` deep
@@ -716,10 +742,9 @@ field, and adds the obvious missing moves.
 - **Readiness** gains two rows the rail can show on every tab: overdue
   tasks and blocking discussions (prep held). Task, note and file writes
   start writing `activityEvents` so the Activity rail finally shows them.
-- **Phone:** segments `Tasks 5 · Notes · Files 6 · Discussion 2`; tasks are
-  cards with a big completion circle and a sticky add bar; notes are the
-  same three cards; files get the camera button; the discussion is the
-  same list. The task sheet and every menu are bottom sheets.
+- **Phone:** the same four sections stacked, with a sticky `Tasks · Notes ·
+  Files · Discussion` chip row that jumps to each; files get the camera
+  button. The task sheet and every menu are bottom sheets.
 
 **Prototype:** https://claude.ai/artifact/BrLBitu3c2V4uixLQbXCNE
 

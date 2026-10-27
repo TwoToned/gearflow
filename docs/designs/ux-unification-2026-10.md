@@ -777,6 +777,16 @@ field, and adds the obvious missing moves.
 
 ## 9. Warehouse
 
+> **Calm pass (2026-10-28).** The locked warehouse job page gets the same
+> visual pass as the job tabs, with its structure, scan pipeline and gates
+> untouched: the stage strip becomes words with counts (active one
+> underlined, the progress bar thinned), the toolbar's checks / case / find
+> controls become words with the active case underlined, status pills a dot
+> and a word, tier tags muted text, serial chips hairline, row actions text
+> links on desktop (the phone keeps its large Prep / Pack / Deploy buttons),
+> section and case headers lose their bands, the footer is one muted line.
+> The scan dock and the one primary action are the only loud things left.
+
 ### 9.1 The floor (`/warehouse`)
 A board, not a hub: title, the `ScanDock` with scope (This job · Any job), a
 **Returns mode** button, four tiles (To pack · Out on site · Coming back · Overdue)

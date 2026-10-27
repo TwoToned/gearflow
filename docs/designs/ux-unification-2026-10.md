@@ -16,6 +16,8 @@ shell at three widths, and the primitives every surface is built from).
   live tab cleaned up with every feature on the row, accessory rows + editor,
   search-first add, one edit sheet, the shortfall → sub-hire sheet, order rows and
   the order sheet, plus the earlier inline editing and drag and drop.
+- Logistics: https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf — v2 (§8).
+- Finance: https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY — v2 (§8b).
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -416,38 +418,128 @@ are rows. Menus are sheets without keyboard hints.
 **Prototype:** https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC (v13, every flow
 above wired with Undo).
 
-## 8. Job › Logistics
+## 8. Job › Logistics — v2 proposal (prototype 2026-10-27, awaiting a yes)
 
-The tab is renamed **Logistics** and gets three things it lacks today:
+The live tab's structure stays (`Add service ▾` by type and template, Generate,
+Import, a date-grouped timeline, the services money summary, the Project crew
+table) and gets the same clean-up as Equipment and the warehouse: the service
+cards become rows, every fact gets one home, and crew can finally be worked from
+the service they are on.
 
-1. **Dates on the page.** A facts strip at the top: Rental · Load in · Load out · Venue
-   access, each editable in place (date/time popover). Editing a date runs the
-   existing `useDateMoveGate` and then **re-times linked services and calls** (today
-   moving dates leaves them where they were — §1.3 "Regenerate does not regenerate").
-2. **One schedule, three lanes.** A single list grouped by day (`Tue 11 Nov · Load in`)
-   with lane filter chips: Transport (delivery, pickup, sub-hire returns), Site (bump
-   in, show calls, bump out), Crew open (calls with unfilled slots). Each service is a
-   `LineRow`: time · what (type glyph, title, duration, where) · where / vehicle · crew
-   (avatar stack + `1 needed`) · charge · status · primary action (`Offer 1 more`,
-   `Assign driver`, `Receive`) · ⋯. A call expands to its crew lines, each a child row
-   with rate, window, status pill and a `Resend` / `Pick crew` / `Request
-   availability` action — so crew can be added **from the call**, not only from the
-   service dialog.
-3. **Money once.** The footer shows On quote · Cost · Margin; the per-card charge/cost/
-   margin trio and the "Services financial summary" card go. The Overview strip and
-   Finance keep their own copies because they answer different questions.
+- **Dates on the page.** A facts strip above the card: Rental · charged, Load in,
+  Load out, Venue (with the access note), Site contact. Each opens its editor in
+  place. Moving the project window offers to **move the services and crew calls
+  with it** (delivery and bump in follow load in; bump out and pickup follow load
+  out) and re-checks availability as a heads-up, never a block. Today dates live
+  only in the edit wizard and nothing moves when they change.
+- **One timeline, lanes instead of cards.** Day headers (`Tue 11 Nov · load in`,
+  with the day's service count, crew on, crew needed and charge) and one row per
+  service: When (call window, plus the truck's own `drop 07:00` / `collect 06:00`
+  for transport) · Service (type glyph, title, **status pill that is a menu**,
+  note) · Where (address + directions, vehicle + trips) · Crew (role pill, avatar
+  stack ringed by status, `3 of 4 · 1 needed`, `3 to offer`) · Charge (with cost
+  and margin for managers, `on quote` / `internal`) · one primary action (`Pick 1
+  crew` → `Send 2 offers` → `Confirm` → `Confirm`) · ⋯. Lane chips (All ·
+  Transport · Site · Labour · Needs crew) and a `needs you` chip (`3 services short
+  of crew · 4 offers to send · 1 unanswered`) replace scrolling for problems.
+- **Crew from the call.** A service expands to its crew rows (avatar, name,
+  preferred / clash tags, phase and window, **status pill as a menu**, rate, `Send
+  offer` / `Resend` / `Confirm`, ⋯) and an `Add crew · 1 needed` row. **Pick
+  crew** is one sheet: members sorted preferred → available → pencilled → booked,
+  each with its availability for that day and rate, role filter on by default,
+  `Request availability instead` for first-come-first-filled. Nothing blocks a
+  double-booking; it is named on the row.
+- **The service sheet** keeps every live field in five sections: When (date,
+  window, truck time with its hint), Where (address, `Use venue`, vehicle with
+  the org's recent vehicles, trips), Crew (role, needed stepper, assigned rows
+  with rate and per, `Pick crew`, `Send offers`, `Confirm all accepted`), Money
+  (charge, cost from crew rates or typed, live margin, role charge rate with
+  `use $2,400`, the pricing lock), Notes. A new service with a headcount opens
+  the picker on save.
+- **The crew table** gains the column it was missing: **Service**. Rows show
+  name (with preferred / no-email tags), role, service, when, availability,
+  rate, status pill menu, ⋯ (Edit assignment, Send offer, .ics, Remove with
+  Undo). Phase group headers stay. The summary counts active assignments and
+  the labour estimate includes service-linked crew (today it excludes them).
+  `Offer all · n`, `Message crew`, `Request availability`, `Call sheet` stay.
+- **Dialogs**: Send offers lists who gets what, flags clashes and members with
+  no email (skipped, call them); Message crew prefills venue, access, contact
+  and schedule; Request availability shows who is eligible before sending; the
+  call sheet picks days, role or one person and prints the access note and
+  contact at the top.
+- **Footer**: `On quote · Cost · Margin` once; the three-figure card and the
+  per-card trio go. The ⋯ holds Show cost & margin, Generate missing, Import,
+  timeline PDF, runsheet.
+- **Phone = day mode.** Day chips (with a red count where crew are needed),
+  cards with the call time in 18 px mono, status, where + Directions, note,
+  crew avatars and one primary action; tap a card for the service sheet. The
+  crew list for that day sits beneath with status pills. The separate read-only
+  `/runsheet` page becomes this.
 
-Vehicle stays free text in the data for now, but the UI treats it as a chip with the
-org's recent vehicles as suggestions. Sub-hire pickup and return trips appear in the
-Transport lane as planned rows (today they appear nowhere).
+**Prototype:** https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf
 
-**Phone = day mode.** The Logistics tab on a phone is the Runsheet: day chips, one
-card per call with the time in 18 px mono, where + directions, crew avatars, one
-primary action (Manifest · Offer 1 more · Message crew) and ⋯. `/projects/[id]/
-runsheet` becomes a redirect to `?tab=logistics` on phones and goes away as a separate
-rendering (it keeps its own copy of the type labels today).
+## 8b. Job › Finance — v2 proposal (prototype 2026-10-27, awaiting a yes)
 
----
+The live tab is a vertical stack with no containers: stale-pricing bar, quote
+rail, invoice ledger, divider, billing row, financial summary, operational P&L.
+Raw enum pills (`SENT`, `ISSUED`), two different "Outstanding"s, two margins, no
+due dates on invoice rows, no overdue state, and the Xero connection visible
+only as a per-row badge. The clean-up keeps the order (workflow first, reference
+figures after) and gives each thing one shape.
+
+- **The position in four tiles** at the top: **Quote** (version, frozen total
+  inc GST, status pill, accepted date + reference or validity countdown, the one
+  next action: Send / Mark accepted / Create v4) · **Invoiced** (of the total,
+  invoicing state in words: Not started · Deposit paid · Awaiting payment ·
+  Partially paid · Paid in full, `$19,701 not yet raised`, `Invoice ▾`) · **Paid**
+  (of issued, outstanding with the next due or **overdue** invoice, `Record
+  payment`) · **Margin ex GST** (percentage, bar, revenue and costs). The Overview
+  cards read the same derivations.
+- **Notices**: stale auto-pricing with `Recalculate`; drift against the document
+  the client holds with `See what changed` and `Create v4`. Nothing else
+  interrupts.
+- **Quotes and Invoices side by side.** Quote rows: `v3` · human status (Draft ·
+  Sent · Accepted · Declined · Expired · Recalled · Superseded) · Live tag ·
+  label · frozen total · `sent 4 Nov to Priya Shah · accepted 6 Nov · ref PO
+  77812` · validity with days left (warn inside 7 days, expired in red) ·
+  lineage (`2 invoices from v3: INV-0041 $6,567, …`) · `Mark accepted` / `Send` ·
+  PDF or Preview draft · ⋯ (view, compare with the job now, rename, chase,
+  decline, recall, raise an invoice, delete draft). Clicking a row opens the
+  revision viewer (`vs previous` / `vs the job now`). Invoice rows: number or
+  `Deposit (draft)` · kind tag with its % · **one status pill that folds payment
+  in** (Draft · Issued · Overdue · Part paid · Paid · Void · Credit) · Xero chip ·
+  total · `issued 6 Nov · due 20 Nov` or `3 days overdue` or `paid 8 Nov` ·
+  payments listed beneath with Void · `Issue` / `Record payment` / `Push to Xero` ·
+  PDF · ⋯ (credit note, void, delete draft with a confirm and Undo).
+- **Dialogs**, all from the live set, cleaned: Send (date, valid-for with the
+  computed `valid until`, contact defaulting to the project's, notes, combine
+  services, the summary from the job now, Preview draft; handover with Download
+  PDF, Copy summary, the status move); Mark accepted (date, reference); Recall
+  and Decline with reasons; Rename; Partial invoice (segmented % / $, the
+  client's default, live amount, over-remaining guard); Issue (invoice date, due
+  from the client's terms, notes, **Push to Xero after issuing**; handover with
+  the `Move to Invoiced` offer for a balance or full invoice); Record payment
+  (balance prefilled, date, method, reference, notes, the Xero read-back note);
+  Void invoice and Void payment with reasons; **Credit note** (the server verb
+  that has no UI today); Billing period (weeks + days, reset to derived, locked
+  with pricing).
+- **Financials** in two columns: Revenue (equipment, sale, services, sub-hire
+  charged on, subtotal, discounts, GST from the org setting, total inc GST) and
+  Costs (services & labour, confirmed sub-hire orders, maintenance, sale cost of
+  goods, total) with **one margin, ex GST**, the groups-priced warning and a
+  `Show group pricing` breakdown. The billing period is a line in the card's
+  sub-heading with `change`, not its own row.
+- **Xero** as one line: connected tenant, whether the client is mapped, invoices
+  synced / to push / failed, `Push n`, `Check payments now`, Settings. Payments
+  reconciled in Xero show on the row as `from Xero`.
+- **Lock and versions**: the header chip opens the lock explanation and unlocks
+  (logged, Undo); the version menu is the live one. Creating the next version
+  unlocks pricing on it and leaves the client's document untouched; recalling a
+  version restores the previous one to the status it had.
+- **Phone**: tiles 2 × 2, the two cards stacked, rows wrap their pills, dialogs
+  are bottom sheets.
+
+**Prototype:** https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY
 
 ## 9. Warehouse
 

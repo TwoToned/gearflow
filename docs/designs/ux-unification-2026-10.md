@@ -15,7 +15,7 @@ shell at three widths, and the primitives every surface is built from).
 - Job › Equipment: https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC — v2 (§7): the
   live tab cleaned up with every feature on the row, accessory rows + editor,
   search-first add, one edit sheet, the shortfall → sub-hire sheet, order rows and
-  the order sheet, plus the earlier inline editing, drag and drop and packing view.
+  the order sheet, plus the earlier inline editing and drag and drop.
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -312,8 +312,8 @@ field (⌘K / the phone icon) with the existing `@` pages, `/` commands and date
 Same approach as the warehouse: the live tab's structure stays (header, stepper,
 version strip, tab row, context rail, `Add ▾`, one table, hover actions, inline
 cells, checkbox selection + bulk bar, drag and drop) and every feature that landed
-since the rebrand gets a visible, consistent home on the row. Three **views** on
-one toolbar (List · Packing · Client view, §7.3), `Find`, `Filter ▾` (All · Short ·
+since the rebrand gets a visible, consistent home on the row. Two **views** on one
+toolbar (List · Client view; packing stays its own tab, D3 withdrawn), `Find`, `Filter ▾` (All · Short ·
 Unpriced · Sub-hire · Optional · Hidden on documents · Needs review), ⋯ (Show cost &
 margin, Sync accessories, Sync kits, Expand/Collapse) and `+ Add` (`A`).
 
@@ -325,7 +325,7 @@ new stock / from fleet · Container) and the state the live tab keeps invisible:
 **Optional**, price hidden / `price shown` inside a combined category, `ROI` excluded,
 `Needs review` / `Follow up`, Prepped / Out, the sub-hire order's status pill, `added
 after lock`. The sub-line holds serials assigned, the planned case, the accessory
-summary (`accessories 3 · 1 removed · SB900B → BATT-01`), the sub-hire order
+summary (`accessories 3`, the included count only), the sub-hire order
 (`SH-0012 · via Scene Change · 23% margin`), the note and `price set by hand`. One
 contextual primary action: `Sub-hire 2` on a short line, `Confirm order` on a draft
 sub-hire, `Price it` on an unpriced line. Category headers gain count, `n short` /
@@ -627,7 +627,7 @@ the recommended option.
 |---|---|---|---|
 | D1 | Bottom nav gets **Scan** in the centre and **More**; Crew and Assets move into More | Yes — half of warehouse work is on phones (TODOS "Mobile-First Overhaul") and there is no scan entry today | Keep §16's five and add a floating scan button (breaks "nothing floats") |
 | D2 | Stage colours: Out = solid red (live), Returned = amber, De-prepped = green | Yes — it is the §1/§3 mapping applied literally | Keep the landing page's amber/green |
-| D3 | Packing tab becomes a view of Equipment | Yes — same lines, one list, no tab to find | Keep the tab, restyle it |
+| D3 | Packing tab becomes a view of Equipment | **Withdrawn 2026-10-27** — the Packing view came out of the Equipment prototype; the tab stays and gets the drag-and-drop case planning on its own | — |
 | D4 | Runsheet route is replaced by Logistics day mode on phones | Yes — one rendering of one data set | Keep both |
 | D5 | Mira moves to the top bar | Yes | Keep the floating button, raise it above the bulk bar |
 | D6 | Manual "Mark deployed / returned / completed" leave the floor cards | Yes, into the job ⋯ with a confirm | Keep on the card |

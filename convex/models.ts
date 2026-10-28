@@ -214,6 +214,14 @@ export const detail = query({
       });
     }
 
+    const customAccessories = (await ctx.db.query("modelCustomAccessories").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect())
+      .filter((r) => r.organizationId === orgId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((r) => ({
+        id: r.id, modelId: r.modelId, name: r.name, quantity: r.quantity,
+        inclusion: (r.inclusion ?? "DEFAULT") as "DEFAULT" | "OPTIONAL", notes: r.notes ?? null,
+      }));
+
     const composite = {
       ...model,
       images: model.images ?? [],
@@ -228,6 +236,7 @@ export const detail = query({
       bulkAssets,
       media,
       bulkAccessories,
+      customAccessories,
     };
     const auth = await getAuthContext(ctx);
     return (await isAgentNoFinancials(ctx, auth)) ? redactFields(composite, MODEL_COST_FIELDS) : composite;

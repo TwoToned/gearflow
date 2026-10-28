@@ -274,6 +274,13 @@ export const AccessoryPlanArg = v.object({
     bulkAssetId: v.string(),
     reason: v.string(),
   }))),
+  // Ad-hoc accessories typed in for THIS line only (not in the catalog): each
+  // becomes a normal accessory child line keyed by `key` (client-minted cuid).
+  custom: v.optional(v.array(v.object({
+    key: v.string(),
+    name: v.string(),
+    quantityPerParent: v.number(),
+  }))),
 });
 export const AllocationBasis = v.union(
   v.literal("DIRECT"),

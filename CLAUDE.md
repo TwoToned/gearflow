@@ -652,6 +652,13 @@ client a different document under the same name (#987). Three rules follow:
    (`buildDocumentData`'s `stampedDates`). Recomputing `quote_valid_until` at render time
    is what used to silently extend how long a quote was valid every time it was re-opened.
 
+### Off-inventory units — the counter is the truth, demand goes through `stockBackedQty`
+"Prep as custom item" (FEATUREDOCS/12) lets a leftover unit of an overbooked serialised line stay on the line (price/docs unchanged) with no serial and no stock held. Three rules:
+
+1. **`projectLineItems.offInventoryQuantity` is the ONE source of truth.** Do not add a per-unit "is custom" flag — the unit side is just a generic (asset-less, qty-1) `projectLineItemUnits` row, the same shape `prepUnit` creates for untagged lines. It is server-owned: only `warehouseOps.convertUnit*` write it (it is in `LINE_IMMUTABLE_ON_PATCH`), and a quantity patch below it is refused.
+2. **Every stock-demand sum reads `stockBackedQty(line)` (`convex/lib/stockBackedQty.ts`), never raw `quantity`.** `convex/stockBackedQtyGuard.test.ts` lists the sites; a new availability/overbooking site goes on that list. Billing, PDFs, ROI and the warehouse "everything deployed" test (`projectAutoStatus`) keep the full `quantity` on purpose.
+3. **A whole-line deploy must include prepped generic units on a mixed line** (`expandPrepUnitAssignments`) — otherwise the custom unit is stranded.
+
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev

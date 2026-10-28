@@ -710,6 +710,16 @@ Custom line items (`isCustomItem: true`) appear in all three warehouse tabs with
 
 **Scan conflict:** Custom items have no barcode. If an operator scans a barcode that doesn't match any asset, the existing "not found" error is returned — no conflict with custom items.
 
+## Prep as Custom Item (off-inventory units)
+
+A job books 3× a serialised model but only 2 are free. At the bench you can turn the leftover unit into a **custom unit**: it stays on the line (still "3× 4099" on the quote, invoice and PDFs, same price, same group/category), but no serial backs it and it **holds no stock**, so the overbook clears. Meant as a temporary stop-gap (sourced elsewhere / hand-built), reversible in one click.
+
+- **Where.** Warehouse Pick/Prep tab: a **"Short on stock?"** panel (`custom-unit-panel.tsx`) above the table lists overbooked lines with a free unit — **Prep as custom item** (marks the new unit prepped, counts as the first prep for the `PREP_STARTED` status auto-advance) — and, for a line with a custom unit not yet deployed, **Convert back**. The Equipment tab's line kebab offers **Convert 1 to custom item** (creates the unit *pending*; the warehouse ticks it) and **Convert 1 back to inventory** via `custom-unit-context.tsx`. One offer rule for both: `src/lib/off-inventory.ts` (`canConvertToCustomUnit` / `canConvertBackToInventory`); the server is the authority.
+- **Data.** One field, `projectLineItems.offInventoryQuantity` (absent = 0) — the single source of truth for stock demand (FEATUREDOCS/11 invariant 6) and the "N custom" badge. No per-unit flag: the fulfilment side is just a **generic unit** (a `projectLineItemUnits` row with no asset/bulk, qty 1 — the shape `prepUnit` already creates for untagged multi-quantity lines).
+- **Mutations.** `warehouseOps.convertUnitToOffInventoryCore` / `convertUnitBackToInventoryCore` (counter ± 1 and the generic unit, in one transaction, then `syncLineItemRollup`), wrapped browser-direct by `warehouseWrites.convertUnitToOffInventory` / `convertUnitBackToInventory` (`warehouse:check_out`, org-checked, audit row; `agentOps` danger `medium`). Preconditions: plain `EQUIPMENT` model line (not a kit/kit child/accessory/container/custom item/sub-hire/sale/cancelled), serialised (not bulk), and a free unit (`quantity − Σ non-cancelled unit qty ≥ 1`). Convert-back removes the highest-ordinal custom unit that isn't deployed/returned.
+- **Scanning.** A generic unit counts toward `assignedQuantity`, so `lookupAssetForScan`'s spare-capacity test (`assignedQuantity < quantity`) no longer offers a filled slot — no scan change needed.
+- **Prep / deploy / return.** `prepUnit`'s generic branch preps an existing PENDING generic unit instead of creating a duplicate. A whole-line deploy (`expandPrepUnitAssignments`) now includes prepped generic units on a line that also has serialised units — before this it expanded only asset/bulk units and would have stranded the custom one. Return uses the existing whole-line path (generic units already flip). A returned custom unit is history and can't be converted back.
+
 ## Force Return
 When assets or kits are stuck in `CHECKED_OUT` status (e.g., project deleted while items deployed, data inconsistency), "Force Return" buttons allow resetting them to `AVAILABLE`:
 

@@ -52,6 +52,9 @@ export interface LineItem {
   prepContainer: string | null;
   isContainerLineItem: boolean;
   isCustomItem: boolean;
+  /** Units of this line sourced outside the fleet ("prep as custom item") — they
+   *  hold no stock; each is backed by a generic (asset-less) unit in `units`. */
+  offInventoryQuantity?: number;
   /** Sub-hire association — null = own-stock, non-null = sub-hire from supplier. */
   subHireId: string | null;
   supplier: { name: string } | null;

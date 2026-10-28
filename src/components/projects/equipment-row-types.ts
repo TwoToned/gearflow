@@ -59,6 +59,9 @@ export interface LineItemData {
   pricedUnderLock?: boolean;
   // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
   isCustomItem?: boolean;
+  /** Units sourced outside the fleet ("prep as custom item", FEATUREDOCS/12): same
+   *  price and document row, no stock held. Absent = 0. */
+  offInventoryQuantity?: number;
   /** A container row (road case, trolley). `isNonGear` in the allocator, so it
    *  takes no share of any pool — see canExcludeFromRoi (src/lib/roi.ts). */
   isContainerLineItem?: boolean;
@@ -104,6 +107,7 @@ export interface LineItemData {
   units?: Array<{
     id: string;
     ordinal: number;
+    quantity?: number | null;
     status?: string | null;
     returnCondition?: string | null;
     asset?: { id: string; assetTag: string } | null;

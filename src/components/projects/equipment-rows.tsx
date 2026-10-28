@@ -206,6 +206,7 @@ export {
   type RowDescriptor,
 } from "./equipment-row-descriptors";
 import { describeRow } from "./equipment-row-descriptors";
+import { CustomUnitMenuItems } from "./custom-unit-menu-items";
 import { UnpricedBadge } from "./unpriced-badge";
 import { LineAssetsIndicator } from "./line-assets-indicator";
 import { MetricLine, GroupCard, CategoryCardHeading, CardAddButton } from "./equipment-cards";
@@ -1407,6 +1408,7 @@ export function LineItemRow({
         <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
       )}
       {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+      {(item.offInventoryQuantity ?? 0) > 0 && <Badge status="neutral">{item.offInventoryQuantity} custom</Badge>}
       {desc.source === "container" && <Badge status="neutral">Container</Badge>}
       {desc.isSale && item.saleMode === "NEW_STOCK" && (
         <Badge status="ok">Sale · New stock</Badge>
@@ -1465,6 +1467,7 @@ export function LineItemRow({
               Edit accessories
             </DropdownMenuItem>
           )}
+          <CustomUnitMenuItems item={item} overbookedInfo={overbookedInfo} />
           <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
             <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
             Needs review
@@ -1783,6 +1786,11 @@ export function LineItemRow({
               Custom
             </Badge>
           )}
+          {(item.offInventoryQuantity ?? 0) > 0 && (
+            <Badge status="neutral" className="ml-1.5">
+              {item.offInventoryQuantity} custom
+            </Badge>
+          )}
           {desc.source === "container" && (
             <Badge status="neutral" className="ml-1.5">
               Container
@@ -2027,6 +2035,7 @@ export function LineItemRow({
                     Edit accessories
                   </DropdownMenuItem>
                 )}
+                <CustomUnitMenuItems item={item} overbookedInfo={overbookedInfo} />
                 <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
                   <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
                   Needs review

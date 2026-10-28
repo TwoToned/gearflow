@@ -31,6 +31,8 @@ import { KitChildRows, MobileKitChildCards, BulkAccessoryRows, MobileBulkAccesso
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
+import { CustomUnitPanel } from "./custom-unit-panel";
+import type { OverbookedInfo } from "@/lib/overbooking-core";
 import { ScanModeBar, type ScanCheckMode } from "./scan-prep-dialogs";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 
@@ -75,6 +77,12 @@ export interface PickPrepTabProps {
   saleItemsToPrep: SaleItemToPrep[];
   onToggleSalePicked: (id: string, picked: boolean) => void;
   pendingSalePickIds: Set<string>;
+
+  // "Prep as custom item" (FEATUREDOCS/12) — leftover units of an overbooked line.
+  overbookedMap: Record<string, OverbookedInfo>;
+  pendingCustomUnitLineIds: ReadonlySet<string>;
+  onConvertToCustomUnit: (lineItemId: string) => void;
+  onConvertBackToInventory: (lineItemId: string) => void;
 
   // Kit verification
   verifiedKitItems: Set<string>;
@@ -129,6 +137,10 @@ export function PickPrepTab({
   saleItemsToPrep,
   onToggleSalePicked,
   pendingSalePickIds,
+  overbookedMap,
+  pendingCustomUnitLineIds,
+  onConvertToCustomUnit,
+  onConvertBackToInventory,
   verifiedKitItems,
   setVerifiedKitItems,
   expandedGroups,
@@ -211,6 +223,14 @@ export function PickPrepTab({
           items={saleItemsToPrep}
           onTogglePicked={onToggleSalePicked}
           pendingIds={pendingSalePickIds}
+        />
+
+        <CustomUnitPanel
+          lines={pickPrepItems}
+          overbookedMap={overbookedMap}
+          pendingLineIds={pendingCustomUnitLineIds}
+          onConvert={onConvertToCustomUnit}
+          onConvertBack={onConvertBackToInventory}
         />
 
         {pickPrepItems.length === 0 ? (

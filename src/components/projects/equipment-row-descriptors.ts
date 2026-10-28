@@ -10,6 +10,7 @@
  * component module here would create a circular dependency (POLICY.md R-3.5).
  */
 import type { LineItemData } from "./equipment-row-types";
+import type { CustomUnitLine } from "@/lib/off-inventory";
 
 // ─── Row descriptor (cross-type unification) ─────────────────────────────────
 //
@@ -119,4 +120,28 @@ export function unitFulfillmentBadge(
         status: "neutral",
       };
   }
+}
+
+/** The slice of an Equipment-tab line `src/lib/off-inventory.ts` needs, so the
+ *  kebab and the warehouse panel share ONE offer rule. */
+export function toCustomUnitLine(item: LineItemData): CustomUnitLine {
+  return {
+    id: item.id,
+    type: item.type,
+    status: item.status,
+    modelId: item.modelId,
+    quantity: item.quantity,
+    isKitChild: item.isKitChild,
+    kitId: item.kitId,
+    subHireId: item.subHireId,
+    isContainerLineItem: item.isContainerLineItem,
+    isCustomItem: item.isCustomItem,
+    offInventoryQuantity: item.offInventoryQuantity,
+    units: (item.units ?? []).map((u) => ({
+      quantity: u.quantity ?? 1,
+      status: u.status,
+      assetId: u.asset?.id ?? null,
+      bulkAssetId: u.bulkAsset?.id ?? null,
+    })),
+  };
 }

@@ -103,6 +103,7 @@ import {
 } from "./equipment-rows";
 import { dropHighlightClass } from "./equipment-row-types";
 import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
+import { CustomUnitProvider, type CustomUnitContextValue } from "./custom-unit-context";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useSelection } from "./use-selection";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -881,6 +882,46 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     [projectId, warehouseWrites],
   );
 
+  // "Convert to custom item" (FEATUREDOCS/12): planning-time conversion — the new
+  // custom unit is created PENDING (prep:false); the warehouse ticks it prepped.
+  const [customUnitPendingLineIds, setCustomUnitPendingLineIds] = useState<ReadonlySet<string>>(new Set());
+  const runCustomUnitWrite = useCallback(
+    (lineItemId: string, write: () => Promise<unknown>, success: string, failure: string) => {
+      setCustomUnitPendingLineIds((prev) => new Set(prev).add(lineItemId));
+      write()
+        .then(() => toast.success(success))
+        .catch((e: unknown) => toast.error(e instanceof Error ? e.message : failure))
+        .finally(() =>
+          setCustomUnitPendingLineIds((prev) => {
+            const next = new Set(prev);
+            next.delete(lineItemId);
+            return next;
+          }),
+        );
+    },
+    [],
+  );
+  const customUnitValue = React.useMemo<CustomUnitContextValue>(
+    () => ({
+      pendingLineIds: customUnitPendingLineIds,
+      convert: (lineItemId) =>
+        runCustomUnitWrite(
+          lineItemId,
+          () => warehouseWrites.convertUnitToOffInventory(projectId, lineItemId, false),
+          "Converted 1 to a custom item",
+          "Couldn't convert to a custom item",
+        ),
+      convertBack: (lineItemId) =>
+        runCustomUnitWrite(
+          lineItemId,
+          () => warehouseWrites.convertUnitBackToInventory(projectId, lineItemId),
+          "Converted back to inventory",
+          "Couldn't convert back to inventory",
+        ),
+    }),
+    [customUnitPendingLineIds, runCustomUnitWrite, warehouseWrites, projectId],
+  );
+
   const reassignValue = React.useMemo(
     () => ({
       targetsByModel: reassignTargetsByModel,
@@ -1601,6 +1642,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   return (
     <ReassignProvider value={reassignValue}>
+    <CustomUnitProvider value={customUnitValue}>
     <div className="space-y-3" data-shortcut-scope="equipment">
       {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
           inline in this toolbar. Sync accessories/kits + the margin toggle are
@@ -2844,6 +2886,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         }}
       />
     </div>
+    </CustomUnitProvider>
     </ReassignProvider>
   );
 }

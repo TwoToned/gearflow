@@ -22,6 +22,7 @@ import type { ConvexProject } from "@/lib/projects-read";
 import type { MappedLineItem } from "@/lib/project-line-item-read";
 import { mapLineItemDoc } from "@/lib/project-equipment-reconstruct";
 import { getProjectWindow } from "@/lib/project-window";
+import { stockBackedQty } from "../../convex/lib/stockBackedQty";
 
 // ─── Stock breakdown (moved from availability.ts) ────────────────────────────
 
@@ -350,8 +351,10 @@ export function sumBookingsByModel(
     // jumps ahead of a real claim).
     const claimedAt = li.createdAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
 
-    bumpTotal(li.modelId, li.quantity);
-    bumpClaim(isPencilled ? pencilledAcc : hardAcc, li.modelId, li.projectId, li.quantity, claimedAt);
+    // Off-inventory units ("prep as custom item") never count as stock demand.
+    const demandQty = stockBackedQty(li);
+    bumpTotal(li.modelId, demandQty);
+    bumpClaim(isPencilled ? pencilledAcc : hardAcc, li.modelId, li.projectId, demandQty, claimedAt);
   }
 
   const toClaimsByModel = (acc: Map<string, Map<string, ProjectModelClaim>>) =>

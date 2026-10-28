@@ -250,7 +250,7 @@ async function checkoutAccessoryChildren(
     for (const u of await lineUnits(ctx, child.id)) {
       if (u.status === "CHECKED_OUT") continue;
       if (p.parentUnitAssetId && u.parentUnitAssetId !== p.parentUnitAssetId) continue;
-      if (p.includeAccessoryIds && !p.includeAccessoryIds.has(u.assetId ?? u.bulkAssetId ?? "")) continue;
+      if (p.includeAccessoryIds && !p.includeAccessoryIds.has(u.assetId ?? u.bulkAssetId ?? child.id)) continue;
       if (isRelocatedAccessoryUnit(u, parentContainerOf(u))) continue;
       units.push(u);
     }

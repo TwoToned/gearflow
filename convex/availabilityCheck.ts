@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import { modelCustomAccessoryKey } from "./lib/fulfillment";
 
 /**
  * ONE-round-trip read for `checkAvailability` (the "after choosing a model"
@@ -18,7 +19,7 @@ export const checkBundle = query({
   handler: async (ctx, { modelId, orgId }) => {
     await requireService(ctx);
 
-    const [modelDoc, assetsRaw, bulksRaw, lineRaw, accessories] = await Promise.all([
+    const [modelDoc, assetsRaw, bulksRaw, lineRaw, accessories, customAccessories] = await Promise.all([
       ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).unique(),
       ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
       ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
@@ -28,6 +29,11 @@ export const checkBundle = query({
         .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
         .filter((q) => q.eq(q.field("organizationId"), orgId))
         .collect(),
+      ctx.db
+        .query("modelCustomAccessories")
+        .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
+        .filter((q) => q.eq(q.field("organizationId"), orgId))
+        .take(200),
     ]);
 
     // Resolve each model accessory's bulk-asset tag + model name for the add-form
@@ -50,6 +56,19 @@ export const checkBundle = query({
       }),
     );
 
+    // Free-text accessories ride in the same picker list, keyed "m:<id>" (the key
+    // `accessoryPlan.excluded`/`.added` use for them) with the typed name as the label.
+    accessoryDetails.push(
+      ...customAccessories.map((a) => ({
+        id: a.id,
+        bulkAssetId: modelCustomAccessoryKey(a.id),
+        quantity: a.quantity,
+        inclusion: (a.inclusion ?? "DEFAULT") as "DEFAULT" | "OPTIONAL",
+        assetTag: a.name,
+        modelName: a.name as string | null,
+      })),
+    );
+
     // projectLineItems.listByModelId org-filters; match it.
     const lines = lineRaw.filter((r) => r.organizationId === orgId);
     // REFERENCED-ONLY projects: the consumer (line-items.ts) builds a projectById
@@ -70,7 +89,7 @@ export const checkBundle = query({
       activeBulkAssets: bulksRaw.filter((b) => b.isActive !== false),
       lines,
       projects: projectDocs.filter((p): p is NonNullable<typeof p> => !!p && p.organizationId === orgId),
-      bulkAccessoryCount: accessories.length,
+      bulkAccessoryCount: accessories.length + customAccessories.length,
       accessories: accessoryDetails,
     };
   },

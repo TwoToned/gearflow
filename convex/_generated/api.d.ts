@@ -203,6 +203,8 @@ import type * as miraMessages from "../miraMessages.js";
 import type * as miraOrgSettings from "../miraOrgSettings.js";
 import type * as modelBulkAccessories from "../modelBulkAccessories.js";
 import type * as modelBulkAccessoriesWrites from "../modelBulkAccessoriesWrites.js";
+import type * as modelCustomAccessories from "../modelCustomAccessories.js";
+import type * as modelCustomAccessoriesWrites from "../modelCustomAccessoriesWrites.js";
 import type * as modelCheckItems from "../modelCheckItems.js";
 import type * as modelMedia from "../modelMedia.js";
 import type * as modelWrites from "../modelWrites.js";
@@ -518,6 +520,8 @@ declare const fullApi: ApiFromModules<{
   miraOrgSettings: typeof miraOrgSettings;
   modelBulkAccessories: typeof modelBulkAccessories;
   modelBulkAccessoriesWrites: typeof modelBulkAccessoriesWrites;
+  modelCustomAccessories: typeof modelCustomAccessories;
+  modelCustomAccessoriesWrites: typeof modelCustomAccessoriesWrites;
   modelCheckItems: typeof modelCheckItems;
   modelMedia: typeof modelMedia;
   modelWrites: typeof modelWrites;

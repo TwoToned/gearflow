@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (599 agent-reachable)
+## Operations (603 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -312,6 +312,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `modelCheckItems.listByCheckItemId` (query, scope: model:read)
 - `modelCheckItems.listByModel` (query, scope: model:read)
 - `modelCheckItems.listByModelId` (query, scope: model:read)
+- `modelCustomAccessories.listByModelId` (query, scope: model:read)
+- `modelCustomAccessoriesWrites.addNative` (mutation, scope: model:update)
+- `modelCustomAccessoriesWrites.removeNative` (mutation, scope: model:update)
+- `modelCustomAccessoriesWrites.updateNative` (mutation, scope: model:update)
 - `modelMedia.list` (query, scope: model:read)
 - `models.counts` (query, scope: model:read)
 - `models.detail` (query, scope: model:read)

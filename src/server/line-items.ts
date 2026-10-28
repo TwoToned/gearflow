@@ -14,6 +14,7 @@ import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
 import { stockBackedQty } from "../../convex/lib/stockBackedQty";
+import { modelCustomAccessoryKey } from "../../convex/lib/fulfillment";
 
 /** Model-accessory detail for the add-form picker (issue #794) — resolved bulk-asset
  *  tag + model name, not just the bare bulkAssetId. Exported so `AccessorySelectionFields`
@@ -254,7 +255,10 @@ export async function lookupAssetByTag(
       ? (await getConvexClient()).query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
       : Promise.resolve([]),
   ]);
-  const modelBulksCount = modelBulksForCount.length;
+  const modelCustomForCount = asset.modelId
+    ? await (await getConvexClient()).query(api.modelCustomAccessories.listByModelId, { modelId: asset.modelId, organizationId })
+    : [];
+  const modelBulksCount = modelBulksForCount.length + modelCustomForCount.length;
   const childAssetCount = orgAssetsForChildren.filter((a) => a.parentAssetId === asset.id).length;
   const childBulkCount = parentBulkChildren.length;
   const hasAccessories = childAssetCount > 0 || childBulkCount > 0 || modelBulksCount > 0;
@@ -276,6 +280,17 @@ export async function lookupAssetByTag(
       modelName: baModel?.name ?? null,
     };
   });
+
+  accessories.push(
+    ...modelCustomForCount.map((a): ModelAccessoryDetail => ({
+      id: a.id,
+      bulkAssetId: modelCustomAccessoryKey(a.id),
+      quantity: a.quantity,
+      inclusion: (a.inclusion ?? "DEFAULT") as "DEFAULT" | "OPTIONAL",
+      assetTag: a.name,
+      modelName: a.name,
+    })),
+  );
 
   return serialize({ found: true as const, asset: { ...asset, model }, available, conflictsWith, hasAccessories, accessories });
 }

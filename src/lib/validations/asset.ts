@@ -82,6 +82,17 @@ export const modelBulkAccessoryUpdateSchema = modelBulkAccessorySchema.omit({ bu
 
 export type ModelBulkAccessoryUpdateFormValues = z.input<typeof modelBulkAccessoryUpdateSchema>;
 
+/** A free-text (not-in-inventory) accessory every unit of a model ships with.
+ *  Mirrored server-side by convex/modelCustomAccessoriesWrites.ts. */
+export const modelCustomAccessorySchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  quantity: z.coerce.number().int("Must be a whole number").min(1).max(1000),
+  inclusion: z.enum(["DEFAULT", "OPTIONAL"]).default("DEFAULT"),
+  notes: z.string().max(500).optional(),
+});
+
+export type ModelCustomAccessoryFormValues = z.input<typeof modelCustomAccessorySchema>;
+
 export const locationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   address: z.string().max(500).optional(),

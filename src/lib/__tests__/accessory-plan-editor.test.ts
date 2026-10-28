@@ -100,3 +100,19 @@ describe("accessoryPlansEqual", () => {
     expect(accessoryPlansEqual({ excluded: [], added: [] }, { excluded: [], added: [{ bulkAssetId: "x" }] })).toBe(false);
   });
 });
+
+describe("custom accessories in the plan", () => {
+  const tape = { key: "k1", name: "Gaffer tape", quantityPerParent: 2 };
+
+  it("derivePlanToSave carries the line's custom accessories", () => {
+    expect(derivePlanToSave(ACCESSORIES, { "row-default": true, "row-optional": false }, {}, [tape]).custom).toEqual([tape]);
+  });
+
+  it("a custom accessory added or edited makes the plan dirty; reordering does not", () => {
+    const base = { excluded: [], added: [], custom: [tape, { key: "k2", name: "Zip ties", quantityPerParent: 1 }] };
+    expect(accessoryPlansEqual(base, { ...base, custom: [...base.custom].reverse() })).toBe(true);
+    expect(accessoryPlansEqual(base, { ...base, custom: [tape] })).toBe(false);
+    expect(accessoryPlansEqual(base, { ...base, custom: [{ ...tape, quantityPerParent: 5 }, base.custom[1]] })).toBe(false);
+    expect(accessoryPlansEqual({ excluded: [], added: [] }, { excluded: [], added: [], custom: [tape] })).toBe(false);
+  });
+});

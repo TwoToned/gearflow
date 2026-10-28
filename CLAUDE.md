@@ -673,6 +673,14 @@ client a different document under the same name (#987). Three rules follow:
 3. **A custom unit keeps the model's accessories.** Its share is per-parent rows on the existing accessory child lines keyed `parentUnitAssetId = customUnitScope(unitId)` (`custom:<unitId>`). Any new accessory cascade that scopes by `parentUnitAssetId` must treat that as a valid parent key, and anything that sums accessory demand per parent must add `offInventoryQuantity × per-parent` (`expandAccessoriesForAsset` does).
 4. **A whole-line deploy must include prepped generic units on a mixed line** (`expandPrepUnitAssignments`) — otherwise the custom unit is stranded.
 
+### Custom accessories — free text, but still a real accessory child
+A not-in-inventory accessory (`modelCustomAccessories` per model, `accessoryPlan.custom` per line,
+FEATUREDOCS/48) is an ordinary ACCESSORY child line keyed by `customAccessoryKey` (no asset/bulkAsset).
+Never give it a second code path: expansion/reconcile/rescale go through `resolveCustomAccessories`
+(`convex/lib/fulfillment.ts`), its units are asset-less rows, and `includeAccessoryIds` identifies it
+by child LINE id. A site that filters accessory children by `assetId ?? bulkAssetId` must fall back to
+`child.id`, or custom accessories silently stop deploying under a narrowed ("Deploy Verified Only") call.
+
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev

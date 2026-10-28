@@ -54,11 +54,11 @@
 ### Type Stack
 | Role | Font | CSS var | Notes |
 |------|------|---------|-------|
-| Display / Hero | Archivo | `--font-display` | Google Fonts. Bold geometric — the intentional display choice. |
-| UI / Body | Hanken Grotesk | `--font-sans` | Google Fonts |
-| Wordmark | Baloo 2 | `--font-wordmark` | Google Fonts — RVLT wordmark/brand moments only |
-| Annotations | Kalam | `--font-hand` | Google Fonts — **only** in empty states and annotation moments |
-| Data / Code | Geist Mono | `--font-mono` | Google Fonts — numbers in tables, asset tags, IDs |
+| Display / Hero | Archivo | `--font-display` | Self-hosted (Google Fonts origin). Bold geometric — the intentional display choice. |
+| UI / Body | Hanken Grotesk | `--font-sans` | Self-hosted (Google Fonts origin) |
+| Wordmark | Baloo 2 | `--font-wordmark` | Self-hosted (Google Fonts origin) — RVLT wordmark/brand moments only |
+| Annotations | Kalam | `--font-hand` | Self-hosted (Google Fonts origin) — **only** in empty states and annotation moments |
+| Data / Code | Geist Mono | `--font-mono` | Self-hosted (Google Fonts origin) — numbers in tables, asset tags, IDs |
 
 ### Type Scale
 | Class | Size | Weight | Tracking | Line-height | Usage |
@@ -515,9 +515,17 @@ Apply UX structure (information hierarchy, interaction patterns, navigation IA).
 Fallback references: Linear, Notion, Airtable, ServiceTitan, Jobber, Vercel, Supabase, Stripe Dashboard.
 
 ## §11 Display Font
-`--font-display` is set to **Archivo** (Google Fonts). This is the intentional display choice — not a fallback.
+`--font-display` is set to **Archivo**. This is the intentional display choice — not a fallback.
 
-Archivo is loaded via `next/font/google` with weights 400–900. Always reference it via `var(--font-display)` or the `.t-display` class. Never hardcode `font-family: 'Archivo'`.
+Archivo is self-hosted with weights 400–900. Always reference it via `var(--font-display)` or the `.t-display` class. Never hardcode `font-family: 'Archivo'`.
+
+### Font loading — self-hosted, never fetched at build time
+All five families load through `next/font/local` from `src/fonts/*.woff2`, declared in
+`src/app/fonts.ts` (provenance + licences: `src/fonts/README.md`). `next/font/google` is
+banned by lint: it downloads at `next build`, so a runner network blip failed CI and the
+Docker image build. The files are the same bytes Google serves, per-subset with Google's
+`unicode-range`, so rendering is unchanged — this is a delivery change, not a font change.
+To add or swap a face, follow `src/fonts/README.md`.
 
 ## §15 Mobile Rules — Touch, Density, Safe Areas
 

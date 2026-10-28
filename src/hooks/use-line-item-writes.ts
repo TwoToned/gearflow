@@ -272,7 +272,7 @@ export function useLineItemWrites() {
       parsed: ParsedCustomLineItem,
       // #1221 follow-up — `versionId` (optional) is the version this new
       // line lands on, defaulting to live (server-side) when omitted.
-      opts?: { groupName?: string; versionId?: string },
+      opts?: { groupName?: string; versionId?: string; accessoryPlan?: AccessoryPlanInput },
     ): Promise<{ id: string }> => {
       const lineTotal = computeLineTotal(
         parsed.unitPrice,
@@ -287,6 +287,7 @@ export function useLineItemWrites() {
           projectId,
           fields: buildCustomAddFields(parsed, opts?.groupName, lineTotal),
           versionId: opts?.versionId,
+          accessoryPlan: opts?.accessoryPlan,
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,

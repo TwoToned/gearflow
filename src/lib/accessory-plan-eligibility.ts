@@ -14,10 +14,12 @@ export function canEditAccessoryPlan(item: {
   checkedOutQuantity?: number;
   status?: string;
   subHireId?: string | null;
+  /** A free-text item: no catalog entry, but it can still carry custom accessories. */
+  isCustomItem?: boolean;
 }): boolean {
   if (item.isKitChild || item.childKind) return false;
   if (item.subHireId) return false; // sub-hire lines have no catalog accessory config to resolve
-  if (!item.modelId && !item.assetId) return false;
+  if (!item.modelId && !item.assetId && !item.isCustomItem) return false;
   if ((item.checkedOutQuantity ?? 0) > 0 || item.status === "CHECKED_OUT") return false;
   return true;
 }

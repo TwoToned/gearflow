@@ -21,7 +21,7 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { toast } from "sonner";
 
-import { useLineItemWrites } from "@/hooks/use-line-item-writes";
+import { useLineItemWrites, type CustomAccessoryInput } from "@/hooks/use-line-item-writes";
 import { customLineItemSchema, type CustomLineItemFormValues } from "@/lib/validations/line-item";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { DialogFooter } from "@/components/ui/dialog";
 import { PlacementFields } from "./placement-fields";
+import { CustomAccessoryFields } from "./custom-accessory-fields";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
@@ -99,6 +100,9 @@ export function CustomItemAddForm({
     return undefined;
   };
 
+  // Free-text accessories that ship with this item (accessoryPlan.custom).
+  const [customAccessories, setCustomAccessories] = useState<CustomAccessoryInput[]>([]);
+
   const addMut = useServerMutation({
     mutationFn: (data: CustomLineItemFormValues) => {
       // #1012: shared conversion + the mode is submitted, not discarded.
@@ -117,6 +121,7 @@ export function CustomItemAddForm({
       return lineItemWrites.addCustom(projectId, parsed, {
         groupName: resolveGroupName(parsed.groupId),
         versionId,
+        accessoryPlan: customAccessories.length > 0 ? { excluded: [], added: [], custom: customAccessories } : undefined,
       });
     },
     onSuccess: () => {
@@ -274,6 +279,11 @@ export function CustomItemAddForm({
           />
         </Field>
       </section>
+
+      <div className="rounded-[var(--r)] border border-line bg-paper-2/50 p-3">
+        <p className="t-overline mb-2 text-muted">Accessories</p>
+        <CustomAccessoryFields custom={customAccessories} onChange={setCustomAccessories} quantity={qtyNum} />
+      </div>
 
       {showSummary && (
         <div className="rounded-[var(--r)] border border-line bg-paper-2/50 px-3 py-2 text-caption text-ink-2">

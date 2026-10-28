@@ -45565,17 +45565,17 @@ export const OPENAPI_DOCUMENT = {
                       "lineItemId": {
                         "type": "string"
                       },
-                      "prep": {
-                        "type": "boolean"
-                      },
                       "projectId": {
                         "type": "string"
+                      },
+                      "startPrep": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
                       "lineItemId",
-                      "prep",
-                      "projectId"
+                      "projectId",
+                      "startPrep"
                     ],
                     "additionalProperties": false
                   },

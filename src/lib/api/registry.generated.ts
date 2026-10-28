@@ -60011,18 +60011,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "prep",
-        "optional": false,
-        "type": "boolean"
-      },
-      {
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "startPrep",
+        "optional": false,
+        "type": "boolean"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "029c2319e3421a84",
+    "argsSha": "b1a177f56a037027",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

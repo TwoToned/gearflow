@@ -809,6 +809,16 @@ field, and adds the obvious missing moves.
 > links on desktop (the phone keeps its large Prep / Pack / Deploy buttons),
 > section and case headers lose their bands, the footer is one muted line.
 > The scan dock and the one primary action are the only loud things left.
+>
+> **Phone pass (2026-10-28).** The stage action row (`Prep ▾ · select lines,
+> or scan` / `Deploy all · 18` / `Receive all`) moves into a sticky bar above
+> the bottom nav, so the one action for the current stage is always in thumb
+> reach and reflects the selection (`Pack 2 accessories`); disabled secondaries
+> and the drag hint stay desktop-only. The page menu gains `Job overview ↗`,
+> `Equipment tab ↗`, `Select lines…` and `Only what needs me`, and closes on
+> tap. The active stage centres itself in the strip; row ⋯ is always visible
+> at 40 px; rows are 64 px with 44 px Prep / Pack / Deploy buttons; the scan
+> input is 16 px; the footer scrolls with the list.
 
 ### 9.1 The floor (`/warehouse`)
 A board, not a hub: title, the `ScanDock` with scope (This job · Any job), a

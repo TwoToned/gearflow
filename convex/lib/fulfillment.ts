@@ -56,7 +56,7 @@ export async function accessoryChildrenOf(ctx: Ctx, organizationId: string, pare
 /** A model's configured bulk accessories — shared by every expansion/reconcile
  *  site that reads the model-level template (R-9.8 collect-ratchet). */
 async function modelBulkAccessoriesOf(ctx: Ctx, modelId: string) {
-  return await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect();
+  return await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(200);
 }
 
 /** A model's free-text (not-in-inventory) accessories — the custom twin of

@@ -534,6 +534,48 @@ exactly the existing "verified subset" filter both of those functions already
 respect (issue #794's partial-deploy escape hatch), so no new gate was needed
 on the Convex side — the client just wasn't setting it on the override path.
 
+## Custom (free-text) accessories
+
+For an item you want packed with something but haven't got in the system — gaffer
+tape, a foam windshield, a pouch. No catalog entry, no asset: just a name and a
+count. It is a **normal accessory child line** (`isKitChild`, `childKind: ACCESSORY`,
+`parentLineItemId`) — the only difference is identity: `projectLineItems.customAccessoryKey`
+instead of `assetId`/`bulkAssetId`, and its text lives in `description` (`"3x Gaffer tape"`,
+the same shape bulk children use). Two sources, one materialisation:
+
+- **Per model** — `modelCustomAccessories` (`convex/modelCustomAccessoriesWrites.ts`;
+  `DEFAULT`/`OPTIONAL` tier like `modelBulkAccessories`; UI: `ModelCustomAccessoriesManager`
+  on the Model page). Identified on lines as `modelCustomAccessoryKey(id)` = `"m:<id>"`.
+  The picker lists them next to the bulk rows (`ModelAccessoryDetail.bulkAssetId` carries
+  that key, `assetTag` the name), and `accessoryPlan.excluded` / `.added` use the key —
+  so deselecting a default (with a typed reason) or opting into an optional needs no
+  new plumbing.
+- **Per line** — `accessoryPlan.custom: { key, name, quantityPerParent }[]` (client-minted
+  cuid key), added from the "Custom (this line only)" row of `AccessorySelectionFields`
+  (add form, Edit Item, row kebab "Edit accessories"). Bounded server-side
+  (`assertAccessoryPlanFields`: ≤50, name 1–120, qty int 1–1000).
+
+**One resolver.** `resolveCustomAccessories` (`convex/lib/fulfillment.ts`) is the custom
+twin of `resolveLineAccessoryPlan`; `expandAccessoryChildLines`, `reconcileLineAccessoryChildren`,
+`rescaleAccessoryChildrenToQuantity` and `expandAccessoriesForAsset` all call it. Quantity is
+`quantityPerParent × parent quantity`, and a custom child follows every plan edit / quantity
+change / resync exactly like a bulk child.
+
+**Warehouse.** Units are asset-less (`assetId`/`bulkAssetId` absent): per parent unit for
+serialised parents (`ensureAccessoryUnit`, `parentUnitAssetId = parent asset`), one parent-less
+unit for bulk/untagged parents (`ensureGenericParentlessUnit`), and a per-custom-unit share for
+off-inventory units. Deploy / return / de-prep / reverse are unit-generic so they need no custom
+branch. `includeAccessoryIds` narrowing identifies a custom unit by its **child line id** (there
+is no asset id) — `accessoryAssetIds` on the warehouse page already includes line ids.
+
+**Documents.** Nothing custom: PDFs, pull sheets and the warehouse tabs key off `childKind` and
+print `model?.name || description`, so a custom accessory prints indented under its parent on
+every warehouse doc and is hidden on quote/invoice, same as any accessory
+(`accessories-render.test.tsx`).
+
+Tests: `convex/customAccessories.test.ts` (expand, plan exclude/add, reconcile in/out, prep→deploy→return),
+`accessory-plan-editor.test.ts`, `custom-accessory-fields.smoke.test.tsx`.
+
 ## Not in v1
 
 Bulk parents (only serialised assets can be parents), nested accessories,

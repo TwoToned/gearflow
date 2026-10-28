@@ -208,6 +208,32 @@ export async function customUnitAccessoryShare(
     .map((b) => ({ bulkAssetId: b.bulkAssetId, perParent: added.get(b.bulkAssetId)?.quantityPerParent ?? b.quantity }));
 }
 
+/** A custom unit is born prepped, so its accessory share is too — unless that row has
+ *  already moved on (deployed / returned), which is history and stays. */
+async function packAccessoryUnit(ctx: Ctx, unitCuid: string, now: number): Promise<void> {
+  const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitCuid)).unique();
+  if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
+    await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
+  }
+}
+
+/** Serial prep sizes the accessory line to the parents prepped SO FAR, so it can sit below
+ *  the custom unit's share — never leave rows that outnumber the line's own quantity. */
+async function growAccessoryLineToRows(
+  ctx: Ctx,
+  child: Awaited<ReturnType<typeof accessoryChildrenOf>>[number],
+  now: number,
+): Promise<void> {
+  const rowTotal = (await lineUnits(ctx, child.id)).filter((x) => x.status !== "CANCELLED").reduce((n, x) => n + (x.quantity ?? 0), 0);
+  if (rowTotal > (child.quantity ?? 0)) {
+    await ctx.db.patch(child._id, {
+      quantity: rowTotal,
+      ...(child.description ? { description: child.description.replace(/^\d+x /, `${rowTotal}x `) } : {}),
+      updatedAt: now,
+    });
+  }
+}
+
 /** Give a custom unit its accessories: one packed per-parent row on each existing bulk
  *  accessory child line the model ships (a custom unit is born prepped, so its share is too). */
 export async function ensureCustomUnitAccessories(
@@ -226,20 +252,8 @@ export async function ensureCustomUnitAccessories(
       organizationId: args.organizationId, lineItemId: child.id, parentUnitAssetId: customUnitScope(args.unitId),
       bulkAssetId: child.bulkAssetId, quantity: perParent,
     });
-    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
-      await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
-    }
-    // Serial prep sizes the accessory line to the parents prepped SO FAR, so it can sit below
-    // the custom unit's share — never leave rows that outnumber the line's own quantity.
-    const rowTotal = (await lineUnits(ctx, child.id)).filter((x) => x.status !== "CANCELLED").reduce((n, x) => n + (x.quantity ?? 0), 0);
-    if (rowTotal > (child.quantity ?? 0)) {
-      await ctx.db.patch(child._id, {
-        quantity: rowTotal,
-        ...(child.description ? { description: child.description.replace(/^\d+x /, `${rowTotal}x `) } : {}),
-        updatedAt: now,
-      });
-    }
+    await packAccessoryUnit(ctx, id, now);
+    await growAccessoryLineToRows(ctx, child, now);
     await syncLineItemRollup(ctx, child.id);
   }
 }

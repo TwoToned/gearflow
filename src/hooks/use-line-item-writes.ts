@@ -41,9 +41,17 @@ export interface BulkLineItemPatch {
 /** The durable per-line accessory selection (issue #794) — mirrors
  *  `projectLineItems.accessoryPlan` (convex/schema.ts). Absent/undefined on `add`
  *  means template behaviour: every model DEFAULT, no OPTIONALs. */
+export interface CustomAccessoryInput {
+  key: string;
+  name: string;
+  quantityPerParent: number;
+}
+
 export interface AccessoryPlanInput {
   excluded: string[];
   added: { bulkAssetId: string; quantityPerParent?: number }[];
+  /** Free-text accessories for this line only (not in the catalog). */
+  custom?: CustomAccessoryInput[];
   /** Required override reason per deselected DEFAULT (issue #794 follow-up). */
   excludedReasons?: { bulkAssetId: string; reason: string }[];
 }

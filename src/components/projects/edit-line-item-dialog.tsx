@@ -174,7 +174,8 @@ function EditLineItemDialogBody({
   // `assertLineOwnsAccessoryPlan` re-checks on save regardless (UX only).
   const canEditAccessories = !!onAccessoryPlanChange && canEditAccessoryPlan(item);
   const accessoryEditor = useAccessoryPlanEditor(item, canEditAccessories);
-  const showAccessories = canEditAccessories && accessoryEditor.accessories.length > 0;
+  // Always offered on an eligible line — custom (free-text) accessories need no catalog entry.
+  const showAccessories = canEditAccessories;
 
   // Optimistic-concurrency baseline — captured once when the editor opens
   // (the body remounts per item.id, so the initializer runs fresh each open).
@@ -400,8 +401,8 @@ function EditLineItemDialogBody({
         )}
 
         {/* Accessories (#794) — what ships with this line on THIS job. Hidden
-            entirely for a line with no configurable accessories, a kit/accessory
-            child, or one already out the door (`canEditAccessoryPlan`). */}
+            for a kit/accessory child or one already out the door
+            (`canEditAccessoryPlan`). */}
         {showAccessories && (
           <AccessoryPlanSection editor={accessoryEditor} quantity={requestedQty} />
         )}

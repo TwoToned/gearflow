@@ -45,6 +45,7 @@ import { ModelChecksTab } from "@/components/assets/model-checks-tab";
 import { ModelRoiTab } from "@/components/assets/model-roi-tab";
 import { ModelFailureAnalytics } from "@/components/assets/model-failure-analytics";
 import { ModelAccessoriesManager } from "@/components/assets/model-accessories-manager";
+import { ModelCustomAccessoriesManager } from "@/components/assets/model-custom-accessories-manager";
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -822,7 +823,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   resource="model"
                   action="update"
                   fallback={
-                    model.bulkAccessories && model.bulkAccessories.length > 0 ? (
+                    (model.bulkAccessories?.length ?? 0) + (model.customAccessories?.length ?? 0) > 0 ? (
                       <ul className="space-y-1 text-table-cell">
                         {model.bulkAccessories.map((c) => (
                           <li key={c.id} className="flex items-center gap-2">
@@ -835,17 +836,33 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                             </span>
                           </li>
                         ))}
+                        {(model.customAccessories ?? []).map((c) => (
+                          <li key={c.id} className="flex items-center gap-2">
+                            <span className="text-muted select-none">└─</span>
+                            <span className="font-medium text-ink">{c.quantity}× {c.name}</span>
+                            <span className="ml-auto text-badge text-muted">
+                              {c.inclusion === "OPTIONAL" ? "optional" : "default"}
+                            </span>
+                          </li>
+                        ))}
                       </ul>
                     ) : (
                       <p className="text-table-cell text-muted">No accessories.</p>
                     )
                   }
                 >
-                  <ModelAccessoriesManager
-                    modelId={id}
-                    bulkAccessories={model.bulkAccessories ?? []}
-                    onChanged={refetch}
-                  />
+                  <div className="space-y-5">
+                    <ModelAccessoriesManager
+                      modelId={id}
+                      bulkAccessories={model.bulkAccessories ?? []}
+                      onChanged={refetch}
+                    />
+                    <ModelCustomAccessoriesManager
+                      modelId={id}
+                      customAccessories={model.customAccessories ?? []}
+                      onChanged={refetch}
+                    />
+                  </div>
                 </CanDo>
               </SidebarSection>
 

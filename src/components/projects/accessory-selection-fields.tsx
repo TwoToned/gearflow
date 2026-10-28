@@ -27,6 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { ModelAccessoryDetail } from "@/server/line-items";
+import type { CustomAccessoryInput } from "@/hooks/use-line-item-writes";
+import { CustomAccessoryFields } from "./custom-accessory-fields";
 
 export interface AccessorySelectionFieldsProps {
   accessories: ModelAccessoryDetail[];
@@ -41,6 +43,10 @@ export interface AccessorySelectionFieldsProps {
    *  already names the section — the Edit Item dialog gives it a `SectionTitle`
    *  like every other section, and two headings for one card reads as a bug. */
   showHeading?: boolean;
+  /** Per-line free-text accessories. Omit `onCustomChange` to hide the "add
+   *  custom accessory" row (callers that can't save a plan). */
+  custom?: CustomAccessoryInput[];
+  onCustomChange?: (next: CustomAccessoryInput[]) => void;
 }
 
 export function AccessorySelectionFields({
@@ -51,11 +57,13 @@ export function AccessorySelectionFields({
   excludeReasons,
   onExcludeReasonsChange,
   showHeading = true,
+  custom = [],
+  onCustomChange,
 }: AccessorySelectionFieldsProps) {
   const [pendingExclude, setPendingExclude] = useState<{ id: string; label: string } | null>(null);
   const [excludeReasonDraft, setExcludeReasonDraft] = useState("");
 
-  if (accessories.length === 0) return null;
+  if (accessories.length === 0 && !onCustomChange) return null;
 
   const defaultAccessories = accessories.filter((a) => a.inclusion !== "OPTIONAL");
   const optionalAccessories = accessories.filter((a) => a.inclusion === "OPTIONAL");
@@ -100,6 +108,10 @@ export function AccessorySelectionFields({
               );
             })}
           </div>
+        )}
+
+        {onCustomChange && (
+          <CustomAccessoryFields custom={custom} onChange={onCustomChange} quantity={quantity} />
         )}
 
         {optionalAccessories.length > 0 && (

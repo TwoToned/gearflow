@@ -25,7 +25,7 @@ import {
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
 import { checkAvailability, lookupAssetByTag } from "@/server/line-items";
-import { useLineItemWrites, type AccessoryPlanInput } from "@/hooks/use-line-item-writes";
+import { useLineItemWrites, type AccessoryPlanInput, type CustomAccessoryInput } from "@/hooks/use-line-item-writes";
 import { useModelSearch, useModel } from "@/hooks/use-models";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
@@ -101,6 +101,8 @@ export function EquipmentAddForm({
   // start selected (deselecting records an exclusion); OPTIONAL rows start
   // unselected (selecting opts in). See accessoryPlan below for the derived plan.
   const [accessorySelection, setAccessorySelection] = useState<Record<string, boolean>>({});
+  // Free-text accessories typed in for this line only (accessoryPlan.custom).
+  const [customAccessories, setCustomAccessories] = useState<CustomAccessoryInput[]>([]);
   // A DEFAULT accessory auto-includes, so deselecting one is a deliberate
   // override — gated behind a required typed reason (issue #794 follow-up),
   // unlike OPTIONAL rows which stay a plain, frictionless checkbox.
@@ -328,19 +330,20 @@ export function EquipmentAddForm({
   const optionalAccessories = accessories.filter((a) => a.inclusion === "OPTIONAL");
 
   const accessoryPlan: AccessoryPlanInput | undefined = useMemo(() => {
-    if (accessories.length === 0) return undefined;
+    if (accessories.length === 0 && customAccessories.length === 0) return undefined;
     const excludedRows = defaultAccessories.filter((a) => accessorySelection[a.id] === false);
     const added = optionalAccessories
       .filter((a) => accessorySelection[a.id] === true)
       .map((a) => ({ bulkAssetId: a.bulkAssetId }));
-    if (excludedRows.length === 0 && added.length === 0) return undefined;
+    if (excludedRows.length === 0 && added.length === 0 && customAccessories.length === 0) return undefined;
     return {
       excluded: excludedRows.map((a) => a.bulkAssetId),
       added,
       excludedReasons: excludedRows.map((a) => ({ bulkAssetId: a.bulkAssetId, reason: excludeReasons[a.id] ?? "" })),
+      custom: customAccessories,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessorySelection, accessoryKey, excludeReasons]);
+  }, [accessorySelection, accessoryKey, excludeReasons, customAccessories]);
 
   // Reset overbook confirmation when model or quantity changes
   useEffect(() => {
@@ -723,6 +726,8 @@ export function EquipmentAddForm({
             onSelectionChange={setAccessorySelection}
             excludeReasons={excludeReasons}
             onExcludeReasonsChange={setExcludeReasons}
+            custom={customAccessories}
+            onCustomChange={setCustomAccessories}
           />
         </section>
 

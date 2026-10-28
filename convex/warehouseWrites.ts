@@ -840,8 +840,8 @@ export const reassignKitMemberSerial = mutation({
 // (FEATUREDOCS/12). Turns an unassigned unit of an overbooked serialised line into a
 // custom (off-inventory) unit that stays on the line but holds no stock, and back.
 // A custom unit is born prepped (nothing to pick). `startPrep:true` (the warehouse bench)
-// also counts it as the first prep on the job — the same PREP_STARTED auto-advance as any
-// prep; the Equipment tab passes false so planning never moves the job's status.
+// also counts it as the first prep on the job — the same PREP_STARTED auto-advance every other
+// prep gets; the Equipment tab passes false so planning never moves the job's status.
 // warehouse:check_out (the same RBAC as the other unit-reassign writes). ────────────
 export const convertUnitToOffInventory = mutation({
   args: { orgId: v.string(), projectId: v.string(), lineItemId: v.string(), startPrep: v.boolean(), auditId: v.string(), now: v.number(), actor: actorValidator },

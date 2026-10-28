@@ -5,10 +5,11 @@
 // (asset-less) unit — and back.
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { convertUnitToOffInventoryCore, convertUnitBackToInventoryCore } from "./warehouseOps";
+import { convertUnitToOffInventoryCore, convertUnitBackToInventoryCore, checkoutItemsCore, checkinItemsCore } from "./warehouseOps";
 import { prepUnit } from "./lib/fulfillment";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -25,6 +26,7 @@ const asUser = { subject: USER, orgId: ORG };
 function makeT(): T {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
+  registerShardedCounter(t, "shardedCounter");
   return t;
 }
 
@@ -255,5 +257,40 @@ describe("warehouseWrites wrappers", () => {
       }),
     ).rejects.toThrow();
     expect((await line(t))?.offInventoryQuantity).toBeUndefined();
+  });
+});
+
+describe("custom unit through deploy and return (existing generic-unit flow)", () => {
+  test("deploying the whole line deploys the custom unit too, and a whole-line return brings it back", async () => {
+    const t = makeT();
+    await seed(t, {}, { assignedAssets: 2 });
+    const { unitId } = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
+    const common = { organizationId: ORG, projectId: "P1", userId: USER, now: NOW };
+
+    await t.run((ctx) => checkoutItemsCore(ctx, { ...common, items: [{ lineItemId: "L1" }], includeAccessories: false }));
+    let us = await units(t);
+    expect(us).toHaveLength(3);
+    expect(us.every((u) => u.status === "CHECKED_OUT")).toBe(true);
+    expect((await line(t))?.status).toBe("CHECKED_OUT");
+
+    await t.run((ctx) => checkinItemsCore(ctx, { ...common, items: [{ lineItemId: "L1", returnCondition: "GOOD" }] }));
+    us = await units(t);
+    expect(us.every((u) => u.status === "RETURNED")).toBe(true);
+
+    // A returned custom unit is history: it can't be converted back.
+    expect(us.find((u) => u.id === unitId)?.status).toBe("RETURNED");
+    await expect(
+      t.run((ctx) => convertUnitBackToInventoryCore(ctx, { organizationId: ORG, projectId: "P1", lineItemId: "L1", now: NOW })),
+    ).rejects.toThrow(/deployed|return/i);
+  });
+
+  test("an UNPREPPED custom unit is not deployed by a whole-line deploy", async () => {
+    const t = makeT();
+    await seed(t, {}, { assignedAssets: 2 });
+    const { unitId } = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: false }));
+    await t.run((ctx) => checkoutItemsCore(ctx, { organizationId: ORG, projectId: "P1", userId: USER, now: NOW, items: [{ lineItemId: "L1" }], includeAccessories: false }));
+    const us = await units(t);
+    expect(us.find((u) => u.id === unitId)?.status).toBe("CONFIRMED");
+    expect(us.filter((u) => u.assetId).every((u) => u.status === "CHECKED_OUT")).toBe(true);
   });
 });

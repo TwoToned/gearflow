@@ -333,10 +333,16 @@ async function expandPrepUnitAssignments(
     if (row?.assetId || row?.bulkAssetId) { out.push(item); continue; }
     // Reuse the units gather already read this same (pre-mutation) snapshot;
     // fall back to a read only for a line gather skipped (wrong org/project).
-    const units = (unitsByLine.get(item.lineItemId) ?? (await lineUnits(ctx, item.lineItemId)))
-      .filter((u) => u.status !== "CHECKED_OUT" && (u.assetId || u.bulkAssetId))
-      .sort((a, b) => a.ordinal - b.ordinal);
-    if (units.length === 0) { out.push(item); continue; }
+    const lineUnitRows = unitsByLine.get(item.lineItemId) ?? (await lineUnits(ctx, item.lineItemId));
+    const tagged = lineUnitRows.filter((u) => u.status !== "CHECKED_OUT" && (u.assetId || u.bulkAssetId));
+    if (tagged.length === 0) { out.push(item); continue; }
+    // A line that mixes serialised units with prepped custom (off-inventory) units
+    // must deploy the custom ones too, or "deploy the whole line" strands them. A
+    // pure-generic line (no tagged unit) keeps the whole-line path above untouched.
+    const customPrepped = lineUnitRows.filter(
+      (u) => !u.assetId && !u.bulkAssetId && u.prepStatus === "PACKED" && u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.status !== "CANCELLED",
+    );
+    const units = [...tagged, ...customPrepped].sort((a, b) => a.ordinal - b.ordinal);
     const want = item.quantity ?? units.length;
     const toDeploy = units.slice(0, Math.max(1, Math.min(want, units.length)));
     for (const u of toDeploy) {

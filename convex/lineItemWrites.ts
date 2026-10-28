@@ -10,7 +10,7 @@ import { assertOverbookAllowed, assertEmitSideEffectsAgentTrue } from "./lib/age
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertDiscountMode, assertLineMoneyFields } from "./lib/moneyGuards";
-import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
+import { assertStrLen, assertArrayMax, assertNumRange } from "./lib/fieldGuards";
 import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
@@ -264,8 +264,14 @@ function assertLineItemFields(f: { description?: string | null; subhireOrderNumb
 
 /** Bound `accessoryPlan.excluded`/`.added` (R-8.6.2) — a browser-direct caller
  *  bypassing the add-form picker could otherwise send an unbounded array. */
-function assertAccessoryPlanFields(plan?: { excluded: string[]; added: { bulkAssetId: string }[]; excludedReasons?: { bulkAssetId: string; reason: string }[] }): void {
+function assertAccessoryPlanFields(plan?: { excluded: string[]; added: { bulkAssetId: string }[]; excludedReasons?: { bulkAssetId: string; reason: string }[]; custom?: { key: string; name: string; quantityPerParent: number }[] }): void {
   if (!plan) return;
+  assertArrayMax(plan.custom, "accessoryPlan.custom", 50);
+  for (const c of plan.custom ?? []) {
+    assertStrLen(c.key, "accessoryPlan.custom.key", { min: 1, max: 64 });
+    assertStrLen(c.name.trim(), "accessoryPlan.custom.name", { min: 1, max: 120 });
+    assertNumRange(c.quantityPerParent, "accessoryPlan.custom.quantityPerParent", { min: 1, max: 1000, integer: true });
+  }
   assertArrayMax(plan.excluded, "accessoryPlan.excluded", 200);
   assertArrayMax(plan.added, "accessoryPlan.added", 200);
   assertArrayMax(plan.excludedReasons, "accessoryPlan.excludedReasons", 200);

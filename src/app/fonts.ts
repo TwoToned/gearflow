@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars -- next/font needs each call assigned to a module-scope const; the faces are consumed by name from globals.css, never via the return value */
 import localFont from "next/font/local";
 
 /**
@@ -28,8 +27,10 @@ import localFont from "next/font/local";
  *   `system-ui`), so nothing rendered depends on them.
  * - Weights are ranges on the variable files. Kalam is a static 400 file.
  *
- * The consts are never read — next/font only needs the module-scope assignment — and
- * the module is imported for its side effect by the root layout.
+ * The module is imported for its side effect by the root layout. next/font only needs
+ * each call assigned to a module-scope const, so the consts are merely read at the
+ * bottom (keeps `no-unused-vars` / CodeQL `js/unused-local-variable` quiet without
+ * exporting them, which Knip would flag).
  */
 
 // Hanken Grotesk
@@ -276,3 +277,26 @@ const kalamLatin = localFont({
     { prop: "unicode-range", value: "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD" },
   ],
 });
+
+void [
+  hankenGroteskCyrillicExt,
+  hankenGroteskVietnamese,
+  hankenGroteskLatinExt,
+  hankenGroteskLatin,
+  archivoVietnamese,
+  archivoLatinExt,
+  archivoLatin,
+  baloo2Devanagari,
+  baloo2Vietnamese,
+  baloo2LatinExt,
+  baloo2Latin,
+  geistMonoCyrillicExt,
+  geistMonoCyrillic,
+  geistMonoSymbols2,
+  geistMonoVietnamese,
+  geistMonoLatinExt,
+  geistMonoLatin,
+  kalamDevanagari,
+  kalamLatinExt,
+  kalamLatin,
+];

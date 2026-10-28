@@ -1301,6 +1301,24 @@ async function emitLineItemAdded(
  * NO availability check to keep server-side — this is a fully-native add. sortOrder is
  * computed in-mutation (nextLineSort replica); recalc stays server-side (post-write).
  */
+/** A custom (free-text) item has no catalog accessories — only the per-line `plan.custom` ones — so
+ *  expand just those, in the add transaction. No-op without any. */
+async function expandCustomItemAccessories(
+  ctx: MutationCtx,
+  a: {
+    id: string; organizationId: string; projectId: string; versionId: string | undefined;
+    fields: { quantity: number; categoryId?: string; groupId?: string; duration?: number; pricingType?: string };
+    accessoryPlan: { custom?: unknown[] } | undefined;
+  },
+): Promise<void> {
+  if (!a.accessoryPlan?.custom?.length) return;
+  await expandAccessoryChildLines(ctx, {
+    id: a.id, assetId: null, modelId: null, quantity: a.fields.quantity, categoryId: a.fields.categoryId,
+    groupId: a.fields.groupId, duration: a.fields.duration, pricingType: a.fields.pricingType,
+    organizationId: a.organizationId, projectId: a.projectId, accessoryPlan: a.accessoryPlan as AccessoryPlan, versionId: a.versionId,
+  });
+}
+
 export const addCustomNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
@@ -1344,9 +1362,12 @@ export const addCustomNative = mutation({
     // against `project` (same org + project) by resolveWriteVersionId — a
     // caller can't smuggle a line onto a foreign project's version.
     versionId: v.optional(v.string()),
+    // Free-text accessories for this custom item (only `custom` is meaningful —
+    // there's no catalog entry to include/exclude from). FEATUREDOCS/48.
+    accessoryPlan: v.optional(enums.AccessoryPlanArg),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, versionId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, versionId, accessoryPlan, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1376,6 +1397,7 @@ export const addCustomNative = mutation({
     // bounds (assertLineItemFields), so checked inline rather than shared.
     assertStrLen(fields.description, "description", { min: 1, max: 200 });
     assertStrLen(fields.notes, "notes", { max: 500 });
+    assertAccessoryPlanFields(accessoryPlan);
 
     // lineTotal is a DERIVED value — see addNative's comment for the full rationale.
     // The legit client already computes it this exact way (use-line-item-writes.ts
@@ -1399,10 +1421,12 @@ export const addCustomNative = mutation({
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
       pricedUnderLock: pricedUnderLockOnInsert(defaultToZero),
+      accessoryPlan,
       sortOrder,
       createdAt: now,
       updatedAt: now,
     });
+    await expandCustomItemAccessories(ctx, { id, organizationId, projectId, fields, accessoryPlan, versionId: targetVersionId });
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -1735,12 +1759,13 @@ export const addNative = mutation({
  *  (issue #794 decision 2: post-deploy edits are hard-blocked). Extracted so
  *  the mutation handler stays under the complexity ratchet (R-3.6). */
 function assertLineOwnsAccessoryPlan(
-  line: { organizationId: string; childKind?: string; modelId?: string; assetId?: string; checkedOutQuantity?: number; status?: string } | null,
+  line: { organizationId: string; childKind?: string; modelId?: string; assetId?: string; isCustomItem?: boolean; checkedOutQuantity?: number; status?: string } | null,
   organizationId: string,
 ): asserts line is NonNullable<typeof line> {
   if (!line || line.organizationId !== organizationId) throw new ConvexError("Line item not found");
   if (line.childKind) throw new ConvexError("Only a parent equipment line can have an accessory plan");
-  if (!line.modelId && !line.assetId) {
+  // A custom (free-text) item has no catalog entry, but can still carry per-line custom accessories.
+  if (!line.modelId && !line.assetId && !line.isCustomItem) {
     throw new ConvexError("This line has no model or asset — there's nothing to attach accessories to");
   }
   if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") {
@@ -1837,7 +1862,7 @@ export const updateAccessoryPlanNative = mutation({
  *  from, and hasn't deployed yet — same gate as `assertLineOwnsAccessoryPlan`. */
 function isAccessoryResyncEligible(line: Doc<"projectLineItems">): boolean {
   if (line.isKitChild || line.childKind) return false; // accessory/kit children have no plan of their own
-  if (!line.modelId && !line.assetId) return false;
+  if (!line.modelId && !line.assetId && !line.isCustomItem) return false;
   if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") return false; // deployed — warehouse owns it now
   return true;
 }

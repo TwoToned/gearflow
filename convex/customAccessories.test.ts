@@ -8,6 +8,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
+import { api } from "./_generated/api";
 import { checkoutItemsCore, checkinItemsCore } from "./warehouseOps";
 import {
   prepUnit, expandAccessoryChildLines, reconcileLineAccessoryChildren, modelCustomAccessoryKey, type AccessoryPlan,
@@ -121,5 +122,66 @@ describe("custom accessories", () => {
     }));
     units = await unitsOf(t, tape.id);
     expect(units.every((u) => u.status === "RETURNED")).toBe(true);
+  });
+});
+
+// ─── Accessories on a custom (free-text) item ───────────────────────────────
+
+describe("custom accessories on a custom item", () => {
+  const asUser = { subject: USER, orgId: ORG };
+  const ACTOR = { userId: USER, userName: "Alice" };
+
+  async function seedCustomItem(t: T, accessoryPlan?: AccessoryPlan, quantity = 2) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "member" });
+      await ctx.db.insert("projects", { liveVersionId: "v-P1", id: "P1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: "v-P1", organizationId: ORG, projectId: "P1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    await t.withIdentity(asUser).mutation(api.lineItemWrites.addCustomNative, {
+      id: "L1", organizationId: ORG, projectId: "P1", fields: { description: "Bespoke rig", quantity, unitPrice: 100 },
+      accessoryPlan, actor: ACTOR, auditId: "a1", now: NOW,
+    });
+  }
+
+  test("addCustomNative with plan.custom creates normal accessory children", async () => {
+    const t = makeT();
+    await seedCustomItem(t, { excluded: [], added: [], custom: [{ key: "k1", name: "Spare fuse", quantityPerParent: 3 }] });
+    const kids = await children(t);
+    expect(kids).toHaveLength(1);
+    expect(kids[0]).toMatchObject({ customAccessoryKey: "k1", childKind: "ACCESSORY", isKitChild: true, quantity: 6, description: "6x Spare fuse" });
+  });
+
+  test("a custom item with no plan gets no children; Edit accessories can add and remove one", async () => {
+    const t = makeT();
+    await seedCustomItem(t);
+    expect(await children(t)).toHaveLength(0);
+
+    const plan = { excluded: [], added: [], custom: [{ key: "k1", name: "Spare fuse", quantityPerParent: 1 }] };
+    await t.withIdentity(asUser).mutation(api.lineItemWrites.updateAccessoryPlanNative, { id: "L1", organizationId: ORG, accessoryPlan: plan, actor: ACTOR, auditId: "a2", now: NOW });
+    expect((await children(t)).map((k) => k.customAccessoryKey)).toEqual(["k1"]);
+
+    await t.withIdentity(asUser).mutation(api.lineItemWrites.updateAccessoryPlanNative, { id: "L1", organizationId: ORG, accessoryPlan: { excluded: [], added: [] }, actor: ACTOR, auditId: "a3", now: NOW });
+    expect(await children(t)).toHaveLength(0);
+  });
+
+  test("changing the custom item's quantity rescales its custom accessory", async () => {
+    const t = makeT();
+    await seedCustomItem(t, { excluded: [], added: [], custom: [{ key: "k1", name: "Spare fuse", quantityPerParent: 2 }] }, 2);
+    await t.withIdentity(asUser).mutation(api.lineItemWrites.patchNative, { id: "L1", orgId: ORG, entityName: "Bespoke rig", allowOverbook: false, set: { quantity: 5, updatedAt: NOW }, clear: [], actor: ACTOR, auditId: "a4", now: NOW });
+    expect((await children(t))[0].quantity).toBe(10);
+  });
+
+  test("whole-line prep packs the custom accessory, then deploy and return carry it", async () => {
+    const t = makeT();
+    await seedCustomItem(t, { excluded: [], added: [], custom: [{ key: "k1", name: "Spare fuse", quantityPerParent: 1 }] }, 1);
+    await t.run((ctx) => prepUnit(ctx, { organizationId: ORG, lineItemId: "L1" }));
+    const fuse = (await children(t))[0];
+    expect((await unitsOf(t, fuse.id)).every((u) => u.prepStatus === "PACKED")).toBe(true);
+
+    await t.run((ctx) => checkoutItemsCore(ctx, { organizationId: ORG, projectId: "P1", userId: USER, now: NOW, includeAccessories: true, items: [{ lineItemId: "L1" }] }));
+    expect((await unitsOf(t, fuse.id)).every((u) => u.status === "CHECKED_OUT")).toBe(true);
+
+    await t.run((ctx) => checkinItemsCore(ctx, { organizationId: ORG, projectId: "P1", userId: USER, now: NOW, items: [{ lineItemId: "L1", returnCondition: "GOOD" }] }));
+    expect((await unitsOf(t, fuse.id)).every((u) => u.status === "RETURNED")).toBe(true);
   });
 });

@@ -33,17 +33,25 @@ lines.
 
 | Field | Table | Meaning |
 |---|---|---|
-| `offInventoryQuantity?: number` | `projectLineItems` | count of flagged units; absent = 0. **The sole input to stock demand.** |
-| `offInventory?: true` | `projectLineItemUnits` | which unit is flagged; **the sole input to warehouse behaviour.** |
+| `offInventoryQuantity?: number` | `projectLineItems` | how many of the line's units are off-inventory; absent = 0. **The single source of truth** for stock demand and for the "custom" display. |
+
+No per-unit flag (it would be a second copy of the same fact, R-3.1). The
+fulfilment side already has the needed shape: a **generic unit** (a
+`projectLineItemUnits` row with no `assetId`/`bulkAssetId`, quantity 1 —
+created by `prepUnit`'s untagged-multi-quantity branch) counts toward
+`assignedQuantity`, so the scan path's spare-capacity test
+(`assignedQuantity < quantity`, `src/server/warehouse.ts`) already stops a scan
+from filling the custom slot. Converting a unit creates one generic unit and
+bumps the counter in the same transaction; converting back removes one
+not-yet-deployed generic unit and decrements it.
 
 No backfill (absent = off). `quantity`, `unitPrice`, `lineTotal`, discount and
 tax are never touched, so finance/PDF/ROI/allocation need no change.
 
-**Invariant (R-3.1):** per line, `offInventoryQuantity === count(units with
-offInventory)`. Written only by the two mutations below (plus the assign-serial
-un-flag), all in one transaction; pinned by a test. The line counter exists
-because demand is summed across every line of a model on hot queries — reading
-unit rows there would be an N+1.
+**Invariant:** for a line with `offInventoryQuantity = k`, it has at least `k`
+generic units after conversion; `quantity ≥ k` always (a quantity patch below
+`k` is rejected with "convert N back first"). The counter lives on the line
+because demand is summed across every line of a model on hot queries.
 
 ## Stock demand — single helper
 
@@ -70,62 +78,75 @@ clear automatically once the helper is in.
 
 ## Mutations (`convex/lineItemWrites.ts` or a sibling `*Writes.ts`)
 
-- `convertUnitToOffInventoryNative({ organizationId, lineItemId, unitId })`
-  - RBAC `project/manage_line_items` **or** `warehouse/check_out` (warehouse
-    staff do this at the bench); org-checked via the loader, not at the call
-    site; `ConvexError` only.
-  - Preconditions: serialised model line, `type EQUIPMENT`, not kit child /
-    accessory / sale / sub-hire / container; unit belongs to the line, has no
-    `assetId`, status not checked-out/returned/cancelled.
-  - Effects: unit `offInventory = true`; line `offInventoryQuantity += 1`;
-    optionally (`markPrepped: true`, the warehouse path) unit `prepStatus` →
-    prepped and line rollup re-synced via the existing `syncLineItemRollup`.
-  - Audit log entry; best-effort webhook like other line writes.
-- `convertUnitBackToInventoryNative(...)` — inverse; clears flag, decrements
-  counter, un-preps the unit. Non-blocking: if stock is short the overbook
-  badge simply returns.
-- Assigning a real serial to a flagged unit (existing warehouse/equipment
-  assign paths) clears the flag via one shared helper.
-- Both get `agentOps` entries (`danger: "medium"`); regenerate
-  `pnpm run api:registry && pnpm run api:docs && pnpm run api:mcp`.
-  Not a privileged-arg name.
+Following the existing warehouse pattern: `*Core` functions in
+`convex/warehouseOps.ts`, a browser-direct wrapper in `convex/warehouseWrites.ts`
+(kill-switch + `enforceBrowserWriteLimit` + RBAC `warehouse/check_out`, boundary
+org checks, audit via `writeActivityLog`, `resolveActor`) and a method on
+`useWarehouseWrites`. No `requireService` mirror (nothing server-side calls it).
+
+- `convertUnitToOffInventoryCore(ctx, { organizationId, projectId, lineItemId, prep, now })`
+  - Preconditions: line in org+project; `type EQUIPMENT`; has `modelId`; not
+    kit child / accessory child / container / sale / sub-hire / cancelled; the
+    model is serialised (the line is not bulk-backed); a free slot exists:
+    `quantity − offInventoryQuantity − (units with an asset/bulk) ≥ 1`.
+  - Effects: `offInventoryQuantity += 1`; insert one generic unit (qty 1,
+    `status CONFIRMED`, `prepStatus` `PACKED` when `prep`, else `PENDING`);
+    `syncLineItemRollup`. Returns `{ unitId, offInventoryQuantity }`.
+- `convertUnitBackToInventoryCore(ctx, { organizationId, projectId, lineItemId, now })`
+  — removes the highest-ordinal generic unit that is not `CHECKED_OUT` /
+  `RETURNED`, decrements the counter, re-syncs the rollup. Rejects when
+  `offInventoryQuantity` is 0 or every generic unit is already out. Non-blocking:
+  if stock is short the overbook badge simply returns.
+- `prepUnit`'s generic branch first flips existing not-packed generic units to
+  `PACKED` (so a planning-time conversion is prepped by one tick) before
+  inserting new ones.
+- `lineItemWrites.patchNative`: a quantity patch below `offInventoryQuantity`
+  throws `ConvexError`.
+- Wrappers `warehouseWrites.convertUnitToOffInventory` /
+  `convertUnitBackToInventory` get `agentOps` entries (`danger: "medium"`);
+  regenerate `pnpm run api:registry && pnpm run api:docs && pnpm run api:mcp`.
+  No privileged-arg names.
 
 ## Warehouse
 
-- Pick/prep tab: an unassigned unit of a line whose model is overbooked
-  (existing `OverbookedInfo`) shows **"Prep as custom item"**. Flagged units
-  show a `Custom` badge and a manual prep/deploy/return tick (reusing the
-  custom-line affordances); a "Convert back" action is available until
-  deployed.
-- Scan auto-pick (and the checkout/return scan paths) **skip flagged units** —
-  scanning a serial must never land on one.
-- Fulfilment rollups treat a flagged unit as a normal unit for status
-  derivation (it is prepped/deployed/returned like any other), so the line's
-  `deriveOrderLineStatus` is unchanged.
+- Pick/prep tab: a line whose model is overbooked (existing `OverbookedInfo`)
+  and that still has a free slot shows **"Prep as custom item"** (calls the
+  convert mutation with `prep: true`). A line with `offInventoryQuantity > 0`
+  shows a `N custom` badge and a "Convert back" action while a custom unit is
+  not yet deployed.
+- Scan path: no change needed — the generic unit counts toward
+  `assignedQuantity`, so `lookupAssetForScan` no longer offers the filled slot.
+  A test pins this.
+- Deploy/return of generic units uses the existing untagged-unit flow
+  (`warehouseOps` generic picker); verified by a test.
+- Rollups are unchanged: a generic unit is prepped/deployed/returned like any
+  other, so `deriveOrderLineStatus` needs no edit.
 
 ## Equipment tab
 
-Expanded per-unit rows get the same action and "Convert back". The collapsed
-line shows `1 custom` beside the tag. Overbook badge reflects the new demand.
+The line's kebab menu gets "Convert 1 to custom item" (`prep: false`; the unit
+is created `PENDING` and the warehouse ticks it) and "Convert 1 back to
+inventory". The line shows `N custom` beside the tag. Overbook badge reflects
+the new demand.
 
 ## Edge cases
 
 - Whole line flagged (qty 3, all 3) → allowed; line shows 0 stock-backed.
-- Quantity reduced below flagged count → `patchNative` trims unassigned
-  **unflagged** units first, then flagged; counter kept in lockstep.
-- Quantity increased → new units are unflagged.
-- Version copy / quote revisions / duplicate project: counter and unit flag are
-  copied with the rows (same as other unit fields); verify in the version
-  clone path.
+- Quantity reduced below `offInventoryQuantity` → rejected (convert back first).
+- Quantity increased → the new units are ordinary stock-backed units.
+- Version copy / quote revisions / duplicate project: the counter is a line
+  field and rides the row copy; verify in the version-clone path.
 - Lifecycle/pricing locks: flagging changes no money, so it is not price-gated.
 
 ## Testing
 
-`convex-test`: convert + counter/flag lockstep; precondition rejections
-(assigned unit, kit child, sale, sub-hire, cross-org line/unit); convert back;
-assign-serial un-flag; demand parity — overbook clears across availability,
-board, confirm-impact and readiness; quantity patch keeps the invariant; scan
-auto-pick skips flagged units. Guard test: no demand site sums raw `quantity`.
+`convex-test`: convert creates counter + generic unit; precondition rejections
+(no free slot, kit child, sale, sub-hire, bulk model, cross-org line); convert
+back (and rejection when the custom unit is deployed); `prepUnit` flips a
+PENDING generic unit; demand parity — overbook clears across availability,
+board, confirm-impact and readiness; quantity patch below the counter is
+rejected; the scan spare-capacity test no longer offers the filled slot. Guard
+test: no demand site sums raw `quantity`.
 jsdom smoke tests that actually open the warehouse action and the Equipment-tab
 menu. Registry/docs/MCP regeneration committed.
 

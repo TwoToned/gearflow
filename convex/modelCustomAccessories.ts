@@ -19,7 +19,7 @@ export const listByModelId = query({
       .query("modelCustomAccessories")
       .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
       .filter((q) => q.eq(q.field("organizationId"), organizationId))
-      .collect();
+      .take(200);
     rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     return rows;
   },

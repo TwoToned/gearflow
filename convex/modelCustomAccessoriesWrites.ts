@@ -52,7 +52,7 @@ export const addNative = mutation({
       .query("modelCustomAccessories")
       .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
       .filter((q) => q.eq(q.field("organizationId"), orgId))
-      .collect();
+      .take(200);
     if (existing.some((a) => a.name.toLowerCase() === trimmed.toLowerCase())) {
       throw new ConvexError(`${trimmed} is already a custom accessory on this model. Edit the quantity instead.`);
     }

@@ -62,7 +62,7 @@ async function modelBulkAccessoriesOf(ctx: Ctx, modelId: string) {
 /** A model's free-text (not-in-inventory) accessories — the custom twin of
  *  `modelBulkAccessoriesOf`. */
 async function modelCustomAccessoriesOf(ctx: Ctx, organizationId: string, modelId: string) {
-  return (await ctx.db.query("modelCustomAccessories").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect())
+  return (await ctx.db.query("modelCustomAccessories").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(200))
     .filter((r) => r.organizationId === organizationId);
 }
 

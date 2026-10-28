@@ -214,7 +214,7 @@ export const detail = query({
       });
     }
 
-    const customAccessories = (await ctx.db.query("modelCustomAccessories").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect())
+    const customAccessories = (await ctx.db.query("modelCustomAccessories").withIndex("by_modelId", (q) => q.eq("modelId", id)).take(200))
       .filter((r) => r.organizationId === orgId)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
       .map((r) => ({

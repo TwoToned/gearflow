@@ -33,7 +33,7 @@ export const checkBundle = query({
         .query("modelCustomAccessories")
         .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
         .filter((q) => q.eq(q.field("organizationId"), orgId))
-        .collect(),
+        .take(200),
     ]);
 
     // Resolve each model accessory's bulk-asset tag + model name for the add-form

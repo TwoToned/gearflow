@@ -20003,6 +20003,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "accessoryPlan": {
+                        "type": "object"
+                      },
                       "emitSideEffects": {
                         "type": "boolean"
                       },

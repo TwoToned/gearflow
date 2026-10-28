@@ -91,6 +91,19 @@ pnpm run api:mcp            # Regenerate the MCP tool manifest (src/lib/api/mcp-
 pnpm run mcp:stdio-proxy    # Local stdio↔HTTP bridge to /api/v1/mcp (decision 4, #999)
 ```
 
+### Regenerating the lockfile — fresh installs fail where yours doesn't
+Re-resolving the whole tree (`pnpm update --depth Infinity`, `pnpm install --fix-lockfile`)
+can rewrite the lockfile **without `hasBin: true`** on dozens of packages. Your own
+`node_modules` already has the bin links, so everything passes locally; CI's fresh
+`--frozen-lockfile` install then never links them and `next dev` dies with
+`Error: Binary posthog-cli not found` (this broke both E2E jobs on a security-bump PR).
+For a security bump prefer plain `pnpm install` after editing `package.json` /
+`pnpm-workspace.yaml` overrides, then check the lockfile lost nothing:
+`git diff origin/main -- pnpm-lock.yaml | grep '^[-+].*hasBin'` — a removed line is only
+legitimate when that package's version changed, and is then paired with a `+` line for
+the new version's entry. To be sure, `git worktree add` the commit,
+`pnpm install --frozen-lockfile` there and run `pnpm dev`.
+
 ### Worktree Setup
 
 Git worktrees don't share `node_modules/` or `.env` with the main repo. Run this to bootstrap a new worktree:

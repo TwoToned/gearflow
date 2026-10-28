@@ -33,4 +33,10 @@ describe("canEditAccessoryPlan", () => {
   it("rejects a line whose status is CHECKED_OUT even if checkedOutQuantity is 0", () => {
     expect(canEditAccessoryPlan({ modelId: "m1", checkedOutQuantity: 0, status: "CHECKED_OUT" })).toBe(false);
   });
+
+  it("allows a free-text custom item (it can carry custom accessories), until it deploys", () => {
+    expect(canEditAccessoryPlan({ isCustomItem: true })).toBe(true);
+    expect(canEditAccessoryPlan({ isCustomItem: true, checkedOutQuantity: 1 })).toBe(false);
+    expect(canEditAccessoryPlan({ isCustomItem: true, isKitChild: true })).toBe(false);
+  });
 });

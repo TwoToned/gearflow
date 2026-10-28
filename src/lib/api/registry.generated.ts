@@ -25131,6 +25131,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "accessoryPlan",
+        "optional": true,
+        "type": "object"
+      },
+      {
         "name": "actor",
         "optional": false,
         "type": "object"
@@ -25182,7 +25187,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f412b44bb3472da4",
+    "argsSha": "4857b05dd8eeb170",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

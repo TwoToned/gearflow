@@ -555,6 +555,13 @@ the same shape bulk children use). Two sources, one materialisation:
   (add form, Edit Item, row kebab "Edit accessories"). Bounded server-side
   (`assertAccessoryPlanFields`: ≤50, name 1–120, qty int 1–1000).
 
+**On a custom item.** A free-text line (`isCustomItem`, no model/asset) can carry per-line custom
+accessories too: the Custom-item add form has an Accessories box, `addCustomNative` takes `accessoryPlan`
+(only `custom` is meaningful) and expands the children in the same transaction, and Edit item /
+"Edit accessories" are offered (`canEditAccessoryPlan` / `assertLineOwnsAccessoryPlan` /
+`isAccessoryResyncEligible` all accept `isCustomItem`). Quantity changes rescale them; whole-line prep packs
+them through the parent-less path (`packParentlessAccessories`) and deploy/return cascade unscoped.
+
 **One resolver.** `resolveCustomAccessories` (`convex/lib/fulfillment.ts`) is the custom
 twin of `resolveLineAccessoryPlan`; `expandAccessoryChildLines`, `reconcileLineAccessoryChildren`,
 `rescaleAccessoryChildrenToQuantity` and `expandAccessoriesForAsset` all call it. Quantity is

@@ -453,13 +453,14 @@ export function useWarehouseWrites() {
     },
 
     // "Prep as custom item": move one unit of a line between stock-backed and
-    // off-inventory (FEATUREDOCS/12). `prep` also marks the new custom unit prepped.
+    // off-inventory (FEATUREDOCS/12). The unit is born prepped; `startPrep` also counts it as the
+    // job's first prep (status auto-advance) — true at the warehouse bench, false when planning.
     convertUnitToOffInventory: async (
       projectId: string,
       lineItemId: string,
-      prep: boolean,
+      startPrep: boolean,
     ): Promise<{ unitId: string; offInventoryQuantity: number }> => {
-      return convertUnitToOffInventoryM({ orgId: requireOrg(), projectId, lineItemId, prep, auditId: createId(), now: Date.now(), actor: actor() });
+      return convertUnitToOffInventoryM({ orgId: requireOrg(), projectId, lineItemId, startPrep, auditId: createId(), now: Date.now(), actor: actor() });
     },
 
     convertUnitBackToInventory: async (

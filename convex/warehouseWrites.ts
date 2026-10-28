@@ -839,11 +839,12 @@ export const reassignKitMemberSerial = mutation({
 // ─── convertUnitToOffInventory / convertUnitBackToInventory — "Prep as custom item"
 // (FEATUREDOCS/12). Turns an unassigned unit of an overbooked serialised line into a
 // custom (off-inventory) unit that stays on the line but holds no stock, and back.
-// `prep:true` (the warehouse bench) also marks it prepped, which counts as the first
-// prep on the job — so it triggers the same PREP_STARTED auto-advance as any prep.
+// A custom unit is born prepped (nothing to pick). `startPrep:true` (the warehouse bench)
+// also counts it as the first prep on the job — the same PREP_STARTED auto-advance as any
+// prep; the Equipment tab passes false so planning never moves the job's status.
 // warehouse:check_out (the same RBAC as the other unit-reassign writes). ────────────
 export const convertUnitToOffInventory = mutation({
-  args: { orgId: v.string(), projectId: v.string(), lineItemId: v.string(), prep: v.boolean(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  args: { orgId: v.string(), projectId: v.string(), lineItemId: v.string(), startPrep: v.boolean(), auditId: v.string(), now: v.number(), actor: actorValidator },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
@@ -854,7 +855,7 @@ export const convertUnitToOffInventory = mutation({
     await requireLineInProject(ctx, a.lineItemId, a.orgId, a.projectId);
 
     const res = await convertUnitToOffInventoryCore(ctx, {
-      organizationId: a.orgId, projectId: a.projectId, lineItemId: a.lineItemId, prep: a.prep, now: a.now,
+      organizationId: a.orgId, projectId: a.projectId, lineItemId: a.lineItemId, now: a.now,
     });
 
     await writeActivityLog(ctx, {
@@ -866,12 +867,12 @@ export const convertUnitToOffInventory = mutation({
       entityName: "Line item",
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Converted 1 unit to a custom item${a.prep ? " (prepped)" : ""}`,
+      summary: "Converted 1 unit to a custom item",
       projectId: a.projectId,
       createdAt: a.now,
     });
 
-    const autoAdvance = a.prep
+    const autoAdvance = a.startPrep
       ? await maybeAutoAdvanceProjectStatus(ctx, { orgId: a.orgId, projectId: a.projectId, trigger: "PREP_STARTED", actor, now: a.now })
       : null;
 

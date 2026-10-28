@@ -561,6 +561,42 @@ const LINE_NEVER_CLEAR = new Set<string>(["id", "organizationId", ...LINE_IMMUTA
  * lost-update race; see the hook's comment. recalc stays server-side (post-write, via
  * a separate recalcNative call).
  */
+/**
+ * A line with custom (off-inventory) units keeps them coherent across edits
+ * (FEATUREDOCS/12): the counter and its generic unit rows describe THIS model on THIS
+ * line, so the edits that would silently break either are refused up front.
+ *  - changing the model / type, clearing the model, or pinning a specific (bulk) asset
+ *    would move or drop the demand without anyone converting anything;
+ *  - lowering the quantity below (custom + serial units) would drop a stock-backed
+ *    unit instead of the custom one the user presumably meant.
+ */
+async function assertCustomUnitsStayCoherent(
+  ctx: MutationCtx,
+  doc: Doc<"projectLineItems">,
+  edit: { newQty: number; clearSet: Set<string>; setObj: Record<string, unknown> },
+): Promise<void> {
+  const custom = doc.offInventoryQuantity ?? 0;
+  if (custom < 1) return;
+  const { newQty, clearSet, setObj } = edit;
+  const changesIdentity =
+    clearSet.has("modelId") ||
+    (setObj.modelId !== undefined && setObj.modelId !== doc.modelId) ||
+    (setObj.type !== undefined && setObj.type !== (doc.type ?? "EQUIPMENT")) ||
+    !!setObj.assetId ||
+    !!setObj.bulkAssetId;
+  if (changesIdentity) {
+    throw new ConvexError(`${custom} unit(s) of this line are custom — convert them back to inventory before changing its model, type or asset.`);
+  }
+  const tagged = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", doc.id)).collect())
+    .filter((u) => u.status !== "CANCELLED" && (u.assetId || u.bulkAssetId))
+    .reduce((n, u) => n + (u.quantity ?? 1), 0);
+  if (newQty < custom + tagged) {
+    throw new ConvexError(
+      `${custom} unit(s) of this line are custom and ${tagged} have serials — convert custom units back to inventory (or remove assigned units) before lowering the quantity below ${custom + tagged}.`,
+    );
+  }
+}
+
 export const patchNative = mutation({
   returns: v.object({ projectId: v.string() }),
   args: {
@@ -700,9 +736,7 @@ export const patchNative = mutation({
     const effType = effField("type");
     const effModelId = effField("modelId") as string | undefined;
     const newQty = clearSet.has("quantity") ? currentQty : ((setObj.quantity as number | undefined) ?? currentQty);
-    if (newQty < (doc.offInventoryQuantity ?? 0)) {
-      throw new ConvexError(`${doc.offInventoryQuantity} of this line are custom units — convert them back to inventory before lowering the quantity below that.`);
-    }
+    await assertCustomUnitsStayCoherent(ctx, doc, { newQty, clearSet, setObj: setObj as Record<string, unknown> });
 
     // Asset REASSIGNMENT (`assetId` actually changing to a different value) — the same
     // hard guards the dedicated `swapLineItemAsset` mutation runs (model match, kit

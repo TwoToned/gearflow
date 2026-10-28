@@ -20,6 +20,8 @@ export interface CustomUnitLine {
   isContainerLineItem?: boolean | null;
   isCustomItem?: boolean | null;
   bulkAssetId?: string | null;
+  /** A line pinned to one specific asset (no unit rows) is fulfilled by THAT asset. */
+  assetId?: string | null;
   model?: { assetType?: string | null } | null;
   units?: Array<{ quantity?: number | null; status?: string | null; assetId?: string | null; bulkAssetId?: string | null }> | null;
   offInventoryQuantity?: number | null;
@@ -41,7 +43,7 @@ function isStandaloneOwnStockLine(line: CustomUnitLine): boolean {
 /** A live, model-backed, serialised equipment line. */
 function isLiveSerialisedModelLine(line: CustomUnitLine): boolean {
   if ((line.type ?? "EQUIPMENT") !== "EQUIPMENT" || !line.modelId || line.status === "CANCELLED") return false;
-  return !line.bulkAssetId && line.model?.assetType !== "BULK";
+  return !line.bulkAssetId && !line.assetId && line.model?.assetType !== "BULK";
 }
 
 function isPlainSerialisedModelLine(line: CustomUnitLine): boolean {

@@ -17,7 +17,22 @@ const DEMAND_SITES = [
   "src/server/line-items.ts",
 ];
 
+// The raw-quantity forms these sites used before they moved onto stockBackedQty. A
+// regression that reintroduces one (even alongside an unrelated stockBackedQty call
+// elsewhere in the file) fails here.
+const RAW_DEMAND_FORMS: Record<string, RegExp[]> = {
+  "convex/lib/availabilityCore.ts": [/sum \+ \(li\.quantity \?\? 0\)/],
+  "convex/lib/overbookingBoard.ts": [/const qty = li\.quantity \?\? 0/],
+  "src/lib/overbooking-core.ts": [/bumpTotal\(li\.modelId, li\.quantity\)/, /bumpClaim\([^)]*li\.quantity/],
+  "src/server/line-items.ts": [/quantity: li\.quantity \?\? 0/],
+};
+
 describe("stockBackedQty demand-site guard", () => {
+  test.each(Object.entries(RAW_DEMAND_FORMS))("%s no longer sums raw quantity as stock demand", (file, forms) => {
+    const src = readFileSync(resolve(ROOT, file), "utf8");
+    for (const re of forms) expect(src).not.toMatch(re);
+  });
+
   test.each(DEMAND_SITES)("%s sums stock demand through stockBackedQty", (file) => {
     expect(readFileSync(resolve(ROOT, file), "utf8")).toContain("stockBackedQty(");
   });

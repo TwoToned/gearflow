@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
-import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup, resolveOrCreateContainerByLabel } from "./lib/fulfillment";
+import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup, resolveOrCreateContainerByLabel, removeCustomUnitAccessories } from "./lib/fulfillment";
 import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 
@@ -238,9 +238,22 @@ async function deprepItemInner(
     // Accessories packed in a different container than their parent keep their own
     // stage (accessoryRelocation.ts) — resolved BEFORE the parent units are deleted.
     const parentContainerOf = parentContainerResolver(prepped);
+    let removedGenericUnits = 0;
     for (let i = 0; i < removeCount; i++) {
       if (prepped[i].assetId) removedParentAssetIds.push(prepped[i].assetId!);
+      else if (!prepped[i].bulkAssetId) {
+        removedGenericUnits++;
+        // A custom unit takes its accessory share with it.
+        if ((line.offInventoryQuantity ?? 0) > 0) await removeCustomUnitAccessories(ctx, { organizationId: a.organizationId, lineItemId: a.lineItemId, unitId: prepped[i].id });
+      }
       await ctx.db.delete(prepped[i]._id);
+    }
+    // A removed generic unit may be a custom (off-inventory) one — de-prepping it returns
+    // the slot to inventory, so the line's counter must follow or it drifts from the unit
+    // rows (demand under-counted, a free slot invisible). FEATUREDOCS/12.
+    if (removedGenericUnits > 0 && (line.offInventoryQuantity ?? 0) > 0) {
+      const left = Math.max(0, (line.offInventoryQuantity ?? 0) - removedGenericUnits);
+      await ctx.db.patch(line._id, { offInventoryQuantity: left === 0 ? undefined : left, updatedAt: a.now });
     }
     if (removedParentAssetIds.length > 0) {
       const accChildren = (await childLines(ctx, a.lineItemId, a.organizationId)).filter((c) => c.childKind === "ACCESSORY");

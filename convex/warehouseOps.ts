@@ -17,6 +17,9 @@ import {
   syncContainerStatuses,
   returnAccessoryUnits,
   loadAccessoryUnits,
+  customUnitScope,
+  ensureCustomUnitAccessories,
+  removeCustomUnitAccessories,
 } from "./lib/fulfillment";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
@@ -168,23 +171,23 @@ async function checkOutDeployWholeLine(ctx: Ctx, p: { lineItemId: string; lineIt
  * Deploy the prepped "generic" units of an untagged multi-quantity line (rows
  * with neither an asset nor a bulk asset — the partial-prep model). Flips up to
  * `want` of them to CHECKED_OUT so a partial deploy leaves the rest waiting.
- * Returns false when the line has no such units (legacy whole-line deploy).
+ * Returns the flipped unit ids, or null when the line has no such units (legacy whole-line deploy).
  */
 async function checkOutGenericUnits(
   ctx: Ctx,
   p: { organizationId: string; lineItemId: string; want?: number; userId: string; projectId: string; notes?: string; now: number },
-): Promise<boolean> {
+): Promise<string[] | null> {
   const units = (await lineUnits(ctx, p.lineItemId))
     .filter((u) => !u.assetId && !u.bulkAssetId && u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.prepStatus === "PACKED")
     .sort((a, b) => a.ordinal - b.ordinal);
-  if (units.length === 0) return false;
+  if (units.length === 0) return null;
   const want = p.want ?? units.length;
   const toFlip = units.slice(0, Math.max(1, Math.min(want, units.length)));
   for (const u of toFlip) {
     await ctx.db.patch(u._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
   }
   await scanLog(ctx, { organizationId: p.organizationId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.notes || `Deployed ${toFlip.length} unit(s)` });
-  return true;
+  return toFlip.map((u) => u.id);
 }
 
 type AccessoryUnitRow = Awaited<ReturnType<typeof lineUnits>>[number];
@@ -264,7 +267,9 @@ async function finalizeCheckoutItem(
   ctx: Ctx,
   p: {
     organizationId: string; lineItemId: string; targetAssetId: string | null; projectId: string; userId: string;
-    projectLocationId: string | null; includeAccessories: boolean; includeAccessoryIds?: Set<string> | null; now: number;
+    projectLocationId: string | null; includeAccessories: boolean; includeAccessoryIds?: Set<string> | null;
+    /** Custom-unit accessory scopes (`customUnitScope`) to deploy instead of one unscoped sweep. */
+    accessoryScopes?: string[]; now: number;
   },
 ): Promise<void> {
   if (p.includeAccessories) {
@@ -274,11 +279,13 @@ async function finalizeCheckoutItem(
         includeAccessoryIds: p.includeAccessoryIds,
       });
     }
-    await checkoutAccessoryChildren(ctx, {
-      organizationId: p.organizationId, projectId: p.projectId, parentLineItemId: p.lineItemId,
-      parentUnitAssetId: p.targetAssetId, userId: p.userId, projectLocationId: p.projectLocationId,
-      includeAccessoryIds: p.includeAccessoryIds, now: p.now,
-    });
+    for (const scope of p.accessoryScopes ?? [p.targetAssetId]) {
+      await checkoutAccessoryChildren(ctx, {
+        organizationId: p.organizationId, projectId: p.projectId, parentLineItemId: p.lineItemId,
+        parentUnitAssetId: scope, userId: p.userId, projectLocationId: p.projectLocationId,
+        includeAccessoryIds: p.includeAccessoryIds, now: p.now,
+      });
+    }
   }
   await syncLineItemRollup(ctx, p.lineItemId);
 }
@@ -398,6 +405,7 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
         throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
       }
       const targetAssetId = item.assetId || lineItem.assetId || null;
+      let accessoryScopes: string[] | undefined;
       if (targetAssetId) {
         const res = await checkOutSerializedItem(ctx, {
           organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, userId: a.userId,
@@ -437,13 +445,16 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
           updated.add(lineItem.id);
           continue;
         }
+        // Custom units carry their own accessory share (scoped by unit): deploy exactly the
+        // flipped units' accessories, not every sibling's. Plain generic lines stay unscoped.
+        accessoryScopes = (lineItem.offInventoryQuantity ?? 0) > 0 ? flipped.map(customUnitScope) : undefined;
         // Generic units flipped — fall through to finalize (accessories + rollup).
       }
       await finalizeCheckoutItem(ctx, {
         organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, projectId: a.projectId,
         userId: a.userId, projectLocationId, includeAccessories: a.includeAccessories,
         includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
-        now: a.now,
+        accessoryScopes, now: a.now,
       });
       updated.add(lineItem.id);
     }
@@ -940,7 +951,7 @@ export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{
 
   const updated = new Set<string>();
   for (const item of a.items) {
-    const { unitsFlipped, assetsTouched } = await returnLineUnits(ctx, {
+    const { unitsFlipped, assetsTouched, genericUnitIds } = await returnLineUnits(ctx, {
       organizationId: a.organizationId, projectId: a.projectId, lineItemId: item.lineItemId, assetId: item.assetId,
       returnCondition: item.returnCondition, quantity: item.quantity, notes: item.notes, userId: a.userId, defaultLocationId,
     });
@@ -957,7 +968,13 @@ export async function checkinItemsCore(ctx: Ctx, a: CheckinItemsArgs): Promise<{
     if (unitsFlipped > 0 || strandedParent) {
       // Scope the cascade to the parent assets that actually came back — a
       // partial return with no assetId must not return every parent's accessories.
-      const scopes: Array<string | null> = item.assetId ? [item.assetId] : assetsTouched.length > 0 ? assetsTouched : [null];
+      // A returned custom unit brings back ITS accessory share (scoped by unit), exactly as a
+      // returned serial brings back its own. Plain generic lines (no custom units) stay unscoped.
+      const hasCustom = ((await lineByCuid(ctx, item.lineItemId))?.offInventoryQuantity ?? 0) > 0;
+      const customScopes = hasCustom ? (genericUnitIds ?? []).map(customUnitScope) : [];
+      const scopes: Array<string | null> = item.assetId
+        ? [item.assetId]
+        : assetsTouched.length + customScopes.length > 0 ? [...assetsTouched, ...customScopes] : [null];
       for (const returnedAssetId of scopes) {
         await checkinAccessoryChildren(ctx, {
           organizationId: a.organizationId, projectId: a.projectId, parentLineItemId: item.lineItemId,
@@ -2116,16 +2133,31 @@ function assertConvertibleLine(line: Awaited<ReturnType<typeof lineByCuid>>, org
   if (line.isKitChild || line.kitId || line.isContainerLineItem || line.isCustomItem || line.subHireId != null) {
     throw new ConvexError("Kit members, kits, containers, custom items and sub-hires can't use a custom unit");
   }
+  // A line pinned to a specific asset (line.assetId, no unit rows) is fulfilled by THAT asset.
+  if (line.assetId) throw new ConvexError("This line is for a specific asset — it can't have a custom unit");
+}
+
+const CLOSED_PROJECT_STATUSES = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);
+
+/** Project must be open for work, and the line must be on its LIVE version (a custom
+ *  unit is reality — it moves at make-live — so it can only be created on the live plan). */
+async function assertProjectOpenAndLineLive(ctx: Ctx, organizationId: string, projectId: string, line: { versionId?: string }): Promise<void> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
+  if (!project || project.organizationId !== organizationId) throw new ConvexError("Project not found");
+  if (CLOSED_PROJECT_STATUSES.has(project.status ?? "")) throw new ConvexError(`A ${project.status} project can't change its custom units`);
+  const liveVersionId = await resolveLiveVersionIdForProject(ctx, projectId, organizationId);
+  if (line.versionId && line.versionId !== liveVersionId) throw new ConvexError("Custom units can only be changed on the live version");
 }
 
 const isGenericUnit = (u: { assetId?: string; bulkAssetId?: string }) => !u.assetId && !u.bulkAssetId;
 
 export async function convertUnitToOffInventoryCore(
   ctx: Ctx,
-  a: { organizationId: string; projectId: string; lineItemId: string; prep: boolean; now: number },
+  a: { organizationId: string; projectId: string; lineItemId: string; now: number },
 ): Promise<{ unitId: string; offInventoryQuantity: number }> {
   const line = await lineByCuid(ctx, a.lineItemId);
   assertConvertibleLine(line, a.organizationId, a.projectId);
+  await assertProjectOpenAndLineLive(ctx, a.organizationId, a.projectId, line);
   // `modelId` is asserted above; models are org-scoped so re-check the row's org.
   const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", line.modelId!)).unique();
   if (!model || model.organizationId !== a.organizationId) throw new ConvexError("Model not found in this organization");
@@ -2146,12 +2178,16 @@ export async function convertUnitToOffInventoryCore(
     quantity: 1,
     returnedQuantity: 0,
     status: "CONFIRMED",
-    prepStatus: a.prep ? "PACKED" : "PENDING",
+    // A custom unit has nothing physical to pick, so it is born ready — it is removed
+    // with Convert back / de-prep, never left half-prepped.
+    prepStatus: "PACKED",
     createdAt: a.now,
     updatedAt: a.now,
   });
   const offInventoryQuantity = (line.offInventoryQuantity ?? 0) + 1;
   await ctx.db.patch(line._id, { offInventoryQuantity, updatedAt: a.now });
+  // The custom unit ships with the model's accessories like any other unit.
+  await ensureCustomUnitAccessories(ctx, { organizationId: a.organizationId, lineItemId: a.lineItemId, unitId });
   await syncLineItemRollup(ctx, a.lineItemId);
   return { unitId, offInventoryQuantity };
 }
@@ -2162,6 +2198,7 @@ export async function convertUnitBackToInventoryCore(
 ): Promise<{ offInventoryQuantity: number }> {
   const line = await lineByCuid(ctx, a.lineItemId);
   assertConvertibleLine(line, a.organizationId, a.projectId);
+  await assertProjectOpenAndLineLive(ctx, a.organizationId, a.projectId, line);
   const current = line.offInventoryQuantity ?? 0;
   if (current < 1) throw new ConvexError("No custom unit on this line to convert back");
 
@@ -2172,6 +2209,7 @@ export async function convertUnitBackToInventoryCore(
     .sort((x, y) => y.ordinal - x.ordinal)[0];
   if (!removable) throw new ConvexError("The custom unit is already deployed — return it before converting back");
 
+  await removeCustomUnitAccessories(ctx, { organizationId: a.organizationId, lineItemId: a.lineItemId, unitId: removable.id });
   await ctx.db.delete(removable._id);
   const offInventoryQuantity = current - 1;
   await ctx.db.patch(line._id, { offInventoryQuantity: offInventoryQuantity === 0 ? undefined : offInventoryQuantity, updatedAt: a.now });

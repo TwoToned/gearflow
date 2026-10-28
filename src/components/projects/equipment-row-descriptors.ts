@@ -136,6 +136,9 @@ export function toCustomUnitLine(item: LineItemData): CustomUnitLine {
     subHireId: item.subHireId,
     isContainerLineItem: item.isContainerLineItem,
     isCustomItem: item.isCustomItem,
+    assetId: item.assetId,
+    bulkAssetId: item.bulkAssetId,
+    model: item.model ? { assetType: item.model.assetType } : null,
     offInventoryQuantity: item.offInventoryQuantity,
     units: (item.units ?? []).map((u) => ({
       quantity: u.quantity ?? 1,

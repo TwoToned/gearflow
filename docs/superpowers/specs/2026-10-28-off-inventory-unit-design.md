@@ -84,24 +84,20 @@ Following the existing warehouse pattern: `*Core` functions in
 org checks, audit via `writeActivityLog`, `resolveActor`) and a method on
 `useWarehouseWrites`. No `requireService` mirror (nothing server-side calls it).
 
-- `convertUnitToOffInventoryCore(ctx, { organizationId, projectId, lineItemId, prep, now })`
+- `convertUnitToOffInventoryCore(ctx, { organizationId, projectId, lineItemId, now })` — the unit is born `PACKED` (nothing to pick; a PENDING custom unit can't be placed by the warehouse stage logic). The wrapper's `startPrep` only controls the `PREP_STARTED` status auto-advance. Added by the branch review: also rejects a line pinned to a specific asset, a closed project (COMPLETED/INVOICED/CANCELLED) and a non-live version.
   - Preconditions: line in org+project; `type EQUIPMENT`; has `modelId`; not
     kit child / accessory child / container / sale / sub-hire / cancelled; the
     model is serialised (the line is not bulk-backed); a free slot exists:
     `quantity − offInventoryQuantity − (units with an asset/bulk) ≥ 1`.
   - Effects: `offInventoryQuantity += 1`; insert one generic unit (qty 1,
-    `status CONFIRMED`, `prepStatus` `PACKED` when `prep`, else `PENDING`);
-    `syncLineItemRollup`. Returns `{ unitId, offInventoryQuantity }`.
+    `status CONFIRMED`, `prepStatus PACKED`); `syncLineItemRollup`. Returns `{ unitId, offInventoryQuantity }`.
 - `convertUnitBackToInventoryCore(ctx, { organizationId, projectId, lineItemId, now })`
   — removes the highest-ordinal generic unit that is not `CHECKED_OUT` /
   `RETURNED`, decrements the counter, re-syncs the rollup. Rejects when
   `offInventoryQuantity` is 0 or every generic unit is already out. Non-blocking:
   if stock is short the overbook badge simply returns.
-- `prepUnit`'s generic branch first flips existing not-packed generic units to
-  `PACKED` (so a planning-time conversion is prepped by one tick) before
-  inserting new ones.
-- `lineItemWrites.patchNative`: a quantity patch below `offInventoryQuantity`
-  throws `ConvexError`.
+- De-prep (`deprepItemInner`) decrements the counter with a deleted generic unit; `copyPlanGraph` does not clone the counter and make-live re-derives it with the carried units (`carryRealityByLineage`).
+- `lineItemWrites.patchNative`: edits that would desync the counter throw `ConvexError` (model/type change, clearing the model, pinning an asset, quantity below custom + serial units).
 - Wrappers `warehouseWrites.convertUnitToOffInventory` /
   `convertUnitBackToInventory` get `agentOps` entries (`danger: "medium"`);
   regenerate `pnpm run api:registry && pnpm run api:docs && pnpm run api:mcp`.
@@ -124,8 +120,7 @@ org checks, audit via `writeActivityLog`, `resolveActor`) and a method on
 
 ## Equipment tab
 
-The line's kebab menu gets "Convert 1 to custom item" (`prep: false`; the unit
-is created `PENDING` and the warehouse ticks it) and "Convert 1 back to
+The line's kebab menu gets "Convert 1 to custom item" (`startPrep: false`) and "Convert 1 back to
 inventory". The line shows `N custom` beside the tag. Overbook badge reflects
 the new demand.
 

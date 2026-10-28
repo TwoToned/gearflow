@@ -10,7 +10,6 @@ import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { convertUnitToOffInventoryCore, convertUnitBackToInventoryCore, checkoutItemsCore, checkinItemsCore } from "./warehouseOps";
-import { prepUnit } from "./lib/fulfillment";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -68,10 +67,10 @@ async function units(t: T) {
 }
 
 describe("convertUnitToOffInventoryCore", () => {
-  test("prep:true bumps the counter and adds one PACKED generic unit", async () => {
+  test("bumps the counter and adds one PACKED generic unit", async () => {
     const t = makeT();
     await seed(t, {}, { assignedAssets: 2 });
-    const res = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
+    const res = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
     expect(res.offInventoryQuantity).toBe(1);
     const l = await line(t);
     expect(l?.offInventoryQuantity).toBe(1);
@@ -83,27 +82,18 @@ describe("convertUnitToOffInventoryCore", () => {
     expect(l?.packedQuantity).toBe(3);
   });
 
-  test("prep:false creates the generic unit PENDING", async () => {
-    const t = makeT();
-    await seed(t);
-    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: false }));
-    const us = await units(t);
-    expect(us).toHaveLength(1);
-    expect(us[0].prepStatus).toBe("PENDING");
-  });
-
   test("rejects when there is no free slot", async () => {
     const t = makeT();
     await seed(t, { quantity: 2 }, { assignedAssets: 2 });
-    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }))).rejects.toThrow(/free/i);
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).rejects.toThrow(/free/i);
   });
 
   test("a second conversion on the same line takes the next slot, a fourth is refused", async () => {
     const t = makeT();
     await seed(t);
-    for (let i = 0; i < 3; i++) await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
+    for (let i = 0; i < 3; i++) await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
     expect((await line(t))?.offInventoryQuantity).toBe(3);
-    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }))).rejects.toThrow(/free/i);
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).rejects.toThrow(/free/i);
   });
 
   test.each([
@@ -118,23 +108,23 @@ describe("convertUnitToOffInventoryCore", () => {
   ])("rejects %s", async (_n, over) => {
     const t = makeT();
     await seed(t, over as LineOver);
-    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }))).rejects.toThrow();
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).rejects.toThrow();
   });
 
   test("rejects a bulk-backed model line", async () => {
     const t = makeT();
     await seed(t, {}, { modelType: "BULK" });
-    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }))).rejects.toThrow(/serialised|bulk/i);
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).rejects.toThrow(/serialised|bulk/i);
   });
 
   test("rejects a line from another org or project (IDOR)", async () => {
     const t = makeT();
     await seed(t);
     await expect(
-      t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, organizationId: OTHER_ORG, prep: true })),
+      t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, organizationId: OTHER_ORG })),
     ).rejects.toThrow();
     await expect(
-      t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, projectId: "P_other", prep: true })),
+      t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, projectId: "P_other" })),
     ).rejects.toThrow();
   });
 });
@@ -143,7 +133,7 @@ describe("convertUnitBackToInventoryCore", () => {
   test("removes the custom unit and decrements the counter", async () => {
     const t = makeT();
     await seed(t, {}, { assignedAssets: 2 });
-    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
+    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
     const res = await t.run((ctx) => convertUnitBackToInventoryCore(ctx, { organizationId: ORG, projectId: "P1", lineItemId: "L1", now: NOW }));
     expect(res.offInventoryQuantity).toBe(0);
     expect((await line(t))?.offInventoryQuantity ?? 0).toBe(0);
@@ -162,7 +152,7 @@ describe("convertUnitBackToInventoryCore", () => {
   test("rejects when the custom unit is already deployed", async () => {
     const t = makeT();
     await seed(t);
-    const { unitId } = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
+    const { unitId } = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
     await t.run(async (ctx) => {
       const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).unique();
       await ctx.db.patch(u!._id, { status: "CHECKED_OUT" });
@@ -171,18 +161,6 @@ describe("convertUnitBackToInventoryCore", () => {
       t.run((ctx) => convertUnitBackToInventoryCore(ctx, { organizationId: ORG, projectId: "P1", lineItemId: "L1", now: NOW })),
     ).rejects.toThrow(/deployed|out/i);
     expect((await line(t))?.offInventoryQuantity).toBe(1);
-  });
-});
-
-describe("prepUnit on a PENDING custom unit", () => {
-  test("flips it to PACKED without creating another unit", async () => {
-    const t = makeT();
-    await seed(t, {}, { assignedAssets: 2 });
-    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: false }));
-    await t.run((ctx) => prepUnit(ctx, { organizationId: ORG, lineItemId: "L1" }));
-    const generic = (await units(t)).filter((u) => !u.assetId);
-    expect(generic).toHaveLength(1);
-    expect(generic[0].prepStatus).toBe("PACKED");
   });
 });
 
@@ -200,8 +178,8 @@ describe("the counter is server-owned", () => {
   test("patchNative refuses a quantity below the off-inventory count", async () => {
     const t = makeT();
     await seed(t, {}, { assignedAssets: 1 });
-    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
-    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
+    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
+    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
     await expect(
       t.withIdentity(asUser).mutation(api.lineItemWrites.patchNative, {
         id: "L1", orgId: ORG, set: { quantity: 1 }, clear: [], entityName: "Line item",
@@ -217,7 +195,7 @@ describe("warehouseWrites wrappers", () => {
   test("convert writes the unit, an audit row, and moves the job to PREPPING when prepping", async () => {
     const t = makeT();
     await seed(t, {}, { assignedAssets: 2 });
-    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, prep: true });
+    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, startPrep: true });
     expect((await line(t))?.offInventoryQuantity).toBe(1);
     const logs = await t.run((ctx) => ctx.db.query("activityLogs").collect());
     expect(logs.find((l) => l.id === "audit1")).toMatchObject({ organizationId: ORG, projectId: "P1", userId: USER });
@@ -225,10 +203,21 @@ describe("warehouseWrites wrappers", () => {
     expect(project?.status).toBe("PREPPING");
   });
 
+  test("a planning-time conversion (startPrep:false) is prepped but does not move the job to PREPPING", async () => {
+    const t = makeT();
+    await seed(t, {}, { assignedAssets: 2 });
+    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, startPrep: false });
+    const generic = (await units(t)).filter((u) => !u.assetId);
+    expect(generic).toHaveLength(1);
+    expect(generic[0].prepStatus).toBe("PACKED");
+    const project = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "P1")).unique());
+    expect(project?.status).toBe("CONFIRMED");
+  });
+
   test("convert back through the wrapper restores the counter", async () => {
     const t = makeT();
     await seed(t);
-    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, prep: false });
+    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, startPrep: false });
     await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitBackToInventory, {
       orgId: ORG, projectId: "P1", lineItemId: "L1", auditId: "audit2", now: NOW, actor: ACTOR,
     });
@@ -243,7 +232,7 @@ describe("warehouseWrites wrappers", () => {
       await ctx.db.patch(m!._id, { role: "viewer" });
     });
     await expect(
-      t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, prep: true }),
+      t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, startPrep: true }),
     ).rejects.toThrow();
   });
 
@@ -253,7 +242,7 @@ describe("warehouseWrites wrappers", () => {
     await t.run((ctx) => ctx.db.insert("members", { id: "m2", organizationId: OTHER_ORG, userId: "user_2", role: "owner" }));
     await expect(
       t.withIdentity({ subject: "user_2", orgId: OTHER_ORG }).mutation(api.warehouseWrites.convertUnitToOffInventory, {
-        ...args, orgId: OTHER_ORG, prep: true,
+        ...args, orgId: OTHER_ORG, startPrep: true,
       }),
     ).rejects.toThrow();
     expect((await line(t))?.offInventoryQuantity).toBeUndefined();
@@ -264,7 +253,7 @@ describe("custom unit through deploy and return (existing generic-unit flow)", (
   test("deploying the whole line deploys the custom unit too, and a whole-line return brings it back", async () => {
     const t = makeT();
     await seed(t, {}, { assignedAssets: 2 });
-    const { unitId } = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: true }));
+    const { unitId } = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
     const common = { organizationId: ORG, projectId: "P1", userId: USER, now: NOW };
 
     await t.run((ctx) => checkoutItemsCore(ctx, { ...common, items: [{ lineItemId: "L1" }], includeAccessories: false }));
@@ -283,14 +272,101 @@ describe("custom unit through deploy and return (existing generic-unit flow)", (
       t.run((ctx) => convertUnitBackToInventoryCore(ctx, { organizationId: ORG, projectId: "P1", lineItemId: "L1", now: NOW })),
     ).rejects.toThrow(/deployed|return/i);
   });
+});
 
-  test("an UNPREPPED custom unit is not deployed by a whole-line deploy", async () => {
+// ─── Review findings (whole-branch review, 2026-10-28) ────────────────────────
+
+const SERVICE = { subject: "gearflow-service", svc: true };
+
+describe("de-prep keeps the counter in step with the unit rows (review #1)", () => {
+  test("removing the custom unit from prep returns it to inventory (counter decremented)", async () => {
     const t = makeT();
     await seed(t, {}, { assignedAssets: 2 });
-    const { unitId } = await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base, prep: false }));
-    await t.run((ctx) => checkoutItemsCore(ctx, { organizationId: ORG, projectId: "P1", userId: USER, now: NOW, items: [{ lineItemId: "L1" }], includeAccessories: false }));
-    const us = await units(t);
-    expect(us.find((u) => u.id === unitId)?.status).toBe("CONFIRMED");
-    expect(us.filter((u) => u.assetId).every((u) => u.status === "CHECKED_OUT")).toBe(true);
+    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base })); // custom unit is the NEWEST unit
+    await t.withIdentity(SERVICE).mutation(api.checkRecordOps.deprepItem, { organizationId: ORG, projectId: "P1", lineItemId: "L1", quantity: 1, now: NOW });
+    expect((await units(t)).filter((u) => !u.assetId)).toHaveLength(0);
+    expect((await line(t))?.offInventoryQuantity ?? 0).toBe(0);
+    // ...so the slot is a plain free slot again and can be re-converted.
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).resolves.toMatchObject({ offInventoryQuantity: 1 });
+  });
+
+  test("a fully custom line de-prepped one at a time loses one custom unit each time", async () => {
+    const t = makeT();
+    await seed(t);
+    for (let i = 0; i < 3; i++) await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
+    await t.withIdentity(SERVICE).mutation(api.checkRecordOps.deprepItem, { organizationId: ORG, projectId: "P1", lineItemId: "L1", quantity: 2, now: NOW });
+    expect((await units(t)).filter((u) => !u.assetId)).toHaveLength(1);
+    expect((await line(t))?.offInventoryQuantity).toBe(1);
+  });
+
+  test("de-prepping serials leaves the custom unit and counter alone", async () => {
+    const t = makeT();
+    await seed(t, {}, { assignedAssets: 2 });
+    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
+    // Only the 2 serial units + 1 custom exist; ask to remove 1: LIFO removes the custom unit (newest),
+    // never a serial while a custom one is newer — the counter must follow whichever went.
+    await t.withIdentity(SERVICE).mutation(api.checkRecordOps.deprepItem, { organizationId: ORG, projectId: "P1", lineItemId: "L1", quantity: 1, now: NOW });
+    const l = await line(t);
+    const generic = (await units(t)).filter((u) => !u.assetId).length;
+    expect(l?.offInventoryQuantity ?? 0).toBe(generic);
+  });
+});
+
+describe("convert preconditions added by review (#4, #9)", () => {
+  test("a line pinned to a specific asset (line.assetId) is not convertible", async () => {
+    const t = makeT();
+    await seed(t, { quantity: 1, assetId: "A0" });
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).rejects.toThrow(/specific|asset/i);
+  });
+
+  test.each(["COMPLETED", "INVOICED", "CANCELLED"])("a %s project is not convertible", async (status) => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "P1")).unique();
+      await ctx.db.patch(p!._id, { status: status as never });
+    });
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).rejects.toThrow(/project|status/i);
+  });
+
+  test("a line on a non-live version is not convertible", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: "v-P1-b", organizationId: ORG, projectId: "P1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      const l = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "L1")).unique();
+      await ctx.db.patch(l!._id, { versionId: "v-P1-b" });
+    });
+    await expect(t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }))).rejects.toThrow(/live|version/i);
+  });
+});
+
+describe("patchNative keeps custom units coherent (review #6, #7)", () => {
+  const patch = (t: T, set: Record<string, unknown>, clear: string[] = [], auditId = "audit-p") =>
+    t.withIdentity(asUser).mutation(api.lineItemWrites.patchNative, {
+      id: "L1", orgId: ORG, set, clear, entityName: "Line item", allowOverbook: true, actor: ACTOR, auditId, now: NOW,
+    });
+
+  test("lowering quantity below custom + serial units is refused, not silently dropping a serial", async () => {
+    const t = makeT();
+    await seed(t, {}, { assignedAssets: 2 });
+    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base })); // 2 serials + 1 custom of 3
+    await expect(patch(t, { quantity: 2 })).rejects.toThrow(/custom|assigned|remove/i);
+    await patch(t, { quantity: 3, notes: "ok" }); // unchanged quantity is fine
+  });
+
+  test.each([
+    ["model", { modelId: "mdl2" }, [] as string[]],
+    ["clearing the model", {}, ["modelId"]],
+    ["pinning an asset", { assetId: "A0" }, []],
+    ["type", { type: "SALE" }, []],
+  ])("changing the %s of a line with custom units is refused", async (_n, set, clear) => {
+    const t = makeT();
+    await seed(t, {}, { assignedAssets: 1 });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "mdl2", organizationId: ORG, name: "4099e", assetType: "SERIALIZED" });
+    });
+    await t.run((ctx) => convertUnitToOffInventoryCore(ctx, { ...base }));
+    await expect(patch(t, set, clear)).rejects.toThrow(/custom|convert/i);
   });
 });

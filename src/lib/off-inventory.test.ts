@@ -13,6 +13,7 @@ const line = (over: Partial<CustomUnitLine> = {}): CustomUnitLine => ({
   isContainerLineItem: false,
   isCustomItem: false,
   bulkAssetId: null,
+  assetId: null,
   model: { assetType: "SERIALIZED" },
   units: [],
   offInventoryQuantity: 0,
@@ -59,6 +60,7 @@ describe("canConvertToCustomUnit", () => {
     ["no model", { modelId: null }],
     ["bulk model", { model: { assetType: "BULK" } }],
     ["bulk-backed", { bulkAssetId: "B1" }],
+    ["pinned to a specific asset", { assetId: "A1" }],
   ])("is not offered on a %s line", (_n, o) => {
     expect(canConvertToCustomUnit(line(o as Partial<CustomUnitLine>), over)).toBe(false);
   });

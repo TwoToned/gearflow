@@ -882,8 +882,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     [projectId, warehouseWrites],
   );
 
-  // "Convert to custom item" (FEATUREDOCS/12): planning-time conversion — the new
-  // custom unit is created PENDING (prep:false); the warehouse ticks it prepped.
+  // "Convert to custom item" (FEATUREDOCS/12): planning-time conversion. The custom unit is
+  // born prepped (nothing to pick); startPrep:false so planning never moves the job to PREPPING.
   const [customUnitPendingLineIds, setCustomUnitPendingLineIds] = useState<ReadonlySet<string>>(new Set());
   const runCustomUnitWrite = useCallback(
     (lineItemId: string, write: () => Promise<unknown>, success: string, failure: string) => {

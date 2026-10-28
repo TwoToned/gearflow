@@ -181,6 +181,85 @@ export async function ensureAccessoryUnit(
   return { id, created: true };
 }
 
+/**
+ * Off-inventory ("custom") units and the model's accessories (FEATUREDOCS/12 + /48).
+ *
+ * A custom unit has no asset, so it can't own a permanent (serialised) accessory — but it
+ * still ships with the MODEL's accessories (modelBulkAccessories), exactly like the serials
+ * beside it. Its share lives on the same accessory child lines as per-parent-unit rows, keyed
+ * by a synthetic scope in `parentUnitAssetId` (`custom:<unitId>`) where a serial would use
+ * its asset id — so every existing scoped cascade (deploy, return, de-prep) handles it by
+ * passing that scope instead of an asset id.
+ */
+export const customUnitScope = (unitId: string): string => `custom:${unitId}`;
+
+/** Per-parent bulk accessories a custom unit of `line` ships with: the model's DEFAULTs
+ *  minus the line's `plan.excluded`, plus OPTIONALs the line opted into. */
+export async function customUnitAccessoryShare(
+  ctx: Ctx,
+  line: { modelId?: string | null; accessoryPlan?: unknown },
+): Promise<Array<{ bulkAssetId: string; perParent: number }>> {
+  if (!line.modelId) return [];
+  const plan = (line.accessoryPlan as AccessoryPlan | undefined) ?? null;
+  const excluded = new Set(plan?.excluded ?? []);
+  const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
+  return (await modelBulkAccessoriesOf(ctx, line.modelId))
+    .filter((b) => ((b.inclusion ?? "DEFAULT") === "DEFAULT" ? !excluded.has(b.bulkAssetId) : added.has(b.bulkAssetId)))
+    .map((b) => ({ bulkAssetId: b.bulkAssetId, perParent: added.get(b.bulkAssetId)?.quantityPerParent ?? b.quantity }));
+}
+
+/** Give a custom unit its accessories: one packed per-parent row on each existing bulk
+ *  accessory child line the model ships (a custom unit is born prepped, so its share is too). */
+export async function ensureCustomUnitAccessories(
+  ctx: Ctx,
+  args: { organizationId: string; lineItemId: string; unitId: string },
+): Promise<void> {
+  const line = await lineDocByCuid(ctx, args.lineItemId);
+  if (!line) return;
+  const share = new Map((await customUnitAccessoryShare(ctx, line)).map((b) => [b.bulkAssetId, b.perParent]));
+  if (share.size === 0) return;
+  const now = Date.now();
+  for (const child of await accessoryChildrenOf(ctx, args.organizationId, args.lineItemId)) {
+    const perParent = child.bulkAssetId ? share.get(child.bulkAssetId) : undefined;
+    if (!child.bulkAssetId || perParent == null || child.status === "CANCELLED") continue;
+    const { id } = await ensureAccessoryUnit(ctx, {
+      organizationId: args.organizationId, lineItemId: child.id, parentUnitAssetId: customUnitScope(args.unitId),
+      bulkAssetId: child.bulkAssetId, quantity: perParent,
+    });
+    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
+      await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
+    }
+    // Serial prep sizes the accessory line to the parents prepped SO FAR, so it can sit below
+    // the custom unit's share — never leave rows that outnumber the line's own quantity.
+    const rowTotal = (await lineUnits(ctx, child.id)).filter((x) => x.status !== "CANCELLED").reduce((n, x) => n + (x.quantity ?? 0), 0);
+    if (rowTotal > (child.quantity ?? 0)) {
+      await ctx.db.patch(child._id, {
+        quantity: rowTotal,
+        ...(child.description ? { description: child.description.replace(/^\d+x /, `${rowTotal}x `) } : {}),
+        updatedAt: now,
+      });
+    }
+    await syncLineItemRollup(ctx, child.id);
+  }
+}
+
+/** Take a custom unit's accessories back off the accessory lines (convert back / de-prep).
+ *  Deployed or returned rows are history and stay. */
+export async function removeCustomUnitAccessories(
+  ctx: Ctx,
+  args: { organizationId: string; lineItemId: string; unitId: string },
+): Promise<void> {
+  const scope = customUnitScope(args.unitId);
+  for (const child of await accessoryChildrenOf(ctx, args.organizationId, args.lineItemId)) {
+    const mine = (await lineUnits(ctx, child.id)).filter(
+      (u) => u.parentUnitAssetId === scope && u.status !== "CHECKED_OUT" && u.status !== "RETURNED",
+    );
+    for (const u of mine) await ctx.db.delete(u._id);
+    if (mine.length > 0) await syncLineItemRollup(ctx, child.id);
+  }
+}
+
 /** Return condition → canonical asset status on checkin. */
 export function assetStatusFromReturnCondition(
   cond: "GOOD" | "DAMAGED" | "MISSING",
@@ -231,7 +310,7 @@ export async function returnLineUnits(
     userId: string;
     defaultLocationId: string | null;
   },
-): Promise<{ unitsFlipped: number; assetsTouched: string[] }> {
+): Promise<{ unitsFlipped: number; assetsTouched: string[]; genericUnitIds?: string[] }> {
   const assetStatus = assetStatusFromReturnCondition(args.returnCondition);
   const now = Date.now();
   const lineItem = await lineDocByCuid(ctx, args.lineItemId);
@@ -341,7 +420,9 @@ export async function returnLineUnits(
       ? outUnits.slice(0, Math.max(0, Math.min(args.quantity, outUnits.length)))
       : outUnits;
   const assetsTouched: string[] = [];
+  const genericUnitIds: string[] = [];
   for (const u of unitsToFlip) {
+    if (!u.assetId && !u.bulkAssetId) genericUnitIds.push(u.id);
     await ctx.db.patch(u._id, {
       status: "RETURNED",
       returnedAt: now,
@@ -356,7 +437,7 @@ export async function returnLineUnits(
       assetsTouched.push(u.assetId);
     }
   }
-  return { unitsFlipped: unitsToFlip.length, assetsTouched };
+  return { unitsFlipped: unitsToFlip.length, assetsTouched, genericUnitIds };
 }
 
 /** Return a parent line's accessory children alongside the parent (scoped by parent unit). */
@@ -625,6 +706,15 @@ export async function expandAccessoriesForAsset(
   const bulkDemand = new Map<string, number>();
   for (const p of profiles.values()) {
     for (const b of p.bulks) bulkDemand.set(b.bulkAssetId, (bulkDemand.get(b.bulkAssetId) ?? 0) + b.quantity);
+  }
+  // Custom (off-inventory) units have no asset, so the sum above can't see them — but they
+  // ship with the model's accessories too. Leaving them out would shrink the accessory line
+  // (and silently drop their share) every time a serial is prepped.
+  const customUnits = line.offInventoryQuantity ?? 0;
+  if (customUnits > 0) {
+    for (const b of await customUnitAccessoryShare(ctx, line)) {
+      bulkDemand.set(b.bulkAssetId, (bulkDemand.get(b.bulkAssetId) ?? 0) + b.perParent * customUnits);
+    }
   }
 
   const existingByAsset = new Map(existing.filter((e) => e.assetId).map((e) => [e.assetId as string, e.id]));
@@ -1161,23 +1251,7 @@ export async function prepUnit(
     }
   } else {
     const line = await lineDocByCuid(ctx, args.lineItemId);
-    // Off-inventory units converted at planning time sit as PENDING generic
-    // units — one tick preps them (flip first, so no duplicate unit is created).
-    let flipped = 0;
     if (line) {
-      const pending = (await lineUnits(ctx, args.lineItemId))
-        .filter((un) => !un.assetId && !un.bulkAssetId && un.prepStatus !== "PACKED" && un.status !== "CHECKED_OUT" && un.status !== "RETURNED" && un.status !== "CANCELLED")
-        .sort((x, y) => x.ordinal - y.ordinal)
-        .slice(0, Math.max(1, args.quantity ?? 1));
-      for (const un of pending) {
-        await ctx.db.patch(un._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
-      }
-      flipped = pending.length;
-    }
-    const stillToPrep = Math.max(1, args.quantity ?? 1) - flipped;
-    if (line && flipped > 0 && stillToPrep <= 0) {
-      // Fully served by flipping existing custom units.
-    } else if (line) {
       const ordered = line.quantity ?? 0;
       if (ordered > 1) {
         // Untagged multi-quantity line (no serialised asset, no bulk asset).
@@ -1187,7 +1261,7 @@ export async function prepUnit(
         const existing = await lineUnits(ctx, args.lineItemId);
         const assigned = existing.reduce((n, u) => n + (u.quantity ?? 0), 0);
         const room = Math.max(0, ordered - assigned);
-        const toCreate = Math.min(Math.max(1, flipped > 0 ? stillToPrep : (args.quantity ?? 1)), room);
+        const toCreate = Math.min(Math.max(1, args.quantity ?? 1), room);
         let ordinal = nextOrdinal(existing);
         const resolved = await resolveContainerForWrite(ctx, args, true);
         for (let i = 0; i < toCreate; i++) {

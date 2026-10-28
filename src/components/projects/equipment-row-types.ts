@@ -17,6 +17,7 @@ export interface LineItemData {
    *  object (MappedLineItem carries both; equipment-tab-reconstruct's attach
    *  helpers spread the full row), just not previously declared here. */
   assetId?: string | null;
+  bulkAssetId?: string | null;
   checkedOutQuantity?: number;
   description: string | null;
   quantity: number;
@@ -98,7 +99,7 @@ export interface LineItemData {
   status?: string;
   prepStatus?: string | null;
   supplier?: { name: string } | null;
-  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
+  model?: { name: string; assetType?: string | null; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
   /** Post-cutover per-unit assignments. Source of truth for which
    *  physical assets a multi-quantity line is using. `status` /

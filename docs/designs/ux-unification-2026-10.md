@@ -817,8 +817,16 @@ field, and adds the obvious missing moves.
 > and the drag hint stay desktop-only. The page menu gains `Job overview ↗`,
 > `Equipment tab ↗`, `Select lines…` and `Only what needs me`, and closes on
 > tap. The active stage centres itself in the strip; row ⋯ is always visible
-> at 40 px; rows are 64 px with 44 px Prep / Pack / Deploy buttons; the scan
-> input is 16 px; the footer scrolls with the list.
+> at 40 px; rows are 64 px; the scan input is 16 px; the footer scrolls with
+> the list.
+>
+> **No per-row Prep / Pack / Deploy button on the phone** (2026-10-28). It
+> duplicated the scan flow and the row's ⋯, and acted on one line only. Every
+> phone row carries a checkbox instead; the sticky bar is the one action for
+> the current stage and reflects the ticks (`Prep ▾` → `Prep 2 + accessories`
+> → `Pack 2 accessories`; `Deploy all · 18` → `Deploy 1`), with `tick lines,
+> or scan` under it when nothing is ticked. Scanning remains the primary way
+> to prep a single unit.
 
 ### 9.1 The floor (`/warehouse`)
 A board, not a hub: title, the `ScanDock` with scope (This job · Any job), a

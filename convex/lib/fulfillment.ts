@@ -619,22 +619,43 @@ export async function resolveCustomAccessories(
 ): Promise<WantedCustom> {
   const wanted: WantedCustom = new Map();
   const parentQty = Math.max(line.quantity, 1);
-  const excluded = new Set(plan?.excluded ?? []);
-  const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
   const put = (key: string, name: string, perParent: number, inclusion: "DEFAULT" | "OPTIONAL") =>
     wanted.set(key, { name, perParent, quantity: perParent * parentQty, inclusion });
-  if (line.modelId) {
-    for (const r of await modelCustomAccessoriesOf(ctx, line.organizationId, line.modelId)) {
-      const key = modelCustomAccessoryKey(r.id);
-      const inclusion = r.inclusion ?? "DEFAULT";
-      const on = inclusion === "DEFAULT"
-        ? !excluded.has(key)
-        : added.has(key) || (!!presentKeys?.has(key) && !excluded.has(key));
-      if (on) put(key, r.name, added.get(key)?.quantityPerParent ?? r.quantity, inclusion);
-    }
-  }
+  if (line.modelId) await putModelCustomAccessories(ctx, line.organizationId, line.modelId, plan, presentKeys, put);
   for (const c of plan?.custom ?? []) put(c.key, c.name, c.quantityPerParent, "DEFAULT");
   return wanted;
+}
+
+/** The model-level free-text rows a line carries: DEFAULT minus `plan.excluded`,
+ *  OPTIONAL when in `plan.added` or already on the line (unless excluded). */
+async function putModelCustomAccessories(
+  ctx: Ctx,
+  organizationId: string,
+  modelId: string,
+  plan: AccessoryPlan | null | undefined,
+  presentKeys: ReadonlySet<string> | undefined,
+  put: (key: string, name: string, perParent: number, inclusion: "DEFAULT" | "OPTIONAL") => unknown,
+): Promise<void> {
+  const excluded = new Set(plan?.excluded ?? []);
+  const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
+  for (const r of await modelCustomAccessoriesOf(ctx, organizationId, modelId)) {
+    const key = modelCustomAccessoryKey(r.id);
+    const inclusion = r.inclusion ?? "DEFAULT";
+    if (!isCustomAccessoryOn(inclusion, key, excluded, added, presentKeys)) continue;
+    put(key, r.name, added.get(key)?.quantityPerParent ?? r.quantity, inclusion);
+  }
+}
+
+/** DEFAULT rows are on unless excluded; OPTIONAL rows only when opted in (plan.added, or already on the line and not excluded). */
+function isCustomAccessoryOn(
+  inclusion: "DEFAULT" | "OPTIONAL",
+  key: string,
+  excluded: ReadonlySet<string>,
+  added: ReadonlyMap<string, unknown>,
+  presentKeys: ReadonlySet<string> | undefined,
+): boolean {
+  if (inclusion === "DEFAULT") return !excluded.has(key);
+  return added.has(key) || (!!presentKeys?.has(key) && !excluded.has(key));
 }
 
 /** The line item's catalog model — its own, else its asset's. */

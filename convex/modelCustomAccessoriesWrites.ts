@@ -23,6 +23,11 @@ function assertFields(f: { name?: string; quantity?: number; notes?: string }): 
   assertStrLen(f.notes, "notes", { max: 500 });
 }
 
+/** Only-defined-fields patch set for updateNative (keeps the handler under the complexity ratchet, R-3.6). */
+function accessoryUpdateSet(f: { name?: string; quantity?: number; inclusion?: "DEFAULT" | "OPTIONAL"; notes?: string }) {
+  return Object.fromEntries(Object.entries(f).filter(([, val]) => val !== undefined));
+}
+
 export const addNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
@@ -98,12 +103,7 @@ export const updateNative = mutation({
     if (!acc || acc.organizationId !== orgId || acc.modelId !== modelId) {
       throw new ConvexError("That custom accessory is not on this model.");
     }
-    await ctx.db.patch(acc._id, {
-      ...(trimmed !== undefined ? { name: trimmed } : {}),
-      ...(quantity !== undefined ? { quantity } : {}),
-      ...(inclusion !== undefined ? { inclusion } : {}),
-      ...(notes !== undefined ? { notes } : {}),
-    });
+    await ctx.db.patch(acc._id, accessoryUpdateSet({ name: trimmed, quantity, inclusion, notes }));
 
     const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
     await writeActivityLog(ctx, {

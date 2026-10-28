@@ -216,7 +216,10 @@ const eslintConfig = [
     // also exports JSX primitives (Document/Page/View/Text/…) every component tree under
     // src/lib/react-pdf/ needs directly — only the byte-producing exports are restricted
     // (see the `paths` entry below), and the whole vendor/library directory is exempted
-    // the same way pdf-render.ts is exempted from the pdfme restriction.
+    // the same way pdf-render.ts is exempted from the pdfme restriction;
+    // `next/font/google` → nowhere: it downloads the font at BUILD time, so a runner
+    // network blip fails `next build` (CI E2E, Docker image). Faces live in
+    // src/app/fonts.ts via `next/font/local` (see src/fonts/README.md).
     files: ["src/**/*.{ts,tsx}", "convex/**/*.ts"],
     ignores: [
       "src/lib/maps-sdk.ts",
@@ -249,6 +252,11 @@ const eslintConfig = [
             {
               name: "posthog-node",
               message: "Use the server adapter (src/lib/posthog-server.ts) (R-8.10.1).",
+            },
+            {
+              name: "next/font/google",
+              message:
+                "Fonts are self-hosted so `next build` never fetches fonts.googleapis.com: add faces to src/app/fonts.ts (next/font/local) — see src/fonts/README.md.",
             },
             {
               name: "@pdfme/generator",

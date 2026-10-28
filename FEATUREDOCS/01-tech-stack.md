@@ -42,5 +42,6 @@ PASSKEY_RP_ID             # WebAuthn relying party ID (e.g. localhost, rvlt.app)
 - `convex/schema.ts` — Domain database schema (100+ tables) — the primary schema
 - `prisma/schema.prisma` — Better Auth + activity-log schema only (16 models)
 - `public/manifest.json` — PWA manifest (standalone, icons, theme)
-- `src/app/layout.tsx` — Root layout with viewport config, fonts, providers
+- `src/app/layout.tsx` — Root layout with viewport config, providers (imports `./fonts` for its side effect)
+- `src/app/fonts.ts` — The five brand font families, self-hosted via `next/font/local` (no build-time Google Fonts fetch); woff2 files + licences in `src/fonts/` (see its README)
 - `src/app/globals.css` — Tailwind imports, oklch theme variables, iOS PWA fixes

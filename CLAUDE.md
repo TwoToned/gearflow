@@ -792,6 +792,21 @@ default, or the scanner silently stops decoding on warehouse wifi.
 the way the pump does, decode it back. The absence of exactly that test is how
 "it doesn't work on iOS" shipped.
 
+### Fonts are SELF-HOSTED — never `next/font/google`
+The five brand families load through `next/font/local` from `src/fonts/*.woff2`,
+declared in `src/app/fonts.ts` (provenance + OFL licences: `src/fonts/README.md`).
+`next/font/google` downloads the font at **build** time, so a runner network blip
+failed `next build` (the E2E jobs, #1358) and would fail the Docker image build the
+same way; importing it is now a `no-restricted-imports` lint error. Two things in
+`fonts.ts` look tidy-able and aren't: **one `localFont` call per subset file**
+(`declarations` apply to every `src` entry, so a per-file `unicode-range` needs its
+own call — that range split is what keeps Cyrillic/Vietnamese/Latin-Extended glyphs
+lazy), and **every value a literal** (the font transform evaluates arguments
+statically; a hoisted `const` is silently dropped). `globals.css` consumes the
+families by literal name (`--font-sans: "Hanken Grotesk"`), so the `@font-face`
+`font-family` must stay the real name. Verify a font change with network blocked:
+`HTTPS_PROXY=http://127.0.0.1:1 pnpm build`.
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

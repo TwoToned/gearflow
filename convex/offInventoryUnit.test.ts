@@ -208,3 +208,52 @@ describe("the counter is server-owned", () => {
     ).rejects.toThrow(/convert/i);
   });
 });
+
+describe("warehouseWrites wrappers", () => {
+  const args = { orgId: ORG, projectId: "P1", lineItemId: "L1", auditId: "audit1", now: NOW, actor: ACTOR };
+
+  test("convert writes the unit, an audit row, and moves the job to PREPPING when prepping", async () => {
+    const t = makeT();
+    await seed(t, {}, { assignedAssets: 2 });
+    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, prep: true });
+    expect((await line(t))?.offInventoryQuantity).toBe(1);
+    const logs = await t.run((ctx) => ctx.db.query("activityLogs").collect());
+    expect(logs.find((l) => l.id === "audit1")).toMatchObject({ organizationId: ORG, projectId: "P1", userId: USER });
+    const project = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "P1")).unique());
+    expect(project?.status).toBe("PREPPING");
+  });
+
+  test("convert back through the wrapper restores the counter", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, prep: false });
+    await t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitBackToInventory, {
+      orgId: ORG, projectId: "P1", lineItemId: "L1", auditId: "audit2", now: NOW, actor: ACTOR,
+    });
+    expect((await line(t))?.offInventoryQuantity ?? 0).toBe(0);
+  });
+
+  test("a viewer (no warehouse:check_out) is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").first();
+      await ctx.db.patch(m!._id, { role: "viewer" });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.warehouseWrites.convertUnitToOffInventory, { ...args, prep: true }),
+    ).rejects.toThrow();
+  });
+
+  test("a caller in another org cannot convert this org's line", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run((ctx) => ctx.db.insert("members", { id: "m2", organizationId: OTHER_ORG, userId: "user_2", role: "owner" }));
+    await expect(
+      t.withIdentity({ subject: "user_2", orgId: OTHER_ORG }).mutation(api.warehouseWrites.convertUnitToOffInventory, {
+        ...args, orgId: OTHER_ORG, prep: true,
+      }),
+    ).rejects.toThrow();
+    expect((await line(t))?.offInventoryQuantity).toBeUndefined();
+  });
+});

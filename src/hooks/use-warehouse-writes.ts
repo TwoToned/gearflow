@@ -57,6 +57,8 @@ export function useWarehouseWrites() {
   const syncContainersBatchM = useMutation(api.warehouseWrites.syncContainersBatch);
   const reassignLineItemUnitM = useMutation(api.warehouseWrites.reassignLineItemUnit);
   const reassignKitMemberSerialM = useMutation(api.warehouseWrites.reassignKitMemberSerial);
+  const convertUnitToOffInventoryM = useMutation(api.warehouseWrites.convertUnitToOffInventory);
+  const convertUnitBackToInventoryM = useMutation(api.warehouseWrites.convertUnitBackToInventory);
   const forceReturnAssetM = useMutation(api.warehouseWrites.forceReturnAsset);
   const forceReturnKitM = useMutation(api.warehouseWrites.forceReturnKit);
   const forceReturnKitsM = useMutation(api.warehouseWrites.forceReturnKits);
@@ -448,6 +450,23 @@ export function useWarehouseWrites() {
       | { moved: true; fromAssetTag?: string; toAssetTag?: string; lineItemId: string }
     > => {
       return reassignKitMemberSerialM({ orgId: requireOrg(), projectId, unitId, newAssetId, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    // "Prep as custom item": move one unit of a line between stock-backed and
+    // off-inventory (FEATUREDOCS/12). `prep` also marks the new custom unit prepped.
+    convertUnitToOffInventory: async (
+      projectId: string,
+      lineItemId: string,
+      prep: boolean,
+    ): Promise<{ unitId: string; offInventoryQuantity: number }> => {
+      return convertUnitToOffInventoryM({ orgId: requireOrg(), projectId, lineItemId, prep, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    convertUnitBackToInventory: async (
+      projectId: string,
+      lineItemId: string,
+    ): Promise<{ offInventoryQuantity: number }> => {
+      return convertUnitBackToInventoryM({ orgId: requireOrg(), projectId, lineItemId, auditId: createId(), now: Date.now(), actor: actor() });
     },
 
     forceReturnAsset: async (assetId: string): Promise<{ success: true }> => {

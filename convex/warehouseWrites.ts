@@ -31,6 +31,8 @@ import {
   syncContainersBatchCore,
   reassignSerialisedUnitCore,
   reassignKitMemberSerialCore,
+  convertUnitToOffInventoryCore,
+  convertUnitBackToInventoryCore,
   forceReturnAssetCore,
   bulkForceReturnAssetsCore,
   forceReturnKitCore,
@@ -834,6 +836,82 @@ export const reassignKitMemberSerial = mutation({
   },
 });
 
+// ─── convertUnitToOffInventory / convertUnitBackToInventory — "Prep as custom item"
+// (FEATUREDOCS/12). Turns an unassigned unit of an overbooked serialised line into a
+// custom (off-inventory) unit that stays on the line but holds no stock, and back.
+// `prep:true` (the warehouse bench) also marks it prepped, which counts as the first
+// prep on the job — so it triggers the same PREP_STARTED auto-advance as any prep.
+// warehouse:check_out (the same RBAC as the other unit-reassign writes). ────────────
+export const convertUnitToOffInventory = mutation({
+  args: { orgId: v.string(), projectId: v.string(), lineItemId: v.string(), prep: v.boolean(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    await requireLineInProject(ctx, a.lineItemId, a.orgId, a.projectId);
+
+    const res = await convertUnitToOffInventoryCore(ctx, {
+      organizationId: a.orgId, projectId: a.projectId, lineItemId: a.lineItemId, prep: a.prep, now: a.now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.orgId,
+      action: "UPDATE",
+      entityType: "lineItem",
+      entityId: a.lineItemId,
+      entityName: "Line item",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Converted 1 unit to a custom item${a.prep ? " (prepped)" : ""}`,
+      projectId: a.projectId,
+      createdAt: a.now,
+    });
+
+    const autoAdvance = a.prep
+      ? await maybeAutoAdvanceProjectStatus(ctx, { orgId: a.orgId, projectId: a.projectId, trigger: "PREP_STARTED", actor, now: a.now })
+      : null;
+
+    return { ...res, ...autoAdvanceFields(autoAdvance) };
+  },
+});
+
+export const convertUnitBackToInventory = mutation({
+  args: { orgId: v.string(), projectId: v.string(), lineItemId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    await requireLineInProject(ctx, a.lineItemId, a.orgId, a.projectId);
+
+    const res = await convertUnitBackToInventoryCore(ctx, {
+      organizationId: a.orgId, projectId: a.projectId, lineItemId: a.lineItemId, now: a.now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.orgId,
+      action: "UPDATE",
+      entityType: "lineItem",
+      entityId: a.lineItemId,
+      entityName: "Line item",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: "Converted 1 custom unit back to inventory",
+      projectId: a.projectId,
+      createdAt: a.now,
+    });
+
+    return res;
+  },
+});
+
 // ─── forceReturnAsset — return every CHECKED_OUT line for an asset + reset it to
 // AVAILABLE. Parity: forceReturnAsset server action. warehouse:check_in. ────────────
 export const forceReturnAsset = mutation({
@@ -1400,6 +1478,10 @@ export const agentOps: AgentOpsAnnotations = {
   checkOutKitsBatch: { danger: "high" },
   // Pure metadata: strips a grouping label off lines, no status/stock change, no audit.
   clearPrepContainer: { danger: "low" },
+  // Moves one unit of a line between "stock-backed" and "custom" (off-inventory) —
+  // changes stock demand + adds/removes a placeholder unit, no physical movement.
+  convertUnitBackToInventory: { danger: "medium" },
+  convertUnitToOffInventory: { danger: "medium" },
   // Idempotent check-then-create of a container line item — bookkeeping, not movement.
   ensureContainerOnProject: { danger: "medium" },
   forceReturnAsset: { danger: "high" },

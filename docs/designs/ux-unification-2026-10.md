@@ -311,6 +311,29 @@ field (⌘K / the phone icon) with the existing `@` pages, `/` commands and date
 
 ---
 
+**Phone pass (2026-10-28, all job prototypes).** The phone views were desktop
+layouts collapsing into a column; this pass treats the phone as its own
+surface, on every job tab:
+
+- **A tab strip under the phone header** (`Overview · Equipment 44 · Logistics
+  · Finance · Tasks & notes 9/14`), scrolling, the active tab filled — today a
+  phone has no way between tabs except the desktop tab row squeezed in.
+- **One sticky primary action in thumb reach**, above the bottom nav: `+ Add
+  line` (opens the search-first add as a bottom sheet), `+ Add service ▾`,
+  `+ Invoice ▾`, `+ Add task` (opens the task sheet), `Advance to …` on
+  Overview. The toolbar's primary button is hidden on phone so there is one.
+  Footer totals stop being sticky; the action bar takes that slot.
+- **Touch targets**: row ⋯ always visible and 40 px; rows 60 px minimum;
+  every input 16 px so iOS does not zoom; menus and dialogs are bottom sheets.
+- **Logistics facts** become a two-column grid instead of a horizontal scroll;
+  day chips and lanes stay; cards keep the call time in mono.
+- **Finance** keeps the 2×2 money tiles with text links, notices as left-rule
+  lines, quotes and invoices as rows.
+- **Tasks & notes** keeps a sticky `Tasks · Notes · Files · Discussion` chip row
+  under the tab strip to jump between sections.
+- **Warehouse** was built phone-first already (scan dock, big Prep / Pack /
+  Deploy buttons) and is untouched here.
+
 ## 6b. Job › Overview and the page header — v2 proposal (prototype 2026-10-27 · calm revision, awaiting a yes)
 
 Overview is the job's home and the page header is the one thing every tab

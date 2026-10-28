@@ -36878,6 +36878,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "offInventoryQuantity",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
@@ -37036,7 +37041,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "overrideReason"
     ],
-    "argsSha": "8fd25dae21b03607",
+    "argsSha": "de1f7b9b9c8df623",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -37234,6 +37239,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "offInventoryQuantity",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
@@ -37392,7 +37402,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "overrideReason"
     ],
-    "argsSha": "8fd25dae21b03607",
+    "argsSha": "de1f7b9b9c8df623",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -37553,7 +37563,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "903e6c7d48e32b72",
+    "argsSha": "c01d595e1030c81a",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -38187,7 +38197,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "16177f31093735e8",
+    "argsSha": "22621f0b2030875b",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59903,6 +59913,125 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "warehouseWrites.convertUnitBackToInventory",
+    "module": "warehouseWrites",
+    "fn": "convertUnitBackToInventory",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "lineItemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a460919d7c169ee9",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "warehouseWrites.convertUnitToOffInventory",
+    "module": "warehouseWrites",
+    "fn": "convertUnitToOffInventory",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "lineItemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "prep",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "029c2319e3421a84",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "warehouseWrites.ensureContainerOnProject",
     "module": "warehouseWrites",
     "fn": "ensureContainerOnProject",
@@ -63062,10 +63191,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1225,
-  agentReachable: 597,
+  total: 1227,
+  agentReachable: 599,
   queries: 440,
-  mutations: 785,
+  mutations: 787,
   agentReachableQueries: 305,
-  agentReachableMutations: 292,
+  agentReachableMutations: 294,
 } as const;

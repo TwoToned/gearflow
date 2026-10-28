@@ -25,6 +25,8 @@ below; (3) Deploy now soft-blocks when a parent's DEFAULT accessories aren't
 packed yet, and asks for a reason when OPTIONALs are skipped — see "Checkout
 accessory gate" below.
 
+**Custom (off-inventory) units** (FEATUREDOCS/12) keep the model's bulk accessories too: their share lives on the same child lines as per-parent rows keyed `parentUnitAssetId = custom:<unitId>` instead of an asset id (`convex/lib/fulfillment.ts` `customUnitScope`). Anything that scopes an accessory cascade by parent must accept that key.
+
 Accessories are **not kits**. A kit is a physical container with its own asset
 tag and rental contract; an accessory is inseparable from its parent — no
 container, no separate booking, no separate price. The implementation is

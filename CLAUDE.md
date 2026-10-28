@@ -652,6 +652,14 @@ client a different document under the same name (#987). Three rules follow:
    (`buildDocumentData`'s `stampedDates`). Recomputing `quote_valid_until` at render time
    is what used to silently extend how long a quote was valid every time it was re-opened.
 
+### Off-inventory units — the counter is the truth, demand goes through `stockBackedQty`
+"Prep as custom item" (FEATUREDOCS/12) lets a leftover unit of an overbooked serialised line stay on the line (price/docs unchanged) with no serial and no stock held. Three rules:
+
+1. **`projectLineItems.offInventoryQuantity` is the ONE source of truth.** Do not add a per-unit "is custom" flag — the unit side is just a generic (asset-less, qty-1) `projectLineItemUnits` row, the same shape `prepUnit` creates for untagged lines. It is server-owned: only `warehouseOps.convertUnit*`, `deprepItemInner` (decrements with the deleted generic unit) and make-live's `carryRealityByLineage` (re-derives it with the carried units — `copyPlanGraph` deliberately does NOT clone it) write it (it is in `LINE_IMMUTABLE_ON_PATCH`); `patchNative` refuses edits that would desync it (model/type/asset change, quantity below custom + serial units). A custom unit is born prepped — never reintroduce a PENDING custom unit; the warehouse stage logic can't place one.
+2. **Every stock-demand sum reads `stockBackedQty(line)` (`convex/lib/stockBackedQty.ts`), never raw `quantity`.** `convex/stockBackedQtyGuard.test.ts` lists the sites; a new availability/overbooking site goes on that list. Billing, PDFs, ROI and the warehouse "everything deployed" test (`projectAutoStatus`) keep the full `quantity` on purpose.
+3. **A custom unit keeps the model's accessories.** Its share is per-parent rows on the existing accessory child lines keyed `parentUnitAssetId = customUnitScope(unitId)` (`custom:<unitId>`). Any new accessory cascade that scopes by `parentUnitAssetId` must treat that as a valid parent key, and anything that sums accessory demand per parent must add `offInventoryQuantity × per-parent` (`expandAccessoriesForAsset` does).
+4. **A whole-line deploy must include prepped generic units on a mixed line** (`expandPrepUnitAssignments`) — otherwise the custom unit is stranded.
+
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev

@@ -13,6 +13,7 @@ import { getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByIds, type ConvexAsse
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
+import { stockBackedQty } from "../../convex/lib/stockBackedQty";
 
 /** Model-accessory detail for the add-form picker (issue #794) — resolved bulk-asset
  *  tag + model name, not just the bare bulkAssetId. Exported so `AccessorySelectionFields`
@@ -100,7 +101,7 @@ export async function checkAvailability(
       if (pStart == null || pEnd == null) continue;
       if (pStart > endMs || pEnd < startMs) continue;
       overlappingLineItems.push({
-        quantity: li.quantity ?? 0,
+        quantity: stockBackedQty(li),
         project: { id: p.id, name: p.name ?? null, projectNumber: p.projectNumber ?? null },
       });
     }
@@ -113,7 +114,7 @@ export async function checkAvailability(
       if (li.projectId !== excludeProjectId) continue;
       const p = projectById.get(li.projectId);
       overlappingLineItems.push({
-        quantity: li.quantity ?? 0,
+        quantity: stockBackedQty(li),
         project: { id: li.projectId, name: p?.name ?? null, projectNumber: p?.projectNumber ?? null },
       });
     }

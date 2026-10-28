@@ -36,6 +36,7 @@ import {
   getAvailableAssetsForModels,
 } from "@/server/warehouse";
 import { useWarehouseWrites, type AccessoryStageOp } from "@/hooks/use-warehouse-writes";
+import { useWarehouseOverbooked } from "@/hooks/use-warehouse-overbooked";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
 import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { Badge } from "@/components/ui/badge";
@@ -1424,6 +1425,37 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
+  // "Prep as custom item" (FEATUREDOCS/12): which lines are short on stock, and the
+  // one-click convert / convert-back. The subscription is reactive, so no invalidate.
+  const overbookedMap = useWarehouseOverbooked(orgId, projectId, lineItems);
+  const [pendingCustomUnitLineIds, setPendingCustomUnitLineIds] = useState<Set<string>>(new Set());
+  const runCustomUnitWrite = (lineItemId: string, write: () => Promise<unknown>, success: string, failure: string) => {
+    setPendingCustomUnitLineIds((prev) => new Set(prev).add(lineItemId));
+    write()
+      .then(() => toast.success(success))
+      .catch((e) => showError(e, { fallbackTitle: failure }))
+      .finally(() =>
+        setPendingCustomUnitLineIds((prev) => {
+          const next = new Set(prev);
+          next.delete(lineItemId);
+          return next;
+        }),
+      );
+  };
+  const handleConvertToCustomUnit = (lineItemId: string) =>
+    runCustomUnitWrite(
+      lineItemId,
+      () => warehouseWrites.convertUnitToOffInventory(projectId, lineItemId, true),
+      "Prepped 1 as a custom item",
+      "Couldn't convert to a custom item",
+    );
+  const handleConvertBackToInventory = (lineItemId: string) =>
+    runCustomUnitWrite(
+      lineItemId,
+      () => warehouseWrites.convertUnitBackToInventory(projectId, lineItemId),
+      "Converted back to inventory",
+      "Couldn't convert back to inventory",
+    );
   // Accessory units packed into a different container than their parent are
   // lifted out into their own lines (relocate-accessories.ts) so every stage
   // list, container section and Move-to… sees them where they physically are.
@@ -2813,6 +2845,10 @@ function WarehouseProjectPage({
           saleItemsToPrep={saleItemsToPrep}
           onToggleSalePicked={handleToggleSalePicked}
           pendingSalePickIds={pendingSalePickIds}
+          overbookedMap={overbookedMap}
+          pendingCustomUnitLineIds={pendingCustomUnitLineIds}
+          onConvertToCustomUnit={handleConvertToCustomUnit}
+          onConvertBackToInventory={handleConvertBackToInventory}
           verifiedKitItems={verifiedKitItems}
           setVerifiedKitItems={setVerifiedKitItems}
           expandedGroups={expandedGroups}

@@ -65,6 +65,7 @@ function li(over: Partial<MappedLineItem>): MappedLineItem {
     checkedOutQuantity: 0,
     returnedQuantity: 0,
     assignedQuantity: 0,
+    offInventoryQuantity: 0,
     packedQuantity: 0,
     damagedQuantity: 0,
     lostQuantity: 0,

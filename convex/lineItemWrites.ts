@@ -536,6 +536,9 @@ const LINE_IMMUTABLE_ON_PATCH = [
   "kitId", "isKitChild", "childKind", "parentLineItemId", "pricingMode", "isCustomItem", "isContainerLineItem",
   "status", "returnStatus", "prepStatus", "prepContainer", "returnCondition", "returnNotes",
   "checkedOutQuantity", "returnedQuantity", "assignedQuantity", "packedQuantity", "damagedQuantity", "lostQuantity",
+  // Server-owned: written only by warehouseOps.convertUnit*OffInventory* (it moves with a
+  // generic unit row, so a client patch would desync stock demand from fulfilment).
+  "offInventoryQuantity",
   "checkedOutAt", "checkedOutById", "returnedAt", "returnedById",
   "allocatedRevenue", "allocationBasis",
   "subHireId", "subHireItemId", "subHireGroupId", "supplierOrderId",
@@ -697,6 +700,9 @@ export const patchNative = mutation({
     const effType = effField("type");
     const effModelId = effField("modelId") as string | undefined;
     const newQty = clearSet.has("quantity") ? currentQty : ((setObj.quantity as number | undefined) ?? currentQty);
+    if (newQty < (doc.offInventoryQuantity ?? 0)) {
+      throw new ConvexError(`${doc.offInventoryQuantity} of this line are custom units — convert them back to inventory before lowering the quantity below that.`);
+    }
 
     // Asset REASSIGNMENT (`assetId` actually changing to a different value) — the same
     // hard guards the dedicated `swapLineItemAsset` mutation runs (model match, kit

@@ -2092,6 +2092,88 @@ export const reassignSerialisedUnit = mutation({
 });
 
 /**
+ * Off-inventory units ("Prep as custom item", FEATUREDOCS/11 + /12).
+ *
+ * A job books 3x a serialised model but only 2 are free: convert the leftover
+ * unit to a custom item. It stays on the line (same price, same document row) but
+ * no serial backs it, so it stops counting as stock demand
+ * (`projectLineItems.offInventoryQuantity`, read through `stockBackedQty`).
+ * Fulfilment-side the unit is a GENERIC unit (no asset/bulk, qty 1) — the same
+ * shape `prepUnit` already creates for untagged multi-quantity lines — so it
+ * counts toward `assignedQuantity` (the scan path's spare-capacity test) and is
+ * prepped/deployed/returned by manual tick with no new fulfilment code.
+ */
+function assertConvertibleLine(line: Awaited<ReturnType<typeof lineByCuid>>, organizationId: string, projectId: string): asserts line is NonNullable<typeof line> {
+  if (!line || line.organizationId !== organizationId || line.projectId !== projectId) throw new ConvexError("Line item not found in project");
+  if (line.status === "CANCELLED") throw new ConvexError("This line is cancelled");
+  if ((line.type ?? "EQUIPMENT") !== "EQUIPMENT" || !line.modelId) throw new ConvexError("Only equipment lines for a model can use a custom unit");
+  if (line.isKitChild || line.kitId || line.isContainerLineItem || line.isCustomItem || line.subHireId != null) {
+    throw new ConvexError("Kit members, kits, containers, custom items and sub-hires can't use a custom unit");
+  }
+}
+
+const isGenericUnit = (u: { assetId?: string; bulkAssetId?: string }) => !u.assetId && !u.bulkAssetId;
+
+export async function convertUnitToOffInventoryCore(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; lineItemId: string; prep: boolean; now: number },
+): Promise<{ unitId: string; offInventoryQuantity: number }> {
+  const line = await lineByCuid(ctx, a.lineItemId);
+  assertConvertibleLine(line, a.organizationId, a.projectId);
+  // `modelId` is asserted above; models are org-scoped so re-check the row's org.
+  const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", line.modelId!)).unique();
+  if (!model || model.organizationId !== a.organizationId) throw new ConvexError("Model not found in this organization");
+  if (model.assetType === "BULK" || line.bulkAssetId) throw new ConvexError("Only serialised gear can be converted to a custom unit");
+
+  const siblings = await lineUnits(ctx, a.lineItemId);
+  const taken = siblings.filter((u) => u.status !== "CANCELLED").reduce((n, u) => n + (u.quantity ?? 0), 0);
+  if ((line.quantity ?? 0) - taken < 1) {
+    throw new ConvexError("No free unit on this line to convert — every unit already has a serial or custom unit");
+  }
+
+  const unitId = createId();
+  await ctx.db.insert("projectLineItemUnits", {
+    id: unitId,
+    organizationId: a.organizationId,
+    lineItemId: a.lineItemId,
+    ordinal: nextOrdinal(siblings),
+    quantity: 1,
+    returnedQuantity: 0,
+    status: "CONFIRMED",
+    prepStatus: a.prep ? "PACKED" : "PENDING",
+    createdAt: a.now,
+    updatedAt: a.now,
+  });
+  const offInventoryQuantity = (line.offInventoryQuantity ?? 0) + 1;
+  await ctx.db.patch(line._id, { offInventoryQuantity, updatedAt: a.now });
+  await syncLineItemRollup(ctx, a.lineItemId);
+  return { unitId, offInventoryQuantity };
+}
+
+export async function convertUnitBackToInventoryCore(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; lineItemId: string; now: number },
+): Promise<{ offInventoryQuantity: number }> {
+  const line = await lineByCuid(ctx, a.lineItemId);
+  assertConvertibleLine(line, a.organizationId, a.projectId);
+  const current = line.offInventoryQuantity ?? 0;
+  if (current < 1) throw new ConvexError("No custom unit on this line to convert back");
+
+  // Highest ordinal first (LIFO, like deprep). Out-the-door or returned units are
+  // history — never deleted.
+  const removable = (await lineUnits(ctx, a.lineItemId))
+    .filter((u) => isGenericUnit(u) && u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.status !== "CANCELLED")
+    .sort((x, y) => y.ordinal - x.ordinal)[0];
+  if (!removable) throw new ConvexError("The custom unit is already deployed — return it before converting back");
+
+  await ctx.db.delete(removable._id);
+  const offInventoryQuantity = current - 1;
+  await ctx.db.patch(line._id, { offInventoryQuantity: offInventoryQuantity === 0 ? undefined : offInventoryQuantity, updatedAt: a.now });
+  await syncLineItemRollup(ctx, a.lineItemId);
+  return { offInventoryQuantity };
+}
+
+/**
  * Kit-member serial reassign (Phase 4). A kit member is bound to its kit slot, so
  * "reassign" here means SWAP which physical serial fills that slot on this job —
  * point the member's unit (and its snapshot child line) at a different same-model

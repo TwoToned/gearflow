@@ -1161,7 +1161,23 @@ export async function prepUnit(
     }
   } else {
     const line = await lineDocByCuid(ctx, args.lineItemId);
+    // Off-inventory units converted at planning time sit as PENDING generic
+    // units — one tick preps them (flip first, so no duplicate unit is created).
+    let flipped = 0;
     if (line) {
+      const pending = (await lineUnits(ctx, args.lineItemId))
+        .filter((un) => !un.assetId && !un.bulkAssetId && un.prepStatus !== "PACKED" && un.status !== "CHECKED_OUT" && un.status !== "RETURNED" && un.status !== "CANCELLED")
+        .sort((x, y) => x.ordinal - y.ordinal)
+        .slice(0, Math.max(1, args.quantity ?? 1));
+      for (const un of pending) {
+        await ctx.db.patch(un._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
+      }
+      flipped = pending.length;
+    }
+    const stillToPrep = Math.max(1, args.quantity ?? 1) - flipped;
+    if (line && flipped > 0 && stillToPrep <= 0) {
+      // Fully served by flipping existing custom units.
+    } else if (line) {
       const ordered = line.quantity ?? 0;
       if (ordered > 1) {
         // Untagged multi-quantity line (no serialised asset, no bulk asset).
@@ -1171,7 +1187,7 @@ export async function prepUnit(
         const existing = await lineUnits(ctx, args.lineItemId);
         const assigned = existing.reduce((n, u) => n + (u.quantity ?? 0), 0);
         const room = Math.max(0, ordered - assigned);
-        const toCreate = Math.min(Math.max(1, args.quantity ?? 1), room);
+        const toCreate = Math.min(Math.max(1, flipped > 0 ? stillToPrep : (args.quantity ?? 1)), room);
         let ordinal = nextOrdinal(existing);
         const resolved = await resolveContainerForWrite(ctx, args, true);
         for (let i = 0; i < toCreate; i++) {

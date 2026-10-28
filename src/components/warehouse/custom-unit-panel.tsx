@@ -58,6 +58,43 @@ export function CustomUnitPanel({ lines, overbookedMap, pendingLineIds, onConver
   );
 }
 
+/** How many units this line is over capacity by (hard overbook or pencilled-in). */
+function shortfallOf(info: OverbookedInfo | undefined): number {
+  return info ? Math.max(info.overBy, info.pencilledOverBy ?? 0) : 0;
+}
+
+function PanelRowActions({
+  lineId,
+  canConvert,
+  canBack,
+  pending,
+  onConvert,
+  onConvertBack,
+}: {
+  lineId: string;
+  canConvert: boolean;
+  canBack: boolean;
+  pending: boolean;
+  onConvert: (lineItemId: string) => void;
+  onConvertBack: (lineItemId: string) => void;
+}) {
+  return (
+    <span className="ml-auto flex gap-1.5">
+      {canBack && (
+        <Button variant="ghost" size="sm" disabled={pending} onClick={() => onConvertBack(lineId)}>
+          <Undo2 className="mr-1 h-3.5 w-3.5" />
+          Convert back
+        </Button>
+      )}
+      {canConvert && (
+        <Button variant="line" size="sm" disabled={pending} onClick={() => onConvert(lineId)}>
+          Prep as custom item
+        </Button>
+      )}
+    </span>
+  );
+}
+
 function PanelRow({
   line,
   info,
@@ -75,26 +112,21 @@ function PanelRow({
   onConvert: (lineItemId: string) => void;
   onConvertBack: (lineItemId: string) => void;
 }) {
-  const short = info ? Math.max(info.overBy, info.pencilledOverBy ?? 0) : 0;
+  const short = shortfallOf(info);
   const custom = line.offInventoryQuantity ?? 0;
   return (
     <li className="flex flex-wrap items-center gap-2 text-table-cell">
       <span className="text-ink">{line.model?.name ?? "Item"}</span>
       {canConvert && short > 0 && <Badge status="warn">{short} over capacity</Badge>}
       {custom > 0 && <Badge status="neutral">{custom} custom</Badge>}
-      <span className="ml-auto flex gap-1.5">
-        {canBack && (
-          <Button variant="ghost" size="sm" disabled={pending} onClick={() => onConvertBack(line.id)}>
-            <Undo2 className="mr-1 h-3.5 w-3.5" />
-            Convert back
-          </Button>
-        )}
-        {canConvert && (
-          <Button variant="line" size="sm" disabled={pending} onClick={() => onConvert(line.id)}>
-            Prep as custom item
-          </Button>
-        )}
-      </span>
+      <PanelRowActions
+        lineId={line.id}
+        canConvert={canConvert}
+        canBack={canBack}
+        pending={pending}
+        onConvert={onConvert}
+        onConvertBack={onConvertBack}
+      />
     </li>
   );
 }

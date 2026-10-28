@@ -19,7 +19,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
-import { expandAccessoryChildLines, reconcileLineAccessoryChildren, rescaleAccessoryChildrenToQuantity, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
+import { expandAccessoryChildLines, reconcileLineAccessoryChildren, rescaleAccessoryChildrenToQuantity, accessoryChildrenOf, lineUnits, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
   loadModelAvailabilityBundle,
@@ -570,6 +570,22 @@ const LINE_NEVER_CLEAR = new Set<string>(["id", "organizationId", ...LINE_IMMUTA
  *  - lowering the quantity below (custom + serial units) would drop a stock-backed
  *    unit instead of the custom one the user presumably meant.
  */
+/** Does this edit move or drop the line's demand (model / type / pinned asset) without
+ *  anyone converting a custom unit first? */
+function changesLineIdentity(
+  doc: Doc<"projectLineItems">,
+  clearSet: Set<string>,
+  setObj: Record<string, unknown>,
+): boolean {
+  return (
+    clearSet.has("modelId") ||
+    (setObj.modelId !== undefined && setObj.modelId !== doc.modelId) ||
+    (setObj.type !== undefined && setObj.type !== (doc.type ?? "EQUIPMENT")) ||
+    !!setObj.assetId ||
+    !!setObj.bulkAssetId
+  );
+}
+
 async function assertCustomUnitsStayCoherent(
   ctx: MutationCtx,
   doc: Doc<"projectLineItems">,
@@ -578,16 +594,10 @@ async function assertCustomUnitsStayCoherent(
   const custom = doc.offInventoryQuantity ?? 0;
   if (custom < 1) return;
   const { newQty, clearSet, setObj } = edit;
-  const changesIdentity =
-    clearSet.has("modelId") ||
-    (setObj.modelId !== undefined && setObj.modelId !== doc.modelId) ||
-    (setObj.type !== undefined && setObj.type !== (doc.type ?? "EQUIPMENT")) ||
-    !!setObj.assetId ||
-    !!setObj.bulkAssetId;
-  if (changesIdentity) {
+  if (changesLineIdentity(doc, clearSet, setObj)) {
     throw new ConvexError(`${custom} unit(s) of this line are custom — convert them back to inventory before changing its model, type or asset.`);
   }
-  const tagged = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", doc.id)).collect())
+  const tagged = (await lineUnits(ctx, doc.id))
     .filter((u) => u.status !== "CANCELLED" && (u.assetId || u.bulkAssetId))
     .reduce((n, u) => n + (u.quantity ?? 1), 0);
   if (newQty < custom + tagged) {

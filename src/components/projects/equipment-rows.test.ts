@@ -10,6 +10,8 @@
 
 import { describe, it, expect } from "vitest";
 import { describeRow, getDisallowedDropReason, isHiddenFromList, hasContainerChip, type LineItemData } from "./equipment-rows";
+import { toCustomUnitLine } from "./equipment-row-descriptors";
+import { canConvertToCustomUnit } from "@/lib/off-inventory";
 
 function item(overrides: Partial<LineItemData>): LineItemData {
   return {
@@ -225,5 +227,21 @@ describe("getDisallowedDropReason — Drop Matrix 8C", () => {
     // The reorder/move decision is made downstream by handleDragEnd —
     // the disallow predicate only flags structural impossibilities.
     expect(getDisallowedDropReason("shg-a", "shg-b")).toBeNull();
+  });
+});
+
+describe("toCustomUnitLine (Equipment tab → shared offer rule)", () => {
+  const item = { id: "li1", modelId: "m1", description: null, quantity: 3, unitPrice: 1, lineTotal: 3, model: { name: "4099" } };
+  const over = { overBy: 1, totalStock: 2, effectiveStock: 2, totalBooked: 3 };
+
+  it("offers conversion on a plain serialised line", () => {
+    expect(canConvertToCustomUnit(toCustomUnitLine({ ...item, model: { name: "4099", assetType: "SERIALIZED" } } as never), over)).toBe(true);
+  });
+  it("never offers it on a bulk model line (the server always rejects it)", () => {
+    expect(canConvertToCustomUnit(toCustomUnitLine({ ...item, model: { name: "XLR", assetType: "BULK" } } as never), over)).toBe(false);
+  });
+  it("never offers it on a bulk-backed or asset-pinned line", () => {
+    expect(canConvertToCustomUnit(toCustomUnitLine({ ...item, bulkAssetId: "b1" } as never), over)).toBe(false);
+    expect(canConvertToCustomUnit(toCustomUnitLine({ ...item, assetId: "a1" } as never), over)).toBe(false);
   });
 });

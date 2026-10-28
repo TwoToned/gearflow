@@ -16,6 +16,7 @@ import {
   computeStockBreakdown,
 } from "./availabilityCore";
 import { EXCLUDED_ASSIGNMENT_STATUSES, overlaps as timeOverlaps, classifyAvailabilityBlock } from "./crewConflicts";
+import { stockBackedQty } from "./stockBackedQty";
 
 /** Mirrors `src/lib/overbooking-core.ts`'s EXCLUDED_PROJECT_STATUSES. */
 const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"]);
@@ -44,6 +45,8 @@ export interface BoardLineItem {
   projectId: string;
   modelId?: string | null;
   quantity?: number | null;
+  /** Units sourced outside the fleet — not stock demand (see stockBackedQty). */
+  offInventoryQuantity?: number | null;
   status?: string | null;
   subHireId?: string | null;
   isOptional?: boolean | null;
@@ -200,7 +203,7 @@ function bumpClaim(claims: Map<string, ProjectClaim>, projectId: string, qty: nu
 
 function applyDemandLine(agg: ModelAgg, li: BoardLineItem, p: BoardProject, clampedStart: number, clampedEnd: number): void {
   const isPencilled = li.isOptional === true || !isConfirmedOrLater(p.status);
-  const qty = li.quantity ?? 0;
+  const qty = stockBackedQty(li);
   // `createdAt` is `v.optional`; `_creationTime` (Convex system field) is
   // always present on a real doc and is the fallback — same reasoning as
   // `mapLineItemDoc` in `project-equipment-reconstruct.ts`.

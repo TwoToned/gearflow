@@ -1651,6 +1651,10 @@ export default defineSchema({
     packedQuantity: v.optional(v.number()),
     damagedQuantity: v.optional(v.number()),
     lostQuantity: v.optional(v.number()),
+    // Units of this line sourced outside the fleet ("prep as custom item"):
+    // they stay on the line (price/docs unchanged) but never count as stock
+    // demand — read via `stockBackedQty`. Absent = 0.
+    offInventoryQuantity: v.optional(v.number()),
     checkedOutAt: v.optional(v.number()),
     checkedOutById: v.optional(v.string()),
     returnedAt: v.optional(v.number()),

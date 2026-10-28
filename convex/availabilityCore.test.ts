@@ -96,7 +96,7 @@ describe("availabilityCore pencil-rule constants == overbooking-core (byte-for-b
 
 // ─── (b) computeModelAvailability fixtures ────────────────────────────────────
 
-type L = { projectId: string; quantity?: number; status?: string; subHireId?: string | null; type?: string };
+type L = { projectId: string; quantity?: number; offInventoryQuantity?: number; status?: string; subHireId?: string | null; type?: string };
 type P = {
   id: string;
   rentalStartDate?: number | null;
@@ -138,6 +138,15 @@ describe("computeModelAvailability", () => {
     });
     const r = computeModelAvailability(b, { rentalStart: null, rentalEnd: null, excludeProjectId: "thisP" });
     expect(r).toMatchObject({ totalStock: 3, effectiveStock: 3, booked: 2, available: 1, assetType: "SERIALIZED" });
+  });
+
+  test("off-inventory units are not stock demand (booked excludes them)", () => {
+    const b = mkBundle({
+      assets: [{ status: "AVAILABLE" }, { status: "AVAILABLE" }],
+      lines: [{ projectId: "thisP", quantity: 3, offInventoryQuantity: 1 }],
+    });
+    const r = computeModelAvailability(b, { rentalStart: null, rentalEnd: null, excludeProjectId: "thisP" });
+    expect(r).toMatchObject({ booked: 2, available: 0 });
   });
 
   test("dated: overlapping bookings across projects (incl. this project) count", () => {

@@ -16,6 +16,7 @@ import {
 } from "./lib/availabilityBookings";
 import type { Doc } from "./_generated/dataModel";
 import { liveRows } from "./lib/versionScope";
+import { stockBackedQty } from "./lib/stockBackedQty";
 
 /**
  * Equipment availability / bookings — browser-native replacement for the deleted
@@ -69,8 +70,18 @@ function toBookingLineItem(d: Doc<"projectLineItems">): BookingLineItem {
     assetId: d.assetId ?? null,
     isKitChild: d.isKitChild ?? false,
     status: d.status ?? "QUOTED",
-    quantity: d.quantity ?? 1,
+    // Off-inventory units (FEATUREDOCS/11) reserve no stock — a booking row shows
+    // only the stock-backed share of the line.
+    quantity: stockBackedQty({ quantity: d.quantity ?? 1, offInventoryQuantity: d.offInventoryQuantity }),
   };
+}
+
+/** Map docs to booking lines, dropping a line that is ENTIRELY off-inventory
+ *  (it holds no stock, so it is not a booking at all). */
+function toBookingLineItems(docs: Doc<"projectLineItems">[]): BookingLineItem[] {
+  return docs
+    .filter((d) => !((d.offInventoryQuantity ?? 0) > 0 && stockBackedQty(d) === 0))
+    .map(toBookingLineItem);
 }
 
 function toBookingUnit(d: Doc<"projectLineItemUnits">): BookingUnit {
@@ -170,7 +181,7 @@ export const modelBookings = query({
     const lineDocs = (
       await ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect()
     ).filter((d) => d.organizationId === orgId);
-    const lineItems = lineDocs.map(toBookingLineItem);
+    const lineItems = toBookingLineItems(lineDocs);
     const projectsById = await loadProjectsForLines(ctx, orgId, lineItems);
     const rows = buildModelBookings(modelId, lineItems, projectsById, window);
     const bookings = await rowsToEntries(ctx, orgId, rows);
@@ -245,7 +256,7 @@ export const assetBookings = query({
       }),
     );
 
-    const lineItems = [...byId.values()].map(toBookingLineItem);
+    const lineItems = toBookingLineItems([...byId.values()]);
     const units = unitDocs.map(toBookingUnit);
     const projectsById = await loadProjectsForLines(ctx, orgId, lineItems);
     const rows = buildAssetBookings(assetId, lineItems, units, projectsById, window);
@@ -267,7 +278,7 @@ export const kitBookings = query({
     const lineDocs = (
       await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect()
     ).filter((d) => d.organizationId === orgId);
-    const lineItems = lineDocs.map(toBookingLineItem);
+    const lineItems = toBookingLineItems(lineDocs);
     const projectsById = await loadProjectsForLines(ctx, orgId, lineItems);
     const rows = buildKitBookings(kitId, lineItems, projectsById, window);
     return await rowsToEntries(ctx, orgId, rows);

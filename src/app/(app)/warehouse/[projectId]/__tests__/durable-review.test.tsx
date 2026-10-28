@@ -8,6 +8,7 @@ vi.mock('@/lib/auth-client',()=>({useActiveOrganization:()=>({data:{id:'o'}}),us
 vi.mock('convex/react',()=>({useConvex:()=>({query:async()=>true,mutation:io.commit}),useConvexAuth:()=>({isAuthenticated:true}),useQuery:()=>undefined,useMutation:()=>io.ordinary}));
 vi.mock('@/lib/use-permissions',()=>({useCurrentRole:()=>({role:'owner',permissions:{warehouse:['read','check_in','check_out','update']},isLoading:false}),useCanDo:()=>true}));
 vi.mock('@/hooks/use-native-warehouse',()=>({useNativeWarehouseProject:()=>({data:io.project,isLoading:false})}));
+vi.mock('@/hooks/use-warehouse-overbooked',()=>({useWarehouseOverbooked:()=>({})}));
 vi.mock('@/server/warehouse',()=>({lookupAssetForScan:io.lookup,getAvailableAssetsForModels:async()=>[]}));
 vi.mock('@/server/check-records',()=>({pullItem:vi.fn(),prepItemDirect:vi.fn(),prepItemsBatch:vi.fn(),deprepKit:vi.fn(),deprepItemsBatch:vi.fn(),prepKitChildren:vi.fn(),prepKitsBatch:vi.fn(),unpackItem:vi.fn()}));
 vi.mock('@/hooks/use-warehouse-writes',()=>({useWarehouseWrites:()=>new Proxy({},{get:()=>io.ordinary})}));

@@ -54,6 +54,34 @@
 #                          Postgres only, adapter code never runs, but the dependency
 #                          still ships)  <3.22.0 — auth-plugin downgrade leaks
 #                          plaintext credentials (2026-09-03 audit).
+#   undici (8.x line)      (jsdom — test tooling only)  >=8.0.0 <8.12.2 — four high
+#                          advisories: GHSA-xjj6-f33q-929c, GHSA-4w7w-5xrc-9h26,
+#                          GHSA-2m5v-pch6-74hx, GHSA-qrxm-fqhp-jwvm (2026-10-28 audit).
+#                          pnpm applies ONE override per request, and the <7.29.0 floor
+#                          above matches shadcn's and @dotenvx/dotenvx's ^7 requests
+#                          first. That floor was unbounded, so it parked them on whatever
+#                          8.x was newest at the time (8.10.2 / 8.11.2 — both vulnerable);
+#                          it is now capped at <8 so they take the patched 7.30.1, and this
+#                          selector covers the requests that really are for 8.x.
+#   dompurify              (@pdfme/schemas, posthog-js)  <3.4.17 — GHSA-mrv2-3pqr-j5jr
+#                          plus one more at critical (2026-10-28 audit). Both
+#                          copies were on the 3.4 line; 3.4.17 is the first fix.
+#   body-parser            (express 5, via @modelcontextprotocol/sdk)  >=2.0.0 <2.4.0 —
+#                          GHSA-27r3-jxmh-p828, DoS via trailing bytes after a
+#                          compressed request body (2026-10-28 audit).
+#   vite                   (vitest, test tooling only)  >=8.0.0 <8.1.6 — high advisory
+#                          (2026-10-28 audit). Held to the 8.1 minor (~8.1.6) so test
+#                          tooling does not jump to 8.3 as a side effect of a security fix.
+#                          Re-bumping it: pnpm will not move an already-locked vite for the
+#                          range form alone — set the override to the exact version, run
+#                          `pnpm install`, then restore the range.
+#   zod (transitive)       (shadcn's nested @modelcontextprotocol/sdk, zod-to-json-schema,
+#                          @pdfme/common, knip, eslint-plugin-react-hooks…)  <4.6.6 —
+#                          GHSA-mrhx-c7xc-m3w5, memory exhaustion on oversized
+#                          constrained collections (2026-10-28 audit). The direct "zod"
+#                          dependency is bumped in package.json; this catches the nested
+#                          copies, including a 3.25.76 that no 3.x release can fix. Every
+#                          dependent of those copies declares "^3.25 || ^4" or "^4".
 overrides:
   serialize-javascript@<7.0.3: '>=7.0.3'
   hono@<4.12.25: '>=4.12.25'
@@ -69,12 +97,17 @@ overrides:
   find-my-way: '>=9.6.1'
   '@hono/node-server': '>=2.0.5'
   valibot: '>=1.4.2'
-  undici@<7.29.0: '>=7.29.0'
+  undici@<7.29.0: '>=7.29.0 <8'
   nanoid@<3.3.18: '>=3.3.18'
   deepmerge-ts@<8.0.0: '>=8.0.0'
   mysql2@<3.22.0: '>=3.22.0'
   next@<16.3.8: '>=16.3.8'
   '@xmldom/xmldom@<0.8.15': '>=0.8.15 <0.9.0'
+  undici@>=8.0.0 <8.12.2: '>=8.12.2 <9'
+  dompurify@<3.4.17: '>=3.4.17 <4'
+  body-parser@>=2.0.0 <2.4.0: '>=2.4.0 <3'
+  vite@>=8.0.0 <8.1.6: '>=8.1.6 <8.2.0'
+  zod@<4.6.6: '>=4.6.6 <5'
 
 # Packages allowed to run install/build lifecycle scripts (pnpm blocks these by default —
 # supports R-6.7 install-script hardening).

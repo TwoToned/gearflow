@@ -827,6 +827,14 @@ field, and adds the obvious missing moves.
 > → `Pack 2 accessories`; `Deploy all · 18` → `Deploy 1`), with `tick lines,
 > or scan` under it when nothing is ticked. Scanning remains the primary way
 > to prep a single unit.
+>
+> **Desktop rows lose their per-line button too** (2026-11-03). `Prep 8`,
+> `Prep + acc.`, `Pack 2 accessories`, `Deploy 6` go; the row checkbox and
+> the toolbar's `Prep ▾` / `Deploy all · 18` act on the ticked lines, and
+> shift-click selects a range in list order. Accessory rows keep their own
+> `Pack 5 with parent` / `Pack anyway` / `Move…`, which act below the line.
+> The row's ⋯ and the row sheet still offer the single-line verbs; scanning
+> stays the single-unit path.
 
 ### 9.1 The floor (`/warehouse`)
 A board, not a hub: title, the `ScanDock` with scope (This job · Any job), a

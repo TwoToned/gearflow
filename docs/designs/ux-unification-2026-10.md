@@ -653,6 +653,16 @@ the service they are on.
   crew list for that day sits beneath with status pills. The separate read-only
   `/runsheet` page becomes this.
 
+> **Narrower desktops** (2026-11-04): seven columns squeezed a 1200 px window
+> into one-word-per-line Where and When cells and an empty action column.
+> The timeline is now six columns: Where folds under the service as one
+> muted line (address · directions · vehicle · trips, or the counter, client
+> and rego for a client pick up), the action column goes, When never wraps,
+> and the needs line reads `3 short of crew · 4 to offer · 1 unanswered`.
+> Between 860 and 1300 px the table uses a fixed layout with tighter Crew,
+> Charge and When columns and the toolbar settles into two rows, so nothing
+> scrolls sideways.
+
 **Prototype:** https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf
 
 ## 8b. Job › Finance — v2 proposal (prototype 2026-10-27, awaiting a yes)
@@ -724,6 +734,12 @@ figures after) and gives each thing one shape.
   version restores the previous one to the status it had.
 - **Phone**: tiles 2 × 2, the two cards stacked, rows wrap their pills, dialogs
   are bottom sheets.
+
+> **Row verbs live in the row menu** (2026-11-04). `Send`, `Mark accepted`
+> and `Issue` buttons leave the quote and invoice rows; each row's ⋯ carries
+> them, and the page-level `Send quote vN` / `Create quote v4` / `Invoice ▾`
+> stay. Quotes and invoices are documents, not work items, so they get no
+> selection checkboxes.
 
 **Prototype:** https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY
 

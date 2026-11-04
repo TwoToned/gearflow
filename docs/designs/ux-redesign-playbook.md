@@ -673,16 +673,34 @@ kit's bottom nav then.
 
 ## 11. Bookkeeping
 
-- **Branch:** `claude/ux-unification-design-2026-10`; **PR:** #1358 (draft, watched).
-  Push after every surface; never rebase.
+- **Branch:** `claude/ux-unification-design-2026-10` (PR #1358, merged) carried
+  §6b–§9b; the twelve remaining surfaces (§6c, §7b, §7c, §9c–§9k) landed on
+  `claude/festive-gauss-gg3r1c`. Push after every surface; never rebase.
 - **Links:** the main spec's top list is the index of prototypes; the mockup canvas
   `HHjfzi1NUL5PEQDQMxM6KU` holds the static artboards.
 - **Artifacts so far:** Overview `RatKsWfTmDJLJHmn6mb7Zo`, Equipment
   `BdwR4bNbiNMLSvfRAByEwC`, Logistics `E36tnBkGL9obdikUQ5mbXf`, Finance
   `7ByfxnbtsgQTJdiwvvo1CY`, Tasks & notes `BrLBitu3c2V4uixLQbXCNE`, Warehouse job
   `Mt8p55xkPkkexVWPC5eaGU` (locked — republish only with `url`), Jobs
-  `A7SMPtpTr3aedUDEnuSaxd`, Assets `89PDTuMiovgP9i3h4MJ1Tw`.
-- **Decisions:** D1–D13 in the main spec §12; the next is D14.
+  `A7SMPtpTr3aedUDEnuSaxd`, Assets `89PDTuMiovgP9i3h4MJ1Tw`; v1 of the rest (2026-11-04):
+  Home `3d6zqfosL5hYRvXLBYLnhR`, Packing + Versions `HSAZTyzfjG2A7sCjUe9wsM`, New job
+  wizard `GgtKxc5WZP33gXihgFTB9B`, Floor `6xqFcEZZk49w86p5pAsisA`, Asset detail
+  `Rr5rwirCUMRy8gf5G6Vz7s`, Model detail `47miWruJVsednbzrFPij2b`, People lists
+  `LPdsNGb4CRMfS6qk7j7Fsa`, Gear lists `D7N5PmXKrkcY2gzZXWeuvc`, Crew planner
+  `AKkgWzJ2gVR3dJTWnMB2Ui`, Scan `8Q2HVoRhLbSLz1Q9mCtayX`, Finance hub
+  `5VnYTVW2pdA5r1qBRvdrom`, Settings `Q3TeWuQPjzvXbAtmUV8Hg8`.
+- **Decisions:** D1–D61 in the main spec §12; the next is D62.
+- **Fixture canon** (keep new prototypes consistent with these): `TODAY` 2026-11-09,
+  and 11 Nov is a Tuesday in the fiction (so 9 Nov is a Sunday; print `9 Nov` with no
+  weekday). AURA-01 is Reserved on #2341 in LX-02, T&T 12-monthly, last passed 19 Nov
+  2025, due 19 Nov (10 days); the overdue T&T units are AURA-02 and AURA-10; the fan
+  fault awaiting parts is AURA-06. #2338 is Corporate AGM (Fri 21 Nov) in every
+  prototype except the Jobs list, where it predates the canon.
+- **Running surfaces in parallel:** the twelve v1 prototypes were built by one Sonnet
+  agent each from a shared brief, then reviewed together for drift (fixture
+  contradictions, crumb separators, fonts in the dock). Brief every agent with the
+  fixture canon above and the sibling-link placeholders, and plan for the usage
+  limit: twelve agents at once ran through it once.
 - **The user's standing preferences:** brief explanations, no fluff, solution first;
   Overview is home and must be calm; checkboxes and bulk actions instead of per-row
   buttons, everywhere; show screenshots, then ask for the yes.

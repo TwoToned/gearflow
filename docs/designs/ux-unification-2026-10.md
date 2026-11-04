@@ -38,6 +38,7 @@ shell at three widths, and the primitives every surface is built from).
 - Scan · Check + Test & tag: https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX — v1 (§9i).
 - Finance hub: https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom — v1 (§9j).
 - Settings (index + Team): https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8 — v1 (§9k).
+- Forms (every create and edit sheet): https://claude.ai/artifact/REMbu5TYg5Nx6iJJoPLuGy — v1 (§9l).
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -1636,9 +1637,54 @@ Decisions raised: D57–D61 (§12).
 
 ---
 
+## 9l. Forms — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/REMbu5TYg5Nx6iJJoPLuGy — desktop 1440 and phone 390, every control wired (gallery search and row ⋯, all eleven sheets/dialogs in create and edit with inline validation, search-first pickers with Enter-picks-top, dependent fields, Save and add another for asset/crew/location, client contacts as rows, discard prompt, Undo on every save, the New job row opening the wizard).
+
+### 9l.1 Why
+Eleven forms (`src/components/{assets,clients,crew,suppliers,locations,kits,maintenance}/*-form.tsx`) are separate full pages with their own layout and no shared validation display. Schemas are the source (`src/lib/validations/*.ts`); the sheet changes only how they render. Findings: `kitSchema` and `locationSchema` carry optional money/number fields that must stay blank-able (`blankableNumber`); `supplier-order` has `supplierId` required and a separate route; `maintenanceSchema` only applies `completed`/outcome fields when `status === "COMPLETED"` (comment at `maintenance.ts:38`). The user asked to see every face-lifted form, not read the order table.
+
+### 9l.2 The page
+A calm gallery: head `Forms`, sub line, one red primary `New job ↗` (links the wizard), page ⋯ (sibling links). Rows are grouped (Gear and places · People and suppliers · Maintenance and jobs), each with name, the route it replaces, field count, last saved. Row click opens Create; row ⋯ opens Create or Edit (prefilled with a realistic record). `Last saved` is a dot-word plus what changed, and goes back to `—` on Undo. There are no checkboxes or bulk bar: nothing here has a bulk verb, so the always-on checkbox rule is deliberately not applied.
+
+### 9l.3 The sheet (`RowEditorSheet`)
+Copied from the asset sheet: centred wide on desktop, full-height bottom sheet on phone; bold section word + muted hint; `More details` collapsed on create, open on edit; inline errors as you type (after a field is touched, all after the first Save); footer Cancel · `Save and add another` (batched forms) · primary.
+- Required, max length, ≥ 0 or blank money (`Enter an amount of 0 or more, or leave it blank`), integer and range bounds come from the Zod schema; blank money stays blank.
+- Pickers are Radix-combobox style: type, arrows, Enter picks the top result, Esc closes the list first and the sheet second. Multi pickers (maintenance assets, kit contents) stay open and add rows.
+- Dependent fields: client type (Company / Person / Venue / Production company) relabels the name and hides contact name and ABN for Person; maintenance `COMPLETED` reveals Completed date and Outcome (cost, parts, result, per-asset disposition that defaults to keep-out on Fail); kit check mode rewrites its hint; model sale price reveals sale stock, `Requires test & tag` reveals profile and validity; client payment profile reveals deposit %.
+- Cancel or Esc with changes asks `Discard your changes?` (Keep editing / Discard).
+- Save toasts what changed with Undo (snapshot closure); `nothing changed` toasts without Undo.
+- Add another keeps context: asset (model, location, bin, condition; tag advances; serial clears), crew (type, status, department, role, rates), location (parent, type).
+
+### 9l.4 Form → route change → notable rules
+| Form | Route change | Notable rules |
+|---|---|---|
+| Asset | `/assets/registry/new`, `/[id]/edit` → sheet; words fold in Bulk | model search-first shows next tag; tag required ≤ 50, unique; warranty not before purchase; price blank-able |
+| Bulk stock | `/assets/registry/new?kind=bulk` → sheet | stock code unique; quantity ≥ 1 |
+| Model | `/assets/models/new`, `/[id]/edit` → sheet | name required; rates blank-able ≥ 0; T&T reveals profile + validity ≥ 1 |
+| Kit | `/assets/kits/new` → sheet | tag required unique; contents search-first (bulk gets qty); check mode words |
+| Location | `/assets/locations/new` → sheet | parent search-first, may be empty; excludes itself in edit; notes ≤ 1,000 |
+| Client | `/clients/new`, `/[id]/edit` → sheet | type relabels; email format; discount 0–100; contacts are rows on edit |
+| Crew member | `/crew/new` → sheet | first and last required; rates blank-able; add another |
+| Supplier | `/suppliers/new` → sheet | name required; email format |
+| Supplier order | `/suppliers/[id]/orders/new` → sheet | supplier and order # required; expected not before order date |
+| Maintenance job | `/maintenance/new` → sheet | ≥ 1 asset, title required; completed not before scheduled; outcome only when completed |
+| Service schedule | stays a dialog | interval 1–120 months; anchor date required |
+| New job | `/projects/new` → the wizard (§9.4) | not rebuilt here |
+
+### 9l.5 Phone
+Gallery rows are cards (name, route line, field count, ⋯ always 40 px); sticky primary `New job`. Every sheet is a full-height bottom sheet, inputs 16 px, footer pinned: `Save and add another` as a word line above Cancel + primary. Service schedule is a bottom dialog.
+
+### 9l.6 Code
+One `RowEditorSheet` driven by the Zod schema (`z.input` types, `.omit()/.pick()` variants), `combobox-picker.tsx` for pickers (Radix Popover, never Base UI inside a Radix Dialog), `useNative*` write hooks unchanged, `blankableNumber` for optional money. The eleven `*-form.tsx` page layouts and their `/new` and `/edit` pages go; routes redirect to the sheet.
+
+Decisions raised: D62–D64 (§12).
+
+---
+
 ## 10. Everything else, briefly
 
-Every surface in the playbook's §9 now has a section (6c, 7b, 7c, 9c–9k). What is
+Every surface in the playbook's §9 now has a section (6c, 7b, 7c, 9c–9l). What is
 left here is the glue between them.
 
 - **DataTable** lists adopt the §9b list-page pattern (strip, filter words,
@@ -1750,6 +1796,9 @@ the recommended option.
 | D59 | Add `Resend invite` and invite Undo (re-issue) | Yes | Revoke + re-invite only |
 | D60 | Move invoice numbering and default tax rate from General to Billing | Yes | Leave on General |
 | D61 | Kill switch moves to a Danger zone group | Yes | Stay on API keys |
+| D62 | Every `/new` and `/[id]/edit` form route becomes a sheet over its list/record (deep links kept) | Yes | Keep full-page forms |
+| D63 | Bulk stock is created from the asset sheet's `Serialised unit · Bulk stock` words | Yes | Separate entry point |
+| D64 | Service schedule stays a small dialog | Yes — five fields, one decision | Make it a sheet |
 
 ---
 

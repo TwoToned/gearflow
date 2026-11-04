@@ -572,6 +572,16 @@ above wired with Undo).
 > paid dots only and red for shortages and crew gaps. Every control and
 > flow is unchanged.
 
+> **Rows select with checkboxes, no per-row action** (2026-11-04). `Pick 1
+> crew` / `Send 2 offers` / `Confirm` on service rows and `Send offer` /
+> `Resend` / `Confirm` on crew rows go; the status pills and ⋯ keep the
+> single-row verbs. Service rows, crew rows and the phone day cards all carry
+> an always-on checkbox, and the bulk bar acts on the ticks: `Pick crew · N
+> short` (opens the picker for the first short service), `Send N offers`,
+> `Confirm N`, `Set status…`, `Send offers`, `Delete` / `Remove`. On the
+> phone the bulk bar replaces the sticky `+ Add service ▾` while anything is
+> ticked.
+
 The live tab's structure stays (`Add service ▾` by type and template, Generate,
 Import, a date-grouped timeline, the services money summary, the Project crew
 table) and gets the same clean-up as Equipment and the warehouse: the service
@@ -776,6 +786,10 @@ field, and adds the obvious missing moves.
   changes ride with this: crew notes actually print at the top of the
   call sheet and runsheet (today nothing prints them), and note saves
   record `updatedBy`/`updatedAt` and write an Activity event.
+- **File rows tick too** (2026-11-04): an always-on checkbox per file and a
+  bulk bar for the ticks (`Category ▾ · Attach to task ▾ · Download ·
+  Remove`), matching every other list; tasks keep their completion circle as
+  the row's own tick.
 - **Files: a category per file, who and when, open, download, rename,
   undo.** The row is thumbnail or type badge, name, a category chip that is
   a menu (the existing `ProjectMediaType` enum — Floor plan, Site map,

@@ -1,0 +1,111 @@
+<style>
+#toast{z-index:60}
+/* crew planner + timesheets (surface CSS; tokens only) */
+.phoneviews,#daychips{display:none}
+#wknav{display:flex;align-items:center;gap:6px;margin-right:6px}
+#wknav .wk{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--ink);min-width:104px;text-align:center;white-space:nowrap}
+#wknav .step{width:28px;height:28px;border-radius:8px;color:var(--muted);font-size:16px;line-height:1}
+#wknav .step:hover{background:var(--paper-2);color:var(--ink)}
+.pgrid{width:100%;table-layout:fixed;border-collapse:collapse}
+.pgrid th{font-size:11px;font-weight:600;color:var(--muted);text-align:left;padding:6px 4px 6px;vertical-align:bottom}
+.pgrid th.day{text-align:left;padding-left:8px}
+.pgrid th.day .dn{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--ink-2);margin-left:4px}
+.pgrid th.we,.pgrid th.we .dn{color:var(--faint)}
+.pgrid th.r{text-align:right;padding-right:2px}
+.pgrid td{border-top:1px solid var(--line);padding:5px 3px;vertical-align:top}
+.pgrid td.who{padding:9px 8px 9px 0;vertical-align:middle}
+.pgrid td.who .nm{font-weight:600;font-size:13.5px;color:var(--ink);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pgrid td.who a.nm:hover{text-decoration:underline}
+.pgrid td.who .rl{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pgrid td.day{height:78px;position:relative}
+.pgrid td.day.we{background:rgba(255,253,248,.02)}
+.pgrid td.day.free{cursor:pointer}
+.pgrid td.day.free:hover::after{content:'+';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:20px;font-weight:300}
+.pgrid td.day.off{background-image:repeating-linear-gradient(135deg,transparent 0 7px,rgba(255,253,248,.045) 7px 8px)}
+.pgrid td .mk{font-size:11.5px;color:var(--muted);padding:5px 5px 0;line-height:1.35}
+.pgrid td .mk .dotw{font-size:11.5px}
+.pgrid td .mk .ref{font-family:var(--mono);font-size:11px;color:var(--faint);display:block;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pgrid td.hrs{text-align:right;font-family:var(--mono);font-size:12.5px;vertical-align:middle;padding-right:2px;white-space:nowrap}
+.pgrid td.hrs .act{color:var(--faint)}
+.pgrid tr:hover td.who .av{box-shadow:0 0 0 2px var(--line-2)}
+.blk{position:relative;background:var(--paper-2);border-radius:7px;padding:5px 7px 6px;cursor:pointer;min-width:0;display:flex;flex-direction:column;gap:1px;margin-bottom:3px}
+.blk:hover{background:var(--card)}
+.blk.sel{background:var(--select)}
+.blk.dim{opacity:.36}
+.blk .b1{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px}
+.blk .b1 a{font-family:var(--mono);font-size:11.5px;color:var(--ink);font-weight:600;flex:none}
+.blk .b1 a:hover{text-decoration:underline}
+.blk .b1 .role{color:var(--muted);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.blk .b2{font-family:var(--mono);font-size:11px;color:var(--muted);padding-left:20px;white-space:nowrap}
+.blk .b3{padding-left:20px}
+.blk .b3 .dotw{font-size:11.5px}
+.blk .cb{width:14px;height:14px;flex:none}
+.blk .cb.on::after{left:3px;top:0;width:3.5px;height:6.5px}
+.blk .dots{position:absolute;right:1px;top:1px;width:22px;height:22px;opacity:0;background:var(--card)}
+.blk:hover .dots{opacity:1}
+.age{color:var(--faint);font-family:var(--mono);font-weight:500;margin-left:2px}
+.age.stale{color:var(--warn)}
+.who .av{border-color:var(--paper)}
+.avs .av{border-color:var(--paper)}
+.sech{display:flex;align-items:baseline;gap:6px;padding:16px 16px 6px;font-size:12.5px;font-weight:600;color:var(--ink)}
+.sech .n{font-family:var(--mono);font-weight:500;font-size:11.5px;color:var(--faint)}
+.sech.first{padding-top:10px}
+.lrow .av{border-color:var(--paper)}
+.lrow .nm a{color:inherit}
+.sugg{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+.tbl td.num,.tbl th.num{text-align:right}
+.tbl .jn{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.tbl a.jn:hover{text-decoration:underline}
+.tbl .mutedcell{color:var(--muted)}
+.flagw{margin-left:10px}
+.rolerow{display:grid;grid-template-columns:14px 1fr 92px 84px 84px 90px 34px;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line);font-size:13.5px}
+.rolerow:first-of-type{border-top:0}
+.rolerow .sw8{width:8px;height:8px;border-radius:50%}
+.rolerow .sub{margin-top:1px;font-size:11.5px}
+.rolerow.arch{opacity:.55}
+.rolehead{display:grid;grid-template-columns:14px 1fr 92px 84px 84px 90px 34px;gap:10px;font-size:11px;font-weight:600;color:var(--muted);padding-bottom:6px}
+.chk{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13.5px;cursor:pointer}
+.chk:first-child{border-top:0}
+.chk .cb{width:18px;height:18px}
+textarea.in{width:100%;min-height:64px;background:var(--card);color:var(--ink);border:1px solid var(--control-line);border-radius:10px;padding:8px 12px;font:inherit;font-size:13.5px;resize:vertical}
+.dlg select{height:36px;border-radius:10px;background:var(--card);color:var(--ink);border:1px solid var(--control-line);padding:0 10px;font:inherit}
+.dlg .availline{font-size:12.5px;min-height:18px}
+@media (max-width:859px){
+  .phoneviews{display:flex;gap:18px;padding:10px 16px 0}
+  .phoneviews .fw{height:30px;font-size:14px}
+  .phoneviews .fw.on::after{content:none}
+  .phoneviews .fw.on{box-shadow:inset 0 -2px 0 var(--action-red);color:var(--ink)}
+  #daychips{display:flex;border-bottom:0;padding:4px 16px 6px}
+  #daychips:empty{display:none}
+  #daychips .chip{height:38px;flex-direction:column;gap:0;justify-content:center;padding:0 12px;border-radius:12px;line-height:1.1}
+  #daychips .chip b{font-weight:600;font-size:13px}
+  #daychips .chip .chip-count{font-size:10.5px;color:var(--faint)}
+  #daychips .chip .chip-count.open{color:var(--t-out)}
+  #wknav{padding:0;margin:0 0 8px;justify-content:space-between}
+  #wknav .wk{min-width:0;flex:1;text-align:center;font-size:13px}
+  #wknav .step{width:40px;height:36px}
+  .lrow .dots{flex:none}
+  .sech{padding:14px 16px 6px}
+  .rolerow,.rolehead{grid-template-columns:12px 1fr 74px 34px}
+  .rolerow .hide-m,.rolehead .hide-m{display:none}
+}
+</style>
+<div class="lphead">
+  <div><h1 class="h1">Crew<span class="cnt" id="count"></span></h1><div class="sub deskonly" id="hsub"></div></div>
+  <div style="flex:1"></div>
+  <div class="ib deskonly" id="viewsw" style="gap:14px;margin-right:8px"></div>
+  <button class="btn btn-primary deskonly" data-act="new" id="primary">Offer call</button>
+  <button class="btn btn-icon deskonly" data-act="pagemenu" aria-label="More">⋯</button>
+</div>
+<div class="phoneviews" id="phoneviews"></div>
+<div class="segrow" id="strip"></div>
+<div class="ftoolbar">
+  <div id="wknav"></div>
+  <div class="search"><span class="muted">⌕</span><input id="q" placeholder="Search person, role, skill or job" aria-label="Search crew"></div>
+  <div class="fstrip"><div id="fwords" style="display:contents"></div><div class="spacer"></div><div id="views"></div></div>
+</div>
+<div class="daychips" id="daychips"></div>
+<div class="tblwrap" id="tblwrap"></div>
+<div class="list" id="list"></div>
+<div class="lpfoot" id="foot"></div>
+<div class="phoneact" id="phoneact"><button class="btn btn-primary" data-act="new" id="phoneprimary">Offer call</button></div>

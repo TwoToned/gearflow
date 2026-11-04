@@ -20,6 +20,8 @@ shell at three widths, and the primitives every surface is built from).
 - Finance: https://claude.ai/artifact/7ByfxnbtsgQTJdiwvvo1CY — v2 (§8b).
 - Job › Overview + page header: https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo — v1 (§6b).
 - Tasks & notes (Tasks + Notes + Files merged): https://claude.ai/artifact/BrLBitu3c2V4uixLQbXCNE — v1 (§8c).
+- Jobs list: https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd — v1 (§9b).
+- Assets registry: https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw — v1 (§9b).
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -1008,10 +1010,138 @@ job or per session.
 
 ---
 
+## 9b. List pages — one pattern for Jobs, Assets and every other table (prototypes 2026-11-04, awaiting a yes)
+
+**Prototypes:** Jobs https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd · Assets
+https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw — desktop 1440 and phone 390, every
+control wired (segments, filter menus, sort, pager, row menu, checkbox range select,
+bulk bar with Undo, saved views, board / grid, empty states).
+
+### 9b.1 Why
+
+Every list in the app is the same primitive (`src/components/ui/data-table.tsx`:
+search, column filter menus, sort, 25-row pages, `emptyPreset`) wrapped differently
+on every page. Jobs (`src/components/projects/project-table.tsx`) and Assets
+(`src/components/assets/asset-table.tsx` inside `assets-view.tsx`) are the two people
+open most, and they disagree on everything above the rows: Assets opens on a photo
+Grid with a `localStorage` toggle and the "power view" behind it, Jobs opens on the
+table; filters live in per-column menus you have to know to look for; the dashboard's
+stat tiles link to bare `/projects` and `/assets/registry`
+(`src/components/dashboard/widgets/stat-tile-widgets.tsx`), so the number you clicked
+is gone when the page opens; and the row actions are the per-row buttons §5.2
+retired everywhere else. The survey covered Crew, Clients, Suppliers, Locations,
+Maintenance, Test & tag, Models, Kits and Sales stock too — same primitive, same
+drift, so one pattern fixes all of them.
+
+### 9b.2 The pattern (every list page)
+
+1. **Head.** `Name · count` (mono count), one sub line (a fact about the whole set
+   plus the `/` search and `n` new hints), ONE primary (`+ New job`, `+ New asset`),
+   everything else in ⋯ (templates, overbookings, import, export, print labels,
+   columns, show cancelled / retired). Table · Board (Jobs) or Table · Grid (Assets)
+   as words with the active one underlined — no segmented control.
+2. **Quick strip.** Four to seven words with counts, in the page's own stage
+   vocabulary, underlined like the job tabs. The LAST segment is the exception set
+   (`Needs you`, `Needs attention`) and is the only one that prints red, and only
+   when non-zero — it is the page's inbox, not a filter.
+3. **Toolbar.** A bare search that says what it matches ("Search job, number or
+   client"), then filter words: `Status ▾` becomes `Status: Confirmed ✕` /
+   `Status: 2 chosen ✕` when set, every menu is multi-select, `Clear` appears when
+   anything is set. `Views ▾` sits at the right. No filter icons, no card chrome.
+4. **Rows.** The whole row opens the record. An always-on checkbox leads every row
+   with a select-page box in the header; shift-click selects the visible range.
+   Status is dot + word; money is right-aligned mono with no cents; the ⋯ shows on
+   hover only. The main column carries a muted second line (client under job name,
+   category under model) so the table stays at eight columns or fewer; the rest are
+   opt-in from ⋯ › Columns. Flags (`1 blocking`, `overbooked`, `18d overdue`) print
+   inline after the name as red dot-words — no badge pills.
+5. **Footer.** `38 jobs · 1–25  ‹ 1 / 2 ›`. Page size stays 25.
+6. **Bulk bar.** Verbs are contextual (`Force return 3` only when a deployed asset is
+   selected), the destructive one last and red, every write toasts with Undo. A bulk
+   write runs each row's own gates and skips what it can't do, and the toast says so
+   ("deployed ones stay on their job").
+7. **Empty states** are domain words with a next action, and "nothing matches"
+   (`Clear filters`) is a different message from "none yet" (`New job`).
+8. **Phone.** The head folds into the phone header (name + a count line), the quick
+   strip and the filter words scroll sideways, rows become cards (title, one sub
+   line, status at the right, 22 px checkbox), the primary is a sticky bar the bulk
+   bar replaces while anything is selected, paging is `Show 25 more`.
+9. **The URL is the state.** Segment, filters, sort, page and view are query params,
+   so a saved view is a link, a dashboard tile links to the segment it counts, and
+   the back button works. This replaces `localStorage` filter persistence; only
+   per-user conveniences (chosen columns, grid vs table) stay local.
+
+### 9b.3 Jobs (`/projects`)
+
+- **Segments:** All · Quoting (`ENQUIRY`, `QUOTING`, `QUOTED`) · Booked
+  (`AWAITING_PAYMENT`, `CONFIRMED`, `PREPPING`) · Out (`CHECKED_OUT`, `ON_SITE`) ·
+  Done (`RETURNED`, `COMPLETED`, `INVOICED`) · Needs you. Cancelled jobs are hidden
+  until asked for (⋯ › Show cancelled, or the Status filter).
+- **Needs you** = unresolved blocking discussions, overbooked, reduced stock, out
+  past its end date, or a quote untouched for 12+ days. Derived on read, never
+  stored (same rule as the Overview readiness checklist).
+- **Columns:** `#` · Job (client, tags, flags) · Status (the pricing-lock glyph under
+  the word when the §6b lock applies) · Dates · Type · Total; PM and Tags opt-in.
+  Default sort is start date, newest first; the strip is the primary way in.
+- **Row ⋯:** Open, Warehouse page, Set status…, Duplicate…, Save as template…,
+  Cancel job…
+- **Bulk:** Set status… (each job runs its own gates — the `CONFIRMED` impact
+  preview and snapshot included), Assign PM…, Add tag…, Export, Cancel jobs (confirm
+  dialog that says what happens to reservations and documents).
+- **Board** (desktop only): one column per stage, cards show number · client, start
+  or overdue, total, and the same flags; drag to change status.
+- **Views:** `My jobs`, `Out this week`, `Unquoted enquiries` ship as defaults;
+  `Save current view…` names the current URL and can make it the user's default.
+
+### 9b.4 Assets (`/assets/registry`)
+
+- **Segments:** All · Available · On jobs (`DEPLOYED` + `RESERVED`) · In maintenance
+  · Due for T&T (overdue, or due within 30 days — test & tag or service, whichever
+  is sooner) · Needs attention · Retired.
+- **Needs attention** = missing, needs repair, overdue test & tag or service, or
+  deployed on a job that is itself overdue.
+- **Filters:** Model, Category, Location, Condition, Kind (serialised / bulk).
+  `Group ▾` (model, location, category) turns the table into group rows with
+  counts — it is a sort, not a tree.
+- **Columns:** Tag (thumbnail) · Model (category, tags; a bulk line prints
+  `37 of 48 in`) · Serial (`bulk` for bulk lines) · Status · Condition · Location
+  (shelf on the second line) · Next due (`T&T 14 Aug`, red `Service 5d overdue`) ·
+  On job (number + name, a link); Value, Tags and Owner opt-in.
+- **Table is the default**, Grid is remembered per user (reverses today's
+  `assets-view.tsx` default). Grid cards keep the checkbox, ⋯ and status, so bulk
+  selection works in both.
+- **Scan to find** sits beside the primary: on desktop it focuses the search (a USB
+  scanner types the tag and Enter opens the asset), on the phone it opens the
+  camera (§5.7 `ScanDock`) and a read jumps straight to the asset.
+- **Row ⋯:** Open, Edit…, Job #n, Move to…, Schedule service…, Print label,
+  Duplicate…, Force return (deployed only), Retire… / Reinstate.
+- **Bulk:** Edit… (only the fields you change are written), Move to… (deployed
+  skipped), Add tag…, Print labels, Schedule service, Force return n, Retire
+  (confirm; on-job skipped; history and T&T record kept).
+
+### 9b.5 Every other list
+
+Crew, Clients, Suppliers, Locations, Maintenance, Test & tag, Models, Kits and Sales
+stock adopt the same shell with their own strip vocabulary (Crew: All · Available
+this week · On a job · Unconfirmed; Maintenance: Open · Overdue · Scheduled · Done;
+Test & tag: Due · Overdue · Passed · Failed; Models: All · With stock · No stock ·
+Archived). Known one-page fixes ride along: Assets' filter menus become multi-value;
+Locations gets a type filter; every page keeps a domain `emptyPreset`.
+
+### 9b.6 Code
+
+One `ListPage` composition (head, strip, toolbar, table-or-cards, footer) over the
+existing `DataTable`, reusing `BulkActionBar` and `RowActionsMenu`
+(`src/components/ui/`) and `SavedViewsMenu` rewired to URLs. Pages supply columns,
+segments, filters, bulk verbs and the row menu — nothing else. The per-row buttons,
+the per-page toggle components and the `localStorage` filter keys go.
+
+---
+
 ## 10. Everything else, briefly
 
-- **DataTable** lists adopt `LineRow`'s mobile card and `ActionMenu` for their row
-  actions; the three ad-hoc inline icon sets go.
+- **DataTable** lists adopt the §9b list-page pattern (strip, filter words,
+  checkbox + bulk bar, phone cards, URL state); the three ad-hoc inline icon sets go.
 - **Asset detail / model detail** headers become `DetailHeader`.
 - **Dashboard** is unchanged; its job cards become the §9.1 card.
 - **Notifications** page gets a "See all" link from the bell; **changelog** links from
@@ -1059,6 +1189,9 @@ the recommended option.
 | D8 | Bulk accessories (batteries, pouches) verify on **count** at the bin barcode, not one scan per unit | Yes — they carry no tag; the bin barcode + "how many" is one scan | Per-unit scan of a shared bin code |
 | D9 | Managers deploying with a DEFAULT accessory left behind get the reason **prefilled** from the office note, still editable | Yes — one tap, still logged | Managers skip the reason entirely (today's `logAccessoryCheckoutOverride` behaviour) |
 | D10 | "Remember for the next n" on the scan sheet is scoped to the **job** | Yes — the choice is about this job's gear | Per packer session |
+| D11 | List filters, sort, page and view live in the **URL**; `localStorage` persistence goes | Yes — saved views and dashboard tiles become links, back works (§9b.2) | Keep per-browser persistence and add deep links on top |
+| D12 | Assets registry opens on the **Table**; Grid is remembered per user | Yes — operators look things up, browsing is the exception | Keep today's Grid default |
+| D13 | `Needs you` / `Needs attention` are derived list segments, not stored flags | Yes — same rule as the Overview readiness checklist | A stored "flagged" bit set by the writers |
 
 ---
 

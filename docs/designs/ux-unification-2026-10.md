@@ -445,6 +445,15 @@ dot. Width is capped so the eye has a single line to follow.
 > paid dots only and red for shortages and crew gaps. Every control and
 > flow is unchanged.
 
+> **Rows select with checkboxes, no per-row action link** (2026-11-04). The
+> `Sub-hire 2` / `Confirm order` / `Price` links in the row go; the row's
+> `● Short 2` status and its ⋯ keep the single-line verbs. Checkboxes are
+> always on, on the phone too (the select-mode toggle is gone), and the bulk
+> bar carries the actions for the ticked lines: `Edit… · Move to… · Exclude
+> from ROI · Delete` plus, when they apply, `Sub-hire N short` (opens the
+> sub-hire sheet for the shortfall) and `Confirm N orders`. On the phone the
+> bulk bar replaces the sticky `+ Add line` bar while anything is ticked.
+
 Same approach as the warehouse: the live tab's structure stays (header, stepper,
 version strip, tab row, context rail, `Add ▾`, one table, hover actions, inline
 cells, checkbox selection + bulk bar, drag and drop) and every feature that landed

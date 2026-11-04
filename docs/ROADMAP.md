@@ -219,6 +219,10 @@ one `LineRow` / `ActionMenu` / stage table across Equipment, Logistics and every
 warehouse surface; Packing and Client views inside Equipment; the warehouse job page
 on one stage filter + one scan pipeline; Scan in the phone bottom nav. Mockups are
 linked from the design doc. Seven decisions (D1–D7) need a yes before phase 0.
+Clickable prototypes exist for the job page (Overview, Equipment, Logistics, Finance,
+Tasks & notes), the warehouse job page and the Jobs / Assets lists;
+[`docs/designs/ux-redesign-playbook.md`](./designs/ux-redesign-playbook.md) is the
+method and the per-surface briefs for the rest.
 
 ---
 

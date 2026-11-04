@@ -11,6 +11,10 @@ artboards: Equipment desktop + phone + line editor sheet, Logistics desktop + ph
 day mode, Warehouse job desktop + phone pack mode + scan sheet, the floor board, the
 shell at three widths, and the primitives every surface is built from).
 
+**How to redesign the next surface:** [`ux-redesign-playbook.md`](./ux-redesign-playbook.md)
+— the method, the language, the surface patterns, the prototype kit
+(`docs/designs/prototype-kit/`) and a brief per remaining surface.
+
 **Clickable prototypes** (state-driven HTML, every action wired, Undo on every write):
 - Job › Equipment: https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC — v2 (§7): the
   live tab cleaned up with every feature on the row, accessory rows + editor,

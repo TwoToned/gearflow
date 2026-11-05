@@ -1,6 +1,6 @@
 ---
 status: PROPOSED
-updated: 2026-10-27
+updated: 2026-11-04
 ---
 # UX unification — one list, one row, one menu, works on a phone
 
@@ -26,6 +26,23 @@ shell at three widths, and the primitives every surface is built from).
 - Tasks & notes (Tasks + Notes + Files merged): https://claude.ai/artifact/BrLBitu3c2V4uixLQbXCNE — v1 (§8c).
 - Jobs list: https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd — v1 (§9b).
 - Assets registry: https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw — v1 (§9b).
+- Home: https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf — v2 (§6c): the live dashboard, calmer. (v1 https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR rejected; its My tasks / Notifications / Activity views are still linked from v2.)
+- Job › Packing + Versions: https://claude.ai/artifact/HSAZTyzfjG2A7sCjUe9wsM — v1 (§7b).
+- New job wizard + job edit sheet: https://claude.ai/artifact/GgtKxc5WZP33gXihgFTB9B — v1 (§7c).
+- Warehouse floor + Returning mode: https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA — v1 (§9c).
+- Asset detail + asset forms: https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s — v1 (§9d).
+- Model detail: https://claude.ai/artifact/47miWruJVsednbzrFPij2b — v1 (§9e).
+- Crew, Clients, Suppliers lists: https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa — v1 (§9f).
+- Models, Kits, Locations, Maintenance, Test & tag, Sales stock, Overbookings lists: https://claude.ai/artifact/D7N5PmXKrkcY2gzZXWeuvc — v1 (§9g).
+- Crew planner + Timesheets: https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui — v1 (§9h).
+- Scan · Check + Test & tag: https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX — v1 (§9i).
+- Finance hub: https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom — v1 (§9j).
+- Settings (index + Team): https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8 — v1 (§9k).
+- Forms (every create and edit sheet): https://claude.ai/artifact/REMbu5TYg5Nx6iJJoPLuGy — v1 (§9l).
+- App shell (sidebar, tablet rail, ⌘K, Mira, phone nav + More): https://claude.ai/artifact/B4JAamBGiX6ypauLucopa2 — v1 (§6d).
+- People records (client, crew member, supplier, supplier order): https://claude.ai/artifact/D8UV81TDFpMEeUBxf2apUX — v1 (§9m).
+- Gear records (location, kit, maintenance job, T&T, category): https://claude.ai/artifact/PDsjUdku2seVZAWfNC6W61 — v1 (§9n).
+- Schedule (jobs + gear timeline): https://claude.ai/artifact/49jbSumcZhVdCU9ZA3nqdm — v1 (§9o).
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -440,6 +457,94 @@ dot. Width is capped so the eye has a single line to follow.
 
 **Prototype:** https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo
 
+## 6c. Home — the live dashboard, calmer (v2, prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf — desktop 1440 and phone 390, every control wired (stat deep links, task tick + Undo, row ⋯, page ⋯, Customise: drag a title, arrow keys, ⋯ menu, width presets and corner resize, hide, Add widget, Reset layout, Done, Dismiss + Undo, loading and all-clear previews). Replaces the v1 6c.
+
+### 6c.1 Why
+The user rejected four new Home concepts (the v1 calm Home, a Today timeline, an Inbox-to-zero and a Week board) and said: *"I kinda like the current one. The quick stats, then any tasks etc."* and *"Give it the calmer design. But keep the bones."* So this is the live `/dashboard`, cleaned up: the same eleven widget kinds, the same 12-column grid, the same default order, the same Customise — only the skin changes.
+
+What the live code does wrong (all kept in the page, fixed in the skin):
+- Three of four stat tiles link to a bare list, so the number is lost on click: `stat-tile-widgets.tsx:71` and `:86` both go to `/projects`. "Overdue returns" counts CHECKED_OUT **line items** (`convex/dashboardStats.ts:116`) yet opens a list of jobs.
+- Customise has no keyboard or menu path (`dashboard-card.tsx` grip is `aria-hidden`), writes silently with no Undo (`use-dashboard-layout.ts` swallows save errors), and the two checklists each have an irreversible org-wide Dismiss.
+- Chrome: every widget is a bordered card with a title bar (`dashboard-card.tsx:10`), needs-attention items are icon pills, the activity feed uses coloured icon discs, "On site" labels both CHECKED_OUT and ON_SITE.
+
+### 6c.2 The page — widget by widget
+Head: `Good morning, Jayden`, date + org, one red `+ New job` (wizard); Warehouse, Add gear and Customise… in ⋯. Each widget is a hairline top rule, a 13 px/600 title, a muted mono count and a quiet `View all ›`. Default order is the user's: setup panel, the four stat tiles, then My tasks and Needs attention side by side (6 + 6), then On the floor now, Upcoming, Recent activity. That changes only `DEFAULT_DASHBOARD_LAYOUT` (live puts the stats 5th and leaves the right half beside My tasks empty); the widgets, the grid and Customise are unchanged, and Reset layout returns to this order.
+
+| widget | verdict |
+|---|---|
+| Finish setup + Get started | **Restyle + merge.** One dismissable panel while either is incomplete: one progress line, rows with a destination word. Dismiss now has **Undo** (bug fixed: dismissal was irreversible). Two live kinds share one slot. |
+| My tasks (6 of 12) | **Restyle + new tick.** Tick circle completes with a toast + **Undo** (the live widget had no checkbox; reuses the `/my-tasks` complete write). Due as `2d overdue` / `Today` / `10 Nov`; High as a dot-word; row ⋯: open, due today/tomorrow, mark done. Count = open tasks. |
+| On the floor now | **Restyle + bug fixed.** Rows not cards, two columns; status word is the real one (`Out` for CHECKED_OUT, `On site` for ON_SITE); soonest due back first, overdue in red. `View all ›` to the floor. Empty keeps the live sentence, minus the mascot. |
+| Needs attention | **Restyle.** The eleven chip kinds as dot-word lines with a mono count, each deep-linked to its list segment. The overdue-returns line is suppressed while its stat tile is on the board (same fact never twice) and returns when the tile is hidden. One addition: `N invoices overdue · $` (orgFinanceCounts already reads the finance counts; the live tray never showed overdue invoices). |
+| Four stat tiles (3 of 12 each) | **Restyle + bug fixed.** A calm row of numbers; every tile deep-links to the segment it counts, with a tooltip naming the target: Active jobs → Jobs `?seg=active`, Overdue returns → `?seg=out&overdue=1`, Gear deployed → Assets `?seg=deployed`, Crew booked → Crew `?seg=all`. Overdue returns now shows **jobs** (what the list shows) with the line count as its sub (`67 items to chase`). Gear keeps its thin utilisation meter. |
+| Upcoming | **Restyle.** Rows with a dot-word status, lock glyph, mono date range; `View all ›` → Jobs `?seg=booked`. |
+| Recent activity | **Restyle.** Same nine items and three columns, as sentences with who · when; no icon discs. `View all ›` goes to Activity. |
+
+Removed: the aside line under the greeting (it restated the Overdue returns tile). Fixture: today 9 Nov; overdue invoices are INV-0027 UNSW $8,250 (18d) and INV-0031 Ogilvy $8,725 (5d) from the Finance prototype.
+
+### 6c.3 Customise
+Kept: enter from the page ⋯ (`Customise…`), hide/show widgets, reorder, resize, Reset, Done, Add widget, per-user save. While customising the red primary becomes `Done` and `+ New job` steps aside, so there is still one primary. New: the title is the drag handle **and** focusable — ArrowUp/Down moves it, Enter opens its ⋯, Delete hides it; the ⋯ has Move up/down, Width (Quarter … Full, clamped to the registry min/max — stat tiles stop at a third), Hide from Home. A corner handle resizes width in whole columns; height follows content (the live comment already sizes every min height to its content). **Every change toasts with Undo.** Add widget lists hidden kinds with their description and appends at the bottom, as live.
+
+### 6c.4 Phone
+Phone header `Home` + `Good morning, Jayden · 9 Nov` + ⋯ as a sheet; one column in the saved (y, x) order; the four stat tiles are a 2×2 grid; rows 60–64 px, tick 22 px, row ⋯ always visible at 40 px; one sticky `+ New job` above the bottom nav (Home active). **Customise is hidden on phone** (the ⋯ sheet says it is on desktop); the phone shows the arrangement made on desktop. This removes the live mobile add/remove-only Customize, because touch reordering was already judged unreliable by the live grid.
+
+### 6c.5 Code
+Restyle in place: `dashboard-card.tsx` (hairline rule + header, no card), `widgets/*` rows (`stat-tile-widgets.tsx` href → `?seg=` URLs, `needs-attention-widget.tsx` pills → dot-word lines, `on-the-floor-now-widget.tsx` status word, `my-tasks-widget.tsx` tick via the existing task-complete mutation, `recent-activity-widget.tsx`), `dashboard-customize-bar.tsx` (Reset layout, Undo snapshots, keyboard handle in `dashboard-grid.tsx`), `dashboard-grid.module.css` (dashed frames). Merge the two checklist widgets into one panel component. `use-dashboard-layout.ts` and `convex/dashboardLayouts.ts` unchanged. Needs: Jobs list `active` segment and `overdue=1`, an un-dismiss for setup/activation, a jobs-not-lines overdue count (or keep lines and link to the line list).
+
+Decisions raised: D85–D89 (§12). The v1 Home's D14–D18 are withdrawn.
+
+---
+
+## 6d. Shell — sidebar, rail, top bar, ⌘K, Mira, bell, phone nav — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/B4JAamBGiX6ypauLucopa2 — desktop 1440, tablet rail 1024 and phone 390, every control wired (sidebar items, sub-page toggle, collapse + ⌘B + auto rail ≤ 1023 with flyouts, org switcher with Undo, user menu with theme words and shortcuts, breadcrumb trails for four page types, ⌘K palette with recents, number/name/date search, `@` pages, `/` actions, arrows and Enter; Mira panel with Confirm, Dismiss, Undo, New chat and the write-access switch; bell with mark-read, Mark all read and Undo; phone bottom nav, camera sheet, More sheet with drill-down, full-screen search, header; "Signed in as" switch showing the permission gates; the D1 alternative).
+
+### 6d.1 Why
+`src/components/layout/*` and `(app)/layout.tsx`. Findings: the top bar shows one non-link title that drops id segments, so a job page reads "Projects" (`top-bar.tsx:45-60`, labels still "Projects"/"Availability" at :34,:30); the phone has no Scan, no gating and reaches Test & tag, Maintenance, Clients only through a hamburger drawer (`mobile-nav.tsx:34-40`), and the theme toggle is `hidden sm:flex` so it is unreachable there (`top-bar.tsx:104`); Mira is a `fixed bottom-20 right-4` FAB over every page, on top of the bulk bar (`mira-launcher.tsx:42`). Also: 13 sub-rows always inline in the sidebar, 248 px width against DESIGN's 220 (`(app)/layout.tsx:46`), ⌘B collapse is not in the shortcuts list, the bell reads mentions only while `/notifications` reads a derived feed, and ten prototypes each hand-roll their own nav and bottom-nav hrefs.
+
+### 6d.2 The page (desktop)
+- **Sidebar 220.** Brand, org row (the switcher), three hairline groups in main spec §6.1 order: Home · Jobs · Finance · Schedule | Crew · Assets · Warehouse · Test & tag · Maintenance | More: Clients · Suppliers · Locations · Activity. Settings, the user row and `‹ Collapse ⌘B` sit at the foot. Icons keep their module hue; the active row is a tint, never a red fill. Sub-pages show under the active module and on a hover `›` toggle (so all 13 stay reachable, none shout). Gated items are absent, never greyed.
+- **Rail 72** at ≤ 1023 automatically and by `Collapse`/⌘B at any width (remembered). Icon + 10.5 px label; click opens a flyout (`Open Assets`, sub-pages); `More` holds the four secondary items; the org row becomes initials.
+- **Top bar** (56): a real trail `Jobs › #2341 Hilton Sydney gala dinner › Equipment`, each segment a link, last one ink; then the search field `Search or jump to… ⌘K`, `Mira`, and the bell with a mono count (no filled badge, no `9+`).
+- **Org switcher** is the sidebar head; the user menu is personal: Account settings, My crew profile (when linked), Theme `Dark Light` words, Keyboard shortcuts, Sign out last and red. Switching org toasts with Undo and lands on Home; role per org changes the gates.
+- **Home** placeholder shows only what the shell needs.
+
+### 6d.3 ⌘K — search first
+- Empty: **Recent** (5) then **Actions** (New job `N`, Scan, New asset, New client; on a job or asset page an `On #2341` group first).
+- Typing matches job number (`2341`, `#2341`), asset tag (`aura 01` = AURA-01), name words, contact names (`priya`), grouped Jobs / Assets / Models / Clients / Crew / Suppliers / Locations, best group first, four rows each and `Show all 7 in Assets ›`. A date (`14/11`, `14 nov`) lists the jobs on that day. `@` pages, `/` actions (also bare `/` opens it), kept from live.
+- ↑ ↓ move, Enter opens the highlighted row, Esc closes, ⌘K toggles. Row = mono id, name, muted sub, dot-word status, mono dates. Opening a row moves it to the top of Recent. Nothing matching says `Nothing matches “…”` with the next step.
+- Gates apply (no New job for a viewer). Drill-down (`Shift+→`) stays as live.
+
+### 6d.4 Mira (D5)
+A `Mira` word in the top bar toggles a 384 px panel under it: hairline left edge, no shadow, overlays the page, Esc closes. Discussion rendering: initials, one sentence, tool lines in mono, no bubbles. A `danger: high` call stops at a left-ruled **Confirm** card: operation, args, estimate, `Confirm` (ink, not red) and `Dismiss`, plus the line "Mira cannot approve this itself". Confirm replays the stored call as the user, toasts and has Undo; with org write access off the card says so and has no button. ⋯: New chat, Mira settings, write access (prototype of the org setting). The panel header names the page Mira is looking at. Per CLAUDE.md, no `confirm` parameter is ever model-visible.
+
+### 6d.5 Bell
+Count + menu of dated rows (unread dot, title, dot-word type, one muted line, time), `Mark all read` with Undo, `All notifications ›` to Home. Open = mark read. Open question: live bell is mentions-only; this assumes it shows the same feed as Home › Notifications.
+
+### 6d.6 Phone
+- Header per page: back chevron + title + one identity line (the trail's last segment; chevron goes to the parent crumb), then `⌕`, Mira, bell with count, ⋯. These are the only icon buttons allowed (global chrome, aria-labelled).
+- **Bottom nav (D1): Home · Jobs · Scan · Warehouse · More.** Scan is a 50 px red circle raised 8 px inside the bar, so it never overlaps the 44 px sticky primary above (checked: 2 px clear). Gated: a role without warehouse loses Scan and Warehouse (live bar is ungated). Active = red; More is active on Crew, Assets, Settings pages.
+- **Scan** opens the camera sheet from the tap (copied from the Scan prototype); outside a job it looks the tag up and offers `Open asset ›`.
+- **More sheet** (88 %, 48 px rows): user head (taps to account menu with Theme and Sign out), Plan: Schedule, Finance `1 overdue`, Overbookings `5 overbooked`, Job templates; Crew and gear: Crew 28 ›, Assets 605 ›, Test & tag `4 overdue` ›, Maintenance `20 open · 5 overdue`, Locations 13, Returns `2 overdue`; People: Clients 26, Suppliers 13; Account: Activity, Settings ›. › rows drill to Open X + sub-pages. Replaces the hamburger drawer.
+- **Search** is a full-screen sheet: input 16 px, `Cancel`, word chips `@ Pages  / Actions  Scan a tag`, 58 px rows. Mira is a full-height sheet, the bell a bottom sheet.
+
+### 6d.7 D1's alternative, and why not
+Alternative: keep Home · Jobs · Warehouse · Crew · Assets and add a floating Scan button. The prototype's "Bottom nav" switch shows it: the button sits on top of the sticky primary and the last row's ⋯ (checked: overlaps), and it breaks principle 8 "nothing floats". Crew and Assets are the cost of D1: they move to More (two taps), which is the right trade because Scan is the daily verb and Crew/Assets are looked up.
+
+### 6d.8 What every other prototype changes when D1 is accepted
+- Kit `shell.html` `.bottomnav`: Assets item becomes `More` (button, opens the More sheet), icons become SVG, centre Scan keeps `.scan` but 50 px / -9 px; `assemble.mjs` `__NAVASSETS__` argument goes (More is active on Crew, Assets, Settings).
+- `core.js`: `renderNav` list (Dashboard -> Home, Maintenance coral, More group) and a shared `moreSheet()`; better, ship the shell as one `shell.js` module (the sidebar, top bar, crumbs, bottom nav) so the ten pages stop rewriting `.bottomnav a` hrefs and `.crumb` (finance, floor, home, model, packing, planner, scan, wizard, settings, people).
+- Per prototype: `#assets` href rewrites become `data-act="more"`; the Scan prototype's `a[href="#scan"]` hook stays; Assets list and Gear lists set `More` active instead of `Assets`; phone headers adopt search / Mira / bell icons; top bar gains `Mira` and the bell.
+
+### 6d.9 Code
+Compose: one `NAV` table (`src/lib/nav.ts`: key, label, hue, url, resource, subs, group, count source) feeding `AppSidebar`, the rail flyouts, `MobileNav`'s More sheet and the palette's `@` pages (R-3.1); `Breadcrumbs` built from route segments plus a per-page `useBreadcrumbs` entity label, replacing `getPageTitle`; `ScanSheet` reused from the Scan surface; `MiraLauncher` becomes the top-bar word and `MiraPanel` loses `fixed bottom-20`. `use-mobile.ts` and the kit disagree (768 vs 859): pick one constant. Goes: the FAB, the hamburger drawer on phone, `segmentLabels` "Projects"/"Availability", My tasks rail item.
+
+Decisions raised: D65–D70 (§12).
+
+---
+
 ## 7. Job › Equipment — v2 proposal (prototype 2026-10-27, awaiting a yes)
 
 > **Calm pass (2026-10-28).** Applied to this tab's prototype after the home:
@@ -566,6 +671,88 @@ are rows. Menus are sheets without keyboard hints.
 
 **Prototype:** https://claude.ai/artifact/BdwR4bNbiNMLSvfRAByEwC (v13, every flow
 above wired with Undo).
+
+## 7b. Job › Packing and Versions — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/HSAZTyzfjG2A7sCjUe9wsM — desktop 1440 and phone 390, every control wired (drag a line onto a case, tick + shift-tick + `Plan into…`, row and case ⋯, add / rename / seal / delete case with Undo, search and filter words, version chip menu, Versions tab rows, Compare sheet with side pickers, Make live dialog with conflicts and Undo, Save as new version, rename, delete, `V`).
+
+### 7b.1 Why
+Live: `src/components/projects/packing-tab.tsx` (194 lines), `versions-panel.tsx`, `version-strip.tsx`, `version-switcher.tsx`, `finance/make-live-dialog.tsx`. Findings: (1) planning is one native `<select>` per row, one line per write, silent on success, no bulk, no undo (`packing-tab.tsx:57-71,153-157`); drag was deferred (`:140-144`). (2) A packed line's select is disabled and reads "Not planned" while the line sits in its packed case's bucket (`:59-60`) — the plan and the reality contradict on screen. (3) Rename and delete container have hooks (`use-project-container-writes.ts:23-24`) but no UI; the tab carries no count. (4) Versions is a right Sheet opened from the header pill or `V` (`versions-panel.tsx:235`); Compare is a separate page mode launched only from the pill menu, and the panel's own docstring still calls Compare a stub (`:28`); Make live shows no preview of what follows (`make-live-dialog.tsx:85-89`).
+
+### 7b.2 The page
+Header, desktop tab strip and phone strip are Overview's, with two entries added: `Packing 36/44` (planned/total, derived, like `Tasks & notes 9/14`) and `Versions 3`. The tab row carries the tab's one red primary on the right: `+ Add case` / `Save as new version` (the live page already shares that row with the active tab's action). The version chip `v3 · Live ▾` sits in the meta line; viewing a draft shows the quiet info strip with `Make v2 live` / `Back to live`, and Packing follows the viewed version (live passes `versionId`).
+
+**Packing.** Left, sticky: one dashed **Unplanned** card (8). Right: **case cards** in two columns (LX-02, LX-04, VID-04, BATT-01): name mono, kind muted, `11 lines · 3 packed`, a header checkbox that selects the card, ⋯ on hover. Rows are 46 px: title, muted `Category · Kit · Sub-hire · Custom`, `×qty`, ⋯. Nothing is priced. Cards show 6 lines then `Show 5 more · 5 left`. Toolbar: bare search, `Category ▾`, `Status ▾` filter words that read their value, `Clear`; tab ⋯ holds Print all case labels, Manifest, Select the unplanned, Show every / fewer lines, Open the warehouse page. Footer: `44 lines · 249 units · 3 packed in the warehouse`.
+
+### 7b.3 Planning
+- Three ways to the same write `planInto(ids, case)`: drag a row (a ticked row drags the whole selection) onto any card header or body; tick lines and use `Plan 3 into… ▾` in the bulk bar; row ⋯ `Plan into…`. All toast with Undo (`snapshot()` closure): `3 lines → LX-04`.
+- Packed lines show `● Packed`, are not draggable, and are skipped by bulk writes; the toast says so (`1 packed line stays (move in the warehouse)`). What was packed wins over the plan, and when they differ the row says `Planned → LX-04` (the warehouse glyph, shown only on disagreement — this fixes finding 2).
+- A kit moves whole (tag `Kit · moves whole`). A sealed case rejects drops with a toast naming the unseal verb; its lines cannot be dragged out.
+- Case ⋯: Rename…, Print case label, Seal / Unseal, Show every line, Delete case… (red, last). Delete is blocked with a reason while any line is packed (`NOT_EMPTY` server rule), otherwise it confirms and returns planned lines to Unplanned; Undo restores.
+- `+ Add case` dialog = the live New container sheet: `From inventory  Custom  Bulk tub (later)` words, search with `In use · #2350` dot-words, name, Packed inside, description. "Cases are never priced."
+- Empty states: `No lines match that` (filters) and `Every line has a case` (nothing unplanned) are different sentences.
+
+### 7b.4 Versions
+- **A dated list in the Discussion rendering**: mono date, `v3 · Live`, label, `● Live` / `● Viewing` dot-word, one fact line (`44 lines · 36 planned`, by, quote state), one derived diff line vs the previous version (`vs v2: +2 lines · −1 line · 3 lines changed · +$1,970`), total right-aligned mono. No cards. Row click opens (views) that version; row ⋯: Open this version, Make vN live…, Compare with v3…, Rename…, Save a copy as new version…, Delete version… (red, last, never on the live row).
+- **Make live** dialog (calm rows): Warehouse (pick list follows vN: lines, packed gear carries over), Availability (demand changes on n models, re-checked, never a block), Invoices (INV-0041 stays; quote total and balance to raise before → after), and "vN stays saved — nothing is deleted. This sends nothing to the client." After confirm a conflict list (`Sennheiser EW-DX SK beltpack · 6 packed units are not on v1`) is shown if any; the toast has Undo that restores the previous live pointer.
+- **Compare** is a read-only right sheet (bottom sheet on phone): `v2 ▾ → v3 · Live ▾` side pickers, money bridge `$21,910 → $23,880 · +$1,970`, then Added / Removed / Changed / Services groups with signed money, and a muted `Packing plan · 2 lines` row. Footer: `Make v2 live`, `Close`.
+- **Save as new version** (primary): dialog with optional name, "a full copy: lines, cases and the packing plan; the live version does not change". Undo removes it.
+- Home: the live panel is a Sheet; this proposal makes it a tab because (a) a sheet cannot carry a sticky primary or a phone tab entry, (b) Compare is already a page-level mode launched from elsewhere, so the sheet was neither the one place for verbs nor for diffs, (c) a version list is read at length (dates, diffs, totals). The chip menu stays for quick switching and `Manage versions` / `V` open the tab.
+
+### 7b.5 Phone
+- Tab strip carries Packing and Versions; header `#2341 · Confirmed · 12 – 14 Nov · v3 live`; header ⋯ = job menu with the tab's own verbs on top.
+- Unplanned first, then each case as a section; rows 64 px, 22 px checkbox, whole row toggles selection, ⋯ 40 px always visible; drag grips and the tab ⋯ are hidden; `Show 5 more · 5 left`.
+- Sticky primary `+ Add case` (Versions: `Save as new version`) is replaced by the bulk bar (`Plan 3 into… ▾`, `Unplan 2`) while anything is ticked; `Plan into…`, row, case and version menus are 48 px bottom sheets; Compare is a 92 % bottom sheet; inputs 16 px.
+- Versions rows are 64 px: `v3 · Live`, `Thu 6 Nov · 44 lines · 36 planned`, diff line, total, ⋯.
+
+### 7b.6 Code
+Reuses `usePackingTab`, `useProjectContainerWrites` (+ the unused `update`/`remove`), `NewContainerSheet` fields, `resolvePackingStatus` (glyph rule), `useProjectVersion` / `MakeLiveDialog` / `CompareView`'s alignment (`convex/lib/versionCompare.ts`; the sheet renders its rows, no second diff). `PackingTab` rewritten as `UnplannedCard` + `CaseCard` + rows; drag uses the Equipment tab's HTML5 drag helpers if they are extracted (else a small local hook). `VersionsPanel` becomes `VersionsTab`; `version-switcher.tsx` keeps the chip menu. Shared bulk bar and row ⋯ primitives from §5. Needs: a `sealedAt` field on `projectContainers` (D), a Make-live preview query (counts only, fail open).
+
+Decisions raised: D19–D21 (§12).
+
+---
+
+## 7c. Job › New job wizard, job edit sheet and templates — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/GgtKxc5WZP33gXihgFTB9B — desktop 1440 and phone 390, every control wired (three steps with validation, draft line, client / contact / location / manager / tag comboboxes, inline new client and location, range calendar with presets and busy-day dots, project window, availability consequence, `Start from template ▾` + `Manage templates…` with bulk delete, search-first gear add with Enter / second Enter, line editor, shift-range select + bulk bar, Review with totals and `Starts as`, `Create job` / `Create as enquiry`, the job-header stub with `Edit`, the edit sheet with the date-move heads-up on #2341, template edit and `New template…`, discard draft, Undo on every write).
+
+### 7c.1 Why
+`src/components/projects/project-wizard.tsx` (913 lines) is create, edit and template in one component. Its steps are Basics · Schedule · Site · Review (`:112`), none of them gear, and nothing is written until the last click (`:330`), so a phone that loses signal on step three loses the job. The Schedule step never says what the dates collide with (`:708-850`). Edit (`edit/page.tsx`, 71 lines) is the same four-step wizard on a separate page, with a Status `Select` (`:536`) that moves status without the stepper's confirm gate. Templates (`templates/page.tsx`) is a table plus a second copy of its cells for the phone cards and per-row `Use` / Edit / Delete buttons (`:150-190`); `Use` asks for a code and name and starts a different flow from the wizard.
+
+### 7c.2 The page
+- **Steps are words**, active underlined: `Who and when · What 7 · Review`. `/projects/new` stays; steps are reachable once step one validates.
+- **Head:** `New job`, a quiet line `✓ Draft #2360 saved` (before a name exists: `Draft #2360 starts when you name the job`), one primary `Next` → `Create job`, `Create as enquiry` (step one) / `Back` as a muted word, ⋯ with `Edit an existing job (#2341)` and `Discard draft…` (confirm; Undo).
+- **Draft:** the job row is written the first time it has a name and kept in step; it is an ordinary Enquiry, so nothing new is stored and an abandoned wizard is just an empty Enquiry (it does not count toward Jobs › Needs you). `Create job` finishes that row, never duplicates it.
+- **`Create as enquiry`** finishes now from step one: Enquiry, no gear, toast with Undo.
+- **`Start from template ▾`** (step one, a filter word that reads its value: `Template: Gala dinner — ballroom`): five most used with their line counts, `Start from scratch` when set, `Manage templates…`, `New template…`. Picking one sets type, tags, description (and client discount) and brings its lines; dates are cleared exactly as `duplicate` does today. Toast with Undo.
+- **Manage templates…** is a dialog list with always-on checkboxes, shift range, row ⋯ (`Use for a new job`, `Edit template…`, `Delete…`) and a footer bulk `Delete n` (confirm: "jobs already created from it are not affected"; Undo). `/projects/templates` becomes a redirect that opens it. The separate table, its mobile duplicate and the per-row buttons go.
+- **What** is the Equipment tab's add, embedded: search first, kind words, results show `n of m free` for the rental dates, Enter adds with defaults and combines an existing model (`already ×4 here → ×5`), an asset tag resolves to its model, free text offers custom and sub-hire, a second Enter with nothing typed opens the line editor. Lines are the Equipment row (qty inline, rate, total, `short n` / `unpriced` flags, ⋯, checkboxes, bulk `Sub-hire n short` / `Remove n`). Category follows the model; moving it is Equipment's job. No dates → `Availability not checked` with `Set dates`.
+- **Review** is read-out sections with an `Edit` word each: Job, When (with the availability line), Where, What (lines + `Hire · Discount · Total ex GST`, no cents), `Starts as ● Quoting ▾` (Enquiry or Quoting; Confirmed and later stay on the Overview stepper) and `Creates`. Gear is pencilled, not held, until Confirmed.
+- **Fields on step one**, in the Zod schema's order (`src/lib/validations/project.ts`): Name · Project code · Client · Contact · Rental dates (`rentalStartDate` / `rentalEndDate`) · Project window (`projectStart/End` date + time) · Type · Project manager(s) · Tags; behind `Site, description and discount ▾`: Description · Location · Site contact name / phone / email · Discount %. `status` is not a field. `crewNotes` / `internalNotes` / `clientNotes`, `billingWeeks/DaysOverride` and `taxRate` are in the schema but never were in this form; they stay where they are.
+
+### 7c.3 Dates and availability
+- One range field; the calendar opens inline (a bottom-sheet-free design: phone shows one month). Presets `1 day · 2 days · Weekend · 1 week`, `Clear`. A dot under a day means another job has gear out (title lists it).
+- Under the field, derived on read: `● 3 other jobs in these dates #2350 …` and `● Gear not checked yet` / `● 2 lines short` / `● All 7 lines free`. No dates → `Availability not checked`.
+- Project window: `Project window · same as rental · Change`; blank stays blank (R-3.1). The soft warning text is kept verbatim.
+
+### 7c.4 The job edit sheet
+- `/projects/[id]/edit` redirects to `?edit=1`; the Overview header's `Edit` and the page ⋯ open a right-hand sheet (full height on phone). The same `fieldsHtml` as step one, all sections open and titled: Job (Name · Project code · Client · Contact · Rental dates · Project window · Type · Project manager(s) · Tags · Description) · Where (Location · Site contact name / phone / email) · Money (Discount %).
+- One `Save changes`, disabled until something changed; the footer says what (`dates, project window changed`). Cancel is the only other control. Save calls the one update mutation inline edits use.
+- **Date-move gate (#1227):** Save checks gear only when the window moved and the status is ≥ Confirmed. Nothing found → saves, toast with Undo. Found → `DateMoveImpactDialog` over the sheet: `2 × Sennheiser EW-DX EM4 receiver — also booked on #2338`, `Heads-up, not a block`, `Cancel` / `Save anyway`. In the prototype moving #2341 to 19 – 21 Nov finds EM4 ×2, SK beltpack ×2, Barco ×1 on #2338. It never shows as you type; the sheet says "Saving checks the new dates against gear on other jobs". Fails open.
+- Moving the rental dates carries the project window by the same offset (new; live leaves it, which makes a move look like a no-op to the gate).
+- Pricing lock: Discount disabled with the lock hint; Save leaves locked fields untouched.
+- Status is not a field: the stepper runs the accepted-quote, blocking-discussion and confirm-impact checks; the live Select skipped them.
+- Templates edit in the same sheet minus code, discount and gate.
+
+### 7c.5 Phone
+Header is back chevron + `New job` + `Draft #2360 saved · What` + ⋯ (bottom sheet). Step words scroll. Inputs 16 px, one column. Sticky pair above the bottom nav: `Create as enquiry | Next` on step one, `Back | Next` then `Back | Create job`; the bulk bar replaces it while lines are ticked. Line cards are 64 px with a 22 px checkbox and always-visible ⋯. Menus and the template manager are bottom sheets / full width dialogs; the edit sheet is full height with sticky Save.
+
+### 7c.6 Code
+One `ProjectFields` (the schema-derived field list) used by wizard step one and the sheet; `ProjectWizard` loses its `project` / edit mode. The What step reuses the Equipment `AddBar` and `LineRow` (§5.1, §5.5); `useDateMoveGate` and `DateMoveImpactDialog` stay as they are. New: a `draft` write on first valid name (reuse `projectWrites.create` with status ENQUIRY, then update), `?edit=1` handling on the record, a redirect for `/projects/templates`. Goes: the Site step, step circles, helper rail and CoachingTip on this page, `QuickCreateClient` / `QuickCreateLocation` dialogs in this flow, the templates table + `MobileCardList` copy, the use-template dialog.
+
+Decisions raised: D22–D25 (§12).
+
+---
 
 ## 8. Job › Logistics — v2 proposal (prototype 2026-10-27, awaiting a yes)
 
@@ -1142,15 +1329,549 @@ the per-page toggle components and the `localStorage` filter keys go.
 
 ---
 
+## 9c. Warehouse › Floor, Returning and the pull sheet — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA — desktop 1440 and phone 390, every control wired (scope strip, stage strip on phone, Packer / Client / Flags filters, dock typed search and scan with Open / Receive, camera sheet, tick + shift-tick, bulk Print pull sheets / Assign packer / Receive / Close out with Undo, card ⋯ with Documents and Admin overrides + confirm, Returning mode with outcome strip, unit chips, bulk Return / Damaged / Raise repair / Missing with Undo, bulk-bin "which job" dialog, offline queue, pull-sheet print view, empty states, Show more).
+
+### 9c.1 Why
+Three pages answer one question — "what is where, and what do I do next" — in three vocabularies. The floor (`warehouse/page.tsx`) has a scan field whose scan only sets a text filter on project name/number (`:468-494`), so scanning a tag empties the list; a link card to Returns (`:504`); four stat tiles; urgency groups; and a card that carries a status pill, a 5-dot stepper, a prep bar, an `Open` button and an `Actions ▾` menu (`:919-946`). Returns (`returns/page.tsx`) is a second scan surface with per-row buttons — `Mark damaged`, `Mark missing`, `Raise repair` (`:433-440`), per-line `Return` / `Return kit` (`:515-540`) — and a manual Refresh (`:459`) because the board is a one-shot fetch. The pull sheet (`pull-sheet/page.tsx:241`) is a whole page to print one list.
+
+### 9c.2 The page
+Keeps: job cards as the unit, the stage vocabulary, the scan, per-item outcomes, Undo, batch close-out, the manual overrides. Head `The floor · 12` with one primary `Scan` (focuses the dock) and ⋯. Strip `Today · This week · Mine · All` with counts (default This week), then `Returning 236` pushed right. Dock (copied from the warehouse job page). Filter words `Packer ▾ · Client ▾ · Flags ▾ · Clear` and `Select all n`. Board of five columns `To pick · Prepping · Ready · Out · Returning`, each a dot-word head with count. Footer one muted line.
+- **Card:** checkbox, `#2341`, ⋯ (hover); name; `client · 12 – 14 Nov`; `18 lines · 4 to pick` (Out: `78 items out`; Returning: `46 of 88 items back`) over a 4 px bar; `Truck Tue 06:30 · Van 2`; packer avatar + name or `no packer`; flags as dot-words (`short 2`, `3d overdue`, `awaiting payment`, `1 blocking`, `1 damaged`). Whole card opens the warehouse job.
+- **Columns are derived, never dragged:** Returning = any unit back; Out = any unit out; Ready = nothing to pick; Prepping = some packed; else To pick. The manual overrides are the only way to disagree with the scanner (D6).
+- **Scope:** Today = truck within today + tomorrow (live's window), plus out-and-due and everything returning; This week = truck within 6 days; Mine = I am PM or packer.
+- **Gone:** stat tiles (counts live in the strip, column heads and Flags), urgency groups, stepper, status pill, `Open`, `Actions ▾`, the close-out bar, the Returns link card.
+### 9c.3 The dock and Looking up
+One input, id `q`. Typing filters by number, name, client; Enter on a tag resolves it. Result strip, same as the job page: `SK-0012 · packed for #2341 · truck Tue 06:30  Open ✕`; an out unit offers `Receive` (primary) and `Open`; a bin out on four jobs offers `Receive…`; kit members say scan the kit; shelf and unknown tags say so. The matching card gets a teal ring and scrolls into view; a job outside the scope widens to All. `Recent n ▾` is the live last-five strip. The chip `Any job · Look up ▾` is the mode toggle (Look up · Receive).
+### 9c.4 Returning mode
+Entered from the strip word, page ⋯, the dock chip, a card ⋯ `Receive gear`, or bulk `Receive n`. Same page, same dock, chip `Receive`. Strip becomes outcomes: `‹ The floor · Out · Returned · Damaged · Missing · Late` (units; missing/late red when non-zero). Body is a table grouped by job (group row: checkbox selects the job, `#2331 Live Nation tour · due back 8 Nov · 68 out · 1d overdue`, ⋯ `Return everything still out`), rows `Item (tags · shelf) · out / total · outcome dot-words · ⋯`. Row click expands unit chips; a chip's menu records one unit. Late is derived (out past the job's end, or returned after it). Scan returns a unit; the strip entry has `Undo` and `Outcome ▾` (Returned · Damaged · Raise repair · Missing); a bin on several jobs opens "Which job?" with a quantity per job. Bulk bar: `Return n · Mark damaged n · Raise repair n · Mark missing n` (destructive last, red). Every write toasts and shares one `snapshot()` closure with the strip; Undo is offered only while it is the latest write.
+### 9c.5 Pull sheet
+`Documents ▾ › Pull sheet` on the warehouse job (already in its menu), card ⋯ › Documents, page ⋯ `Pull sheets · jobs in view`, bulk `Print pull sheets 3`. A dialog with the print view (paper, category groups sorted by shelf, kit members, short flags, sign-off line), `Print` / `Save PDF`. `/warehouse/[id]/pull-sheet` becomes a redirect to `/warehouse/[id]?doc=pull-sheet`. Same list the packer works from; no localStorage ticks.
+### 9c.6 Phone
+Header `The floor · 12 jobs · 2 overdue` + ⋯ sheet (Returning mode first). Stage strip under it (`All · To pick · Prepping · Ready · Out · Returning`, counts). Dock sticky beneath, camera beside it, result strip inside the sticky block. Scope words and filters scroll as one row. Cards grouped by stage under hairline heads, 64 px: name, `#2341 · client · dates`, `Truck Tue 06:30 · Sam O.`; right `4 to pick` and the first flag; 22 px checkbox; ⋯ 40 px. No sticky `Scan` bar: the dock and the bottom nav's raised Scan (context-aware: it opens the camera in the current mode, Warehouse item active) already are the primary, a third would duplicate; the bulk bar replaces nothing and sits above the nav. Returning rows are cards under job heads, `Show 25 more · n left`. Board is hidden, not squeezed.
+### 9c.7 Does `/warehouse/returns` survive?
+Only as a deep link: it redirects to `/warehouse?mode=returning` (the returns desk has printed signage and bookmarks). Mode, scope and filters belong in the URL (D11). The separate page, its Refresh button and its own board go.
+### 9c.8 Code
+Composes `ScanDock`/`ScanStrip` (§5.7, as built for the job page), `BulkBar`, `ActionMenu`, `DetailHeader`-less list head, `filterWord`. Reuses `useNativeWarehouseList`, `useReturnsWrites`, `useResolveScan`, `warehouse-undo-toast`, `warehouse-stages.ts` (adds Ready, Returning labels in `vocabulary.ts`). Goes: `StatCell`, `UrgencyGroupHeader`, `LifecycleStepper`, `PrepProgress` card variant, returns page's session lists, `pull-sheet/page.tsx` body (becomes `PullSheetDocument`). Needs a derived `warehouseStage(project)` shared by board, strip and URL; the server must expose per-project unit counts (out/back/pick) rather than top-level line status (live `getPrepSummary` counts lines, so a half-returned line reads as out).
+
+Decisions raised: D26–D29 (§12).
+
+---
+
+## 9d. Assets › Asset detail and the asset forms — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s — desktop 1440 and phone 390, every control wired (seven controlled tabs with `#AURA-01/<tab>` deep links, health checklist actions, availability strip with Earlier / Today / Later and row highlight, check filters, maintenance tick + shift-range + bulk Mark done / Reschedule with Undo, History filter and paging, Notes autosave and Discussion, Files grid with bulk, page ⋯ (Move, Schedule service, Report issue, Print label, New asset like this, Force return, Retire / Reinstate / Delete), the Scan dialog (same tag confirms, another tag navigates), the edit sheet with validation, the create sheet with search-first model, Save and add another, Bulk stock, CSV import, empty and not-found states). Six assets are reachable through Scan: AURA-01, AURA-03 (deployed, T&T overdue), L-0007 (in repair), ULXD-03 (in a kit), SK-0012 (nothing checked), RC-0007 (an accessory).
+
+### 9d.1 Why
+`src/app/(app)/assets/registry/[id]/page.tsx` is a 993-line page with a bordered hero card carrying five controls (comments, QR, Report issue, Edit, ⋯), an uncontrolled `Tabs defaultValue="history"` (`:493`) with no `?tab=`, and a 4-section sidebar. Three findings. (1) The record lands on History, a log, not on what an operator needs first: is this unit fit to go out. That answer is scattered: T&T lives in the sidebar (`:787-820`), condition is a header pill (`:327`), open repairs are a tab, "where is it" is a pill (`:171-243`); nothing says `not checked`. (2) Edit is a route (`Link href=/assets/registry/${id}/edit`, `:373`), and Delete sits one click below Archive in the same ⋯ (`:410-420`) although it destroys maintenance and T&T history (dialog copy `:937`). (3) Every sub-list uses a different chrome: bordered timeline, table plus MobileCardList, session cards with Badges, two Panels, a bare editor. The forms (`asset-form.tsx`, `bulk-asset-form.tsx`) already share `SmartFormSection` order Identity → … → More details, but each is a page with a preview rail and the asset form creates several assets through add-row buttons (`asset-form.tsx:257,283`).
+
+### 9d.2 The page
+Pattern 4.2 on the Overview prototype's language. **Header:** thumbnail, `AURA-01` (the tag is what the floor says), status dot-word, identity line `Martin MAC Aura XB · Lighting · Warehouse A / B2` (model is a link to the model page; home bin is the one place the home location prints), real breadcrumb `Assets › AURA-01`. One primary: `Edit` (opens the sheet). Everything else in ⋯: Move to…, Schedule service…, Report issue…, Print label…, New asset like this… (the Duplicate item), Force return… (enabled only when Deployed, shown disabled with the reason otherwise), Retire… last and red. `Scan a tag…` is the first ⋯ item on desktop (and key `/`); `e` edits, `n` starts a new asset.
+
+**Tabs** (controlled; add to `VALID_TABS`, else a `?tab=` falls back to Overview): Overview · Availability *n* · Checks *n* · Maintenance *n* · History *n* · Notes *n open* · Files *n*. `?date=` still seeds Availability.
+
+**Overview** shows no table. (a) The health checklist, copied from the job's readiness list: headline (`Ready to go` / `Nearly ready` / `Can't go out`), `n of m checks clear`, the non-passing rows each with a right-hand action, and the passing ones as one muted line. Checks are derived on read, never stored: test & tag (overdue = blocking, ≤ 30 days = warn, no record = `not checked` → Register), service (next scheduled or last + interval; none = `not checked`), condition (needs repair blocks; no prep/return check on record = `not checked`; failed last check warns), whereabouts (missing blocks, in maintenance warns, due back today warns), double bookings, open repairs. (b) `Now · Last scan · Value & owner` in three columns: current job (link), dates, case / kit, "Accessory of", last scan, replacement and cost, owner. (c) Identity: serial, barcode, purchase, warranty, specs from the model, custom fields, tags. (d) Accessories as rows (serialised unit or bulk count; "from the model" rows cannot be detached), `+ Attach`, row ⋯ Detach with Undo.
+
+**Context rail** on every tab except Overview: Now, Last scan, Value, Owner — the same four definitions Overview composes (one function each, so they cannot drift). It is not shown on the phone (the facts are one tab away).
+
+**Availability:** words `‹ Earlier  Today  Later ›` and the window; an 8-week strip (4 on phone), one thin lane per booking, solid = reserved, red = deployed (live state), dashed = pencilled, amber = service, grey = past, a Today line; clicking a lane highlights its row. Below it the bookings list (job number, name linked to the job, dates, note, dot-word state, row ⋯ Open job / Warehouse page). Past jobs are in History.
+
+**Checks:** words `All Prep Return Ad hoc` (live filter), sessions as dated headers (`Prep · #2341 Hilton… · Sam Okafor · Fri 7 Nov 16:40`) with result rows as dot-words, notes and photo counts; `Run an ad hoc check ›` links to the scan/check surface. **Maintenance:** rows with always-on checkboxes; bulk `Mark done n`, `Reschedule…`; row ⋯; `Schedule service…` and `Report issue…` as words; footer shows the next service and the T&T record link. **History:** the Discussion rendering — day headings, job rows (dot-word Returned / Deployed) and change rows (time, who, what) merged from the live History list and the sidebar Activity feed; words `All Jobs Changes`; `Show 8 more · n left`. **Notes:** the note (autosave on blur, Undo) then Discussion (the live comments button becomes the tab). **Files:** photos as a grid with checkboxes (bulk `Set as photo`, `Download n`, `Remove n`), the "showing the model photo" line kept, model documents as rows.
+
+**Removed, with where the job went:** the hero card chrome (hairlines); the condition pill (health row); the comments, QR and Report issue header buttons (Notes tab, ⋯ › Print label, ⋯ › Report issue); the sidebar (Overview + rail); top-level Delete (inside the Retire dialog, enabled only for an asset with no history — retire is the safe default); `/edit` as a page (the sheet; the route redirects to `?edit=1`).
+
+### 9d.3 Retire, Force return, Scan
+- Retire names the downstream effects: reservations released and the job showing `short by 1`, scheduled services cancelled, accessories detached, history / checks / T&T kept, Reinstate from the Retired segment. Writes toast with Undo.
+- Force return explains the line returned, the status and location it lands in, and that the return check is skipped and logged.
+- Scan (phone's sticky primary, desktop ⋯ and `/`): a read of this tag confirms it (last scan = now, toast with Undo); a different tag navigates to that asset; an unknown tag says so in the dialog. Camera rules are the scanner's (CLAUDE.md): one WASM engine, `getUserMedia` from this tap.
+
+### 9d.4 Forms — the asset edit and create sheets
+One sheet shape for every §9.8 form (`RowEditorSheet`, §5.8): a centred wide sheet on desktop, full-height bottom sheet on phone, Save in the footer (always visible). Sections in the live order, each a bold word and a muted hint line; `More details` closes the sheet. Inline errors under the field as you type (tag required, ≤ 50, unique — `AURA-03 is already used by another asset`; money ≥ 0 or blank; warranty not before purchase). `blankableNumber`: a blank price stays blank, never `$0`. Save calls the same mutation the inline edits call and toasts what changed, with Undo.
+
+- **Edit:** Identity (model, tag + serial, custom name) · Condition & location (status, condition, location, bin) · Purchase (date, price, supplier, order #, warranty) · More details (tags, custom fields). The Notes field leaves the sheet; the Notes tab owns it.
+- **Create** (⋯ › New asset like this…, the list's `+ New asset`, key `n`; `/assets/registry/new` opens it over the list): search-first by model (type, Enter picks the top result; each result shows the next tag it would get), then tag (suggested, editable, a scan fills it), serial, condition, location, bin; purchase and more details behind one word. Footer: `Import CSV…` · Cancel · `Save and add another` (keeps model, location, condition, advances the tag, clears the serial — replaces the live add-row buttons) · `Create asset` (primary; opens it, where every check reads `not checked`). The words `Serialised unit · Bulk stock` fold `bulk-asset-form` in (stock code, quantity, location, price per unit); bulk stock lives on the model page, as the live detail redirect already does (`page.tsx:132`).
+- **CSV:** expected columns printed, a file preview with new / update / error rows, `Import 3 rows`, Undo.
+
+**Forms, field order from the live components** (all adopt the sheet; `Identity` first, `More details` last; ★ = required):
+
+| Form | Source | Order |
+|---|---|---|
+| Asset | `asset-form.tsx` | Identity: model★ · tag★ / serial · custom name — Condition & location: status · condition · location — Purchase: date · price · supplier · order # · warranty — More: custom fields · notes · tags |
+| Bulk stock | `bulk-asset-form.tsx` | Identity: model★ · tag★ · total quantity★ — Status & location: status · location — More: price per unit · notes · tags |
+| Model | `model-form.tsx` | Identity: name★ · manufacturer · model number · SKU · category · asset type · description — Pricing: day · week · month · purchase · replacement · sale price · sale stock — Xero coding: rental · sale account — Compliance: weight · power · requires T&T · test profile · validity days — More: specifications · tags · active · packing container |
+| Client | `client-form.tsx` (+ `client-contacts-manager.tsx`) | Identity: name★ · type — Contact: name · email · phone — Address: billing · shipping — More: ABN · terms · default discount · tax exemption · payment profile · default partial % · notes · tags. Contacts (name · role · email · phone · notes) are rows on the client record, added after create |
+| Crew member | `crew-member-form.tsx` | Identity: first★ · last★ · type · status · platform account — Contact: email · phone — Rates: day · hourly · overtime — More: department · default role · DOB · ABN/GST · address · emergency contact · notes · tags |
+| Supplier | `supplier-form.tsx` (+ order: `suppliers/[id]/orders/new`) | Identity: name★ — Contact: name · email · phone · website — Address — More: account # · terms · lead time · notes · tags. Order: order / PO #★ · type · status · order date · expected date · notes |
+| Location | `location-form.tsx` | Identity: name★ · type — Place: parent (search-first) · address — More: notes · tags · default for new assets |
+| Kit | `kit-form.tsx` | Identity: name★ · tag · category · location · status · condition · check mode — Contents — Case: type · dimensions · weight — Xero coding — More: purchase date · price · description · notes · tags |
+| Maintenance | `maintenance-form.tsx` | Identity: assets★ (search-first) · title★ · type · status · reported by · description — Schedule: scheduled · completed — Outcome: cost · parts · result · next due · asset disposition — More: photos · tags |
+| Service schedule | `service-schedule-dialog.tsx` | model · name · interval (months) · anchor date · instructions — stays a dialog (five fields) |
+
+Rules for the rest: sheet if ≤ 8 visible fields, search-first where a parent exists (asset → model, location → parent, maintenance → asset), `Save and add another` where records arrive in batches (asset, crew, location), `/new` and `/[id]/edit` stay as deep links that open the sheet, the preview rail goes.
+
+### 9d.5 Phone
+- Phone header: back chevron, `AURA-01`, one line `● Reserved · Martin MAC Aura XB · Warehouse A / B2`, ⋯ as a bottom sheet with 48 px items (Edit… is first, because Scan holds the primary).
+- Scrolling tab strip with counts under the header; the strip is the only tab control.
+- Sticky primary `Scan` above the nav; the bulk bar replaces it when anything is ticked (Maintenance, Files).
+- Rows 62 px with 22 px checkboxes where bulk exists, row ⋯ always 40 px; availability strip shows 4 weeks; files grid is two columns with a `Photo` link (camera, from the tap).
+- Sheets are bottom sheets, inputs 16 px, Save always visible; the context rail is hidden (its facts are on Overview).
+- History pages with `Show 8 more · n left`.
+
+### 9d.6 Code
+Composes `DetailHeader` (§5.9), `StatusPill` as dot-word, `BulkBar`, `RowEditorSheet`; the readiness list component from the job Overview becomes a shared `ChecklistSection` fed by a pure `assetHealth(asset)` (T&T, service, condition, whereabouts, bookings, repairs — derived, `unknown` never passes). `AssetChecksTab`, `AssetAccessoriesManager`, `AssetQRCode` (inside the label dialog), `ReportIssueDialog`, `BookingCalendar` data and the `useNativeAsset` subscription are reused; the sidebar components, `KvRow`, the hero card, the Delete menu item and `/registry/[id]/edit` page go. `asset-form` and `bulk-asset-form` are re-skinned into one `AssetSheet`; the zod schemas (`assetSchema`, `bulkAssetSchema`) stay the source.
+
+Decisions raised: D30–D34 (§12).
+
+---
+
+## 9e. Assets › Model detail — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/47miWruJVsednbzrFPij2b — desktop 1440 and phone 390, every control wired (six tabs and `?tab=` links, edit sheet with validation, discard prompt and specifications editor, duplicate-as-create, new-asset sheet, page ⋯ and archive confirm, accessory add/edit/remove, the Assets list filtered to this model with strip, filters, sort, pager, checkbox range select, bulk bar and row ⋯, checks picker and reorder, documents and photos grids with bulk, ROI scope, window, cost opt-in and tooltip, Undo on every write).
+
+### 9e.1 Why
+Live page: `src/app/(app)/assets/models/[id]/page.tsx` (933 lines) plus six components. Findings: (1) the landing tab is Details, four bordered cards of settings (`page.tsx:327-421`), so the first screen is a form read-out, not the model's state; the stock numbers sit in a sidebar "Asset summary" (`:748`) and the photo is a 64 px thumb. (2) The Assets tab hand-builds two tables with per-row icon buttons (force return, edit, archive, delete — `:432-446`, `:560-600`) and no search, filter, sort, selection or bulk, while `/assets/registry` has all of them. (3) ROI shows cost, fleet cost and payback by default in four Stat panels (`model-roi-tab.tsx:158-176`), against the "cost hidden by default" rule; and `Edit` is a separate route although the record has the form's whole shape on the page.
+
+### 9e.2 The page
+Pattern 4.2. Breadcrumb `Assets › Models › MAC Aura XB`. Header: **Martin MAC Aura XB** · `● Active`; identity line `Lighting · $85/day · $340/wk`; one primary `+ New asset`; ⋯ = Edit model…, Duplicate model…, Print labels for all 12, Archive model… (red, last). Tabs as words: **Overview · Assets 12 · Checks 6 · Documents 3 · Photos 5 · ROI**. Details is gone: its facts are on Overview, its form is the edit sheet, and `?tab=details` / `/edit` open the sheet.
+
+- **Overview** (no rail): the photo as hero beside the stock line `12 owned · 3 out · 1 in service`, a lead (`4 free · 4 held for #2341 …`) and up to three derived health rows (unit in service, units overdue for T&T, a check failing >= 25%) that jump to the tab that fixes them; then Earning (12-month revenue, jobs, per unit) · Value (replacement, fleet value, monthly rate) · Reliability (top failure rates); Booked (the BookingCalendar's data as rows + a 14-day free-units strip, `Schedule ›` for the month grid); Accessories as rows; Model · Technical · Compliance facts; description; Recent.
+- **Assets** is the Assets list (§9b) minus its head and minus the Model column: strip, search, Location and Condition filter words, sortable columns, 10-per-page in the prototype (25 live), shift-range checkboxes, row ⋯ (Open, Edit, Job, Move to…, Schedule service…, Print label, Force return when out, Retire…), bulk bar `Edit 3… · Move 3… · Schedule service 3 · Print labels 3 · Force return 3 · Retire 3` (red last). Rows open the asset (`https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s`). Bulk-type models show Available/Total instead of Serial/Condition.
+- **Checks**: rows (order, label, description, type word, ⋯: Move up/down, Remove…) + `+ Add check` picker (stays open; library link); Failure rates below as rows with a thin bar and a red `high` flag >= 25%.
+- **Documents** rows and **Photos** grid follow Tasks & notes files: select-all, always-on checkboxes, ⋯, bulk `Remove n`; photo ⋯ adds Set as primary, Move earlier/later.
+- **ROI**: words `Completed & invoiced · Including booked work` and `Last 12 months · All time`; default figures are revenue and revenue per unit; `Show cost & payback` reveals fleet cost, paid-for-itself and the cost-recovered bar; `How is revenue counted?` is the tooltip.
+- **Context rail** on every tab except Overview: Stock (omitted on Assets, where the strip says it), Value, Model, Technical, Accessories, Recent. Rates are on the identity line only, so they are not repeated.
+
+### 9e.3 The edit sheet
+Opened by ⋯ › Edit, `Edit pricing`/`Edit model` links, `?edit=1`. Right sheet 580 px (full-height on phone), sections in the model form's order: Identity, Pricing, Xero coding, Compliance & technical (test profile and validity appear when T&T is on), Specifications (the key/value editor inline; Enter adds), Tags and status (Active off = archived; Packing container). Rules:
+- One Save writes the same mutation the form does; toast + Undo (snapshot).
+- Blank money is blank, not $0 (`blankableNumber`); negative or non-numeric shows an inline error under the field and focuses it; name is required.
+- Cancel or Esc with unsaved changes asks `Discard your changes?` (Keep editing restores the draft).
+- Duplicate model opens the same sheet in create mode (`/new`), name `… (copy)`; it copies rates, specs, accessory plan and checks, not assets, photos or documents.
+- Purchase price lives here and in ROI's cost opt-in only: cost is not shown by default.
+
+### 9e.4 New asset and archive
+`+ New asset` (or `n`) opens a short sheet with the model fixed: Tag (next free suggested, unique-checked), Serial, Location, Condition, Purchase price (blank = model default), T&T due. `Create and add another` keeps the sheet open. Archive confirms with the downstream effects: assets stay, units out finish on their jobs, reservations hold, quotes unchanged, restore from Models › Archived. Archived model: dot-word `Archived`, a quiet banner, primary becomes `Restore model`.
+
+### 9e.5 Phone
+- Phone header: back chevron, name, `Lighting · $85/day · $340/wk`, ⋯ as a bottom sheet with 48 px items.
+- Tab strip scrolls with counts; rail hidden (its facts are on Overview); hero photo full width.
+- Assets are 60–64 px cards with 22 px checkbox, always-visible 40 px ⋯, `Show 2 more · 2 left`; sticky `+ New asset` above the nav, replaced by the bulk bar on selection; Photos 2-up grid; sheets full-height with sticky Save, inputs 16 px.
+
+### 9e.6 Code
+Composes `DetailHeader`, `ListPage` (strip, toolbar, table/cards, footer), `BulkBar`, `ActionMenu`, `RowEditorSheet` (the edit and create sheets), the Tasks & notes files rows. Reused: `ModelAccessoriesManager`/`ModelCustomAccessoriesManager` logic (as rows + search-first add), `ModelChecksTab` picker, `MediaUploader` mutations, `useModelRoi`. Goes: Details tab and its four cards, the two hand-built tables and their icon buttons, the Stat panels, `/assets/models/[id]/edit` (redirect to `?edit=1`), the sidebar Asset summary. **Tooltip rule kept:** the ROI explanation `Tooltip` must stay inside its own `TooltipProvider` (there is no global one; `model-roi-tab.smoke.test.tsx` reproduces the render-time crash) and the trigger renders its own `<button>`, so no nested button. The `?tab=roi` deep link from Fleet ROI keeps working; add `VALID_TABS` and fall back to Overview. URL is state: `?tab=`, segment and filters on the Assets tab.
+
+Decisions raised: D35–D37 (§12).
+
+---
+
+## 9f. People › Crew, Clients, Suppliers — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa — desktop 1440 and phone 390, every control wired (list switch in the sidebar / phone title sheet, strip segments, multi-select filter words, search, sort, shift-range ticks, bulk Message / Assign to job / Add tag / Deactivate / Merge / Archive with Undo, row ⋯, page ⋯, Log time and Export dialogs, saved views, columns, deep-link URLs, empty states, Show more, sticky primary).
+
+### 9f.1 Why
+Three lists on one primitive (`src/components/ui/data-table.tsx`) with three different tops. `/crew` is not a list for managers at all: `src/app/(app)/crew/page.tsx:75-81` renders `CrewDashboard` (five stat cards, four dashboard lists, per-row Approve / Dispute / Send buttons, then the table at the bottom), while non-managers get a bare table. `/clients` and `/suppliers` stack four stat tiles on the table (`clients-dashboard.tsx:93-120`, `suppliers/page.tsx` tiles) that link nowhere. Client bulk Archive is the only bulk verb anywhere (`client-table.tsx:197-230`); crew and suppliers have none. Enum filters are single-value (`crew-table.tsx:204-207` unwraps `[0]`). Status is a pill.
+
+### 9f.2 The page
+One shell (§9b), three configs: strip, columns, filters, bulk, row ⋯, page ⋯. Sidebar items Crew / Clients / Suppliers switch the list; the URL is `#/crew?seg=unconf&type=Freelancer|Employee&sort=…&page=2` (push on list and segment change, replace otherwise; back works).
+- **Crew:** `All · Available this week · On a job · Unconfirmed · Inactive`. Name (role, skills) · Status · Next call · This week · Rate /day · Phone; Email, Type, Department, Tags opt-in. Default sort Status, so unconfirmed people lead. Status is derived from the calls (Unconfirmed > On a job > Available; On leave, Inactive from the stored status). "Available this week" = active, not on leave, nothing confirmed in the next seven days. `clash 14 Nov` prints when two calls overlap. Bulk: Message n, Assign n to job…, Add tag…, Deactivate n (red; people with confirmed calls stay and the toast says so). Assigning offers the shift, so those people become Unconfirmed until they answer (Undo restores).
+- **Clients:** `All · Active jobs · Quoting · Overdue invoices · Archived`. Client (contact · type) · Open jobs (job number links to the job) · Quoted · Outstanding (due date, or red `18d overdue`, derived from the invoice due date) · Last job · Xero; Type, Email, Lifetime, Tags opt-in. Default sort open jobs. Bulk: Add tag…, Merge n… (keep-which dialog; Undo), Export, Archive n (clients with open jobs stay).
+- **Suppliers:** `All · Open orders · Overdue returns · Archived`. Supplier (contact) · Open orders · On hire now · Due back (red `2d overdue`) · Spend YTD; Phone, Account #, Email, Tags opt-in. Default sort Due back. Bulk: Export, Add tag…, Archive n.
+- The exception segment (Unconfirmed / Overdue invoices / Overdue returns) prints red only when non-zero; the parking segment (Inactive / Archived) stays last, so the exception is not always last as in Jobs.
+- **`clients-dashboard.tsx` and the supplier/crew tiles:** their numbers become strip counts (active, with open work, with orders), one head sub line (`10 with open jobs (16 live) · $234,400 quoted · $76,170 outstanding`), the Type filter menu counts (replacing "most common type") and the opt-in Lifetime column (total project value). A client record page later takes per-client history. The tiles are removed, not moved.
+- **Crew dashboard:** Pending timesheets and Approve / Dispute / Approve all belong to the Timesheets surface (9.9); page ⋯ carries `Timesheets · 4 to approve`, `Planner`, `Crew settings`, `Log time…`, `Export timesheets…`. Active assignments and Upcoming shifts become Next call and Planner. Pending offers per-row Send becomes row ⋯ `Resend offer`.
+- Rows open a record page (not prototyped: toast). Row ⋯ crew: Open, Open in planner, Message…, Assign to job…, Resend offer (unconfirmed only), Log time…, Deactivate… / Reactivate. Clients: Open, Open job #n, New job for client…, Open invoices, Open in Xero, Add tag…, Archive… / Reactivate. Suppliers: Open, Orders…, New order…, Returns, Email supplier…, Add tag…, Archive… / Reactivate. Destructive last, red, confirmed in a dialog.
+
+### 9f.3 One renderer
+`LISTS[key]` carries `segs, filters, cols, card, sub, empty, views, rowMenu, bulk, pageMenu`; everything else (strip, filter words, table, cards, pager, bulk bar, selection, undo, URL) is shared. Derived facts (crew status, availability, clash, overdue days) are functions of the rows, never stored. Bulk writes run per-row gates and the toast names who was skipped.
+
+### 9f.4 Phone
+Header is the list name with `▾` (opens a People sheet: Crew / Clients / Suppliers) plus a count line and ⋯ (also lists the other two lists). Strip and filter words scroll sideways; cards 64 px with 22 px checkbox, status and one number at the right, row ⋯ always visible at 40 px (the Jobs/Assets prototypes omit it on phone; §5 requires it, so retrofit them). Sticky `+ Add crew member` / `+ New client` / `+ New supplier` is replaced by the bulk bar while ticked; Export is desktop-only; `Show 25 more · n left`.
+
+### 9f.5 Code
+Composes the §9b list shell and `DataTable` successor; reuses `StatusIndicator` as dot-word, `useTablePreferences` → URL state (D11), `useClientWrites.bulkArchive`. Removes `ClientsDashboard`, the supplier `StatTile`, `CrewDashboard` cards (timesheet approval moves to Timesheets). New server work: bulk message, assign (offer) and merge mutations; derived `Next call`, `This week` and `overdue` read from existing assignments/invoices/orders.
+
+Decisions raised: D38–D40 (§12).
+
+---
+
+## 9g. Gear lists — Models, Kits, Locations, Maintenance, Test & tag, Sales stock, Overbookings — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/D7N5PmXKrkcY2gzZXWeuvc — desktop 1440 and phone 390, every control wired (seven lists switched from the sidebar or the phone title sheet, strip segments, multi-select filter words, search, sort, pager / Show more, tick + shift-tick, bulk verbs with Undo, row ⋯, page ⋯, Columns, Views, create sheets, schedules and reports dialogs, empty states, URL hash state).
+
+### 9g.1 Why
+Seven pages, seven shapes: `model-table.tsx` (762 lines), `locations/location-table.tsx`, `sales-stock-table.tsx` are `DataTable`s with button rows; Kits, Maintenance, Test & tag and Overbookings are hand-built pages. Findings: Maintenance and Sales stock keep per-row buttons the program retired (`maintenance/page.tsx:215-233` trash, `sales-stock-table.tsx:142-152` Restock); Overbookings is six stacked tiles with a `Sub-hire this` button per row (`overbookings/page.tsx:260`) and a days Select; `/maintenance/due`, `/test-and-tag/registry` and `/test-and-tag/reports` are separate pages for what are segments and a dialog. Kits' only bulk verb is Force return (`kits/page.tsx:288-299`). One shell (§9b) with seven configs fixes all of it.
+
+### 9g.2 The page
+One list renderer, seven configs (columns, strip, filters, bulk verbs, row ⋯, primary). Sidebar: Models, Kits, Locations, Sales stock, Overbookings under Assets; Test & tag and Maintenance keep their slots. Active list highlighted; breadcrumb `Assets › Maintenance`. URL is the state (`#list=maintenance&seg=overdue&f.type=Repair&sort=due`; real query params in the app; list switch pushes history).
+
+| List | Strip (red = exception, only when > 0) | Default columns | Opt-in | Bulk | Primary |
+|---|---|---|---|---|---|
+| Models | All · With stock · No stock · Due for T&T · Archived | Model (category · maker) · Owned · Available · Day rate | Value, ROI, Type, Tags | Edit rates, Add accessory, Assign checks, Archive | + New model |
+| Kits | All · Complete · Missing items (red) · On a job | Kit (tag · models · category) · Items · Complete · On job · Location | Value, Condition, Tags | Duplicate, Print list, Force return, Archive | + New kit |
+| Locations | All · Warehouses · Vehicles · Sites · Empty | Location (type · parent) · Assets · Capacity · Last movement | Address, Tags | Move contents, Print bin labels, Archive | + New location |
+| Maintenance | Open · Overdue (red) · Scheduled · Done | Asset (model) · Issue (type) · Status · Due · Assigned | Cost, Reported by, Tags | Assign, Reschedule, Mark done | + Log maintenance |
+| Test & tag | Due · Overdue (red) · Passed · Failed · All | Asset (model, TT id, class) · Last test · Result · Next due · Tester | — | Schedule, Print tags, Export report | + Register item |
+| Sales stock | All · Low stock · Out of stock (red) | Item (SKU · category) · On hand · Reserved · Reorder at · Price | Supplier | Adjust stock, Reorder, Export | Reorder n low |
+| Overbookings | This week (red) · Next 30 days · All | Model (kind flag) · Short by · Jobs · Dates · Sub-hire | — | Sub-hire n short, Open n jobs | Sub-hire n short |
+
+Rules:
+- Cost and margin columns are hidden by default (§3.7): Models Value and ROI, Kits Value, Maintenance Cost. Price (sales) and day rate are what the client pays, so they show.
+- `/maintenance/due` is the Overdue segment plus recurring-schedule rows (`every 90 days · 9 of 24 checked`); check-off is row ⋯ `Check off cycle`; schedule create/deactivate lives in ⋯ `Service schedules…`.
+- Registry is T&T `All`; reports are ⋯ `Reports…` (the ten live reports, PDF/CSV); Quick test is ⋯ → the scan surface. Tester-first phones can swap the primary later (open question).
+- Overbookings keeps all six live tiles as rows: a `Kind ▾` filter (Overbooked, Pencilled, Sale stock, Crew) and an inline kind dot-word. Crew rows never offer Sub-hire; sale-stock rows point to Reorder. Requested sub-hire prints `Requested · Big Picture` and the shortfall stays until the gear arrives (derived, not cleared).
+- One verb definition feeds both the row ⋯ and the bulk bar (same closure, same gates); skipped rows are named in the toast (`5 skipped (still hold assets)`). Every write has Undo; print/export toast only.
+- Locations archive is gated (a location holding assets is skipped). Kits Force return and Models/Kits/Locations Archive confirm in a dialog that says what is kept.
+- Whole-row open: Models rows → model page, AURA-01 rows → asset page, `#2341` rows → Equipment; other record pages are separate surfaces (toast).
+
+### 9g.3 Story rows
+AURA-01 overdue T&T (7d) and awaiting-parts repair (2d); K-0042 Shure ULXD4Q kit missing the PA805 on #2341; MAC Aura PXL short by 2 on #2341 + #2350 (Models: No stock; Overbookings: first row); Gaffer tape out of stock with 12 reserved for #2341; Van 2 empty, loads Tue 11 Nov 06:30.
+
+### 9g.4 Phone
+Header is the list name with ▾ (opens the Lists bottom sheet) + a count line + ⋯ (page menu repeats the lists on top). Strip and filter words scroll sideways; cards are 64 px with 22 px checkbox, title, one sub line, status/figure at the right, always-visible 40 px ⋯; one sticky primary replaced by the bulk bar on first tick; `Show 25 more · n left`; print/export verbs hidden.
+
+### 9g.5 Code
+`ListPage` (§9b.6) with seven column/segment/verb configs; `BulkActionBar`, `RowActionsMenu`, `SavedViewsMenu` rewired to URLs. Goes: the per-row buttons, `StatTile` rows, `/maintenance/due`, `/test-and-tag/registry|reports` as pages (redirects to segment / dialog), Overbookings tiles. New fields: sales stock `reorderLevel` and derived `reserved`; location `capacity` and derived `lastMovement`.
+
+Decisions raised: D41–D45 (§12).
+
+---
+
+## 9h. Crew › Planner and Timesheets — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui — desktop 1440 and phone 390, every control wired (Planner / Timesheets words; strip All · Needs crew · Unconfirmed · Mine; week ‹ › Today; search; Role / Skill / Job / Availability filters; click an empty cell to offer a call; tick + shift-tick calls, bulk Offer n / Confirm n / Cancel n, Offer to suggested; block ⋯, call edit sheet; Needs crew list; Timesheets strip Submitted · Approved · Queried · All, sort, pager, filters, Views, bulk Approve n / Query… / Export, row ⋯, edit, Log time, Export; page ⋯ › Crew roles & rates…; Undo on every write; phone day mode).
+
+### 9h.1 Why
+Live: `src/app/(app)/crew/planner/page.tsx` (1090), `crew/timesheets/page.tsx` (1147), `crew/settings/page.tsx` (461). Three findings.
+- The planner is a read-only picture. A day cell is one chip with a glyph (`planner/page.tsx:1000-1030`); there is no click, no offer, no confirm, no bulk. Offers are sent from the crew dashboard or a job's Logistics tab, so the person who sees the gap cannot fill it.
+- It shows 14 days (`DAYS_TO_SHOW = 14`, :161) in a table with `min-w-[860px]` (:620), so on a phone it scrolls sideways and a call is a 62 px chip with a job number and nothing else.
+- Timesheets have `submit` and `approve` mutations that already take `ids: string[]` (`use-crew-time-writes`), but the page only ever passes `[row.id]` (:226-257): approving a crew's week is one menu per row. There is no rate or total, so approval cannot be a money decision. `/crew/settings` (the roles admin) is reachable only from a small link on the crew page (`crew/page.tsx:538`).
+
+### 9h.2 The page
+One page, `Crew`, with two views as words in the head: `Planner  Timesheets` (Jobs' `Table  Board` position). The two sidebar items become one; `/crew/planner` and `/crew/timesheets` stay as deep links to each word. Pattern 4.4 for the planner (the strip counts the work, a bulk bar acts), 4.1 for timesheets.
+- **Primary.** Planner: `Offer call`. Timesheets: `Log time`, the live page's only create. `Approve n` is a bulk verb (it needs a selection) and `Export` is something done after approving, so neither earns the red button; both live in the bulk bar, Export also in ⋯.
+- **Page ⋯.** Crew list ↗, **Crew roles & rates…** (this is where `/crew/settings` lives, in both views), Export this week / Print (planner); Columns, Export all… (timesheets). Roles opens as a sheet over the page; the route stays as a deep link that opens it. Cost and charge show for managers only, exactly as live.
+- **Removed.** The fortnight (one week with ‹ ›, see 9h.3), the four today-tiles (counts moved to the strip and footer), the crew-member select (search), the glyph legend (every block prints its own word). Added: `Skill ▾`.
+- **Footer.** One muted line: `10 people · 5 of 13 confirmed · 2 accepted · 2 offered · 4 pending · 1 declined` (declined is the only red, it is a flag).
+
+### 9h.3 The planner grid
+- Rows are people (last name), columns Mon–Sun, last column `Hours` = planned from booked calls, `/ n` logged from approved timesheets (the live Planned / actual, derived, never stored). The week opens on the next working week when today is a weekend.
+- A call is a block: `[☐] #2341 Rigger` / `08:00–18:00` mono / `● Confirmed`. Job number links to Logistics; the rest of the block opens the call sheet; ⋯ on hover (always visible on phone). Status words: Pending · Offered (with age, amber from 3d) · Accepted · Confirmed · Declined · Completed (past weeks).
+- Availability prints as a word in the empty cell: `Unavailable · Leave` (hatched), `● Pencilled #2340 Launch night`, `Preferred`. Booked elsewhere is just a block from the other job. Marks are advisory: offering into one shows the clash in the sheet and still lets you.
+- **Click an empty cell** → `Offer a call` sheet for that person and day: Person (with each person's day state in the list), Day, **Job service** (the services planned that day, `needs 1` / `full`; none → link to the job's Logistics tab), Role, Start, End, cost rate (from the role), `Send the offer now` switch (off = Pending). Changing person or day re-checks availability. The same sheet opens from the primary, from a Needs crew row (person pre-picked from the suggestions, preferred first) and from phone free-person cards.
+- **Strip.** `All` (calls this week) · `Needs crew` (open slots, red) · `Unconfirmed` (Pending + Offered + Accepted) · `Mine` (calls on jobs I manage). Unconfirmed and Mine filter people to those with a matching call and dim the other blocks.
+- **Needs crew** replaces the grid with a list of unfilled calls grouped by day: job · call · times · `needs 1` · avatars of free people with that role. `#2341 Bump in needs 1 rigger`, `#2341 LX op Wed 12`. Row ⋯: Offer to…, Offer to suggested, Open job.
+- **Bulk (tick calls, shift-click ranges, select-page in the header).** `Offer 3` (Pending → Offered), `Confirm 2` (Accepted → Confirmed), `Offer to suggested 2` (open slots), `Cancel 4` (red, last, confirm dialog: the slot reopens, offered people are told, timesheets stay). Each row runs its own gate; the toast says what was skipped. Every write toasts with Undo (one `snapshot()` closure shared by the toast and any other surface).
+- **Filters** read their value: `Role: Rigger ✕`, `Skill`, `Job` (also dims other jobs' blocks, as live), `Availability` (Free · Booked · Unavailable · Pencilled · Preferred). The find-cover deep link (`?week&role&avail`) sets them; filters, week and strip are the URL (D11).
+- **Fortnight is removed**: a 14-column grid cannot print number, role, times and status; the planner's job is offering calls for a week. See decision D-A.
+
+### 9h.4 Timesheets
+- Strip `Submitted 10 · Approved 6 · Queried 1 · All 43`; Draft and Exported live under `Status ▾` and All.
+- Columns: person (role) · job (number, name, entry description, query note) · date (times and break under it) · hours · rate · total · status; Approved by and Notes are opt-in in ⋯ › Columns. Rate and Total are manager-only, like role rates. Total = hours × rate for hourly roles, the day or flat rate otherwise: derived, never stored.
+- Row ⋯ (hover): Edit entry, Submit, Approve, Query…, Open crew member, Delete (red, confirm). Exported rows show a lock and no ⋯, as live.
+- Bulk: `Approve 4`, `Submit n`, `Query…`, `Export`. Query… asks what needs checking and writes it to the entry's notes so a queried entry finally carries its reason (small new capability, D-B). `Dispute` is relabelled `Query` (enum stays `DISPUTED`).
+- Footer: `43 entries · 1–25  Totals · 361h · $16,962  ‹ 1 / 2 ›`. `Views ▾`, sort and pager as the Jobs list. Log time keeps the live shape (many people, one set of hours) in one sheet.
+
+### 9h.5 Crew roles & rates (`/crew/settings`)
+A sheet from page ⋯: role rows (colour dot, name, department · people count, rate type, cost, charge), `New role`, row ⋯ Edit… · Move up/down · Archive… (usage summary: people, calls) · Restore, archived roles under a muted head. Blank rates stay blank (`blankableNumber`). Also the Settings index entry `Crew` with status word `6 roles` (§4.7).
+
+### 9h.6 Phone
+- Header `Crew` / `10 – 16 Nov · 4 need crew · 8 unconfirmed`, ⋯ as a bottom sheet; `Planner  Timesheets` words under it; strip scrolls.
+- **Day mode** (Logistics' pattern): week ‹ › under the strip, day chips `Tue 11 · 1 open` (open count red), then one day as sections: `Needs crew` (open calls), `Booked` (people as 64 px cards: 22 px checkbox, avatar, name, `#2341 · 06:30–08:30`, status word, ⋯ 40 px), `Free`, `Unavailable`. Tap a booked card → call sheet; tap a free card → offer sheet for that day. `Needs crew` strip = open calls for the week grouped by day.
+- Sticky primary `Offer call` / `Log time`; the bulk bar replaces it while ticked.
+- Timesheets are cards (name, `#2336 · Fri 7 · 9h`, status, total) with `Show 25 more · n left`. Grid, Columns and the desktop-only export are hidden.
+
+### 9h.7 Code
+Composes `DetailHeader`-less page head, `BulkBar`, `RowEditorSheet` (call, entry, role), `ActionMenu`, `StatusPill` as dot-word, `ScanDock` not used. Reused: `useOrgCrewAssignments`, `useOrgAvailabilities`, `useCrewTimeWrites` (`submit/approve/dispute` already take `ids[]`), `useCrewRoleWrites`. New: call offer/confirm/cancel writes from the planner (same mutations the dashboard `sendOfferMutation` and Logistics use, one `*Native` each, `agentOps` danger classified; Cancel is `high`), a `candidates(service)` read. Goes: `SummaryTile` row, `LegendChip`, the fortnight constant, `crew/settings/page.tsx` chrome (body becomes the sheet), sidebar duplicate item. Names link to `/crew/[id]`, job numbers to the job's Logistics tab.
+
+Decisions raised: D46–D49 (§12).
+
+---
+
+## 9i. Scan › Check and Test & tag — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX — desktop 1440 and phone 390, every control wired (mode words, dock + Enter + `/` + camera sheet from a tap, every scan state, checklist Pass/Fail/measure/dropdown/notes/photos, Pass all + Undo, save split primary with Undo on toast and strip, test & tag visual ticks with shift-range, readings with N/A, method, tester, outlets, quick pass, fail flag + maintenance job, retire/reactivate, discard confirm, last scans Show more, page ⋯ and card ⋯).
+
+### 9i.1 Why
+Live: `src/app/(app)/check/[assetTag]/page.tsx`, `src/components/warehouse/{item-check-form,scan-history-strip}.tsx`, `src/app/(app)/test-and-tag/quick-test/*`. Findings: (1) the result card knows nothing about the asset: `lookupAssetForAdHocCheck` (`src/server/check-records.ts:620`) returns tag, serial, model and check-item count, so a tester cannot see where it lives, whether it is out on a job, or when it was last checked or tested. (2) The check page navigates per scan (`router.push`, page.tsx `ScanNavInput.go`) and the completed state replaces the card, so the next scan costs a route change; the quick test is a five-step wizard of Back/Next buttons for what is one sitting. (3) The quick test can lose or mis-pass work: `page.tsx:324` resets the form 500 ms after save without waiting for the mutation, `page.tsx:125` makes Escape wipe the wizard, a blank reading is skipped so an untested appliance passes (`electrical-step.tsx` auto-calc), and `nextDueDate` is a typed date (`wizard-reducer.ts:172`) although it follows from the interval.
+
+### 9i.2 The page
+Pattern 4.4, one centred column (640 px). Head `Scan`, one primary top right, ⋯. Stage words `Check 7  Test & tag 5` (counts = saved this session, active underlined red). Under them the scan dock (one input, keyboard wedge + camera button), then the result card, then Last scans. No bordered cards; hairlines only.
+- **Result card:** `AURA-01 ● Prepped` (flags inline: `T&T overdue 38d`, `Damaged`), model name linking to the asset (`https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s`), identity line, then four facts in two columns: Where, On job, Last check (`not checked` when none), Last T&T (links `https://claude.ai/artifact/D7N5PmXKrkcY2gzZXWeuvc`, due date amber/red when due). An asset out on another job adds one line: `● On #2340 Launch night — back Tue 11 Nov. A check here is recorded on the asset, not the job.`
+- **Check form (inline):** the model's live items in order: Pass/Fail words, measurement (mono input, unit, limit, derived dot-word), dropdown, per-item `note`; `Pass all` in the section head with Undo; FAIL opens a left-ruled reason + photo block (still required, #898). Then Condition `Good Worn Damaged` (forced Damaged and locked by any fail), Notes, Photos.
+- **T&T form (inline):** `Tested by` and `Method` as filter words (tester sticks for the session), Visual inspection ticks (always-on checkboxes, shift-click range, `Pass all`), Electrical rows from the profile with thresholds shown and `N/A`, Outlets for sub-test profiles, then Result (`Pass`/`Fail`/`not finished`) with **Next due derived** from the asset's interval, never typed. A fail shows Failure action (`Removed from service ▾` default, notes) and a one-line statement that the asset is flagged.
+- **Primary:** `Save and scan next` split button; caret: Save and keep this asset open, Save and print label (T&T), Save and create maintenance job (on a fail). Disabled with the reason in plain words (`Yoke needs a reason and a photo`, `Enter insulation resistance, or mark it N/A`). With nothing loaded the primary is `Scan`.
+- **Card ⋯:** Open asset, Quick pass (repeat last test), Pass all, Create maintenance job…, Print label, Open in test & tag list, Clear this scan, Retire from test & tag… (red, confirm names downstream). **Page ⋯:** Scan sounds, Clear this scan, Test & tag list, Assets, Check items (settings), Clear last scans (red, Undo).
+- **Removed (jobs kept):** wizard step tabs and Back/Next (one scroll); the typed next-due input (derived); the fail dialog (inline action + ⋯); sidebar/bottom session log (= Last scans); the Check complete card (saved row + ready card); Escape-resets (a scan over unsaved answers asks to discard instead); `router.back()` cancel (nothing to cancel).
+
+### 9i.3 Scan states
+- Ready: `Scan a tag to check it`. Unknown tag: tag in mono, `No asset carries this tag`, words Scan again · Type the tag · Register an asset with this tag. Not on register (T&T): `Not on the test & tag register` + Add to the register (Undo). No check items: link to settings. Retired: Reactivate and test (Undo). Other job: the line above.
+- Each exception scan is logged in Last scans with a dot-word verdict; none of them blocks the dock.
+- Rules: a second scan over unsaved answers opens `Discard this check?`; the same tag again toasts `already open`; a tag or a test tag (`TT-0412`) resolves to the same asset.
+
+### 9i.4 Last scans and Undo
+Section head `Last scans 7` + `6 clean · 1 failed` (T&T: `n pass · n fail`), per mode, last 5 (3 on phone) then `Show n more · n left`. Row: tag mono + name, dot-word verdict + detail, time mono, Undo word while inside the 10 s window, row ⋯ (Open asset, Scan it again, Create maintenance job on a failed row). Row tap re-scans. A save builds one `undo` closure handed to both the toast and the row (never two reverse paths); it restores the asset and, if nothing else is loaded, the draft.
+
+### 9i.5 Camera
+The camera button and the bottom nav Scan open one sheet (fake viewfinder, reticle, `Camera live` in red, mode word). A read loads the asset and closes the sheet. Rules for the Code subsection: `getUserMedia` only from that tap (never a mount effect), one live capture, `stopStream` on close/unmount/hide, re-acquire on show, `playsInline muted` + awaited `play()`, `facingMode: ideal environment`; one WASM decoder, no `BarcodeDetector` path anywhere (FEATUREDOCS/19). The design adds no second decoder: the dock's wedge input and the camera both end in `scan(tag)`.
+
+### 9i.6 Phone
+- Phone header `Scan` + `Check · Jayden Cole · Warehouse A`, ⋯ as bottom sheet; stage words scroll under it.
+- The dock is sticky at the top; checklist rows 56 px, Pass/Fail targets 44 px, inputs 16 px; visual ticks 22 px checkbox rows.
+- One sticky primary above the nav (`Save and scan next` split, or `Scan` which opens the camera) with the blocker/ready line under it; menus are bottom sheets with 48 px items; row ⋯ always visible 40 px; Last scans `Show n more`.
+- Nav Scan item active. No bulk bar: the unit is one asset; the bulk equivalents are `Pass all` (Undo) and the visual range tick.
+
+### 9i.7 Code
+Composes: the scan dock + camera sheet + result strip vocabulary from the warehouse job (§5.7), `use-camera-scanner`/`camera-scanner-dialog` unchanged, `useScanFeedback` (sound + history source), `ItemCheckForm` inline mode split into a field list (drop the Sheet shell, hotkeys), `wizard-reducer` retained as the T&T draft (steps dropped, `nextDueDate` removed from state and computed from `testIntervalMonths`), `ScanHistoryStrip` replaced by the Last scans list. New: a server lookup returning location, current job, last check, last T&T (extends `lookupAssetForAdHocCheck`; tenant-checked by org). Save awaits the mutation before clearing the card (fixes page.tsx:324); a blank enabled reading blocks save instead of passing. Routes: `/check/[assetTag]` and `/test-and-tag/quick-test?id=` become deep links that open the same page in the right mode with the tag loaded.
+
+Decisions raised: D50–D53 (§12).
+
+---
+
+## 9j. Finance › the org hub — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom — desktop 1440 and phone 390, every control wired (Quotes / Invoices words, four money words that deep-link, segment strips, Client / Sent / Validity / Kind / Issued / Xero filters, search, sort, pager, tick + shift-range, bulk Chase / Acknowledge / Sync to Xero / Delete drafts with Undo, row ⋯, record-payment and void dialogs, page ⋯, Xero sync dialog and the "Xero not connected" state, `+ New ▾` job picker, saved views, empty states).
+
+### 9j.1 Why
+The live hub (`src/app/(app)/finance/page.tsx`, 335 lines; `convex/financeOrg.ts`) is five stacked card sections that each link out. Findings: (1) every section is a `TILE` card with icon, overline and a filled count pill (`page.tsx:30`, `:48-52`), and rows are bordered cards with `Badge` pills — the chrome the program removed everywhere; (2) the one write, `Acknowledge`, is a per-row ghost button (`:150-153`), and there is no selection, sort, paging or URL state, so a dashboard number cannot land on the list it counts; (3) Outstanding shows the invoice `total` and a raw `UNPAID`/`PARTIALLY_PAID` badge (`:228-233`) not the balance, and its subtitle points at a "note below" that does not exist (`:220`). Xero state, which the job Finance tab shows per invoice, is invisible here.
+
+### 9j.2 The page
+Pattern 4.1 + 4.6. Head `Finance`, the words `Quotes 27  Invoices 20` (underlined red, where Jobs has Table/Board), `+ New ▾` and ⋯. Under it four money words (Quoted, Awaiting payment, Invoiced this month, Overdue), each a link to the segment it counts (`?tab=invoices&seg=overdue`); then ONE list at a time with its own strip.
+- **Words-switch, not stacked.** Live stacks because each section was a short capped list. With strips, stacking gives two toolbars, two footers and deep-link targets below the fold; the switch keeps one list, one URL and one phone column.
+- **Quotes strip:** All · Draft · Sent · Accepted · Expired (red when non-zero). **Invoices:** All · Draft · Deposit due · Issued · Paid · Overdue. `All` is added to both, and Deposit due is the live section re-housed. Declined / recalled / superseded and void are under All only after ⋯ › Show … (like Jobs' cancelled).
+- **Primary `+ New ▾`** (menu: Invoice for a job…, Quote for a job…; search-first job picker, invoice side lists `$ to raise`). Export is a read and Chase is a contextual bulk verb, so neither earns the red button; creation is the one verb with no row to hang off.
+- **Columns** (≤ 8): ☐ · Quote `#2341 v3` / Invoice `INV-0041` (kind + % under it) · Job (client under; `#2341` and client link out) · Status (derived words; `5d left`, `18d`, `$2,950 to go` under) · Sent / Date · Xero (invoices) · Total · ⋯. Contact and PM are opt-in.
+- **Row ⋯:** Open on the job · Open PDF (stored copy) / Generate PDF / Preview draft · Mark accepted… · Acknowledge expired · Record payment… · Chase · Push to Xero · red last: Void… (dialog names: number stays used, document stays, Xero voided too, job money recount, payment blocks it) / Delete draft…. Decline, recall, new version, send, issue stay on the job tab (the hub says so in the menu).
+- **Bulk:** Chase n · Acknowledge n · Sync to Xero n · Export n · Delete n drafts (red). Counts are the eligible rows; the rest are skipped and the toast says so.
+- **Views / URL:** tab, segment, filters and search are query params; two default views per list.
+
+### 9j.3 Rules the design keeps (CLAUDE.md)
+- **Stored bytes:** `Open PDF` opens the stored document ("exactly the bytes sent 4 Nov"); a draft only previews, watermarked. A row with no stored PDF offers `Generate PDF`, which never replaces an existing one. No regenerate path.
+- **Derived, never stored:** Expired (`validUntil < now && SENT`), Overdue, Part paid, Deposit due and every money word are computed on read. Expired shows 7 days or until acknowledged (live rule); older ones live under All.
+- **Money phase:** no new status. Record payment copy says paying a deposit in full can confirm an awaiting-payment job (#1236 PAYMENT_SETTLED); accept says the job advances if automation is on.
+- **Flow never emails the client (decision 7, #934):** the brief's `Send reminder` is `Chase` — a dialog showing the follow-up text and `Copy`, same as the job tab's chase.
+- **Invoice overdue wins over part-paid** when past due and balance remains (the job tab's `payState` shows Part paid); a chasing list must not hide an overdue behind a payment.
+
+### 9j.4 Xero
+A Xero dot-word column (Synced · Not in Xero · Failed with the error in the tooltip), `Sync to Xero n` in the bulk bar, filter `Xero ▾`, page ⋯ › `Xero sync…` (counts, Check payments now, Xero settings). When not connected the column, filter and verb disappear and a one-line note (`Xero isn’t connected` · Open Xero settings) sits above the list on Invoices; the dialog says the same. Payments reconciled in Xero are not recorded here.
+
+### 9j.5 Phone
+Header `Finance` + `27 quotes · 20 invoices · Xero connected` + ⋯ sheet; the Quotes/Invoices words as a strip row; money words as a 2×2 grid; segment strip and filter words scroll; search full width; 64 px cards (name, `number · date · client`, status + total right, 22 px checkbox, always-visible 40 px ⋯); `Show 2 more · n left`; sticky `+ New ▾` replaced by the bulk bar; export hidden; menus and the job picker are bottom sheets.
+
+### 9j.6 Code
+Composes `ListPage` (§9b.6), `BulkActionBar`, `RowActionsMenu`, `SavedViewsMenu`. Reuses `effectiveQuoteStatus`, `useQuoteWrites`, the job tab's `payState` (extract to `src/lib`), `chaseSummary`. One convex query replaces `financeOrg.bundle`'s five buckets with paged `quotes`/`invoices` queries + `counts` (the money words); the bucket scans' SECTION_CAP stays as the guard and shows a footer note when hit. Goes: five section components, `RowShell`, `TILE`, `Badge` use, the client substring box, `AllClearState`.
+
+Decisions raised: D54–D56 (§12).
+
+---
+
+## 9k. Settings — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8 — desktop 1440 and phone 390, every control wired (index search, all 19 rows open, Team: member search, Role filter word, tick + shift-tick + select-page, bulk Change role / Remove / Resend / Revoke / Approve / Reject with Undo, row ⋯ for members, invites and requests, role word menu, Invite dialog with validation, Join policy radios with Save/Discard bar and leave guard, permission grid with expandable resources, role edit sheet, Preview-as-role in the page ⋯).
+
+### 9k.1 Why
+Live: `settings/layout.tsx` (a 56-wide second rail beside the app sidebar, plus a jump-select on phone), 18 pages built from `SettingsCard`/`FormSection` chrome. Findings: Team has per-row Select, trash and X buttons (`member-list.tsx:205,231,159`) and Approve/Reject buttons (`join-request-approvals.tsx:78-108`); the role list is hand-kept twice (`member-list.tsx:29` has 4 roles, `role-descriptions.ts:24` has 5 including warehouse, R-3.1); `PermissionMatrix` is imported nowhere, so nobody can see what a role can do. No resend-invite, no bulk, no danger zone (the kill switch sits on API keys, `api-keys/page.tsx:131`).
+
+### 9k.2 The page
+The index replaces the rail: one list grouped under calm headings (Organisation, People & access, Operations, Money, Integrations, Developer, Danger zone), each row name · one-line description · status dot-word · ›, whole row opens, bare search matching names, descriptions and the parts inside pages (`tax` finds General, Billing, Services, Xero). No primary, no strip. Rows a role cannot open are absent, with one muted footer line naming them. Status words are derived: Team counts members and invites, Xero says Connected or Not set up, Mira says `On · read-only` or `On · can write`. Sections are record pages without tabs: title, muted identity line, one primary, page ⋯. A header status word appears only when the body does not already state it (Team omits it).
+
+### 9k.3 Team
+Members (checkbox, avatar, name · email, role word, joined, ⋯), Invitations (status Pending / Expired derived from `expiresAt`), Join requests, Join policy, Roles & permissions, in that order, each a hairline section with a mono count.
+- Role is a word; clicking it opens the role menu and writes at once with Undo. Bulk `Change role… 3` uses the same menu.
+- Bulk verbs are contextual by kind: members `Change role… n`, `Remove n`; invites `Resend n`, `Revoke n`; requests `Approve n`, `Reject n`. Destructive last, red. The owner is skipped and the toast says so.
+- Remove and Revoke confirm in a dialog naming the consequence (live copy); both toast Undo (Undo re-adds / re-issues a fresh link).
+- Invite is a dialog: email (inline validation: malformed, already a member, already invited), five role radios with the live descriptions.
+- Join policy is three radio rows. Editing makes the section `Unsaved` and raises a Save/Discard bar named for the section (`Save join policy`); leaving with unsaved changes asks. While the bar is up the header primary demotes to secondary, so one red button exists. Section hidden without orgSettings:update, requests without orgMembers:invite (as live).
+- Permission grid: 20 resources × 6 roles read from the real registry; a cell reads `All`, `3/6` or `—`; a resource opens to per-action ticks; footer `Actions granted 72/92`. Role headers show people and `edited`. Selecting a role opens the edit sheet: every action as a tick, View required before the rest, Admin keeps the four actions that fix permissions, Owner is fixed, `Reset to defaults`, Save with change count and Undo.
+- Read-only users (manager) see a one-line note and no checkboxes, primary or policy.
+
+### 9k.4 Stubs and the other 17 sections
+Each opens the same header with its parts (every live FormSection named), primary, gate and notes. The shape they adopt: inline fields, Save per part through the dirty bar, ⋯ for verbs, Undo on reversible writes, confirms that name what breaks (Mira write-access flip revokes every member's cached key; calendar token regeneration breaks every subscribed feed).
+
+### 9k.5 Phone
+Index is what the More sheet's Settings entry opens (kit bottom nav kept until D1). Rows are 64 px cards, status at the right, description one line. Section header has back ‹, name, identity line, ⋯ sheet. Cards 60+ px with 22 px checkbox, row ⋯ always visible, bulk bar replaces the sticky `+ Invite member`, dirty bar replaces it too, dialogs and menus are bottom sheets. The grid is desktop-only; phone shows the six roles as rows opening the same sheet.
+
+### 9k.6 Code
+Composes list rows (§9b), the record header (§4.2), `RowEditorSheet` for the role sheet, the non-blocking confirm dialog shape. Reuse `rolePermissions`/`RESOURCES`/`PERMISSION_REGISTRY` for the grid (never a copy), `ASSIGNABLE_ROLE_OPTIONS` for every role list (add warehouse to `ORG_ROLES` or derive from `rolePermissions`). Delete `SettingsCard`/`FormSection` use, the layout rail and jump-select, `PermissionMatrix`. New: `resendInvitation`, bulk role/remove wrappers, `joinedAt` read, kill switch moved. Index metadata (name, description, gate, status) is one registry that also drives the search and the gate check, replacing `settingsNav`.
+
+Decisions raised: D57–D61 (§12).
+
+---
+
+## 9l. Forms — v1 proposal (prototype 2026-11-04, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/REMbu5TYg5Nx6iJJoPLuGy — desktop 1440 and phone 390, every control wired (gallery search and row ⋯, all eleven sheets/dialogs in create and edit with inline validation, search-first pickers with Enter-picks-top, dependent fields, Save and add another for asset/crew/location, client contacts as rows, discard prompt, Undo on every save, the New job row opening the wizard).
+
+### 9l.1 Why
+Eleven forms (`src/components/{assets,clients,crew,suppliers,locations,kits,maintenance}/*-form.tsx`) are separate full pages with their own layout and no shared validation display. Schemas are the source (`src/lib/validations/*.ts`); the sheet changes only how they render. Findings: `kitSchema` and `locationSchema` carry optional money/number fields that must stay blank-able (`blankableNumber`); `supplier-order` has `supplierId` required and a separate route; `maintenanceSchema` only applies `completed`/outcome fields when `status === "COMPLETED"` (comment at `maintenance.ts:38`). The user asked to see every face-lifted form, not read the order table.
+
+### 9l.2 The page
+A calm gallery: head `Forms`, sub line, one red primary `New job ↗` (links the wizard), page ⋯ (sibling links). Rows are grouped (Gear and places · People and suppliers · Maintenance and jobs), each with name, the route it replaces, field count, last saved. Row click opens Create; row ⋯ opens Create or Edit (prefilled with a realistic record). `Last saved` is a dot-word plus what changed, and goes back to `—` on Undo. There are no checkboxes or bulk bar: nothing here has a bulk verb, so the always-on checkbox rule is deliberately not applied.
+
+### 9l.3 The sheet (`RowEditorSheet`)
+Copied from the asset sheet: centred wide on desktop, full-height bottom sheet on phone; bold section word + muted hint; `More details` collapsed on create, open on edit; inline errors as you type (after a field is touched, all after the first Save); footer Cancel · `Save and add another` (batched forms) · primary.
+- Required, max length, ≥ 0 or blank money (`Enter an amount of 0 or more, or leave it blank`), integer and range bounds come from the Zod schema; blank money stays blank.
+- Pickers are Radix-combobox style: type, arrows, Enter picks the top result, Esc closes the list first and the sheet second. Multi pickers (maintenance assets, kit contents) stay open and add rows.
+- Dependent fields: client type (Company / Person / Venue / Production company) relabels the name and hides contact name and ABN for Person; maintenance `COMPLETED` reveals Completed date and Outcome (cost, parts, result, per-asset disposition that defaults to keep-out on Fail); kit check mode rewrites its hint; model sale price reveals sale stock, `Requires test & tag` reveals profile and validity; client payment profile reveals deposit %.
+- Cancel or Esc with changes asks `Discard your changes?` (Keep editing / Discard).
+- Save toasts what changed with Undo (snapshot closure); `nothing changed` toasts without Undo.
+- Add another keeps context: asset (model, location, bin, condition; tag advances; serial clears), crew (type, status, department, role, rates), location (parent, type).
+
+### 9l.4 Form → route change → notable rules
+| Form | Route change | Notable rules |
+|---|---|---|
+| Asset | `/assets/registry/new`, `/[id]/edit` → sheet; words fold in Bulk | model search-first shows next tag; tag required ≤ 50, unique; warranty not before purchase; price blank-able |
+| Bulk stock | `/assets/registry/new?kind=bulk` → sheet | stock code unique; quantity ≥ 1 |
+| Model | `/assets/models/new`, `/[id]/edit` → sheet | name required; rates blank-able ≥ 0; T&T reveals profile + validity ≥ 1 |
+| Kit | `/assets/kits/new` → sheet | tag required unique; contents search-first (bulk gets qty); check mode words |
+| Location | `/assets/locations/new` → sheet | parent search-first, may be empty; excludes itself in edit; notes ≤ 1,000 |
+| Client | `/clients/new`, `/[id]/edit` → sheet | type relabels; email format; discount 0–100; contacts are rows on edit |
+| Crew member | `/crew/new` → sheet | first and last required; rates blank-able; add another |
+| Supplier | `/suppliers/new` → sheet | name required; email format |
+| Supplier order | `/suppliers/[id]/orders/new` → sheet | supplier and order # required; expected not before order date |
+| Maintenance job | `/maintenance/new` → sheet | ≥ 1 asset, title required; completed not before scheduled; outcome only when completed |
+| Service schedule | stays a dialog | interval 1–120 months; anchor date required |
+| New job | `/projects/new` → the wizard (§9.4) | not rebuilt here |
+
+### 9l.5 Phone
+Gallery rows are cards (name, route line, field count, ⋯ always 40 px); sticky primary `New job`. Every sheet is a full-height bottom sheet, inputs 16 px, footer pinned: `Save and add another` as a word line above Cancel + primary. Service schedule is a bottom dialog.
+
+### 9l.6 Code
+One `RowEditorSheet` driven by the Zod schema (`z.input` types, `.omit()/.pick()` variants), `combobox-picker.tsx` for pickers (Radix Popover, never Base UI inside a Radix Dialog), `useNative*` write hooks unchanged, `blankableNumber` for optional money. The eleven `*-form.tsx` page layouts and their `/new` and `/edit` pages go; routes redirect to the sheet.
+
+Decisions raised: D62–D64 (§12).
+
+---
+
+## 9m. People › Client, Crew member, Supplier, Supplier order records — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/D8UV81TDFpMEeUBxf2apUX — desktop 1440 and phone 390, every control wired (record switch, tabs with hash state, words filters, tick + shift-range, bulk bar + Undo, row ⋯, page ⋯, Edit sheets, merge/archive/inactive confirms, extend hire, log time, upload, History composer).
+
+### 9m.1 Why
+Four record pages with four layouts: `clients/[id]/page.tsx:236` draws a bordered hero card with HeroStat boxes, `crew/[id]/page.tsx` is 2,355 lines with per-row icon buttons (`:593`, `:787`) and an Approve all button (`:1439`), `suppliers/[id]/page.tsx:371` carries Edit + a ⋯ that holds only Delete, and the order page (`orders/[orderId]/page.tsx:243`) shows four stat boxes over a table. None has an Overview. The live data is good; the chrome and the missing derived health are the problem.
+
+### 9m.2 The page
+The §4.2 record page, copied from Asset and Model. DetailHeader (name · status dot-word · identity line), `Edit` the one primary (opens the Forms sheet for that record), page ⋯ with the rest, red verbs last with a confirm naming what stays. Overview first, calm: an overline, one headline, health rows with a muted `Action ›`, three fact columns, relationships as rows. List tabs follow §4.1 without the head; History is the Discussion rendering with a one-line composer. Context rail on every tab but Overview. Breadcrumb `Clients/Crew/Suppliers › name` links the People lists; order adds the supplier.
+- Client: Overview · Jobs · Quotes & invoices · Contacts · Files · History. Headline `$11,940 outstanding`; rows `INV-0042 $11,940 due 28 Nov`, `QT-2359 expires in 11 days`. ⋯: Edit, New job, Sync/Change Xero mapping, Merge, Archive (red).
+- Crew: Overview · Calls · Timesheets · Availability · Documents · History. Headline `2 calls · 18 h`; rows unconfirmed Bump in, `licence expires in 12 days`, `2 timesheets awaiting approval`. ⋯: Message, Resend offer, Log time, Add block, Calendar feed, Export, Make inactive, Delete.
+- Supplier: Overview · Orders · Sub-hires · Assets · Contacts · Documents · History. Headline `14 units on hire`; row `SH-0012 return 2d overdue`.
+- Order: Overview · Lines · Files · History. Headline `On hire · 14 units`; rows overdue return (`Extend hire`), invoice not attached; link to `#2341` Equipment.
+
+### 9m.3 Derived, never stored
+Outstanding, lifetime, overdue, expiry words, `On hire`/`Returned`, late days, margin, order total and spend are computed on read. `On hire` is `SUBHIRE` + received + no return date, so the stored status vocabulary (Draft/Ordered/Partial/Received/Cancelled) is untouched; only a return date is new (D?). The overdue return resolves by `Extend hire` (job needs the gear to 14 Nov) or `Mark returned`, both with Undo.
+
+### 9m.4 New capability, each closing a found gap
+Quotes & invoices on the client (Finance owns the documents; this is the account view); Merge client (dialog lists what moves); crew Documents with expiry (feeds the Overview row); crew Message; supplier Contacts; order Return due. Calendar tab becomes a dialog; Notes tab becomes an Overview section.
+
+### 9m.5 Phone
+Header name + identity line + ‹ back + ⋯ bottom sheet; scrolling tab strip with counts; cards 60–72 px, 22 px checkbox, id moved into the meta line, ⋯ always visible 40 px; sticky `Edit` above the bottom nav, replaced by the bulk bar on tick; sheets full-height, inputs 16 px; `Show n more · n left`.
+
+### 9m.6 Code
+Reuse DetailHeader, RowEditorSheet (Forms), `useConfirm…` dialogs. Delete the hero cards, HeroStat, the per-row icon buttons and the Calendar tab. Money matches the siblings: outstanding $11,940, INV-0041 deposit 25% $6,567 paid 8 Nov (Finance hub).
+
+Decisions raised: D71–D74 (§12).
+
+---
+
+## 9n. Gear records — Location, Kit, Maintenance job, Test & tag, Category — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/PDsjUdku2seVZAWfNC6W61 — desktop 1440 and phone 390, every control wired (record switcher words, `#type/id/tab` hash, Overview checks, list tabs with search, filter words, tick + shift-tick, bulk bars with Undo, row ⋯, page ⋯, Edit sheets, Complete / Record test / Scan dialogs, destructive confirms, files grid, notes in History, empty states, Show more).
+
+### 9n.1 Why
+Five record pages built five ways: `locations/[id]/page.tsx:276-358` (hero card, type pill, always-visible Delete), `kits/[id]/page.tsx:430-500` (three header buttons, no tabs, stored `INCOMPLETE` status), `maintenance/[id]/page.tsx:184-290` (Panels, parts as one free-text field and cost as one number), `test-and-tag/[id]/page.tsx:259-300` (four header buttons, a disabled Edit). None lands on a state; none has a context rail; deletes say "unlinked" without naming what.
+They become the asset and model record pages: DetailHeader, Overview first, list tabs, Discussion-style History, one Edit, one ⋯.
+
+### 9n.2 The page
+- Header: name · derived dot-word (`69% full`, `Incomplete`, `Awaiting parts`, `18d overdue`, `2 models without rates`) · identity line. `Edit` opens the Forms sheet (location, kit, maintenance sheets copied from §9l; T&T and category are new field tables, category a small sheet). ⋯ holds the rest, destructive last in red with a dialog naming downstream effects.
+- Overview: head word + `n of m checks clear`, rows with muted `Action ›`; three facts; Identity list. No table. Checks that cannot run say `not checked` (location stocktake).
+- Tabs — location: Contents · Bins · Jobs · History · Files; kit: Contents · Checks · History · Files; job: Assets · Parts · History · Files; T&T: Tests · History · Files; category: Models · Kits · Subcategories. Rail on every non-Overview tab. Notes tabs are gone: the text is a sheet field, discussion is a note in History.
+- Lists: bare search, filter words that read their value (`Bin: B2 ✕`), checkbox rows, bulk bar with counts (`Move 3 to…`, `Mark present 1`), row ⋯, `Show 25 more · n left`, one footer line.
+
+### 9n.3 Things that needed design
+**Location.** Bins are child locations with capacity, label state and last movement. Warehouse A reads 412 assets, 11 bins, `3 assets with no bin`. Moving a case moves what is in it. `Print bin labels` offers unprinted-only or all. Scan = put-away (asset into this place, optional bin); a read of an asset already there says so rather than moving it.
+**Kit.** Complete/missing is derived from contents. Missing item beats reservation: `1 item missing … needed for #2341, truck Tue 11 Nov 06:30` blocks (`Can't go out`). Check mode is two words on the Checks tab. Scan = check: each read ticks an item off; the last one flips the kit to Ready. Value shows replacement and paid; case info is Identity.
+**Maintenance job — Complete.** Dialog: result (Pass/Fail/Conditional), completed date, labour (blank is not $0), next due, per-asset disposition defaulting from the result (fail → keep out of service). Cost is derived: parts lines + labour. Completing writes the outcome, updates each asset, toasts with Undo; `Reopen` reverses it. `Mark arrived` moves Awaiting parts to In progress.
+**Test & tag.** Next due is last test + interval, never stored. Record test: readings against limits, live Pass/Fail line; a fail raises a repair job, keeps the asset out of service and links it in the test row. `Book a test` creates a scheduled T&T job. Delete is offered only after Retire.
+**Category.** Default T&T profile (class, interval) inherited by its models; models can override. `Including subcategories` widens Models. Deleting moves models to Uncategorised and subcategories up.
+
+### 9n.4 Phone
+Phone header (name + dot-word + one fact + ⋯ sheet); Record strip is prototype-only; tab strip scrolls; filter words scroll under a full-width search; cards 60+ px with 22 px checkbox, tag moves into the meta line; sticky primary per record (`Scan` location and kit, `Complete` open job, `Record test` T&T, `Edit` category) replaced by the bulk bar on first tick; sheets are bottom sheets; inputs 16 px.
+
+### 9n.5 Code
+Composes DetailHeader, Tabs (controlled, `?tab=`), the §4.1 list rows, `useConfirmStatusGate`-style non-blocking previews for Retire/Delete, the Forms sheet. Derive: kit status, T&T next due, maintenance cost, location fill, category asset counts. Remove: five hero cards, header button rows, Notes tabs, per-row delete buttons.
+
+Decisions raised: D75–D80 (§12).
+
+---
+
+## 9o. Schedule — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/49jbSumcZhVdCU9ZA3nqdm — desktop 1440 and phone 390, every control wired (Jobs / Gear words; Week / Month zoom; ‹ › Today; strip All · Confirmed · Pencilled · Clashes; Status / Category / Model / PM filters, search, Clear; click a bar for the job sheet, a day header for the day sheet, a gear cell for the model-day sheet; tick + shift-tick, bulk Confirm n with the heads-up gate, Move dates… with the date-move gate, Sub-hire n short, Undo on every write; row ⋯, page ⋯ › Only my jobs; empty state; phone day mode).
+
+### 9o.1 Why
+Live: `src/app/(app)/availability/page.tsx` (867 lines) over `convex/availability.ts calendarData` and `convex/lib/availabilityCore.ts`. Three findings.
+- It is a read-only picture of jobs and says nothing about gear. The page's own subtitle is "when projects are live and gear is committed" (`page.tsx:~255`) but `calendarData` returns only `lineItemCount` (`availability.ts:293-340`); the HARD vs pencilled rule in `availabilityCore.ts:91-111` (a pencilled job holds nothing) never reaches the screen, so two jobs that overbook a model look like two bars.
+- The six-week grid caps bars at three lanes and hides the rest behind "+n more" (`page.tsx:~520`); the busy-day legend (1 / 2 / 3+ projects) counts jobs, not stock, so "red = 3+" is not "short".
+- No filter, search, selection or write. Confirming or moving a job means leaving for the job page; the fixes the confirm gate and date-move gate already exist for (#1227) are not reachable from the page that shows the clash. Phone squeezes the same grid; Agenda is a second view of the same list.
+
+### 9o.2 The page
+One page, `Schedule` (sidebar rename per D7), with two views as words in the head, `Jobs  Gear` (Jobs' `Table  Board` position). Pattern 4.4, sibling of the crew planner.
+- **Primary** `+ New job` (wizard). **Page ⋯:** Only my jobs, Overbookings ›, Crew planner ›, Logistics ›, Export this range (CSV), Copy link.
+- **Strip** `All 9 · Confirmed 5 · Pencilled 4 · Clashes 2` (Clashes red when non-zero). **Gear has its own model-based strip** `All 16 · Short 1 · At risk 2` (short = a hard shortfall, red; at risk = a pencilled shortfall, amber); the job strip is not reused there. Counts follow the range and filters.
+- **Toolbar:** `‹ 10 – 16 Nov ›  Today  | Week  Month`, search (`job, client or model`), `Status ▾ Category ▾ Model ▾ PM ▾` reading their values, `Clear`. In Gear, Status and PM narrow the rows to models those jobs hold; the numbers stay the whole org's.
+- **Footer** is the legend, one muted line: `Solid bar holds gear · dashed bar is pencilled and holds nothing`.
+- **Removed:** Agenda (desktop; the day sheet and phone day mode cover it), the busy-day legend and tint (counts in the day header), the 3-lane cap and `+n more`.
+
+### 9o.3 The timeline (Jobs)
+Rows are jobs (start order), columns days; label column 264 px = checkbox, `#2341 name`, `client ● Status · pencilled`, row ⋯ on hover. One bar per job across its rental window; left/right edges square when it continues past the range.
+- **Held vs pencilled without fills shouting.** Held = a quiet raised block with a hairline; pencilled = no fill, a faint hairline and hatching, muted text. Colour lives only in the status dot-word in the label (the bar carries no status colour, so the fact is not printed twice). A held job that causes a shortfall prints a red `clash` (#2337 Allianz and #2342 Mercedes both hold EM4 receivers on Tue 11 Nov); a pencilled job that would overbook if confirmed prints an amber `would clash` (#2350 Qantas awards, Quoted, against #2341's MAC Aura PXL on 13 – 14 Nov, so #2341 itself shows no red). Both are derived (`jobRuns`), never stored. Month zoom shows the same as a dot before the number.
+- **Day headers** `Wed 12` + `3 jobs` (muted, mono). Weekends faint; today a hairline. Click opens the day sheet.
+- **Week / Month.** Week = Mon–Sun, ‹ › step 7 days. Month = the calendar month (30 slim columns, weekday initial + number), ‹ › step a month. Today = the working week from 10 Nov (9 Nov is a Sunday).
+- **Job side sheet** (click a bar or label): status + `holds its gear` / `pencilled · holds nothing`; When, Truck, Client · contact, PM, Value, Gear (models · units · lines). A `Clashes` section lists each short model with the other job (`short 2 · MAC Aura PXL · with #2350 · 13 – 14 Nov`); each row opens the model-day sheet. Actions: `Open job` (Overview), `Equipment ›`, `Logistics ›`, then `Confirm…` / `Move dates…` words. Deployed and on-site jobs say their dates are locked.
+
+### 9o.4 Gear
+Rows are models grouped by category (`Lighting 5`), cells the free count per day (serviceable − held by hard jobs). Plain days print only the number (faint when nothing holds it). A shortfall (two confirmed jobs, e.g. EM4 receivers short 2 on 11 Nov) prints a red flag-word `● short 2` with `held 10` under it; a pencilled risk (MAC Aura PXL 13 – 14 Nov, beltpacks 14 Nov) prints the free number in amber with `pencilled −2` (confirming the pencilled job would take it below zero). The cell sheet adds `would be short 2 if #2350 confirms`. Day header carries `1 short` in red. Month zoom shrinks cells to the number, `−2` red. Model label shows `12 owned · 1 in service` (AURA-06 fan fault, derived from maintenance, not typed).
+- **Click a cell** → model-day sheet: Serviceable, Held, Free; `Held by` rows (job, qty, each opens the job sheet); `Pencilled, holds nothing` rows; any `Sub-hire requested` rows; then `Sub-hire 2…` (secondary), `Overbookings ›` (Gear lists), `Open model ›`.
+- **Sub-hire…** dialog: supplier, quantity per model (default = the shortfall), window = the short run. Requested sub-hire prints `requested` under the cell and **the shortfall stays** until the gear arrives (same rule as Overbookings). Toast + Undo.
+- Demand reads `stockBackedQty`, so off-inventory units never count (9o.7).
+
+### 9o.5 Bulk and the gates
+Always-on checkboxes (header = select shown), shift-click range, bulk bar with counts in the verb.
+- **Confirm n** (counts only `Quoted` jobs; the toast says what was skipped). It runs the non-blocking confirm gate: simulate the jobs as hard, compare shortfalls with today's; none → confirms with no UI change; some → heads-up dialog `Confirming #2350 leaves a model short`: `short 2 · Martin MAC Aura PXL · 13 – 14 Nov` / `#2341 Hilton Sydney gala dinner would be short 2 × Martin MAC Aura PXL if #2350 confirms`, buttons `Cancel` / `Confirm 1 anyway`. Same gate from the row ⋯ and the job sheet. Fails open: a preview error confirms without a dialog.
+- **Move dates…** one dialog, `Move by` 1 week earlier … 1 week later with `old → new` per job; same gate for the date-move case (#1227; moving #2341 a day earlier lands it on the EM4 receivers #2337 and #2342 hold), same dialog grammar, `Move anyway`. Deployed / on-site jobs are skipped and the toast says so.
+- **Sub-hire n short** (Gear selection). Every write toasts with Undo through one `snapshot()` closure. No per-row buttons; row ⋯ has Open job, Equipment, Logistics, Confirm…, Move dates…, Copy link (Gear: Open model, Overbookings, Sub-hire n…).
+
+### 9o.6 Phone
+Header `Schedule` / `10 – 16 Nov · 9 jobs · 2 clash`, ⋯ as a bottom sheet; `Jobs  Gear` under it; strip scrolls; week ‹ › Today, search, filter words scroll; **day chips** `Wed 12 · clash` (red) or `3 jobs`. Jobs: cards for that day (22 px checkbox, `#2341 name`, `client · 12 – 14 Nov`, status word, `clash` under it, ⋯ 40 px); tap → bottom sheet with the same facts and 44–48 px actions. Gear: models for that day (`short 2` or `9 free`), tap → model-day sheet. Zoom and the grid are hidden. Sticky `+ New job`; the bulk bar replaces it while ticked. No paging (a day holds a handful), so no `Show more`.
+
+### 9o.7 Code
+Composes the §9b shell, `ActionMenu`, `BulkBar`, a side `Sheet` (bottom sheet on phone), `Dialog`. Reads: `availability.calendarData` extended to return per-job `lines: {modelId, qty}` (stock-backed) and the model day-grid from the existing `availabilityCore` (one `scheduleGrid(orgId, start, end)` query, org-checked, `requireOrgReadFor`); flags and runs are pure functions over it, shared with the confirm gate (`useConfirmStatusGate`) and `useDateMoveGate` — those hooks' preview queries are the same `newShort` simulation, one definition (R-3.1). New writes: none except Sub-hire request (existing overbooking sub-hire mutation) and the date move / confirm the job page already calls. Goes: `MonthGrid`, `AgendaView`, `DayProjectCard`, `LegendSwatch`, `dayIntensity`, `WeekOverflow`, `ViewToggleButton`. URL state: view, zoom, range start, filters, day.
+
+Decisions raised: D81–D84 (§12).
+
+---
+
 ## 10. Everything else, briefly
+
+Every surface in the playbook's §9 now has a section (6c, 6d, 7b, 7c, 9c–9o). What is
+left here is the glue between them.
 
 - **DataTable** lists adopt the §9b list-page pattern (strip, filter words,
   checkbox + bulk bar, phone cards, URL state); the three ad-hoc inline icon sets go.
-- **Asset detail / model detail** headers become `DetailHeader`.
-- **Dashboard** is unchanged; its job cards become the §9.1 card.
-- **Notifications** page gets a "See all" link from the bell; **changelog** links from
-  Settings › General.
-- **Tasks · Notes · Files** tabs are unchanged in this pass.
+  §9f and §9g show it holds for ten more lists with one config-driven renderer.
+- **Record pages** (asset §9d, model §9e) use underlined-word tabs and a dot-word
+  status in `DetailHeader`. The job page's pill tab strip (§6b–§8c prototypes) moves
+  to the same words when Phase 1 builds the primitive — one tab style, not two.
+- **The job tab strip** gains `Packing n/m` and `Versions n` (§7b). The accepted job
+  tab prototypes are not republished for it; the strip is a primitive.
+- **Phone row ⋯** is always visible at 40 px on every list (§5 of the playbook, D39);
+  the Jobs and Assets prototypes predate it and get it in Phase 1.
+- **Payment status precedence** is one rule everywhere: Overdue outranks Part paid
+  (D56) — the job Finance tab (§8b) follows the hub.
+- **Notifications** page gets a "See all" link from the bell (§6c); **changelog** links
+  from Settings › General (§9k).
+- **Shell (§6):** D1 (Scan + More in the bottom nav) is still open. The twelve new
+  prototypes keep the kit's nav (`Home · Jobs · Scan · Warehouse · Assets`).
 
 ---
 
@@ -1196,6 +1917,82 @@ the recommended option.
 | D11 | List filters, sort, page and view live in the **URL**; `localStorage` persistence goes | Yes — saved views and dashboard tiles become links, back works (§9b.2) | Keep per-browser persistence and add deep links on top |
 | D12 | Assets registry opens on the **Table**; Grid is remembered per user | Yes — operators look things up, browsing is the exception | Keep today's Grid default |
 | D13 | `Needs you` / `Needs attention` are derived list segments, not stored flags | Yes — same rule as the Overview readiness checklist | A stored "flagged" bit set by the writers |
+| D14 | ~~The default Home is the fixed calm layout; the customisable grid moves behind ⋯ › Customise…~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D15 | ~~Lists accept URL-only qualifiers so a stat's number matches the list it opens: Jobs `?seg=active` (booked + out) and `?seg=out&overdue=1`, shown as removable filter words~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D16 | ~~Notifications vocabulary: "Mark read" replaces "Dismiss" (same stored dismissal); `Unread · All` strip~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D17 | ~~On now becomes org-wide (floor, out today, due back); the widget hook must stop reading `myProjects` only~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D18 | ~~My tasks gains `+ New task` (personal or job)~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D19 | Versions becomes a job-page tab (chip menu + `V` stay); the Sheet goes | Tab | Keep the Sheet and add a phone entry that opens it |
+| D20 | Compare as a read-only sheet from the row ⋯; the page-level mode goes | Sheet | Keep Compare mode and link it from the row ⋯ |
+| D21 | `Seal case` stores `projectContainers.sealedAt` (blocks plan changes; print label on seal) | Add the field | Ship Print label only, no seal in v1 |
+| D22 | `/projects/[id]/edit` becomes a sheet (`?edit=1`) opened from the Overview `Edit`; status leaves the form | Yes — one edit surface, status keeps its gates | Keep the page |
+| D23 | Templates become `Start from template ▾` on wizard step one + a `Manage templates…` dialog; `/projects/templates` redirects | Yes — one way to start a job | Keep the list page |
+| D24 | The wizard writes an Enquiry draft at step one (number allocated then) and `Create job` finishes it | Yes — nothing is lost on a dropped connection | Create only on the last step |
+| D25 | Moving rental dates carries a set project window by the same offset | Yes | Leave the window alone |
+| D26 | `/warehouse/returns` becomes a redirect to `/warehouse?mode=returning`; Returns is a mode of the floor | Yes — one scan surface, one dock, one strip, live subscription replaces Refresh | Keep a separate Returns page sharing the dock component |
+| D27 | Floor columns are derived from unit state; no drag, no stored stage; manual overrides only via card ⋯ › Admin (extends D6) | Yes | Allow drag between columns as a manual override |
+| D28 | Phone has no sticky Scan bar on the floor: the dock and the nav's Scan are the primary (amends playbook §5 sticky-primary rule for surfaces whose dock is the primary) | Yes | Add a `Scan` sticky bar that replaces itself with the bulk bar |
+| D29 | `Late` is a derived outcome (out past end, or returned after it), not a recorded one | Yes | Store `returnedLate` on the unit |
+| D30 | Asset detail opens on a new **Overview** tab (health checklist), tabs controlled with `?tab=` | Yes — mirrors #1061 and answers "is it fit to go out" first | Keep History as the landing tab |
+| D31 | `/assets/registry/[id]/edit` and `/new` become the sheet (redirect to `?edit=1` / open over the list) | Yes | Keep the routes as pages |
+| D32 | Delete leaves the ⋯ and lives only inside Retire, enabled only for an asset with no history | Yes — retire is reversible, delete is not | Keep Delete beside Archive |
+| D33 | Asset ⋯ item `Archive` is renamed `Retire` everywhere (matches the list's status word) | Yes | Keep "Archive" |
+| D34 | Phone: sticky primary is `Scan` on the asset page, Edit moves to the phone ⋯ | Yes | Sticky Edit |
+| D35 | Model detail lands on Overview; Details becomes the edit sheet and `/edit`, `/new` redirect to `?edit=1` | Yes | Keep a Details tab |
+| D36 | Duplicate model and Print labels for all are new model-level verbs (copy rates, specs, accessories, checks; one label sheet for every unit) | Yes | Defer until asked |
+| D37 | ROI default hides cost and payback behind `Show cost & payback` (per-user, local) | Yes | Show all four figures as today |
+| D38 | Crew landing page is the list; the manager dashboard is dissolved into strip counts, Timesheets and Planner | Yes | Keep CrewDashboard above the list |
+| D39 | Phone cards carry an always-visible 40 px row ⋯ (retrofit Jobs and Assets) | Yes | Whole-card tap only |
+| D40 | "This week" = the next seven days from today; Available = nothing confirmed in that window | Yes | Calendar week Mon–Sun |
+| D41 | Sales stock gains a `reorderLevel` per model; `Reserved` is derived from confirmed jobs, never stored | Yes | Keep On hand only |
+| D42 | Locations gain optional `capacity`; `Last movement` is derived from movement records | Yes | Drop both columns |
+| D43 | Cost/margin columns (Value, ROI, Cost) are opt-in from ⋯ › Columns on every list | Yes | Show Value by default on Models |
+| D44 | `/maintenance/due`, `/test-and-tag/registry` and `/reports` become segment / dialog; old URLs redirect | Yes | Keep as pages |
+| D45 | Overbookings crew and sale-stock tiles become Kind-filtered rows of the same list | Yes | Separate Crew gaps list |
+| D46 | Planner shows one week (‹ ›), not a fortnight | Yes — blocks need room for number, role, times, status | Keep 14 days with compact chips |
+| D47 | `Dispute` is relabelled `Query` in the UI (enum unchanged); Query… stores a reason on the entry | Yes — it asks the crew member to check, and the reason was missing | Keep "Dispute", no reason |
+| D48 | Planner and Timesheets are one sidebar item `Crew` with two words; `/crew/settings` becomes ⋯ › Crew roles & rates… (route kept as a deep link) | Yes | Keep three routes in the sidebar |
+| D49 | Timesheets show rate and total (manager-only) so approval is a money decision | Yes — hours × the role rate already on the assignment | Hours only |
+| D50 | Ad-hoc check records a condition (Good/Worn/Damaged, damaged forced by any fail), as returns already do | Yes | Keep condition return-only |
+| D51 | A blank enabled T&T reading blocks save (explicit N/A to skip) instead of passing | Yes | Keep live skip-as-pass |
+| D52 | Next-due is derived from the asset interval; to change a date change the interval on the register | Yes | Keep the typed override |
+| D53 | A T&T fail defaults the action to Removed from service (Undo available), replacing the blocking fail dialog | Yes | Default No action + dialog |
+| D54 | The hub's `Send reminder` is `Chase` (copy text), because Flow never emails clients | Chase = copy follow-up, no sending | Add an email-sending reminder (reverses #934 decision 7) |
+| D55 | Quotes / Invoices as a words-switch with their own strips instead of stacked sections | Words-switch | Stack both lists |
+| D56 | Overdue outranks Part paid when past due | Overdue wins | Keep the job tab's Part-paid-first order |
+| D57 | Settings index replaces the settings rail and phone jump-select; `/settings` becomes the index and General moves to `/settings/general` | Yes | Keep the rail |
+| D58 | Roles editable per org (overrides of the built-in roles; Owner fixed, Admin keeps permission-fixing actions) — today roles are code constants | Read-only grid now, edit behind a flag later | Grid read-only permanently |
+| D59 | Add `Resend invite` and invite Undo (re-issue) | Yes | Revoke + re-invite only |
+| D60 | Move invoice numbering and default tax rate from General to Billing | Yes | Leave on General |
+| D61 | Kill switch moves to a Danger zone group | Yes | Stay on API keys |
+| D62 | Every `/new` and `/[id]/edit` form route becomes a sheet over its list/record (deep links kept) | Yes | Keep full-page forms |
+| D63 | Bulk stock is created from the asset sheet's `Serialised unit · Bulk stock` words | Yes | Separate entry point |
+| D64 | Service schedule stays a small dialog | Yes — five fields, one decision | Make it a sheet |
+| D65 | Bottom nav and More sheet exactly as 6d.6 (supersedes D1's open details: gating, raise, drill-down) | Yes | Five items + floating Scan (6d.7) |
+| D66 | Sidebar "Dashboard" is named **Home** everywhere | Yes — the bottom nav, the prototype and the page already say Home | Keep Dashboard |
+| D67 | Tablet rail is automatic at ≤ 1023 and manual at any width (⌘B, remembered); sub-pages show only under the active module | Yes | Always-inline sub rows |
+| D68 | One phone breakpoint constant: 859 (prototypes) replaces 768 (`use-mobile.ts`) | Yes — a 768 iPad portrait gets the phone layout, tables need 860+ | Keep 768 and add a tablet layout |
+| D69 | Theme moves into the user menu (reachable on phone); org switcher moves to the sidebar head | Yes | Keep both in the avatar menu |
+| D70 | Bell and Home › Notifications read one feed | Yes | Keep mentions-only bell |
+| D71 | Order gets a derived `On hire`/`Returned` state and a stored return date; Mark returned and Extend hire verbs | Yes | Keep Received as the only word |
+| D72 | Crew Documents with expiry dates drive an Overview health row | Yes | Keep licences in notes |
+| D73 | Client Merge ships with undo and a named list of what moves | Yes | Archive only |
+| D74 | Supplier and crew keep Delete but behind Archive/Inactive; supplier delete gated while orders exist | Yes | Remove Delete |
+| D75 | Kit status derived from contents (Incomplete/Reserved/Available), not a stored `INCOMPLETE` | Derive; drop the status select from the kit sheet | Keep stored status |
+| D76 | Maintenance parts become rows (name, supplier, qty, price, ETA, on order/arrived); cost = parts + labour, never stored | Rows + derived cost | Keep `partsUsed` text and `cost` number |
+| D77 | Category default T&T profile (class + interval) inherited by models | Add, model can override | Keep per-model only |
+| D78 | Location capacity and bin labels (`cap`, printed state) as real fields | Add | Keep locations free of capacity |
+| D79 | Notes tabs dropped on location/kit/job/T&T; notes are History entries | Drop | Keep a Notes tab |
+| D80 | T&T record gets a real Edit sheet (live Edit is disabled) | Add | Keep read-only |
+| D81 | Schedule gains a Gear view (free count per model per day, shortfalls as flag-words) beside Jobs | Yes — the page's own promise is "gear is committed" | Jobs only; gear stays in Overbookings |
+| D82 | Agenda is removed on desktop; phone day mode is the agenda | Yes — the day sheet and day chips cover it | Keep Agenda as a third word |
+| D83 | Month is a real calendar month (30 slim columns), not six weeks | Yes — bars stay one row each | Keep the six-week grid |
+| D84 | Pencilled jobs show `would clash` (amber) and Confirm runs the heads-up gate from the Schedule | Yes — same gate as the job page | Gate only on the job page |
+| D85 | Overdue returns tile counts jobs (what the list shows); the line count moves to its sub-line | Jobs, with lines as sub | Keep counting line items |
+| D86 | Jobs list gains an `Active` segment (Booked + Out) and an `overdue=1` filter so tiles can deep-link | Add both | Link to Booked / Out only |
+| D87 | `DEFAULT_DASHBOARD_LAYOUT` becomes setup → stats → My tasks + Needs attention (6 + 6) → On the floor → Upcoming → Activity | Yes — the user's "quick stats, then any tasks"; fills the empty half beside My tasks | Keep the live order (stats 5th) |
+| D88 | Overdue-invoices line in Needs attention | Add (data already read) | Leave out |
+| D89 | Customise on phone | Hidden | Keep live add/remove-only |
 
 ---
 

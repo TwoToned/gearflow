@@ -40,7 +40,7 @@ const { chromium } = require('playwright');
     let opened = 0, stubOk = 0;
     for (const k of keys) {
       await p.click(`.irow[data-k="${k}"]`); await wait(60);
-      const h1 = phone ? await p.locator('.phonehead .ell').first().textContent() : await p.locator('.set h1').textContent();
+      await (phone ? p.locator('.phonehead .ell').first().textContent() : p.locator('.set h1').textContent());
       opened++;
       if (k !== 'team') { if ((await p.locator('.quiet').count()) && (await p.locator('.stubrow').count())) stubOk++; }
       if (opened === 3) await p.screenshot({ path: `shots/check-${tag}-stub.png` });

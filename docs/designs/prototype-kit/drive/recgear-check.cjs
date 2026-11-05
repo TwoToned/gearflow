@@ -20,7 +20,6 @@ const { chromium } = require('playwright');
     const tab = async t => { await p.click(`#tabs [data-t=${t}]`); await W(); };
     const tick = async (i, mod) => p.click(`#view .rrow:has(.dots) .cb >> nth=${i}`, mod ? { modifiers: [mod] } : {});
     const clickMenu = async act => { await p.click(`#layerbody [data-act=${act}]`); await W(150); };
-    const phoneMenuFix = async () => { /* phone sheets use .item buttons with the same data-act */ };
 
     // ================= LOCATION
     await step('loc overview', async () => {

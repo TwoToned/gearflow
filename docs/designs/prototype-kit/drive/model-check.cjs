@@ -8,7 +8,6 @@ const { chromium } = require('playwright');
     const ph = tag === 'phone';
     const p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
     p.on('pageerror', e => errs.push(tag + ': ' + e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(tag + ' console: ' + m.text()); });
-    const log = s => console.log(tag, s);
     const ok = (c, m) => { if (!c) { fails.push(tag + ' FAIL ' + m); console.log(tag, 'FAIL', m); } else console.log(tag, 'ok  ', m); };
     const T = async s => ((await p.locator(s).first().textContent()) || '').replace(/\s+/g, ' ').trim();
     const W = ms => p.waitForTimeout(ms || 120);

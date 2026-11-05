@@ -13,7 +13,7 @@ let uid = 0; const nid = p => p + (uid++);
 
 // Models
 // [name, category, manufacturer, type, owned, unit value, day rate, code]
-[['Martin MAC Aura XB','Lighting','Martin','S',8,3200,95,'AURA'],['Martin MAC Aura PXL','Lighting','Martin','S',6,4100,140,'L'],['Robe T1 Profile','Lighting','Robe','S',6,7900,120,'T1'],['Chauvet COLORado Panel Q40','Lighting','Chauvet','S',12,900,60,'CLRD'],['GrandMA3 light','Lighting','MA Lighting','S',1,29000,650,'MA3'],
+[['Martin MAC Aura XB','Lighting','Martin','S',12,3200,85,'AURA'],['Martin MAC Aura PXL','Lighting','Martin','S',8,4100,140,'L'],['Robe T1 Profile','Lighting','Robe','S',6,7900,120,'T1'],['Chauvet COLORado Panel Q40','Lighting','Chauvet','S',12,900,60,'CLRD'],['GrandMA3 light','Lighting','MA Lighting','S',1,29000,650,'MA3'],
  ['d&b Y8','Audio','d&b audiotechnik','S',16,4100,85,'Y8'],['d&b Y10P','Audio','d&b audiotechnik','S',8,5600,110,'Y10P'],['Sennheiser EW-DX SK beltpack','Audio','Sennheiser','S',24,1100,45,'SK'],['Sennheiser EM4 receiver','Audio','Sennheiser','S',6,3600,180,'A'],['Shure ULXD4Q','Audio','Shure','S',6,4200,160,'ULXD'],['Yamaha QL5','Audio','Yamaha','S',2,9800,320,'QL5'],['Shure SM58','Audio','Shure','S',30,190,12,'SM58'],
  ['Barco UDX-4K32','Video','Barco','S',3,68000,1800,'V'],['Absen PL2.5 panel','Video','Absen','S',80,1400,45,'PL25'],['Blackmagic ATEM 2 M/E','Video','Blackmagic','S',3,6200,260,'ATEM'],
  ['CM Lodestar 1T','Rigging','Columbus McKinnon','S',24,2400,40,'LODE'],['Prolyte H30V 3m','Rigging','Prolyte','S',60,420,18,'H30V'],
@@ -24,7 +24,7 @@ let uid = 0; const nid = p => p + (uid++);
   D.models.push({ id:nid('m'), name, cat, mfr, type, owned, out, maint, unit, day, week: rates >= 2 ? Math.round(day * 3.2) : null, month: rates >= 3 ? Math.round(day * 9) : null, code, dueTT: cat === 'Rigging' || cat === 'Staging' ? 0 : Math.floor(rnd() * 3), roi: Math.round(45 + rnd() * 260), tags: rnd() < .15 ? ['touring'] : [], acc: Math.floor(rnd() * 4), archived: !!arch });
 });
 const mdl = n => D.models.find(m => m.name === n);
-Object.assign(mdl('Martin MAC Aura XB'), { owned:8, out:3, maint:1, dueTT:2, roi:214, day:95, week:304, month:855, acc:2 });
+Object.assign(mdl('Martin MAC Aura XB'), { owned:12, out:3, maint:1, dueTT:2, roi:214, day:85, week:340, month:1100, acc:2 });
 Object.assign(mdl('Martin MAC Aura PXL'), { owned:6, out:6, maint:0, dueTT:1, roi:188, day:140, week:448, month:1260, acc:3 });
 Object.assign(mdl('Sennheiser EW-DX SK beltpack'), { owned:24, out:10, maint:1, dueTT:3, week:144, month:405 });
 Object.assign(mdl('d&b Y8'), { owned:16, out:12, maint:0, dueTT:0, roi:241 });

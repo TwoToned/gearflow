@@ -688,14 +688,14 @@ kit's bottom nav then.
   `Rr5rwirCUMRy8gf5G6Vz7s`, Model detail `47miWruJVsednbzrFPij2b`, People lists
   `LPdsNGb4CRMfS6qk7j7Fsa`, Gear lists `D7N5PmXKrkcY2gzZXWeuvc`, Crew planner
   `AKkgWzJ2gVR3dJTWnMB2Ui`, Scan `8Q2HVoRhLbSLz1Q9mCtayX`, Finance hub
-  `5VnYTVW2pdA5r1qBRvdrom`, Settings `Q3TeWuQPjzvXbAtmUV8Hg8`, Forms `REMbu5TYg5Nx6iJJoPLuGy`.
-- **Decisions:** D1–D64 in the main spec §12; the next is D65.
+  `5VnYTVW2pdA5r1qBRvdrom`, Settings `Q3TeWuQPjzvXbAtmUV8Hg8`, Forms `REMbu5TYg5Nx6iJJoPLuGy`, App shell `B4JAamBGiX6ypauLucopa2`, People records `D8UV81TDFpMEeUBxf2apUX`, Gear records `PDsjUdku2seVZAWfNC6W61`, Schedule `49jbSumcZhVdCU9ZA3nqdm`.
+- **Decisions:** D1–D84 in the main spec §12; the next is D85.
 - **Fixture canon** (keep new prototypes consistent with these): `TODAY` 2026-11-09,
   and 11 Nov is a Tuesday in the fiction (so 9 Nov is a Sunday; print `9 Nov` with no
   weekday). AURA-01 is Reserved on #2341 in LX-02, T&T 12-monthly, last passed 19 Nov
   2025, due 19 Nov (10 days); the overdue T&T units are AURA-02 and AURA-10; the fan
   fault awaiting parts is AURA-06. #2338 is Corporate AGM (Fri 21 Nov) in every
-  prototype except the Jobs list, where it predates the canon.
+  prototype except the Jobs list, where it predates the canon. #2350 Qantas awards is Quoted (pencilled) on 13 – 14 Nov: confirming it would leave #2341 short 2 × MAC Aura PXL (8 owned); MAC Aura XB is 12 owned, $85/day, 1 in service. Hilton Sydney owes $11,940 due 28 Nov (INV-0042), nothing overdue; INV-0041 deposit $6,567 paid 8 Nov. The warehouse is 14 Industry Rd, Marrickville. Known drift, not yet reconciled: #2352 is three different jobs (wizard draft, Hilton NYE party, Westpac party), and the Overview's deposit reads $5,970 against the Finance prototypes' $6,567.
 - **Running surfaces in parallel:** the twelve v1 prototypes were built by one Sonnet
   agent each from a shared brief, then reviewed together for drift (fixture
   contradictions, crumb separators, fonts in the dock). Brief every agent with the

@@ -1,6 +1,6 @@
 // ---------- Scan · check + test & tag · data
 const TODAY = '2026-11-09';
-const L = { ASSET:'https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s', LISTS:'https://claude.ai/artifact/D7N5PmXKrkcY2gzZXWeuvc', FLOOR:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', HOME:'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', PEOPLE:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', FINANCE:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', SETTINGS:'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8',
+const L = { ASSET:'https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s', LISTS:'https://claude.ai/artifact/D7N5PmXKrkcY2gzZXWeuvc', FLOOR:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', HOME:'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', PEOPLE:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', FINANCE:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', SETTINGS:'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8',
   JOB:'https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo', JOBS:'https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd', ASSETS:'https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw' };
 const ME = 'Jayden Cole', TESTERS = ['Jayden Cole','Sam Okafor','Tom Nguyen','Mel Torres'];
 const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(11);

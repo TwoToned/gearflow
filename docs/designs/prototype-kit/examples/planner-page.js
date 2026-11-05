@@ -1,6 +1,6 @@
 // ---------- Crew planner + timesheets · data
 const TODAY = '2026-11-09', ME = 'Jayden Cole';
-const U = { logi:'https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf', jobs:'https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd', assets:'https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw', people:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', home:'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', floor:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', fin:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', scan:'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX' };
+const U = { logi:'https://claude.ai/artifact/E36tnBkGL9obdikUQ5mbXf', jobs:'https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd', assets:'https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw', people:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', home:'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', floor:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', fin:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', scan:'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX' };
 const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(7);
 const addD = (d, n) => new Date((dayNum(d) + n) * 864e5).toISOString().slice(0,10);
 // The fixture calendar: Mon 10 Nov 2026 anchors the week (the brief's world has 11 Nov on a Tuesday), so weekday names come from here, not from Date.

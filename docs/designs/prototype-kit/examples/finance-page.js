@@ -130,9 +130,9 @@ function fromUrl() { try { const p = new URLSearchParams(location.search); if (p
 function render() { renderChrome(); renderHead(); renderNote(); renderWords(); renderStrip(); renderToolbar(); renderTable(); renderList(); renderFoot(); renderBulk(); toUrl(); }
 function renderChrome() {
   if (renderChrome.done) return; renderChrome.done = true;
-  const items = [['Dashboard','blue','https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR'],['Jobs','blue',JOBSURL],['Finance','green','#finance'],['Schedule','green','#schedule'],['Crew','purple','https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui'],['Assets','amber',ASSETSURL],['Warehouse','teal','https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA'],['Test & tag','teal','https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX'],['Maintenance','amber','#maintenance']];
+  const items = [['Dashboard','blue','https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf'],['Jobs','blue',JOBSURL],['Finance','green','#finance'],['Schedule','green','#schedule'],['Crew','purple','https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui'],['Assets','amber',ASSETSURL],['Warehouse','teal','https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA'],['Test & tag','teal','https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX'],['Maintenance','amber','#maintenance']];
   $('#sidenav').innerHTML = items.map(([n, c, h]) => `<a href="${h}" class="${n === 'Finance' ? 'on' : ''}"><span class="patch" style="background:var(--${c}-soft, var(--paper-2))"></span>${n}</a>`).join('');
-  const bn = [...document.querySelectorAll('.bottomnav a')]; ['https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', JOBSURL, 'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', ASSETSURL].forEach((h, k) => { if (bn[k]) bn[k].setAttribute('href', h); });
+  const bn = [...document.querySelectorAll('.bottomnav a')]; ['https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', JOBSURL, 'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', ASSETSURL].forEach((h, k) => { if (bn[k]) bn[k].setAttribute('href', h); });
   const st = document.querySelector('.sidebar .foot a'); if (st) st.setAttribute('href', SETTINGS);
 }
 function renderHead() {

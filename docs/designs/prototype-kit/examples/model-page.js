@@ -2,7 +2,7 @@
 const TODAY = '2026-11-09';
 const U = {
   OV:'https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo', JOBS:'https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd', ASSETS:'https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw',
-  ASSET:'https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s', FLOOR:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', HOME:'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', FINANCE:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', PEOPLE:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', SETTINGS:'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8', SCAN:'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX',
+  ASSET:'https://claude.ai/artifact/Rr5rwirCUMRy8gf5G6Vz7s', FLOOR:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', HOME:'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', FINANCE:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', PEOPLE:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', SETTINGS:'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8', SCAN:'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX',
 };
 const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(11);
 const addD = (d, n) => new Date((dayNum(d) + n) * 864e5).toISOString().slice(0,10);

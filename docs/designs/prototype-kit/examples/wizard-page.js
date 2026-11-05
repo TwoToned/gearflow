@@ -118,11 +118,11 @@ const statusWord = s => `<span class="dotw ${STATUS[s][1]}">${STATUS[s][0]}</spa
 // ---------- shell wiring
 function renderNav() {
   if ($('#sidenav').children.length) return;
-  const items = [['Dashboard', 'blue', 'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR'], ['Jobs', 'blue', URLS.jobs], ['Finance', 'green', 'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom'], ['Schedule', 'green', 'https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui'], ['Crew', 'purple', 'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa'], ['Assets', 'amber', URLS.assets], ['Warehouse', 'teal', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA'], ['Test & tag', 'teal', '#'], ['Maintenance', 'amber', '#']];
+  const items = [['Dashboard', 'blue', 'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf'], ['Jobs', 'blue', URLS.jobs], ['Finance', 'green', 'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom'], ['Schedule', 'green', 'https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui'], ['Crew', 'purple', 'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa'], ['Assets', 'amber', URLS.assets], ['Warehouse', 'teal', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA'], ['Test & tag', 'teal', '#'], ['Maintenance', 'amber', '#']];
   $('#sidenav').innerHTML = items.map(([n, c, h]) => `<a href="${h}" class="${n === 'Jobs' ? 'on' : ''}"><span class="patch" style="background:var(--${c}-soft, var(--paper-2))"></span>${n}</a>`).join('');
 }
 $('.sidebar .foot a').setAttribute('href', 'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8');
-{ const bn = document.querySelectorAll('.bottomnav a'); const hs = ['https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', URLS.jobs, 'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', URLS.assets]; bn.forEach((a, i) => a.setAttribute('href', hs[i])); }
+{ const bn = document.querySelectorAll('.bottomnav a'); const hs = ['https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', URLS.jobs, 'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', URLS.assets]; bn.forEach((a, i) => a.setAttribute('href', hs[i])); }
 $('.crumb').innerHTML = `<a href="${URLS.jobs}" style="color:var(--muted)">Jobs</a><span>›</span><b id="crumbb">New job</b>`;
 $('.phonehead').innerHTML = `<a class="btn btn-icon btn-lg" href="${URLS.jobs}" aria-label="Back to Jobs" style="color:var(--ink)">‹</a><div style="flex:1;min-width:0"><div class="ell" id="phonettl" style="font-family:var(--display);font-weight:800;font-size:16px">New job</div><div class="ell t-micro muted" id="phonesub"></div></div><button class="btn btn-icon btn-lg" data-act="pagemenu" aria-label="Page actions">⋯</button>`;
 // ---------- render

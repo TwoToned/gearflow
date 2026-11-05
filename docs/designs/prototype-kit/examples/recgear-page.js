@@ -338,7 +338,7 @@ const crumbOf = r => { const T = TYPES[state.type]; const mid = state.type === '
 let chromeDone = false;
 function chrome() {
   if (chromeDone) return; chromeDone = true;
-  const nav = [['Dashboard', 'blue', AR + '3d6zqfosL5hYRvXLBYLnhR'], ['Jobs', 'blue', AR + 'A7SMPtpTr3aedUDEnuSaxd'], ['Finance', 'green', AR + '5VnYTVW2pdA5r1qBRvdrom'], ['Schedule', 'green', U.sched], ['Crew', 'purple', AR + 'LPdsNGb4CRMfS6qk7j7Fsa'], ['Assets', 'amber', GL('locations')], ['Warehouse', 'teal', AR + '6xqFcEZZk49w86p5pAsisA'], ['Test & tag', 'teal', GL('tt')], ['Maintenance', 'amber', GL('maintenance')]];
+  const nav = [['Dashboard', 'blue', AR + 'RPnGj7WnaWcknvQ8ShcRkf'], ['Jobs', 'blue', AR + 'A7SMPtpTr3aedUDEnuSaxd'], ['Finance', 'green', AR + '5VnYTVW2pdA5r1qBRvdrom'], ['Schedule', 'green', U.sched], ['Crew', 'purple', AR + 'LPdsNGb4CRMfS6qk7j7Fsa'], ['Assets', 'amber', GL('locations')], ['Warehouse', 'teal', AR + '6xqFcEZZk49w86p5pAsisA'], ['Test & tag', 'teal', GL('tt')], ['Maintenance', 'amber', GL('maintenance')]];
   $('#sidenav').innerHTML = nav.map(([n, c, h]) => `<a href="${h}" class="${n === 'Assets' ? 'on' : ''}"><span class="patch" style="background:var(--${c}-soft, var(--paper-2))"></span>${n}</a>`).join('');
   $('.phonehead').innerHTML = `<a class="btn btn-icon btn-lg" id="phoneback" href="${U.gear}" aria-label="Back to the list" style="color:var(--ink)">‹</a><div style="flex:1;min-width:0"><div class="ell" id="phonetitle" style="font-family:var(--display);font-weight:800;font-size:16px"></div><div class="ell t-micro muted" id="phonesub"></div></div><button class="btn btn-icon btn-lg" data-act="pagemenu" aria-label="Page actions">⋯</button>`;
 }

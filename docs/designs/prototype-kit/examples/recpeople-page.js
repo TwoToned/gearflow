@@ -1,7 +1,7 @@
 // ---------- People records · data  (record pages, pattern 4.2): Client · Crew member · Supplier · Supplier order
 const TODAY = '2026-11-09';
 const A = id => 'https://claude.ai/artifact/' + id;
-const U = { OV:A('RatKsWfTmDJLJHmn6mb7Zo'), EQ:A('BdwR4bNbiNMLSvfRAByEwC'), LOG:A('E36tnBkGL9obdikUQ5mbXf'), FIN:A('7ByfxnbtsgQTJdiwvvo1CY'), JOBS:A('A7SMPtpTr3aedUDEnuSaxd'), ASSETS:A('89PDTuMiovgP9i3h4MJ1Tw'), ASSET:A('Rr5rwirCUMRy8gf5G6Vz7s'), HOME:A('3d6zqfosL5hYRvXLBYLnhR'), FLOOR:A('6xqFcEZZk49w86p5pAsisA'), PEOPLE:A('LPdsNGb4CRMfS6qk7j7Fsa'), PLANNER:A('AKkgWzJ2gVR3dJTWnMB2Ui'), SCAN:A('8Q2HVoRhLbSLz1Q9mCtayX'), FINHUB:A('5VnYTVW2pdA5r1qBRvdrom'), SETTINGS:A('Q3TeWuQPjzvXbAtmUV8Hg8'), WIZARD:A('GgtKxc5WZP33gXihgFTB9B'), SCHEDULE:'https://claude.ai/artifact/49jbSumcZhVdCU9ZA3nqdm' };
+const U = { OV:A('RatKsWfTmDJLJHmn6mb7Zo'), EQ:A('BdwR4bNbiNMLSvfRAByEwC'), LOG:A('E36tnBkGL9obdikUQ5mbXf'), FIN:A('7ByfxnbtsgQTJdiwvvo1CY'), JOBS:A('A7SMPtpTr3aedUDEnuSaxd'), ASSETS:A('89PDTuMiovgP9i3h4MJ1Tw'), ASSET:A('Rr5rwirCUMRy8gf5G6Vz7s'), HOME:A('RPnGj7WnaWcknvQ8ShcRkf'), FLOOR:A('6xqFcEZZk49w86p5pAsisA'), PEOPLE:A('LPdsNGb4CRMfS6qk7j7Fsa'), PLANNER:A('AKkgWzJ2gVR3dJTWnMB2Ui'), SCAN:A('8Q2HVoRhLbSLz1Q9mCtayX'), FINHUB:A('5VnYTVW2pdA5r1qBRvdrom'), SETTINGS:A('Q3TeWuQPjzvXbAtmUV8Hg8'), WIZARD:A('GgtKxc5WZP33gXihgFTB9B'), SCHEDULE:'https://claude.ai/artifact/49jbSumcZhVdCU9ZA3nqdm' };
 const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(7);
 const addD = (d, n) => new Date((dayNum(d) + n) * 864e5).toISOString().slice(0,10);
 const dow = d => WD[(dayNum(d) + 3) % 7]; // fixture world: 11 Nov 2026 is a Tuesday

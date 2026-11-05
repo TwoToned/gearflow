@@ -1,7 +1,7 @@
 // ---------- Schedule · data
 const TODAY = '2026-11-09', ME = 'Jayden Cole';
 const A = id => 'https://claude.ai/artifact/' + id;
-const U = { over:A('RatKsWfTmDJLJHmn6mb7Zo'), equip:A('BdwR4bNbiNMLSvfRAByEwC'), logi:A('E36tnBkGL9obdikUQ5mbXf'), jobs:A('A7SMPtpTr3aedUDEnuSaxd'), assets:A('89PDTuMiovgP9i3h4MJ1Tw'), home:A('3d6zqfosL5hYRvXLBYLnhR'), wizard:A('GgtKxc5WZP33gXihgFTB9B'), floor:A('6xqFcEZZk49w86p5pAsisA'), model:A('47miWruJVsednbzrFPij2b'), people:A('LPdsNGb4CRMfS6qk7j7Fsa'), gear:A('D7N5PmXKrkcY2gzZXWeuvc'), planner:A('AKkgWzJ2gVR3dJTWnMB2Ui'), scan:A('8Q2HVoRhLbSLz1Q9mCtayX'), fin:A('5VnYTVW2pdA5r1qBRvdrom') };
+const U = { over:A('RatKsWfTmDJLJHmn6mb7Zo'), equip:A('BdwR4bNbiNMLSvfRAByEwC'), logi:A('E36tnBkGL9obdikUQ5mbXf'), jobs:A('A7SMPtpTr3aedUDEnuSaxd'), assets:A('89PDTuMiovgP9i3h4MJ1Tw'), home:A('RPnGj7WnaWcknvQ8ShcRkf'), wizard:A('GgtKxc5WZP33gXihgFTB9B'), floor:A('6xqFcEZZk49w86p5pAsisA'), model:A('47miWruJVsednbzrFPij2b'), people:A('LPdsNGb4CRMfS6qk7j7Fsa'), gear:A('D7N5PmXKrkcY2gzZXWeuvc'), planner:A('AKkgWzJ2gVR3dJTWnMB2Ui'), scan:A('8Q2HVoRhLbSLz1Q9mCtayX'), fin:A('5VnYTVW2pdA5r1qBRvdrom') };
 const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(11);
 const addD = (d, n) => new Date((dayNum(d) + n) * 864e5).toISOString().slice(0,10);
 // Fixture calendar: Mon 10 Nov 2026 anchors the week (11 Nov is a Tuesday in the fiction; 9 Nov prints with no weekday).

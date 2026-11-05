@@ -279,11 +279,11 @@ function render() {
 let navWired = false;
 function wireNav() {
   if (navWired) return; navWired = true;
-  const hrefs = { Dashboard: 'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', Jobs: JOBS, Finance: 'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', Crew: 'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', Assets: ASSETS };
+  const hrefs = { Dashboard: 'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', Jobs: JOBS, Finance: 'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', Crew: 'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', Assets: ASSETS };
   document.querySelectorAll('#sidenav a').forEach(a => { const n = a.textContent.trim(); if (hrefs[n]) a.href = hrefs[n]; });
   const s = document.querySelector('.sidebar .foot a'); if (s) s.href = 'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8';
   const bn = document.querySelectorAll('.bottomnav a');
-  bn.forEach(a => { const h = a.getAttribute('href'); if (h === '#home') a.href = 'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR'; if (h === '#jobs') a.href = JOBS; if (h === '#assets') a.href = ASSETS; if (h === '#warehouse') a.classList.add('on'); if (h === '#scan') a.setAttribute('data-act', 'camera'); });
+  bn.forEach(a => { const h = a.getAttribute('href'); if (h === '#home') a.href = 'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf'; if (h === '#jobs') a.href = JOBS; if (h === '#assets') a.href = ASSETS; if (h === '#warehouse') a.classList.add('on'); if (h === '#scan') a.setAttribute('data-act', 'camera'); });
   $('#camBtn').innerHTML = ICON.cam;
 }
 function renderHead() {

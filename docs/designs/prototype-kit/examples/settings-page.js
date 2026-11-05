@@ -1,6 +1,6 @@
 // ---------- Data -------------------------------------------------------------
 const TODAY = '2026-11-09';
-const SIB = { home:'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', jobs:'https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd', finance:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', planner:'https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui', people:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', assets:'https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw', floor:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', scan:'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX' };
+const SIB = { home:'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', jobs:'https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd', finance:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', planner:'https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui', people:'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa', assets:'https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw', floor:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', scan:'https://claude.ai/artifact/8Q2HVoRhLbSLz1Q9mCtayX' };
 const MDY = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const fmtDY = d => `${+d.slice(8,10)} ${MDY[+d.slice(5,7)-1]} ${d.slice(0,4)}`;
 const clone = o => JSON.parse(JSON.stringify(o));

@@ -2,7 +2,7 @@
 const TODAY = '2026-11-09', ME = 'Jayden Cole';
 const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(11);
 const A = 'https://claude.ai/artifact/';
-const U = { home: A + '3d6zqfosL5hYRvXLBYLnhR', wizard: A + 'GgtKxc5WZP33gXihgFTB9B', asset: A + 'Rr5rwirCUMRy8gf5G6Vz7s', model: A + '47miWruJVsednbzrFPij2b', people: A + 'LPdsNGb4CRMfS6qk7j7Fsa', gear: A + 'D7N5PmXKrkcY2gzZXWeuvc', floor: A + '6xqFcEZZk49w86p5pAsisA', planner: A + 'AKkgWzJ2gVR3dJTWnMB2Ui', scan: A + '8Q2HVoRhLbSLz1Q9mCtayX', finance: A + '5VnYTVW2pdA5r1qBRvdrom', settings: A + 'Q3TeWuQPjzvXbAtmUV8Hg8', jobs: A + 'A7SMPtpTr3aedUDEnuSaxd', assets: A + '89PDTuMiovgP9i3h4MJ1Tw' };
+const U = { home: A + 'RPnGj7WnaWcknvQ8ShcRkf', wizard: A + 'GgtKxc5WZP33gXihgFTB9B', asset: A + 'Rr5rwirCUMRy8gf5G6Vz7s', model: A + '47miWruJVsednbzrFPij2b', people: A + 'LPdsNGb4CRMfS6qk7j7Fsa', gear: A + 'D7N5PmXKrkcY2gzZXWeuvc', floor: A + '6xqFcEZZk49w86p5pAsisA', planner: A + 'AKkgWzJ2gVR3dJTWnMB2Ui', scan: A + '8Q2HVoRhLbSLz1Q9mCtayX', finance: A + '5VnYTVW2pdA5r1qBRvdrom', settings: A + 'Q3TeWuQPjzvXbAtmUV8Hg8', jobs: A + 'A7SMPtpTr3aedUDEnuSaxd', assets: A + '89PDTuMiovgP9i3h4MJ1Tw' };
 const state = { q: '', form: null, last: {}, recs: {}, clock: 41, undo: null };
 const clone = o => JSON.parse(JSON.stringify(o));
 const nowt = () => '09:' + String(state.clock).padStart(2, '0');

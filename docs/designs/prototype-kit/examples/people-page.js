@@ -1,7 +1,7 @@
 // ---------- People lists (Crew · Clients · Suppliers) · ONE config-driven list renderer
 const TODAY = '2026-11-09', WEEK_END = '2026-11-15';
 const OV = 'https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo', JOBSURL = 'https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd', ASSETSURL = 'https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw';
-const U = { planner:'https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui', finance:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', home:'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR', floor:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', settings:'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8' };
+const U = { planner:'https://claude.ai/artifact/AKkgWzJ2gVR3dJTWnMB2Ui', finance:'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom', home:'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf', floor:'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA', settings:'https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8' };
 const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(11);
 const pick = a => a[Math.floor(rnd() * a.length)];
 const addD = (d, n) => new Date((dayNum(d) + n) * 864e5).toISOString().slice(0,10);

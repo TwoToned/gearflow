@@ -148,7 +148,7 @@ function render() { chrome(); renderHead(); renderTabs(); renderView(); renderBu
 let chromeDone = false;
 function chrome() {
   if (chromeDone) return; chromeDone = true;
-  const nav = [['Dashboard', 'blue', 'https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR'], ['Jobs', 'blue', JOBSL], ['Finance', 'green', 'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom'], ['Schedule', 'green', ''], ['Crew', 'purple', 'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa'], ['Assets', 'amber', LIST], ['Warehouse', 'teal', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA'], ['Test & tag', 'teal', ''], ['Maintenance', 'amber', '']];
+  const nav = [['Dashboard', 'blue', 'https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf'], ['Jobs', 'blue', JOBSL], ['Finance', 'green', 'https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom'], ['Schedule', 'green', ''], ['Crew', 'purple', 'https://claude.ai/artifact/LPdsNGb4CRMfS6qk7j7Fsa'], ['Assets', 'amber', LIST], ['Warehouse', 'teal', 'https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA'], ['Test & tag', 'teal', ''], ['Maintenance', 'amber', '']];
   $('#sidenav').innerHTML = nav.map(([n, c, h]) => `<a ${h ? `href="${h}"` : 'href="#" data-act="noop"'} class="${n === 'Assets' ? 'on' : ''}"><span class="patch" style="background:var(--${c}-soft, var(--paper-2))"></span>${n}</a>`).join('');
   $('.phonehead').innerHTML = `<a class="btn btn-icon btn-lg" href="${LIST}" aria-label="Back to assets" style="color:var(--ink)">‹</a><div style="flex:1;min-width:0"><div class="ell" id="phonetitle" style="font-family:var(--display);font-weight:800;font-size:16px"></div><div class="ell t-micro muted" id="phonesub"></div></div><button class="btn btn-icon btn-lg" data-act="pagemenu" aria-label="Page actions">⋯</button>`;
 }

@@ -2,7 +2,7 @@
 const TODAY = '2026-11-09';
 const A = id => 'https://claude.ai/artifact/' + id;
 const U = {
-  HOME:A('3d6zqfosL5hYRvXLBYLnhR'), JOBS:A('A7SMPtpTr3aedUDEnuSaxd'), OV:A('RatKsWfTmDJLJHmn6mb7Zo'), EQ:A('BdwR4bNbiNMLSvfRAByEwC'), LOG:A('E36tnBkGL9obdikUQ5mbXf'),
+  HOME:A('RPnGj7WnaWcknvQ8ShcRkf'), JOBS:A('A7SMPtpTr3aedUDEnuSaxd'), OV:A('RatKsWfTmDJLJHmn6mb7Zo'), EQ:A('BdwR4bNbiNMLSvfRAByEwC'), LOG:A('E36tnBkGL9obdikUQ5mbXf'),
   FIN:A('7ByfxnbtsgQTJdiwvvo1CY'), WH:A('Mt8p55xkPkkexVWPC5eaGU'), ASSETS:A('89PDTuMiovgP9i3h4MJ1Tw'), ASSET:A('Rr5rwirCUMRy8gf5G6Vz7s'), MODEL:A('47miWruJVsednbzrFPij2b'),
   PEOPLE:A('LPdsNGb4CRMfS6qk7j7Fsa'), GEAR:A('D7N5PmXKrkcY2gzZXWeuvc'), PLAN:A('AKkgWzJ2gVR3dJTWnMB2Ui'), SCAN:A('8Q2HVoRhLbSLz1Q9mCtayX'), FINHUB:A('5VnYTVW2pdA5r1qBRvdrom'),
   SET:A('Q3TeWuQPjzvXbAtmUV8Hg8'), FORMS:A('REMbu5TYg5Nx6iJJoPLuGy'), WIZ:A('GgtKxc5WZP33gXihgFTB9B'), FLOOR:A('6xqFcEZZk49w86p5pAsisA'), PACK:A('HSAZTyzfjG2A7sCjUe9wsM'),

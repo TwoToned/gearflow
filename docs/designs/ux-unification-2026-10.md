@@ -39,6 +39,10 @@ shell at three widths, and the primitives every surface is built from).
 - Finance hub: https://claude.ai/artifact/5VnYTVW2pdA5r1qBRvdrom — v1 (§9j).
 - Settings (index + Team): https://claude.ai/artifact/Q3TeWuQPjzvXbAtmUV8Hg8 — v1 (§9k).
 - Forms (every create and edit sheet): https://claude.ai/artifact/REMbu5TYg5Nx6iJJoPLuGy — v1 (§9l).
+- App shell (sidebar, tablet rail, ⌘K, Mira, phone nav + More): https://claude.ai/artifact/B4JAamBGiX6ypauLucopa2 — v1 (§6d).
+- People records (client, crew member, supplier, supplier order): https://claude.ai/artifact/D8UV81TDFpMEeUBxf2apUX — v1 (§9m).
+- Gear records (location, kit, maintenance job, T&T, category): https://claude.ai/artifact/PDsjUdku2seVZAWfNC6W61 — v1 (§9n).
+- Schedule (jobs + gear timeline): https://claude.ai/artifact/49jbSumcZhVdCU9ZA3nqdm — v1 (§9o).
 - Warehouse job: https://claude.ai/artifact/Mt8p55xkPkkexVWPC5eaGU — **locked
   2026-10-27** (§9.2, §9.4, §9.5). Three earlier directions (case board, pick walk,
   scanner-first) were prototyped and rejected in favour of "the live page, cleaned up".
@@ -481,6 +485,54 @@ Phone header `Home` + `Mon 9 Nov · Two Toned Productions`, ⋯ as a bottom shee
 Reuses the kit's strip, filter words, pager, `openMenu` / `openDialog` / `toast`, bulk bar, `.dotw`. In the app: stat words and Needs me read the same hooks (`useNativeDashboardStats`, `useNativeBlocking`, `useNativeOverbookingCounts`, `useNativeOrgFinanceCounts`, `useNativePendingCrewOffers`); the default layout is a plain component, `DashboardGrid` only mounts from Customise. Targets come from one `LIST_SEGMENTS` map shared with the lists' own strips (R-3.1). Notifications/My tasks/Activity adopt the §9b shell; `DashboardCard` chrome and the chip tray go. The old per-row Dismiss and `Dismiss All` go.
 
 Decisions raised: D14–D18 (§12).
+
+---
+
+## 6d. Shell — sidebar, rail, top bar, ⌘K, Mira, bell, phone nav — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/B4JAamBGiX6ypauLucopa2 — desktop 1440, tablet rail 1024 and phone 390, every control wired (sidebar items, sub-page toggle, collapse + ⌘B + auto rail ≤ 1023 with flyouts, org switcher with Undo, user menu with theme words and shortcuts, breadcrumb trails for four page types, ⌘K palette with recents, number/name/date search, `@` pages, `/` actions, arrows and Enter; Mira panel with Confirm, Dismiss, Undo, New chat and the write-access switch; bell with mark-read, Mark all read and Undo; phone bottom nav, camera sheet, More sheet with drill-down, full-screen search, header; "Signed in as" switch showing the permission gates; the D1 alternative).
+
+### 6d.1 Why
+`src/components/layout/*` and `(app)/layout.tsx`. Findings: the top bar shows one non-link title that drops id segments, so a job page reads "Projects" (`top-bar.tsx:45-60`, labels still "Projects"/"Availability" at :34,:30); the phone has no Scan, no gating and reaches Test & tag, Maintenance, Clients only through a hamburger drawer (`mobile-nav.tsx:34-40`), and the theme toggle is `hidden sm:flex` so it is unreachable there (`top-bar.tsx:104`); Mira is a `fixed bottom-20 right-4` FAB over every page, on top of the bulk bar (`mira-launcher.tsx:42`). Also: 13 sub-rows always inline in the sidebar, 248 px width against DESIGN's 220 (`(app)/layout.tsx:46`), ⌘B collapse is not in the shortcuts list, the bell reads mentions only while `/notifications` reads a derived feed, and ten prototypes each hand-roll their own nav and bottom-nav hrefs.
+
+### 6d.2 The page (desktop)
+- **Sidebar 220.** Brand, org row (the switcher), three hairline groups in main spec §6.1 order: Home · Jobs · Finance · Schedule | Crew · Assets · Warehouse · Test & tag · Maintenance | More: Clients · Suppliers · Locations · Activity. Settings, the user row and `‹ Collapse ⌘B` sit at the foot. Icons keep their module hue; the active row is a tint, never a red fill. Sub-pages show under the active module and on a hover `›` toggle (so all 13 stay reachable, none shout). Gated items are absent, never greyed.
+- **Rail 72** at ≤ 1023 automatically and by `Collapse`/⌘B at any width (remembered). Icon + 10.5 px label; click opens a flyout (`Open Assets`, sub-pages); `More` holds the four secondary items; the org row becomes initials.
+- **Top bar** (56): a real trail `Jobs › #2341 Hilton Sydney gala dinner › Equipment`, each segment a link, last one ink; then the search field `Search or jump to… ⌘K`, `Mira`, and the bell with a mono count (no filled badge, no `9+`).
+- **Org switcher** is the sidebar head; the user menu is personal: Account settings, My crew profile (when linked), Theme `Dark Light` words, Keyboard shortcuts, Sign out last and red. Switching org toasts with Undo and lands on Home; role per org changes the gates.
+- **Home** placeholder shows only what the shell needs.
+
+### 6d.3 ⌘K — search first
+- Empty: **Recent** (5) then **Actions** (New job `N`, Scan, New asset, New client; on a job or asset page an `On #2341` group first).
+- Typing matches job number (`2341`, `#2341`), asset tag (`aura 01` = AURA-01), name words, contact names (`priya`), grouped Jobs / Assets / Models / Clients / Crew / Suppliers / Locations, best group first, four rows each and `Show all 7 in Assets ›`. A date (`14/11`, `14 nov`) lists the jobs on that day. `@` pages, `/` actions (also bare `/` opens it), kept from live.
+- ↑ ↓ move, Enter opens the highlighted row, Esc closes, ⌘K toggles. Row = mono id, name, muted sub, dot-word status, mono dates. Opening a row moves it to the top of Recent. Nothing matching says `Nothing matches “…”` with the next step.
+- Gates apply (no New job for a viewer). Drill-down (`Shift+→`) stays as live.
+
+### 6d.4 Mira (D5)
+A `Mira` word in the top bar toggles a 384 px panel under it: hairline left edge, no shadow, overlays the page, Esc closes. Discussion rendering: initials, one sentence, tool lines in mono, no bubbles. A `danger: high` call stops at a left-ruled **Confirm** card: operation, args, estimate, `Confirm` (ink, not red) and `Dismiss`, plus the line "Mira cannot approve this itself". Confirm replays the stored call as the user, toasts and has Undo; with org write access off the card says so and has no button. ⋯: New chat, Mira settings, write access (prototype of the org setting). The panel header names the page Mira is looking at. Per CLAUDE.md, no `confirm` parameter is ever model-visible.
+
+### 6d.5 Bell
+Count + menu of dated rows (unread dot, title, dot-word type, one muted line, time), `Mark all read` with Undo, `All notifications ›` to Home. Open = mark read. Open question: live bell is mentions-only; this assumes it shows the same feed as Home › Notifications.
+
+### 6d.6 Phone
+- Header per page: back chevron + title + one identity line (the trail's last segment; chevron goes to the parent crumb), then `⌕`, Mira, bell with count, ⋯. These are the only icon buttons allowed (global chrome, aria-labelled).
+- **Bottom nav (D1): Home · Jobs · Scan · Warehouse · More.** Scan is a 50 px red circle raised 8 px inside the bar, so it never overlaps the 44 px sticky primary above (checked: 2 px clear). Gated: a role without warehouse loses Scan and Warehouse (live bar is ungated). Active = red; More is active on Crew, Assets, Settings pages.
+- **Scan** opens the camera sheet from the tap (copied from the Scan prototype); outside a job it looks the tag up and offers `Open asset ›`.
+- **More sheet** (88 %, 48 px rows): user head (taps to account menu with Theme and Sign out), Plan: Schedule, Finance `1 overdue`, Overbookings `5 overbooked`, Job templates; Crew and gear: Crew 28 ›, Assets 605 ›, Test & tag `4 overdue` ›, Maintenance `20 open · 5 overdue`, Locations 13, Returns `2 overdue`; People: Clients 26, Suppliers 13; Account: Activity, Settings ›. › rows drill to Open X + sub-pages. Replaces the hamburger drawer.
+- **Search** is a full-screen sheet: input 16 px, `Cancel`, word chips `@ Pages  / Actions  Scan a tag`, 58 px rows. Mira is a full-height sheet, the bell a bottom sheet.
+
+### 6d.7 D1's alternative, and why not
+Alternative: keep Home · Jobs · Warehouse · Crew · Assets and add a floating Scan button. The prototype's "Bottom nav" switch shows it: the button sits on top of the sticky primary and the last row's ⋯ (checked: overlaps), and it breaks principle 8 "nothing floats". Crew and Assets are the cost of D1: they move to More (two taps), which is the right trade because Scan is the daily verb and Crew/Assets are looked up.
+
+### 6d.8 What every other prototype changes when D1 is accepted
+- Kit `shell.html` `.bottomnav`: Assets item becomes `More` (button, opens the More sheet), icons become SVG, centre Scan keeps `.scan` but 50 px / -9 px; `assemble.mjs` `__NAVASSETS__` argument goes (More is active on Crew, Assets, Settings).
+- `core.js`: `renderNav` list (Dashboard -> Home, Maintenance coral, More group) and a shared `moreSheet()`; better, ship the shell as one `shell.js` module (the sidebar, top bar, crumbs, bottom nav) so the ten pages stop rewriting `.bottomnav a` hrefs and `.crumb` (finance, floor, home, model, packing, planner, scan, wizard, settings, people).
+- Per prototype: `#assets` href rewrites become `data-act="more"`; the Scan prototype's `a[href="#scan"]` hook stays; Assets list and Gear lists set `More` active instead of `Assets`; phone headers adopt search / Mira / bell icons; top bar gains `Mira` and the bell.
+
+### 6d.9 Code
+Compose: one `NAV` table (`src/lib/nav.ts`: key, label, hue, url, resource, subs, group, count source) feeding `AppSidebar`, the rail flyouts, `MobileNav`'s More sheet and the palette's `@` pages (R-3.1); `Breadcrumbs` built from route segments plus a per-page `useBreadcrumbs` entity label, replacing `getPageTitle`; `ScanSheet` reused from the Scan surface; `MiraLauncher` becomes the top-bar word and `MiraPanel` loses `fixed bottom-20`. `use-mobile.ts` and the kit disagree (768 vs 859): pick one constant. Goes: the FAB, the hamburger drawer on phone, `segmentLabels` "Projects"/"Availability", My tasks rail item.
+
+Decisions raised: D65–D70 (§12).
 
 ---
 
@@ -1682,9 +1734,117 @@ Decisions raised: D62–D64 (§12).
 
 ---
 
+## 9m. People › Client, Crew member, Supplier, Supplier order records — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/D8UV81TDFpMEeUBxf2apUX — desktop 1440 and phone 390, every control wired (record switch, tabs with hash state, words filters, tick + shift-range, bulk bar + Undo, row ⋯, page ⋯, Edit sheets, merge/archive/inactive confirms, extend hire, log time, upload, History composer).
+
+### 9m.1 Why
+Four record pages with four layouts: `clients/[id]/page.tsx:236` draws a bordered hero card with HeroStat boxes, `crew/[id]/page.tsx` is 2,355 lines with per-row icon buttons (`:593`, `:787`) and an Approve all button (`:1439`), `suppliers/[id]/page.tsx:371` carries Edit + a ⋯ that holds only Delete, and the order page (`orders/[orderId]/page.tsx:243`) shows four stat boxes over a table. None has an Overview. The live data is good; the chrome and the missing derived health are the problem.
+
+### 9m.2 The page
+The §4.2 record page, copied from Asset and Model. DetailHeader (name · status dot-word · identity line), `Edit` the one primary (opens the Forms sheet for that record), page ⋯ with the rest, red verbs last with a confirm naming what stays. Overview first, calm: an overline, one headline, health rows with a muted `Action ›`, three fact columns, relationships as rows. List tabs follow §4.1 without the head; History is the Discussion rendering with a one-line composer. Context rail on every tab but Overview. Breadcrumb `Clients/Crew/Suppliers › name` links the People lists; order adds the supplier.
+- Client: Overview · Jobs · Quotes & invoices · Contacts · Files · History. Headline `$11,940 outstanding`; rows `INV-0042 $11,940 due 28 Nov`, `QT-2352 expires in 11 days`. ⋯: Edit, New job, Sync/Change Xero mapping, Merge, Archive (red).
+- Crew: Overview · Calls · Timesheets · Availability · Documents · History. Headline `2 calls · 18 h`; rows unconfirmed Bump in, `licence expires in 12 days`, `2 timesheets awaiting approval`. ⋯: Message, Resend offer, Log time, Add block, Calendar feed, Export, Make inactive, Delete.
+- Supplier: Overview · Orders · Sub-hires · Assets · Contacts · Documents · History. Headline `14 units on hire`; row `SH-0012 return 2d overdue`.
+- Order: Overview · Lines · Files · History. Headline `On hire · 14 units`; rows overdue return (`Extend hire`), invoice not attached; link to `#2341` Equipment.
+
+### 9m.3 Derived, never stored
+Outstanding, lifetime, overdue, expiry words, `On hire`/`Returned`, late days, margin, order total and spend are computed on read. `On hire` is `SUBHIRE` + received + no return date, so the stored status vocabulary (Draft/Ordered/Partial/Received/Cancelled) is untouched; only a return date is new (D?). The overdue return resolves by `Extend hire` (job needs the gear to 14 Nov) or `Mark returned`, both with Undo.
+
+### 9m.4 New capability, each closing a found gap
+Quotes & invoices on the client (Finance owns the documents; this is the account view); Merge client (dialog lists what moves); crew Documents with expiry (feeds the Overview row); crew Message; supplier Contacts; order Return due. Calendar tab becomes a dialog; Notes tab becomes an Overview section.
+
+### 9m.5 Phone
+Header name + identity line + ‹ back + ⋯ bottom sheet; scrolling tab strip with counts; cards 60–72 px, 22 px checkbox, id moved into the meta line, ⋯ always visible 40 px; sticky `Edit` above the bottom nav, replaced by the bulk bar on tick; sheets full-height, inputs 16 px; `Show n more · n left`.
+
+### 9m.6 Code
+Reuse DetailHeader, RowEditorSheet (Forms), `useConfirm…` dialogs. Delete the hero cards, HeroStat, the per-row icon buttons and the Calendar tab. Money matches the siblings: outstanding $11,940, INV-0041 deposit 25% $6,567 paid 8 Nov (Finance hub).
+
+Decisions raised: D71–D74 (§12).
+
+---
+
+## 9n. Gear records — Location, Kit, Maintenance job, Test & tag, Category — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/PDsjUdku2seVZAWfNC6W61 — desktop 1440 and phone 390, every control wired (record switcher words, `#type/id/tab` hash, Overview checks, list tabs with search, filter words, tick + shift-tick, bulk bars with Undo, row ⋯, page ⋯, Edit sheets, Complete / Record test / Scan dialogs, destructive confirms, files grid, notes in History, empty states, Show more).
+
+### 9n.1 Why
+Five record pages built five ways: `locations/[id]/page.tsx:276-358` (hero card, type pill, always-visible Delete), `kits/[id]/page.tsx:430-500` (three header buttons, no tabs, stored `INCOMPLETE` status), `maintenance/[id]/page.tsx:184-290` (Panels, parts as one free-text field and cost as one number), `test-and-tag/[id]/page.tsx:259-300` (four header buttons, a disabled Edit). None lands on a state; none has a context rail; deletes say "unlinked" without naming what.
+They become the asset and model record pages: DetailHeader, Overview first, list tabs, Discussion-style History, one Edit, one ⋯.
+
+### 9n.2 The page
+- Header: name · derived dot-word (`69% full`, `Incomplete`, `Awaiting parts`, `18d overdue`, `2 models without rates`) · identity line. `Edit` opens the Forms sheet (location, kit, maintenance sheets copied from §9l; T&T and category are new field tables, category a small sheet). ⋯ holds the rest, destructive last in red with a dialog naming downstream effects.
+- Overview: head word + `n of m checks clear`, rows with muted `Action ›`; three facts; Identity list. No table. Checks that cannot run say `not checked` (location stocktake).
+- Tabs — location: Contents · Bins · Jobs · History · Files; kit: Contents · Checks · History · Files; job: Assets · Parts · History · Files; T&T: Tests · History · Files; category: Models · Kits · Subcategories. Rail on every non-Overview tab. Notes tabs are gone: the text is a sheet field, discussion is a note in History.
+- Lists: bare search, filter words that read their value (`Bin: B2 ✕`), checkbox rows, bulk bar with counts (`Move 3 to…`, `Mark present 1`), row ⋯, `Show 25 more · n left`, one footer line.
+
+### 9n.3 Things that needed design
+**Location.** Bins are child locations with capacity, label state and last movement. Warehouse A reads 412 assets, 11 bins, `3 assets with no bin`. Moving a case moves what is in it. `Print bin labels` offers unprinted-only or all. Scan = put-away (asset into this place, optional bin); a read of an asset already there says so rather than moving it.
+**Kit.** Complete/missing is derived from contents. Missing item beats reservation: `1 item missing … needed for #2341, truck Tue 11 Nov 06:30` blocks (`Can't go out`). Check mode is two words on the Checks tab. Scan = check: each read ticks an item off; the last one flips the kit to Ready. Value shows replacement and paid; case info is Identity.
+**Maintenance job — Complete.** Dialog: result (Pass/Fail/Conditional), completed date, labour (blank is not $0), next due, per-asset disposition defaulting from the result (fail → keep out of service). Cost is derived: parts lines + labour. Completing writes the outcome, updates each asset, toasts with Undo; `Reopen` reverses it. `Mark arrived` moves Awaiting parts to In progress.
+**Test & tag.** Next due is last test + interval, never stored. Record test: readings against limits, live Pass/Fail line; a fail raises a repair job, keeps the asset out of service and links it in the test row. `Book a test` creates a scheduled T&T job. Delete is offered only after Retire.
+**Category.** Default T&T profile (class, interval) inherited by its models; models can override. `Including subcategories` widens Models. Deleting moves models to Uncategorised and subcategories up.
+
+### 9n.4 Phone
+Phone header (name + dot-word + one fact + ⋯ sheet); Record strip is prototype-only; tab strip scrolls; filter words scroll under a full-width search; cards 60+ px with 22 px checkbox, tag moves into the meta line; sticky primary per record (`Scan` location and kit, `Complete` open job, `Record test` T&T, `Edit` category) replaced by the bulk bar on first tick; sheets are bottom sheets; inputs 16 px.
+
+### 9n.5 Code
+Composes DetailHeader, Tabs (controlled, `?tab=`), the §4.1 list rows, `useConfirmStatusGate`-style non-blocking previews for Retire/Delete, the Forms sheet. Derive: kit status, T&T next due, maintenance cost, location fill, category asset counts. Remove: five hero cards, header button rows, Notes tabs, per-row delete buttons.
+
+Decisions raised: D75–D80 (§12).
+
+---
+
+## 9o. Schedule — v1 proposal (prototype 2026-11-05, awaiting a yes)
+
+**Prototype:** https://claude.ai/artifact/49jbSumcZhVdCU9ZA3nqdm — desktop 1440 and phone 390, every control wired (Jobs / Gear words; Week / Month zoom; ‹ › Today; strip All · Confirmed · Pencilled · Clashes; Status / Category / Model / PM filters, search, Clear; click a bar for the job sheet, a day header for the day sheet, a gear cell for the model-day sheet; tick + shift-tick, bulk Confirm n with the heads-up gate, Move dates… with the date-move gate, Sub-hire n short, Undo on every write; row ⋯, page ⋯ › Only my jobs; empty state; phone day mode).
+
+### 9o.1 Why
+Live: `src/app/(app)/availability/page.tsx` (867 lines) over `convex/availability.ts calendarData` and `convex/lib/availabilityCore.ts`. Three findings.
+- It is a read-only picture of jobs and says nothing about gear. The page's own subtitle is "when projects are live and gear is committed" (`page.tsx:~255`) but `calendarData` returns only `lineItemCount` (`availability.ts:293-340`); the HARD vs pencilled rule in `availabilityCore.ts:91-111` (a pencilled job holds nothing) never reaches the screen, so two jobs that overbook a model look like two bars.
+- The six-week grid caps bars at three lanes and hides the rest behind "+n more" (`page.tsx:~520`); the busy-day legend (1 / 2 / 3+ projects) counts jobs, not stock, so "red = 3+" is not "short".
+- No filter, search, selection or write. Confirming or moving a job means leaving for the job page; the fixes the confirm gate and date-move gate already exist for (#1227) are not reachable from the page that shows the clash. Phone squeezes the same grid; Agenda is a second view of the same list.
+
+### 9o.2 The page
+One page, `Schedule` (sidebar rename per D7), with two views as words in the head, `Jobs  Gear` (Jobs' `Table  Board` position). Pattern 4.4, sibling of the crew planner.
+- **Primary** `+ New job` (wizard). **Page ⋯:** Only my jobs, Overbookings ›, Crew planner ›, Logistics ›, Export this range (CSV), Copy link.
+- **Strip** `All 9 · Confirmed 5 · Pencilled 4 · Clashes 2` (Clashes red when non-zero). **Gear has its own model-based strip** `All 16 · Short 1 · At risk 2` (short = a hard shortfall, red; at risk = a pencilled shortfall, amber); the job strip is not reused there. Counts follow the range and filters.
+- **Toolbar:** `‹ 10 – 16 Nov ›  Today  | Week  Month`, search (`job, client or model`), `Status ▾ Category ▾ Model ▾ PM ▾` reading their values, `Clear`. In Gear, Status and PM narrow the rows to models those jobs hold; the numbers stay the whole org's.
+- **Footer** is the legend, one muted line: `Solid bar holds gear · dashed bar is pencilled and holds nothing`.
+- **Removed:** Agenda (desktop; the day sheet and phone day mode cover it), the busy-day legend and tint (counts in the day header), the 3-lane cap and `+n more`.
+
+### 9o.3 The timeline (Jobs)
+Rows are jobs (start order), columns days; label column 264 px = checkbox, `#2341 name`, `client ● Status · pencilled`, row ⋯ on hover. One bar per job across its rental window; left/right edges square when it continues past the range.
+- **Held vs pencilled without fills shouting.** Held = a quiet raised block with a hairline; pencilled = no fill, a faint hairline and hatching, muted text. Colour lives only in the status dot-word in the label (the bar carries no status colour, so the fact is not printed twice). A held job that causes a shortfall prints a red `clash` (#2337 Allianz and #2342 Mercedes both hold EM4 receivers on Tue 11 Nov); a pencilled job that would overbook if confirmed prints an amber `would clash` (#2350 Qantas awards, Quoted, against #2341's MAC Aura PXL on 13 – 14 Nov, so #2341 itself shows no red). Both are derived (`jobRuns`), never stored. Month zoom shows the same as a dot before the number.
+- **Day headers** `Wed 12` + `3 jobs` (muted, mono). Weekends faint; today a hairline. Click opens the day sheet.
+- **Week / Month.** Week = Mon–Sun, ‹ › step 7 days. Month = the calendar month (30 slim columns, weekday initial + number), ‹ › step a month. Today = the working week from 10 Nov (9 Nov is a Sunday).
+- **Job side sheet** (click a bar or label): status + `holds its gear` / `pencilled · holds nothing`; When, Truck, Client · contact, PM, Value, Gear (models · units · lines). A `Clashes` section lists each short model with the other job (`short 2 · MAC Aura PXL · with #2350 · 13 – 14 Nov`); each row opens the model-day sheet. Actions: `Open job` (Overview), `Equipment ›`, `Logistics ›`, then `Confirm…` / `Move dates…` words. Deployed and on-site jobs say their dates are locked.
+
+### 9o.4 Gear
+Rows are models grouped by category (`Lighting 5`), cells the free count per day (serviceable − held by hard jobs). Plain days print only the number (faint when nothing holds it). A shortfall (two confirmed jobs, e.g. EM4 receivers short 2 on 11 Nov) prints a red flag-word `● short 2` with `held 10` under it; a pencilled risk (MAC Aura PXL 13 – 14 Nov, beltpacks 14 Nov) prints the free number in amber with `pencilled −2` (confirming the pencilled job would take it below zero). The cell sheet adds `would be short 2 if #2350 confirms`. Day header carries `1 short` in red. Month zoom shrinks cells to the number, `−2` red. Model label shows `12 owned · 1 in service` (AURA-06 fan fault, derived from maintenance, not typed).
+- **Click a cell** → model-day sheet: Serviceable, Held, Free; `Held by` rows (job, qty, each opens the job sheet); `Pencilled, holds nothing` rows; any `Sub-hire requested` rows; then `Sub-hire 2…` (secondary), `Overbookings ›` (Gear lists), `Open model ›`.
+- **Sub-hire…** dialog: supplier, quantity per model (default = the shortfall), window = the short run. Requested sub-hire prints `requested` under the cell and **the shortfall stays** until the gear arrives (same rule as Overbookings). Toast + Undo.
+- Demand reads `stockBackedQty`, so off-inventory units never count (9o.7).
+
+### 9o.5 Bulk and the gates
+Always-on checkboxes (header = select shown), shift-click range, bulk bar with counts in the verb.
+- **Confirm n** (counts only `Quoted` jobs; the toast says what was skipped). It runs the non-blocking confirm gate: simulate the jobs as hard, compare shortfalls with today's; none → confirms with no UI change; some → heads-up dialog `Confirming #2350 leaves a model short`: `short 2 · Martin MAC Aura PXL · 13 – 14 Nov` / `#2341 Hilton Sydney gala dinner would be short 2 × Martin MAC Aura PXL if #2350 confirms`, buttons `Cancel` / `Confirm 1 anyway`. Same gate from the row ⋯ and the job sheet. Fails open: a preview error confirms without a dialog.
+- **Move dates…** one dialog, `Move by` 1 week earlier … 1 week later with `old → new` per job; same gate for the date-move case (#1227; moving #2341 a day earlier lands it on the EM4 receivers #2337 and #2342 hold), same dialog grammar, `Move anyway`. Deployed / on-site jobs are skipped and the toast says so.
+- **Sub-hire n short** (Gear selection). Every write toasts with Undo through one `snapshot()` closure. No per-row buttons; row ⋯ has Open job, Equipment, Logistics, Confirm…, Move dates…, Copy link (Gear: Open model, Overbookings, Sub-hire n…).
+
+### 9o.6 Phone
+Header `Schedule` / `10 – 16 Nov · 9 jobs · 2 clash`, ⋯ as a bottom sheet; `Jobs  Gear` under it; strip scrolls; week ‹ › Today, search, filter words scroll; **day chips** `Wed 12 · clash` (red) or `3 jobs`. Jobs: cards for that day (22 px checkbox, `#2341 name`, `client · 12 – 14 Nov`, status word, `clash` under it, ⋯ 40 px); tap → bottom sheet with the same facts and 44–48 px actions. Gear: models for that day (`short 2` or `9 free`), tap → model-day sheet. Zoom and the grid are hidden. Sticky `+ New job`; the bulk bar replaces it while ticked. No paging (a day holds a handful), so no `Show more`.
+
+### 9o.7 Code
+Composes the §9b shell, `ActionMenu`, `BulkBar`, a side `Sheet` (bottom sheet on phone), `Dialog`. Reads: `availability.calendarData` extended to return per-job `lines: {modelId, qty}` (stock-backed) and the model day-grid from the existing `availabilityCore` (one `scheduleGrid(orgId, start, end)` query, org-checked, `requireOrgReadFor`); flags and runs are pure functions over it, shared with the confirm gate (`useConfirmStatusGate`) and `useDateMoveGate` — those hooks' preview queries are the same `newShort` simulation, one definition (R-3.1). New writes: none except Sub-hire request (existing overbooking sub-hire mutation) and the date move / confirm the job page already calls. Goes: `MonthGrid`, `AgendaView`, `DayProjectCard`, `LegendSwatch`, `dayIntensity`, `WeekOverflow`, `ViewToggleButton`. URL state: view, zoom, range start, filters, day.
+
+Decisions raised: D81–D84 (§12).
+
+---
+
 ## 10. Everything else, briefly
 
-Every surface in the playbook's §9 now has a section (6c, 7b, 7c, 9c–9l). What is
+Every surface in the playbook's §9 now has a section (6c, 6d, 7b, 7c, 9c–9o). What is
 left here is the glue between them.
 
 - **DataTable** lists adopt the §9b list-page pattern (strip, filter words,
@@ -1799,6 +1959,26 @@ the recommended option.
 | D62 | Every `/new` and `/[id]/edit` form route becomes a sheet over its list/record (deep links kept) | Yes | Keep full-page forms |
 | D63 | Bulk stock is created from the asset sheet's `Serialised unit · Bulk stock` words | Yes | Separate entry point |
 | D64 | Service schedule stays a small dialog | Yes — five fields, one decision | Make it a sheet |
+| D65 | Bottom nav and More sheet exactly as 6d.6 (supersedes D1's open details: gating, raise, drill-down) | Yes | Five items + floating Scan (6d.7) |
+| D66 | Sidebar "Dashboard" is named **Home** everywhere | Yes — the bottom nav, the prototype and the page already say Home | Keep Dashboard |
+| D67 | Tablet rail is automatic at ≤ 1023 and manual at any width (⌘B, remembered); sub-pages show only under the active module | Yes | Always-inline sub rows |
+| D68 | One phone breakpoint constant: 859 (prototypes) replaces 768 (`use-mobile.ts`) | Yes — a 768 iPad portrait gets the phone layout, tables need 860+ | Keep 768 and add a tablet layout |
+| D69 | Theme moves into the user menu (reachable on phone); org switcher moves to the sidebar head | Yes | Keep both in the avatar menu |
+| D70 | Bell and Home › Notifications read one feed | Yes | Keep mentions-only bell |
+| D71 | Order gets a derived `On hire`/`Returned` state and a stored return date; Mark returned and Extend hire verbs | Yes | Keep Received as the only word |
+| D72 | Crew Documents with expiry dates drive an Overview health row | Yes | Keep licences in notes |
+| D73 | Client Merge ships with undo and a named list of what moves | Yes | Archive only |
+| D74 | Supplier and crew keep Delete but behind Archive/Inactive; supplier delete gated while orders exist | Yes | Remove Delete |
+| D75 | Kit status derived from contents (Incomplete/Reserved/Available), not a stored `INCOMPLETE` | Derive; drop the status select from the kit sheet | Keep stored status |
+| D76 | Maintenance parts become rows (name, supplier, qty, price, ETA, on order/arrived); cost = parts + labour, never stored | Rows + derived cost | Keep `partsUsed` text and `cost` number |
+| D77 | Category default T&T profile (class + interval) inherited by models | Add, model can override | Keep per-model only |
+| D78 | Location capacity and bin labels (`cap`, printed state) as real fields | Add | Keep locations free of capacity |
+| D79 | Notes tabs dropped on location/kit/job/T&T; notes are History entries | Drop | Keep a Notes tab |
+| D80 | T&T record gets a real Edit sheet (live Edit is disabled) | Add | Keep read-only |
+| D81 | Schedule gains a Gear view (free count per model per day, shortfalls as flag-words) beside Jobs | Yes — the page's own promise is "gear is committed" | Jobs only; gear stays in Overbookings |
+| D82 | Agenda is removed on desktop; phone day mode is the agenda | Yes — the day sheet and day chips cover it | Keep Agenda as a third word |
+| D83 | Month is a real calendar month (30 slim columns), not six weeks | Yes — bars stay one row each | Keep the six-week grid |
+| D84 | Pencilled jobs show `would clash` (amber) and Confirm runs the heads-up gate from the Schedule | Yes — same gate as the job page | Gate only on the job page |
 
 ---
 

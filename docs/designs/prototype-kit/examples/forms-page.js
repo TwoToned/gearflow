@@ -342,7 +342,7 @@ window.addEventListener('keydown', ev => { if (ev.key !== 'Escape' || !state.for
 function pick(k, id) {
   const f = state.form, x = flat(f.def).find(y => y.k === k), all = srcAll(x, f), it = all.find(z => z.id === id); if (!it) return;
   f.dirty = true; f.touched[k] = true; f.open[k] = false; delete f.q[k];
-  if (x.type === 'pick') { f.v[k] = id; if (f.def.onPick) f.def.onPick(f, k, it); drawForm(x.next || null); if (!x.next) { const nx = $('#f-' + k, body); } return; }
+  if (x.type === 'pick') { f.v[k] = id; if (f.def.onPick) f.def.onPick(f, k, it); drawForm(x.next || null); return; }
   if (x.type === 'multi') { f.v.assets.push(id); f.q[k] = ''; f.open[k] = true; f.hi[k] = 0; drawForm('f-' + k); return; }
   if (x.type === 'contents') { f.v.contents.push({ id: it.id, label: it.label, tg: it.tg, qty: 1, bulk: !!it.bulk }); f.q[k] = ''; f.open[k] = true; f.hi[k] = 0; drawForm('f-' + k); }
 }
@@ -390,7 +390,7 @@ function act(name, el, ev) {
     case 'formadd': if (f) commit(true); break;
     case 'moretoggle': f.more = true; drawForm(null, true); break;
     case 'wsel': f.v[el.dataset.k] = el.dataset.v; f.dirty = true; drawForm(null, true); break;
-    case 'swform': { if (!f || f.def.key === el.dataset.k) break; const m = f.v.model; openForm(el.dataset.k, 'create'); break; }
+    case 'swform': { if (!f || f.def.key === el.dataset.k) break; openForm(el.dataset.k, 'create'); break; }
     case 'pick': pick(el.dataset.k, el.dataset.v); break;
     case 'rm': { const k = el.dataset.k, i = +el.dataset.i; f.dirty = true; (k === 'assets' ? f.v.assets : k === 'contents' ? f.v.contents : f.v.contacts).splice(i, 1); drawForm(null, true); break; }
     case 'cshow': f.addc = !f.addc; drawForm(f.addc ? 'c-n' : null, true); break;

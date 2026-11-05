@@ -136,7 +136,7 @@ const { chromium } = require('playwright');
     // open row → asset
     const p2 = await b.newPage({ viewport: { width: w, height: h } }); const reqs = []; p2.on('requestfailed', r => reqs.push(r.url())); p2.on('request', r => reqs.push(r.url())); await p2.goto(file + '?tab=assets'); await p2.waitForTimeout(400);
     
-    await p2.locator(ph ? '#list .lrow[data-act=open] >> nth=0 >> .grow' : '#tblwrap tr.row >> nth=0 >> td >> nth=2').click(); await p2.waitForTimeout(800); ok(reqs.some(u => u.includes('__URL_ASSET__')), 'row click navigates to __URL_ASSET__'); await p2.close();
+    await p2.locator(ph ? '#list .lrow[data-act=open] >> nth=0 >> .grow' : '#tblwrap tr.row >> nth=0 >> td >> nth=2').click(); await p2.waitForTimeout(800); ok(reqs.some(u => u.includes('Rr5rwirCUMRy8gf5G6Vz7s')), 'row click navigates to Rr5rwirCUMRy8gf5G6Vz7s'); await p2.close();
     // ---- checks
     await tab('checks');
     ok(await p.locator('#pane-checks .rrow:not(.flat)').count() === 6, '6 checks'); ok((await T('#pane-checks')).includes('Gobo wheel spin') && (await T('#pane-checks')).includes('28%') && (await T('#pane-checks')).includes('high'), 'failure rates with a high flag');

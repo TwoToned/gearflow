@@ -117,7 +117,7 @@ const preOut = s => s === 'topick' || s === 'prepping' || s === 'ready';
 const overdueDays = j => { const c = counts(j); return c.out > 0 && j.end < TODAY ? dayNum(TODAY) - dayNum(j.end) : 0; };
 const closeable = j => stageOf(j) === 'returning' && counts(j).out === 0;
 function flagsOf(j) {
-  const f = [], st = stageOf(j), c = counts(j);
+  const f = [], st = stageOf(j);
   const sh = j.lines.filter(l => lineSt(l) === 'pick').reduce((a, l) => a + (l.short || 0), 0); if (sh) f.push({ k: 'short', cls: 'err', t: `short ${sh}` });
   const od = overdueDays(j); if (od) f.push({ k: 'overdue', cls: 'err', t: `${od}d overdue` });
   if (j.pay && preOut(st)) f.push({ k: 'pay', cls: 'warn', t: 'awaiting payment' });
@@ -425,7 +425,7 @@ function groupHead(j, ph) {
   return { name: `<span class="mono muted t-small">#${j.num}</span> <b>${esc(j.name)}</b>`, meta: `${esc(j.client)} · due back ${fmtD(j.end)} · <span class="mono">${c.out}</span> out`, od };
 }
 function renderReturning() {
-  $('#board').innerHTML = ''; const { gs, flat, slice } = pagedGroups(); const allSel = slice.length && slice.every(r => state.selRows.has(r.l.id));
+  $('#board').innerHTML = ''; const { gs, slice } = pagedGroups(); const allSel = slice.length && slice.every(r => state.selRows.has(r.l.id));
   let h = `<table class="tbl rtbl"><colgroup><col style="width:34px"><col><col style="width:90px"><col style="width:300px"><col style="width:40px"></colgroup><thead><tr><th><button class="cb ${allSel ? 'on' : ''}" data-act="selallrows" aria-label="Select page"></button></th><th>Item</th><th class="r" style="text-align:right">Out</th><th>Outcome</th><th></th></tr></thead><tbody>`;
   if (!gs.length) h += `<tr><td colspan="5"><div class="empty">${state.jobs.some(returnable) ? `<b>Nothing here</b>No items in this outcome. <button class="lnk" data-act="rscope" data-k="out">Show what is still out</button>` : `<b>Nothing out</b>Every job is back on the shelf.`}</div></td></tr>`;
   for (const g of gs) {

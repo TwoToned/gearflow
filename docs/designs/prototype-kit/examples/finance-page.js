@@ -203,7 +203,7 @@ function emptyMsg() {
   const [a, b] = M[t][s]; return `<b>${a}</b>${b}`;
 }
 function renderList() {
-  const t = state.tab, all = rows(), pr = all.slice(0, (state.page + 1) * state.size);
+  const all = rows(), pr = all.slice(0, (state.page + 1) * state.size);
   $('#list').innerHTML = pr.map(r => {
     const sel = state.selected.has(r.id), [sn, sc, l2] = statusLines(r), j = r.job, [d1] = datesCell(r);
     const sub = r.k === 'q' ? `${esc(j.num)} v${r.src.v} · ${d1} · ${esc(j.client)}` : r.ghost ? `${esc(j.num)} · ${r.pct}% deposit · ${esc(j.client)}` : `${esc(r.ref)} · ${d1} · ${esc(j.client)}`;

@@ -69,10 +69,9 @@ const { chromium } = require('playwright');
     if (!ph) { await p.click('.dh >> nth=3'); await wait(150); log('day sheet: ' + (await p.locator('.side .sh1').textContent()).replace(/\s+/g, ' ') + ' rows ' + await count('.side .hrow')); await shot('daysheet'); await close(); }
     await (ph ? p.click('#phoneviews [data-v=jobs]') : p.click('#viewsw [data-v=jobs]')); await wait();
     // ---------- tick + shift range + bulk confirm gate
-    const pen = ph ? null : '.tlr';
     if (ph) { await nextDay(5); log('Sat/Sun cards: ' + await count(rows)); await nextDay(4); }
     const cbs = ph ? '#list .lrow .cb' : '.tlr .cb';
-    const n = await count(cbs); const i0 = ph ? 0 : 6;
+    const n = await count(cbs);
     await p.click(`${cbs} >> nth=${ph ? 0 : 4}`); await p.click(`${cbs} >> nth=${ph ? Math.min(2, n - 1) : 6}`, { modifiers: ['Shift'] }); await wait();
     log('selected: ' + await T('#bulk') + ' · open ' + await count('#bulk.open')); await shot('sel');
     if (!ph) {

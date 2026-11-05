@@ -16,7 +16,7 @@ const { chromium } = require('playwright');
   for (const [tag, vp] of [['desk', { width: 1440, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
     const p = await b.newPage({ viewport: vp, deviceScaleFactor: 2 });
     await p.goto('file://' + process.cwd() + '/wizard-prototype.html'); await p.waitForTimeout(500);
-    const c = await fill1(p);
+    await fill1(p);
     await p.screenshot({ path: `shots/final-wizard-${tag === 'desk' ? 'desk' : 'phone'}.png` });
     await p.close();
   }

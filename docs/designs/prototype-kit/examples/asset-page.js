@@ -295,7 +295,7 @@ function readForm() { const f = state.form; if (!f) return; const g = id => { co
   set('tag', 'f-tag'); set('serial', 'f-serial'); set('name', 'f-name'); set('status', 'f-status'); set('cond', 'f-cond'); set('loc', 'f-loc'); set('bin', 'f-bin'); set('pdate', 'f-pdate'); set('price', 'f-price'); set('supplier', 'f-supplier'); set('order', 'f-order'); set('warranty', 'f-warranty'); set('tags', 'f-tags'); set('fw', 'f-fw'); set('qty', 'f-qty'); if (g('f-model') !== undefined && f.mode === 'edit') f.model = g('f-model'); }
 const ferr = (id, msg) => `<div class="err" id="e-${id}">${msg || ''}</div>`;
 function drawForm(focus) {
-  const f = state.form, edit = f.mode === 'edit', m = f.model ? modelOf(f.model) : null, bulk = f.kind === 'BULK';
+  const f = state.form, edit = f.mode === 'edit', bulk = f.kind === 'BULK';
   const modelStep = !edit && !f.model;
   const hd = `<div class="hd"><div class="t-overline">${edit ? 'Edit asset' : 'New asset'}</div><h2>${edit ? `<span class="mono" style="font-size:19px">${esc(f.orig)}</span> · ${esc(f.model)}` : f.model ? `New ${esc(f.model)}` : 'Which model?'}</h2>${edit ? '' : `<div class="words" style="margin-top:8px;border:0"><button class="wd ${!bulk ? 'on' : ''}" data-act="fkind" data-k="SER">Serialised unit</button><button class="wd ${bulk ? 'on' : ''}" data-act="fkind" data-k="BULK">Bulk stock</button></div>`}</div>`;
   let bd;

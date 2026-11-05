@@ -308,7 +308,7 @@ L.overbookings = {
   segEmpty:{ week:['Nothing short this week', 'Gear, stock and crew all cover the next seven days.'], next30:['Nothing short in 30 days', 'Everything booked in the next month is covered.'] },
 };
 const uniq = a => [...new Set(a)].sort();
-const shortGear = () => rowsOf('overbookings', true).filter(o => (o.kind === 'gear') && !o.sub);
+const shortGear = () => rowsOf('overbookings').filter(o => (o.kind === 'gear') && !o.sub);
 function V(k, label, r, danger) { return { label, act:'verb', args:`data-k="${k}" data-id="${r.id}"`, danger }; }
 // ---------- derived
 const rowsOf = key => key === state.list ? rows() : D[key];
@@ -418,7 +418,7 @@ function emptyHtml() {
   return `<div class="empty"><b>${l.none.t}</b>${l.none.d}${l.none.cta ? ` <button class="lnk" data-act="new">${l.none.cta}</button>` : ''}</div>`;
 }
 function renderTable() {
-  const l = cur(), all = rows(), pr = all.slice(state.page * state.size, (state.page + 1) * state.size), cols = visCols(), allSel = pr.length && pr.every(r => state.selected.has(r.id));
+  const all = rows(), pr = all.slice(state.page * state.size, (state.page + 1) * state.size), cols = visCols(), allSel = pr.length && pr.every(r => state.selected.has(r.id));
   let h = `<table class="tbl" style="min-width:0;table-layout:fixed;width:100%"><colgroup><col style="width:34px">${cols.map(c => c.main ? '<col>' : `<col style="width:${c.w}px">`).join('')}<col style="width:40px"></colgroup><thead><tr><th><button class="cb ${allSel ? 'on' : ''}" data-act="selall" aria-label="Select page"></button></th>${cols.map(c => c.sort ? sortHead(c.label, c.k, c.align) : `<th>${c.label}</th>`).join('')}<th></th></tr></thead><tbody>`;
   if (!pr.length) h += `<tr><td colspan="${cols.length + 2}">${emptyHtml()}</td></tr>`;
   for (const r of pr) { const s = state.selected.has(r.id); h += `<tr class="row ${s ? 'sel' : ''}" data-act="open" data-id="${r.id}"><td><button class="cb ${s ? 'on' : ''}" data-act="select" data-id="${r.id}" aria-label="Select ${esc(nameOf(r))}"></button></td>${cols.map(c => `<td class="${c.align === 'r' ? 'r' : ''}" style="min-width:0">${c.cell(r)}</td>`).join('')}<td class="r"><button class="dots" data-act="rowmenu" data-id="${r.id}" aria-label="Row actions">${ICON.dots}</button></td></tr>`; }
@@ -469,11 +469,11 @@ function act(name, el, ev) {
     case 'clearsel': state.selected.clear(); render(); break;
     case 'rowmenu': { const r = byId(id); openMenu(el, nameOf(r), l.rowItems(r)); break; }
     case 'verb': { const vb = VERBS[el.dataset.k], sel = id ? [byId(id)] : selectedRows(), e = sel.filter(vb.elig); closeLayer(); if (!e.length) { toast('Nothing in that selection can do this'); break; } state.skipped = sel.length - e.length; if (vb.form && vb.form(e)) openVerbDialog(el.dataset.k, e.map(r => r.id)); else runVerb(el.dataset.k, e, {}, state.skipped); break; }
-    case 'verbgo': { const p = state.pending, vb = VERBS[p.k], sel = p.ids.map(i => D[state.list].find(r => r.id === i)), v = {}; $('#layerbody').querySelectorAll('[data-v]').forEach(x => v[x.dataset.v] = x.value); runVerb(p.k, sel, v, state.skipped || 0); break; }
+    case 'verbgo': { const p = state.pending, sel = p.ids.map(i => D[state.list].find(r => r.id === i)), v = {}; $('#layerbody').querySelectorAll('[data-v]').forEach(x => v[x.dataset.v] = x.value); runVerb(p.k, sel, v, state.skipped || 0); break; }
     case 'primary-reorder': { const low = D.sales.filter(s => s.onHand <= s.reorder && !s.onOrder); closeLayer(); if (!low.length) { toast('Nothing is low. Everything is above its reorder level.'); break; } state.selected = new Set(low.map(s => s.id)); state.skipped = 0; openVerbDialog('reorder', low.map(s => s.id)); break; }
     case 'primary-subhire': { const sh = shortGear(); closeLayer(); if (!sh.length) { toast('Every short model already has a sub-hire request.'); break; } state.skipped = 0; openVerbDialog('subhire', sh.map(o => o.id)); break; }
     case 'new': { closeLayer(); const f = l.newForm; if (!f) { toast('Not wired in this prototype'); break; } openDialog(`<div class="hd"><div class="t-overline">${esc(l.title)}</div><h2 style="font-size:18px">${f.title}</h2></div><div class="bd">${f.fields.map(([lab, inner]) => field(lab, typeof inner === 'function' ? inner() : inner)).join('')}</div><div class="ft"><div style="flex:1"></div><button class="btn btn-secondary" data-act="close">Cancel</button><button class="btn btn-primary" data-act="newgo">Create</button></div>`, d => { const i = d.querySelector('input'); if (i && !isPhone()) i.focus(); }); break; }
-    case 'newgo': { const v = {}; $('#layerbody').querySelectorAll('[data-v]').forEach(x => v[x.dataset.v] = x.value); const first = l.newForm.fields[0]; if (!v[Object.keys(v)[0]].trim()) { toast('Give it a name first'); break; } const undo = snapshot(); const r = l.newForm.make(v); D[l.key].unshift(r); closeLayer(); state.q = ''; state.seg = l.defSeg === 'due' ? 'all' : (inSeg(l, r, l.defSeg) ? l.defSeg : l.seg[0][0]); state.sort = l.defSort[0]; state.dir = l.defSort[1]; render(); toast(`${esc(nameOf(r))} created`, undo); break; }
+    case 'newgo': { const v = {}; $('#layerbody').querySelectorAll('[data-v]').forEach(x => v[x.dataset.v] = x.value); if (!v[Object.keys(v)[0]].trim()) { toast('Give it a name first'); break; } const undo = snapshot(); const r = l.newForm.make(v); D[l.key].unshift(r); closeLayer(); state.q = ''; state.seg = l.defSeg === 'due' ? 'all' : (inSeg(l, r, l.defSeg) ? l.defSeg : l.seg[0][0]); state.sort = l.defSort[0]; state.dir = l.defSort[1]; render(); toast(`${esc(nameOf(r))} created`, undo); break; }
     case 'schedules': closeLayer(); openSchedules(); break;
     case 'schedoff': { const undo = snapshot(); D.maintenance = D.maintenance.filter(r => r.id !== id); closeLayer(); render(); openSchedules(); toast('Schedule deactivated · open cycles are kept', undo); break; }
     case 'schednew': { const undo = snapshot(); D.maintenance.push({ id:nid('mt'), src:'schedule', asset:'', model:'Moving-head wash (all)', title:'Lens & fan clean', type:'PREVENTATIVE', status:'SCHEDULED', due:addD(TODAY, 21), done:null, assigned:'Tom Nguyen', cost:0, by:'Schedule', result:'', tags:[], every:'every 60 days', total:18, checked:0 }); render(); openSchedules(); toast('Schedule added · first cycle due ' + fmtD(addD(TODAY, 21)), undo); break; }

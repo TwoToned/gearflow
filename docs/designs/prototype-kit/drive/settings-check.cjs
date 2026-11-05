@@ -133,7 +133,7 @@ const { chromium } = require('playwright');
       await p.screenshot({ path: `shots/check-${tag}-matrix.png` });
       await p.click('tr.res[data-v="invoice"]');
     }
-    await p.click((phone ? '.rolesl ' : 'th ') + '[data-act="role"][data-v="manager"]'.replace(/^/, '')).catch(async () => { await p.click('[data-act="role"][data-v="manager"] >> visible=true'); }); await wait();
+    await p.click((phone ? '.rolesl ' : 'th ') + '[data-act="role"][data-v="manager"]').catch(async () => { await p.click('[data-act="role"][data-v="manager"] >> visible=true'); }); await wait();
     log('role sheet: ' + (await p.locator('.dlg h2').textContent()) + ' · ' + (await p.locator('#rcnt').textContent()));
     await p.click('[data-act="rtoggle"][data-res="client"][data-a="delete"]'); await wait(); log('toggle: ' + (await p.locator('#rcnt').textContent()) + ' · save label ' + (await p.locator('#rsave').textContent()));
     await p.click('[data-act="rtoggle"][data-res="project"][data-a="read"]'); await wait(); log('view off clears the rest: ' + (await p.locator('#rcnt').textContent()));

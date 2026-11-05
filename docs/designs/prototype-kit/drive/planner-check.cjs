@@ -34,7 +34,6 @@ const { chromium } = require('playwright');
     await p.click('#strip [data-k=all]'); await wait();
     // ---- filters
     await p.click('#fwords [data-k=role]'); await wait(150); await shot('rolemenu');
-    const roleItem = ph ? '.sheetwrap .item >> nth=1' : '.menu button >> nth=1';
     await p.click('[data-act=ftoggle] >> nth=1'); await wait(); await p.keyboard.press('Escape'); await wait();
     log('fwords: ' + (await p.locator('#fwords .fw').allTextContents()).join(' | ') + ' rows: ' + (ph ? await count('#list .lrow') : await count('.pgrid tbody tr')));
     await p.click('[data-act=clearf]'); await wait();

@@ -8,7 +8,7 @@ const left = d => dayNum(d) - dayNum(TODAY);
 const PMS = ['Jayden', 'Mel', 'Tom'];
 const PROFILE = { 'Hilton Sydney':['Priya Shah',25], 'Qantas':['Marcus Lee',25], 'Atlassian':['Nina Patel',25], 'Canva':['Ruby Chen',25], 'Sydney Opera House':['Hannah Brooks',30], 'Ogilvy':['Tom Ellis',25], 'UNSW':['Alan Ward',0], 'Live Nation':['Jess Cooper',30], 'ICC Sydney':['Ben Harris',25], 'Red Bull':['Kai Mori',25] };
 const CL = Object.keys(PROFILE);
-const JOBS = [['#2341','Hilton Sydney gala dinner','Hilton Sydney','Jayden'],['#2350','Qantas awards night','Qantas','Mel'],['#2340','Launch night','Ogilvy','Tom'],['#2338','Corporate AGM','Atlassian','Jayden'],['#2352','Sales kickoff','Canva','Mel'],['#2349','Festival stage','Red Bull','Tom'],['#2309','UNSW graduation','UNSW','Jayden'],['#2322','Ogilvy product launch','Ogilvy','Tom'],['#2331','Gala ball','Sydney Opera House','Mel'],['#2344','Town hall','ICC Sydney','Jayden'],['#2346','Summer tour','Live Nation','Tom'],['#2336','Conference','Live Nation','Mel'],['#2347','Trade show','ICC Sydney','Jayden'],['#2345','Charity ball','Sydney Opera House','Mel']];
+const JOBS = [['#2341','Hilton Sydney gala dinner','Hilton Sydney','Jayden'],['#2350','Qantas awards night','Qantas','Mel'],['#2340','Launch night','Ogilvy','Tom'],['#2338','Corporate AGM','Atlassian','Jayden'],['#2357','Sales kickoff','Canva','Mel'],['#2349','Festival stage','Red Bull','Tom'],['#2309','UNSW graduation','UNSW','Jayden'],['#2322','Ogilvy product launch','Ogilvy','Tom'],['#2331','Gala ball','Sydney Opera House','Mel'],['#2344','Town hall','ICC Sydney','Jayden'],['#2346','Summer tour','Live Nation','Tom'],['#2336','Conference','Live Nation','Mel'],['#2347','Trade show','ICC Sydney','Jayden'],['#2345','Charity ball','Sydney Opera House','Mel']];
 const FILL = ['Awards lunch','Brand launch','Graduation night','Arena tour','Staff town hall','Festival main stage','Expo stand','Wedding reception','Fashion week','Film premiere','Roadshow','Exhibition fit-out','Press day','Gala auction'];
 FILL.forEach((n, i) => JOBS.push(['#' + (2280 + i * 2), n, CL[(i * 3 + 1) % 10], PMS[i % 3]]));
 const JB = JOBS.map(([num, name, client, pm]) => ({ num, name, client, pm, contact:PROFILE[client][0], dep:PROFILE[client][1] }));
@@ -27,7 +27,7 @@ addQ('#2344', 1, 'SENT', { total:12430, sentAt:'2026-10-08', validUntil:'2026-11
 addQ('#2331', 1, 'SENT', { total:31900, sentAt:'2026-09-20', validUntil:'2026-10-20', acked:true });
 addQ('#2336', 1, 'SENT', { total:20900, sentAt:'2026-10-26', validUntil:'2026-11-25', pdf:false });
 addQ('#2338', 1, 'ACCEPTED', { total:21780, sentAt:'2026-10-24', validUntil:'2026-11-23', acceptedAt:'2026-10-28', ref:'PO 4471' });
-addQ('#2352', 1, 'DRAFT', { created:'2026-11-02', total:9834 });
+addQ('#2357', 1, 'DRAFT', { created:'2026-11-02', total:9834 });
 addQ('#2349', 1, 'DRAFT', { created:'2026-10-20', total:52470 });
 addQ('#2309', 1, 'ACCEPTED', { total:8250, sentAt:'2026-09-12', validUntil:'2026-10-12', acceptedAt:'2026-09-15' });
 addQ('#2322', 1, 'ACCEPTED', { total:14300, sentAt:'2026-10-02', validUntil:'2026-11-01', acceptedAt:'2026-10-06', ref:'PO 2290' });

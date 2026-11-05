@@ -19,7 +19,7 @@ const { chromium } = require('playwright');
     // duplicate code
     await p.fill('[data-f=code][data-c=w]', '2341'); await click('[data-act=next]:visible');
     log('dup code error: ' + await p.locator('.ferr').first().textContent());
-    await p.fill('[data-f=code][data-c=w]', '2352');
+    await p.fill('[data-f=code][data-c=w]', '2360');
     // client combo
     await p.click('.cbin[data-cb=client]'); await p.waitForTimeout(W); await p.fill('.cbin[data-cb=client]', 'hil'); await p.waitForTimeout(W);
     await shot('combo');

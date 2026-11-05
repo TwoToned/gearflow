@@ -73,7 +73,7 @@ const { chromium } = require('playwright');
     await p.screenshot({ path: `shots/people-${tag}-rowmenu.png` });
     log('row menu: ' + (await p.locator('#layerbody button, #layerbody a.item').allTextContents()).join(' | '));
     await p.click('[data-act="rresend"]'); await p.waitForTimeout(100); log('resend toast: ' + await txt('#toast')); await p.click('[data-act="undo"]');
-    await p.click(R + ' >> nth=0', { position: { x: 120, y: 12 } }); await p.waitForTimeout(100); log('open toast: ' + await txt('#toast'));
+    const here = p.url(); await p.click(R + ' >> nth=0', { position: { x: 120, y: 12 } }); await p.waitForURL(u => !String(u).startsWith('file'), { timeout: 8000 }).catch(() => {}); await p.waitForTimeout(200); log('row opens: ' + p.url().slice(-40)); if (p.url() !== here) { await p.goto(here); await p.waitForTimeout(300); }
     await p.click('#strip button[data-k="all"]');
     // page menu, log time, columns
     await p.click((desk ? '.lphead' : '.phonehead') + ' [data-act="pagemenu"]'); await p.waitForTimeout(200);
@@ -140,6 +140,6 @@ const { chromium } = require('playwright');
     await p.close();
   };
   await run(1440, 900, 'desk'); await run(390, 844, 'phone');
-  console.log('errors:', errs);
+  console.log('errors:', errs.filter(e => !/403 \(Forbidden\)|Content-Security-Policy directive 'webrtc'/.test(e)));
   await b.close();
 })();

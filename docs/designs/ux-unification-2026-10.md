@@ -712,7 +712,7 @@ Decisions raised: D19–D21 (§12).
 
 ### 7c.2 The page
 - **Steps are words**, active underlined: `Who and when · What 7 · Review`. `/projects/new` stays; steps are reachable once step one validates.
-- **Head:** `New job`, a quiet line `✓ Draft #2352 saved` (before a name exists: `Draft #2352 starts when you name the job`), one primary `Next` → `Create job`, `Create as enquiry` (step one) / `Back` as a muted word, ⋯ with `Edit an existing job (#2341)` and `Discard draft…` (confirm; Undo).
+- **Head:** `New job`, a quiet line `✓ Draft #2360 saved` (before a name exists: `Draft #2360 starts when you name the job`), one primary `Next` → `Create job`, `Create as enquiry` (step one) / `Back` as a muted word, ⋯ with `Edit an existing job (#2341)` and `Discard draft…` (confirm; Undo).
 - **Draft:** the job row is written the first time it has a name and kept in step; it is an ordinary Enquiry, so nothing new is stored and an abandoned wizard is just an empty Enquiry (it does not count toward Jobs › Needs you). `Create job` finishes that row, never duplicates it.
 - **`Create as enquiry`** finishes now from step one: Enquiry, no gear, toast with Undo.
 - **`Start from template ▾`** (step one, a filter word that reads its value: `Template: Gala dinner — ballroom`): five most used with their line counts, `Start from scratch` when set, `Manage templates…`, `New template…`. Picking one sets type, tags, description (and client discount) and brings its lines; dates are cleared exactly as `duplicate` does today. Toast with Undo.
@@ -736,7 +736,7 @@ Decisions raised: D19–D21 (§12).
 - Templates edit in the same sheet minus code, discount and gate.
 
 ### 7c.5 Phone
-Header is back chevron + `New job` + `Draft #2352 saved · What` + ⋯ (bottom sheet). Step words scroll. Inputs 16 px, one column. Sticky pair above the bottom nav: `Create as enquiry | Next` on step one, `Back | Next` then `Back | Create job`; the bulk bar replaces it while lines are ticked. Line cards are 64 px with a 22 px checkbox and always-visible ⋯. Menus and the template manager are bottom sheets / full width dialogs; the edit sheet is full height with sticky Save.
+Header is back chevron + `New job` + `Draft #2360 saved · What` + ⋯ (bottom sheet). Step words scroll. Inputs 16 px, one column. Sticky pair above the bottom nav: `Create as enquiry | Next` on step one, `Back | Next` then `Back | Create job`; the bulk bar replaces it while lines are ticked. Line cards are 64 px with a 22 px checkbox and always-visible ⋯. Menus and the template manager are bottom sheets / full width dialogs; the edit sheet is full height with sticky Save.
 
 ### 7c.6 Code
 One `ProjectFields` (the schema-derived field list) used by wizard step one and the sheet; `ProjectWizard` loses its `project` / edit mode. The What step reuses the Equipment `AddBar` and `LineRow` (§5.1, §5.5); `useDateMoveGate` and `DateMoveImpactDialog` stay as they are. New: a `draft` write on first valid name (reuse `projectWrites.create` with status ENQUIRY, then update), `?edit=1` handling on the record, a redirect for `/projects/templates`. Goes: the Site step, step circles, helper rail and CoachingTip on this page, `QuickCreateClient` / `QuickCreateLocation` dialogs in this flow, the templates table + `MobileCardList` copy, the use-template dialog.
@@ -1743,7 +1743,7 @@ Four record pages with four layouts: `clients/[id]/page.tsx:236` draws a bordere
 
 ### 9m.2 The page
 The §4.2 record page, copied from Asset and Model. DetailHeader (name · status dot-word · identity line), `Edit` the one primary (opens the Forms sheet for that record), page ⋯ with the rest, red verbs last with a confirm naming what stays. Overview first, calm: an overline, one headline, health rows with a muted `Action ›`, three fact columns, relationships as rows. List tabs follow §4.1 without the head; History is the Discussion rendering with a one-line composer. Context rail on every tab but Overview. Breadcrumb `Clients/Crew/Suppliers › name` links the People lists; order adds the supplier.
-- Client: Overview · Jobs · Quotes & invoices · Contacts · Files · History. Headline `$11,940 outstanding`; rows `INV-0042 $11,940 due 28 Nov`, `QT-2352 expires in 11 days`. ⋯: Edit, New job, Sync/Change Xero mapping, Merge, Archive (red).
+- Client: Overview · Jobs · Quotes & invoices · Contacts · Files · History. Headline `$11,940 outstanding`; rows `INV-0042 $11,940 due 28 Nov`, `QT-2359 expires in 11 days`. ⋯: Edit, New job, Sync/Change Xero mapping, Merge, Archive (red).
 - Crew: Overview · Calls · Timesheets · Availability · Documents · History. Headline `2 calls · 18 h`; rows unconfirmed Bump in, `licence expires in 12 days`, `2 timesheets awaiting approval`. ⋯: Message, Resend offer, Log time, Add block, Calendar feed, Export, Make inactive, Delete.
 - Supplier: Overview · Orders · Sub-hires · Assets · Contacts · Documents · History. Headline `14 units on hire`; row `SH-0012 return 2d overdue`.
 - Order: Overview · Lines · Files · History. Headline `On hire · 14 units`; rows overdue return (`Extend hire`), invoice not attached; link to `#2341` Equipment.

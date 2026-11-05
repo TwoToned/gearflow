@@ -50,7 +50,7 @@ const BOOK = [
 const USED_CODES = ['2338', '2340', '2341', '2350', '2351'];
 const blankFields = () => ({ name:'', code:'', clientId:'', contactId:'', type:'OTHER', pms:[], tags:[], desc:'', locId:'', siteName:'', sitePhone:'', siteEmail:'', start:'', end:'', gStart:'', gStartT:'', gEnd:'', gEndT:'', discount:'', discountTouched:false });
 const state = {
-  view:'wizard', step:0, nextNum:2352, startsAs:'', stash:null, created:null, jobRef:'2341', cb:null, add:{ q:'', kind:'all', sel:0, last:null }, sel:new Set(), tsel:new Set(), lastSel:null, undo:null,
+  view:'wizard', step:0, nextNum:2360, startsAs:'', stash:null, created:null, jobRef:'2341', cb:null, add:{ q:'', kind:'all', sel:0, last:null }, sel:new Set(), tsel:new Set(), lastSel:null, undo:null,
   draft:{ saved:false }, errs:{ w:{}, e:{} }, ui:{ w:{ cal:false, win:false, more:false, month:'', newc:null }, e:{ cal:false, win:false, more:true, month:'', newc:null } }, e:null, lastPhone:null,
   clients:[
     { id:'c1', name:'Hilton Sydney', disc:5, contacts:[{ id:'ct1', name:'Priya Shah', primary:true, role:'Events' }, { id:'ct2', name:'Marco Bell', role:'Venue ops' }] },

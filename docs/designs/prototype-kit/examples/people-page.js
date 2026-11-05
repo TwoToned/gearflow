@@ -321,7 +321,7 @@ function act(name, el, ev) {
     case 'pagemenu': { const items = l.pageMenu(); if (isPhone()) items.unshift({ sh:'Switch list' }, ...ORDER.filter(k => k !== state.cur).map(k => ({ label:LISTS[k].title, act:'nav', args:`data-k="${k}"`, small:String(DATA[k].filter(live).length) })), '-'); openMenu(el, l.title, items); break; }
     case 'colsmenu': openMenu(el, 'Columns', [...l.cols.filter(c => c.opt).map(c => ({ label:c.label, act:'coltoggle', args:`data-c="${c.k}"`, on:state.cols[c.k] })), { sh:'The default columns are always shown' }]); break;
     case 'coltoggle': state.cols[el.dataset.c] = !state.cols[el.dataset.c]; closeLayer(); render(); break;
-    case 'open': if (ev && ev.target.closest('.cb,.dots,a')) break; closeLayer(); toast(`${esc(r.name)} · the ${l.one} record page isn't prototyped yet`); break;
+    case 'open': { if (ev && ev.target.closest('.cb,.dots,a')) break; closeLayer(); const t = { crew:'crew', clients:'client', suppliers:'supplier' }[state.cur]; try { location.href = 'https://claude.ai/artifact/D8UV81TDFpMEeUBxf2apUX#' + t; } catch (e) {} break; }
     case 'select': { if (ev && ev.shiftKey && state.lastSel) { const order = rows().map(x => x.id), a = order.indexOf(state.lastSel), b = order.indexOf(id); for (const k of order.slice(Math.min(a, b), Math.max(a, b) + 1)) state.selected.add(k); } else state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id); state.lastSel = id; render(); break; }
     case 'selall': { const pr = rows().slice(state.page * state.size, (state.page + 1) * state.size), all = pr.every(x => state.selected.has(x.id)); pr.forEach(x => all ? state.selected.delete(x.id) : state.selected.add(x.id)); render(); break; }
     case 'clearsel': state.selected.clear(); render(); break;

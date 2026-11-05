@@ -7,7 +7,7 @@ const pick = a => a[Math.floor(rnd() * a.length)];
 const addD = (d, n) => new Date((dayNum(d) + n) * 864e5).toISOString().slice(0,10);
 const daysTo = d => dayNum(d) - dayNum(TODAY);
 const PEOPLE = ['Jayden Cole', 'Sam Okafor', 'Tom Nguyen', 'Mel Torres'], TECH = ['Sam Okafor', 'Tom Nguyen', 'SafeTest Co'];
-const JOBN = { '#2341':'Hilton Sydney gala dinner', '#2338':'Corporate AGM', '#2340':'Launch night', '#2350':'Qantas awards', '#2352':'Westpac Christmas party' };
+const JOBN = { '#2341':'Hilton Sydney gala dinner', '#2338':'Corporate AGM', '#2340':'Launch night', '#2350':'Qantas awards', '#2354':'Westpac Christmas party' };
 const D = { models:[], kits:[], locations:[], maintenance:[], tt:[], sales:[], overbookings:[] };
 let uid = 0; const nid = p => p + (uid++);
 
@@ -96,8 +96,8 @@ O('sale','Gaffer tape black 48mm',12,'',['#2341'],'2026-11-12','2026-11-14');
 O('crew','Rigger · install',1,'crew',['#2341'],'2026-11-11','2026-11-12');
 O('crew','Dev Patel · unconfirmed',1,'crew',['#2350'],'2026-11-13','2026-11-14');
 O('crew','Oli Martin · double-booked',1,'crew',['#2341','#2350'],'2026-11-13','2026-11-14');
-O('gear','CM Lodestar 1T',4,'',['#2352'],'2026-12-11','2026-12-12',{ model:true });
-O('gear','Prolyte H30V 3m',8,'',['#2352'],'2026-12-11','2026-12-12',{ model:true });
+O('gear','CM Lodestar 1T',4,'',['#2354'],'2026-12-11','2026-12-12',{ model:true });
+O('gear','Prolyte H30V 3m',8,'',['#2354'],'2026-12-11','2026-12-12',{ model:true });
 const KIND = { gear:['overbooked','err'], pencil:['pencilled','warn'], sale:['to procure','warn'], crew:['crew','warn'] };
 const SUPPLIERS = ['Scene Change','Big Picture','Chameleon Touring'];
 // ---------- cell helpers
@@ -463,7 +463,7 @@ function act(name, el, ev) {
     case 'colsmenu': { const opts = l.cols.filter(c => c.opt); openMenu(el, 'Columns', [...opts.map(c => ({ label:c.label, act:'coltoggle', args:`data-c="${c.k}"`, on:!!state.cols[l.key + ':' + c.k] })), { sh:'The other columns are always shown' }]); break; }
     case 'coltoggle': state.cols[l.key + ':' + el.dataset.c] = !state.cols[l.key + ':' + el.dataset.c]; closeLayer(); render(); break;
     case 'showarch': state.showArch = !state.showArch; closeLayer(); render(); break;
-    case 'open': { if (ev && ev.target.closest('.cb,.dots,a')) break; closeLayer(); const r = byId(id), u = l.href(r); if (u) go(u); else toast(`Opens ${esc(nameOf(r))} · its record page is a separate surface`); break; }
+    case 'open': { if (ev && ev.target.closest('.cb,.dots,a')) break; closeLayer(); const r = byId(id), u = l.href(r); if (u) go(u); else { const t = { kits:'kit/k42', locations:'loc/wa', maintenance:'maint/m188', tt:'tt/tt402' }[state.list]; if (t) go('https://claude.ai/artifact/PDsjUdku2seVZAWfNC6W61#' + t); else toast(`Opens ${esc(nameOf(r))} · its record page is a separate surface`); } break; }
     case 'select': { if (ev && ev.shiftKey && state.lastSel) { const order = rows().map(x => x.id), i1 = order.indexOf(state.lastSel), i2 = order.indexOf(id); for (const k of order.slice(Math.min(i1, i2), Math.max(i1, i2) + 1)) state.selected.add(k); } else state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id); state.lastSel = id; render(); break; }
     case 'selall': { const pr = rows().slice(state.page * state.size, (state.page + 1) * state.size), all = pr.every(x => state.selected.has(x.id)); pr.forEach(x => all ? state.selected.delete(x.id) : state.selected.add(x.id)); render(); break; }
     case 'clearsel': state.selected.clear(); render(); break;

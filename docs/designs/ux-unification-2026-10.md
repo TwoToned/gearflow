@@ -26,7 +26,7 @@ shell at three widths, and the primitives every surface is built from).
 - Tasks & notes (Tasks + Notes + Files merged): https://claude.ai/artifact/BrLBitu3c2V4uixLQbXCNE — v1 (§8c).
 - Jobs list: https://claude.ai/artifact/A7SMPtpTr3aedUDEnuSaxd — v1 (§9b).
 - Assets registry: https://claude.ai/artifact/89PDTuMiovgP9i3h4MJ1Tw — v1 (§9b).
-- Home (+ My tasks, Notifications, Activity): https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR — v1 (§6c).
+- Home: https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf — v2 (§6c): the live dashboard, calmer. (v1 https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR rejected; its My tasks / Notifications / Activity views are still linked from v2.)
 - Job › Packing + Versions: https://claude.ai/artifact/HSAZTyzfjG2A7sCjUe9wsM — v1 (§7b).
 - New job wizard + job edit sheet: https://claude.ai/artifact/GgtKxc5WZP33gXihgFTB9B — v1 (§7c).
 - Warehouse floor + Returning mode: https://claude.ai/artifact/6xqFcEZZk49w86p5pAsisA — v1 (§9c).
@@ -457,34 +457,43 @@ dot. Width is capped so the eye has a single line to follow.
 
 **Prototype:** https://claude.ai/artifact/RatKsWfTmDJLJHmn6mb7Zo
 
-## 6c. Home › Dashboard, My tasks, Notifications, Activity — v1 proposal (prototype 2026-11-04, awaiting a yes)
+## 6c. Home — the live dashboard, calmer (v2, prototype 2026-11-05, awaiting a yes)
 
-**Prototype:** https://claude.ai/artifact/3d6zqfosL5hYRvXLBYLnhR — desktop 1440 and phone 390, every control wired (four views switched by words in the head / chips on phone; stat words with deep-link targets; Needs me and On now rows with ⋯; setup panel dismiss, page ⋯ toggle and Undo; Customise… dialog with 11 widget switches and Reset; My tasks tick + Undo, due menu, select mode with shift-range and bulk `Done n` / `Set due…`, Done strip, New task; Notifications mark read / unread, range select, bulk, Mark all read, Undo, empty state; Activity Mine·Today·All, Actor/Action/Entity filters, search, saved views, record scope, Export, pager / Show more).
+**Prototype:** https://claude.ai/artifact/RPnGj7WnaWcknvQ8ShcRkf — desktop 1440 and phone 390, every control wired (stat deep links, task tick + Undo, row ⋯, page ⋯, Customise: drag a title, arrow keys, ⋯ menu, width presets and corner resize, hide, Add widget, Reset layout, Done, Dismiss + Undo, loading and all-clear previews). Replaces the v1 6c.
 
 ### 6c.1 Why
-`/dashboard` (`src/app/(app)/dashboard/page.tsx`) is a card grid: four tiles, a chip tray, three list cards and two checklist cards, each with its own border and shadow (`dashboard-card.tsx`), so Home is the busiest page in the app and the opposite of Overview. Three findings. The stat tiles link to bare routes (`stat-tile-widgets.tsx:71,86` both `/projects`), so the number you clicked is gone on arrival. "On the floor now" is described as org-wide but reads `useNativeHome().myProjects` (`on-the-floor-now-widget.tsx:71`), and "All activity" lands on the audit log while the widget shows scans and tests (`recent-activity-widget.tsx:29`) — two different feeds under one name. The three secondary pages are the old pattern: `/notifications` has a per-row `Dismiss` button and `Dismiss All` (`notifications/page.tsx`), `/my-tasks` completes with no undo and cannot create, `/activity` is a six-column DataTable of an audit trail nobody reads as a table.
+The user rejected four new Home concepts (the v1 calm Home, a Today timeline, an Inbox-to-zero and a Week board) and said: *"I kinda like the current one. The quick stats, then any tasks etc."* and *"Give it the calmer design. But keep the bones."* So this is the live `/dashboard`, cleaned up: the same eleven widget kinds, the same 12-column grid, the same default order, the same Customise — only the skin changes.
 
-### 6c.2 The page
-Calm like Overview: no card chrome, hairlines, dot-words. Head: a greeting, the date and org, the four views as words (`Home · My tasks 8 · Notifications 6 · Activity`, active underlined), the one primary `+ New job`, page ⋯ (Warehouse, Add gear, Setup panel, Customise…). Below it, in order: the setup panel (when anything is undone), four stat words, two columns **Needs me** and **On now**, a second band **My tasks** and **Coming up**, then **Recent activity**.
-- **Stat words.** `14 Active jobs · 2 Overdue returns · 41 Gear deployed · 9 Crew booked`. Each is a link to the list segment it counts, target in a tooltip (`Jobs list · ?seg=out&overdue=1`). Overdue prints red only when non-zero. The utilisation meter becomes `65% of 63 out`.
-- **Needs me** is the union of the lists' exception segments, derived and never stored: dot-word flag + mono id, one muted line, the destination at the right (`Overview ›`, `Finance ›`, `Logistics ›`, `Overbookings ›`, `Asset ›`). Six shown, `and 2 more ›`. Row ⋯: Open, the list segment it came from, Copy link.
-- **On now** is three groups: On the floor, Out today (truck times, mono), Due back (overdue prints as a red dot-word). Group names link to the floor.
-- **Setup panel.** Finish setup and Get started merge into one left-ruled panel listing only what is undone with a segmented progress hairline; it hides when nothing is undone. `Dismiss` (the panel's own word) toasts with Undo; the page ⋯ `Setup panel` brings it back, which the live dismissal cannot.
-- **Recent activity** keeps its data (scans, tests, maintenance) in the Discussion rendering: dated groups, initials, one sentence, clock time.
-- **Customise….** The grid is no longer the default. The dialog lists the 11 live widgets with a switch each (each maps to one piece of Home), `Reset to default` (toast + Undo) and `Arrange on a grid…`, which opens today's drag-and-resize board with the saved arrangement intact.
+What the live code does wrong (all kept in the page, fixed in the skin):
+- Three of four stat tiles link to a bare list, so the number is lost on click: `stat-tile-widgets.tsx:71` and `:86` both go to `/projects`. "Overdue returns" counts CHECKED_OUT **line items** (`convex/dashboardStats.ts:116`) yet opens a list of jobs.
+- Customise has no keyboard or menu path (`dashboard-card.tsx` grip is `aria-hidden`), writes silently with no Undo (`use-dashboard-layout.ts` swallows save errors), and the two checklists each have an irreversible org-wide Dismiss.
+- Chrome: every widget is a bordered card with a title bar (`dashboard-card.tsx:10`), needs-attention items are icon pills, the activity feed uses coloured icon discs, "On site" labels both CHECKED_OUT and ON_SITE.
 
-### 6c.3 My tasks, Notifications, Activity
-- **My tasks.** Strip `Open 8 · Done 2`; open tasks grouped Overdue / Today / This week / Later / No date with mono counts. The round tick completes with an Undo toast (same circle as Tasks & notes). Select tasks… (⋯) swaps ticks for checkboxes, shift-click ranges, bulk bar `Done 4 · Set due…`. Row ⋯: Open on the job, Mark done, Set due…. Primary `+ New task` (job or Personal, due) closes the gap that personal tasks exist but cannot be added here.
-- **Notifications.** Strip `Unread 6 · All 10`, grouped Today / Yesterday / This week / Earlier. Row: title, dot-word type + one muted line, time. Always-on checkboxes, shift-range, bulk `Mark read 4` / `Mark unread n`; primary `Mark all read` (hidden at zero; the empty state says `All caught up`). Opening a row marks it read, as today. Everything is Undo-able. Live "dismiss" is renamed "mark read" (it is a per-user server dismissal that self-prunes when the cause clears).
-- **Activity.** Strip `Mine · Today · All`; filter words `Actor ▾ Action ▾ Entity ▾`, search, `Views ▾`, `Record: #2340 ✕` for the live `entityType/entityId` scope (row ⋯ › `Only #2340`), Export CSV in ⋯. Dated rows: `Name did X`, muted `Action · Entity`, an `agent` dot-word for API-authored writes (live Actor badge), time at the right. No primary: it is read-only. Desktop pager `60 events · 1–25`; phone `Show 25 more`.
+### 6c.2 The page — widget by widget
+Head: `Good morning, Jayden`, date + org, one red `+ New job` (wizard); Warehouse, Add gear and Customise… in ⋯. Each widget is a hairline top rule, a 13 px/600 title, a muted mono count and a quiet `View all ›`. Default order is the user's: setup panel, the four stat tiles, then My tasks and Needs attention side by side (6 + 6), then On the floor now, Upcoming, Recent activity. That changes only `DEFAULT_DASHBOARD_LAYOUT` (live puts the stats 5th and leaves the right half beside My tasks empty); the widgets, the grid and Customise are unchanged, and Reset layout returns to this order.
+
+| widget | verdict |
+|---|---|
+| Finish setup + Get started | **Restyle + merge.** One dismissable panel while either is incomplete: one progress line, rows with a destination word. Dismiss now has **Undo** (bug fixed: dismissal was irreversible). Two live kinds share one slot. |
+| My tasks (6 of 12) | **Restyle + new tick.** Tick circle completes with a toast + **Undo** (the live widget had no checkbox; reuses the `/my-tasks` complete write). Due as `2d overdue` / `Today` / `10 Nov`; High as a dot-word; row ⋯: open, due today/tomorrow, mark done. Count = open tasks. |
+| On the floor now | **Restyle + bug fixed.** Rows not cards, two columns; status word is the real one (`Out` for CHECKED_OUT, `On site` for ON_SITE); soonest due back first, overdue in red. `View all ›` to the floor. Empty keeps the live sentence, minus the mascot. |
+| Needs attention | **Restyle.** The eleven chip kinds as dot-word lines with a mono count, each deep-linked to its list segment. The overdue-returns line is suppressed while its stat tile is on the board (same fact never twice) and returns when the tile is hidden. One addition: `N invoices overdue · $` (orgFinanceCounts already reads the finance counts; the live tray never showed overdue invoices). |
+| Four stat tiles (3 of 12 each) | **Restyle + bug fixed.** A calm row of numbers; every tile deep-links to the segment it counts, with a tooltip naming the target: Active jobs → Jobs `?seg=active`, Overdue returns → `?seg=out&overdue=1`, Gear deployed → Assets `?seg=deployed`, Crew booked → Crew `?seg=all`. Overdue returns now shows **jobs** (what the list shows) with the line count as its sub (`67 items to chase`). Gear keeps its thin utilisation meter. |
+| Upcoming | **Restyle.** Rows with a dot-word status, lock glyph, mono date range; `View all ›` → Jobs `?seg=booked`. |
+| Recent activity | **Restyle.** Same nine items and three columns, as sentences with who · when; no icon discs. `View all ›` goes to Activity. |
+
+Removed: the aside line under the greeting (it restated the Overdue returns tile). Fixture: today 9 Nov; overdue invoices are INV-0027 UNSW $8,250 (18d) and INV-0031 Ogilvy $8,725 (5d) from the Finance prototype.
+
+### 6c.3 Customise
+Kept: enter from the page ⋯ (`Customise…`), hide/show widgets, reorder, resize, Reset, Done, Add widget, per-user save. While customising the red primary becomes `Done` and `+ New job` steps aside, so there is still one primary. New: the title is the drag handle **and** focusable — ArrowUp/Down moves it, Enter opens its ⋯, Delete hides it; the ⋯ has Move up/down, Width (Quarter … Full, clamped to the registry min/max — stat tiles stop at a third), Hide from Home. A corner handle resizes width in whole columns; height follows content (the live comment already sizes every min height to its content). **Every change toasts with Undo.** Add widget lists hidden kinds with their description and appends at the bottom, as live.
 
 ### 6c.4 Phone
-Phone header `Home` + `Mon 9 Nov · Two Toned Productions`, ⋯ as a bottom sheet; sub-views get a back chevron. The four views are a scrolling chip strip under the header. One column in the same order; the stat words are a 2×2 grid; rows are 60–64 px with a 40 px ⋯ always visible; the destination word is dropped (it is the first ⋯ item). The sticky primary is `+ New job` / `+ New task` / `Mark all read` above the bottom nav (Home item active); the bulk bar replaces it while anything is selected; Activity has none. Menus and dialogs are bottom sheets; the grid option is desktop-only.
+Phone header `Home` + `Good morning, Jayden · 9 Nov` + ⋯ as a sheet; one column in the saved (y, x) order; the four stat tiles are a 2×2 grid; rows 60–64 px, tick 22 px, row ⋯ always visible at 40 px; one sticky `+ New job` above the bottom nav (Home active). **Customise is hidden on phone** (the ⋯ sheet says it is on desktop); the phone shows the arrangement made on desktop. This removes the live mobile add/remove-only Customize, because touch reordering was already judged unreliable by the live grid.
 
 ### 6c.5 Code
-Reuses the kit's strip, filter words, pager, `openMenu` / `openDialog` / `toast`, bulk bar, `.dotw`. In the app: stat words and Needs me read the same hooks (`useNativeDashboardStats`, `useNativeBlocking`, `useNativeOverbookingCounts`, `useNativeOrgFinanceCounts`, `useNativePendingCrewOffers`); the default layout is a plain component, `DashboardGrid` only mounts from Customise. Targets come from one `LIST_SEGMENTS` map shared with the lists' own strips (R-3.1). Notifications/My tasks/Activity adopt the §9b shell; `DashboardCard` chrome and the chip tray go. The old per-row Dismiss and `Dismiss All` go.
+Restyle in place: `dashboard-card.tsx` (hairline rule + header, no card), `widgets/*` rows (`stat-tile-widgets.tsx` href → `?seg=` URLs, `needs-attention-widget.tsx` pills → dot-word lines, `on-the-floor-now-widget.tsx` status word, `my-tasks-widget.tsx` tick via the existing task-complete mutation, `recent-activity-widget.tsx`), `dashboard-customize-bar.tsx` (Reset layout, Undo snapshots, keyboard handle in `dashboard-grid.tsx`), `dashboard-grid.module.css` (dashed frames). Merge the two checklist widgets into one panel component. `use-dashboard-layout.ts` and `convex/dashboardLayouts.ts` unchanged. Needs: Jobs list `active` segment and `overdue=1`, an un-dismiss for setup/activation, a jobs-not-lines overdue count (or keep lines and link to the line list).
 
-Decisions raised: D14–D18 (§12).
+Decisions raised: D85–D89 (§12). The v1 Home's D14–D18 are withdrawn.
 
 ---
 
@@ -1908,11 +1917,11 @@ the recommended option.
 | D11 | List filters, sort, page and view live in the **URL**; `localStorage` persistence goes | Yes — saved views and dashboard tiles become links, back works (§9b.2) | Keep per-browser persistence and add deep links on top |
 | D12 | Assets registry opens on the **Table**; Grid is remembered per user | Yes — operators look things up, browsing is the exception | Keep today's Grid default |
 | D13 | `Needs you` / `Needs attention` are derived list segments, not stored flags | Yes — same rule as the Overview readiness checklist | A stored "flagged" bit set by the writers |
-| D14 | The default Home is the fixed calm layout; the customisable grid moves behind ⋯ › Customise… | Yes | Keep the grid as the default |
-| D15 | Lists accept URL-only qualifiers so a stat's number matches the list it opens: Jobs `?seg=active` (booked + out) and `?seg=out&overdue=1`, shown as removable filter words | Yes | Add `Active` and `Overdue` words to the Jobs strip |
-| D16 | Notifications vocabulary: "Mark read" replaces "Dismiss" (same stored dismissal); `Unread · All` strip | Yes | Keep "Dismiss" |
-| D17 | On now becomes org-wide (floor, out today, due back); the widget hook must stop reading `myProjects` only | Yes | Keep it personal and rename the section |
-| D18 | My tasks gains `+ New task` (personal or job) | Yes | Read-only page |
+| D14 | ~~The default Home is the fixed calm layout; the customisable grid moves behind ⋯ › Customise…~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D15 | ~~Lists accept URL-only qualifiers so a stat's number matches the list it opens: Jobs `?seg=active` (booked + out) and `?seg=out&overdue=1`, shown as removable filter words~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D16 | ~~Notifications vocabulary: "Mark read" replaces "Dismiss" (same stored dismissal); `Unread · All` strip~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D17 | ~~On now becomes org-wide (floor, out today, due back); the widget hook must stop reading `myProjects` only~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
+| D18 | ~~My tasks gains `+ New task` (personal or job)~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
 | D19 | Versions becomes a job-page tab (chip menu + `V` stay); the Sheet goes | Tab | Keep the Sheet and add a phone entry that opens it |
 | D20 | Compare as a read-only sheet from the row ⋯; the page-level mode goes | Sheet | Keep Compare mode and link it from the row ⋯ |
 | D21 | `Seal case` stores `projectContainers.sealedAt` (blocks plan changes; print label on seal) | Add the field | Ship Print label only, no seal in v1 |
@@ -1979,6 +1988,11 @@ the recommended option.
 | D82 | Agenda is removed on desktop; phone day mode is the agenda | Yes — the day sheet and day chips cover it | Keep Agenda as a third word |
 | D83 | Month is a real calendar month (30 slim columns), not six weeks | Yes — bars stay one row each | Keep the six-week grid |
 | D84 | Pencilled jobs show `would clash` (amber) and Confirm runs the heads-up gate from the Schedule | Yes — same gate as the job page | Gate only on the job page |
+| D85 | Overdue returns tile counts jobs (what the list shows); the line count moves to its sub-line | Jobs, with lines as sub | Keep counting line items |
+| D86 | Jobs list gains an `Active` segment (Booked + Out) and an `overdue=1` filter so tiles can deep-link | Add both | Link to Booked / Out only |
+| D87 | `DEFAULT_DASHBOARD_LAYOUT` becomes setup → stats → My tasks + Needs attention (6 + 6) → On the floor → Upcoming → Activity | Yes — the user's "quick stats, then any tasks"; fills the empty half beside My tasks | Keep the live order (stats 5th) |
+| D88 | Overdue-invoices line in Needs attention | Add (data already read) | Leave out |
+| D89 | Customise on phone | Hidden | Keep live add/remove-only |
 
 ---
 

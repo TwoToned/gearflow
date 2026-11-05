@@ -668,6 +668,7 @@ kit's bottom nav then.
 | `localStorage` as the filter store | lists | URL state (D11) |
 | Floating action buttons on phone | shell | Sticky bar above the nav; nothing floats |
 | A separate decoder or platform `BarcodeDetector` | scanner | One WASM engine (CLAUDE.md) |
+| New Home concepts: v1 calm Home (stats → Needs me / On now → activity), Today timeline, Inbox to zero, Week board | Home, 2026-11-05 | "I kinda like the current one — the quick stats, then any tasks." The live dashboard's bones (stat tiles, widget grid, customise) stay; only the skin gets calmer (§6c v2) |
 
 ---
 

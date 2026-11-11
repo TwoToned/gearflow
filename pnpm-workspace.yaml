@@ -82,6 +82,10 @@
 #                          dependency is bumped in package.json; this catches the nested
 #                          copies, including a 3.25.76 that no 3.x release can fix. Every
 #                          dependent of those copies declares "^3.25 || ^4" or "^4".
+#   systeminformation      (shadcn>@dotenvx/dotenvx, CLI dev tool only, not shipped)
+#                          <5.33.16 — GHSA-3f7j-7jwc-fxfj, Windows command injection in
+#                          services() via Unicode quotation marks (2026-11-11 audit).
+#                          Held to the 5.x line.
 overrides:
   serialize-javascript@<7.0.3: '>=7.0.3'
   hono@<4.12.25: '>=4.12.25'
@@ -108,6 +112,7 @@ overrides:
   body-parser@>=2.0.0 <2.4.0: '>=2.4.0 <3'
   vite@>=8.0.0 <8.1.6: '>=8.1.6 <8.2.0'
   zod@<4.6.6: '>=4.6.6 <5'
+  systeminformation@<5.33.16: '>=5.33.16 <6'
 
 # Packages allowed to run install/build lifecycle scripts (pnpm blocks these by default —
 # supports R-6.7 install-script hardening).

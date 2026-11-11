@@ -2126,15 +2126,24 @@ export const reassignSerialisedUnit = mutation({
  * counts toward `assignedQuantity` (the scan path's spare-capacity test) and is
  * prepped/deployed/returned by manual tick with no new fulfilment code.
  */
-function assertConvertibleLine(line: Awaited<ReturnType<typeof lineByCuid>>, organizationId: string, projectId: string): asserts line is NonNullable<typeof line> {
-  if (!line || line.organizationId !== organizationId || line.projectId !== projectId) throw new ConvexError("Line item not found in project");
-  if (line.status === "CANCELLED") throw new ConvexError("This line is cancelled");
-  if ((line.type ?? "EQUIPMENT") !== "EQUIPMENT" || !line.modelId) throw new ConvexError("Only equipment lines for a model can use a custom unit");
-  if (line.isKitChild || line.kitId || line.isContainerLineItem || line.isCustomItem || line.subHireId != null) {
-    throw new ConvexError("Kit members, kits, containers, custom items and sub-hires can't use a custom unit");
-  }
+type ConvertibleLine = NonNullable<Awaited<ReturnType<typeof lineByCuid>>>;
+
+/** Each line shape that can't carry a custom unit, checked in order; first match wins. */
+const CUSTOM_UNIT_BLOCKERS: ReadonlyArray<readonly [(line: ConvertibleLine) => boolean, string]> = [
+  [(line) => line.status === "CANCELLED", "This line is cancelled"],
+  [(line) => (line.type ?? "EQUIPMENT") !== "EQUIPMENT" || !line.modelId, "Only equipment lines for a model can use a custom unit"],
+  [
+    (line) => Boolean(line.isKitChild || line.kitId || line.isContainerLineItem || line.isCustomItem) || line.subHireId != null,
+    "Kit members, kits, containers, custom items and sub-hires can't use a custom unit",
+  ],
   // A line pinned to a specific asset (line.assetId, no unit rows) is fulfilled by THAT asset.
-  if (line.assetId) throw new ConvexError("This line is for a specific asset — it can't have a custom unit");
+  [(line) => Boolean(line.assetId), "This line is for a specific asset — it can't have a custom unit"],
+];
+
+function assertConvertibleLine(line: Awaited<ReturnType<typeof lineByCuid>>, organizationId: string, projectId: string): asserts line is ConvertibleLine {
+  if (!line || line.organizationId !== organizationId || line.projectId !== projectId) throw new ConvexError("Line item not found in project");
+  const blocker = CUSTOM_UNIT_BLOCKERS.find(([blocks]) => blocks(line));
+  if (blocker) throw new ConvexError(blocker[1]);
 }
 
 const CLOSED_PROJECT_STATUSES = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);

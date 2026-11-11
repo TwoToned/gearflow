@@ -576,6 +576,24 @@ const LINE_NEVER_CLEAR = new Set<string>(["id", "organizationId", ...LINE_IMMUTA
  *  - lowering the quantity below (custom + serial units) would drop a stock-backed
  *    unit instead of the custom one the user presumably meant.
  */
+/** Would this edit move a line's demand to a different model, type or asset? */
+function editChangesLineIdentity(
+  doc: Doc<"projectLineItems">,
+  clearSet: Set<string>,
+  setObj: Record<string, unknown>,
+): boolean {
+  if (clearSet.has("modelId") || setObj.assetId || setObj.bulkAssetId) return true;
+  if (setObj.modelId !== undefined && setObj.modelId !== doc.modelId) return true;
+  return setObj.type !== undefined && setObj.type !== (doc.type ?? "EQUIPMENT");
+}
+
+/** Units on the line that a serial (asset or bulk asset) backs. */
+async function taggedUnitCount(ctx: MutationCtx, lineId: string): Promise<number> {
+  return (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineId)).collect())
+    .filter((u) => u.status !== "CANCELLED" && (u.assetId || u.bulkAssetId))
+    .reduce((n, u) => n + (u.quantity ?? 1), 0);
+}
+
 async function assertCustomUnitsStayCoherent(
   ctx: MutationCtx,
   doc: Doc<"projectLineItems">,
@@ -583,20 +601,11 @@ async function assertCustomUnitsStayCoherent(
 ): Promise<void> {
   const custom = doc.offInventoryQuantity ?? 0;
   if (custom < 1) return;
-  const { newQty, clearSet, setObj } = edit;
-  const changesIdentity =
-    clearSet.has("modelId") ||
-    (setObj.modelId !== undefined && setObj.modelId !== doc.modelId) ||
-    (setObj.type !== undefined && setObj.type !== (doc.type ?? "EQUIPMENT")) ||
-    !!setObj.assetId ||
-    !!setObj.bulkAssetId;
-  if (changesIdentity) {
+  if (editChangesLineIdentity(doc, edit.clearSet, edit.setObj)) {
     throw new ConvexError(`${custom} unit(s) of this line are custom — convert them back to inventory before changing its model, type or asset.`);
   }
-  const tagged = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", doc.id)).collect())
-    .filter((u) => u.status !== "CANCELLED" && (u.assetId || u.bulkAssetId))
-    .reduce((n, u) => n + (u.quantity ?? 1), 0);
-  if (newQty < custom + tagged) {
+  const tagged = await taggedUnitCount(ctx, doc.id);
+  if (edit.newQty < custom + tagged) {
     throw new ConvexError(
       `${custom} unit(s) of this line are custom and ${tagged} have serials — convert custom units back to inventory (or remove assigned units) before lowering the quantity below ${custom + tagged}.`,
     );

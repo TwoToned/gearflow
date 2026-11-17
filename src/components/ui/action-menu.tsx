@@ -69,32 +69,11 @@ export function ActionMenu({
     else void item.onSelect();
   };
 
-  const defaultTrigger = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      aria-label={label}
-      onClick={isMobile ? () => setOpen(true) : undefined}
-      className={cn(
-        "touch-target shrink-0 text-muted transition-opacity",
-        isMobile ? "size-10" : "size-8 opacity-60 hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
-        triggerClassName,
-      )}
-    >
-      <MoreHorizontal className="size-4" aria-hidden="true" />
-    </Button>
+  const trigger = customTrigger ? (
+    isMobile ? phoneTrigger({ element: customTrigger, onOpen: () => setOpen(true) }) : customTrigger
+  ) : (
+    defaultTrigger({ isMobile, onOpen: () => setOpen(true), className: triggerClassName, label })
   );
-  const trigger = customTrigger
-    ? isMobile
-      ? React.cloneElement(customTrigger, {
-          onClick: (e: React.MouseEvent) => {
-            customTrigger.props.onClick?.(e as React.MouseEvent<Element>);
-            setOpen(true);
-          },
-        })
-      : customTrigger
-    : defaultTrigger;
 
   return (
     <span className={className}>
@@ -108,6 +87,52 @@ export function ActionMenu({
       )}
       <ConfirmDialog item={pending} onClose={() => setPending(null)} />
     </span>
+  );
+}
+
+function phoneTrigger({
+  element,
+  onOpen,
+}: {
+  element: React.ReactElement<{ onClick?: React.MouseEventHandler }>;
+  onOpen: () => void;
+}) {
+  return React.cloneElement(element, {
+    onClick: (e: React.MouseEvent) => {
+      element.props.onClick?.(e as React.MouseEvent<Element>);
+      onOpen();
+    },
+  });
+}
+
+// Plain functions (not components): `DropdownMenuTrigger asChild` needs the Button
+// element itself so its ref and props land on it.
+function defaultTrigger({
+  isMobile,
+  onOpen,
+  className,
+  label,
+}: {
+  isMobile: boolean;
+  onOpen: () => void;
+  className?: string;
+  label: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={label}
+      onClick={isMobile ? onOpen : undefined}
+      className={cn(
+        "touch-target shrink-0 text-muted transition-opacity",
+        isMobile ? "size-10" : "size-8 opacity-60 hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+        className,
+      )}
+    >
+      <MoreHorizontal className="size-4" aria-hidden="true" />
+    </Button>
   );
 }
 

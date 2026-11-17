@@ -177,11 +177,25 @@ function PhoneChild({ child }: { child: LineRowData }) {
   );
 }
 
+function TitleLine({ row, linkRef }: { row: LineRowData; linkRef: React.Ref<HTMLAnchorElement> }) {
+  return (
+    <>
+      <Title row={row} linkRef={linkRef} />
+      {row.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
+      <StateGlyphs glyphs={row.glyphs} />
+    </>
+  );
+}
+
+function phoneSubtitle(subtitle: string | undefined, folded: Fact[]): string {
+  return [subtitle, ...folded.map(factText)].filter(Boolean).join(" · ");
+}
+
 function PhoneRow({ row, columns, selection }: RowProps) {
   const [expanded, setExpanded] = React.useState(false);
   const { linkRef, open, openable } = useWholeRowOpen(row);
   const { right, folded } = splitPhoneFacts(columns.map((c) => c.id), row.facts);
-  const sub = [row.subtitle, ...folded.map(factText)].filter(Boolean).join(" · ");
+  const sub = phoneSubtitle(row.subtitle, folded);
   const hasChildren = !!row.children?.length;
   return (
     <div data-row-id={row.id} className="border-t border-line">
@@ -193,9 +207,7 @@ function PhoneRow({ row, columns, selection }: RowProps) {
         {hasChildren && <ExpandToggle open={expanded} onToggle={() => setExpanded((v) => !v)} />}
         <div className="min-w-0 flex-1 py-2">
           <div className="flex min-w-0 items-center gap-1.5">
-            <Title row={row} linkRef={linkRef} />
-            {row.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
-            <StateGlyphs glyphs={row.glyphs} />
+            <TitleLine row={row} linkRef={linkRef} />
           </div>
           {sub && <div className="truncate text-[12px] text-muted">{sub}</div>}
         </div>

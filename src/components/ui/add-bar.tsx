@@ -154,7 +154,7 @@ function AddBarCommand({
             aria-pressed={kind === k.key}
             onClick={() => setKind(kind === k.key ? null : k.key)}
             className={cn(
-              "min-h-11 border-b-2 px-0.5 text-[13px] font-medium [@media(pointer:fine)]:min-h-7",
+              "min-h-11 border-b-2 px-0.5 text-table-cell font-medium [@media(pointer:fine)]:min-h-7",
               kind === k.key ? "border-ink text-ink" : "border-transparent text-muted",
             )}
           >
@@ -178,7 +178,7 @@ function AddBarCommand({
           onChange={(e) => changeQuery(e.target.value)}
           onKeyDown={onKeyDown}
           // 16 px so iOS does not zoom on focus.
-          className="min-h-11 min-w-0 flex-1 bg-transparent text-[16px] text-ink placeholder:text-muted focus:outline-none"
+          className="min-h-11 min-w-0 flex-1 bg-transparent text-reading-body text-ink placeholder:text-muted focus:outline-none"
         />
       </div>
       {showList ? (
@@ -192,7 +192,7 @@ function AddBarCommand({
           )}
         >
           {results.length === 0 ? (
-            <li role="presentation" className="px-3 py-3 text-[13px] text-muted">
+            <li role="presentation" className="px-3 py-3 text-table-cell text-muted">
               {loading ? "Searching…" : "No matches"}
             </li>
           ) : (
@@ -209,18 +209,18 @@ function AddBarCommand({
                   void onAdd(r);
                 }}
                 className={cn(
-                  "flex min-h-12 cursor-pointer items-center gap-3 px-3 text-[14px]",
+                  "flex min-h-12 cursor-pointer items-center gap-3 px-3 text-ui-text",
                   i === index && "bg-paper-2",
                 )}
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-ink">{r.title}</span>
-                  {r.subtitle ? <span className="block truncate text-[12px] text-muted">{r.subtitle}</span> : null}
+                  {r.subtitle ? <span className="block truncate text-caption text-muted">{r.subtitle}</span> : null}
                 </span>
                 {r.id === lastAdded ? (
-                  <span className="shrink-0 text-[12px] text-muted">Added · Enter to edit</span>
+                  <span className="shrink-0 text-caption text-muted">Added · Enter to edit</span>
                 ) : r.detail ? (
-                  <span className="shrink-0 text-[12px] text-muted">{r.detail}</span>
+                  <span className="shrink-0 text-caption text-muted">{r.detail}</span>
                 ) : null}
               </li>
             ))

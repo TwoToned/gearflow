@@ -72,7 +72,7 @@ describe("DetailHeader", () => {
   it("the lock glyph opens a menu that says what it is and unlocks", async () => {
     const { unlock } = setup();
     await userEvent.click(screen.getByRole("button", { name: "Pricing locked" }));
-    expect(screen.getByRole("button", { name: "Pricing locked" }).getAttribute("title")).toContain("Read-only");
+    expect(await screen.findByText(/Read-only while locked/)).toBeTruthy();
     await userEvent.click(await screen.findByRole("menuitem", { name: "Unlock pricing" }));
     expect(unlock).toHaveBeenCalledTimes(1);
   });

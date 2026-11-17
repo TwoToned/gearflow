@@ -16,7 +16,7 @@ import {
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { rowEditorSchema } from "@/lib/validations/line-item";
 import { cn } from "@/lib/utils";
-import { computeLineTotal } from "../../../convex/lib/lineTotal";
+import { computeLineTotal, roundCurrency } from "../../../convex/lib/lineTotal";
 
 /**
  * `RowEditorSheet` (spec §5.8, §9l.3): the phone's answer to inline editing.
@@ -98,6 +98,8 @@ interface Draft {
   unitPrice: string;
   discount: string;
   mode: DiscountMode;
+  /** The operator typed in the discount field or switched its mode. */
+  discountTouched: boolean;
 }
 
 function toDraft(i: RowEditorInitial): Draft {
@@ -108,17 +110,60 @@ function toDraft(i: RowEditorInitial): Draft {
     unitPrice: i.unitPrice == null ? "" : String(i.unitPrice),
     discount: discountEntryValue(i.discount, mode, gross),
     mode,
+    discountTouched: false,
   };
 }
 
-/** Parses a draft; `ok:false` when the schema rejects it (e.g. qty 0). */
-function parseDraft(d: Draft) {
-  return rowEditorSchema.safeParse({
+interface DraftErrors {
+  quantity?: string;
+  unitPrice?: string;
+  discount?: string;
+}
+
+interface ParsedDraft {
+  data: { quantity: number; unitPrice?: number } | null;
+  errors: DraftErrors;
+}
+
+const FIELD_MESSAGES: Record<string, string> = {
+  quantity: "Quantity must be at least 1",
+  unitPrice: "Enter a valid price",
+  discount: "Enter a valid discount",
+};
+
+/** The discount's own rules. `discountField` in the schema is a DOLLAR field, so
+ *  a percentage is bounded here (0-100), and a dollar discount can never
+ *  exceed the line's gross. */
+function discountError(d: Draft, gross: number): string | undefined {
+  const raw = d.discount.trim();
+  if (raw === "") return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return FIELD_MESSAGES.discount;
+  if (n > 0 && gross <= 0) return d.mode === "%" ? "Add a price to use %" : "Add a price to use a discount";
+  if (d.mode === "%") return n > 100 ? "Discount must be between 0 and 100%" : undefined;
+  return roundCurrency(n) > roundCurrency(gross) ? "Discount can't be more than the line total" : undefined;
+}
+
+function parseDraft(d: Draft, duration: number): ParsedDraft {
+  const r = rowEditorSchema.safeParse({
     quantity: d.quantity,
     unitPrice: d.unitPrice,
-    discount: d.discount,
+    // % is validated below, not as a dollar amount.
+    discount: d.mode === "$" ? d.discount : "",
     discountMode: d.mode,
   });
+  const errors: DraftErrors = {};
+  if (!r.success) {
+    for (const issue of r.error.issues) {
+      const key = String(issue.path[0]);
+      if (key in FIELD_MESSAGES) errors[key as keyof DraftErrors] ??= FIELD_MESSAGES[key];
+    }
+    return { data: null, errors };
+  }
+  const data = { quantity: r.data.quantity, unitPrice: r.data.unitPrice };
+  const gross = lineGrossAmount({ unitPrice: data.unitPrice, quantity: data.quantity, duration });
+  errors.discount = discountError(d, gross);
+  return { data, errors };
 }
 
 /** The resolved flat dollar discount for a parsed draft (`undefined` = none). */
@@ -127,11 +172,28 @@ function resolvedDiscount(d: Draft, qty: number, price: number | undefined, dura
   return resolveDiscountAmount(d.mode, d.discount, gross);
 }
 
+const sameMoney = (a: number | null, b: number | null) =>
+  a == null || b == null ? a === b : roundCurrency(a) === roundCurrency(b);
+
+/**
+ * The discount part of the patch. Only when the operator touched the discount
+ * (field or mode), or when `%` mode AND price/qty changed (re-resolving the
+ * percentage against the new gross is the intent). Anything else leaves the
+ * stored dollar amount alone, so a cent of round-trip drift never rewrites it.
+ */
+/** Whether the discount is part of this save at all (see `discountPatch`). */
+function discountInScope(initial: RowEditorInitial, d: Draft, qty: number, price: number | undefined): boolean {
+  if (d.discountTouched || d.mode !== (initial.discountMode === "%" ? "%" : "$")) return true;
+  const repriced = qty !== initial.quantity || (price ?? null) !== (initial.unitPrice ?? null);
+  return d.mode === "%" && repriced;
+}
+
 function discountPatch(initial: RowEditorInitial, d: Draft, qty: number, price: number | undefined): RowEditorPatch {
-  const discount = resolvedDiscount(d, qty, price, initial.duration ?? 1) ?? null;
+  if (!discountInScope(initial, d, qty, price)) return {};
   const modeChanged = d.mode !== (initial.discountMode === "%" ? "%" : "$");
-  const changed = discount !== (initial.discount ?? null) || (modeChanged && discount != null);
-  return changed ? { discount, discountMode: discount == null ? "$" : d.mode } : {};
+  const discount = resolvedDiscount(d, qty, price, initial.duration ?? 1) ?? null;
+  if (!modeChanged && sameMoney(discount, initial.discount ?? null)) return {};
+  return { discount, discountMode: discount == null ? "$" : d.mode };
 }
 
 /** The patch between the initial row and a valid draft: changed fields only. */
@@ -161,7 +223,7 @@ function Stepper({ value, onChange }: { value: string; onChange: (v: string) => 
         inputMode="numeric"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-16 rounded-[var(--r)] border-2 border-line-2 bg-paper text-center text-[16px] tabular-nums text-ink"
+        className="h-11 w-16 rounded-[var(--r)] border-2 border-line-2 bg-paper text-center text-reading-body tabular-nums text-ink"
       />
       <Button type="button" variant="line" size="icon" aria-label="Increase quantity" onClick={() => bump(1)}>
         <Plus aria-hidden="true" />
@@ -181,7 +243,7 @@ function ModeSwitch({ mode, onChange }: { mode: DiscountMode; onChange: (m: Disc
           aria-checked={mode === m}
           aria-label={m === "$" ? "Dollars" : "Percent"}
           onClick={() => onChange(m)}
-          className={cn("size-11 text-[16px] font-semibold", mode === m ? "bg-ink text-paper" : "text-muted")}
+          className={cn("size-11 text-reading-body font-semibold", mode === m ? "bg-ink text-paper" : "text-muted")}
         >
           {m}
         </button>
@@ -191,7 +253,7 @@ function ModeSwitch({ mode, onChange }: { mode: DiscountMode; onChange: (m: Disc
 }
 
 const fieldInput =
-  "h-11 w-full rounded-[var(--r)] border-2 border-line-2 bg-paper px-3 text-[16px] tabular-nums text-ink placeholder:text-muted";
+  "h-11 w-full rounded-[var(--r)] border-2 border-line-2 bg-paper px-3 text-reading-body tabular-nums text-ink placeholder:text-muted";
 
 function useRowDraft(open: boolean, initial: RowEditorInitial) {
   const [draft, setDraft] = React.useState<Draft>(() => toDraft(initial));
@@ -201,13 +263,14 @@ function useRowDraft(open: boolean, initial: RowEditorInitial) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed on open only
   }, [open]);
 
-  const parsed = parseDraft(draft);
   const duration = initial.duration ?? 1;
-  const data = parsed.success ? parsed.data : null;
-  const total = data
-    ? computeLineTotal(data.unitPrice, data.quantity, duration, resolvedDiscount(draft, data.quantity, data.unitPrice, duration))
-    : null;
-  const patch = data ? buildRowPatch(initial, draft, data) : null;
+  const { data, errors } = parseDraft(draft, duration);
+  const valid = !!data && !errors.discount;
+  const total =
+    valid && data
+      ? computeLineTotal(data.unitPrice, data.quantity, duration, resolvedDiscount(draft, data.quantity, data.unitPrice, duration))
+      : null;
+  const patch = valid && data ? buildRowPatch(initial, draft, data) : null;
   const set = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
   const switchMode = (to: DiscountMode) => {
     if (to === draft.mode) return;
@@ -216,9 +279,20 @@ function useRowDraft(open: boolean, initial: RowEditorInitial) {
       quantity: data ? data.quantity : initial.quantity,
       duration,
     });
-    set({ mode: to, discount: convertDiscountEntry(draft.discount, draft.mode, to, gross) });
+    // On an unpriced line there is nothing to convert against: keep the typed
+    // text and let the inline reason explain, never blank it.
+    const converted = gross > 0 ? convertDiscountEntry(draft.discount, draft.mode, to, gross) : draft.discount;
+    set({ mode: to, discount: converted === "" ? draft.discount : converted, discountTouched: true });
   };
-  return { draft, set, switchMode, total, patch };
+  return { draft, set, switchMode, total, patch, errors };
+}
+
+function FieldError({ message }: { message?: string }) {
+  return message ? (
+    <p role="alert" className="text-caption text-t-out">
+      {message}
+    </p>
+  ) : null;
 }
 
 function AvailabilityNotice({ a }: { a: NonNullable<RowEditorSheetProps["availability"]> }) {
@@ -226,7 +300,7 @@ function AvailabilityNotice({ a }: { a: NonNullable<RowEditorSheetProps["availab
     <div
       role="status"
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-[var(--r)] px-3 py-2 text-[13px]",
+        "flex flex-wrap items-center gap-2 rounded-[var(--r)] px-3 py-2 text-table-cell",
         a.tone === "error" ? "bg-out-soft text-t-out" : "bg-paper-2 text-warn",
       )}
     >
@@ -248,10 +322,10 @@ function DrillIns({ items }: { items: RowEditorDrillIn[] }) {
           <button
             type="button"
             onClick={d.onOpen}
-            className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-[15px] active:bg-paper-2"
+            className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-card-title active:bg-paper-2"
           >
             <span className="flex-1">{d.label}</span>
-            {d.detail ? <span className="text-[13px] text-muted">{d.detail}</span> : null}
+            {d.detail ? <span className="text-table-cell text-muted">{d.detail}</span> : null}
             <ChevronRight className="size-4 text-muted" aria-hidden="true" />
           </button>
         </li>
@@ -273,16 +347,21 @@ export function RowEditorSheet({
   menu,
 }: RowEditorSheetProps) {
   const { formatCurrency } = useFormatters();
-  const { draft, set, switchMode, total, patch } = useRowDraft(open, initial);
+  const { draft, set, switchMode, total, patch, errors } = useRowDraft(open, initial);
   const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const canSave = !!patch && Object.keys(patch).length > 0 && !saving;
 
   const save = async () => {
     if (!patch) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await onSave(patch);
       onOpenChange(false);
+    } catch (e) {
+      // Keep the sheet open with what the operator typed, and say why.
+      setSaveError(e instanceof Error && e.message ? e.message : "Couldn't save. Try again.");
     } finally {
       setSaving(false);
     }
@@ -299,49 +378,60 @@ export function RowEditorSheet({
 
         {availability ? <AvailabilityNotice a={availability} /> : null}
 
-        <div className="flex items-center justify-between gap-3 text-[14px] font-medium text-ink">
+        <div className="flex items-center justify-between gap-3 text-ui-text font-medium text-ink">
           <span aria-hidden="true">Quantity</span>
           <Stepper value={draft.quantity} onChange={(quantity) => set({ quantity })} />
         </div>
+        <FieldError message={errors.quantity} />
 
         {priceEditable ? (
           <>
-            <label className="flex flex-col gap-1 text-[13px] text-muted">
+            <label className="flex flex-col gap-1 text-table-cell text-muted">
               Price
               <input
                 aria-label="Price"
                 inputMode="decimal"
                 placeholder="Blank = unpriced"
                 value={draft.unitPrice}
+                aria-invalid={!!errors.unitPrice}
                 onChange={(e) => set({ unitPrice: e.target.value })}
                 className={fieldInput}
               />
+              <FieldError message={errors.unitPrice} />
             </label>
             <div className="flex items-end gap-2">
-              <label className="flex flex-1 flex-col gap-1 text-[13px] text-muted">
+              <label className="flex flex-1 flex-col gap-1 text-table-cell text-muted">
                 Discount
                 <input
                   aria-label="Discount"
                   inputMode="decimal"
                   placeholder="None"
                   value={draft.discount}
-                  onChange={(e) => set({ discount: e.target.value })}
+                  aria-invalid={!!errors.discount}
+                  onChange={(e) => set({ discount: e.target.value, discountTouched: true })}
                   className={fieldInput}
                 />
               </label>
               <ModeSwitch mode={draft.mode} onChange={switchMode} />
             </div>
+            <FieldError message={errors.discount} />
           </>
         ) : null}
 
         <div className="flex items-baseline justify-between border-t border-line pt-3">
-          <span className="text-[13px] text-muted">Total</span>
-          <output aria-label="Total" className="text-[18px] font-semibold tabular-nums text-ink">
+          <span className="text-table-cell text-muted">Total</span>
+          <output aria-label="Total" className="text-section-header font-semibold tabular-nums text-ink">
             {formatCurrency(total)}
           </output>
         </div>
 
         {drillIns?.length ? <DrillIns items={drillIns} /> : null}
+
+        {saveError ? (
+          <p role="alert" className="text-caption text-t-out">
+            {saveError}
+          </p>
+        ) : null}
 
         <div className="flex gap-2">
           <Button type="button" variant="line" className="flex-1" onClick={() => onOpenChange(false)}>

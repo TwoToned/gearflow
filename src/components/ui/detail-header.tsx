@@ -32,7 +32,7 @@ export interface DetailHeaderProps {
   status: StatusValue;
   /**
    * The pricing-lock glyph. `label` titles the menu (`Pricing locked · Jayden ·
-   * Thu 6 Nov`); `summary` says what is read-only and is the glyph's tooltip.
+   * Thu 6 Nov`); `summary` says what is read-only: the menu header (the glyph's tooltip is the label).
    */
   lock?: { label: string; summary: string; menu: ActionMenuSpec };
   /** Job variant: number · client · dates · days, joined with a middle dot. */
@@ -64,11 +64,12 @@ function LockGlyph({ lock }: { lock: NonNullable<DetailHeaderProps["lock"]> }) {
     <ActionMenu
       spec={lock.menu}
       label={lock.label}
+      header={lock.summary}
       trigger={
         <button
           type="button"
           aria-label={lock.label}
-          title={lock.summary}
+          title={lock.label}
           className="inline-flex size-[22px] items-center justify-center rounded-full border border-line-2 text-muted hover:border-control-line hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red [@media(pointer:coarse)]:size-11"
         >
           <Lock className="size-[11px]" aria-hidden="true" />
@@ -89,7 +90,7 @@ function PackerFactsLine({ facts }: { facts: PackerFacts }) {
 
 function MetaLine({ parts }: { parts: React.ReactNode[] }) {
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-table-cell text-muted">
       {parts.map((p, i) => (
         <React.Fragment key={i}>
           {i > 0 && <span aria-hidden="true">·</span>}
@@ -113,7 +114,7 @@ function ProgressStep({ step, state, subLabel }: { step: DetailHeaderStep; state
       className={cn("min-w-0 flex-1", state !== "current" && "max-md:[&>span]:hidden")}
     >
       <i className={cn("mb-1.5 block h-[3px] rounded-sm", STEP_BAR[state])} />
-      <span className={cn("block truncate text-[11px]", state === "current" ? "font-semibold text-ink" : "text-faint")}>
+      <span className={cn("block truncate text-badge", state === "current" ? "font-semibold text-ink" : "text-faint")}>
         {step.label}
         {state === "current" && subLabel ? ` · ${subLabel}` : ""}
       </span>
@@ -148,7 +149,7 @@ function TitleBlock({
   return (
     <div className="min-w-0 flex-1 basis-80">
       <div className="flex flex-wrap items-center gap-2.5">
-        <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
+        <h1 className="font-display text-page-title font-extrabold leading-tight tracking-tight text-ink">{title}</h1>
         <StatusWord status={status} />
         {lock ? <LockGlyph lock={lock} /> : null}
       </div>
@@ -195,7 +196,7 @@ export function DetailHeader({ progress, strip, className, variant = "job", ...r
         <ActionRow {...rest} />
       </div>
       {progress ? <Progress progress={progress} /> : null}
-      {strip ? <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-paper-2 px-3.5 py-2.5 text-[13px] text-ink-2">{strip}</div> : null}
+      {strip ? <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-paper-2 px-3.5 py-2.5 text-table-cell text-ink-2">{strip}</div> : null}
     </header>
   );
 }

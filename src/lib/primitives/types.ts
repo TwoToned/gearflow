@@ -17,6 +17,7 @@ import type { ColorIntent } from "@/lib/status-colors";
 export const ACTION_GROUPS = ["edit", "organise", "documents", "reporting", "danger"] as const;
 export type ActionGroupKey = (typeof ACTION_GROUPS)[number];
 
+/** @public Contract for the surface phases. */
 export interface ActionConfirm {
   title: string;
   /** Says what happens downstream (reservations, documents, history). */
@@ -52,12 +53,14 @@ export interface ActionMenuSpec {
 export type RowActionBuilder<Row, Ctx> = (row: Row, ctx: Ctx) => ActionMenuSpec;
 
 /** A bulk verb. The label carries the count: `Force return 3` (playbook §3.5). */
+/** @public Contract for the surface phases. */
 export interface BulkAction extends Omit<ActionItem, "label" | "children"> {
   label: (count: number) => string;
   /** One sub-level (e.g. `Set status ▾`); the count stays in the parent label. */
   children?: BulkAction[];
 }
 
+/** @public Contract for the surface phases. */
 export type BulkActionBuilder<Row, Ctx> = (rows: Row[], ctx: Ctx) => BulkAction[];
 
 // ─── Status (§5.3, D91) ──────────────────────────────────────────────────
@@ -90,6 +93,7 @@ export interface StateGlyph {
 
 // ─── LineRow (§5.1) ──────────────────────────────────────────────────────
 
+/** @public Contract for the surface phases. */
 export type RowKind =
   | "gear"
   | "kit"
@@ -99,6 +103,7 @@ export type RowKind =
   | "sale"
   | "container"
   | "service"
+  | "accessory"
   | "crew"
   | "asset";
 
@@ -137,6 +142,9 @@ export interface LineRowData {
   facts: Record<string, Fact>;
   status?: StatusValue;
   menu?: ActionMenuSpec;
+  /** ONLY for kind "accessory" (§9.5 `Pack n with parent`); never on other kinds
+   *  (playbook §10). One quiet text button; `LineRow` ignores it elsewhere. */
+  primary?: { label: string; onSelect: () => void | Promise<void> };
   /** One level: kit members, accessories, group members, bulk units, crew. 44 px, no actions. */
   children?: LineRowData[];
   /** Whole-row open (desktop: navigate/expand; phone: the RowEditorSheet when editable). */
@@ -144,10 +152,8 @@ export interface LineRowData {
   onOpen?: () => void;
 }
 
-// Not in the type on purpose: spec §5.1's `primary?` per-row button. Playbook
-// §3.4 and §10 rejected per-row buttons everywhere; the one survivor (the
-// warehouse accessory row's `Pack 5 with parent`, §9.5) is added by Phase 3
-// through this file, not invented per surface.
+// `primary` exists for ONE row kind only (the warehouse accessory row, §9.5).
+// Playbook §3.4 and §10 rejected per-row buttons everywhere else.
 
 export interface FactColumn {
   id: string;
@@ -175,6 +181,7 @@ export interface RowSelection {
 // ─── Totals (§5.6) ───────────────────────────────────────────────────────
 
 /** A derived footer total; never stored (FEATUREDOCS/74). */
+/** @public Contract for the surface phases. */
 export interface TotalLine {
   label: string;
   amount: number | null;

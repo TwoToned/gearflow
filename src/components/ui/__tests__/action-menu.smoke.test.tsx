@@ -169,4 +169,22 @@ describe("ActionMenu smoke", () => {
     await user.click(await screen.findByRole("button", { name: "Edit" }));
     expect(edit).toHaveBeenCalledTimes(1);
   });
+
+  it("renders a non-interactive header when open, on desktop", async () => {
+    const { spec } = makeSpec();
+    const user = userEvent.setup();
+    render(<ActionMenu spec={spec} header="Locked by Sam on 3 Nov. Pricing is read-only." />);
+    expect(screen.queryByText(/Locked by Sam/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    expect(await screen.findByText(/Locked by Sam/)).toBeTruthy();
+  });
+
+  it("renders the header in the phone sheet", async () => {
+    mobile.value = true;
+    const { spec } = makeSpec();
+    const user = userEvent.setup();
+    render(<ActionMenu spec={spec} header="Locked by Sam on 3 Nov. Pricing is read-only." />);
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    expect(await screen.findByText(/Locked by Sam/)).toBeTruthy();
+  });
 });

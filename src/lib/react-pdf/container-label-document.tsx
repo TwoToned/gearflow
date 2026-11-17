@@ -140,7 +140,7 @@ function SingleLabel({ data, label, color }: { data: DocumentData; label: Contai
           <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold" }}>{data.client_name || "-"}</Text>
         </Block>
         <View style={{ width: "3mm" }} />
-        <Block caption="Project">
+        <Block caption="Job">
           <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold" }}>{data.project_name || "-"}</Text>
         </Block>
         <View style={{ width: "3mm" }} />

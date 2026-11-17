@@ -325,7 +325,7 @@ export function buildTimelineInputs(
   const headerConfig: PageHeaderConfig = {
     orgName: data.org_name,
     orgDetails: [data.org_phone, data.org_email].filter(Boolean).join("\n"),
-    docTitle: "Project Timeline",
+    docTitle: "Job Timeline",
     docMeta: `${data.project_number}\n${data.document_date}`,
     logoData: data.org_logo,
     iconData: data.org_icon,

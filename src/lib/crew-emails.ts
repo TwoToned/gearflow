@@ -31,7 +31,7 @@ function buildDetailsHtml(data: AssignmentEmailData): string {
   const phase = data.phase ? phaseLabels[data.phase] || data.phase : null;
 
   const rows: string[] = [];
-  rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Project</td><td style="padding:4px 0;font-size:14px;"><strong>${escapeHtml(data.projectNumber)}</strong> — ${escapeHtml(data.projectName)}</td></tr>`);
+  rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Job</td><td style="padding:4px 0;font-size:14px;"><strong>${escapeHtml(data.projectNumber)}</strong> — ${escapeHtml(data.projectName)}</td></tr>`);
   if (data.roleName) {
     rows.push(`<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:14px;">Role</td><td style="padding:4px 0;font-size:14px;">${escapeHtml(data.roleName)}</td></tr>`);
   }
@@ -73,7 +73,7 @@ export function crewOfferEmail(
     html: emailWrapper(
       `
       <h2>Hi ${escapeHtml(data.crewFirstName)},</h2>
-      <p>You've been offered a crew position for an upcoming project. Please review the details below and let us know if you're available.</p>
+      <p>You've been offered a crew position for an upcoming job. Please review the details below and let us know if you're available.</p>
       ${buildDetailsHtml(data)}
       ${data.notes ? `<p style="margin-top:16px;padding:12px;background:#f8f8f8;border-radius:6px;font-size:14px;"><strong>Notes:</strong> ${escapeHtml(data.notes)}</p>` : ""}
       <div style="margin-top:24px;">

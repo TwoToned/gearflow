@@ -169,4 +169,37 @@ describe("prepContainer unit/line split (defect #1, §1.5) — fixed", () => {
     });
     expect((await unitByLine(t, "L1"))?.containerId).toBe("c1");
   });
+  // Phase 2c (UX unification): the warehouse page sends `containerId` only when
+  // the packer CHOSE something. These pin the three server-side outcomes.
+  const planL1 = (t: T) => t.run(async (ctx) => {
+    const l = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "L1")).unique();
+    if (!l) throw new Error("seed line L1 missing");
+    await ctx.db.patch(l._id, { plannedContainerId: "c1" });
+  });
+  const prepL1 = (t: T, extra: { containerId?: string | null }) =>
+    t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", items: [{ lineItemId: "L1", assetId: "a1", ...extra }], now: NOW,
+    });
+
+  test("an explicit Loose (containerId: null) preps loose even when the line has a plan", async () => {
+    const t = makeT();
+    await seed(t);
+    await planL1(t);
+    await prepL1(t, { containerId: null });
+    expect((await unitByLine(t, "L1"))?.containerId).toBeUndefined();
+  });
+
+  test("an explicit case choice wins over the plan", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectContainers", {
+        id: "c2", organizationId: ORG, projectId: "p1", versionId: V1, lineageId: "c2", kind: "CUSTOM", label: "C2",
+        lineItemId: "case-li", sortOrder: 1, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    await planL1(t);
+    await prepL1(t, { containerId: "c2" });
+    expect((await unitByLine(t, "L1"))?.containerId).toBe("c2");
+  });
 });

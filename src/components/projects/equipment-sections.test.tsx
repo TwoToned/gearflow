@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
-import { buildEquipmentSections, equipmentColumns, type EquipmentHandlers, type EquipmentSectionsInput } from "./equipment-sections";
+import type { RowSelection } from "@/lib/primitives/types";
+import { buildEquipmentSections, equipmentColumns, withSectionSelection, type EquipmentHandlers, type EquipmentSectionsInput } from "./equipment-sections";
 import type { CategoryData, GroupData, LineItemData } from "./equipment-row-types";
 import { visibleRowIds } from "@/components/ui/line-row";
 
@@ -64,6 +65,30 @@ describe("buildEquipmentSections", () => {
     expect(visibleRowIds(closedGroup.sections)).toEqual(["a", "b", "c"]);
     const closedCat = buildEquipmentSections(input({ collapsedCategories: new Set(["c1"]) }));
     expect(visibleRowIds(closedCat.sections)).toEqual([]);
+  });
+
+  it("rows carry an inline discount cell, a stage cell, and the Disc. column follows Unit", () => {
+    const { sections } = buildEquipmentSections(input());
+    const row = sections[0].rows[0];
+    expect(Object.keys(row.cells ?? {})).toEqual(expect.arrayContaining(["status", "discount", "qty", "unit"]));
+    expect(sections[1].section.cells).toHaveProperty("discount");
+    const ids = equipmentColumns(false).map((c) => c.id);
+    expect(ids.indexOf("discount")).toBe(ids.indexOf("unit") + 1);
+  });
+
+  it("section tick-all: a category covers its rows and nested groups; toggling selects, then clears", () => {
+    const { sections } = buildEquipmentSections(input());
+    const picked = new Set<string>(["a"]);
+    const toggle = (id: string) => (picked.has(id) ? picked.delete(id) : picked.add(id));
+    const sel = { isSelected: (id: string) => picked.has(id), toggle } as unknown as RowSelection;
+    const out = withSectionSelection(sections, sel);
+    expect(out.map((s) => s.section.selectState)).toEqual(["some", "none", undefined, undefined]);
+    out[0].section.onToggleSelect?.();
+    expect([...picked].sort()).toEqual(["a", "b", "c", "m1"]);
+    const again = withSectionSelection(sections, sel);
+    expect(again[0].section.selectState).toBe("all");
+    again[0].section.onToggleSelect?.();
+    expect(picked.size).toBe(0);
   });
 
   it("cannot drag without permission; the Cost column is opt-in", () => {

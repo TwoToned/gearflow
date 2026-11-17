@@ -11,6 +11,7 @@ import type { FactColumn, LineRowData, RowSelection } from "@/lib/primitives/typ
 import type { DropHighlight } from "./equipment-row-types";
 import { DragGrip, SortableWrap, UNCAT_ZONE_ID, UncatDropWrap } from "./equipment-list-dnd";
 import type { EquipmentSections } from "./equipment-sections";
+import { useRowHotkeys } from "./use-row-hotkeys";
 
 /**
  * The Equipment list: `LineRowList` sections inside the one `DndContext`
@@ -75,6 +76,7 @@ export function EquipmentList({
 }) {
   const isMobile = useIsMobile();
   const { rowMeta, sectionMeta, sections } = built;
+  const hotkeys = useRowHotkeys(sections);
   const highlight = (id: string) => dropHighlightFor(id, dnd.hoveredOverId, dnd.invalidOverId);
 
   const wrapRow = (row: LineRowData, el: React.ReactElement) => {
@@ -115,7 +117,7 @@ export function EquipmentList({
       onDragEnd={dnd.handleDragEnd}
       onDragCancel={dnd.handleDragCancel}
     >
-      <div className={isMobile ? undefined : "overflow-x-auto rounded-[var(--r)] border border-line"}>
+      <div className={isMobile ? undefined : "overflow-x-auto rounded-[var(--r)] border border-line"} {...hotkeys}>
         <LineRowList
           sections={sections}
           columns={columns}

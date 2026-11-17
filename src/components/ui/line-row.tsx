@@ -301,12 +301,13 @@ export interface LineRowListSection {
 
 /**
  * Ids of the rows a user can see, in DOM order: pass this to `useRowSelection`
- * so shift-range and select-page skip rows hidden by a collapsed section.
+ * so shift-range and select-page skip rows hidden by a collapsed section and
+ * rows with `selectable: false` (they render no checkbox).
  * `collapsedIds` is only needed for sections whose collapse the list owns
  * (i.e. no `collapsed` given); controlled sections use their own flag.
  */
 export function visibleRowIds(sections: LineRowListSection[], collapsedIds?: ReadonlySet<string>): string[] {
-  return sections.flatMap((s) => ((s.collapsed ?? collapsedIds?.has(s.section.id)) ? [] : s.rows.map((r) => r.id)));
+  return sections.flatMap((s) => ((s.collapsed ?? collapsedIds?.has(s.section.id)) ? [] : s.rows.filter((r) => r.selectable !== false).map((r) => r.id)));
 }
 
 interface ListShared {

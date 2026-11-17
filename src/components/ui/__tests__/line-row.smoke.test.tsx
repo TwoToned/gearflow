@@ -339,6 +339,25 @@ describe("LineRowList sections", () => {
     expect(screen.queryByRole("checkbox", { name: "Select Fresnel" })).toBeNull();
   });
 
+  it("selectable:false rows are excluded from visibleRowIds, shift-range and select-page", async () => {
+    const list: LineRowListSection[] = [
+      { section: { id: "s1", title: "Cat" }, rows: [rows[0], { ...rows[1], selectable: false }, rows[2]] },
+    ];
+    expect(visibleRowIds(list)).toEqual([rows[0].id, rows[2].id]);
+    function H() {
+      const selection = useRowSelection(visibleRowIds(list));
+      return (
+        <>
+          <LineRowList sections={list} columns={columns} selection={selection} />
+          <output data-testid="sel">{[...selection.selected].join(",")}</output>
+        </>
+      );
+    }
+    render(<H />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select page" }));
+    expect(screen.getByTestId("sel").textContent).toBe([rows[0].id, rows[2].id].join(","));
+  });
+
   it("phone: section heads and rows in one list, in order", () => {
     mobile.value = true;
     render(<SecHarness />);

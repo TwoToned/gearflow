@@ -87,7 +87,8 @@ import { buildBulkEquipmentActions } from "@/lib/row-actions/bulk-equipment";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { EquipmentList } from "./equipment-list";
-import { buildEquipmentSections, equipmentColumns, type EquipmentHandlers } from "./equipment-sections";
+import { buildEquipmentSections, equipmentColumns, withSectionSelection, type EquipmentHandlers } from "./equipment-sections";
+import type { CommentCount } from "./equipment-row-extras";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 
@@ -265,6 +266,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     () => new Map((reviewMarkers ?? []).map((m) => [m.targetId, m])),
     [reviewMarkers]
   );
+  // Per-line / per-group discussion counts: one live query for the whole project.
+  const commentCounts = useAuthedQuery(
+    api.collaboration.listThreadCommentCounts,
+    orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
+  ) as Record<string, CommentCount> | undefined;
 
   // Category sections the user has collapsed (all open by default), and the
   // deployed line whose "Report issue" dialog is open.
@@ -1267,11 +1273,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     canDrag: canDragEquipment,
     showCost: showCostColumn,
     customUnit: customUnitValue,
+    comments: orgId ? { orgId, projectId, counts: commentCounts } : undefined,
     handlers,
   });
   const listColumns = equipmentColumns(showCostColumn);
   const visibleIds = visibleRowIds(built.sections).filter((id) => built.rowMeta.has(id));
   const selection = useRowSelection(visibleIds);
+  const listBuilt = { ...built, sections: withSectionSelection(built.sections, selection) };
 
   // Clear selection on Escape
   useEffect(() => {
@@ -1430,7 +1438,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
           subscriptions aren't duplicated across two DOM trees. */}
       {(hasCategories || hasUncategorized) && (
         <EquipmentList
-          built={built}
+          built={listBuilt}
           columns={listColumns}
           selection={selection}
           dnd={dnd}

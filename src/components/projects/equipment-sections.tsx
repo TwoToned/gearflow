@@ -8,7 +8,7 @@ import { EQUIPMENT_COLUMNS, equipmentRowModel, type EquipmentRowCtx } from "@/li
 import type { InlineLineItemPatch } from "@/lib/line-item-edit-payload";
 import { canConvertBackToInventory, canConvertToCustomUnit } from "@/lib/off-inventory";
 import type { OverbookedInfo } from "@/lib/overbooking-core";
-import type { ActionItem, FactColumn, LineRowData, LineRowSectionData } from "@/lib/primitives/types";
+import type { ActionItem, FactColumn, LineRowData, LineRowSectionData, RowSelection } from "@/lib/primitives/types";
 import { buildCategoryActions } from "@/lib/row-actions/category";
 import { buildGearLineActions } from "@/lib/row-actions/gear-line";
 import { buildGroupActions } from "@/lib/row-actions/group";
@@ -19,7 +19,9 @@ import type { CategoryData, GroupData, LineItemData, MixedGroupSlot, SubHireGrou
 import type { GroupInlinePricePatch } from "./equipment-rows";
 import { isHiddenFromList } from "./equipment-rows";
 import type { SortableMeta } from "./equipment-list-dnd";
-import { InlineEditablePrice, InlineEditableQuantity } from "./line-item-inline-cells";
+import { lineGrossAmount } from "@/lib/discount-mode";
+import { CommentButton, StageCell, type CommentTarget } from "./equipment-row-extras";
+import { InlineEditableDiscount, InlineEditablePrice, InlineEditableQuantity } from "./line-item-inline-cells";
 
 /**
  * Turns the reconstructed Equipment data into `LineRowList` sections (spec
@@ -34,11 +36,16 @@ import { InlineEditablePrice, InlineEditableQuantity } from "./line-item-inline-
 
 const COST_COLUMN: FactColumn = { id: "cost", header: "Cost", align: "end" };
 
-/** The list's columns; Cost (sub-hire groups only) sits before Total when margin is shown. */
+/** Inline discount (`$`/`%`): a cells-only column, there is no discount FACT (the stored dollar amount is edited, never a derived %). */
+const DISCOUNT_COLUMN: FactColumn = { id: "discount", header: "Disc.", align: "end" };
+
+/** The list's columns: Disc. follows Unit; Cost (sub-hire groups only) sits before Total when margin is shown. */
 export function equipmentColumns(showCost: boolean): FactColumn[] {
-  if (!showCost) return EQUIPMENT_COLUMNS;
-  const at = EQUIPMENT_COLUMNS.findIndex((c) => c.id === "total");
-  return [...EQUIPMENT_COLUMNS.slice(0, at), COST_COLUMN, ...EQUIPMENT_COLUMNS.slice(at)];
+  return EQUIPMENT_COLUMNS.flatMap((c) => {
+    if (c.id === "unit") return [c, DISCOUNT_COLUMN];
+    if (c.id === "total" && showCost) return [COST_COLUMN, c];
+    return [c];
+  });
 }
 
 interface Placement {
@@ -95,6 +102,8 @@ export interface EquipmentSectionsInput {
   canDrag: boolean;
   showCost: boolean;
   customUnit?: CustomUnitContextValue | null;
+  /** Discussion badges (per line and per Project Group); absent = none rendered. */
+  comments?: CommentTarget;
   handlers: EquipmentHandlers;
 }
 
@@ -132,8 +141,26 @@ function customUnitItems(item: LineItemData, c: Ctx, over?: OverbookedInfo | nul
 
 function lineCells(item: LineItemData, c: Ctx, model: ReturnType<typeof equipmentRowModel>): Record<string, React.ReactNode> {
   const editable = model.kind !== "container" && item.subHireGroupId == null;
-  if (!editable) return {};
+  const stage = (
+    <StageCell
+      status={model.stage ? gearStageValue(model.stage) : undefined}
+      item={item}
+      comments={c.comments}
+      disableReassign={item.childKind === "ACCESSORY"}
+    />
+  );
+  if (!editable) return { status: stage };
   return {
+    status: stage,
+    discount: (
+      <InlineEditableDiscount
+        discount={item.discount != null && Number(item.discount) > 0 ? Number(item.discount) : null}
+        discountMode={item.discountMode}
+        gross={lineGrossAmount({ unitPrice: num(item.unitPrice), quantity: item.quantity, duration: item.duration })}
+        disabled={c.moneyLocked}
+        onSave={(amount, mode) => c.handlers.inlineUpdate(item, { field: "discount", value: amount, discountMode: mode })}
+      />
+    ),
     qty: (
       <InlineEditableQuantity
         value={item.quantity}
@@ -155,12 +182,15 @@ function childRows(item: LineItemData): LineRowData[] | undefined {
   if (kids.length === 0) return undefined;
   return kids.map((k) => {
     const m = equipmentRowModel(k);
+    const accessory = k.childKind === "ACCESSORY";
     return {
       id: k.id,
-      kind: k.childKind === "ACCESSORY" ? "accessory" : "gear",
+      kind: accessory ? "accessory" : "gear",
       title: m.title,
       subtitle: m.subtitle,
       facts: { qty: m.facts.qty, unit: m.facts.unit, total: m.facts.total },
+      // A kit member's serial swap / an accessory's serial list, as live.
+      cells: { status: <StageCell item={k} kitMember={!accessory} disableReassign={accessory} /> },
     };
   });
 }
@@ -287,7 +317,17 @@ function projectGroupSection(group: GroupData, cat: CategoryData | null, contain
       },
     ),
     cells: {
+      ...(c.comments ? { status: <CommentButton target={c.comments} lineId={group.id} targetType="group" /> } : {}),
       qty: <span className="text-table-cell text-ink-2">{group.quantity}</span>,
+      discount: (
+        <InlineEditableDiscount
+          discount={group.discount != null && Number(group.discount) > 0 ? Number(group.discount) : null}
+          discountMode={group.discountMode}
+          gross={lineGrossAmount({ unitPrice: num(group.price), quantity: group.quantity, duration: 1 })}
+          disabled={c.moneyLocked}
+          onSave={(amount, mode) => h.inlineGroupPrice(group, { field: "discount", value: amount, discountMode: mode })}
+        />
+      ),
       total: (
         <InlineEditablePrice
           value={num(group.price)}
@@ -441,6 +481,35 @@ function uncategorisedSections(c: Ctx): LineRowListSection[] {
   for (const g of c.orphanProjectGroups) out.push(projectGroupSection(g, null, "uncategorized-groups", groupIds, c));
   for (const sg of c.orphanSubHireGroups) out.push(subHireGroupSection(sg, null, "uncategorized-groups", groupIds, c));
   return out;
+}
+
+/**
+ * Adds each head's tri-state "tick all" box. A category covers its own rows plus
+ * the rows of the groups nested under it; a group covers its own. Derived from
+ * the live selection, so it runs AFTER `useRowSelection` (which is fed the
+ * visible ids from the un-decorated sections). `selectable: false` rows are
+ * never covered.
+ */
+export function withSectionSelection(sections: LineRowListSection[], selection: RowSelection): LineRowListSection[] {
+  const covers: string[][] = sections.map(() => []);
+  let owner = -1;
+  sections.forEach((s, i) => {
+    const ids = s.rows.filter((r) => r.selectable !== false).map((r) => r.id);
+    const top = !s.headless && (s.section.depth ?? 0) === 0;
+    if (top) owner = i;
+    covers[i].push(...ids);
+    if (!top && owner >= 0) covers[owner].push(...ids);
+  });
+  return sections.map((s, i) => {
+    const ids = covers[i];
+    if (s.headless || ids.length === 0) return s;
+    const picked = ids.filter((id) => selection.isSelected(id));
+    const selectState = picked.length === 0 ? "none" : picked.length === ids.length ? "all" : "some";
+    const onToggleSelect = () => {
+      for (const id of selectState === "all" ? ids : ids.filter((x) => !selection.isSelected(x))) selection.toggle(id);
+    };
+    return { ...s, section: { ...s.section, selectState, onToggleSelect } };
+  });
 }
 
 export function buildEquipmentSections(input: EquipmentSectionsInput): EquipmentSections {

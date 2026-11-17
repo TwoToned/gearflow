@@ -7,11 +7,8 @@
  * stores the old panels used (the shared services/crew stores, the batched
  * `conflictsForProject` query).
  */
-import * as React from "react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
-import { useSuppliers } from "@/hooks/use-suppliers";
-import { subHireStops, type SubHireOrderLite } from "@/lib/logistics-transport";
-import { useCanDo } from "@/lib/use-permissions";
+import { useSubHireStops } from "./use-subhire-stops";
 import { useProjectCrew } from "@/hooks/use-project-crew";
 import { useProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectServices, useProjectServicesLiveSync, useProjectServicesSummary } from "@/hooks/use-project-services";
@@ -47,18 +44,7 @@ export function useLogisticsData(projectId: string) {
   const { data: rawCrew, isLoading: crewLoading } = useProjectCrew(projectId, orgId);
   const { data: templates } = useServiceTemplates(orgId);
 
-  // Sub-hire transport stops: derived from the job's linked orders. Both reads are org-checked
-  // server-side (`subHires.listByProject` filters the global by_projectId index to the caller's org);
-  // gated on the caller's read rights so a role without them skips instead of erroring the tab.
-  const canSubHires = useCanDo("subHire", "read") && useCanDo("supplier", "read");
-  const orders = useAuthedQuery(api.subHires.listByProject, orgId && canSubHires ? { projectId, orgId } : "skip") as
-    | SubHireOrderLite[]
-    | undefined;
-  const suppliers = useSuppliers(canSubHires ? orgId : undefined);
-  const stops = React.useMemo(() => {
-    const names = new Map((suppliers ?? []).map((s) => [s.id, s.name]));
-    return subHireStops(orders ?? [], (id) => names.get(id) ?? "");
-  }, [orders, suppliers]);
+  const stops = useSubHireStops(projectId, orgId);
 
   const services = (rawServices ?? []) as unknown as LogisticsService[];
   const crew = (rawCrew ?? []) as unknown as CrewAssignmentRow[];

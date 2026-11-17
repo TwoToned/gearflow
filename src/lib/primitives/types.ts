@@ -17,6 +17,7 @@ import type { ColorIntent } from "@/lib/status-colors";
 export const ACTION_GROUPS = ["edit", "organise", "documents", "reporting", "danger"] as const;
 export type ActionGroupKey = (typeof ACTION_GROUPS)[number];
 
+/** @public Contract for the surface phases. */
 export interface ActionConfirm {
   title: string;
   /** Says what happens downstream (reservations, documents, history). */
@@ -52,12 +53,14 @@ export interface ActionMenuSpec {
 export type RowActionBuilder<Row, Ctx> = (row: Row, ctx: Ctx) => ActionMenuSpec;
 
 /** A bulk verb. The label carries the count: `Force return 3` (playbook §3.5). */
+/** @public Contract for the surface phases. */
 export interface BulkAction extends Omit<ActionItem, "label" | "children"> {
   label: (count: number) => string;
   /** One sub-level (e.g. `Set status ▾`); the count stays in the parent label. */
   children?: BulkAction[];
 }
 
+/** @public Contract for the surface phases. */
 export type BulkActionBuilder<Row, Ctx> = (rows: Row[], ctx: Ctx) => BulkAction[];
 
 // ─── Status (§5.3, D91) ──────────────────────────────────────────────────
@@ -90,6 +93,7 @@ export interface StateGlyph {
 
 // ─── LineRow (§5.1) ──────────────────────────────────────────────────────
 
+/** @public Contract for the surface phases. */
 export type RowKind =
   | "gear"
   | "kit"
@@ -175,6 +179,7 @@ export interface RowSelection {
 // ─── Totals (§5.6) ───────────────────────────────────────────────────────
 
 /** A derived footer total; never stored (FEATUREDOCS/74). */
+/** @public Contract for the surface phases. */
 export interface TotalLine {
   label: string;
   amount: number | null;

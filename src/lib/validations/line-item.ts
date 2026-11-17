@@ -106,7 +106,7 @@ export const rowEditorSchema = lineItemSchema.pick({
   discount: true,
   discountMode: true,
 });
-export type RowEditorInput = z.input<typeof rowEditorSchema>;
+type RowEditorInput = z.input<typeof rowEditorSchema>;
 
 export const customLineItemSchema = z.object({
   description: z.string().min(1, "Name is required").max(200),

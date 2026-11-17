@@ -44,14 +44,14 @@ export interface RowEditorInitial {
 }
 
 /** Only the fields that changed. `null` = cleared (blank), never `0`. */
-export interface RowEditorPatch {
+interface RowEditorPatch {
   quantity?: number;
   unitPrice?: number | null;
   discount?: number | null;
   discountMode?: DiscountMode;
 }
 
-export interface RowEditorDrillIn {
+interface RowEditorDrillIn {
   key: string;
   label: string;
   /** Muted trailing summary, e.g. `3 accessories`. */
@@ -135,7 +135,7 @@ function discountPatch(initial: RowEditorInitial, d: Draft, qty: number, price: 
 }
 
 /** The patch between the initial row and a valid draft: changed fields only. */
-export function buildRowPatch(
+function buildRowPatch(
   initial: RowEditorInitial,
   d: Draft,
   parsed: { quantity: number; unitPrice?: number },

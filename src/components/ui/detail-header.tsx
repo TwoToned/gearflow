@@ -16,12 +16,12 @@ import { cn } from "@/lib/utils";
  * the lock is the glyph, not a banner. The warehouse variant swaps the meta
  * line for the packer's facts.
  */
-export interface DetailHeaderStep {
+interface DetailHeaderStep {
   key: string;
   label: string;
 }
 
-export interface PackerFacts {
+interface PackerFacts {
   loadsOut?: string;
   truck?: string;
   packing?: string[];

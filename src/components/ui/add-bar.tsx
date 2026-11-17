@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  * It owns no data and no mutation: the existing add dialogs stay as the
  * "more options" step behind the row editor (Phase 2a/5 wire it).
  */
-export interface AddBarKind {
+interface AddBarKind {
   key: string;
   label: string;
 }

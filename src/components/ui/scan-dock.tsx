@@ -11,14 +11,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-export type ScanMode = "prep" | "check";
+type ScanMode = "prep" | "check";
 
-export const SCAN_MODE_LABELS: Record<ScanMode, string> = {
+const SCAN_MODE_LABELS: Record<ScanMode, string> = {
   prep: "Prep as I scan",
   check: "Check only",
 };
 
-export interface ScanTarget {
+interface ScanTarget {
   id: string;
   label: string;
 }

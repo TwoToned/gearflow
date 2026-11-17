@@ -36,7 +36,7 @@ interface RowProps {
 function FlagWord({ flag }: { flag: RowFlag }) {
   const styles = intentStyles[flag.tone];
   return (
-    <span className={cn("inline-flex items-center gap-1 text-[12px] font-medium", styles.text)}>
+    <span className={cn("inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[12px] font-medium", styles.text)}>
       <span aria-hidden="true" className={cn("size-1.5 rounded-full", styles.dot)} />
       {flag.label}
     </span>

@@ -18,8 +18,6 @@ import {
   PackageX,
   PackageOpen,
   Truck,
-  ClipboardList,
-  MoreHorizontal,
   FileText,
   ChevronDown,
   ExternalLink,
@@ -88,7 +86,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
-import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { CheckFlowSheet } from "@/components/warehouse/job/check-flow-sheet";
 import { useCheckQueue, type CheckQueueItem } from "@/components/warehouse/job/use-check-queue";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
@@ -150,7 +147,6 @@ import {
 } from "@/server/check-records";
 import { useConvex, useConvexAuth, useQuery } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useDurableScanIntake } from "@/hooks/use-durable-scan-intake";
 import { ScanIntakeStatus } from "@/components/warehouse/scan-intake-status";
 import { useActiveOrganization, useSession } from "@/lib/auth-client";
@@ -241,8 +237,6 @@ function WarehouseProjectPage({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [returnCondition, setReturnCondition] = useState("GOOD");
   const [returnNotes, setReturnNotes] = useState("");
-  const [pickListOpen, setPickListOpen] = useState(false);
-  const isMobile = useIsMobile();
   const { data: activeOrg } = useActiveOrganization();
   const { data: scanSession } = useSession();
   const orgId = activeOrg?.id;
@@ -2432,11 +2426,6 @@ function WarehouseProjectPage({
         <div className="flex gap-2">
           {/* Scan audio toggle — shared across prep/deploy/return scan verdicts */}
           <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
-          {/* Mobile: Pick List button shown prominently */}
-          <Button variant="line" className="sm:hidden" onClick={() => setPickListOpen(true)}>
-            <ClipboardList className="mr-2 h-4 w-4" />
-            Pick list
-          </Button>
           {/* Mobile: Pull Slip as secondary */}
           <Button variant="line" size="icon" className="sm:hidden" aria-label="Print pull slip" onClick={() => window.open(`/api/documents/${projectId}?type=pull-slip`, "_blank")}>
             <Printer className="h-4 w-4" />
@@ -2492,36 +2481,8 @@ function WarehouseProjectPage({
             </Link>
           </Button>
           {/* Desktop: more menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="line" size="icon" className="hidden sm:flex" aria-label="More actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setPickListOpen(true)}>
-                <ClipboardList className="mr-2 h-4 w-4" />
-                Online pick list
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
-
-      {/* Online Pick List Dialog */}
-      <Dialog open={pickListOpen} onOpenChange={setPickListOpen}>
-        <DialogContent className={isMobile ? "h-[100dvh] max-h-[100dvh] w-full max-w-full rounded-none border-0 flex flex-col" : "sm:max-w-lg"} style={isMobile ? { paddingTop: "calc(0.5rem + env(safe-area-inset-top, 0px))", paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))" } : undefined}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ClipboardList className="h-5 w-5" />
-              Pick list
-            </DialogTitle>
-          </DialogHeader>
-          <div className={`overflow-y-auto ${isMobile ? "flex-1" : "max-h-[70vh]"}`}>
-            <OnlinePickList projectId={projectId} />
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Lifecycle stepper — where every piece of this job's gear sits, left to
           right. Returned gear shows in its own stage, never folded back into

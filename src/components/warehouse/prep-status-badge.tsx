@@ -23,7 +23,9 @@ export function GearStageBadge({ stage }: { stage: GearStageKey }) {
  */
 export function PrepStatusBadge({ item }: { item: LineItem }) {
   const packed = item.prepStatus === "PACKED";
-  const stage = packed ? "prepped" : "to_prep";
+  // A returned unit keeps prepStatus PACKED until de-prepped, so status wins:
+  // reading it as "Prepped" showed returned gear with a Prepped chip (spec §1.1).
+  const stage: GearStageKey = item.status === "RETURNED" ? "returned" : packed ? "prepped" : "to_prep";
   const status = intentToBadgeStatus(getStatusIntent("gearStage", stage));
   return (
     <Badge status={status}>

@@ -103,6 +103,7 @@ export type RowKind =
   | "sale"
   | "container"
   | "service"
+  | "accessory"
   | "crew"
   | "asset";
 
@@ -141,6 +142,17 @@ export interface LineRowData {
   facts: Record<string, Fact>;
   status?: StatusValue;
   menu?: ActionMenuSpec;
+  /** ONLY for kind "accessory" (§9.5 `Pack n with parent`); never on other kinds
+   *  (playbook §10). One quiet text button; `LineRow` ignores it elsewhere. */
+  primary?: { label: string; onSelect: () => void | Promise<void> };
+  /**
+   * @public Desktop-only cell overrides keyed by the parent's column ids
+   * (inline-edit inputs, a `7/12` stepper, a `not with parent` chip). A cell
+   * here WINS over `facts` for that column, on parent rows and on child rows.
+   * Phone ignores `cells` entirely: it folds `facts` into the subtitle and
+   * opens the row (`onOpen` / the RowEditorSheet) to edit.
+   */
+  cells?: Record<string, ReactNode>;
   /** One level: kit members, accessories, group members, bulk units, crew. 44 px, no actions. */
   children?: LineRowData[];
   /** Whole-row open (desktop: navigate/expand; phone: the RowEditorSheet when editable). */
@@ -148,10 +160,28 @@ export interface LineRowData {
   onOpen?: () => void;
 }
 
-// Not in the type on purpose: spec §5.1's `primary?` per-row button. Playbook
-// §3.4 and §10 rejected per-row buttons everywhere; the one survivor (the
-// warehouse accessory row's `Pack 5 with parent`, §9.5) is added by Phase 3
-// through this file, not invented per surface.
+/**
+ * @public A section head (category, case, group): NOT a data row, so not a
+ * `RowKind`. The caller renders the section's rows after it and hides them when
+ * `collapsed`. Rendered by `LineRowSection`.
+ */
+export interface LineRowSectionData {
+  id: string;
+  title: string;
+  /** Mono count after the title (`3`); omit for none. */
+  count?: number;
+  /** Derived subtotal; `null` is BLANK (never $0), `undefined` omits it. Never stored. */
+  amount?: number | null;
+  /** Dot-words after the count (`Sealed`, `Packing`, `Active`), same look as row flags. */
+  flags?: RowFlag[];
+  menu?: ActionMenuSpec;
+  /** Tri-state "tick all in this section", driven by the caller. Absent = no box. */
+  selectState?: "none" | "some" | "all";
+  onToggleSelect?: () => void;
+}
+
+// `primary` exists for ONE row kind only (the warehouse accessory row, §9.5).
+// Playbook §3.4 and §10 rejected per-row buttons everywhere else.
 
 export interface FactColumn {
   id: string;

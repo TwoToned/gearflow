@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { LineRowList } from "@/components/ui/line-row";
+import { LineRowList, LineRowSection } from "@/components/ui/line-row";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
 import type { FactColumn, LineRowData } from "@/lib/primitives/types";
 
@@ -149,5 +149,82 @@ describe("LineRow", () => {
     expect(screen.queryByRole("button", { name: "Cable actions" })).toBeNull();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("desktop: a cell override wins over the fact, on a row and on a child; phone ignores it", async () => {
+    const user = userEvent.setup();
+    const row: LineRowData = {
+      id: "r", kind: "gear", title: "Desk",
+      facts: { qty: { kind: "qty", value: 4 } },
+      cells: { qty: <input aria-label="qty cell" defaultValue="9" /> },
+      children: [{ id: "k", kind: "accessory", title: "PSU", facts: { qty: { kind: "qty", value: 1 } }, cells: { qty: <span>7/12</span> } }],
+    };
+    const { unmount } = render(<LineRowList rows={[row]} columns={columns} />);
+    expect(screen.getByLabelText("qty cell")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.getByText("7/12")).toBeTruthy();
+    unmount();
+    mobile.value = true;
+    render(<LineRowList rows={[row]} columns={columns} />);
+    expect(screen.queryByLabelText("qty cell")).toBeNull();
+    expect(document.querySelector("[data-row-id='r']")!.textContent).toContain("4");
+  });
+
+  it("wrapRow wraps the row element and dragHandle renders in the select cell (desktop)", () => {
+    const wrap = vi.fn((_r: LineRowData, el: React.ReactElement) => React.cloneElement(el as React.ReactElement<{ "data-wrapped": string }>, { "data-wrapped": "yes" }));
+    render(<LineRowList rows={rows} columns={columns} wrapRow={wrap} dragHandle={(r) => <i data-testid={`grip-${r.id}`} />} />);
+    expect(wrap).toHaveBeenCalledTimes(3);
+    expect(document.querySelector("tr[data-row-id='b']")!.getAttribute("data-wrapped")).toBe("yes");
+    expect(screen.getByTestId("grip-b")).toBeTruthy();
+  });
+});
+
+describe("LineRowSection", () => {
+  beforeEach(() => {
+    mobile.value = false;
+  });
+  const onSelectAll = vi.fn();
+  const section = {
+    id: "s", title: "Lighting", count: 3, amount: null as number | null, flags: [{ label: "Sealed", tone: "warning" as const }],
+    menu: { items: [{ key: "r", label: "Rename", group: "edit" as const, onSelect: vi.fn() }] },
+    selectState: "some" as const, onToggleSelect: onSelectAll,
+  };
+
+  it("desktop: full-width row with count, flag, blank subtotal, tri-state box, menu that opens, collapse", async () => {
+    const user = userEvent.setup();
+    const onCollapse = vi.fn();
+    render(
+      <table><tbody>
+        <LineRowSection section={section} columns={columns} onCollapsedChange={onCollapse} wrapSection={(el) => React.cloneElement(el as React.ReactElement<{ "data-wrapped": string }>, { "data-wrapped": "y" })} />
+      </tbody></table>,
+    );
+    const tr = document.querySelector("tr[data-section-id='s']")!;
+    expect(tr.getAttribute("data-wrapped")).toBe("y");
+    expect(tr.querySelector("td")!.getAttribute("colspan")).toBe("5");
+    expect(screen.getByText("Sealed")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
+    const box = screen.getByRole("checkbox", { name: "Select all in Lighting" });
+    expect(box.getAttribute("data-state")).toBe("indeterminate");
+    await user.click(box);
+    expect(onSelectAll).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Collapse" }));
+    expect(onCollapse).toHaveBeenCalledWith(true);
+    expect(screen.getByRole("button", { name: "Expand" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Lighting actions" }));
+    expect(await screen.findByText("Rename")).toBeTruthy();
+  });
+
+  it("phone: a hairline head with a subtotal and the menu", async () => {
+    mobile.value = true;
+    render(<LineRowSection section={{ ...section, amount: 1200 }} columns={columns} />);
+    const head = document.querySelector("[data-section-id='s']")!;
+    expect(head.tagName).toBe("DIV");
+    expect(head.textContent).toContain("$1,200");
+    expect(screen.getByRole("button", { name: "Lighting actions" })).toBeTruthy();
+  });
+
+  it("collapsed is controllable", () => {
+    render(<table><tbody><LineRowSection section={section} columns={columns} collapsed /></tbody></table>);
+    expect(screen.getByRole("button", { name: "Expand" })).toBeTruthy();
   });
 });

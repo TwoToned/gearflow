@@ -40,6 +40,12 @@ describe("warehouse job rows", () => {
     expect(row.flags).toEqual([{ label: "Short 2", tone: "error" }]);
     expect(buildJobSections([li({})], ctx({ query: "zzz" }))).toEqual([]);
   });
+  it("a bulk line in Pick AND Prepped shows each stage's own count, not quantity", () => {
+    const unit = { id: "u", ordinal: 0, assetId: null, bulkAssetId: "b", quantity: 4, status: "CONFIRMED", prepStatus: "PACKED", containerId: null, asset: null, bulkAsset: null };
+    const bulk = li({ quantity: 10, bulkAssetId: "b", units: [unit] });
+    expect(buildJobRow(bulk, ctx()).facts.qty).toEqual({ kind: "qty", value: 6 });
+    expect(buildJobRow(bulk, ctx({ stage: "prepped" })).facts.qty).toEqual({ kind: "qty", value: 4 });
+  });
   it("an unpacked accessory of a packed parent offers Pack n with parent", () => {
     const acc = li({ id: "acc", childKind: "ACCESSORY", isKitChild: true, quantity: 4, model: { name: "AA battery" }, accessoryInclusion: "DEFAULT" });
     const row = buildJobRow(li({ prepStatus: "PACKED", childLineItems: [acc] }), ctx({ stage: "prepped" }));

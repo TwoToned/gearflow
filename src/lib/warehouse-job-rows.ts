@@ -5,7 +5,7 @@
  * never read "Prepped" (§1.1).
  */
 import {
-  accessoryChildrenOf, isInCheckedOutStage, isInDeprepedStage, isInPickPrepStage, isInPreppedStage, isInReturnedStage,
+  accessoryChildrenOf, bulkStageUnitCount, isBulkItem, isInCheckedOutStage, isInDeprepedStage, isInPickPrepStage, isInPreppedStage, isInReturnedStage,
   modelDisplayName, resolveItemContainerId, type LineItem,
 } from "@/components/warehouse/warehouse-types";
 import { deriveItemStage, type WarehouseStageKey } from "@/components/warehouse/warehouse-stages";
@@ -35,6 +35,18 @@ export interface JobRowsCtx {
 }
 
 export interface JobSection { section: LineRowSectionData; rows: LineRowData[]; key: string }
+
+/**
+ * Units of `li` that sit in `stage`. A bulk line stays ONE row through its whole
+ * life, so it can be in Pick and Prepped at once: the row's qty is the stage
+ * count, never `li.quantity` (the old tabs' per-stage `unitCount`).
+ */
+export function stageQuantity(li: LineItem, stage: JobStage): number {
+  if (!isBulkItem(li)) return li.quantity;
+  if (stage === "out") return Math.max(li.checkedOutQuantity - li.returnedQuantity, 0);
+  const countStage = { pick: "prep", prepped: "prepped", returned: "returned", deprepped: "depreped" } as const;
+  return bulkStageUnitCount(li, countStage[stage]);
+}
 
 function glyphsFor(li: LineItem, ctx: JobRowsCtx): StateGlyph[] {
   const out: StateGlyph[] = [];
@@ -99,7 +111,7 @@ export function buildJobRow(li: LineItem, ctx: JobRowsCtx, packWithParent: (acce
   return {
     id: li.id, kind: kindOf(li), title: modelDisplayName(li), tags: tagsOf(li),
     glyphs: glyphsFor(li, ctx), flags: flagsFor(li, ctx),
-    facts: { qty: { kind: "qty", value: li.quantity }, ...(place ? { place: { kind: "place" as const, label: place } } : {}) },
+    facts: { qty: { kind: "qty", value: stageQuantity(li, ctx.stage) }, ...(place ? { place: { kind: "place" as const, label: place } } : {}) },
     status: stageStatus(ctx.stage),
     children: children.length ? children : undefined,
   };

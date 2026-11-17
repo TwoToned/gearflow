@@ -630,7 +630,7 @@ export function resolveSelectionToUnitIds(
 
 /** Per-unit count of a bulk line that is actionable in a stage: units still to
  *  pick (`prep`), packed-and-waiting (`prepped`), else the whole quantity. */
-function bulkStageUnitCount(item: LineItem, countStage?: UnitCountStage): number {
+export function bulkStageUnitCount(item: LineItem, countStage?: UnitCountStage): number {
   if (countStage === "prep") return bulkUnpackedRemaining(item);
   if (countStage === "prepped") return bulkPackedWaiting(item);
   if (countStage === "returned") {

@@ -23,7 +23,7 @@ export function StatusWord({
       {...props}
       data-intent={status.intent}
       data-outline={status.outline ? "true" : undefined}
-      className={cn("inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] font-medium", className)}
+      className={cn("inline-flex items-center gap-1.5 whitespace-nowrap text-table-cell font-medium", className)}
     >
       <span
         aria-hidden="true"

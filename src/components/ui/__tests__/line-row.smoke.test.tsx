@@ -100,10 +100,32 @@ describe("LineRow", () => {
     expect(document.querySelector("table")).toBeNull();
     const card = document.querySelector("[data-row-id='b']")!;
     expect(card.textContent).toContain("2");
-    expect(card.textContent).toContain("$10.00");
+    expect(card.textContent).toContain("$10");
+    expect(card.textContent).not.toContain("$10.00"); // no cents in lists
     const more = screen.getAllByRole("button", { name: /actions$/ })[0];
     expect(more.className).toContain("size-10");
     expect(screen.getAllByRole("checkbox")[0].className).toContain("[&>span]:size-[22px]");
     await waitFor(() => expect(screen.getAllByRole("button", { name: /actions$/ })).toHaveLength(3));
+  });
+
+  it("desktop money is whole dollars; blank money is a dash", () => {
+    render(<Harness />);
+    expect(screen.getByText("$10")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
+  });
+
+  it("phone: a blank money fact is skipped in the subtitle, not shown as a dash", () => {
+    mobile.value = true;
+    render(<Harness />);
+    expect(document.querySelector("[data-row-id='a']")!.textContent).not.toContain("—");
+  });
+
+  it("a flag never wraps or shrinks beside a truncating title", () => {
+    mobile.value = true;
+    render(<Harness />);
+    const flag = screen.getByText("Short 2");
+    expect(flag.className).toContain("whitespace-nowrap");
+    expect(flag.className).toContain("shrink-0");
+    expect(flag.parentElement!.querySelector("span.truncate, a.truncate")).toBeTruthy();
   });
 });

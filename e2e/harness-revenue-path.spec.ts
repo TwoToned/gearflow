@@ -235,9 +235,9 @@ test.describe("harness: primary revenue path", () => {
       await expect(addDialog.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
       await expect(addDialog.getByText(/overbook/i)).toHaveCount(0);
 
-      await page.getByRole("button", { name: "Add to project" }).click();
+      await page.getByRole("button", { name: "Add to job" }).click();
       // The dialog closes on a successful add.
-      await expect(page.getByRole("button", { name: "Add to project" })).toBeHidden();
+      await expect(page.getByRole("button", { name: "Add to job" })).toBeHidden();
     });
 
     await test.step("check the gear out through the warehouse pipeline (flow 8)", async () => {
@@ -255,7 +255,7 @@ test.describe("harness: primary revenue path", () => {
       // enough to hang the whole test on a swallowed click if the dialog
       // reopens between the previous check and this click — exactly what
       // happened in CI (the "Prepped" tab click itself was unprotected).
-      await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Pick/ }));
+      await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^To pick/ }));
       await clickRacingAssignDialog(page, page.locator("table thead").getByRole("checkbox"));
       await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Prep( \(\d+\))?$/ }));
       await resolveAssignAssetsDialogIfPresent(page);
@@ -265,17 +265,17 @@ test.describe("harness: primary revenue path", () => {
       await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Deploy/ }));
       await resolveAssignAssetsDialogIfPresent(page);
 
-      await expect(page.getByRole("tab", { name: /^Deployed \(1\)/ })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /^Out \(1\)/ })).toBeVisible();
     });
 
     await test.step("return the gear (flow 9)", async () => {
-      await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Deployed/ }));
+      await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Out/ }));
       await clickRacingAssignDialog(page, page.locator("table thead").getByRole("checkbox"));
       // Condition defaults to "Good" — happy path needs no extra input.
       await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Return/ }));
 
       await expect(page.getByRole("tab", { name: /^Returned \(1\)/ })).toBeVisible();
-      await expect(page.getByRole("tab", { name: /^Deployed \(0\)/ })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /^Out \(0\)/ })).toBeVisible();
     });
   });
 });

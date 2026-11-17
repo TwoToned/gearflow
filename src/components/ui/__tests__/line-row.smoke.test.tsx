@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { LineRowList, LineRowSection } from "@/components/ui/line-row";
+import { LineRowList, LineRowSection, visibleRowIds, type LineRowListSection } from "@/components/ui/line-row";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
 import type { FactColumn, LineRowData } from "@/lib/primitives/types";
 
@@ -226,5 +226,67 @@ describe("LineRowSection", () => {
   it("collapsed is controllable", () => {
     render(<table><tbody><LineRowSection section={section} columns={columns} collapsed /></tbody></table>);
     expect(screen.getByRole("button", { name: "Expand" })).toBeTruthy();
+  });
+});
+
+describe("LineRowList sections", () => {
+  beforeEach(() => {
+    mobile.value = false;
+  });
+  const mk = (id: string): LineRowData => ({ id, kind: "gear", title: `Item ${id}`, facts: { qty: { kind: "qty", value: 1 } } });
+  const secs: LineRowListSection[] = [
+    { section: { id: "s1", title: "Lighting", count: 2 }, rows: [mk("a"), mk("b")] },
+    { section: { id: "s2", title: "Sound", count: 1 }, rows: [mk("c")] },
+  ];
+
+  function SecHarness() {
+    const [owned] = React.useState<ReadonlySet<string>>(new Set());
+    const ids = visibleRowIds(secs, owned);
+    const selection = useRowSelection(ids);
+    return (
+      <>
+        <span data-testid="count">{selection.count}</span>
+        <LineRowList sections={secs} columns={columns} selection={selection} />
+      </>
+    );
+  }
+
+  it("one table, one header row, each section head followed by its rows in DOM order", () => {
+    render(<SecHarness />);
+    expect(document.querySelectorAll("table")).toHaveLength(1);
+    expect(document.querySelectorAll("thead tr")).toHaveLength(1);
+    const order = [...document.querySelectorAll("tbody tr")].map((r) => r.getAttribute("data-section-id") ?? r.getAttribute("data-row-id"));
+    expect(order).toEqual(["s1", "a", "b", "s2", "c"]);
+  });
+
+  it("collapsing hides only that section's rows", async () => {
+    const user = userEvent.setup();
+    render(<SecHarness />);
+    await user.click(within(document.querySelector("[data-section-id='s1']") as HTMLElement).getByRole("button", { name: "Collapse" }));
+    expect(document.querySelector("[data-row-id='a']")).toBeNull();
+    expect(document.querySelector("[data-row-id='c']")).toBeTruthy();
+  });
+
+  it("shift-range selects across a section boundary", async () => {
+    const user = userEvent.setup();
+    render(<SecHarness />);
+    await user.click(screen.getByRole("checkbox", { name: "Select Item b" }));
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("checkbox", { name: "Select Item c" }));
+    await user.keyboard("{/Shift}");
+    expect(screen.getByTestId("count").textContent).toBe("2");
+  });
+
+  it("visibleRowIds skips collapsed sections (controlled and list-owned)", () => {
+    expect(visibleRowIds([{ ...secs[0], collapsed: true }, secs[1]])).toEqual(["c"]);
+    expect(visibleRowIds(secs, new Set(["s2"]))).toEqual(["a", "b"]);
+  });
+
+  it("phone: section heads and rows in one list, in order", () => {
+    mobile.value = true;
+    render(<SecHarness />);
+    expect(document.querySelector("table")).toBeNull();
+    const order = [...document.querySelectorAll("[data-section-id], [data-row-id]")].map((r) => r.getAttribute("data-section-id") ?? r.getAttribute("data-row-id"));
+    expect(order).toEqual(["s1", "a", "b", "s2", "c"]);
   });
 });

@@ -62,7 +62,7 @@ describe("RowEditorSheet", () => {
   });
 
   it("a blank price is blank, never $0: total is a dash and the patch clears with null", async () => {
-    const { onSave } = open();
+    const { onSave } = open({ initial: { quantity: 2, unitPrice: 100 } });
     const price = await screen.findByLabelText("Price");
     await userEvent.clear(price);
     expect(screen.getByLabelText("Total").textContent).toBe("—");
@@ -97,5 +97,68 @@ describe("RowEditorSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "More actions" }));
     await userEvent.click(await screen.findByRole("button", { name: "Duplicate line" }));
     expect(act).toHaveBeenCalledTimes(1);
+  });
+
+  it("percent is bounded to 0-100 and a dollar discount can't exceed the line total", async () => {
+    const { onSave } = open({ initial: { quantity: 1, unitPrice: 200 } });
+    const discount = await screen.findByLabelText("Discount");
+    await userEvent.type(discount, "250");
+    expect(await screen.findByText("Discount can't be more than the line total")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
+    await userEvent.click(screen.getByRole("radio", { name: "Percent" }));
+    expect(await screen.findByText("Discount must be between 0 and 100%")).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("an invalid quantity says why", async () => {
+    open();
+    const qty = await screen.findByLabelText("Quantity");
+    await userEvent.clear(qty);
+    await userEvent.type(qty, "0");
+    expect(await screen.findByText("Quantity must be at least 1")).toBeTruthy();
+  });
+
+  it("stored % discount: qty change re-resolves the percentage; $ discount with qty change sends no discount key", async () => {
+    const pct = open({ initial: { quantity: 1, unitPrice: 100, discount: 33.33, discountMode: "%" } });
+    await userEvent.click(await screen.findByRole("button", { name: "Increase quantity" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(pct.onSave).toHaveBeenCalledTimes(1));
+    expect(pct.onSave).toHaveBeenCalledWith({ quantity: 2, discount: 66.66, discountMode: "%" });
+    cleanup();
+    const dollar = open({ initial: { quantity: 1, unitPrice: 100, discount: 33.33, discountMode: "$" } });
+    await userEvent.click(await screen.findByRole("button", { name: "Increase quantity" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(dollar.onSave).toHaveBeenCalledTimes(1));
+    expect(dollar.onSave.mock.calls[0][0]).toEqual({ quantity: 2 });
+  });
+
+  it("changing only the price on a $ discount row leaves the discount out of the patch", async () => {
+    const { onSave } = open({ initial: { quantity: 1, unitPrice: 100, discount: 33.33 } });
+    const price = await screen.findByLabelText("Price");
+    await userEvent.clear(price);
+    await userEvent.type(price, "120");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toEqual({ unitPrice: 120 });
+  });
+
+  it("an unpriced line keeps the typed discount when the mode switches, and says why", async () => {
+    open({ initial: { quantity: 1 } });
+    const discount = await screen.findByLabelText("Discount");
+    await userEvent.type(discount, "10");
+    await userEvent.click(screen.getByRole("radio", { name: "Percent" }));
+    expect((screen.getByLabelText("Discount") as HTMLInputElement).value).toBe("10");
+    expect(await screen.findByText("Add a price to use %")).toBeTruthy();
+  });
+
+  it("a rejected save keeps the sheet open, shows the error inline and does not throw", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("Pricing is locked"));
+    const onOpenChange = vi.fn();
+    open({ onSave, onOpenChange });
+    await userEvent.click(await screen.findByRole("button", { name: "Increase quantity" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Pricing is locked")).toBeTruthy();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
   });
 });

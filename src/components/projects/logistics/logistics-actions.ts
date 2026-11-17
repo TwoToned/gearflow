@@ -93,8 +93,9 @@ export function buildBulk(c: ActionsCtx): BulkAction[] {
 }
 
 /** The days on the timeline a service can be moved to, labelled for the menu. */
-export function dayTargetsOf(groups: { key: string }[]): MoveTarget[] {
-  return groups.filter((g) => g.key).map((g) => ({ key: g.key, label: dayLabel(g.key) }));
+export function dayTargetsOf(groups: { key: string; services: unknown[] }[]): MoveTarget[] {
+  // A day that holds only a sub-hire stop is not a place to move a service to.
+  return groups.filter((g) => g.key && g.services.length > 0).map((g) => ({ key: g.key, label: dayLabel(g.key) }));
 }
 
 /** The offer dialog's rows: who gets what, with the advisory clash and the missing-email flag. */

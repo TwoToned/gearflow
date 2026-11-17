@@ -26,6 +26,7 @@ export interface ContentProps {
   crewRow: (a: CrewAssignmentRow) => LineRowData;
   serviceMenu: (s: LogisticsService) => ActionMenuSpec | undefined;
   onOpenService: (s: LogisticsService) => void;
+  onOpenOrder: (subHireId: string) => void;
 }
 
 export function LogisticsContent(p: ContentProps) {
@@ -45,10 +46,11 @@ export function LogisticsContent(p: ContentProps) {
   }
   if (isMobile) {
     return (
-      <DayMode groups={p.groups} day={p.day} onDay={p.onDay} selection={p.selection} menuFor={p.serviceMenu} onOpen={p.onOpenService} />
+      <DayMode groups={p.groups} day={p.day} onDay={p.onDay} selection={p.selection} menuFor={p.serviceMenu} onOpen={p.onOpenService} onOpenOrder={p.onOpenOrder} />
     );
   }
   const byId = new Map(p.groups.flatMap((g) => g.services).map((s) => [s.id, s]));
+  // (`hasServices` already counts sub-hire stops, so a stops-only job still gets its timeline.)
   return (
     <Timeline
       groups={p.groups}
@@ -57,6 +59,7 @@ export function LogisticsContent(p: ContentProps) {
       selection={p.selection}
       loadInDay={p.loadInDay}
       loadOutDay={p.loadOutDay}
+      onOpenOrder={p.onOpenOrder}
     />
   );
 }

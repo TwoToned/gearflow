@@ -5,6 +5,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { LogisticsService } from "@/lib/logistics-model";
+import { mergeStops, subHireStops } from "@/lib/logistics-transport";
 import { serviceActions } from "@/lib/row-actions/service";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
 
@@ -68,8 +69,11 @@ beforeEach(() => {
   writes.gate.pending = null;
 });
 
-function TimelineHarness({ onEdit }: { onEdit?: () => void }) {
-  const groups = groupByDay(services);
+const SH = [{ id: "sh1", supplierId: "sup1", orderNumber: "SH-0007", status: "CONFIRMED", hireStart: Date.UTC(2026, 10, 10), hireEnd: Date.UTC(2026, 10, 14) }];
+const stops = subHireStops(SH, () => "Acme Hire");
+
+function TimelineHarness({ onEdit, onOpenOrder = () => {} }: { onEdit?: () => void; onOpenOrder?: (id: string) => void }) {
+  const groups = mergeStops(groupByDay(services), stops);
   const selection = useRowSelection(groups.flatMap((g) => g.services.map((s) => s.id)));
   return (
     <>
@@ -80,6 +84,7 @@ function TimelineHarness({ onEdit }: { onEdit?: () => void }) {
         selection={selection}
         loadInDay="2026-11-11"
         loadOutDay="2026-11-13"
+        onOpenOrder={onOpenOrder}
         rowFor={(id) => {
           const s = services.find((x) => x.id === id)!;
           return serviceRow(s, { showCost: false, onOpen: onEdit, menu: serviceActions(s, { onEdit, onPickCrew: () => {}, onDelete: () => {} }) });
@@ -109,6 +114,19 @@ describe("Timeline (desktop)", () => {
     expect(items[items.length - 1]).toMatch(/Delete/);
   });
 
+  it("shows sub-hire collect and return stops with no checkbox or money, and opens the order", async () => {
+    const user = userEvent.setup();
+    const onOpenOrder = vi.fn();
+    render(<TimelineHarness onOpenOrder={onOpenOrder} />);
+    expect(screen.getByText(/Collect from Acme Hire/)).toBeTruthy();
+    expect(screen.getByText(/Return to Acme Hire/)).toBeTruthy();
+    // A stop-only day gets a header but no service row, and no new checkboxes.
+    expect(screen.getByRole("heading", { name: /10 Nov/ })).toBeTruthy();
+    expect(screen.getAllByRole("checkbox", { name: /^Select (?!page)/ })).toHaveLength(3);
+    await user.click(screen.getAllByRole("button", { name: "Open order SH-0007" })[0]);
+    expect(onOpenOrder).toHaveBeenCalledWith("sh1");
+  });
+
   it("ticking a row selects it", async () => {
     const user = userEvent.setup();
     render(<TimelineHarness />);
@@ -129,6 +147,7 @@ describe("DayMode (phone)", () => {
         selection={selection}
         menuFor={(s) => serviceActions(s, { onEdit: () => {}, onSetStatus: () => {} })}
         onOpen={() => {}}
+        onOpenOrder={() => {}}
       />
     );
   }

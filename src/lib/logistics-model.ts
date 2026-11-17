@@ -6,6 +6,7 @@
  * these one definitions.
  */
 import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
+import type { TransportStop } from "@/lib/logistics-transport";
 
 export type ServiceType = "DELIVERY" | "PICKUP" | "BUMP_IN" | "BUMP_OUT" | "LABOUR" | "MISC";
 export type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
@@ -136,6 +137,8 @@ export interface DayGroup {
   /** `YYYY-MM-DD`, or "" for unscheduled. */
   key: string;
   services: LogisticsService[];
+  /** Derived sub-hire collect/return stops on this day (`mergeStops`); absent when none. */
+  stops?: TransportStop[];
 }
 
 const timeOf = (s: LogisticsService): string => s.startTime ?? s.scheduledTime ?? "99:99";

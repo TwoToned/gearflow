@@ -18,6 +18,7 @@ import { FooterTotals } from "@/components/ui/footer-totals";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { groupByDay, inLane, needsLine, totalsOf, type LogisticsService } from "@/lib/logistics-model";
+import { mergeStops } from "@/lib/logistics-transport";
 import type { TotalLine } from "@/lib/primitives/types";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
 import { useCanDo, useIsManagerPlus } from "@/lib/use-permissions";
@@ -91,7 +92,9 @@ function useBodyModel(projectId: string, data: Data) {
   const loadOutDay = schedule.loadOut || schedule.rentalEnd;
   const where = whereOf(data.project, site);
 
-  const groups = groupByDay(data.services.filter((s) => inLane(s, ui.lane)));
+  // Sub-hire stops are transport: they ride the All and Transport lanes only.
+  const stops = ui.lane === "all" || ui.lane === "transport" ? data.stops : [];
+  const groups = mergeStops(groupByDay(data.services.filter((s) => inLane(s, ui.lane))), stops);
   const visibleIds = ui.view === "people" ? data.crew.map((a) => a.id) : groups.flatMap((g) => g.services.map((s) => s.id));
   const selection = useRowSelection(visibleIds);
   const { clear, selected } = selection;
@@ -169,7 +172,7 @@ function LogisticsBody({ projectId, data }: { projectId: string; data: Data }) {
         />
         <LogisticsContent
           view={ui.view}
-          hasServices={data.services.length > 0}
+          hasServices={data.services.length > 0 || data.stops.length > 0}
           hasDates={!!m.loadInDay}
           groups={m.groups}
           crew={data.crew}
@@ -183,6 +186,7 @@ function LogisticsBody({ projectId, data }: { projectId: string; data: Data }) {
           crewRow={(a) => crewRow(a, { conflict: data.conflicts[a.id], menu: buildCrewMenu(a, actions), onOpen: () => ui.setAssignmentId(a.id) })}
           serviceMenu={serviceMenu}
           onOpenService={(s) => ui.setEditId(s.id)}
+          onOpenOrder={ui.setOrderId}
         />
         <ListFooter m={m} data={data} />
       </div>

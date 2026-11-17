@@ -21,6 +21,7 @@ import { getStatusIntent, intentStyles } from "@/lib/status-colors";
 import { assignmentStatusLabels } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import { crewText, personName, serviceStatusValue, whereLine } from "./service-rows";
+import { TransportStopRow } from "./transport-stop-row";
 
 export function directionsHref(s: LogisticsService): string | null {
   if (s.latitude == null || s.longitude == null) return null;
@@ -112,8 +113,9 @@ function DayCard({
 }
 
 export function DayMode({
-  groups, day, onDay, selection, menuFor, onOpen,
+  groups, day, onDay, selection, menuFor, onOpen, onOpenOrder,
 }: {
+  onOpenOrder: (subHireId: string) => void;
   groups: DayGroup[];
   day: string;
   onDay: (key: string) => void;
@@ -130,10 +132,11 @@ export function DayMode({
           <DayChip key={g.key || "tbc"} group={g} active={g.key === current.key} onClick={() => onDay(g.key)} />
         ))}
       </div>
-      {current.services.length === 0 && <p className="p-4 text-muted">Nothing on this day.</p>}
+      {current.services.length === 0 && !current.stops?.length && <p className="p-4 text-muted">Nothing on this day.</p>}
       {current.services.map((s) => (
         <DayCard key={s.id} s={s} selection={selection} menu={menuFor(s)} onOpen={() => onOpen(s)} />
       ))}
+      {current.stops?.map((st) => <TransportStopRow key={st.id} stop={st} onOpen={onOpenOrder} />)}
       <DayCrew services={current.services} />
     </div>
   );

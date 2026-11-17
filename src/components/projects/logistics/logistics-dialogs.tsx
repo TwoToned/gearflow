@@ -7,6 +7,7 @@ import { resolveLockCopy } from "@/lib/lock-copy";
 import type { LogisticsService } from "@/lib/logistics-model";
 import { AssignmentDialog, BulkMessageDialog, RequestAvailabilityDialog } from "../crew-dialogs";
 import { CallSheetDialog } from "../call-sheet-dialog";
+import { SubHireOrderDialog } from "../sub-hire-order-dialog";
 import { CloneServicesDialog, CrewMessageDialog, ServiceDialog } from "../service-dialogs";
 import { LogisticsDatesSheet, type ScheduleSnapshot } from "./dates-sheet";
 import type { LogisticsState } from "./logistics-state";
@@ -137,6 +138,9 @@ export function LogisticsDialogs({ p }: { p: DialogsProps }) {
         crewMemberName={ui.messageTarget?.name ?? ""}
       />
       <BulkDelete p={p} />
+      {ui.orderId && (
+        <SubHireOrderDialog projectId={p.projectId} open onOpenChange={(o) => !o && ui.setOrderId(null)} subHireId={ui.orderId} />
+      )}
     </>
   );
 }

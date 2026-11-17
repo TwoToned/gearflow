@@ -11,6 +11,7 @@ import { LineRowList } from "@/components/ui/line-row";
 import { dayLabel, filledOf, crewShort, type DayGroup } from "@/lib/logistics-model";
 import type { FactColumn, LineRowData, RowSelection } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
+import { TransportStopRow } from "./transport-stop-row";
 
 function dayNote(key: string, loadIn: string, loadOut: string): string {
   if (key && key === loadIn && key === loadOut) return "load in and out";
@@ -23,9 +24,11 @@ function DayHeader({ group, note }: { group: DayGroup; note: string }) {
   const live = group.services.filter((s) => s.status !== "CANCELLED");
   const crew = live.reduce((n, s) => n + filledOf(s).length, 0);
   const needed = live.reduce((n, s) => n + crewShort(s), 0);
+  const stops = group.stops?.length ?? 0;
   const counts = [
-    live.length + (live.length === 1 ? " service" : " services"),
+    live.length > 0 || stops === 0 ? live.length + (live.length === 1 ? " service" : " services") : "",
     crew ? crew + " crew" : "",
+    stops ? stops + (stops === 1 ? " sub-hire stop" : " sub-hire stops") : "",
   ].filter(Boolean);
   return (
     <div className="mt-4 flex items-baseline gap-3 first:mt-1">
@@ -40,8 +43,9 @@ function DayHeader({ group, note }: { group: DayGroup; note: string }) {
 }
 
 export function Timeline({
-  groups, rowFor, columns, selection, loadInDay, loadOutDay,
+  groups, rowFor, columns, selection, loadInDay, loadOutDay, onOpenOrder,
 }: {
+  onOpenOrder: (subHireId: string) => void;
   groups: DayGroup[];
   rowFor: (id: string) => LineRowData;
   columns: FactColumn[];
@@ -54,16 +58,19 @@ export function Timeline({
       {groups.map((g, i) => (
         <section key={g.key || "unscheduled"} aria-label={dayLabel(g.key)}>
           <DayHeader group={g} note={dayNote(g.key, loadInDay, loadOutDay)} />
-          <LineRowList
-            rows={g.services.map((s) => rowFor(s.id))}
-            columns={columns}
-            selection={selection}
-            className={cn(
-              "table-fixed",
-              "[&_td:nth-child(3)]:w-36 [&_td:nth-child(4)]:w-44 [&_td:nth-child(5)]:w-28",
-              i > 0 && "[&_thead]:hidden",
-            )}
-          />
+          {g.services.length > 0 && (
+            <LineRowList
+              rows={g.services.map((s) => rowFor(s.id))}
+              columns={columns}
+              selection={selection}
+              className={cn(
+                "table-fixed",
+                "[&_td:nth-child(3)]:w-36 [&_td:nth-child(4)]:w-44 [&_td:nth-child(5)]:w-28",
+                i > 0 && "[&_thead]:hidden",
+              )}
+            />
+          )}
+          {g.stops?.map((st) => <TransportStopRow key={st.id} stop={st} onOpen={onOpenOrder} />)}
         </section>
       ))}
     </div>

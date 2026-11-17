@@ -22,7 +22,9 @@ export function useLogisticsState() {
   const [availOpen, setAvailOpen] = React.useState(false);
   const [messageTarget, setMessageTarget] = React.useState<{ id: string; name: string } | null>(null);
   const [bulkDelete, setBulkDelete] = React.useState<"services" | "crew" | null>(null);
+  const [orderId, setOrderId] = React.useState<string | null>(null);
   return {
+    orderId, setOrderId,
     view, setView, lane, setLane, day, setDay, showCost, setShowCost,
     editId, setEditId, pickId, setPickId, assignmentId, setAssignmentId, offerIds, setOfferIds,
     datesOpen, setDatesOpen, cloneOpen, setCloneOpen, callSheetOpen, setCallSheetOpen,

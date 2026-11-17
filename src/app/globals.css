@@ -160,6 +160,9 @@
 }
 
 @theme inline {
+  /* D68: phone is max-width 859px, so Tailwind's `md` starts at 860px. The TS
+     constant (src/lib/breakpoints.ts) is held in step by breakpoints.test.ts. */
+  --breakpoint-md: 860px;
   /* brand palette → bg-paper, text-ink, border-line-2, text-ok, bg-ok-soft, bg-red… */
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
@@ -387,7 +390,7 @@
 html {
   min-height: calc(100% + env(safe-area-inset-top));
 }
-@media (max-width: 767px) {
+@media (width < theme(--breakpoint-md)) {
   .app-shell {
     position: fixed;
     inset: 0;

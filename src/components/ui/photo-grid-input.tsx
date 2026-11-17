@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AppImage } from "@/components/ui/app-image";
 import { Camera, Loader2, X } from "lucide-react";
+import { PHONE_MAX } from "@/lib/breakpoints";
 
 interface PendingPhoto {
   previewUrl: string;
@@ -175,7 +176,7 @@ export function PhotoGridInput({
           key={url}
           className="relative aspect-square overflow-hidden rounded-md border bg-bg-inset"
         >
-          <AppImage src={url} alt="" fill sizes="(max-width: 768px) 50vw, 200px" className="object-cover" />
+          <AppImage src={url} alt="" fill sizes={`(max-width: ${PHONE_MAX}px) 50vw, 200px`} className="object-cover" />
           <button
             type="button"
             onClick={() => removeExisting(url)}
@@ -199,7 +200,7 @@ export function PhotoGridInput({
               src={photo.previewUrl}
               alt=""
               fill
-              sizes="(max-width: 768px) 50vw, 200px"
+              sizes={`(max-width: ${PHONE_MAX}px) 50vw, 200px`}
               className="object-cover"
             />
             {photo.uploading && (

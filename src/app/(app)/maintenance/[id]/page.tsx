@@ -42,6 +42,7 @@ import {
 } from "@/lib/status-labels";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
+import { PHONE_MAX } from "@/lib/breakpoints";
 
 export default function MaintenanceDetailPage({
   params,
@@ -202,7 +203,7 @@ function MaintenanceDetailContent({
                         rel="noopener noreferrer"
                         className={cn("relative block aspect-square overflow-hidden rounded-[var(--r)] border border-line bg-paper-2 transition-opacity hover:opacity-90", focusRing)}
                       >
-                        <AppImage src={url} alt="" fill sizes="(max-width: 768px) 50vw, 200px" className="object-cover" />
+                        <AppImage src={url} alt="" fill sizes={`(max-width: ${PHONE_MAX}px) 50vw, 200px`} className="object-cover" />
                       </a>
                     ))}
                   </div>

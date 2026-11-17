@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/smart-form";
 import { QuickCreateLocation } from "./quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { PHONE_MAX } from "@/lib/breakpoints";
 
 interface BulkAssetFormProps {
   initialData?: BulkAssetFormValues & { id: string };
@@ -135,7 +136,7 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
               <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
                 {modelImage ? (
-                  <AppImage src={modelImage} alt={modelLabel ?? "Bulk stock"} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
+                  <AppImage src={modelImage} alt={modelLabel ?? "Bulk stock"} fill sizes={`(max-width: ${PHONE_MAX}px) 100vw, 400px`} className="object-cover" />
                 ) : (
                   <Layers className="h-8 w-8 text-muted" strokeWidth={1.5} />
                 )}

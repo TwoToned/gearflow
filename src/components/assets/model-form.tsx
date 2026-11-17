@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/smart-form";
 import { CoachingTip } from "@/components/onboarding/coaching-tip";
 import { useActiveMilestoneKey } from "@/hooks/use-activation-milestones";
+import { PHONE_MAX } from "@/lib/breakpoints";
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   SERIALIZED: "Serialized (tracked individually)",
@@ -162,7 +163,7 @@ export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAss
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
               <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
                 {previewImage ? (
-                  <AppImage src={previewImage} alt={previewName} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
+                  <AppImage src={previewImage} alt={previewName} fill sizes={`(max-width: ${PHONE_MAX}px) 100vw, 400px`} className="object-cover" />
                 ) : (
                   <Package className="h-8 w-8 text-muted" strokeWidth={1.5} />
                 )}

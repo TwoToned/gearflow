@@ -123,8 +123,10 @@ const matches = (li: LineItem, q: string) => !q || modelDisplayName(li).toLowerC
 /** Sections for the active stage: category groups on To pick, case groups (Loose last) afterwards. */
 export function buildJobSections(items: LineItem[], ctx: JobRowsCtx): JobSection[] {
   const q = (ctx.query ?? "").trim().toLowerCase();
-  // Real kit/accessory children hide under their parent; a sub-hire child is its own line (legacy equipmentItems rule).
-  const lines = items.filter((li) => (!li.isKitChild || !isInternalStockLine(li.subHireId)) && IN_STAGE[ctx.stage](li) && matches(li, q));
+  // Real kit/accessory children hide under their parent; only a sub-hire GROUP child (no kitId) is its own
+  // line (legacy equipmentItems rule). A kit child, sub-hired or not, never becomes a selectable top-level
+  // row: kits go through their parent's kit-atomic path.
+  const lines = items.filter((li) => (!li.isKitChild || (!isInternalStockLine(li.subHireId) && !li.kitId)) && IN_STAGE[ctx.stage](li) && matches(li, q));
   const groups = new Map<string, LineItem[]>();
   for (const li of lines) {
     const key = ctx.stage === "pick" ? ctx.categoryOf(li) : (resolveItemContainerId(li) ?? "");

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { keysForRowIds, prepSelectionInfo } from "./warehouse-job-keys";
+import { keysForRowIds, prepRowIds, prepSelectionInfo } from "./warehouse-job-keys";
 import type { LineItem } from "@/components/warehouse/warehouse-types";
 
 const li = (over: Partial<LineItem>): LineItem => ({
@@ -21,6 +21,24 @@ describe("keysForRowIds", () => {
   });
   it("an unknown id passes through", () => {
     expect(keysForRowIds([], ["x"], "pick")).toEqual(["x"]);
+  });
+});
+
+describe("kit children and the prep gate", () => {
+  it("keysForRowIds rejects a real kit child and anything with a kitId child flag", () => {
+    const kitChild = li({ id: "k1", isKitChild: true, kitId: "kit", subHireId: null });
+    const subhireKitChild = li({ id: "k2", isKitChild: true, kitId: "kit", subHireId: "sh" });
+    const subhireGroupChild = li({ id: "k3", isKitChild: true, kitId: null, subHireId: "sh" });
+    expect(keysForRowIds([kitChild, subhireKitChild, subhireGroupChild], ["k1", "k2", "k3"], "pick")).toEqual(["k3"]);
+  });
+  it("a kit PARENT stays selectable (it goes down the kit path)", () => {
+    expect(keysForRowIds([li({ id: "kp", kitId: "kit" })], ["kp"], "pick")).toEqual(["kp"]);
+  });
+  it("prepRowIds never hands a packed parent to the parent verbs", () => {
+    const packed = li({ id: "p1", prepStatus: "PACKED" });
+    const fresh = li({ id: "p2" });
+    expect(prepRowIds([packed, fresh], ["p1", "p2"], "parents")).toEqual(["p2"]);
+    expect(prepRowIds([packed, fresh], ["p1", "p2"], "accessories")).toEqual(["p1"]);
   });
 });
 

@@ -66,7 +66,7 @@ export function TabStrip({
             id={`${idPrefix}-${t.value}`}
             value={t.value}
             className={cn(
-              "relative -mb-px shrink-0 whitespace-nowrap border-b-2 border-transparent py-3 text-[14px] font-medium text-muted",
+              "relative -mb-px shrink-0 whitespace-nowrap border-b-2 border-transparent py-3 text-ui-text font-medium text-muted",
               "[@media(pointer:coarse)]:min-h-11",
               "data-[state=active]:border-ink data-[state=active]:text-ink",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper",

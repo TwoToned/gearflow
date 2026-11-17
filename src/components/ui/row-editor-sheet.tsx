@@ -161,7 +161,7 @@ function Stepper({ value, onChange }: { value: string; onChange: (v: string) => 
         inputMode="numeric"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-16 rounded-[var(--r)] border-2 border-line-2 bg-paper text-center text-[16px] tabular-nums text-ink"
+        className="h-11 w-16 rounded-[var(--r)] border-2 border-line-2 bg-paper text-center text-reading-body tabular-nums text-ink"
       />
       <Button type="button" variant="line" size="icon" aria-label="Increase quantity" onClick={() => bump(1)}>
         <Plus aria-hidden="true" />
@@ -181,7 +181,7 @@ function ModeSwitch({ mode, onChange }: { mode: DiscountMode; onChange: (m: Disc
           aria-checked={mode === m}
           aria-label={m === "$" ? "Dollars" : "Percent"}
           onClick={() => onChange(m)}
-          className={cn("size-11 text-[16px] font-semibold", mode === m ? "bg-ink text-paper" : "text-muted")}
+          className={cn("size-11 text-reading-body font-semibold", mode === m ? "bg-ink text-paper" : "text-muted")}
         >
           {m}
         </button>
@@ -191,7 +191,7 @@ function ModeSwitch({ mode, onChange }: { mode: DiscountMode; onChange: (m: Disc
 }
 
 const fieldInput =
-  "h-11 w-full rounded-[var(--r)] border-2 border-line-2 bg-paper px-3 text-[16px] tabular-nums text-ink placeholder:text-muted";
+  "h-11 w-full rounded-[var(--r)] border-2 border-line-2 bg-paper px-3 text-reading-body tabular-nums text-ink placeholder:text-muted";
 
 function useRowDraft(open: boolean, initial: RowEditorInitial) {
   const [draft, setDraft] = React.useState<Draft>(() => toDraft(initial));
@@ -226,7 +226,7 @@ function AvailabilityNotice({ a }: { a: NonNullable<RowEditorSheetProps["availab
     <div
       role="status"
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-[var(--r)] px-3 py-2 text-[13px]",
+        "flex flex-wrap items-center gap-2 rounded-[var(--r)] px-3 py-2 text-table-cell",
         a.tone === "error" ? "bg-out-soft text-t-out" : "bg-paper-2 text-warn",
       )}
     >
@@ -248,10 +248,10 @@ function DrillIns({ items }: { items: RowEditorDrillIn[] }) {
           <button
             type="button"
             onClick={d.onOpen}
-            className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-[15px] active:bg-paper-2"
+            className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-card-title active:bg-paper-2"
           >
             <span className="flex-1">{d.label}</span>
-            {d.detail ? <span className="text-[13px] text-muted">{d.detail}</span> : null}
+            {d.detail ? <span className="text-table-cell text-muted">{d.detail}</span> : null}
             <ChevronRight className="size-4 text-muted" aria-hidden="true" />
           </button>
         </li>
@@ -299,14 +299,14 @@ export function RowEditorSheet({
 
         {availability ? <AvailabilityNotice a={availability} /> : null}
 
-        <div className="flex items-center justify-between gap-3 text-[14px] font-medium text-ink">
+        <div className="flex items-center justify-between gap-3 text-ui-text font-medium text-ink">
           <span aria-hidden="true">Quantity</span>
           <Stepper value={draft.quantity} onChange={(quantity) => set({ quantity })} />
         </div>
 
         {priceEditable ? (
           <>
-            <label className="flex flex-col gap-1 text-[13px] text-muted">
+            <label className="flex flex-col gap-1 text-table-cell text-muted">
               Price
               <input
                 aria-label="Price"
@@ -318,7 +318,7 @@ export function RowEditorSheet({
               />
             </label>
             <div className="flex items-end gap-2">
-              <label className="flex flex-1 flex-col gap-1 text-[13px] text-muted">
+              <label className="flex flex-1 flex-col gap-1 text-table-cell text-muted">
                 Discount
                 <input
                   aria-label="Discount"
@@ -335,8 +335,8 @@ export function RowEditorSheet({
         ) : null}
 
         <div className="flex items-baseline justify-between border-t border-line pt-3">
-          <span className="text-[13px] text-muted">Total</span>
-          <output aria-label="Total" className="text-[18px] font-semibold tabular-nums text-ink">
+          <span className="text-table-cell text-muted">Total</span>
+          <output aria-label="Total" className="text-section-header font-semibold tabular-nums text-ink">
             {formatCurrency(total)}
           </output>
         </div>

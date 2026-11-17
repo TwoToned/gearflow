@@ -84,17 +84,23 @@ async function validateKitChild(ctx: MutationCtx, a: CommitArgs, parentId: strin
         throw new ConvexError('Verified item is not a kit child');
 }
 
-async function returnVerifiedKitItems(ctx: MutationCtx, a: CommitArgs, common: Common, parentId: string): Promise<string | null> {
+type AutoAdvance = { autoStatus: string | null; autoStatusAuditId: string | null };
+const advance = (r: { autoStatus?: string | null; autoStatusAuditId?: string | null }): AutoAdvance => ({
+    autoStatus: r.autoStatus ?? null,
+    autoStatusAuditId: r.autoStatusAuditId ?? null,
+});
+
+async function returnVerifiedKitItems(ctx: MutationCtx, a: CommitArgs, common: Common, parentId: string): Promise<AutoAdvance> {
     const ids = [...new Set(a.effect.verifiedLineItemIds ?? [])];
     if (!ids.length)
         throw new ConvexError('No verified kit items selected');
     for (const id of ids)
         await validateKitChild(ctx, a, parentId, id);
     const res = await ctx.runMutation(api.warehouseWrites.checkInItems, { ...common, items: ids.map(lineItemId => ({ lineItemId, returnCondition: a.condition, notes: a.notes || undefined })), auditIds: ids.map((_, i) => `${a.operationId}:${i}`) });
-    return res.autoStatus ?? null;
+    return advance(res);
 }
 
-async function commitKit(ctx: MutationCtx, a: CommitArgs, common: Common): Promise<string | null> {
+async function commitKit(ctx: MutationCtx, a: CommitArgs, common: Common): Promise<AutoAdvance> {
     const parent = await validatedKitParent(ctx, a);
     if (a.operation === 'return' && a.effect.kitDecision === 'verified') {
         return await returnVerifiedKitItems(ctx, a, common, parent.id);
@@ -103,9 +109,9 @@ async function commitKit(ctx: MutationCtx, a: CommitArgs, common: Common): Promi
         if (a.operation === 'return' && a.effect.kitDecision !== 'all')
             throw new ConvexError('Kit requires review decision');
         if (a.operation === 'deploy')
-            return (await ctx.runMutation(api.warehouseWrites.checkOutKit, { ...common, kitId: a.effect.kitId!, notes: a.notes || undefined, auditId: a.operationId })).autoStatus ?? null;
+            return advance(await ctx.runMutation(api.warehouseWrites.checkOutKit, { ...common, kitId: a.effect.kitId!, notes: a.notes || undefined, auditId: a.operationId }));
         else
-            return (await ctx.runMutation(api.warehouseWrites.checkInKit, { ...common, kitId: a.effect.kitId!, returnCondition: a.condition, notes: a.notes || undefined, auditId: a.operationId })).autoStatus ?? null;
+            return advance(await ctx.runMutation(api.warehouseWrites.checkInKit, { ...common, kitId: a.effect.kitId!, returnCondition: a.condition, notes: a.notes || undefined, auditId: a.operationId }));
     }
 }
 
@@ -127,7 +133,7 @@ async function validateAccessories(ctx: MutationCtx, a: CommitArgs) {
     }
 }
 
-async function commitLine(ctx: MutationCtx, a: CommitArgs, common: Common): Promise<string | null> {
+async function commitLine(ctx: MutationCtx, a: CommitArgs, common: Common): Promise<AutoAdvance> {
     if (a.effect.accessoryDecision) {
         await validateAccessories(ctx, a);
         if (a.effect.accessoryDecision === 'override')
@@ -137,15 +143,16 @@ async function commitLine(ctx: MutationCtx, a: CommitArgs, common: Common): Prom
     const res = a.operation === 'deploy'
         ? await ctx.runMutation(api.warehouseWrites.checkOutItems, { ...common, items: [item], includeAccessories: true, auditIds: [a.operationId] })
         : await ctx.runMutation(api.warehouseWrites.checkInItems, { ...common, items: [{ ...item, returnCondition: a.condition }], auditIds: [a.operationId] });
-    return res.autoStatus ?? null;
+    return advance(res);
 }
 
 export const commit = mutation({
     args: commitArgs.fields,
-    returns: v.object({ confirmed: v.literal(true), autoStatus: v.optional(v.union(v.string(), v.null())) }),
+    returns: v.object({ confirmed: v.literal(true), autoStatus: v.optional(v.union(v.string(), v.null())), autoStatusAuditId: v.optional(v.union(v.string(), v.null())) }),
     handler: async (ctx, a): Promise<{
         confirmed: true;
         autoStatus?: string | null;
+        autoStatusAuditId?: string | null;
     }> => {
         const userId = await verify(ctx, a);
         validateScan(a);
@@ -161,15 +168,15 @@ export const commit = mutation({
         const common = { orgId: a.orgId, projectId: a.projectId, actor: { userId, userName: userId }, now: Date.now() };
         // Nested mutations are subtransactions of this transaction. Fulfillment, its
         // permission/conflict gates, audit and the receipt either all commit or roll back.
-        let autoStatus: string | null;
+        let adv: AutoAdvance;
         if (a.effect.kitId)
-            autoStatus = await commitKit(ctx, a, common);
+            adv = await commitKit(ctx, a, common);
         else if (a.effect.lineItemId)
-            autoStatus = await commitLine(ctx, a, common);
+            adv = await commitLine(ctx, a, common);
         else
             throw new ConvexError('Scan requires review before committing');
         await ctx.db.insert('scanReceipts', { orgId: a.orgId, userId, projectId: a.projectId, operationId: a.operationId, fingerprint, confirmedAt: Date.now() });
         // The status the server advanced on its own (#1160); omitted when none, and on replay.
-        return autoStatus ? { confirmed: true, autoStatus } : { confirmed: true };
+        return adv.autoStatus ? { confirmed: true, ...adv } : { confirmed: true };
     }
 });

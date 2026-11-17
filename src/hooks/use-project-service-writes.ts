@@ -141,7 +141,7 @@ export function useProjectServiceWrites() {
     shiftSchedule: async (
       projectId: string,
       input: { moves: { offsetDays: number; serviceIds: string[] }[] },
-    ): Promise<{ services: number; crewCalls: number; undated: number }> => {
+    ): Promise<{ services: number; crewCalls: number; undated: number; confirmedMoved: number }> => {
       const p = shiftScheduleSchema.parse(input);
       return shiftM({ projectId, orgId: requireOrg(), ...p, now: Date.now(), actor: actor(), auditId: createId() });
     },

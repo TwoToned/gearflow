@@ -6,7 +6,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
 import { assertArrayMax, assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { MAX_SHIFT_DAYS, MAX_SHIFT_GROUPS, MAX_SHIFT_SERVICES, serviceTypeToPhase, shiftDay } from "./lib/serviceSchedule";
@@ -862,7 +862,9 @@ export const updateServiceNative = mutation({
 // project:update.
 // ─────────────────────────────────────────────────────────────────────────────
 export const shiftScheduleNative = mutation({
-  returns: v.object({ services: v.number(), crewCalls: v.number(), undated: v.number() }),
+  // `confirmedMoved`: moved crew calls whose status is CONFIRMED or OFFERED, i.e. people the
+  // move may surprise. Their status is NOT changed; the caller just tells the operator.
+  returns: v.object({ services: v.number(), crewCalls: v.number(), undated: v.number(), confirmedMoved: v.number() }),
   args: {
     orgId: v.string(),
     projectId: v.string(),
@@ -888,6 +890,8 @@ export const shiftScheduleNative = mutation({
       total += m.serviceIds.length;
     }
     assertNumRange(total, "serviceIds", { max: MAX_SHIFT_SERVICES });
+    // The cap comes from the verified identity: 50 for an agent, 500 for a person (CLAUDE.md).
+    await assertBulkSizeOk(ctx, total);
 
     // Validate everything first: all-or-nothing.
     await requireProjectInOrg(ctx, a.projectId, a.orgId);
@@ -903,9 +907,14 @@ export const shiftScheduleNative = mutation({
         planned.push({ service, offsetDays: m.offsetDays });
       }
     }
-    if (planned.length === 0) return { services: 0, crewCalls: 0, undated: 0 };
+    if (planned.length === 0) return { services: 0, crewCalls: 0, undated: 0, confirmedMoved: 0 };
 
-    let shifted = 0, crewCalls = 0, undated = 0;
+    // PRICING LOCK: deliberately NOT gated. A whole-day shift keeps each service's span, and
+    // crew cost is `rate x (days in span)` (calculateEstimatedCost: no weekday/weekend term),
+    // so the re-sync below rewrites `estimatedCost` to the same number and the recalcs are
+    // date-invariant. Proved across a weekend in convex/shiftSchedule.test.ts. If a date-
+    // sensitive rate is ever added, this must call assertPricingUnlocked first.
+    let shifted = 0, crewCalls = 0, undated = 0, confirmedMoved = 0;
     for (const { service: s, offsetDays } of planned) {
       if (s.date == null) { undated++; continue; }
       const next: ServiceSchedule = {
@@ -915,6 +924,7 @@ export const shiftScheduleNative = mutation({
       };
       await ctx.db.patch(s._id, { date: next.date, endDate: next.endDate, updatedAt: a.now });
       crewCalls += await syncServiceCrewSchedule(ctx, { id: s.id, type: s.type }, a.orgId, next, a.now);
+      confirmedMoved += await countHeldCrew(ctx, s.id, a.orgId);
       shifted++;
     }
 
@@ -928,9 +938,15 @@ export const shiftScheduleNative = mutation({
         metadata: { offsets: a.moves.map((m) => m.offsetDays) },
       });
     }
-    return { services: shifted, crewCalls, undated };
+    return { services: shifted, crewCalls, undated, confirmedMoved };
   },
 });
+
+/** Crew on a service who have said yes (CONFIRMED) or been asked (OFFERED). */
+async function countHeldCrew(ctx: MutationCtx, serviceId: string, orgId: string): Promise<number> {
+  const rows = await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", serviceId)).collect();
+  return rows.filter((r) => r.organizationId === orgId && (r.status === "CONFIRMED" || r.status === "OFFERED")).length;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // deleteServiceNative — full per-service cascade + recalc. Parity: deleteProjectService.

@@ -16,6 +16,9 @@ export interface ContentProps {
   hasDates: boolean;
   groups: DayGroup[];
   crew: CrewAssignmentRow[];
+  /** By person is narrowed to confirmed / offered crew (from the date-move toast). */
+  heldOnly: boolean;
+  onShowAll: () => void;
   selection: RowSelection;
   columns: FactColumn[];
   day: string;
@@ -31,7 +34,19 @@ export interface ContentProps {
 
 export function LogisticsContent(p: ContentProps) {
   const isMobile = useIsMobile();
-  if (p.view === "people") return <PeopleView rows={p.crew} selection={p.selection} rowFor={p.crewRow} />;
+  if (p.view === "people") {
+    return (
+      <>
+        {p.heldOnly && (
+          <p className="mb-2 text-caption text-muted">
+            Showing confirmed and offered crew.{" "}
+            <button type="button" onClick={p.onShowAll} className="text-link">Show all</button>
+          </p>
+        )}
+        <PeopleView rows={p.crew} selection={p.selection} rowFor={p.crewRow} />
+      </>
+    );
+  }
   if (!p.hasServices) {
     return (
       <EmptyState

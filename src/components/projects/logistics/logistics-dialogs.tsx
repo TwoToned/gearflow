@@ -108,6 +108,7 @@ export function LogisticsDialogs({ p }: { p: DialogsProps }) {
         projectStatus={p.projectStatus}
         snapshot={p.schedule}
         services={p.services}
+        onViewHeld={() => { ui.setHeldOnly(true); ui.setView("people"); }}
       />
       <ServiceEditor p={p} />
       <PickCrewSheet

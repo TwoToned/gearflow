@@ -77,7 +77,7 @@ function Field({ id, label, hint, children }: { id: string; label: string; hint?
 }
 
 /** The two writes behind a save, and the one closure that undoes both. */
-function useScheduleMove(projectId: string, orgId: string | undefined, snapshot: ScheduleSnapshot) {
+function useScheduleMove(projectId: string, orgId: string | undefined, snapshot: ScheduleSnapshot, onViewHeld?: () => void) {
   const projectWrites = useProjectWrites(orgId);
   const svcWrites = useProjectServiceWrites();
   const restoreWindow = () => projectWrites.updateSchedule(projectId, schedulePatch(snapshot));
@@ -106,7 +106,13 @@ function useScheduleMove(projectId: string, orgId: string | undefined, snapshot:
     }
     try {
       const shifted = await shift(plan);
-      toast.success(shiftedText(shifted), { action: { label: "Undo", onClick: undo(plan) } });
+      toast.success(shiftedText(shifted), {
+        action: { label: "Undo", onClick: undo(plan) },
+        // Status is NOT changed by a move; this only tells the operator who it touches.
+        ...(shifted?.confirmedMoved && onViewHeld
+          ? { description: plural(shifted.confirmedMoved, "confirmed crew") + " moved to new dates", cancel: { label: "View crew", onClick: onViewHeld } }
+          : {}),
+      });
     } catch (e) {
       toast.error("Dates saved, but the services did not move: " + (e as Error).message, {
         action: { label: "Restore dates", onClick: () => void restoreWindow().then(() => refreshLogistics(projectId)) },
@@ -120,7 +126,7 @@ function useScheduleMove(projectId: string, orgId: string | undefined, snapshot:
 
 const plural = (n: number, w: string) => n + " " + w + (n === 1 ? "" : "s");
 
-function shiftedText(r?: { services: number; crewCalls: number }): string {
+function shiftedText(r?: { services: number; crewCalls: number; confirmedMoved?: number }): string {
   return r ? "Dates moved · " + plural(r.services, "service") + " · " + plural(r.crewCalls, "crew call") : "Dates saved";
 }
 
@@ -182,8 +188,10 @@ function DatesForm({
 }
 
 export function LogisticsDatesSheet({
-  open, onOpenChange, orgId, projectId, projectStatus, snapshot, services,
+  open, onOpenChange, orgId, projectId, projectStatus, snapshot, services, onViewHeld,
 }: {
+  /** Opens By person filtered to confirmed / offered crew (the toast's "View crew"). */
+  onViewHeld?: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orgId: string | undefined;
@@ -193,7 +201,7 @@ export function LogisticsDatesSheet({
   services: LogisticsService[];
 }) {
   const isMobile = useIsMobile();
-  const { apply } = useScheduleMove(projectId, orgId, snapshot);
+  const { apply } = useScheduleMove(projectId, orgId, snapshot, onViewHeld);
   const [saving, setSaving] = React.useState(false);
   const submitted = React.useRef<ScheduleSnapshot>(snapshot);
 

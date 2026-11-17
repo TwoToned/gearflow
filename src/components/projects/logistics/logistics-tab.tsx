@@ -95,7 +95,8 @@ function useBodyModel(projectId: string, data: Data) {
   // Sub-hire stops are transport: they ride the All and Transport lanes only.
   const stops = ui.lane === "all" || ui.lane === "transport" ? data.stops : [];
   const groups = mergeStops(groupByDay(data.services.filter((s) => inLane(s, ui.lane))), stops);
-  const visibleIds = ui.view === "people" ? data.crew.map((a) => a.id) : groups.flatMap((g) => g.services.map((s) => s.id));
+  const crewShown = ui.heldOnly ? data.crew.filter((a) => a.status === "CONFIRMED" || a.status === "OFFERED") : data.crew;
+  const visibleIds = ui.view === "people" ? crewShown.map((a) => a.id) :groups.flatMap((g) => g.services.map((s) => s.id));
   const selection = useRowSelection(visibleIds);
   const { clear, selected } = selection;
   const { view, lane } = ui;
@@ -117,7 +118,7 @@ function useBodyModel(projectId: string, data: Data) {
   });
   usePrintOnArrival(true);
   return {
-    can, w, ui, schedule, site, loadInDay, loadOutDay, where, groups, selection, actions, quick, pageMenu,
+    crewShown, can, w, ui, schedule, site, loadInDay, loadOutDay, where, groups, selection, actions, quick, pageMenu,
     showCost: ui.showCost && isManagerPlus,
   };
 }
@@ -164,7 +165,7 @@ function LogisticsBody({ projectId, data }: { projectId: string; data: Data }) {
         <LogisticsFacts orgId={data.orgId} projectId={projectId} schedule={m.schedule} site={m.site} canEdit={m.can.project} onEditDates={() => ui.setDatesOpen(true)} />
         <LaneBar
           view={ui.view}
-          onView={ui.setView}
+          onView={(v) => { ui.setHeldOnly(false); ui.setView(v); }}
           lane={ui.lane}
           onLane={(l) => { ui.setView("timeline"); ui.setLane(l); }}
           needs={needsLine(totalsOf(data.services))}
@@ -175,7 +176,9 @@ function LogisticsBody({ projectId, data }: { projectId: string; data: Data }) {
           hasServices={data.services.length > 0 || data.stops.length > 0}
           hasDates={!!m.loadInDay}
           groups={m.groups}
-          crew={data.crew}
+          crew={m.crewShown}
+          heldOnly={ui.heldOnly}
+          onShowAll={() => ui.setHeldOnly(false)}
           selection={m.selection}
           columns={logisticsColumns(m.showCost)}
           day={ui.day}

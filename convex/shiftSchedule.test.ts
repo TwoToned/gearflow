@@ -62,7 +62,7 @@ describe("shiftScheduleNative", () => {
     const t = makeT();
     await seed(t);
     const r = await shift(t, {});
-    expect(r).toEqual({ services: 2, crewCalls: 1, undated: 0 });
+    expect(r).toEqual({ services: 2, crewCalls: 1, undated: 0, confirmedMoved: 0 });
     const s1 = await svc(t, "s1");
     expect([s1?.date, s1?.endDate, s1?.startTime]).toEqual([D1 + 2 * DAY, D1 + 3 * DAY, "08:00"]);
     expect((await svc(t, "s2"))?.date).toBe(D1 + 2 * DAY);
@@ -146,7 +146,65 @@ describe("shiftScheduleNative", () => {
   test("offset 0 or no ids is a no-op", async () => {
     const t = makeT();
     await seed(t);
-    expect(await shift(t, { offsetDays: 0 })).toEqual({ services: 0, crewCalls: 0, undated: 0 });
+    expect(await shift(t, { offsetDays: 0 })).toEqual({ services: 0, crewCalls: 0, undated: 0, confirmedMoved: 0 });
     expect((await svc(t, "s1"))?.date).toBe(D1);
+  });
+
+  test("confirmedMoved counts CONFIRMED and OFFERED crew, and leaves their status alone", async () => {
+    const t = makeT();
+    await seed(t);
+    for (const status of ["CONFIRMED", "OFFERED"]) {
+      await t.run(async (ctx) => {
+        const row = await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", "s1")).first();
+        await ctx.db.patch(row!._id, { status } as never);
+      });
+      const r = await shift(t, { serviceIds: ["s1"], offsetDays: 1, auditId: "c-" + status });
+      expect(r.confirmedMoved).toBe(1);
+      expect((await asg(t))[0].status).toBe(status);
+    }
+  });
+
+  test("crew cost and the service totals are date-invariant across a weekend (why no pricing-lock gate)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "cm1")).first();
+      await ctx.db.patch(m!._id, { defaultDayRate: 500 } as never);
+    });
+    // Touch the assignment so its cost is resolved at the current rate, then snapshot.
+    await shift(t, { serviceIds: ["s1"], offsetDays: 0 });
+    await shift(t, { serviceIds: ["s1"], offsetDays: 1, auditId: "w0" });
+    const money = async () => {
+      const s = await svc(t, "s1");
+      const [a] = await asg(t);
+      return [a.estimatedCost, s?.costTotal, s?.lineTotal];
+    };
+    const before = await money();
+    expect(before[0]).toBe(1000); // 2 days x $500: the test is not vacuously comparing zeros
+    // D1 is a Thursday-ish anchor; 3 days crosses a weekend boundary either way.
+    await shift(t, { serviceIds: ["s1"], offsetDays: 3, auditId: "w1" });
+    expect(await money()).toEqual(before);
+    await shift(t, { serviceIds: ["s1"], offsetDays: -4, auditId: "w2" });
+    expect(await money()).toEqual(before);
+  });
+
+  test("an agent is held to the 50-row bulk cap", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("apiKeys", {
+        id: "key_1", organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h",
+        scopes: JSON.stringify(["*"]), isActive: true, actingUserId: USER, createdById: USER,
+      });
+    });
+    const asAgent = { subject: USER, orgId: ORG, akid: "key_1" };
+    const call = (n: number) =>
+      t.withIdentity(asAgent).mutation(api.projectServicesWrites.shiftScheduleNative, {
+        orgId: ORG, projectId: "p1", now: NOW + 1, actor: ACTOR, auditId: "agent" + n,
+        moves: [{ offsetDays: 1, serviceIds: Array.from({ length: n }, (_, i) => `x${i}`) }],
+      } as never);
+    await expect(call(51)).rejects.toThrow(/exceeds the 50-item limit/i);
+    // 50 clears the cap (the ids do not exist, so it then fails on "not found", not on size).
+    await expect(call(50)).rejects.toThrow(/not found/i);
   });
 });

@@ -127,23 +127,25 @@ function resolvedDiscount(d: Draft, qty: number, price: number | undefined, dura
   return resolveDiscountAmount(d.mode, d.discount, gross);
 }
 
+function discountPatch(initial: RowEditorInitial, d: Draft, qty: number, price: number | undefined): RowEditorPatch {
+  const discount = resolvedDiscount(d, qty, price, initial.duration ?? 1) ?? null;
+  const modeChanged = d.mode !== (initial.discountMode === "%" ? "%" : "$");
+  const changed = discount !== (initial.discount ?? null) || (modeChanged && discount != null);
+  return changed ? { discount, discountMode: discount == null ? "$" : d.mode } : {};
+}
+
 /** The patch between the initial row and a valid draft: changed fields only. */
 export function buildRowPatch(
   initial: RowEditorInitial,
   d: Draft,
   parsed: { quantity: number; unitPrice?: number },
 ): RowEditorPatch {
-  const patch: RowEditorPatch = {};
-  if (parsed.quantity !== initial.quantity) patch.quantity = parsed.quantity;
   const price = parsed.unitPrice ?? null;
-  if (price !== (initial.unitPrice ?? null)) patch.unitPrice = price;
-  const discount = resolvedDiscount(d, parsed.quantity, parsed.unitPrice, initial.duration ?? 1) ?? null;
-  const modeChanged = d.mode !== (initial.discountMode === "%" ? "%" : "$");
-  if (discount !== (initial.discount ?? null) || (modeChanged && discount != null)) {
-    patch.discount = discount;
-    patch.discountMode = discount == null ? "$" : d.mode;
-  }
-  return patch;
+  return {
+    ...(parsed.quantity !== initial.quantity ? { quantity: parsed.quantity } : {}),
+    ...(price !== (initial.unitPrice ?? null) ? { unitPrice: price } : {}),
+    ...discountPatch(initial, d, parsed.quantity, parsed.unitPrice),
+  };
 }
 
 function Stepper({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -191,6 +193,73 @@ function ModeSwitch({ mode, onChange }: { mode: DiscountMode; onChange: (m: Disc
 const fieldInput =
   "h-11 w-full rounded-[var(--r)] border-2 border-line-2 bg-paper px-3 text-[16px] tabular-nums text-ink placeholder:text-muted";
 
+function useRowDraft(open: boolean, initial: RowEditorInitial) {
+  const [draft, setDraft] = React.useState<Draft>(() => toDraft(initial));
+  // Re-seed whenever the sheet opens on a (possibly different) row.
+  React.useEffect(() => {
+    if (open) setDraft(toDraft(initial));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed on open only
+  }, [open]);
+
+  const parsed = parseDraft(draft);
+  const duration = initial.duration ?? 1;
+  const data = parsed.success ? parsed.data : null;
+  const total = data
+    ? computeLineTotal(data.unitPrice, data.quantity, duration, resolvedDiscount(draft, data.quantity, data.unitPrice, duration))
+    : null;
+  const patch = data ? buildRowPatch(initial, draft, data) : null;
+  const set = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
+  const switchMode = (to: DiscountMode) => {
+    if (to === draft.mode) return;
+    const gross = lineGrossAmount({
+      unitPrice: data ? data.unitPrice : initial.unitPrice,
+      quantity: data ? data.quantity : initial.quantity,
+      duration,
+    });
+    set({ mode: to, discount: convertDiscountEntry(draft.discount, draft.mode, to, gross) });
+  };
+  return { draft, set, switchMode, total, patch };
+}
+
+function AvailabilityNotice({ a }: { a: NonNullable<RowEditorSheetProps["availability"]> }) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-wrap items-center gap-2 rounded-[var(--r)] px-3 py-2 text-[13px]",
+        a.tone === "error" ? "bg-out-soft text-t-out" : "bg-paper-2 text-warn",
+      )}
+    >
+      <span className="flex-1">{a.message}</span>
+      {a.action ? (
+        <Button type="button" size="sm" variant="line" onClick={a.action.onSelect}>
+          {a.action.label}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function DrillIns({ items }: { items: RowEditorDrillIn[] }) {
+  return (
+    <ul className="-mx-4 border-t border-line">
+      {items.map((d) => (
+        <li key={d.key}>
+          <button
+            type="button"
+            onClick={d.onOpen}
+            className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-[15px] active:bg-paper-2"
+          >
+            <span className="flex-1">{d.label}</span>
+            {d.detail ? <span className="text-[13px] text-muted">{d.detail}</span> : null}
+            <ChevronRight className="size-4 text-muted" aria-hidden="true" />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function RowEditorSheet({
   open,
   onOpenChange,
@@ -204,37 +273,9 @@ export function RowEditorSheet({
   menu,
 }: RowEditorSheetProps) {
   const { formatCurrency } = useFormatters();
-  const [draft, setDraft] = React.useState<Draft>(() => toDraft(initial));
+  const { draft, set, switchMode, total, patch } = useRowDraft(open, initial);
   const [saving, setSaving] = React.useState(false);
-  // Re-seed whenever the sheet opens on a (possibly different) row.
-  React.useEffect(() => {
-    if (open) setDraft(toDraft(initial));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed on open only
-  }, [open]);
-
-  const parsed = parseDraft(draft);
-  const duration = initial.duration ?? 1;
-  const total = parsed.success
-    ? computeLineTotal(
-        parsed.data.unitPrice,
-        parsed.data.quantity,
-        duration,
-        resolvedDiscount(draft, parsed.data.quantity, parsed.data.unitPrice, duration),
-      )
-    : null;
-  const patch = parsed.success ? buildRowPatch(initial, draft, parsed.data) : null;
   const canSave = !!patch && Object.keys(patch).length > 0 && !saving;
-
-  const set = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
-  const switchMode = (to: DiscountMode) => {
-    if (to === draft.mode) return;
-    const gross = lineGrossAmount({
-      unitPrice: parsed.success ? parsed.data.unitPrice : initial.unitPrice,
-      quantity: parsed.success ? parsed.data.quantity : initial.quantity,
-      duration,
-    });
-    set({ mode: to, discount: convertDiscountEntry(draft.discount, draft.mode, to, gross) });
-  };
 
   const save = async () => {
     if (!patch) return;
@@ -256,22 +297,7 @@ export function RowEditorSheet({
           </div>
         ) : null}
 
-        {availability ? (
-          <div
-            role="status"
-            className={cn(
-              "flex flex-wrap items-center gap-2 rounded-[var(--r)] px-3 py-2 text-[13px]",
-              availability.tone === "error" ? "bg-out-soft text-t-out" : "bg-paper-2 text-warn",
-            )}
-          >
-            <span className="flex-1">{availability.message}</span>
-            {availability.action ? (
-              <Button type="button" size="sm" variant="line" onClick={availability.action.onSelect}>
-                {availability.action.label}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+        {availability ? <AvailabilityNotice a={availability} /> : null}
 
         <div className="flex items-center justify-between gap-3 text-[14px] font-medium text-ink">
           <span aria-hidden="true">Quantity</span>
@@ -315,23 +341,7 @@ export function RowEditorSheet({
           </output>
         </div>
 
-        {drillIns?.length ? (
-          <ul className="-mx-4 border-t border-line">
-            {drillIns.map((d) => (
-              <li key={d.key}>
-                <button
-                  type="button"
-                  onClick={d.onOpen}
-                  className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-[15px] active:bg-paper-2"
-                >
-                  <span className="flex-1">{d.label}</span>
-                  {d.detail ? <span className="text-[13px] text-muted">{d.detail}</span> : null}
-                  <ChevronRight className="size-4 text-muted" aria-hidden="true" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        {drillIns?.length ? <DrillIns items={drillIns} /> : null}
 
         <div className="flex gap-2">
           <Button type="button" variant="line" className="flex-1" onClick={() => onOpenChange(false)}>

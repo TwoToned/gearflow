@@ -7,7 +7,7 @@ import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectSubHires, refreshProjectSubHires, useSubHire, refreshSubHire } from "@/hooks/use-project-equipment";
 import { useProjectCategoriesWithGroups } from "@/hooks/use-projects";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreVertical, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, ArrowLeft, MoreHorizontal, AlertTriangle, FolderPlus, ChevronDown, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -811,7 +811,7 @@ function SubHireManageView({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon">
-                <MoreVertical className="h-4 w-4" />
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -1203,7 +1203,7 @@ function SubHireManageView({
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-3 w-3" />
+                              <MoreHorizontal className="h-3 w-3" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -1838,7 +1838,7 @@ function SubHireItemRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon">
-            <MoreVertical className="h-3 w-3" />
+            <MoreHorizontal className="h-3 w-3" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

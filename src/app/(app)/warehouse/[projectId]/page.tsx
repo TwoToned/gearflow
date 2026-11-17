@@ -19,7 +19,7 @@ import {
   PackageOpen,
   Truck,
   ClipboardList,
-  MoreVertical,
+  MoreHorizontal,
   FileText,
   ChevronDown,
   ExternalLink,
@@ -2751,7 +2751,7 @@ function WarehouseProjectPage({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="line" size="icon" className="hidden sm:flex" aria-label="More actions">
-                <MoreVertical className="h-4 w-4" />
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

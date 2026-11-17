@@ -103,6 +103,7 @@ export type RowKind =
   | "sale"
   | "container"
   | "service"
+  | "accessory"
   | "crew"
   | "asset";
 
@@ -141,6 +142,9 @@ export interface LineRowData {
   facts: Record<string, Fact>;
   status?: StatusValue;
   menu?: ActionMenuSpec;
+  /** ONLY for kind "accessory" (§9.5 `Pack n with parent`); never on other kinds
+   *  (playbook §10). One quiet text button; `LineRow` ignores it elsewhere. */
+  primary?: { label: string; onSelect: () => void | Promise<void> };
   /** One level: kit members, accessories, group members, bulk units, crew. 44 px, no actions. */
   children?: LineRowData[];
   /** Whole-row open (desktop: navigate/expand; phone: the RowEditorSheet when editable). */
@@ -148,10 +152,8 @@ export interface LineRowData {
   onOpen?: () => void;
 }
 
-// Not in the type on purpose: spec §5.1's `primary?` per-row button. Playbook
-// §3.4 and §10 rejected per-row buttons everywhere; the one survivor (the
-// warehouse accessory row's `Pack 5 with parent`, §9.5) is added by Phase 3
-// through this file, not invented per surface.
+// `primary` exists for ONE row kind only (the warehouse accessory row, §9.5).
+// Playbook §3.4 and §10 rejected per-row buttons everywhere else.
 
 export interface FactColumn {
   id: string;

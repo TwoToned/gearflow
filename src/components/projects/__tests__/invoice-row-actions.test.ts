@@ -20,7 +20,7 @@ describe("invoiceRowMenuActions", () => {
       handlers(),
     );
     expect(actions.map((a) => a.key)).toEqual(["delete-draft"]);
-    expect(actions[0].destructive).toBe(true);
+    expect(actions[0].danger).toBe(true);
   });
 
   it("hides Delete draft on a DRAFT invoice without invoice:delete", () => {
@@ -48,7 +48,7 @@ describe("invoiceRowMenuActions", () => {
       handlers(),
     );
     expect(actions.map((a) => a.key)).toEqual(["delete-void"]);
-    expect(actions[0].destructive).toBe(true);
+    expect(actions[0].danger).toBe(true);
   });
 
   it("hides Delete permanently on a VOID invoice without invoice:delete", () => {

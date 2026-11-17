@@ -832,6 +832,19 @@ activity text still says "project"/"deployed" (known residue). The phone breakpo
 `PHONE_MAX` = 859 (`src/lib/breakpoints.ts`; Tailwind `md` = 860); the 72px tablet rail at
 <= 1023px is a CSS (`max-lg`) swap in `app-sidebar.tsx`, ⌘B collapse is desktop-only.
 
+### ActionMenu — one row menu, absent-not-disabled, builders in `src/lib/row-actions`
+`ActionMenu` (`src/components/ui/action-menu.tsx`) is the ONLY row/overflow menu: a Radix
+DropdownMenu on desktop, a 48px `BottomSheet` on phone (it replaced `row-actions-menu.tsx`,
+deleted). It renders an `ActionMenuSpec` built by a pure per-row-kind function in
+`src/lib/row-actions/` (`buildGearLineActions` is the first; the project and the warehouse
+share it). Rules: an action that does not apply is **absent** from the spec, never
+`disabled` (there is no such field); `danger` items go last and red and carry a `confirm`
+(rendered with `Dialog`; there is no AlertDialog) unless their handler already opens its own
+dialog; one sub-level via `children`; shortcuts (`kbd`) fire only while the desktop menu is
+open. `trigger` swaps the default ⋯ for any element (`Documents ▾`, a lock glyph). The
+dropdown is `modal={false}` so a confirm Dialog opening as it closes is not click-locked.
+`ConfirmActionMenuItem` is legacy (R-4.4); don't use it in new menus.
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

@@ -276,13 +276,23 @@ Registry components encode these already. Hand-built interactive elements must r
 Always use `PersonAvatar name="…"` for any crew/person display. It derives a deterministic hue from the name hash (one of the 8 module hues, never red) and renders AA-safe initials per the §3.7 on-fill rule. Never hand-pick avatar background colours.
 
 ### Status Indicators
-Registry `StatusIndicator` (when deployed) offers `dot` / `glow` / `inline` variants; `live` state is a pulsing green dot. Until migrated, the app's existing `status-indicator.tsx` (33 consumers) stays — see migration note in the redesign plan.
-- **Dot + Text:** 7px dot with 2px ring glow + status text. For detail views and headers.
-- **Pill:** Compact badge, dot inside. Use `intentStyles` from `status-colors.ts` — NEVER hardcode pill classes.
-- **Live/Active pill:** `bg-primary text-primary-foreground` (solid red) — CHECKED_OUT, ON_SITE, ACCEPTED
-- **Error/Problem pill:** `bg-out-soft text-t-out` (tinted red) — CANCELLED, overdue, conflict
-- **Status encoded by colour AND label, never colour-only** (§3.3 — accessibility)
-- **Never:** Plain colored rectangles, badges without semantic mapping
+_Rewritten per UX unification D91 (2026-11-17)._ Status is a **dot and a word**, never a filled pill: `StatusWord` (`src/components/ui/status-word.tsx`) renders a `StatusValue` (`{ label, intent, outline? }`).
+- **Dot + word:** 7px dot, then the status word in the intent's text colour. Colour AND label always (§3.3), never colour-only.
+- **Colours come only from `intentStyles`** in `status-colors.ts`. Nothing maps a stage to a class itself; a gear stage goes through `gearStageValue(stage)` (words from `vocabulary.ts`, intent from the `gearStage` category).
+- **Out = a red dot** (solid red is reserved for live: CHECKED_OUT, ON_SITE, ACCEPTED). Returned = amber, De-prepped = green, Prepped = blue, To pick = neutral (D2).
+- **Closed is an outline dot** (neutral ring, no fill), the one stage that is not coloured (D2).
+- **Error/problem** is the tinted red intent (`error`: CANCELLED, overdue, conflict), still a dot and a word.
+- **Deprecated:** the filled pill (`StatusIndicator variant="pill"` in `status-indicator.tsx`). The default dot variant of that component now delegates to `StatusWord`; its 46 consumers migrate surface by surface and the pill variant is removed when the last one has (R-4.4).
+- **Never:** filled pills, plain coloured rectangles, badges without a semantic mapping.
+
+### Row primitives (UX unification §5)
+All live in `src/components/ui/`; types in `src/lib/primitives/types.ts`.
+- **`LineRow` / `LineRowList`:** one row for every list. Desktop is a table row with the parent-chosen facts as columns; phone is a 60-64px card (facts folded into the subtitle, first qty/money on the right, 22px checkbox, ⋯ always visible at 40px, D39). Children are 44px with no actions. The whole row opens. Calm: hairlines, no card chrome, flags as dot-words, tags muted mono.
+- **`ActionMenu`:** renders an `ActionMenuSpec` as a dropdown on desktop and a 48px-item `BottomSheet` on phone. Fixed group order, danger last and red, a destructive confirm through `Dialog`, one sub-level, E/M/D shortcuts while open. An action that does not apply is absent from the spec, never disabled. Specs come from builders in `src/lib/row-actions/`.
+- **`StatusWord`:** see Status Indicators.
+- **`StageFilter`:** stage counts as underlined words with mono counts; controlled; scrolls sideways on phone.
+- **State glyphs (`StateGlyphIcon`):** one 18px icon per `StateGlyphKey`, with a tooltip, identical everywhere.
+- **`BottomSheet`:** the one phone sheet (Radix Sheet, 48px items, safe-area inset).
 
 ### Tables
 - **Headers:** `t-overline` (11px/600, **sentence case**), `muted`, no background

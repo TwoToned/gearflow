@@ -14,7 +14,8 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
+import { ActionMenu } from "@/components/ui/action-menu";
+import type { ActionItem } from "@/lib/primitives/types";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useCanDo } from "@/lib/use-permissions";
 import { useProjectVersionWrites, type MakeLiveResult } from "@/hooks/use-project-version-writes";
@@ -39,12 +40,13 @@ function versionRowActions(
   v: ProjectVersionSummary,
   canPublish: boolean,
   handlers: { onMakeLive: () => void; onRename: () => void; onDelete: () => void },
-): RowAction[] {
-  if (!canPublish) return [{ key: "rename", label: "Rename", icon: Pencil, onClick: handlers.onRename }];
-  const actions: RowAction[] = [{ key: "rename", label: "Rename", icon: Pencil, onClick: handlers.onRename }];
+): ActionItem[] {
+  const rename: ActionItem = { key: "rename", label: "Rename", group: "edit", icon: Pencil, onSelect: handlers.onRename };
+  if (!canPublish) return [rename];
+  const actions: ActionItem[] = [rename];
   if (!v.isLive) {
-    actions.unshift({ key: "make-live", label: `Make v${v.number} live`, icon: Sparkles, onClick: handlers.onMakeLive });
-    actions.push({ key: "delete", label: "Delete version", icon: Trash2, onClick: handlers.onDelete, destructive: true });
+    actions.unshift({ key: "make-live", label: `Make v${v.number} live`, group: "organise", icon: Sparkles, onSelect: handlers.onMakeLive });
+    actions.push({ key: "delete", label: "Delete version", group: "danger", icon: Trash2, onSelect: handlers.onDelete, danger: true });
   }
   return actions;
 }
@@ -85,7 +87,7 @@ function VersionRow({
           </span>
         </span>
       </button>
-      <RowActionsMenu actions={actions} label={`v${v.number} actions`} />
+      <ActionMenu spec={{ items: actions }} label={`v${v.number} actions`} />
     </div>
   );
 }

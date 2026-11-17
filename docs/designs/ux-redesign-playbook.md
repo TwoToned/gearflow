@@ -690,7 +690,7 @@ kit's bottom nav then.
   `LPdsNGb4CRMfS6qk7j7Fsa`, Gear lists `D7N5PmXKrkcY2gzZXWeuvc`, Crew planner
   `AKkgWzJ2gVR3dJTWnMB2Ui`, Scan `8Q2HVoRhLbSLz1Q9mCtayX`, Finance hub
   `5VnYTVW2pdA5r1qBRvdrom`, Settings `Q3TeWuQPjzvXbAtmUV8Hg8`, Forms `REMbu5TYg5Nx6iJJoPLuGy`, App shell `B4JAamBGiX6ypauLucopa2`, People records `D8UV81TDFpMEeUBxf2apUX`, Gear records `PDsjUdku2seVZAWfNC6W61`, Schedule `49jbSumcZhVdCU9ZA3nqdm`, Home v2 `RPnGj7WnaWcknvQ8ShcRkf` (replaces v1).
-- **Decisions:** D1–D89 in the main spec §12; the next is D90.
+- **Decisions:** D1–D92 in the main spec §12; the next is D93.
 - **Fixture canon** (keep new prototypes consistent with these): `TODAY` 2026-11-09,
   and 11 Nov is a Tuesday in the fiction (so 9 Nov is a Sunday; print `9 Nov` with no
   weekday). AURA-01 is Reserved on #2341 in LX-02, T&T 12-monthly, last passed 19 Nov

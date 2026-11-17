@@ -14,18 +14,19 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
+import { MODULE_NAMES } from "@/lib/vocabulary";
 import { usePlatformName } from "@/lib/use-platform-name";
 
 /** Map route segments to display names */
 const segmentLabels: Record<string, string> = {
-  dashboard: "Dashboard",
+  dashboard: MODULE_NAMES.home,
   assets: "Assets",
   registry: "Registry",
   models: "Models",
   "sales-stock": "Sales Stock",
-  availability: "Availability",
+  availability: MODULE_NAMES.schedule,
   kits: "Kits",
-  projects: "Projects",
+  projects: MODULE_NAMES.jobs,
   templates: "Templates",
   warehouse: "Warehouse",
   clients: "Clients",
@@ -61,7 +62,7 @@ const segmentLabels: Record<string, string> = {
 
 function getPageTitle(pathname: string): string {
   const segments = pathname.split("/").filter(Boolean);
-  if (segments.length === 0) return "Dashboard";
+  if (segments.length === 0) return MODULE_NAMES.home;
 
   // Build display breadcrumb, skipping ID-like segments
   const parts: string[] = [];
@@ -73,7 +74,7 @@ function getPageTitle(pathname: string): string {
     // Skip ID segments (cuid, uuid, etc.)
   }
 
-  return parts.length > 0 ? parts.join(" / ") : "Dashboard";
+  return parts.length > 0 ? parts.join(" / ") : MODULE_NAMES.home;
 }
 
 export function TopBar({ title }: { title?: string }) {

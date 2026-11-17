@@ -35,9 +35,11 @@ interface MobileNavItem {
   matchPrefix?: string;
 }
 
+import { MODULE_NAMES } from "@/lib/vocabulary";
+
 const navItems: MobileNavItem[] = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/projects", icon: FolderOpen, label: "Jobs" },
+  { href: "/dashboard", icon: LayoutDashboard, label: MODULE_NAMES.home },
+  { href: "/projects", icon: FolderOpen, label: MODULE_NAMES.jobs },
   { href: "/warehouse", icon: Warehouse, label: "Warehouse" },
   { href: "/crew", icon: HardHat, label: "Crew" },
   { href: "/assets/registry", icon: Package, label: "Assets", matchPrefix: "/assets" },

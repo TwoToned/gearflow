@@ -1,5 +1,7 @@
 "use client";
 
+import { MODULE_NAMES } from "@/lib/vocabulary";
+
 import * as React from "react";
 import { useCallback, useState } from "react";
 import Link from "next/link";
@@ -98,9 +100,9 @@ const RAIL: RailItem[] = [
   // now hidden; its widgets live on the customizable dashboard board instead).
   // No `resource` gate: Dashboard never had one, so viewer/warehouse roles
   // keep it without project:read.
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
+  { title: MODULE_NAMES.home, url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
   {
-    title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
+    title: MODULE_NAMES.jobs, url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
     subs: [
       { title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" },
       // WS3 #942 — org-wide hard/pencilled overbooking + crew-gap board.
@@ -113,7 +115,7 @@ const RAIL: RailItem[] = [
   // expiring, never sent, deposit due, outstanding.
   // Gated on `invoice` (same resource the per-project Finance tab uses).
   { title: "Finance", url: "/finance", icon: Landmark, hue: "green", resource: "invoice" },
-  { title: "Schedule", url: "/availability", icon: CalendarRange, hue: "green", resource: "asset" },
+  { title: MODULE_NAMES.schedule, url: "/availability", icon: CalendarRange, hue: "green", resource: "asset" },
   {
     title: "Crew", url: "/crew", icon: HardHat, hue: "purple", resource: "crew",
     subs: [
@@ -399,7 +401,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-line bg-paper-2">
       <SidebarHeader className={cn("border-b border-line", collapsed ? "items-center py-3" : "px-3 py-3.5")}>
-        <Link href="/dashboard" aria-label="RVLT Flow — dashboard" className="flex items-center">
+        <Link href="/dashboard" aria-label="RVLT Flow — home" className="flex items-center">
           {collapsed ? (
             <span className="flex size-9 items-center justify-center rounded-[var(--r)] bg-red shadow-[var(--lit)]">
               <RvltMark className="h-4 w-auto [&_path]:fill-white" />

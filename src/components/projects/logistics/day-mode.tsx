@@ -93,12 +93,21 @@ function DayCard({
           }}
           className="[&>span]:size-[22px]"
         />
-        <span className="t-mono min-w-0 flex-1 text-[18px] font-semibold text-ink">{when || "No time"}</span>
+        {/* The call time leads when there is one; otherwise the NAME is the headline (never "No time"). */}
+        {when ? (
+          <span className="t-mono min-w-0 flex-1 text-[18px] font-semibold text-ink">{when}</span>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-[18px] font-semibold text-ink">{s.title}</span>
+        )}
         <StatusWord status={serviceStatusValue(s)} />
         {menu && <ActionMenu spec={menu} label={s.title + " actions"} />}
       </div>
       <div className="pl-9">
-        <div className="truncate text-ui-text font-medium text-ink">{s.title}</div>
+        {when ? (
+          <div className="truncate text-ui-text font-medium text-ink">{s.title}</div>
+        ) : (
+          <div className="text-caption text-muted">No time set</div>
+        )}
         {whereLine(s) && <div className="truncate text-caption text-muted">{whereLine(s)}</div>}
         {directions && (
           <a href={directions} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-caption text-link">
@@ -154,7 +163,7 @@ function DayCrew({ services }: { services: LogisticsService[] }) {
           <PersonAvatar name={personName(a)} src={a.crewMember.image ?? undefined} className="size-7" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-ui-text text-ink">{personName(a)}</div>
-            <div className="truncate text-caption text-muted">{s.title + " · " + whenText(s)}</div>
+            <div className="truncate text-caption text-muted">{[s.title, whenText(s)].filter(Boolean).join(" · ")}</div>
           </div>
           <StatusWord
             status={{ label: assignmentStatusLabels[a.status] ?? a.status, intent: getStatusIntent("assignment", a.status) }}

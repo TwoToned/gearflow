@@ -9,7 +9,6 @@
  */
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
-import { createPortal } from "react-dom";
 
 import { CanDo } from "@/components/auth/permission-gate";
 import { ActionMenu } from "@/components/ui/action-menu";
@@ -37,14 +36,16 @@ import { useLogisticsData } from "./use-logistics-data";
 import { useLogisticsWrites } from "./use-logistics-writes";
 import { useQuickAdd } from "./use-quick-add";
 
-/** A fixed bar above the phone bottom nav; portaled so a transformed ancestor cannot trap it. */
+/**
+ * Sticks above the phone bottom nav while the tab is in view, but stays IN FLOW: at the
+ * end of the tab it sits under the list instead of floating over whatever comes next
+ * (spec principle 8: nothing floats over content).
+ */
 function StickyAdd({ children }: { children: React.ReactNode }) {
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <div className="fixed inset-x-2 z-30" style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)" }}>
+  return (
+    <div className="sticky z-30 mt-3" style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)" }}>
       {children}
-    </div>,
-    document.body,
+    </div>
   );
 }
 
@@ -53,10 +54,13 @@ function totalLines(
   showCost: boolean,
 ): TotalLine[] {
   if (!summary || summary.serviceCount === 0) return [];
-  const lines: TotalLine[] = [{ label: "On quote", amount: summary.onDocumentsTotal }];
+  // Nothing priced is blank (`—`), never `$0` ("$0 is a PRICE", CLAUDE.md).
+  const blankIfZero = (n: number): number | null => (n > 0 ? n : null);
+  const lines: TotalLine[] = [{ label: "On quote", amount: blankIfZero(summary.onDocumentsTotal) }];
   if (showCost) {
-    lines.push({ label: "Cost", amount: summary.internalTotal });
-    lines.push({ label: "Margin", amount: summary.onDocumentsTotal - summary.internalTotal });
+    const margin = summary.onDocumentsTotal - summary.internalTotal;
+    lines.push({ label: "Cost", amount: blankIfZero(summary.internalTotal) });
+    lines.push({ label: "Margin", amount: summary.onDocumentsTotal > 0 || summary.internalTotal > 0 ? margin : null });
   }
   return lines;
 }

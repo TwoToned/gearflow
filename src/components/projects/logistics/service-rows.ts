@@ -63,6 +63,12 @@ function chargeFact(s: LogisticsService): Fact {
   return { kind: "money", amount: null };
 }
 
+/** The type as a muted tag, unless the title already says it (`Delivery · Delivery` is noise). */
+export function typeTag(s: LogisticsService): string[] | undefined {
+  const word = TYPE_WORDS[s.type];
+  return s.title.trim().toLowerCase() === word.toLowerCase() ? undefined : [word];
+}
+
 function crewChild(a: LogisticsAssignment): LineRowData {
   return {
     id: a.id,
@@ -94,7 +100,7 @@ export function serviceRow(
     kind: "service",
     title: s.title,
     subtitle: whereLine(s) || undefined,
-    tags: [TYPE_WORDS[s.type]],
+    tags: typeTag(s),
     flags: short ? [{ label: `${short} needed`, tone: "error" }] : undefined,
     facts,
     status: serviceStatusValue(s),

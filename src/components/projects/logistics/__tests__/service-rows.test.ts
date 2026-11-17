@@ -32,6 +32,11 @@ describe("serviceRow", () => {
     expect(logisticsColumns(true).map((c) => c.id)).toEqual(["when", "crew", "charge", "cost", "margin", "status"]);
     expect(logisticsColumns(false)).toHaveLength(4);
   });
+  test("the type tag is dropped when the title already says it", () => {
+    expect(serviceRow(svc({ title: "Delivery" }), { showCost: false }).tags).toBeUndefined();
+    expect(serviceRow(svc({ title: "Delivery to Hilton" }), { showCost: false }).tags).toEqual(["Delivery"]);
+  });
+
   test("helpers", () => {
     expect(crewText(svc({ crewCountRequired: null, crewAssignments: [], crewRole: null }))).toBe("no crew");
     expect(whereLine(svc({ address: null, scheduledTime: null, vehicleDescription: null, numberOfTrips: 3 }))).toBe("3 trips");

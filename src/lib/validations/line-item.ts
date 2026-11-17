@@ -97,6 +97,16 @@ export const lineItemSchema = z.object({
 
 export type LineItemFormValues = z.input<typeof lineItemSchema>;
 
+/** The phone RowEditorSheet's fields, derived from `lineItemSchema` (R-8.6.3):
+ *  a blank price/discount parses to `undefined`, never `0` (CLAUDE.md "$0 is a
+ *  PRICE"). */
+export const rowEditorSchema = lineItemSchema.pick({
+  quantity: true,
+  unitPrice: true,
+  discount: true,
+  discountMode: true,
+});
+
 export const customLineItemSchema = z.object({
   description: z.string().min(1, "Name is required").max(200),
   quantity: quantityField,

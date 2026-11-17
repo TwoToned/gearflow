@@ -49,7 +49,7 @@ import { computeInlineSubHireItemInput, type SubHireItemRowLike, type InlineSubH
 import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { BulkEditLineItemsDialog } from "./bulk-edit-line-items-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1693,32 +1693,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       )}
 
       {/* Bulk action bar — appears once one or more line items are selected. */}
-      <BulkActionBar
-        count={selectedLineItemIds.length}
-        onClear={selection.clearSelection}
-      >
-        <Button size="sm" variant="line" onClick={() => setBulkEditOpen(true)}>
-          <Pencil className="mr-2 h-3 w-3" />
-          Edit
-        </Button>
-        <Button size="sm" variant="line" onClick={() => setBulkMoveGroupOpen(true)}>
-          <ArrowLeftRight className="mr-2 h-3 w-3" />
-          Move to group
-        </Button>
-        <Button size="sm" variant="line" onClick={() => setBulkMoveCategoryOpen(true)}>
-          <FolderTree className="mr-2 h-3 w-3" />
-          Move to category
-        </Button>
-        <Button
-          size="sm"
-          variant="line"
-          className="text-destructive"
-          onClick={() => setBulkDeleteOpen(true)}
-        >
-          <Trash2 className="mr-2 h-3 w-3" />
-          Delete
-        </Button>
-      </BulkActionBar>
+      <BulkBar
+        noun="line"
+        selection={{ count: selectedLineItemIds.length, clear: selection.clearSelection }}
+        actions={[
+          { key: "edit", group: "edit", icon: Pencil, label: () => "Edit", onSelect: () => setBulkEditOpen(true) },
+          { key: "move-group", group: "organise", icon: ArrowLeftRight, label: () => "Move to group", onSelect: () => setBulkMoveGroupOpen(true) },
+          { key: "move-category", group: "organise", icon: FolderTree, label: () => "Move to category", onSelect: () => setBulkMoveCategoryOpen(true) },
+          // The surface's own BulkDeleteDialog owns the confirm (it names what stays).
+          { key: "delete", group: "danger", danger: true, icon: Trash2, label: () => "Delete", onSelect: () => setBulkDeleteOpen(true) },
+        ]}
+      />
 
       {/* Equipment list. Desktop renders the full data table; below md the rows
           self-branch into stacked cards (§15) — same data, same handlers, no

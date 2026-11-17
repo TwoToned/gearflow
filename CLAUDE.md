@@ -845,6 +845,19 @@ open. `trigger` swaps the default ⋯ for any element (`Documents ▾`, a lock g
 dropdown is `modal={false}` so a confirm Dialog opening as it closes is not click-locked.
 `ConfirmActionMenuItem` is legacy (R-4.4); don't use it in new menus.
 
+### BulkBar and ScanStrip — two footguns
+`BulkBar` (`src/components/ui/bulk-bar.tsx`, replaced `BulkActionBar`) is the ONE bulk
+surface. On a phone it is **portaled to `<body>`** and pinned above the bottom nav:
+the app-shell `<main>` keeps a lingering `transform` from its page-enter animation, so a
+`fixed` bar left in place resolves against `<main>` and an inline one reflows the list on
+every tap. Don't remove the portal. A verb with no `confirm` fires immediately (the
+surface owns its own dialog, as the three legacy consumers' `BulkDeleteDialog` does).
+
+`ScanStrip`'s `undo` MUST be `AnnouncedWrite.scanUndo` from `announceWarehouseWrite`,
+passed through unchanged: it is the exact guarded closure the toast's Undo calls, so the
+toast and the strip can never disagree about whether an undo fired. The strip calls it
+once per click and adds no guard of its own; never derive a second reverse mutation.
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

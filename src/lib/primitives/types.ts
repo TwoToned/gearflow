@@ -54,6 +54,8 @@ export type RowActionBuilder<Row, Ctx> = (row: Row, ctx: Ctx) => ActionMenuSpec;
 /** A bulk verb. The label carries the count: `Force return 3` (playbook §3.5). */
 export interface BulkAction extends Omit<ActionItem, "label" | "children"> {
   label: (count: number) => string;
+  /** One sub-level (e.g. `Set status ▾`); the count stays in the parent label. */
+  children?: BulkAction[];
 }
 
 export type BulkActionBuilder<Row, Ctx> = (rows: Row[], ctx: Ctx) => BulkAction[];
@@ -160,6 +162,9 @@ export interface FactColumn {
 /** Returned by 1a's `useRowSelection(visibleIds)`; BulkBar (1b) reads it. */
 export interface RowSelection {
   selected: ReadonlySet<string>;
+  isSelected: (id: string) => boolean;
+  /** State of the list header's select-page box. */
+  pageState: "none" | "some" | "all";
   /** Shift extends over the visible range in DOM order. */
   toggle: (id: string, opts?: { shift?: boolean }) => void;
   togglePage: () => void;

@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { OUT_LABEL } from "@/lib/vocabulary";
+import { LOOSE_LABEL, OUT_LABEL } from "@/lib/vocabulary";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -220,8 +220,8 @@ export function ReturnTab({
 
         {checkedOutItems.length === 0 ? (
           <EmptyState
-            title="Nothing out on this project"
-            description="Deployed gear shows here, ready to scan back in."
+            title="Nothing out on this job"
+            description="Gear that is out shows here, ready to scan back in."
           />
         ) : (
           <>
@@ -267,7 +267,7 @@ export function ReturnTab({
                         <TableCell colSpan={5} className="py-1.5">
                           <div className="flex items-center gap-1.5 text-caption font-medium text-muted">
                             <Package className="h-3.5 w-3.5" />
-                            No container
+                            {LOOSE_LABEL}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -625,7 +625,7 @@ export function ReturnTab({
                 {container ? (
                   <ScanContainerHeading label={container} />
                 ) : returnContainerGroups.some((g) => g.container !== null) && (
-                  <ScanContainerHeading label="No container" muted />
+                  <ScanContainerHeading label={LOOSE_LABEL} muted />
                 )}
                 {entries.map((entry) => {
                   if (entry.kind === "serialized-group") {

@@ -36,6 +36,7 @@ import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard, ScanContainerHeading } from "./scan-card";
 import { ScanHistoryStrip } from "./scan-history-strip";
 import type { ScanHistoryRecord } from "@/hooks/use-scan-feedback";
+import { LOOSE_LABEL } from "@/lib/vocabulary";
 
 export interface DeployTabProps {
   /**
@@ -305,7 +306,7 @@ export function DeployTab({
                         <TableCell colSpan={5} className="py-1.5">
                           <div className="flex items-center gap-1.5 text-caption font-medium text-muted">
                             <Package className="h-3.5 w-3.5" />
-                            No container
+                            {LOOSE_LABEL}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -647,7 +648,7 @@ export function DeployTab({
                     }
                   />
                 ) : deployContainerGroups.some((g) => g.container !== null) && (
-                  <ScanContainerHeading label="No container" muted />
+                  <ScanContainerHeading label={LOOSE_LABEL} muted />
                 )}
                 {entries.map((entry) => {
                   if (entry.kind === "serialized-group") {

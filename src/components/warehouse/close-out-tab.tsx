@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 // Sentence-case labels (§5.2) for the exceptions table — the raw enum values
 // (CHECKED_OUT, DAMAGED) must never render directly.
@@ -36,7 +37,7 @@ const STATUS_LABELS: Record<string, string> = {
   QUOTED: "Quoted",
   CONFIRMED: "Confirmed",
   PREPPED: "Prepped",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   RETURNED: "Returned",
   CANCELLED: "Cancelled",
 };
@@ -89,7 +90,7 @@ export function CloseOutTab({
   const closeMutation = useServerMutation({
     mutationFn: () => closeOut(projectId),
     onSuccess: () => {
-      toast.success("Project closed out successfully");
+      toast.success("Job closed out successfully");
       refetch();
       onChanged?.();
       setConfirmStep(0);
@@ -137,7 +138,7 @@ export function CloseOutTab({
         <div className="flex items-center gap-3 rounded-[var(--r)] border-l-[3px] border-l-ok bg-card p-4 ring-1 ring-line">
           <CheckCircle2 className="h-5 w-5 text-ok shrink-0" />
           <div>
-            <p className="text-ui-text font-medium text-ok">Project closed out</p>
+            <p className="text-ui-text font-medium text-ok">Job closed out</p>
             <p className="text-caption text-muted">
               Closed{closedBy ? ` by ${closedBy}` : ""}{closedAt ? ` on ${new Date(closedAt).toLocaleDateString()}` : ""}
             </p>
@@ -291,7 +292,7 @@ export function CloseOutTab({
               disabled={closeMutation.isPending}
             >
               <PackageCheck className="mr-2 h-4 w-4" />
-              Close out project
+              Close out job
             </Button>
           ) : (
             <div className="flex items-center gap-3">

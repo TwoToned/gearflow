@@ -6,6 +6,7 @@ import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import { useCanDo } from "@/lib/use-permissions";
 import { announceWarehouseWrite, countLabel, type AnnouncedWrite } from "@/lib/warehouse-undo-toast";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 type ReturnCondition = "GOOD" | "DAMAGED" | "MISSING";
 
@@ -284,7 +285,7 @@ export function useWarehouseWrites() {
       if (n === 0) return res;
       return announceWarehouseWrite(res, {
         doneTitle: `Checked in ${countLabel(n, "item")}`,
-        undoneTitle: `Undone — ${countLabel(n, "item")} back in Deployed`,
+        undoneTitle: `Undone — ${countLabel(n, "item")} back in ${OUT_LABEL}`,
         canUndo: canUndoReturn,
         performUndo: async () => {
           await unreturnItemsM({
@@ -358,7 +359,7 @@ export function useWarehouseWrites() {
       const kitName = await fetchKitName(kitId);
       return announceWarehouseWrite(res, {
         doneTitle: kitName ? `Checked in kit ${kitName}` : "Checked in kit",
-        undoneTitle: "Undone — kit back in Deployed",
+        undoneTitle: `Undone — kit back in ${OUT_LABEL}`,
         canUndo: canUndoReturn,
         performUndo: async () => {
           await unreturnKitsBatchM({
@@ -389,7 +390,7 @@ export function useWarehouseWrites() {
       if (res.succeeded.length === 0) return res;
       return announceWarehouseWrite(res, {
         doneTitle: `Checked in ${countLabel(res.succeeded.length, "kit")}`,
-        undoneTitle: `Undone — ${countLabel(res.succeeded.length, "kit")} back in Deployed`,
+        undoneTitle: `Undone — ${countLabel(res.succeeded.length, "kit")} back in ${OUT_LABEL}`,
         canUndo: canUndoReturn,
         performUndo: async () => {
           await unreturnKitsBatchM({

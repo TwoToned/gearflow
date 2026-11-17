@@ -12,6 +12,7 @@ import type { LineItemData } from "@/components/projects/equipment-rows";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { focusRing, cn } from "@/lib/utils";
+import { LOOSE_LABEL } from "@/lib/vocabulary";
 
 export interface PackingTabProps {
   projectId: string;
@@ -64,7 +65,7 @@ function PlanLineRow({
           focusRing,
         )}
       >
-        <option value={NOT_PLANNED_VALUE}>Not planned</option>
+        <option value={NOT_PLANNED_VALUE}>{LOOSE_LABEL}</option>
         {containers.map((c) => (
           <option key={c.id} value={c.id}>{c.label}</option>
         ))}
@@ -117,7 +118,7 @@ function BucketSection({
     <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
       <div className="flex items-center gap-1.5 bg-paper-2/60 px-3 py-2 text-caption font-semibold text-ink-2">
         <Package className="h-3.5 w-3.5" />
-        {bucket.label ?? "Not planned"}
+        {bucket.label ?? LOOSE_LABEL}
         <Badge status="neutral" className="ml-auto tabular-nums">{bucket.lines.length}</Badge>
       </div>
       {bucket.lines.map(({ item, categoryName }) => (

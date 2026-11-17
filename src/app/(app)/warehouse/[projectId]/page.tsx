@@ -1,4 +1,5 @@
 "use client";
+import { GEAR_STAGE_LABELS, OUT_LABEL } from "@/lib/vocabulary";
 import { ReviewScanError } from "@/lib/scan-intake";
 // use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
@@ -165,7 +166,7 @@ const statusLabels: Record<string, string> = {
   QUOTED: "Quoted",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
@@ -209,7 +210,7 @@ export default function WarehouseProjectPageWrapper({
 /** The model/asset-tag half of a scan-prep queue entry. */
 const ACCESSORY_STAGE_DONE: Record<AccessoryStageOp, string> = {
   DEPLOY: "Deployed", RETURN: "Returned", DEPREP: "De-prepped",
-  UNDEPLOY: "Moved back to Prepped:", UNRETURN: "Moved back to Deployed:", UNDEPREP: "Re-packed",
+  UNDEPLOY: "Moved back to Prepped:", UNRETURN: `Moved back to ${OUT_LABEL}:`, UNDEPREP: "Re-packed",
 };
 
 function scanQueueIdentity(li: LineItem | undefined) {
@@ -864,7 +865,7 @@ function WarehouseProjectPage({
   const unreturnMutation = useServerMutation({
     mutationFn: (items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) =>
       warehouseWrites.unreturnItems(projectId, items),
-    onSuccess: () => { toast.success("Moved back to Deployed"); invalidate(); },
+    onSuccess: () => { toast.success(`Moved back to ${OUT_LABEL}`); invalidate(); },
     onError: (e) => showError(e),
   });
   const unreturnKitsMutation = useServerMutation<KitBatchResult, string[]>({
@@ -1148,7 +1149,7 @@ function WarehouseProjectPage({
           }
         } else {
           const messages: Record<string, string> = {
-            not_on_project: "Kit not assigned to this project",
+            not_on_project: "Kit not assigned to this job",
             already_checked_out: "Kit already deployed",
           };
           const outcome = messages[kitResult.reason as string] || "Cannot prep this kit";
@@ -1184,8 +1185,8 @@ function WarehouseProjectPage({
           scanFeedback.play("success", { label: memberResult.assetName, outcome: "Verified" });
           toast.success(`Verified: ${memberResult.assetName}`);
         } else {
-          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this project" });
-          toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
+          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this job" });
+          toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this job.`);
         }
         setScanValue("");
         scanInputRef.current?.focus();
@@ -1209,7 +1210,7 @@ function WarehouseProjectPage({
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
           // Asset found but not on this project — resolved but needs a decision
           // (add it?), not a hard failure.
-          scanFeedback.play("exception", { label: result.assetName || "Unknown asset", outcome: "Not on this project" });
+          scanFeedback.play("exception", { label: result.assetName || "Unknown asset", outcome: "Not on this job" });
           // Prompt user to add asset to the project
           setAddPromptData({
             assetName: result.assetName || "Unknown asset",
@@ -1230,10 +1231,10 @@ function WarehouseProjectPage({
             ? new Date(result.ttNextDueDate as unknown as string).toLocaleDateString()
             : "";
         const messages: Record<string, string> = {
-          already_checked_out: "Already deployed on this project",
+          already_checked_out: "Already deployed on this job",
           asset_checked_out_elsewhere: `Already deployed${detail}`,
-          not_on_project: "Asset not assigned to this project",
-          not_checked_out: "Asset is not deployed on this project",
+          not_on_project: "Asset not assigned to this job",
+          not_checked_out: "Asset is not deployed on this job",
           already_returned: "All units already returned",
           asset_unavailable: `Asset is ${assetStatus.replace("_", " ").toLowerCase()} and cannot be deployed`,
           tt_blocked: `Test & Tag ${ttStatus.toLowerCase()}${ttNextDue ? ` — next test due ${ttNextDue}` : ""}. Cannot deploy until tested.`,
@@ -1270,7 +1271,7 @@ function WarehouseProjectPage({
       return wConvex.query(convexApi.scanIntake.verifyContext, { orgId, projectId, expectedUserId: scanSession.user.id, operation });
     },
     async (entry, assertCurrent, save) => {
-      if (!entry.expectedVersionId) throw new Error("Saved scan has no project version. Review before recapturing.");
+      if (!entry.expectedVersionId) throw new Error("Saved scan has no job version. Review before recapturing.");
       if (!entry.effect) {
         // Raw scan, condition and notes are already durable BEFORE this lookup.
         const result = await lookupAssetForScan(entry.projectId, entry.raw.trim(), entry.operation === "deploy" ? "checkout" : "checkin");
@@ -1289,9 +1290,9 @@ function WarehouseProjectPage({
           throw new Error("Kit member: scan the kit barcode. Saved for review.");
         }
         if (result.type === "asset_child") throw new Error("Accessory: scan its parent barcode. Saved for review.");
-        if (!result.lineItemId || result.reason) throw new Error(result.reason || "Item is not actionable on this project");
+        if (!result.lineItemId || result.reason) throw new Error(result.reason || "Item is not actionable on this job");
         const matched = lineItems.find(l => l.id === result.lineItemId);
-        if (!matched) throw new Error("Project data unavailable. Reconnect and review this saved scan.");
+        if (!matched) throw new Error("Job data unavailable. Reconnect and review this saved scan.");
         if (entry.operation === "deploy") {
           if (matched.prepStatus !== "PACKED" || matched.status === "CHECKED_OUT") throw new Error("Item is not prepped or is already deployed");
 
@@ -1310,7 +1311,7 @@ function WarehouseProjectPage({
         throw new ReviewScanError("Review accessories before deploying. Captured scan is saved.");
       if (entry.operation === "return" && entry.effect.kitId && !entry.effect.kitDecision) {
         const matched = lineItems.find(l => l.id === entry.effect!.lineItemId);
-        if (!matched) throw new Error("Kit version data unavailable. Return to its captured project version.");
+        if (!matched) throw new Error("Kit version data unavailable. Return to its captured job version.");
         const ids = collectAllVerifiableIds((matched.childLineItems || []) as LineItem[], "return");
         const verifiedIds = ids.filter(id => verifiedKitItems.has(id));
         setKitConfirm({action:"return",kitName:matched.kit?.name || "Kit",kitId:entry.effect.kitId,parentLineItemId:matched.id,verifiedCount:verifiedIds.length,totalCount:ids.length,verifiedIds,durableOperationId:entry.id});
@@ -2650,7 +2651,7 @@ function WarehouseProjectPage({
     return (
       <RequirePermission resource="warehouse" action="read">
         <div className="rounded-[var(--r)] border-l-[3px] border-l-t-out bg-card p-4 ring-1 ring-line">
-          <p className="text-ui-text font-medium text-ink">Project not found</p>
+          <p className="text-ui-text font-medium text-ink">Job not found</p>
           <p className="text-caption text-muted mt-0.5">
             It may have been removed, or you don&apos;t have access to it.
           </p>
@@ -2743,7 +2744,7 @@ function WarehouseProjectPage({
           <Button variant="line" className="hidden sm:flex" asChild>
             <Link href={`/projects/${projectId}`}>
               <ExternalLink className="mr-2 h-4 w-4" />
-              View project
+              View job
             </Link>
           </Button>
           {/* Desktop: more menu */}
@@ -2792,23 +2793,23 @@ function WarehouseProjectPage({
         <TabsList>
           <TabsTrigger value="pick-prep">
             <ScanBarcode className="mr-1.5 h-4 w-4" />
-            Pick ({pickPrepItems.length})
+            {GEAR_STAGE_LABELS.to_prep} ({pickPrepItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
-            Prepped ({preppedItems.length})
+            {GEAR_STAGE_LABELS.prepped} ({preppedItems.length})
           </TabsTrigger>
           <TabsTrigger value="check-in">
             <Truck className="mr-1.5 h-4 w-4" />
-            Deployed ({checkedOutItems.length})
+            {OUT_LABEL} ({checkedOutItems.length})
           </TabsTrigger>
           <TabsTrigger value="deprep">
             <PackageX className="mr-1.5 h-4 w-4" />
-            Returned ({returnedItems.length})
+            {GEAR_STAGE_LABELS.returned} ({returnedItems.length})
           </TabsTrigger>
           <TabsTrigger value="deprepped">
             <PackageOpen className="mr-1.5 h-4 w-4" />
-            De-prepped ({deprepedItems.length})
+            {GEAR_STAGE_LABELS.deprepped} ({deprepedItems.length})
           </TabsTrigger>
           <TabsTrigger value="close-out">
             <PackageCheck className="mr-1.5 h-4 w-4" />
@@ -3337,7 +3338,7 @@ function WarehouseProjectPage({
       <Dialog open={addPromptOpen} onOpenChange={setAddPromptOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add to project?</DialogTitle>
+            <DialogTitle>Add to job?</DialogTitle>
           </DialogHeader>
           <p className="text-ui-text text-muted">
             <span className="font-medium text-ink">{addPromptData?.assetName}</span>{" "}

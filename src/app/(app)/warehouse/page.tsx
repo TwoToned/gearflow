@@ -296,8 +296,8 @@ export default function WarehousePage() {
       await statusBrowser.updateStatus(id, status);
     },
     onSuccess: (_, { status }) => {
-      const label = status === "CHECKED_OUT" ? "Deployed" : status === "RETURNED" ? "Returned" : "Completed";
-      toast.success(`Project marked as ${label}`);
+      const label = status === "CHECKED_OUT" ? OUT_LABEL : status === "RETURNED" ? "Returned" : "Completed";
+      toast.success(`Job marked as ${label}`);
       refetch();
       setPendingAction(null);
     },
@@ -311,7 +311,7 @@ export default function WarehousePage() {
       const succeeded = r.filter((r) => r.success).length;
       const failed = r.filter((r) => !r.success).length;
       if (failed === 0) {
-        toast.success(`${succeeded} project${succeeded !== 1 ? "s" : ""} closed out`);
+        toast.success(`${succeeded} job${succeeded !== 1 ? "s" : ""} closed out`);
       } else {
         toast.warning(`${succeeded} closed, ${failed} failed`);
       }
@@ -337,7 +337,7 @@ export default function WarehousePage() {
       const next = new Set(prev);
       if (next.has(projectId)) next.delete(projectId);
       else if (next.size < 25) next.add(projectId);
-      else toast.error("Maximum 25 projects per batch close-out");
+      else toast.error("Maximum 25 jobs per batch close-out");
       return next;
     });
   }
@@ -385,7 +385,7 @@ export default function WarehousePage() {
       setPendingAction({
         project,
         targetStatus,
-        warningMessage: `Are you sure you want to mark this project as ${targetStatus === "CHECKED_OUT" ? "Deployed" : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
+        warningMessage: `Are you sure you want to mark this job as ${targetStatus === "CHECKED_OUT" ? OUT_LABEL : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
       });
       return;
     }
@@ -398,7 +398,7 @@ export default function WarehousePage() {
         setPendingAction({
           project,
           targetStatus,
-          warningMessage: `${notCheckedOut} item${notCheckedOut !== 1 ? "s are" : " is"} not yet deployed. Are you sure you want to mark this project as Deployed?`,
+          warningMessage: `${notCheckedOut} item${notCheckedOut !== 1 ? "s are" : " is"} not yet deployed. Are you sure you want to mark this job as Deployed?`,
         });
         return;
       }
@@ -412,7 +412,7 @@ export default function WarehousePage() {
         setPendingAction({
           project,
           targetStatus,
-          warningMessage: `${notReturned} item${notReturned !== 1 ? "s have" : " has"} not been returned yet. Are you sure you want to mark this project as ${targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
+          warningMessage: `${notReturned} item${notReturned !== 1 ? "s have" : " has"} not been returned yet. Are you sure you want to mark this job as ${targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
         });
         return;
       }
@@ -421,7 +421,7 @@ export default function WarehousePage() {
     setPendingAction({
       project,
       targetStatus,
-      warningMessage: `Mark this project as ${targetStatus === "CHECKED_OUT" ? "Deployed" : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
+      warningMessage: `Mark this job as ${targetStatus === "CHECKED_OUT" ? OUT_LABEL : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
     });
   }
 
@@ -466,7 +466,7 @@ export default function WarehousePage() {
               <div className="relative min-w-0 flex-1">
                 <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-lime" />
                 <AssetTagInput
-                  placeholder="Scan a barcode or search project name / number…"
+                  placeholder="Scan a barcode or search job name / number…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onScan={(scanned) => setSearch(scanned)}
@@ -511,7 +511,7 @@ export default function WarehousePage() {
               </span>
               <div>
                 <p className="t-body font-semibold text-ink">Returns station</p>
-                <p className="t-micro text-muted">Everything out, org-wide — scan to return, no project to pick first</p>
+                <p className="t-micro text-muted">Everything out, org-wide — scan to return, no job to pick first</p>
               </div>
             </div>
             <ArrowRight className="h-4 w-4 flex-shrink-0 text-muted" />
@@ -531,7 +531,7 @@ export default function WarehousePage() {
               <StatCell
                 icon={<Truck className="h-4 w-4" />}
                 value={deployedCount}
-                label="Deployed"
+                label={OUT_LABEL}
                 accent="text-red-text"
               />
               <StatCell
@@ -568,8 +568,8 @@ export default function WarehousePage() {
                 <span className="inline-flex items-center gap-1.5">
                   <Undo2 className="h-4 w-4 text-rep" />
                   {selectedForClose.size > 0
-                    ? `${selectedForClose.size} of ${returnedProjects.length} returned project${returnedProjects.length !== 1 ? "s" : ""} selected`
-                    : `${returnedProjects.length} returned project${returnedProjects.length !== 1 ? "s" : ""} ready to close out`}
+                    ? `${selectedForClose.size} of ${returnedProjects.length} returned job${returnedProjects.length !== 1 ? "s" : ""} selected`
+                    : `${returnedProjects.length} returned job${returnedProjects.length !== 1 ? "s" : ""} ready to close out`}
                 </span>
               </label>
               {selectedForClose.size > 0 && (
@@ -601,8 +601,8 @@ export default function WarehousePage() {
               title="The floor is clear"
               description={
                 search
-                  ? "No projects match that scan or search. Clear it to see the full pipeline."
-                  : "Projects land here the moment they're confirmed and ready to prep."
+                  ? "No jobs match that scan or search. Clear it to see the full pipeline."
+                  : "Jobs land here the moment they're confirmed and ready to prep."
               }
             />
           </FadeIn>

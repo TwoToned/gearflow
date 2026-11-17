@@ -58,7 +58,7 @@ export interface PickPrepTabProps {
   selectedContainer: string;
   containers: ContainerRailItem[];
   activeContainerId: ContainerChoice;
-  onSelectContainer: (id: string | null) => void;
+  onSelectContainer: (id: ContainerChoice) => void;
   onNewContainer: () => void;
 
   // Selection

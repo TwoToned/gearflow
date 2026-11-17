@@ -16,3 +16,10 @@ export type ContainerChoice = string | null | undefined;
 export function isLooseChosen(choice: ContainerChoice): boolean {
   return choice === null;
 }
+
+/** The `containerId` fragment of a prep write for a choice. The key is OMITTED
+ *  when nothing is chosen, so the server falls back to the plan; `null` and an
+ *  id are sent as given. Spread it into the write, or read `.containerId`. */
+export function containerArgs(choice: ContainerChoice): { containerId?: string | null } {
+  return choice === undefined ? {} : { containerId: choice };
+}

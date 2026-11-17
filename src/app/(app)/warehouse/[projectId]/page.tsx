@@ -28,7 +28,7 @@ import {
 import { toast } from "sonner";
 import { LabelSubmenu } from "@/components/documents/label-submenu";
 import { showError } from "@/lib/show-error";
-import type { ContainerChoice } from "@/lib/warehouse-container-choice";
+import { containerArgs, type ContainerChoice } from "@/lib/warehouse-container-choice";
 import { focusRing } from "@/lib/utils";
 import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/warehouse-check-policy";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
@@ -270,7 +270,7 @@ function WarehouseProjectPage({
   // Deploy/Return/De-prep sectioning (buildContainerGroups) resolves a real
   // containerId to its current label through this map.
   const containerLabelById = useMemo(() => new Map(realContainers.map((c) => [c.id, c.label])), [realContainers]);
-  const handleSelectContainer = useCallback((id: string | null) => {
+  const handleSelectContainer = useCallback((id: ContainerChoice) => {
     setActiveContainerId(id);
     setSelectedContainer(id ? realContainers.find((c) => c.id === id)?.label ?? "" : "");
   }, [realContainers]);
@@ -580,7 +580,7 @@ function WarehouseProjectPage({
             assetId: i.assetId || undefined,
             quantity: i.quantity,
             prepContainer: selectedContainer || null,
-            containerId: activeContainerId,
+            ...containerArgs(activeContainerId),
             includeAccessoryIds: i.includeAccessoryIds,
           })),
         )
@@ -789,7 +789,7 @@ function WarehouseProjectPage({
         scanInputRef.current?.focus();
       } else {
         // No checks — prep directly
-        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null, undefined, activeContainerId)
+        prepItemDirect(projectId, li.id, li.assetId || undefined, undefined, selectedContainer || null, undefined, containerArgs(activeContainerId).containerId)
           .then(() => {
             toast.success(`Added and prepped: ${assetName}`);
             invalidate();
@@ -1020,7 +1020,7 @@ function WarehouseProjectPage({
       lineItemId: target.lineItemId,
       assetId: target.assetId || undefined,
       prepContainer: selectedContainer || null,
-      containerId: activeContainerId,
+      ...containerArgs(activeContainerId),
       includeAccessoryIds: opts.includeAccessoryIds,
       accessoriesOnly: true,
     }]);
@@ -1031,7 +1031,7 @@ function WarehouseProjectPage({
 
   async function prepScanDirect(target: ScanPrepTarget, name: string, opts: ScanPrepOpts) {
     // No check items — prep directly (set prepStatus=PACKED, no deploy)
-    await prepItemDirect(projectId, target.lineItemId, target.assetId || undefined, undefined, selectedContainer || null, opts.includeAccessoryIds, activeContainerId);
+    await prepItemDirect(projectId, target.lineItemId, target.assetId || undefined, undefined, selectedContainer || null, opts.includeAccessoryIds, containerArgs(activeContainerId).containerId);
     scanFeedback.play("success", { label: name, outcome: "Prepped" });
     toast.success(`Prepped: ${name}`);
   }
@@ -1093,7 +1093,7 @@ function WarehouseProjectPage({
       lineItemId: b.lineItemId,
       assetId: b.assetId || undefined,
       prepContainer: selectedContainer || null,
-      containerId: activeContainerId,
+      ...containerArgs(activeContainerId),
       includeAccessoryIds: b.includeAccessoryIds,
     })))
       .then(() => {
@@ -1881,7 +1881,7 @@ function WarehouseProjectPage({
           lineItemId: bi.lineItemId,
           quantity: bi.quantity,
           prepContainer: selectedContainer || null,
-          containerId: activeContainerId,
+          ...containerArgs(activeContainerId),
         });
       }
 
@@ -1915,7 +1915,7 @@ function WarehouseProjectPage({
           assetId: item.assetId,
           quantity: item.quantity,
           prepContainer: selectedContainer || null,
-          containerId: activeContainerId,
+          ...containerArgs(activeContainerId),
           ...accessoryNarrow,
         });
       }
@@ -2423,7 +2423,7 @@ function WarehouseProjectPage({
         assetId: i.assetId,
         quantity: i.quantity,
         prepContainer: selectedContainer || null,
-        containerId: activeContainerId,
+        ...containerArgs(activeContainerId),
       })),
     )
       .then(() => {
@@ -2440,7 +2440,7 @@ function WarehouseProjectPage({
   const handlePrepAccessoriesOnly = async () => {
     try {
       await ensureContainerIfNeeded();
-      const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId: string | null | undefined; accessoriesOnly: true }> = [];
+      const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId?: ContainerChoice; accessoriesOnly: true }> = [];
       const seen = new Set<string>();
       for (const key of selectedPrep) {
         const li = lineItems.find((l) => l.id === key.split(":")[0]);
@@ -2449,7 +2449,7 @@ function WarehouseProjectPage({
         // One entry per packed parent asset — a multi-quantity line has no
         // line-level asset, so its accessories are packed per unit.
         for (const assetId of packedParentAssetIds(li)) {
-          items.push({ lineItemId: li.id, assetId, prepContainer: selectedContainer || null, containerId: activeContainerId, accessoriesOnly: true });
+          items.push({ lineItemId: li.id, assetId, prepContainer: selectedContainer || null, ...containerArgs(activeContainerId), accessoriesOnly: true });
         }
       }
       if (items.length === 0) {
@@ -3555,7 +3555,7 @@ function WarehouseProjectPage({
                       item.assetId ? undefined : 1,
                       selectedContainer || null,
                       undefined,
-                      activeContainerId,
+                      containerArgs(activeContainerId).containerId,
                     );
                   } else if (item.fromDeprep) {
                     // completeCheckAndDeprep tolerates an empty checks[] (it
@@ -3597,7 +3597,7 @@ function WarehouseProjectPage({
                     assetId: item.assetId,
                     bulkAssetId: item.bulkAssetId,
                     prepContainer: selectedContainer || null,
-                    containerId: activeContainerId,
+                    ...containerArgs(activeContainerId),
                     checks,
                     includeAccessoryIds: item.includeAccessoryIds,
                   });
@@ -3670,7 +3670,7 @@ function WarehouseProjectPage({
                     assetId: checkFormData.assetId,
                     bulkAssetId: checkFormData.bulkAssetId,
                     prepContainer: selectedContainer || null,
-                    containerId: activeContainerId,
+                    ...containerArgs(activeContainerId),
                     checks,
                     includeAccessoryIds: checkFormData.includeAccessoryIds,
                   });

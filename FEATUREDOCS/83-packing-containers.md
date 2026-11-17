@@ -446,7 +446,7 @@ The warehouse page tracks the packer's choice as a tri-state
 (`ContainerChoice`, `src/lib/warehouse-container-choice.ts`): `undefined` until
 they tap a chip, `null` once they pick Loose, a string for a case. The rail
 highlights Loose only when it is exactly `null`; with nothing chosen no chip is
-active because the plan applies. Before this the page defaulted to `null`, so
+active because the plan applies. Clicking the already-active chip clears the choice back to `undefined`, so a packer can return to "follow the plan" without reloading; the page builds every write's `containerId` through `containerArgs(choice)`, which omits the key when nothing is chosen. Before this the page defaulted to `null`, so
 the plan never applied from the warehouse.
 
 ## Not yet started

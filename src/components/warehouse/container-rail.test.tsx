@@ -69,4 +69,19 @@ describe("ContainerRail smoke", () => {
     expect(checked()).toHaveLength(1);
     expect(checked()[0].textContent).toContain("Loose");
   });
+
+  it("clicking the already-active chip clears the choice back to undefined", () => {
+    const onSelect = vi.fn();
+    const Harness = () => {
+      const [choice, setChoice] = React.useState<string | null | undefined>(undefined);
+      return <ContainerRail containers={containers} activeContainerId={choice} onSelect={(c) => { onSelect(c); setChoice(c); }} onNew={() => {}} />;
+    };
+    render(<Harness />);
+    const checked = () => screen.getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true");
+    fireEvent.click(screen.getByText("Loose"));
+    expect(checked()).toHaveLength(1);
+    fireEvent.click(screen.getByText("Loose"));
+    expect(checked()).toHaveLength(0);
+    expect(onSelect).toHaveBeenLastCalledWith(undefined);
+  });
 });

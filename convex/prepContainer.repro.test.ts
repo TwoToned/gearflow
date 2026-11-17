@@ -173,7 +173,8 @@ describe("prepContainer unit/line split (defect #1, §1.5) — fixed", () => {
   // the packer CHOSE something. These pin the three server-side outcomes.
   const planL1 = (t: T) => t.run(async (ctx) => {
     const l = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "L1")).unique();
-    if (l) await ctx.db.patch(l._id, { plannedContainerId: "c1" });
+    if (!l) throw new Error("seed line L1 missing");
+    await ctx.db.patch(l._id, { plannedContainerId: "c1" });
   });
   const prepL1 = (t: T, extra: { containerId?: string | null }) =>
     t.withIdentity(SERVICE).mutation(api.checkRecordOps.prepItems, {

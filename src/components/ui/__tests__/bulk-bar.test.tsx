@@ -11,6 +11,9 @@ vi.mock("@/hooks/use-mobile", () => ({
   useIsMobile: () => mockIsMobile,
 }));
 
+const showError = vi.fn();
+vi.mock("@/lib/show-error", () => ({ showError: (e: unknown) => showError(e) }));
+
 import { BulkBar, orderBulkActions } from "@/components/ui/bulk-bar";
 
 const act = (key: string, extra: Partial<BulkAction> = {}): BulkAction => ({
@@ -84,5 +87,36 @@ describe("BulkBar", () => {
     await userEvent.click(screen.getByRole("button", { name: /Set status 4/ }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Confirmed 4" }));
     expect(pick).toHaveBeenCalledTimes(1);
+  });
+
+  it("sub-items open as the phone bottom sheet through the one ActionMenu", async () => {
+    mockIsMobile = true;
+    const pick = vi.fn();
+    const status = act("Set status", { children: [act("Confirmed", { onSelect: pick })] });
+    render(<BulkBar selection={{ count: 4, clear: () => {} }} actions={[status]} />);
+    await userEvent.click(screen.getByRole("button", { name: /Set status 4/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Confirmed 4" }));
+    expect(pick).toHaveBeenCalledTimes(1);
+  });
+
+  it("a rejecting verb is surfaced, not left unhandled (plain, confirm and sub-item)", async () => {
+    showError.mockClear();
+    const boom = new Error("nope");
+    const plain = act("Move", { onSelect: vi.fn().mockRejectedValue(boom) });
+    const del = act("Delete", {
+      danger: true,
+      onSelect: vi.fn().mockRejectedValue(boom),
+      confirm: { title: "Delete?", body: "b", confirmLabel: "Delete lines" },
+    });
+    const sub = act("Status", { children: [act("Confirmed", { onSelect: vi.fn().mockRejectedValue(boom) })] });
+    render(<BulkBar selection={{ count: 2, clear: () => {} }} actions={[plain, sub, del]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Move 2" }));
+    await waitFor(() => expect(showError).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: /Status 2/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Confirmed 2" }));
+    await waitFor(() => expect(showError).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByRole("button", { name: "Delete 2" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete lines" }));
+    await waitFor(() => expect(showError).toHaveBeenCalledTimes(3));
   });
 });

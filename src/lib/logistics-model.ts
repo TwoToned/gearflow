@@ -73,7 +73,7 @@ export const TYPE_WORDS: Record<ServiceType, string> = {
 const ISO_DAY = (v: string | null): string => (v ? new Date(v).toISOString().slice(0, 10) : "");
 export const dayKeyOf = ISO_DAY;
 
-export function laneOf(type: ServiceType): Exclude<Lane, "all" | "needs"> {
+function laneOf(type: ServiceType): Exclude<Lane, "all" | "needs"> {
   return TYPE_LANE[type];
 }
 
@@ -91,7 +91,7 @@ export function crewShort(s: LogisticsService): number {
 const countStatus = (s: LogisticsService, status: string): number =>
   s.crewAssignments.filter((a) => a.status === status).length;
 export const toOffer = (s: LogisticsService): number => countStatus(s, "PENDING");
-export const unanswered = (s: LogisticsService): number => countStatus(s, "OFFERED");
+const unanswered = (s: LogisticsService): number => countStatus(s, "OFFERED");
 
 export interface LogisticsTotals {
   services: number;

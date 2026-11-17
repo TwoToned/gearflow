@@ -93,4 +93,3 @@ export const shiftScheduleSchema = z.object({
     )
     .max(MAX_SHIFT_GROUPS),
 });
-export type ShiftScheduleInput = z.input<typeof shiftScheduleSchema>;

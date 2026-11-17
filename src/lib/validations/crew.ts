@@ -138,7 +138,7 @@ export const crewTimeEntrySchema = z.object({
 export type CrewTimeEntryFormValues = z.input<typeof crewTimeEntrySchema>;
 
 /** Most offers one "Send N offers" click may fan out (each is an email). */
-export const MAX_OFFER_BATCH = 100;
+const MAX_OFFER_BATCH = 100;
 
 /** `sendCrewOffers` input: the assignments ticked on the Logistics tab. */
 export const sendCrewOffersSchema = z.object({

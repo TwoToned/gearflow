@@ -4,7 +4,7 @@ import { assignmentStatusLabels } from "@/lib/status-labels";
 import type { ActionItem, ActionMenuSpec, BulkAction, RowActionBuilder } from "@/lib/primitives/types";
 
 /** Every status a crew assignment can be set to, in lifecycle order. */
-export const CREW_STATUSES = ["PENDING", "OFFERED", "ACCEPTED", "DECLINED", "CONFIRMED", "CANCELLED", "COMPLETED"] as const;
+const CREW_STATUSES = ["PENDING", "OFFERED", "ACCEPTED", "DECLINED", "CONFIRMED", "CANCELLED", "COMPLETED"] as const;
 
 export interface CrewActionRow {
   id: string;

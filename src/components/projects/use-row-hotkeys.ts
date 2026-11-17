@@ -10,8 +10,8 @@ import { isShortcutSuppressed } from "./use-row-shortcuts";
  * driven by the row's own `ActionMenu` spec: whatever item carries that `kbd`
  * is what the key runs, so the menu and the hotkey can never disagree. One
  * delegated pointer listener + one window keydown listener for the whole list
- * (the per-row `useRowShortcuts` hook cannot sit inside the primitive's
- * `wrapRow`, which is not a component). Same skip rules as `useRowShortcuts`:
+ * (a per-row hover hook cannot sit inside the primitive's `wrapRow`, which is
+ * not a component). Skip rules are `isShortcutSuppressed`'s:
  * inputs, dialogs, menus and modifier keys are ignored.
  *
  * Spread the returned handlers on the list's wrapper element.

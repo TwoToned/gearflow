@@ -21,7 +21,7 @@ import { isHiddenFromList } from "./equipment-rows";
 import type { SortableMeta } from "./equipment-list-dnd";
 import { lineGrossAmount } from "@/lib/discount-mode";
 import { CommentButton, StageCell, type CommentTarget } from "./equipment-row-extras";
-import { InlineEditableDiscount, InlineEditablePrice, InlineEditableQuantity } from "./line-item-inline-cells";
+import { InlineEditableDiscount, InlineEditablePercent, InlineEditablePrice, InlineEditableQuantity } from "./line-item-inline-cells";
 
 /**
  * Turns the reconstructed Equipment data into `LineRowList` sections (spec
@@ -266,6 +266,22 @@ function subHireChildRow(item: LineItemData, shGroup: SubHireGroupData, c: Ctx):
     flags: model.flags,
     facts: model.facts,
     selectable: false,
+    // These route through updateSubHireItemNative (not lock-gated); discount is a plain 0-100%.
+    cells: {
+      qty: (
+        <InlineEditableQuantity
+          value={item.quantity}
+          onSave={(next, allowOverbook) => c.handlers.inlineUpdate(item, { field: "quantity", value: next, allowOverbook })}
+        />
+      ),
+      unit: <InlineEditablePrice value={num(item.unitPrice)} onSave={(next) => c.handlers.inlineUpdate(item, { field: "unitPrice", value: next })} />,
+      discount: (
+        <InlineEditablePercent
+          value={num(item.discount)}
+          onSave={(next) => c.handlers.inlineUpdate(item, { field: "discountPercent", value: next })}
+        />
+      ),
+    },
     children: childRows(item),
     onOpen: open,
     menu: buildSubHireActions({ title: model.title }, { onEditInOrder: open }),

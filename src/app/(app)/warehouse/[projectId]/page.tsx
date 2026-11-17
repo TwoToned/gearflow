@@ -1,32 +1,35 @@
 "use client";
 import { ReviewScanError } from "@/lib/scan-intake";
 // use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
-import { GEAR_STAGE_LABELS, OUT_LABEL } from "@/lib/vocabulary";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 import { use, useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useNativeWarehouseProject } from "@/hooks/use-native-warehouse";
 import {
-  ScanBarcode,
   ChevronRight,
   ArrowLeft,
-  Printer,
-  PackageCheck,
-  PackageX,
-  PackageOpen,
-  Truck,
-  FileText,
-  ChevronDown,
-  ExternalLink,
   Undo2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { LabelSubmenu } from "@/components/documents/label-submenu";
 import { showError } from "@/lib/show-error";
 import { containerArgs, type ContainerChoice } from "@/lib/warehouse-container-choice";
+import { DetailHeader } from "@/components/ui/detail-header";
+import { warehouseHeaderProps } from "@/lib/warehouse-job-header";
+import { StageCard, stageFromParams, type JobStageKey } from "@/components/warehouse/job/stage-card";
+import { PickStage } from "@/components/warehouse/job/pick-stage";
+import type { PrepHandlers } from "@/components/warehouse/job/prep-split-button";
+import { useWarehouseScan, type ScanActOutcome } from "@/hooks/use-warehouse-scan";
+import { useRowSelection } from "@/lib/primitives/use-row-selection";
+import { buildJobSections, type JobSection } from "@/lib/warehouse-job-rows";
+import type { ScanLookup } from "@/lib/warehouse-scan-classify";
+import type { ActionItem } from "@/lib/primitives/types";
+import { parentAlreadyPrepped } from "@/components/warehouse/warehouse-types";
+import { jobRowIds } from "@/components/warehouse/job/job-table";
+import { keysForRowIds, prepSelectionInfo } from "@/lib/warehouse-job-keys";
 import { focusRing } from "@/lib/utils";
 import { transitionNeedsCheck, lineHasModelChecks } from "@/lib/warehouse-check-policy";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
@@ -38,10 +41,8 @@ import {
 import { useWarehouseWrites, type AccessoryStageOp } from "@/hooks/use-warehouse-writes";
 import { useWarehouseOverbooked } from "@/hooks/use-warehouse-overbooked";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,8 +50,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   Tabs,
-  TabsList,
-  TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
 import {
@@ -75,15 +74,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { CheckFlowSheet } from "@/components/warehouse/job/check-flow-sheet";
@@ -98,15 +88,12 @@ import {
   type ScanCheckMode,
 } from "@/components/warehouse/scan-prep-dialogs";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
-import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
 import { AccessorySelectionContext } from "@/components/warehouse/kit-child-rows";
 import { isRelocatedLineId, relocateAccessories, takeAccessorySelection } from "@/components/warehouse/relocate-accessories";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { ReturnTab } from "@/components/warehouse/return-tab";
-import { WarehouseLifecycle } from "@/components/warehouse/warehouse-lifecycle";
-import { summarizeWarehouseStages } from "@/components/warehouse/warehouse-stages";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
@@ -206,6 +193,11 @@ const ACCESSORY_STAGE_DONE: Record<AccessoryStageOp, string> = {
   UNDEPLOY: "Moved back to Prepped:", UNRETURN: `Moved back to ${OUT_LABEL}:`, UNDEPREP: "Re-packed",
 };
 
+/** The legacy tab each stage still renders (strangler; the stage strip replaced the tab list). */
+const TAB_FOR_STAGE: Record<JobStageKey, string> = {
+  pick: "pick-prep", prepped: "check-out", out: "check-in", returned: "deprep", deprepped: "deprepped", closeout: "close-out",
+};
+
 function scanQueueIdentity(li: LineItem | undefined) {
   return {
     modelId: li?.modelId ?? undefined,
@@ -225,8 +217,17 @@ function WarehouseProjectPage({
 }) {
   const { projectId } = use(params);
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "check-in" ? "check-in" : tabParam === "check-out" ? "check-out" : tabParam === "close-out" ? "close-out" : "pick-prep";
+  const router = useRouter();
+  // The job's stage (spec §9.2): `?stage=` wins, the old `?tab=` deep links alias onto it.
+  const [stage, setStageState] = useState<JobStageKey>(() => stageFromParams(searchParams));
+  const setStage = useCallback((next: JobStageKey) => {
+    setStageState(next);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("tab");
+    url.searchParams.set("stage", next);
+    window.history.replaceState(null, "", url);
+  }, []);
+  const [dockMode, setDockMode] = useState("prep");
   const scanInputRef = useRef<HTMLInputElement>(null);
   const deployScanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
@@ -571,13 +572,14 @@ function WarehouseProjectPage({
     scanInputRef.current?.focus();
   }
 
-  function routeScanPrep(target: ScanPrepTarget) {
+  async function routeScanPrep(target: ScanPrepTarget): Promise<ScanActOutcome> {
     const li = lineItems.find((l) => l.id === target.lineItemId);
+    const name = target.assetName || (li ? modelDisplayName(li) : "Asset");
     if (target.assetId && scanBatch.some((b) => b.lineItemId === target.lineItemId && b.assetId === target.assetId)) {
-      scanFeedback.play("exception", { label: target.assetName || "Asset", outcome: "Already scanned" });
-      toast.info(`${target.assetName || "Asset"} is already in this scan batch`);
+      scanFeedback.play("exception", { label: name, outcome: "Already scanned" });
+      toast.info(`${name} is already in this scan batch`);
       scanFocus();
-      return;
+      return { text: `${name} is already in this scan batch`, tone: "warning" };
     }
     if (li) {
       const options = scanAccessoryOptions(li);
@@ -586,10 +588,10 @@ function WarehouseProjectPage({
           target,
           data: { parentName: modelDisplayName(li), parentPrepped: prepActionAvailability([li.id], [li]).canPrepAccessoriesOnly, options },
         });
-        return;
+        return { text: `${name}: choose which accessories`, tone: "neutral" };
       }
     }
-    void proceedScanPrep(target, {});
+    return proceedScanPrep(target, {});
   }
 
   function decideScanAccessories(prompt: { target: ScanPrepTarget }, d: ScanAccessoryDecision) {
@@ -655,23 +657,29 @@ function WarehouseProjectPage({
     return false;
   }
 
-  async function proceedScanPrep(target: ScanPrepTarget, opts: ScanPrepOpts, modeOverride?: ScanCheckMode) {
+  /** Preps (or defers to a check) and reports the one-line outcome the scan strip shows. */
+  async function proceedScanPrep(target: ScanPrepTarget, opts: ScanPrepOpts, modeOverride?: ScanCheckMode): Promise<ScanActOutcome> {
     const li = lineItems.find((l) => l.id === target.lineItemId);
     const name = target.assetName || (li ? modelDisplayName(li) : "Asset");
     try {
       await ensureContainerIfNeeded();
+      let outcome: ScanActOutcome;
       if (opts.accessoriesOnly) {
         await prepScanAccessoriesOnly(target, name, opts);
+        outcome = { text: `Accessories prepped: ${name}` };
       } else {
         const needsCheck = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) }) && !!li?.modelId;
         const deferred = deferScanPrep(target, name, opts, needsCheck, modeOverride ?? scanCheckMode);
         if (!deferred) await prepScanDirect(target, name, opts);
+        outcome = deferred ? { text: `${name}: prep check to run`, tone: "warning" } : { text: `Prepped: ${name}` };
       }
       scanFocus();
       invalidate();
+      return outcome;
     } catch (e) {
       scanFeedback.play("error", { label: name, outcome: e instanceof Error ? e.message : "Failed to prep" });
       showError(e);
+      return { text: e instanceof Error && e.message ? e.message : "Failed to prep", tone: "error" };
     }
   }
 
@@ -943,26 +951,6 @@ function WarehouseProjectPage({
     if (durableScans.capture("return",raw,returnCondition as "GOOD"|"DAMAGED"|"MISSING",returnNotes)) setReturnScanValue("");
   };
 
-  const handleScanKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && scanValue.trim()) {
-        e.preventDefault();
-        const trimmed = scanValue.trim();
-        const container = matchContainerByTag(trimmed);
-        if (container) {
-          handleSelectContainer(container.id);
-          scanFeedback.play("info", { label: container.label, outcome: "Active container" });
-          toast.info(`Active container: ${container.label}`);
-          setScanValue("");
-          scanInputRef.current?.focus();
-          return;
-        }
-        scanMutation.mutate(trimmed);
-      }
-    },
-    [scanValue, scanMutation, matchContainerByTag, handleSelectContainer, scanFeedback]
-  );
-
   const handleDeployScanKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && deployScanValue.trim()) {
@@ -1163,7 +1151,6 @@ function WarehouseProjectPage({
   });
 
   // Per-stage counts for the lifecycle stepper (Pick/prep → … → De-prepped).
-  const stageCounts = summarizeWarehouseStages(equipmentItems);
 
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
   // Pick/Prep, Deploy, De-prep-staging, De-prepped, and Return tab membership —
@@ -1188,7 +1175,6 @@ function WarehouseProjectPage({
 
   const checkedOutItems = equipmentItems.filter(isInCheckedOutStage);
 
-  const groupedPrep = groupItems(pickPrepItems, "prep", "prep");
   const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");
   // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
   const groupedDeprep = groupItems(returnedItems, "deploy", "returned");
@@ -1260,7 +1246,6 @@ function WarehouseProjectPage({
   };
 
   // Build all selectable keys for pick/prep
-  const allPrepKeys = useMemo(() => selectionKeysForEntries(groupedPrep), [groupedPrep]);
 
   // Build all selectable keys for check-out
   const allOutKeys = useMemo(() => selectionKeysForEntries(groupedOut), [groupedOut]);
@@ -1269,8 +1254,6 @@ function WarehouseProjectPage({
 
   const allInKeys = useMemo(() => selectionKeysForEntries(groupedIn), [groupedIn]);
 
-  const selectedPrepCount = selectedPrep.size;
-  const prepActions = prepActionAvailability(selectedPrep, lineItems);
   const selectedOutCount = selectedOut.size;
   const selectedDeprepCount = selectedDeprep.size;
   const selectedInCount = selectedIn.size;
@@ -1279,7 +1262,7 @@ function WarehouseProjectPage({
   // `withoutAccessories` packs the parents only (`includeAccessoryIds: []`);
   // their accessories stay in Pick/Prep (an accessory parent remains in the
   // stage while any child is unpacked) and a later plain Prep packs them.
-  const handlePrepSelected = async (opts?: { withoutAccessories?: boolean }) => {
+  const handlePrepSelected = async (opts?: { withoutAccessories?: boolean; keys?: Iterable<string> }) => {
     const accessoryNarrow = opts?.withoutAccessories ? { includeAccessoryIds: [] as string[] } : {};
     try {
       // If prepping into a container asset, ensure it's on the project
@@ -1289,7 +1272,7 @@ function WarehouseProjectPage({
       const kitLineItemIds: string[] = [];
       const bulkItems: { lineItemId: string; quantity: number }[] = [];
 
-      for (const key of selectedPrep) {
+      for (const key of opts?.keys ?? selectedPrep) {
         if (key.includes(":")) {
           // Bulk unit key from deploy tab (id:unitIndex)
           const lineItemId = key.split(":")[0];
@@ -2048,12 +2031,12 @@ function WarehouseProjectPage({
   // Pack ONLY the accessories of already-prepped parents. The parent is not
   // re-prepped, and the active container applies to the accessories alone — so
   // batteries can go in the battery box while the beltpacks sit in the pelican.
-  const handlePrepAccessoriesOnly = async () => {
+  const handlePrepAccessoriesOnly = async (keys?: Iterable<string>) => {
     try {
       await ensureContainerIfNeeded();
       const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId?: ContainerChoice; accessoriesOnly: true }> = [];
       const seen = new Set<string>();
-      for (const key of selectedPrep) {
+      for (const key of keys ?? selectedPrep) {
         const li = lineItems.find((l) => l.id === key.split(":")[0]);
         if (!li || !isAccessoryParent(li) || seen.has(li.id)) continue;
         seen.add(li.id);
@@ -2190,6 +2173,105 @@ function WarehouseProjectPage({
     }
   };
 
+  // --- To pick stage (spec §9.2): job table + selection + the one scan pipeline ---
+  const pickSections: JobSection[] = buildJobSections(equipmentItems, {
+    stage: "pick",
+    containerLabelById,
+    categoryOf: (li) => (li.model as { category?: { name?: string } | null } | null)?.category?.name ?? "Equipment",
+    shortById: new Map(Object.entries(overbookedMap).map(([id, o]) => [id, o.overBy])),
+  });
+  const pickSelection = useRowSelection(jobRowIds(pickSections));
+  const prepAndClear = (run: (keys: string[]) => unknown) => {
+    void run(keysForRowIds(lineItems, pickSelection.selected, "pick"));
+    pickSelection.clear();
+  };
+  const pickPrepHandlers: PrepHandlers = {
+    withAccessories: () => prepAndClear((keys) => handlePrepSelected({ keys })),
+    parentOnly: () => prepAndClear((keys) => handlePrepSelected({ keys, withoutAccessories: true })),
+    accessoriesWithParent: () => prepAndClear((keys) => handlePrepAccessoriesOnly(keys)),
+    accessoriesIntoActive: () => prepAndClear((keys) => handlePrepAccessoriesOnly(keys)),
+    choose: () => {
+      const first = lineItems.find((l) => pickSelection.selected.has(l.id) && scanAccessoryOptions(l).length > 0);
+      if (first) void routeScanPrep({ lineItemId: first.id, assetId: first.assetId });
+      pickSelection.clear();
+    },
+    unpackParent: () => {
+      const packed = lineItems.filter((l) => pickSelection.selected.has(l.id) && parentAlreadyPrepped(l)).map((l) => l.id);
+      handleDeprep(new Set(keysForRowIds(lineItems, packed, "prepped")));
+      pickSelection.clear();
+    },
+  };
+  const pickScan = useWarehouseScan({
+    stage: "pick",
+    mode: dockMode === "check" ? "check" : "prep",
+    lookup: (raw) => lookupAssetForScan(projectId, raw, "checkout") as Promise<ScanLookup>,
+    context: () => ({
+      containersByTag: new Map(realContainers.filter((c) => c.tag).map((c) => [c.tag as string, { id: c.id, label: c.label }])),
+      batchKeys: new Set(scanBatch.map((b) => `${b.lineItemId}:${b.assetId}`)),
+      kitOnJob: (kitId) => lineItems.some((l) => l.kitId === kitId && !l.isKitChild),
+    }),
+    setCase: handleSelectContainer,
+    verifyKitMember: (p) => {
+      const kitLi = lineItems.find((l) => l.kitId === p.kitId && !l.isKitChild);
+      if (!kitLi) return;
+      const children = (kitLi.childLineItems || []) as LineItem[];
+      const childLi = children.find((c) => c.assetId === p.assetId)
+        || children.flatMap((c) => (c.childLineItems || []) as LineItem[]).find((c) => c.assetId === p.assetId);
+      if (childLi) setVerifiedKitItems((prev) => new Set(prev).add(childLi.id));
+      setExpandedGroups((prev) => new Set(prev).add(`kit-${kitLi.id}`));
+    },
+    actKit: async (p) => {
+      const kitLi = lineItems.find((l) => l.kitId === p.kitId && !l.isKitChild);
+      const allIds = collectAllVerifiableIds(kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [], "deploy");
+      const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
+      if (allIds.length > 0 && verifiedIds.length < allIds.length) {
+        setKitConfirm({
+          action: "deploy", kitName: p.name, kitId: p.kitId, parentLineItemId: kitLi?.id || p.lineItemId,
+          verifiedCount: verifiedIds.length, totalCount: allIds.length, verifiedIds,
+        });
+        return { text: `${p.name}: confirm unverified items`, tone: "warning" };
+      }
+      if (kitLi && startKitCheckFlow(p.kitId, kitLi, "PREP")) return { text: `${p.name}: prep check to run`, tone: "warning" };
+      if (kitLi) await prepKitChildren(projectId, kitLi.id);
+      invalidate();
+      return { text: `Kit prepped: ${p.name}` };
+    },
+    act: (p) => routeScanPrep({ lineItemId: p.lineItemId, assetId: p.assetId, assetName: p.name }),
+    describe: (p) => ({ text: `${p.name}: on this job (check only, nothing prepped)`, tone: "neutral" }),
+    addAndAct: async (offer) => {
+      setAddPromptData({ assetName: offer.name, modelId: offer.modelId, assetId: offer.assetId, bulkAssetId: offer.bulkAssetId, isBulk: offer.isBulk });
+      setAddPromptOpen(true);
+      return { text: `Confirm adding ${offer.name} to this job`, tone: "neutral" };
+    },
+    isOffline: () => typeof navigator !== "undefined" && !navigator.onLine,
+    play: (kind) => scanFeedback.play(kind),
+  });
+  const NEW_CASE = "__new-case";
+  const caseTarget = {
+    verb: "Prep",
+    current: activeContainerId ? { id: activeContainerId, label: containerLabelById.get(activeContainerId) ?? "Case" } : { id: "", label: "Loose" },
+    options: [{ id: "", label: "Loose" }, ...realContainers.map((c) => ({ id: c.id, label: c.label })), { id: NEW_CASE, label: "New case…" }],
+    onChange: (id: string) => (id === NEW_CASE ? setNewContainerSheetOpen(true) : handleSelectContainer(id || null)),
+  };
+
+  // --- Header (spec §5.9): the page computes the strings, warehouseHeaderProps shapes them ---
+  const baseHeader = warehouseHeaderProps({
+    name: project?.name ?? "",
+    status: project?.status ?? "",
+    statusLabel: statusLabels[project?.status] || project?.status || "",
+    openDocument: (type) => window.open(`/api/documents/${projectId}?type=${type}`, "_blank"),
+    hasContainers: realContainers.length > 0,
+    onViewProject: () => router.push(`/projects/${projectId}`),
+    feedback: scanFeedback,
+  });
+  const openLabels = (query: string) => () => { window.open(`/api/documents/${projectId}?type=${query}`, "_blank"); };
+  const labelItems: ActionItem[] = [
+    ...realContainers.map((c): ActionItem => ({ key: `label-${c.id}`, label: `Case label: ${c.label}`, group: "documents", onSelect: openLabels(`container-label&labelId=${encodeURIComponent(c.id)}`) })),
+    { key: "kit-labels", label: "Kit labels", group: "documents", onSelect: openLabels("kit-label") },
+    { key: "item-labels", label: "Loose item labels", group: "documents", onSelect: openLabels("item-label") },
+  ];
+  const headerProps = { ...baseHeader, documents: { items: [...(baseHeader.documents?.items ?? []), ...labelItems] } };
+
   // --- Shared row renderers ---
   function renderGroupHeader(
     entry: { kind: "serialized-group"; groupKey: string; modelName: string; items: LineItem[] } | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number },
@@ -2285,164 +2367,37 @@ function WarehouseProjectPage({
     <RequirePermission resource="warehouse" action="read">
     <FadeIn>
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Button variant="ghost" size="icon" asChild>
-              <Link href="/warehouse" aria-label="Back to warehouse">
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            </Button>
-            <span className="t-mono text-muted">{project.projectNumber}</span>
-            <StatusIndicator category="project" value={project.status} label={statusLabels[project.status] || project.status} variant="pill" />
-          </div>
-          <h1 className="t-page-title text-ink">{project.name}</h1>
-          {project.client && <p className="text-muted">{project.client.name}</p>}
-        </div>
-        <div className="flex gap-2">
-          {/* Scan audio toggle — shared across prep/deploy/return scan verdicts */}
-          <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
-          {/* Mobile: Pull Slip as secondary */}
-          <Button variant="line" size="icon" className="sm:hidden" aria-label="Print pull slip" onClick={() => window.open(`/api/documents/${projectId}?type=pull-slip`, "_blank")}>
-            <Printer className="h-4 w-4" />
-          </Button>
-          {/* Desktop: Documents dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="line" className="hidden sm:flex">
-                <FileText className="mr-2 h-4 w-4" />
-                Documents
-                <ChevronDown className="ml-1 h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=pull-slip`, "_blank")}>
-                Pull slip
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=delivery-docket`, "_blank")}>
-                Delivery docket
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=return-sheet`, "_blank")}>
-                Return sheet
-              </DropdownMenuItem>
-              {/* One label per case: `labelId` is the container id. Ad hoc
-                  (CUSTOM) containers are ordinary projectContainers rows, so
-                  they list here like any other. */}
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Container labels</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=container-label`, "_blank")}>
-                    All containers
-                  </DropdownMenuItem>
-                  {realContainers.map((c) => (
-                    <DropdownMenuItem
-                      key={c.id}
-                      onClick={() => window.open(`/api/documents/${projectId}?type=container-label&labelId=${encodeURIComponent(c.id)}`, "_blank")}
-                    >
-                      {c.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <LabelSubmenu projectId={projectId} apiType="kit-label" label="Kit labels" allLabel="All kits" emptyLabel="No kits on this job" />
-              {/* Loose gear only (not in a case or a kit): serialised, bulk, custom and sub-hired. */}
-              <LabelSubmenu projectId={projectId} apiType="item-label" label="Item labels" allLabel="All loose items" emptyLabel="No loose items on this job" />
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {/* Desktop: View Project button */}
-          <Button variant="line" className="hidden sm:flex" asChild>
-            <Link href={`/projects/${projectId}`}>
-              <ExternalLink className="mr-2 h-4 w-4" />
-              View job
-            </Link>
-          </Button>
-          {/* Desktop: more menu */}
-        </div>
-      </div>
+      <DetailHeader {...headerProps} />
 
-      {/* Lifecycle stepper — where every piece of this job's gear sits, left to
-          right. Returned gear shows in its own stage, never folded back into
-          Prep or Deploy. */}
-      <FadeIn>
-        <div className="rounded-[var(--r)] bg-card ring-1 ring-line shadow-[var(--sh-card)] px-4 py-3">
-          <WarehouseLifecycle counts={stageCounts} />
-        </div>
-      </FadeIn>
+      <StageCard
+        stage={stage}
+        counts={{ pick: pickPrepItems.length, prepped: preppedItems.length, out: checkedOutItems.length, returned: returnedItems.length, deprepped: deprepedItems.length }}
+        onStageChange={setStage}
+        onScan={(raw) => void pickScan.scan(raw)}
+        mode={dockMode}
+        onModeChange={setDockMode}
+        caseTarget={caseTarget}
+        entries={pickScan.entries}
+        showDock={stage === "pick"}
+      />
 
       <ScanIntakeStatus entries={durableScans.entries} error={durableScans.error} unsaved={durableScans.unsaved} retry={durableScans.retry} />
-      <Tabs defaultValue={initialTab}>
-        <TabsList>
-          <TabsTrigger value="pick-prep">
-            <ScanBarcode className="mr-1.5 h-4 w-4" />
-            {GEAR_STAGE_LABELS.to_prep} ({pickPrepItems.length})
-          </TabsTrigger>
-          <TabsTrigger value="check-out">
-            <PackageCheck className="mr-1.5 h-4 w-4" />
-            {GEAR_STAGE_LABELS.prepped} ({preppedItems.length})
-          </TabsTrigger>
-          <TabsTrigger value="check-in">
-            <Truck className="mr-1.5 h-4 w-4" />
-            {OUT_LABEL} ({checkedOutItems.length})
-          </TabsTrigger>
-          <TabsTrigger value="deprep">
-            <PackageX className="mr-1.5 h-4 w-4" />
-            {GEAR_STAGE_LABELS.returned} ({returnedItems.length})
-          </TabsTrigger>
-          <TabsTrigger value="deprepped">
-            <PackageOpen className="mr-1.5 h-4 w-4" />
-            {GEAR_STAGE_LABELS.deprepped} ({deprepedItems.length})
-          </TabsTrigger>
-          <TabsTrigger value="close-out">
-            <PackageCheck className="mr-1.5 h-4 w-4" />
-            Close-out
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Pick/Prep Tab */}
-        <PickPrepTab
-          scanInputRef={scanInputRef}
-          scanCheckMode={scanCheckMode}
-          onScanCheckModeChange={setScanCheckMode}
-          scanBatchNames={scanBatch.map((b) => b.assetName)}
-          onFinishScanBatch={finishScanBatch}
-          onClearScanBatch={() => setScanBatch([])}
-          scanValue={scanValue}
-          setScanValue={setScanValue}
-          handleScanKeyDown={handleScanKeyDown}
-          scanMutationMutate={(v) => scanMutation.mutate(v)}
-          scanMutationIsPending={scanMutation.isPending}
-          selectedContainer={selectedContainer}
-          containers={realContainers}
-          activeContainerId={activeContainerId}
-          onSelectContainer={handleSelectContainer}
-          onNewContainer={() => setNewContainerSheetOpen(true)}
-          selectedPrep={selectedPrep}
-          setSelectedPrep={setSelectedPrep}
-          selectedPrepCount={selectedPrepCount}
-          canPrep={prepActions.canPrep}
-          canPrepAccessoriesOnly={prepActions.canPrepAccessoriesOnly}
-          allPrepKeys={allPrepKeys}
-          pickPrepItems={pickPrepItems}
-          groupedPrep={groupedPrep}
-          saleItemsToPrep={saleItemsToPrep}
-          onToggleSalePicked={handleToggleSalePicked}
-          pendingSalePickIds={pendingSalePickIds}
-          overbookedMap={overbookedMap}
-          pendingCustomUnitLineIds={pendingCustomUnitLineIds}
-          onConvertToCustomUnit={handleConvertToCustomUnit}
-          onConvertBackToInventory={handleConvertBackToInventory}
-          verifiedKitItems={verifiedKitItems}
-          setVerifiedKitItems={setVerifiedKitItems}
-          expandedGroups={expandedGroups}
-          toggleExpanded={toggleExpanded}
-          handlePrepSelected={handlePrepSelected}
-          handlePrepAccessoriesOnly={handlePrepAccessoriesOnly}
-          toggleSelection={toggleSelection}
-          toggleGroupSelection={toggleGroupSelection}
-          toggleAll={toggleAll}
-          renderGroupHeader={renderGroupHeader}
-        />
+      {/* Strangler: the stage strip above drives the old tabs (no TabsList) for every stage but To pick. */}
+      <Tabs value={TAB_FOR_STAGE[stage]}>
+        {stage === "pick" && (
+          <PickStage
+            sections={pickSections}
+            selection={pickSelection}
+            prepInfo={prepSelectionInfo(lineItems, pickSelection.selected)}
+            prepHandlers={pickPrepHandlers}
+            saleItems={{ items: saleItemsToPrep, onTogglePicked: handleToggleSalePicked, pendingIds: pendingSalePickIds }}
+            customUnits={{
+              lines: pickPrepItems, overbookedMap, pendingLineIds: pendingCustomUnitLineIds,
+              onConvert: handleConvertToCustomUnit, onConvertBack: handleConvertBackToInventory,
+            }}
+            batch={{ mode: scanCheckMode, onModeChange: setScanCheckMode, names: scanBatch.map((b) => b.assetName), onFinish: finishScanBatch, onClear: () => setScanBatch([]) }}
+          />
+        )}
         <NewContainerSheet
           open={newContainerSheetOpen}
           onOpenChange={setNewContainerSheetOpen}

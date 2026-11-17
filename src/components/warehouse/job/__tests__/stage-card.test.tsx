@@ -2,12 +2,24 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StageCard, stageOptions, dockConfigFor } from "@/components/warehouse/job/stage-card";
+import { StageCard, stageOptions, dockConfigFor, stageFromParams } from "@/components/warehouse/job/stage-card";
 import { CaseChips, nextCaseChoice } from "@/components/warehouse/job/case-chips";
 
 vi.mock("@/components/scanner/scan-button", () => ({ ScanButton: () => <button type="button">Camera</button> }));
 
 const counts = { pick: 18, prepped: 24, out: 0, returned: 0, deprepped: 3 };
+
+describe("stageFromParams", () => {
+  const p = (q: string) => new URLSearchParams(q);
+  it("?stage= wins, ?tab= aliases onto it, default is To pick", () => {
+    expect(stageFromParams(p("stage=returned&tab=check-in"))).toBe("returned");
+    expect(stageFromParams(p("tab=check-in"))).toBe("out");
+    expect(stageFromParams(p("tab=check-out"))).toBe("prepped");
+    expect(stageFromParams(p("tab=close-out"))).toBe("closeout");
+    expect(stageFromParams(p("stage=bogus"))).toBe("pick");
+    expect(stageFromParams(p(""))).toBe("pick");
+  });
+});
 
 describe("stage card", () => {
   it("words and counts come from the vocabulary; Close-out is the sixth", () => {

@@ -11,6 +11,7 @@ import {
 import { deriveItemStage, type WarehouseStageKey } from "@/components/warehouse/warehouse-stages";
 import type { LineRowData, LineRowSectionData, RowFlag, StateGlyph } from "@/lib/primitives/types";
 import { getStatusIntent } from "@/lib/status-colors";
+import { isInternalStockLine } from "@/lib/warehouse-subhire-filter";
 import { GEAR_STAGE_LABELS } from "@/lib/vocabulary";
 
 /** The job page's stage filter keys (spec §9.2). `closeout` has no gear rows. */
@@ -75,7 +76,7 @@ function tagsOf(li: LineItem): string[] {
   return tags.filter((t): t is string => !!t);
 }
 
-export function stageStatus(stage: JobStage) {
+function stageStatus(stage: JobStage) {
   const key = GEAR_KEY[stage];
   return { label: GEAR_STAGE_LABELS[key], intent: getStatusIntent("gearStage", key) };
 }
@@ -122,7 +123,8 @@ const matches = (li: LineItem, q: string) => !q || modelDisplayName(li).toLowerC
 /** Sections for the active stage: category groups on To pick, case groups (Loose last) afterwards. */
 export function buildJobSections(items: LineItem[], ctx: JobRowsCtx): JobSection[] {
   const q = (ctx.query ?? "").trim().toLowerCase();
-  const lines = items.filter((li) => !li.isKitChild && IN_STAGE[ctx.stage](li) && matches(li, q));
+  // Real kit/accessory children hide under their parent; a sub-hire child is its own line (legacy equipmentItems rule).
+  const lines = items.filter((li) => (!li.isKitChild || !isInternalStockLine(li.subHireId)) && IN_STAGE[ctx.stage](li) && matches(li, q));
   const groups = new Map<string, LineItem[]>();
   for (const li of lines) {
     const key = ctx.stage === "pick" ? ctx.categoryOf(li) : (resolveItemContainerId(li) ?? "");

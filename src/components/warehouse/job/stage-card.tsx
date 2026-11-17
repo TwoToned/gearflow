@@ -8,6 +8,18 @@ import { OUT_LABEL } from "@/lib/vocabulary";
 
 export type JobStageKey = JobStage | "closeout";
 
+const TAB_ALIAS: Record<string, JobStageKey> = {
+  "pick-prep": "pick", "check-out": "prepped", "check-in": "out", deprep: "returned", deprepped: "deprepped", "close-out": "closeout",
+};
+const STAGE_KEYS: readonly JobStageKey[] = ["pick", "prepped", "out", "returned", "deprepped", "closeout"];
+
+/** `?stage=` wins; the old `?tab=` deep links (emails, bookmarks) alias onto it; default To pick. */
+export function stageFromParams(params: { get: (k: string) => string | null }): JobStageKey {
+  const stage = params.get("stage");
+  if (stage && (STAGE_KEYS as readonly string[]).includes(stage)) return stage as JobStageKey;
+  return TAB_ALIAS[params.get("tab") ?? ""] ?? "pick";
+}
+
 /** Stage words and counts, from the one vocabulary table (§4). Close-out is the sixth word (locked prototype). */
 export function stageOptions(counts: Record<JobStage, number>, closeoutFlags = 0): StageFilterOption[] {
   return [
@@ -39,8 +51,10 @@ export function dockConfigFor(stage: JobStage) {
 
 /** The strip + dock + result strip at the top of the one card (§9.2); toolbars come in as children. */
 export function StageCard({
-  stage, counts, closeoutFlags, onStageChange, onScan, mode, onModeChange, caseTarget, entries, disabledScan, children,
+  stage, counts, closeoutFlags, onStageChange, onScan, mode, onModeChange, caseTarget, entries, disabledScan, showDock = true, children,
 }: {
+  /** False while a stage still scans through its legacy tab input (strangler); the strip is the only thing shown then. */
+  showDock?: boolean;
   stage: JobStageKey;
   counts: Record<JobStage, number>;
   closeoutFlags?: number;
@@ -62,7 +76,7 @@ export function StageCard({
         onChange={(k) => k && onStageChange(k as JobStageKey)}
         label="Job stage"
       />
-      {stage !== "closeout" && (
+      {stage !== "closeout" && showDock && (
         <>
           <ScanDock
             onScan={onScan}

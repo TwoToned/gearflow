@@ -3,7 +3,7 @@ import React from 'react';
 import {render,screen,fireEvent,waitFor,act,cleanup} from '@testing-library/react';
 import {it,expect,vi,afterEach,beforeEach} from 'vitest';
 const io=vi.hoisted(()=>({tab:'check-in',user:'u',lookup:vi.fn(),commit:vi.fn(),ordinary:vi.fn(),play:vi.fn(),project:null as Record<string,unknown> | null}));
-vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams('tab='+io.tab)}));
+vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams('tab='+io.tab),useRouter:()=>({push:()=>{}})}));
 vi.mock('@/lib/auth-client',()=>({useActiveOrganization:()=>({data:{id:'o'}}),useSession:()=>({data:{user:{id:io.user}}})}));
 vi.mock('convex/react',()=>({useConvex:()=>({query:async()=>true,mutation:io.commit}),useConvexAuth:()=>({isAuthenticated:true}),useQuery:()=>undefined,useMutation:()=>io.ordinary}));
 vi.mock('@/lib/use-permissions',()=>({useCurrentRole:()=>({role:'owner',permissions:{warehouse:['read','check_in','check_out','update']},isLoading:false}),useCanDo:()=>true}));

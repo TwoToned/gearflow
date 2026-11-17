@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 
 /** Reason chips for leaving a DEFAULT accessory behind (§9.5). */
-export const LEAVE_REASONS = ["Still charging", "Out of stock", "Client supplies", "Not needed"] as const;
+const LEAVE_REASONS = ["Still charging", "Out of stock", "Client supplies", "Not needed"] as const;
 
 export interface GateAccessory {
   id: string;

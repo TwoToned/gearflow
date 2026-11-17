@@ -6,7 +6,7 @@ import type { ActionMenuSpec, FactColumn, RowFlag, RowSelection } from "@/lib/pr
 import type { JobSection } from "@/lib/warehouse-job-rows";
 
 /** Qty · case · (status is the row's own word). At most 8 columns (playbook §3.8). */
-export const JOB_COLUMNS: FactColumn[] = [
+const JOB_COLUMNS: FactColumn[] = [
   { id: "place", header: "Case" },
   { id: "qty", header: "Qty", align: "end" },
 ];

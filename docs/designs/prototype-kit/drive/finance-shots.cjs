@@ -1,0 +1,22 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({ proxy: { server: process.env.HTTPS_PROXY } });
+  const url = 'file://' + process.cwd() + '/finance-prototype.html';
+  const d = await b.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  await d.goto(url); await d.waitForTimeout(600);
+  await d.click('#kindsw [data-t=i]'); await d.waitForTimeout(150);
+  await d.screenshot({ path: 'shots/final-finance-desk.png' });
+  await d.click('#strip [data-k=all]');
+  await d.click('#tblwrap tr.row .cb >> nth=1'); await d.click('#tblwrap tr.row .cb >> nth=3', { modifiers: ['Shift'] });
+  await d.click('#tblwrap tr.row:has-text("Not in Xero") .cb >> nth=0'); await d.waitForTimeout(200);
+  await d.screenshot({ path: 'shots/final-finance-desk-sel.png' });
+  await d.click('[data-act=clearsel]'); await d.click('#strip [data-k=overdue]'); await d.hover('#tblwrap tr.row >> nth=0'); await d.click('#tblwrap tr.row >> nth=0 >> .dots'); await d.waitForTimeout(200);
+  await d.screenshot({ path: 'shots/final-finance-rowmenu.png' });
+  await d.keyboard.press('Escape'); await d.click('.lphead [data-act=pagemenu]'); await d.click('[data-act=xeroconn]'); await d.waitForTimeout(200);
+  await d.screenshot({ path: 'shots/final-finance-noxero.png' });
+  await d.close();
+  const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await p.goto(url); await p.waitForTimeout(600); await p.click('#kindrow [data-t=i]'); await p.waitForTimeout(150);
+  await p.screenshot({ path: 'shots/final-finance-phone.png' });
+  await b.close();
+})();

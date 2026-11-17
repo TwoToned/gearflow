@@ -1,0 +1,160 @@
+<style>
+#toast{z-index:60}
+/* schedule (surface CSS; tokens only) */
+.phoneviews,#daychips{display:none}
+#wknav{display:flex;align-items:center;gap:6px;margin-right:6px}
+#wknav .wk{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--ink);min-width:112px;text-align:center;white-space:nowrap}
+#wknav .step{width:28px;height:28px;border-radius:8px;color:var(--muted);font-size:16px;line-height:1}
+#wknav .step:hover{background:var(--paper-2);color:var(--ink)}
+#wknav .zoomw{display:inline-flex;gap:12px;margin-left:10px;padding-left:12px;border-left:1px solid var(--line)}
+.zw{height:28px;padding:0 2px;font-size:12.5px;font-weight:600;color:var(--muted);display:inline-flex;align-items:center}
+.zw:hover{color:var(--ink)}
+.zw.on{color:var(--ink);box-shadow:inset 0 -2px 0 var(--action-red)}
+/* the timeline: one grid per row, a label column and N day columns */
+.tl{--lw:264px;margin-top:2px}
+.tlh,.tlr{display:grid;grid-template-columns:var(--lw) minmax(0,1fr)}
+.tld{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));position:relative;min-width:0}
+.tlh .tll{align-items:flex-end;padding:6px 10px 6px 0;font-size:11px;font-weight:600;color:var(--muted);gap:10px}
+.dh{grid-row:1;text-align:left;padding:6px 6px 6px;display:flex;flex-direction:column;gap:1px;min-width:0;border-radius:6px}
+.dh:hover{background:var(--paper-2)}
+.dh .wd{font-size:11px;font-weight:600;color:var(--muted)}
+.dh b{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--ink-2)}
+.dh i{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--faint);white-space:nowrap}
+.dh i.r{color:var(--t-out)}
+.dh.we .wd,.dh.we b{color:var(--faint)}
+.dh.td b{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink-2)}
+.dh.td{}
+.tl.m .dh{align-items:center;padding:6px 0;text-align:center}
+.tl.m .dh .wd{font-size:10px}
+.tl.m .dh b{font-size:11px}
+.tl.m .dh.mstart b::before{content:'';}
+.tlr{border-top:1px solid var(--line);min-height:50px}
+.tlr.sel{background:var(--select)}
+.tlr:hover .dots{opacity:1}
+.tll{display:flex;align-items:center;gap:10px;padding:6px 8px 6px 0;min-width:0;cursor:pointer}
+.tll .cb{width:16px;height:16px}
+.tll .tx{min-width:0;flex:1}
+.tll .t1{display:flex;align-items:baseline;gap:7px;min-width:0;font-size:13.5px;font-weight:600;color:var(--ink)}
+.tll .t1 .jn{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--muted);flex:none}
+.tll .t1 .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tll .t2{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);min-width:0;white-space:nowrap}
+.tll .t2 .c{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tll .t2 .dotw{font-size:11.5px}
+.tll .t2 .tg{color:var(--faint)}
+.tll .dots{flex:none;width:24px;height:24px}
+.dc{grid-row:1;border-left:1px solid rgba(255,253,248,.045);min-width:0;pointer-events:none}
+.dc.we{background:rgba(255,253,248,.022)}
+.dc.td{border-left:1px solid var(--muted)}
+.dc.fresh{border-left-color:var(--line-2)}
+.tlr .tld,.tlr .tld{min-height:50px}
+.bar{grid-row:1;align-self:center;height:30px;margin:0 2px;position:relative;z-index:1;display:flex;align-items:center;gap:8px;padding:0 9px;border-radius:8px;min-width:0;text-align:left;font-size:12px;color:var(--ink);overflow:hidden;white-space:nowrap}
+.bar.hard{background:var(--elev);box-shadow:inset 0 0 0 1px var(--line-2)}
+.bar.hard:hover{box-shadow:inset 0 0 0 1px var(--control-line)}
+.bar.pen{background:transparent;box-shadow:inset 0 0 0 1px var(--faint);background-image:repeating-linear-gradient(135deg,transparent 0 6px,rgba(255,253,248,.04) 6px 7px);color:var(--ink-2)}
+.bar.pen:hover{box-shadow:inset 0 0 0 1px var(--muted)}
+.bar.sel{box-shadow:inset 0 0 0 1px var(--action-red)}
+.bar.cl{border-top-left-radius:0;border-bottom-left-radius:0;margin-left:0}
+.bar.cr{border-top-right-radius:0;border-bottom-right-radius:0;margin-right:0}
+.bar .bt{font-family:var(--mono);font-size:11.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bar .dotw{font-size:11.5px;margin-left:auto}
+.tl.m .bar{padding:0 6px;gap:5px}
+.tl.m .bar .bt{font-size:10.5px}
+.tl.m .bar.clash::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t-out);flex:none}
+.tl.m .bar.wc::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
+.tl.m .bar .dotw{display:none}
+/* gear cells */
+.gc{grid-row:1;display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:0;padding:4px 6px;text-align:left;border-radius:6px;margin:2px 0}
+.gc:hover{background:var(--paper-2)}
+.gc .fn{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--ink)}
+.gc.z .fn{color:var(--faint)}
+.gc .fs:empty{display:none}
+.gc .fs{font-style:normal;font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}
+.gc .fs.pw{color:var(--warn)}
+.gc.short .dotw{font-size:12px}
+.gc.short .fs{color:var(--muted)}
+.gc.pen .fn{color:var(--warn)}
+.tl.m .gc{align-items:center;padding:4px 0}
+.tl.m .gc .fn{font-size:11px}
+.tl.m .gc .fs,.tl.m .gc .dotw{display:none}
+.tl.m .gc.short .fn{color:var(--t-out);font-weight:600}
+.tl.m .gc.pen .fn{color:var(--warn)}
+.tl.m .gc.short::after{content:none}
+.gsec{display:grid;grid-template-columns:var(--lw) minmax(0,1fr);padding:16px 0 6px;font-size:12.5px;font-weight:600;color:var(--ink);border-top:1px solid var(--line)}
+.gsec:first-of-type{border-top:0}
+.gsec .n{font-family:var(--mono);font-weight:500;font-size:11.5px;color:var(--faint);margin-left:6px}
+.tl .gsec + .tlr{border-top:0}
+.sech{display:flex;align-items:baseline;gap:6px;padding:16px 16px 6px;font-size:12.5px;font-weight:600;color:var(--ink)}
+.sech .n{font-family:var(--mono);font-weight:500;font-size:11.5px;color:var(--faint)}
+.sech.first{padding-top:10px}
+/* side sheet */
+.side{position:absolute;right:0;top:0;bottom:0;width:408px;max-width:100%;background:var(--card);border-left:2px solid var(--line-2);box-shadow:-12px 0 32px rgba(0,0,0,.35);display:flex;flex-direction:column}
+.side .sh1{display:flex;align-items:flex-start;gap:10px;padding:20px 22px 12px}
+.side .sh1 .x{margin-left:auto;width:28px;height:28px;border-radius:8px;color:var(--muted);flex:none}
+.side .sh1 .x:hover{background:var(--paper-2);color:var(--ink)}
+.side .sb{padding:0 22px 18px;overflow:auto;flex:1}
+.sheetwrap .sb{padding:0 20px 14px;overflow:auto}
+.sheetwrap .sh1{display:flex;align-items:flex-start;gap:10px;padding:6px 20px 10px}
+.sheetwrap .sh1 .x{margin-left:auto;width:40px;height:40px;border-radius:8px;color:var(--muted);flex:none}
+.sh1 .kick{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.sh1 h2{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:-.02em;margin:2px 0 6px;line-height:1.2}
+.facts{display:grid;grid-template-columns:84px 1fr;gap:9px 12px;font-size:13px;padding:12px 0;border-top:1px solid var(--line)}
+.facts dt{color:var(--muted);font-size:12px}
+.facts dd{margin:0;min-width:0}
+.sbh{font-size:12px;font-weight:600;color:var(--ink);padding:14px 0 6px;border-top:1px solid var(--line);display:flex;align-items:baseline;gap:6px}
+.sbh .n{font-family:var(--mono);font-size:11.5px;color:var(--faint);font-weight:500}
+.hrow{display:flex;align-items:center;gap:10px;min-height:34px;font-size:13px;border-top:1px solid var(--line);padding:4px 0;width:100%;text-align:left;color:inherit}
+.hrow:first-of-type{border-top:0}
+.hrow .jn{font-family:var(--mono);font-size:12px;color:var(--muted);flex:none}
+.hrow .r{margin-left:auto;font-family:var(--mono);font-size:12.5px;flex:none;color:var(--ink-2)}
+.hrow .g{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sacts{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--line);margin-top:6px}
+.sacts .btn{height:34px}
+.gate-ico{color:var(--warn);display:inline-flex;margin-right:6px;vertical-align:-2px}
+.impact{display:flex;flex-direction:column;gap:2px;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
+.impact:first-child{border-top:0}
+.impact .why{font-size:12px;color:var(--muted)}
+.dlg select{height:36px;border-radius:10px;background:var(--card);color:var(--ink);border:1px solid var(--control-line);padding:0 10px;font:inherit}
+.dlg .availline{font-size:12.5px;min-height:18px}
+@media (max-width:859px){
+  .phoneviews{display:flex;gap:18px;padding:10px 16px 0}
+  .phoneviews .fw{height:30px;font-size:14px}
+  .phoneviews .fw.on::after{content:none}
+  .phoneviews .fw.on{box-shadow:inset 0 -2px 0 var(--action-red);color:var(--ink)}
+  #daychips{display:flex;border-bottom:0;padding:4px 16px 6px}
+  #daychips .chip{height:38px;flex-direction:column;gap:0;justify-content:center;padding:0 12px;border-radius:12px;line-height:1.1}
+  #daychips .chip b{font-weight:600;font-size:13px}
+  #daychips .chip .chip-count{font-size:10.5px;color:var(--faint)}
+  #daychips .chip .chip-count.open{color:var(--t-out)}
+  #wknav{padding:0;margin:0 0 8px;justify-content:space-between}
+  #wknav .wk{min-width:0;flex:1;text-align:center;font-size:13px}
+  #wknav .step{width:40px;height:36px}
+  .lrow .dots{flex:none}
+  .sech{padding:14px 16px 6px}
+  .side{display:none}
+  .sheetwrap .sacts .lnk{min-height:44px;font-size:14px;display:inline-flex;align-items:center}
+  .sheetwrap .sacts .btn{height:44px}
+  .sheetwrap .hrow{min-height:48px}
+  .phoneact{margin-top:auto}
+  section.page.lp{min-height:100%}
+  .lrow .ttl .jn{font-family:var(--mono);font-size:12.5px;color:var(--muted);font-weight:500;margin-right:6px}
+}
+</style>
+<div class="lphead">
+  <div><h1 class="h1">Schedule<span class="cnt" id="count"></span></h1><div class="sub deskonly" id="hsub"></div></div>
+  <div style="flex:1"></div>
+  <div class="ib deskonly" id="viewsw" style="gap:14px;margin-right:8px"></div>
+  <a class="btn btn-primary deskonly" data-act="new" id="primary" href="https://claude.ai/artifact/GgtKxc5WZP33gXihgFTB9B">+ New job</a>
+  <button class="btn btn-icon deskonly" data-act="pagemenu" aria-label="More">⋯</button>
+</div>
+<div class="phoneviews" id="phoneviews"></div>
+<div class="segrow" id="strip"></div>
+<div class="ftoolbar">
+  <div id="wknav"></div>
+  <div class="search"><span class="muted">⌕</span><input id="q" placeholder="Search job, client or model" aria-label="Search the schedule"></div>
+  <div class="fstrip"><div id="fwords" style="display:contents"></div><div class="spacer"></div><div id="views"></div></div>
+</div>
+<div class="daychips" id="daychips"></div>
+<div class="tblwrap" id="tblwrap"></div>
+<div class="list" id="list"></div>
+<div class="lpfoot" id="foot"></div>
+<div class="phoneact" id="phoneact"><a class="btn btn-primary" data-act="new" id="phoneprimary" href="https://claude.ai/artifact/GgtKxc5WZP33gXihgFTB9B">+ New job</a></div>

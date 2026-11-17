@@ -13,8 +13,15 @@ cd docs/designs/prototype-kit/examples && node ../drive/jobs-check.cjs jobs-prot
 
 # 2x screenshots for the user
 node ../drive/shots.cjs .
+# or, for a newer surface (run from the directory holding its prototype):
+node ../drive/floor-check.cjs floor-prototype.html && node ../drive/floor-shots.cjs floor-prototype.html
 ```
 
-`examples/` holds the page files of accepted prototypes (Jobs, Assets). Copy the
-closest one for a new surface. The kit is excluded from ESLint (`eslint.config.mjs`)
+`examples/` holds the page files of every published prototype: the accepted Jobs and
+Assets lists, and the v1 drafts of the remaining surfaces (floor, asset, model, wizard,
+people, gearlists, homelive, packing, planner, scan, finance, settings, forms, shell, recpeople, recgear, schedule). `drive/` holds each
+one's `<name>-check.cjs` (Playwright drive, prints `errors: []` last) and
+`<name>-shots.cjs` (2× screenshots). Copy the closest one for a new surface; surface
+CSS lives in a `<style>` block at the top of each `-body.html`, so the shared kit files
+stay untouched. The kit is excluded from ESLint (`eslint.config.mjs`)
 because it is design scaffolding, not app code.

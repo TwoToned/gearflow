@@ -1,0 +1,20 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({ proxy: { server: process.env.HTTPS_PROXY } });
+  const f = 'file://' + process.cwd() + '/planner-prototype.html';
+  const d = await b.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  await d.goto(f); await d.waitForTimeout(700);
+  await d.screenshot({ path: 'shots/final-planner-desk.png' });
+  const pend = d.locator('.blk', { hasText: /Pending|Accepted/ }); await pend.nth(0).locator('.cb').click(); await pend.nth(1).locator('.cb').click(); await pend.nth(2).locator('.cb').click(); await pend.nth(3).locator('.cb').click(); await d.waitForTimeout(200);
+  await d.screenshot({ path: 'shots/final-planner-desk-sel.png' });
+  await d.click('[data-act=clearsel]');
+  await d.click('#strip [data-k=needs]'); await d.waitForTimeout(200); await d.screenshot({ path: 'shots/final-planner-needs.png' });
+  await d.click('#strip [data-k=all]'); await d.locator('td.day.free[data-act=cell]').nth(3).click(); await d.selectOption('#o-d','2026-11-12'); await d.selectOption('#o-p','c3'); await d.waitForTimeout(200);
+  await d.screenshot({ path: 'shots/final-planner-offer.png' });
+  await d.keyboard.press('Escape');
+  await d.click('#viewsw [data-v=timesheets]'); await d.click('#tblwrap tr.row .cb >> nth=0'); await d.click('#tblwrap tr.row .cb >> nth=3', { modifiers: ['Shift'] }); await d.waitForTimeout(200);
+  await d.screenshot({ path: 'shots/final-planner-ts-sel.png' });
+  const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await p.goto(f); await p.waitForTimeout(700); await p.screenshot({ path: 'shots/final-planner-phone.png' });
+  await b.close();
+})();

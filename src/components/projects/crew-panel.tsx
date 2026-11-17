@@ -27,7 +27,8 @@ import { toast } from "sonner";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { useCrewAssignmentWrites } from "@/hooks/use-crew-assignment-writes";
 import { useSelection } from "./use-selection";
-import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkBar } from "@/components/ui/bulk-bar";
+import { useCanDo } from "@/lib/use-permissions";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api as crewApi } from "../../../convex/_generated/api";
@@ -222,6 +223,8 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
   // ─── Bulk selection ────────────────────────────────────────────────────────
   const selection = useSelection();
+  const canUpdateCrew = useCanDo("crew", "update");
+  const canDeleteCrew = useCanDo("crew", "delete");
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const allAssignmentIds: string[] = (assignments ?? []).map((a: Assignment) => a.id as string);
   const selectedAssignmentIds = allAssignmentIds.filter((id) => selection.isSelected(id));
@@ -359,45 +362,41 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
       </div>
 
       {/* Bulk action bar — appears once one or more assignments are selected. */}
-      <BulkActionBar
-        count={selectedAssignmentIds.length}
-        onClear={selection.clearSelection}
-        itemLabel="assignment"
-      >
-        <CanDo resource="crew" action="update">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="line">
-                Set status
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {(Object.keys(assignmentStatusLabels)).map((status) => (
-                <DropdownMenuItem
-                  key={status}
-                  onClick={() =>
-                    bulkStatusMut.mutate({ ids: selectedAssignmentIds, status })
-                  }
-                >
-                  {assignmentStatusLabels[status]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </CanDo>
-        <CanDo resource="crew" action="delete">
-          <Button
-            size="sm"
-            variant="line"
-            className="text-destructive"
-            onClick={() => setBulkDeleteOpen(true)}
-          >
-            <Trash2 className="mr-2 h-3 w-3" />
-            Remove
-          </Button>
-        </CanDo>
-      </BulkActionBar>
+      <BulkBar
+        noun="assignment"
+        selection={{ count: selectedAssignmentIds.length, clear: selection.clearSelection }}
+        actions={[
+          ...(canUpdateCrew
+            ? [
+                {
+                  key: "set-status",
+                  group: "organise" as const,
+                  label: () => "Set status",
+                  onSelect: () => {},
+                  children: Object.keys(assignmentStatusLabels).map((status) => ({
+                    key: status,
+                    group: "organise" as const,
+                    label: () => assignmentStatusLabels[status],
+                    onSelect: () => bulkStatusMut.mutate({ ids: selectedAssignmentIds, status }),
+                  })),
+                },
+              ]
+            : []),
+          ...(canDeleteCrew
+            ? [
+                {
+                  key: "remove",
+                  group: "danger" as const,
+                  danger: true,
+                  icon: Trash2,
+                  label: () => "Remove",
+                  // The surface's own bulk delete dialog owns the confirm.
+                  onSelect: () => setBulkDeleteOpen(true),
+                },
+              ]
+            : []),
+        ]}
+      />
 
       {/* Bulk delete confirmation */}
       <BulkDeleteDialog

@@ -44,7 +44,7 @@ import {
 } from "@/server/project-services";
 import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
 import { useSelection } from "./use-selection";
-import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { useCrewRoles } from "@/hooks/use-crew";
@@ -463,12 +463,11 @@ export function ServicesPanel({
 
         {/* Bulk action bar — appears once one or more services are selected. */}
         <CanDo resource="project" action="update">
-          <BulkActionBar
-            count={selectedServiceIds.length}
-            onClear={selection.clearSelection}
-            itemLabel="service"
-          >
-            <label className="flex items-center gap-1.5 text-caption text-muted">
+          <BulkBar
+            noun="service"
+            selection={{ count: selectedServiceIds.length, clear: selection.clearSelection }}
+            leading={
+              <label className="flex items-center gap-1.5 text-caption text-muted">
               <Checkbox
                 aria-label="Select all services"
                 checked={allSelected}
@@ -480,36 +479,24 @@ export function ServicesPanel({
               />
               All
             </label>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="line">
-                  Set status
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {(Object.keys(SERVICE_STATUS_LABELS) as ServiceStatus[]).map((status) => (
-                  <DropdownMenuItem
-                    key={status}
-                    onClick={() =>
-                      bulkStatusMut.mutate({ ids: selectedServiceIds, status })
-                    }
-                  >
-                    {SERVICE_STATUS_LABELS[status]}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              size="sm"
-              variant="line"
-              className="text-destructive"
-              onClick={() => setBulkDeleteOpen(true)}
-            >
-              <Trash2 className="mr-2 h-3 w-3" />
-              Delete
-            </Button>
-          </BulkActionBar>
+            }
+            actions={[
+              {
+                key: "set-status",
+                group: "organise",
+                label: () => "Set status",
+                onSelect: () => {},
+                children: (Object.keys(SERVICE_STATUS_LABELS) as ServiceStatus[]).map((status) => ({
+                  key: status,
+                  group: "organise" as const,
+                  label: () => SERVICE_STATUS_LABELS[status],
+                  onSelect: () => bulkStatusMut.mutate({ ids: selectedServiceIds, status }),
+                })),
+              },
+              // The surface's own BulkDeleteDialog owns the confirm.
+              { key: "delete", group: "danger", danger: true, icon: Trash2, label: () => "Delete", onSelect: () => setBulkDeleteOpen(true) },
+            ]}
+          />
         </CanDo>
 
         {/* Timeline — Date Groups */}

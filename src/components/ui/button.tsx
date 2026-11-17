@@ -49,36 +49,61 @@ export interface ButtonProps
   loading?: boolean;
 }
 
+/** Every pointer/key handler an inactive asChild child must not run (capture + bubble). */
+const BLOCKED_HANDLERS = ["onClick", "onAuxClick", "onDoubleClick", "onKeyDown", "onKeyUp", "onMouseDown", "onMouseUp", "onPointerDown", "onPointerUp", "onTouchStart", "onTouchEnd"];
+
+function blockEvent(event: React.SyntheticEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+/**
+ * Props that make an asChild child inert while disabled/loading. Slot runs child
+ * handlers first, so both capture and bubble handlers are replaced on the child
+ * itself, and native navigation is removed.
+ */
+function inactiveChildProps(children: React.ReactNode, loading: boolean): Record<string, unknown> {
+  const element = React.isValidElement(children) ? children : null;
+  const guarded: Record<string, unknown> = {
+    tabIndex: -1, "aria-disabled": true, "aria-busy": loading || undefined,
+    ...(element?.type === "a" ? { role: (element.props as Record<string, unknown>).role ?? "link" } : {}),
+    href: element && typeof element.type !== "string" ? "#" : undefined, disabled: true,
+  };
+  for (const name of BLOCKED_HANDLERS) {
+    guarded[name] = blockEvent;
+    guarded[`${name}Capture`] = blockEvent;
+  }
+  return guarded;
+}
+
+/** Spinner colour per variant, so it stays visible over the transparent label. */
+function spinnerTone(variant: ButtonProps["variant"]): string {
+  if (variant === "cream") return "text-[var(--cream-ink)]";
+  if (variant === "line" || variant === "ghost") return "text-ink";
+  return "text-primary-foreground";
+}
+
+function SlotButton({ classes, variant, loading, inactive, children, slotRef, ...props }: Omit<ButtonProps, "asChild" | "className" | "size"> & { classes: string; loading: boolean; inactive: boolean; slotRef: React.ForwardedRef<HTMLButtonElement> }) {
+  const guarded = inactive ? inactiveChildProps(children, loading) : {};
+  const child = inactive && React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<Record<string, unknown>>, guarded)
+    : children;
+  return (
+    <Slot {...props} className={cn(classes, inactive && "cursor-not-allowed opacity-45", loading && "text-transparent")} ref={slotRef} {...guarded}>
+      {loading && <span aria-hidden="true" className={cn("pointer-events-none absolute inset-0 grid place-items-center", spinnerTone(variant))}><span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" /></span>}
+      <Slottable>{child}</Slottable>
+    </Slot>
+  );
+}
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }, ref) => {
     const classes = cn(buttonVariants({ variant, size, className }));
     if (asChild) {
-      // Slot runs child handlers first: replace both capture and bubble handlers
-      // on the actual child before Slot composes them. Remove native navigation.
-      const inactive = Boolean(disabled || loading);
-      const block = (event: React.SyntheticEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-      };
-      const guarded: Record<string, unknown> = inactive ? {
-        tabIndex: -1, "aria-disabled": true, "aria-busy": loading || undefined,
-        ...(React.isValidElement(children) && children.type === "a" ? { role: (children.props as Record<string, unknown>).role ?? "link" } : {}),
-        href: React.isValidElement(children) && typeof children.type !== "string" ? "#" : undefined, disabled: true,
-      } : {};
-      if (inactive) {
-        for (const name of ["onClick", "onAuxClick", "onDoubleClick", "onKeyDown", "onKeyUp", "onMouseDown", "onMouseUp", "onPointerDown", "onPointerUp", "onTouchStart", "onTouchEnd"]) {
-          guarded[name] = block;
-          guarded[`${name}Capture`] = block;
-        }
-      }
-      const child = inactive && React.isValidElement(children)
-        ? React.cloneElement(children as React.ReactElement<Record<string, unknown>>, guarded)
-        : children;
       return (
-        <Slot {...props} className={cn(classes, inactive && "cursor-not-allowed opacity-45", loading && "text-transparent")} ref={ref} {...guarded}>
-          {loading && <span aria-hidden="true" className={cn("pointer-events-none absolute inset-0 grid place-items-center", variant === "cream" ? "text-[var(--cream-ink)]" : variant === "line" || variant === "ghost" ? "text-ink" : "text-primary-foreground")}><span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" /></span>}
-          <Slottable>{child}</Slottable>
-        </Slot>
+        <SlotButton {...props} classes={classes} variant={variant} loading={loading} inactive={Boolean(disabled || loading)} slotRef={ref}>
+          {children}
+        </SlotButton>
       );
     }
     return (

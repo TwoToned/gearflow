@@ -1,5 +1,6 @@
 "use client";
 
+import type { ContainerChoice } from "@/lib/warehouse-container-choice";
 import { Fragment } from "react";
 import {
   ChevronRight,
@@ -56,8 +57,8 @@ export interface PickPrepTabProps {
   // kept in sync by the parent's `onSelectContainer`/`onNewContainer` handlers.
   selectedContainer: string;
   containers: ContainerRailItem[];
-  activeContainerId: string | null;
-  onSelectContainer: (id: string | null) => void;
+  activeContainerId: ContainerChoice;
+  onSelectContainer: (id: ContainerChoice) => void;
   onNewContainer: () => void;
 
   // Selection

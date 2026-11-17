@@ -24,7 +24,7 @@ https://flow.rvlt.app returns 200/307.
 | 4 | D6, D26, D27, D28, D29 | Accepted 2026-11-17 |
 | Wave D | phases to propose (§6c, §6d, §7b, §7c, §8b, §8c, §9b–§9o) | not proposed |
 
-Decisions PR #1377 merged 2026-11-17.
+Decisions PRs #1377 and #1379 merged 2026-11-17. Knip baseline lowered 405 → 402 after Phase 0.
 
 Parallel start (2026-11-17, user asked for phases in parallel where possible): 1a and 1b build off Phase 0's branch against a shared contract commit (`claude/ux-1-contract`) before Phase 0 merges; they merge `main` once it does.
 
@@ -32,11 +32,11 @@ Parallel start (2026-11-17, user asked for phases in parallel where possible): 1
 
 | Phase | Worker | Branch / PR | State | Blockers |
 |---|---|---|---|---|
-| 0 Vocabulary + tokens | Sonnet | `claude/ux-0-vocabulary-tokens` · #1378 (draft) | in review: 4 fixes requested 2026-11-17 | CI pending |
-| 1a LineRow, ActionMenu, StatusWord, StageFilter, glyphs | Sonnet | `claude/ux-1a-row-primitives` (base `claude/ux-1-contract`) | planning | owns `src/lib/primitives/types.ts` |
-| 1b AddBar, FooterTotals, BulkBar, RowEditorSheet, DetailHeader, ScanDock/ScanStrip | Sonnet | `claude/ux-1b-bar-primitives` (base `claude/ux-1-contract`) | planning | merges after 1a |
+| 0 Vocabulary + tokens | Sonnet | `claude/ux-0-vocabulary-tokens` · #1378 | **merged 2026-11-17** (3581a386) | — |
+| 1a LineRow, ActionMenu, StatusWord, StageFilter, glyphs | Sonnet | `claude/ux-1a-row-primitives` (base `claude/ux-1-contract`) | building; paused on 1Password signing | owns `src/lib/primitives/types.ts` |
+| 1b AddBar, FooterTotals, BulkBar, RowEditorSheet, DetailHeader, ScanDock/ScanStrip | Sonnet | `claude/ux-1b-bar-primitives` (base `claude/ux-1-contract`) | building; paused on 1Password signing | merges after 1a |
 | 2a → 2b Equipment, then Packing | — | — | waiting on 1 | Gate 0 |
-| 2c Plan-honouring prep (only schema change) | Sonnet | `claude/ux-2c-plan-honouring-prep` | planning | started early (user: parallel where possible); merges right after 0 if no schema change, else last in Wave B. `Planned →` glyph moved to Phase 3 |
+| 2c Plan-honouring prep (only schema change) | Sonnet | `claude/ux-2c-plan-honouring-prep` · #1380 | review passed; merging `main`, then merge | started early (user: parallel where possible); merges right after 0 if no schema change, else last in Wave B. `Planned →` glyph moved to Phase 3 |
 | 3 Warehouse job page (L) | — | — | waiting on 1 | Gate 0; model choice |
 | 5 Logistics (L) | — | — | waiting on 1 | Gate 0; model choice |
 | 6 Shell | — | — | waiting on 1 | Gate 0 |

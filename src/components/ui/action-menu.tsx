@@ -47,6 +47,7 @@ export function ActionMenu({
   className,
   triggerClassName,
   trigger: customTrigger,
+  header,
 }: {
   spec: ActionMenuSpec;
   label?: string;
@@ -54,6 +55,9 @@ export function ActionMenu({
    *  element: composed with Radix `asChild` on desktop; on phone the same
    *  element opens the bottom sheet. */
   trigger?: React.ReactElement<{ onClick?: React.MouseEventHandler }>;
+  /** Non-interactive block at the top of the menu (desktop and phone sheet), e.g.
+   *  the lock glyph's who / when / what is read-only sentence (§6b). */
+  header?: React.ReactNode;
   className?: string;
   triggerClassName?: string;
 }) {
@@ -80,10 +84,10 @@ export function ActionMenu({
       {isMobile ? (
         <>
           {trigger}
-          <PhoneSheet spec={spec} label={label} open={open} onOpenChange={setOpen} onRun={run} />
+          <PhoneSheet spec={spec} label={label} open={open} onOpenChange={setOpen} onRun={run} header={header} />
         </>
       ) : (
-        <DesktopMenu spec={spec} open={open} onOpenChange={setOpen} onRun={run} trigger={trigger} />
+        <DesktopMenu spec={spec} open={open} onOpenChange={setOpen} onRun={run} trigger={trigger} header={header} />
       )}
       <ConfirmDialog item={pending} onClose={() => setPending(null)} />
     </span>
@@ -136,6 +140,18 @@ function defaultTrigger({
   );
 }
 
+function MenuHeader({ header, sheet = false }: { header?: React.ReactNode; sheet?: boolean }) {
+  if (!header) return null;
+  return (
+    <>
+      <div data-slot="menu-header" className={cn("text-caption text-muted", sheet ? "px-4 pb-2" : "max-w-64 px-2.5 py-2")}>
+        {header}
+      </div>
+      {sheet ? <BottomSheetSeparator /> : <DropdownMenuSeparator />}
+    </>
+  );
+}
+
 function ItemIcon({ item }: { item: ActionItem }) {
   const Icon = item.icon;
   return Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null;
@@ -174,12 +190,14 @@ function DesktopMenu({
   onOpenChange,
   onRun,
   trigger,
+  header,
 }: {
   spec: ActionMenuSpec;
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onRun: (i: ActionItem) => void;
   trigger: React.ReactElement;
+  header?: React.ReactNode;
 }) {
   const groups = groupActionItems(spec.items);
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -195,6 +213,7 @@ function DesktopMenu({
     <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align="end" onKeyDown={onKeyDown}>
+        <MenuHeader header={header} />
         {groups.map((g, i) => (
           <React.Fragment key={g.group}>
             {i > 0 && <DropdownMenuSeparator />}
@@ -214,9 +233,11 @@ function PhoneSheet({
   open,
   onOpenChange,
   onRun,
+  header,
 }: {
   spec: ActionMenuSpec;
   label: string;
+  header?: React.ReactNode;
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onRun: (i: ActionItem) => void;
@@ -231,6 +252,7 @@ function PhoneSheet({
   const groups = groupActionItems(items);
   return (
     <BottomSheet open={open} onOpenChange={change} title={parent ? parent.label : label}>
+      {!parent && <MenuHeader header={header} sheet />}
       {parent && (
         <BottomSheetItem keepOpen onSelect={() => setParent(null)} icon={<ChevronLeft />}>
           Back

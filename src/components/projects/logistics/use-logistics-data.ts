@@ -7,6 +7,7 @@
  * stores the old panels used (the shared services/crew stores, the batched
  * `conflictsForProject` query).
  */
+import * as React from "react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useSubHireStops } from "./use-subhire-stops";
 import { useProjectCrew } from "@/hooks/use-project-crew";
@@ -23,6 +24,31 @@ import type { ServiceTemplateLite } from "./add-service-bar";
 export type Conflict = { severity: "hard" | "soft"; label: string };
 
 const ms = (v?: string | null): number | null => (v ? new Date(v).getTime() : null);
+
+/**
+ * The services and crew arrive from server actions, where a date field is a real `Date`
+ * (the React Flight wire keeps them), not the ISO string the row model types it as; a
+ * string-only helper (`.slice`) then threw on a live job. One boundary: every date is an
+ * ISO string or null before anything below reads it.
+ */
+export function isoOrNull(v: unknown): string | null {
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "number") return new Date(v).toISOString();
+  return typeof v === "string" && v ? v : null;
+}
+
+export function normaliseCrew(raw: unknown): CrewAssignmentRow[] {
+  return ((raw ?? []) as CrewAssignmentRow[]).map((a) => ({ ...a, startDate: isoOrNull(a.startDate), endDate: isoOrNull(a.endDate) }));
+}
+
+export function normaliseServices(raw: unknown): LogisticsService[] {
+  return ((raw ?? []) as LogisticsService[]).map((s) => ({
+    ...s,
+    date: isoOrNull(s.date),
+    endDate: isoOrNull(s.endDate),
+    crewAssignments: (s.crewAssignments ?? []).map((a) => ({ ...a })),
+  }));
+}
 
 /** The span of every dated assignment, or null when none are dated. */
 export function conflictRange(crew: CrewAssignmentRow[]): { start: number; end: number } | null {
@@ -46,8 +72,8 @@ export function useLogisticsData(projectId: string) {
 
   const stops = useSubHireStops(projectId, orgId);
 
-  const services = (rawServices ?? []) as unknown as LogisticsService[];
-  const crew = (rawCrew ?? []) as unknown as CrewAssignmentRow[];
+  const services = React.useMemo(() => normaliseServices(rawServices), [rawServices]);
+  const crew = React.useMemo(() => normaliseCrew(rawCrew), [rawCrew]);
 
   // One batched query covers every dated assignment (WS8 #947); a stable range, no per-render timestamp.
   const range = conflictRange(crew);

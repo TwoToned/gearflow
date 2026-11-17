@@ -46,9 +46,14 @@ export function ActionMenu({
   label = "More actions",
   className,
   triggerClassName,
+  trigger: customTrigger,
 }: {
   spec: ActionMenuSpec;
   label?: string;
+  /** Replaces the default ⋯ button (e.g. `Documents ▾`, a lock glyph). One
+   *  element: composed with Radix `asChild` on desktop; on phone the same
+   *  element opens the bottom sheet. */
+  trigger?: React.ReactElement<{ onClick?: React.MouseEventHandler }>;
   className?: string;
   triggerClassName?: string;
 }) {
@@ -64,7 +69,7 @@ export function ActionMenu({
     else void item.onSelect();
   };
 
-  const trigger = (
+  const defaultTrigger = (
     <Button
       type="button"
       variant="ghost"
@@ -72,7 +77,7 @@ export function ActionMenu({
       aria-label={label}
       onClick={isMobile ? () => setOpen(true) : undefined}
       className={cn(
-        "shrink-0 text-muted transition-opacity",
+        "touch-target shrink-0 text-muted transition-opacity",
         isMobile ? "size-10" : "size-8 opacity-60 hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
         triggerClassName,
       )}
@@ -80,6 +85,16 @@ export function ActionMenu({
       <MoreHorizontal className="size-4" aria-hidden="true" />
     </Button>
   );
+  const trigger = customTrigger
+    ? isMobile
+      ? React.cloneElement(customTrigger, {
+          onClick: (e: React.MouseEvent) => {
+            customTrigger.props.onClick?.(e as React.MouseEvent<Element>);
+            setOpen(true);
+          },
+        })
+      : customTrigger
+    : defaultTrigger;
 
   return (
     <span className={className}>

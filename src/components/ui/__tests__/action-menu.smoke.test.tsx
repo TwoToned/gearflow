@@ -140,4 +140,33 @@ describe("ActionMenu smoke", () => {
     await user.click(await screen.findByRole("button", { name: "Delete line" }));
     expect(del).toHaveBeenCalledTimes(1);
   });
+
+  it("a danger item without a confirm runs immediately (its handler owns the dialog)", async () => {
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+    render(<ActionMenu spec={{ items: [{ key: "v", label: "Void invoice", group: "danger", danger: true, onSelect }] }} />);
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: /Void invoice/ }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a custom trigger opens the menu on desktop", async () => {
+    const { spec, edit } = makeSpec();
+    const user = userEvent.setup();
+    render(<ActionMenu spec={spec} trigger={<button type="button">Documents</button>} />);
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Documents" }));
+    await user.click(await screen.findByRole("menuitem", { name: /Edit/ }));
+    expect(edit).toHaveBeenCalledTimes(1);
+  });
+
+  it("a custom trigger opens the bottom sheet on phone", async () => {
+    mobile.value = true;
+    const { spec, edit } = makeSpec();
+    const user = userEvent.setup();
+    render(<ActionMenu spec={spec} trigger={<button type="button">Documents</button>} />);
+    await user.click(screen.getByRole("button", { name: "Documents" }));
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(edit).toHaveBeenCalledTimes(1);
+  });
 });

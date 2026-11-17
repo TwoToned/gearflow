@@ -237,14 +237,8 @@ actions (`addLineItem`, `addKitLineItem`, `addCustomLineItem`) already accepted
 change. Placement pickers stay hidden when the form is launched from a specific
 category/group context (a `targetLabel` chip shows the destination instead).
 
-`add-service-dialog.tsx` (the standalone Add service/other dialog, separate
-from `UnifiedAddDialog`) got the same dialog-context treatment: its two raw
-`<select>` elements (type, pricing type) are now the registry `Select` with
-explicit `SelectValue` children, the hand-rolled `Loader2` spinner is replaced
-by `Button loading`, error copy moved to `t-out`/`t-micro`, a `line` Cancel
-button was added to match the other dialogs, and labels/title are sentence
-case. The group `ComboboxPicker` (creatable) and the `addLineItem` mutation
-are unchanged.
+The standalone `add-service-dialog.tsx` was dead code (no importer) and was removed in
+the UX unification Phase 0 (services are added through `UnifiedAddDialog`).
 
 Both move-item dialogs replaced the combined `move-line-item-dialog.tsx`
 in v0.9.3.0. The server action (`moveLineItemToGroup`) is unchanged —

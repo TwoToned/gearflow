@@ -1431,7 +1431,6 @@ export function LineItemRow({
         </TooltipProvider>
       )}
       {item.status === "CANCELLED" && <Badge status="overbooked">Cancelled</Badge>}
-      {item.prepStatus === "PREPPED" && <Badge status="ok">Prepped</Badge>}
       <OverbookedBadge info={overbookedInfo} />
       {liveMarker && liveMarker.status !== "resolved" && (
         <ReviewMarkerBadge status={liveMarker.status as MarkerStatus} reason={liveMarker.reason} />
@@ -1823,11 +1822,6 @@ export function LineItemRow({
           {item.status === "CANCELLED" && (
             <Badge status="overbooked" className="ml-1.5">
               Cancelled
-            </Badge>
-          )}
-          {item.prepStatus === "PREPPED" && (
-            <Badge status="ok" className="ml-1.5">
-              Prepped
             </Badge>
           )}
           <OverbookedBadge info={overbookedInfo} />

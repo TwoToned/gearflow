@@ -159,7 +159,7 @@ function TitleBlock({
 
 function ActionRow({ primary, documents, onEdit, menu }: Pick<DetailHeaderProps, "primary" | "documents" | "onEdit" | "menu">) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {primary ? (
         <Button size="sm" disabled={primary.disabled} onClick={() => void primary.onSelect()}>
           {primary.label}

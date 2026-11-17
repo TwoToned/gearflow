@@ -39,7 +39,8 @@ interface RowDragValue {
 
 const RowDragContext = React.createContext<RowDragValue | null>(null);
 
-type Cloneable = React.ReactElement<{ style?: React.CSSProperties; className?: string }>;
+// The primitive hands over a plain element (`<tr>` / card); we only read style/className.
+type Cloneable = React.ReactElement<any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- opaque host element
 
 function SortableInner({
   meta,
@@ -92,6 +93,7 @@ export function SortableWrap(props: {
 export function DragGrip() {
   const ctx = React.useContext(RowDragContext);
   if (!ctx) return <span aria-hidden="true" className="inline-block size-6" />;
+  /* eslint-disable react-hooks/refs -- dnd-kit's activator ref callback + listeners from useSortable, passed through context; not a React ref read */
   return (
     <button
       type="button"
@@ -104,6 +106,7 @@ export function DragGrip() {
       <GripVertical className="size-4" aria-hidden="true" />
     </button>
   );
+  /* eslint-enable react-hooks/refs */
 }
 
 export const UNCAT_ZONE_ID = "uncat-zone";

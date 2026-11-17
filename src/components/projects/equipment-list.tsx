@@ -20,7 +20,7 @@ import type { EquipmentSections } from "./equipment-sections";
  */
 
 /** Ring state for the row under the pointer; "invalid" is the Drop Matrix saying no. */
-export function dropHighlightFor(
+function dropHighlightFor(
   sortableId: string,
   hoveredOverId: string | null,
   invalidOverId: string | null,

@@ -162,11 +162,11 @@ export interface DragHandleControls {
 // Column count used for category-row + empty-state colSpans. Spans every
 // column except the trailing actions column. Dropped the orphan
 // rental-quantity column (no header, rendered a bare "—") → 6 → 5.
-export const COL_COUNT = 5;
+const COL_COUNT = 5;
 
 // Kit children and sub-hire group children both have isKitChild=true —
 // filter them from flat rendering so they only appear nested under their parent.
-export function isRealKitChild(item: LineItemData) {
+function isRealKitChild(item: LineItemData) {
   return item.isKitChild === true;
 }
 
@@ -201,9 +201,6 @@ export {
   describeRow,
   unitFulfillmentBadge,
   hasContainerChip,
-  type RowSource,
-  type RowRole,
-  type RowDescriptor,
 } from "./equipment-row-descriptors";
 import { describeRow } from "./equipment-row-descriptors";
 import { CustomUnitMenuItems } from "./custom-unit-menu-items";
@@ -278,7 +275,7 @@ export type GroupInlinePricePatch =
   | { field: "price"; value: number | undefined }
   | { field: "discount"; value: number | undefined; discountMode: DiscountMode };
 
-export function GroupRow({
+function GroupRow({
   group,
   isExpanded,
   indented,
@@ -665,7 +662,7 @@ export function GroupRow({
 // Drag handle uses the `shg-<id>` prefix so the unified DnD context can
 // distinguish sub-hire groups from project groups (`grp-<id>`).
 
-export function SubHireGroupRow({
+function SubHireGroupRow({
   group,
   isExpanded,
   indented,

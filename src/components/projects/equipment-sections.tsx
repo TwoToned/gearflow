@@ -32,7 +32,7 @@ import { InlineEditablePrice, InlineEditableQuantity } from "./line-item-inline-
  * group become a HEADLESS section (rows, no head) rather than being reordered.
  */
 
-export const COST_COLUMN: FactColumn = { id: "cost", header: "Cost", align: "end" };
+const COST_COLUMN: FactColumn = { id: "cost", header: "Cost", align: "end" };
 
 /** The list's columns; Cost (sub-hire groups only) sits before Total when margin is shown. */
 export function equipmentColumns(showCost: boolean): FactColumn[] {
@@ -41,7 +41,7 @@ export function equipmentColumns(showCost: boolean): FactColumn[] {
   return [...EQUIPMENT_COLUMNS.slice(0, at), COST_COLUMN, ...EQUIPMENT_COLUMNS.slice(at)];
 }
 
-export interface Placement {
+interface Placement {
   categoryId?: string;
   groupId?: string;
 }

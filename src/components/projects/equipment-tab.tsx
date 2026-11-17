@@ -2,17 +2,11 @@
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { DndContext, DragOverlay, closestCenter, useDroppable } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import {
-  type CategoryPricingDisplay,
-  isRollupCategory,
-} from "@/lib/category-pricing-display";
+import { type CategoryPricingDisplay } from "@/lib/category-pricing-display";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectCategoryWrites } from "@/hooks/use-project-categories-writes";
 import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
@@ -22,9 +16,9 @@ import {
   computeLineTotal,
   type OptimisticLineEdit,
 } from "@/hooks/use-native-line-item-writes";
-import { useEquipmentDnd, type DraggedRowClone } from "@/hooks/use-equipment-dnd";
+import { useEquipmentDnd } from "@/hooks/use-equipment-dnd";
 import { useCanDo } from "@/lib/use-permissions";
-import { FolderTree, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,18 +42,10 @@ import { computeInlineLineItemPayload, type InlineLineItemPatch } from "@/lib/li
 import { computeInlineSubHireItemInput, type SubHireItemRowLike, type InlineSubHireItemPatch } from "@/lib/sub-hire-item-edit-payload";
 import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { BulkBar } from "@/components/ui/bulk-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { BulkEditLineItemsDialog } from "./bulk-edit-line-items-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
 import { cn, focusRing } from "@/lib/utils";
@@ -79,36 +65,29 @@ import { RenameCategoryDialog } from "./rename-category-dialog";
 import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
 import { EditAccessoryPlanDialog } from "./edit-accessory-plan-dialog";
-import { canEditAccessoryPlan } from "@/lib/accessory-plan-eligibility";
 import { SubHireExpandedItems } from "./sub-hire-expanded-items";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { ArrowLeftRight, ChevronDown } from "lucide-react";
 import {
-  COL_COUNT,
-  isRealKitChild,
-  isHiddenFromList,
-  GroupRow,
-  CategoryRow,
-  LineItemRow,
-  SubHireGroupRow,
   type LineItemData,
   type GroupData,
   type CategoryData,
   type SubHireGroupData,
-  type MixedGroupSlot,
   type OverbookedInfo,
   type GroupInlinePricePatch,
-  type DropHighlight,
 } from "./equipment-rows";
-import { dropHighlightClass } from "./equipment-row-types";
 import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
 import { CustomUnitProvider, type CustomUnitContextValue } from "./custom-unit-context";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
-import { useSelection } from "./use-selection";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { CategoryCardHeading } from "./equipment-cards";
+import { visibleRowIds } from "@/components/ui/line-row";
+import { useRowSelection } from "@/lib/primitives/use-row-selection";
+import { buildBulkEquipmentActions } from "@/lib/row-actions/bulk-equipment";
+import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
+import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
+import { EquipmentList } from "./equipment-list";
+import { buildEquipmentSections, equipmentColumns, type EquipmentHandlers } from "./equipment-sections";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 
@@ -154,7 +133,6 @@ interface EquipmentTabProps {
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId, versionId, addDisabledReason }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-  const isMobile = useIsMobile();
   const warehouseWrites = useWarehouseWrites();
 
   const invalidate = useCallback(() => {
@@ -283,28 +261,16 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     api.collaboration.listReviewMarkersForEntity,
     orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
   );
-  const commentCounts = useAuthedQuery(
-    api.collaboration.listThreadCommentCounts,
-    orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
-  ) as Record<string, { open: number; total: number; blockingOpen: number }> | undefined;
   const markerByTarget = React.useMemo(
     () => new Map((reviewMarkers ?? []).map((m) => [m.targetId, m])),
     [reviewMarkers]
   );
 
-  // Multi-select state (row highlight via cmd/shift-click).
-  const selection = useSelection();
-
-  // Clear selection on Escape
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && selection.selectionSize > 0) {
-        selection.clearSelection();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selection]);
+  // Category sections the user has collapsed (all open by default), and the
+  // deployed line whose "Report issue" dialog is open.
+  const [collapsedCategories, setCollapsedCategories] = useState<ReadonlySet<string>>(() => new Set());
+  const [reportIssueItem, setReportIssueItem] = useState<LineItemData | null>(null);
+  const { setReviewMarker } = useCollaborationWrites();
 
   // Move-sub-hire-group dialog state (Phase 6b kebab action).
   const [moveSubHireGroup, setMoveSubHireGroup] = useState<{ id: string; title: string } | null>(null);
@@ -342,7 +308,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       return next;
     });
   }, []);
-  const colCount = COL_COUNT + (showCostColumn ? 1 : 0);
 
   const [showAddCategory, setShowAddCategory] = useState(false);
 
@@ -381,15 +346,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const [managingSubHireId, setManagingSubHireId] = useState<string | null>(null);
   const [expandedSubHires, setExpandedSubHires] = useState<Set<string>>(new Set());
 
-  // Kit/group parent expand state (for items with childLineItems)
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
-  const toggleParent = useCallback((id: string) => {
-    setExpandedParents((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
 
 
 
@@ -1032,7 +988,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     },
     onSuccess: (r: { removed: number; skipped: number }) => {
       invalidate();
-      selection.clearSelection();
+      selection.clear();
       setBulkDeleteOpen(false);
       toast.success(
         `Removed ${r.removed} item${r.removed === 1 ? "" : "s"}` +
@@ -1049,7 +1005,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     },
     onSuccess: (r: { updated: number; skipped: number }) => {
       invalidate();
-      selection.clearSelection();
+      selection.clear();
       setBulkEditOpen(false);
       toast.success(`Updated ${r.updated} item${r.updated === 1 ? "" : "s"}`);
     },
@@ -1068,7 +1024,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     }) => groupWrites.moveLineItems({ lineItemIds: ids, targetGroupId, targetCategoryId }),
     onSuccess: (r: { moved: number; skipped: number }) => {
       invalidate();
-      selection.clearSelection();
+      selection.clear();
       setBulkMoveGroupOpen(false);
       setBulkMoveCategoryOpen(false);
       toast.success(`Moved ${r.moved} item${r.moved === 1 ? "" : "s"}`);
@@ -1207,8 +1163,127 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // ─── List model + selection (before the loading return: these are hooks) ───
+  const typedCategories = categories as CategoryData[];
+  const hasCategories = typedCategories.length > 0;
+  const orphanSubHireGroups = uncategorizedSubHireGroups as SubHireGroupData[];
+  const orphanProjectGroups = uncategorizedProjectGroups as GroupData[];
+  const hasUncategorized =
+    (uncategorizedItems as LineItemData[]).length > 0 ||
+    orphanSubHireGroups.length > 0 ||
+    orphanProjectGroups.length > 0;
+  const draftSubHireIds = new Set<string>();
+  for (const sh of projectSubHires) {
+    if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
+  }
+
+  const openAdd = (target: { categoryId?: string; groupId?: string; label: string }, kind: UnifiedAddKind) => {
+    setUnifiedAddTarget(target);
+    setUnifiedAddKind(kind);
+    setShowUnifiedAdd(true);
+  };
+  const openOrder = (subHireId: string) => {
+    setManagingSubHireId(subHireId);
+    setShowSubHireOrderDialog(true);
+  };
+  const handlers: EquipmentHandlers = {
+    editLine: (item, placement) => {
+      setEditLineItemPlacement(placement);
+      setEditLineItem(item);
+    },
+    moveLineToCategory: (lineItemId, initialCategoryId) => setMoveItemToCategory({ lineItemId, initialCategoryId }),
+    moveLineToGroup: (lineItemId, initialGroupId) => setMoveItemToGroup({ lineItemId, initialGroupId }),
+    editAccessories: setEditAccessoryItem,
+    removeLine: handleRemoveItem,
+    inlineUpdate: handleInlineLineItemUpdate,
+    toggleLinePriceReveal: (item) => togglePriceRevealMut.mutate({ item }),
+    toggleLineDisclosure: (item) => toggleGroupChildDisclosureMut.mutate({ item }),
+    toggleLineRoi: (item) => toggleRoiExclusionMut.mutate({ item }),
+    setMarker: (id, status) => {
+      setReviewMarker("project", projectId, "lineItem", id, status)
+        .then(() => toast.success(status === "resolved" ? "Marker resolved" : "Marker updated"))
+        .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Failed to update marker"));
+    },
+    reportIssue: setReportIssueItem,
+    editInOrder: openOrder,
+    setCategoryCollapsed: (id, collapsed) =>
+      setCollapsedCategories((prev) => {
+        const next = new Set(prev);
+        if (collapsed) next.add(id);
+        else next.delete(id);
+        return next;
+      }),
+    renameCategory: (cat) => {
+      setRenameCategoryId(cat.id);
+      setRenameCategoryValue(cat.name);
+    },
+    removeCategory: setDeleteCategoryTarget,
+    setPricingDisplay: (cat, pricingDisplay) => setCategoryPricingDisplayMut.mutate({ id: cat.id, pricingDisplay }),
+    addToTarget: openAdd,
+    toggleGroup,
+    editGroup: setEditGroupData,
+    editGroupPrice: (group) =>
+      setPriceEditTarget({
+        kind: "project",
+        groupId: group.id,
+        title: group.title,
+        quantity: group.quantity,
+        price: group.price != null ? Number(group.price) : null,
+        discount: group.discount != null ? Number(group.discount) : null,
+        discountMode: group.discountMode ?? null,
+      }),
+    removeGroup: (group, itemCount) => {
+      setDeleteGroupId(group.id);
+      setDeleteGroupInfo({ title: group.title, price: group.price != null ? Number(group.price) : 0, itemCount });
+    },
+    saveGroupAsTemplate: (group) => setSaveAsTemplateGroup({ id: group.id, title: group.title }),
+    moveGroup: (group) => setMoveProjectGroup({ id: group.id, title: group.title }),
+    toggleGroupPriceReveal: (group) => toggleGroupPriceRevealMut.mutate({ group }),
+    inlineGroupPrice: handleInlineGroupPriceUpdate,
+    editSubHirePrice: (g) =>
+      setPriceEditTarget({
+        kind: "subHire",
+        groupId: g.id,
+        title: g.title,
+        quantity: g.quantity,
+        cost: g.cost != null ? Number(g.cost) : null,
+        charge: g.charge != null ? Number(g.charge) : null,
+      }),
+    moveSubHireGroup: (g) => setMoveSubHireGroup({ id: g.id, title: g.title }),
+    inlineSubHirePrice: handleInlineSubHireGroupPriceUpdate,
+  };
+  const built = buildEquipmentSections({
+    categories: typedCategories,
+    uncategorizedItems: uncategorizedItems as LineItemData[],
+    orphanProjectGroups,
+    orphanSubHireGroups,
+    collapsedCategories,
+    expandedGroups,
+    pendingRemovalIds,
+    overbookedMap: overbookedMap as Record<string, OverbookedInfo>,
+    markerByTarget,
+    draftSubHireIds,
+    moneyLocked,
+    canDrag: canDragEquipment,
+    showCost: showCostColumn,
+    customUnit: customUnitValue,
+    handlers,
+  });
+  const listColumns = equipmentColumns(showCostColumn);
+  const visibleIds = visibleRowIds(built.sections).filter((id) => built.rowMeta.has(id));
+  const selection = useRowSelection(visibleIds);
+
+  // Clear selection on Escape
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && selection.count > 0) selection.clear();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selection]);
+
   // Category reordering is real drag-and-drop too (useEquipmentDnd, rendered
-  // rows wrapped in SortableCategoryRow below) — the old ▲/▼ moveCategory
+  // rows wrapped in the sortable section wrapper) — the old ▲/▼ moveCategory
   // swap-with-neighbour helper is fully superseded.
   //
   // Group (project group + sub-hire group) reordering AND cross-category
@@ -1247,90 +1322,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     );
   }
 
-  const typedCategories = categories as CategoryData[];
-  const hasCategories = typedCategories.length > 0;
-  const orphanSubHireGroups = uncategorizedSubHireGroups as SubHireGroupData[];
-  const orphanProjectGroups = uncategorizedProjectGroups as GroupData[];
-  const hasUncategorized =
-    (uncategorizedItems as LineItemData[]).length > 0 ||
-    orphanSubHireGroups.length > 0 ||
-    orphanProjectGroups.length > 0;
-
-  // Build a set of draft sub-hire IDs so we can badge unconfirmed items
-  const draftSubHireIds = new Set<string>();
-  for (const sh of projectSubHires) {
-    if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
-  }
-
-  // Build flat list of all line-item IDs in visual order. Used by
-  // shift-click range selection (handleRowClick). Walks each category's
-  // mixed group list in canonical (CategorySlot) order. Falls back to
-  // cat.groups when mixedGroups isn't present (e.g. an HMR-stale cache).
-  const allSortableIds: string[] = [];
-  for (const cat of typedCategories) {
-    allSortableIds.push(`cat-${cat.id}`);
-    const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
-      kind: "project" as const,
-      sortOrder: g.sortOrder,
-      projectGroupId: g.id,
-    }));
-    for (const slot of mixed) {
-      if (slot.kind === "project") {
-        allSortableIds.push(`grp-${slot.projectGroupId}`);
-        const group = cat.groups.find((g) => g.id === slot.projectGroupId);
-        if (group && expandedGroups.has(group.id)) {
-          for (const item of group.lineItems ?? []) {
-            if (!isRealKitChild(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
-          }
-        }
-      } else if (slot.kind === "subHire") {
-        allSortableIds.push(`shg-${slot.subHireGroupId}`);
-      } else {
-        allSortableIds.push(`li-${slot.lineItemId}`);
-      }
-    }
-  }
-  for (const item of uncategorizedItems as LineItemData[]) {
-    if (!isRealKitChild(item)) allSortableIds.push(`li-${item.id}`);
-  }
-  for (const shGroup of orphanSubHireGroups) {
-    allSortableIds.push(`shg-${shGroup.id}`);
-  }
-
-  const handleRowClick = (id: string, e: React.MouseEvent) => {
-    const sortableId = `li-${id}`;
-    if (e.metaKey || e.ctrlKey) {
-      selection.toggle(sortableId, true);
-    } else if (e.shiftKey) {
-      const liIds = allSortableIds.filter((sid) => sid.startsWith("li-"));
-      selection.selectTo(sortableId, liIds);
-    } else {
-      selection.select(sortableId);
-    }
-  };
-
-  // ─── Bulk-selection derived state ──────────────────────────────────────────
-  // Every selectable line item's sortable key, and the plain cuids of the ones
-  // currently selected (the payload for the bulk server actions).
-  const allLiSortableIds = allSortableIds.filter((sid) => sid.startsWith("li-"));
-  const selectedLineItemIds = allLiSortableIds
-    .filter((sid) => selection.isSelected(sid))
-    .map((sid) => sid.slice(3));
-  const allLiSelected =
-    allLiSortableIds.length > 0 && selectedLineItemIds.length === allLiSortableIds.length;
-  const someLiSelected = selectedLineItemIds.length > 0;
-
-  const toggleSelectAll = () => {
-    if (allLiSelected) selection.clearSelection();
-    else selection.selectAll(allLiSortableIds);
-  };
-
-  // Checkbox on a line-item row: shift extends a range, otherwise toggle one.
-  const handleSelectChange = (itemId: string, _checked: boolean, shiftKey: boolean) => {
-    const sortableId = `li-${itemId}`;
-    if (shiftKey) selection.selectTo(sortableId, allLiSortableIds);
-    else selection.toggle(sortableId, true);
-  };
+  const selectedLineItemIds = visibleIds.filter((id) => selection.isSelected(id));
 
   // Primary "Add ▾" menu (item / group / category) — extracted to
   // `equipment-add-menu-trigger.tsx` (Phase 5, #1231) so its two render
@@ -1410,732 +1402,41 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       {/* Bulk action bar — appears once one or more line items are selected. */}
       <BulkBar
         noun="line"
-        selection={{ count: selectedLineItemIds.length, clear: selection.clearSelection }}
-        actions={[
-          { key: "edit", group: "edit", icon: Pencil, label: () => "Edit", onSelect: () => setBulkEditOpen(true) },
-          { key: "move-group", group: "organise", icon: ArrowLeftRight, label: () => "Move to group", onSelect: () => setBulkMoveGroupOpen(true) },
-          { key: "move-category", group: "organise", icon: FolderTree, label: () => "Move to category", onSelect: () => setBulkMoveCategoryOpen(true) },
+        selection={{ count: selectedLineItemIds.length, clear: selection.clear }}
+        actions={buildBulkEquipmentActions([], {
+          onEdit: () => setBulkEditOpen(true),
+          onMoveToGroup: () => setBulkMoveGroupOpen(true),
+          onMoveToCategory: () => setBulkMoveCategoryOpen(true),
           // The surface's own BulkDeleteDialog owns the confirm (it names what stays).
-          { key: "delete", group: "danger", danger: true, icon: Trash2, label: () => "Delete", onSelect: () => setBulkDeleteOpen(true) },
-        ]}
+          onDelete: () => setBulkDeleteOpen(true),
+        })}
       />
+      {reportIssueItem && (
+        <ReportIssueDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setReportIssueItem(null);
+          }}
+          targetLabel={reportIssueItem.description ?? reportIssueItem.model?.name ?? "Item"}
+          projectId={projectId}
+          lineItemId={reportIssueItem.id}
+        />
+      )}
 
       {/* Equipment list. Desktop renders the full data table; below md the rows
           self-branch into stacked cards (§15) — same data, same handlers, no
           StickyTable and no horizontal scroll. The row map is built once and
           rendered in whichever shell matches the breakpoint, so the live per-row
           subscriptions aren't duplicated across two DOM trees. */}
-      {(hasCategories || hasUncategorized) && (() => {
-        const equipmentRows = (
-          <>
-                {/* Top-level category reorder — ONE SortableContext for the
-                    whole project's category list (useEquipmentDnd's
-                    resolveCategoryDragAction; single "categories" container,
-                    top-level reorder only — categories don't nest into
-                    anything and nothing nests INTO a category via a
-                    "category drag", see that function's doc comment). */}
-                <SortableContext
-                  items={typedCategories.map((cat) => `cat-${cat.id}`)}
-                  strategy={verticalListSortingStrategy}
-                >
-                {typedCategories.map((cat) => {
-                  const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
-                  const mixedSlots: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
-                    kind: "project" as const,
-                    sortOrder: g.sortOrder,
-                    projectGroupId: g.id,
-                  }));
-
-                  return (
-                    <React.Fragment key={cat.id}>
-                      {/* Category label row */}
-                      <SortableCategoryRow
-                        sortableId={`cat-${cat.id}`}
-                        dropHighlight={dropHighlightFor(`cat-${cat.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                        containerId="categories"
-                        dragDisabled={!canDragEquipment}
-                        cat={cat}
-                        columnCount={colCount}
-                        onRename={() => {
-                          setRenameCategoryId(cat.id);
-                          setRenameCategoryValue(cat.name);
-                        }}
-                        onDelete={() => setDeleteCategoryTarget(cat)}
-                        onSetPricingDisplay={(pricingDisplay) =>
-                          setCategoryPricingDisplayMut.mutate({ id: cat.id, pricingDisplay })
-                        }
-                        onAddEquipment={() => {
-                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
-                          setUnifiedAddKind("own-stock");
-                          setShowUnifiedAdd(true);
-                        }}
-                        onAddKit={() => {
-                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
-                          setUnifiedAddKind("kit");
-                          setShowUnifiedAdd(true);
-                        }}
-                        onAddCustom={() => {
-                          setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
-                          setUnifiedAddKind("custom");
-                          setShowUnifiedAdd(true);
-                        }}
-                      />
-
-                      {/* Combined top-level list within category (CategorySlot order;
-                          falls back to cat.groups when mixedGroups hasn't been computed).
-                          ONE SortableContext for the whole interleaved
-                          project-group + sub-hire-group + standalone-line-item
-                          list — a drag can reorder within it (groups and line
-                          items freely rearranged against each other) or move a
-                          group/item out to another category/Uncategorized
-                          (useEquipmentDnd's resolveGroupDragAction /
-                          resolveLineItemDragAction; container id `mixed:{cat.id}`
-                          for both). */}
-                      <SortableContext
-                        items={mixedSlots.map((slot) =>
-                          slot.kind === "project" ? `grp-${slot.projectGroupId}`
-                          : slot.kind === "subHire" ? `shg-${slot.subHireGroupId}`
-                          : `li-${slot.lineItemId}`,
-                        )}
-                        strategy={verticalListSortingStrategy}
-                      >
-                      {mixedSlots.map((slot) => {
-                        if (slot.kind === "lineItem") {
-                          const item = standaloneItems.find((i) => i.id === slot.lineItemId);
-                          if (!item) return null;
-                          return (
-                            <SortableLineItemRow
-                              key={item.id}
-                              sortableId={`li-${item.id}`}
-                              dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                              containerId={`mixed:${cat.id}`}
-                              dragDisabled={!canDragEquipment}
-                              item={item}
-                              indent="ml-3"
-                              orgId={orgId}
-                              projectId={projectId}
-                              markerByTarget={markerByTarget}
-                              overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                              isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                              showCostColumn={showCostColumn}
-                              isExpanded={expandedParents.has(item.id)}
-                              isSelected={selection.isSelected(`li-${item.id}`)}
-                              selectable={!item.isKitChild}
-                              selectionActive={someLiSelected}
-                              onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                              onClick={(e) => handleRowClick(item.id, e)}
-                              onToggle={() => toggleParent(item.id)}
-                              onEdit={() => {
-                                setEditLineItemPlacement({ categoryId: cat.id });
-                                setEditLineItem(item);
-                              }}
-                              onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
-                              onMoveToCategory={() => setMoveItemToCategory({
-                                lineItemId: item.id,
-                                initialCategoryId: cat.id,
-                              })}
-                              onMoveToGroup={() => setMoveItemToGroup({
-                                lineItemId: item.id,
-                              })}
-                              inRollupCategory={isRollupCategory(cat.pricingDisplay)}
-                              onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
-                              onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
-                              onRemove={() => handleRemoveItem(item.id)}
-                              onInlineUpdate={handleInlineLineItemUpdate}
-                              moneyLocked={moneyLocked}
-                              lockReason={lockReason}
-                              onUnlockExit={scrollToLockStrip}
-                            />
-                          );
-                        }
-                        if (slot.kind === "subHire") {
-                          const shGroup = (cat.subHireGroupTargets ?? []).find(
-                            (g: SubHireGroupData) => g.id === slot.subHireGroupId,
-                          );
-                          if (!shGroup) return null;
-                          const isExpanded = expandedGroups.has(shGroup.id);
-                          // Synthetic parent line item — its childLineItems are
-                          // the kit-style children rendered on expand.
-                          const parentLi = (shGroup.lineItems ?? [])[0];
-                          const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
-                          return (
-                            <React.Fragment key={`shg-${shGroup.id}`}>
-                              <SortableSubHireGroupRow
-                                sortableId={`shg-${shGroup.id}`}
-                                dropHighlight={dropHighlightFor(`shg-${shGroup.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                                containerId={`mixed:${cat.id}`}
-                                dragDisabled={!canDragEquipment}
-                                group={shGroup}
-                                isExpanded={isExpanded}
-                                showCostColumn={showCostColumn}
-                                indented
-                                onToggle={() => toggleGroup(shGroup.id)}
-                                onEdit={() => {
-                                  setManagingSubHireId(shGroup.subHire.id);
-                                  setShowSubHireOrderDialog(true);
-                                }}
-                                onEditPrice={() => setPriceEditTarget({
-                                  kind: "subHire",
-                                  groupId: shGroup.id,
-                                  title: shGroup.title,
-                                  quantity: shGroup.quantity,
-                                  cost: shGroup.cost != null ? Number(shGroup.cost) : null,
-                                  charge: shGroup.charge != null ? Number(shGroup.charge) : null,
-                                })}
-                                onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
-                                onInlinePriceUpdate={handleInlineSubHireGroupPriceUpdate}
-                              />
-                              {isExpanded && childItems.length === 0 && (
-                                isMobile ? (
-                                  <p className="px-3 py-2 text-caption text-muted">No items in this sub-hire group yet.</p>
-                                ) : (
-                                  <TableRow className="hover:bg-transparent">
-                                    <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                                      No items in this sub-hire group yet.
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              )}
-                              {isExpanded && childItems.map((item) => (
-                                <LineItemRow
-                                  key={item.id}
-                                  item={item}
-                                  indent="ml-12"
-                                  markerByTarget={markerByTarget}
-                                  overbookedInfo={undefined}
-                                  isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
-                                  showCostColumn={showCostColumn}
-                                  isExpanded={expandedParents.has(item.id)}
-                                  isDragDisabled
-                                  onToggle={() => toggleParent(item.id)}
-                                  onEdit={() => {
-                                    setManagingSubHireId(shGroup.subHire.id);
-                                    setShowSubHireOrderDialog(true);
-                                  }}
-                                  onMoveToCategory={() => {
-                                    setManagingSubHireId(shGroup.subHire.id);
-                                    setShowSubHireOrderDialog(true);
-                                  }}
-                                  onMoveToGroup={() => {
-                                    setManagingSubHireId(shGroup.subHire.id);
-                                    setShowSubHireOrderDialog(true);
-                                  }}
-                                  inRollupCategory={isRollupCategory(cat.pricingDisplay)}
-                                  onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
-                                  onRemove={() => handleRemoveItem(item.id)}
-                                  onInlineUpdate={handleInlineLineItemUpdate}
-                                />
-                              ))}
-                            </React.Fragment>
-                          );
-                        }
-                        const group = cat.groups.find((g) => g.id === slot.projectGroupId);
-                        if (!group) return null;
-                        const isExpanded = expandedGroups.has(group.id);
-                        const priceVal = group.price != null ? Number(group.price) : null;
-                        const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
-                        return (
-                          <React.Fragment key={group.id}>
-                            <SortableGroupRow
-                              sortableId={`grp-${group.id}`}
-                              dropHighlight={dropHighlightFor(`grp-${group.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                              containerId={`mixed:${cat.id}`}
-                              dragDisabled={!canDragEquipment}
-                              group={group}
-                              isExpanded={isExpanded}
-                              indented
-                              orgId={orgId}
-                              projectId={projectId}
-                              commentBadge={{
-                                open: commentCounts?.[group.id]?.open ?? 0,
-                                blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
-                              }}
-                              showCostColumn={showCostColumn}
-                              onToggle={() => toggleGroup(group.id)}
-                              onDelete={() => {
-                                setDeleteGroupId(group.id);
-                                setDeleteGroupInfo({
-                                  title: group.title,
-                                  price: priceVal ?? 0,
-                                  itemCount: groupItems.length,
-                                });
-                              }}
-                              onEdit={() => setEditGroupData(group)}
-                              onEditPrice={() => setPriceEditTarget({
-                                kind: "project",
-                                groupId: group.id,
-                                title: group.title,
-                                quantity: group.quantity,
-                                price: priceVal,
-                                discount: group.discount != null ? Number(group.discount) : null,
-                                discountMode: group.discountMode ?? null,
-                              })}
-                              onAddEquipment={() => {
-                                setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setUnifiedAddKind("own-stock");
-                                setShowUnifiedAdd(true);
-                              }}
-                              onAddKit={() => {
-                                setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
-                                setUnifiedAddKind("kit");
-                                setShowUnifiedAdd(true);
-                              }}
-                              onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
-                              inRollupCategory={isRollupCategory(cat.pricingDisplay)}
-                              onTogglePriceReveal={() => toggleGroupPriceRevealMut.mutate({ group })}
-                              onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
-                              onInlinePriceUpdate={handleInlineGroupPriceUpdate}
-                              moneyLocked={moneyLocked}
-                              lockReason={lockReason}
-                              onUnlockExit={scrollToLockStrip}
-                            />
-                            {/* Expanded line items */}
-                            {isExpanded && groupItems.length === 0 && (
-                              isMobile ? (
-                                <p className="px-3 py-2 text-caption text-muted">No items in this group yet. Add equipment to get started.</p>
-                              ) : (
-                                <TableRow className="hover:bg-transparent">
-                                  <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                                    No items in this group yet. Add equipment to get started.
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            )}
-                            <SortableContext
-                              items={groupItems.map((item) => `li-${item.id}`)}
-                              strategy={verticalListSortingStrategy}
-                            >
-                              {isExpanded && groupItems.map((item) => (
-                                <SortableLineItemRow
-                                  key={item.id}
-                                  sortableId={`li-${item.id}`}
-                                  dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                                  containerId={`items:${group.id}`}
-                                  dragDisabled={!canDragEquipment}
-                                  item={item}
-                                  indent="ml-12"
-                                  orgId={orgId}
-                                  projectId={projectId}
-                                  markerByTarget={markerByTarget}
-                                  overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                                  isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                                  showCostColumn={showCostColumn}
-                                  isExpanded={expandedParents.has(item.id)}
-                                  isSelected={selection.isSelected(`li-${item.id}`)}
-                                  selectable={!item.isKitChild}
-                                  selectionActive={someLiSelected}
-                                  onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                                  onClick={(e) => handleRowClick(item.id, e)}
-                                  onToggle={() => toggleParent(item.id)}
-                                  onEdit={() => {
-                                    setEditLineItemPlacement({ categoryId: cat.id, groupId: group.id });
-                                    setEditLineItem(item);
-                                  }}
-                                  onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
-                                  onMoveToCategory={() => setMoveItemToCategory({
-                                    lineItemId: item.id,
-                                    initialCategoryId: cat.id,
-                                  })}
-                                  onMoveToGroup={() => setMoveItemToGroup({
-                                    lineItemId: item.id,
-                                    initialGroupId: group.id,
-                                  })}
-                                  inRollupCategory={isRollupCategory(cat.pricingDisplay)}
-                                  onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
-                                  inProjectGroup
-                                  onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
-                                  onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
-                                  onRemove={() => handleRemoveItem(item.id)}
-                                  onInlineUpdate={handleInlineLineItemUpdate}
-                                  moneyLocked={moneyLocked}
-                                  lockReason={lockReason}
-                                  onUnlockExit={scrollToLockStrip}
-                                />
-                              ))}
-                            </SortableContext>
-                          </React.Fragment>
-                        );
-                      })}
-                      </SortableContext>
-                    </React.Fragment>
-                  );
-                })}
-                </SortableContext>
-
-                {/* Uncategorized items — always rendered whenever the project
-                    has categories, even with nothing uncategorized yet, so
-                    there's always a droppable landing zone for a line item
-                    or group dragged out of a category (see
-                    UncategorizedHeader's doc comment). */}
-                {hasCategories && (
-                  <UncategorizedHeader
-                    isMobile={isMobile}
-                    colCount={colCount}
-                    isEmpty={!hasUncategorized}
-                    dropHighlight={dropHighlightFor("uncat-zone", dnd.hoveredOverId, dnd.invalidOverId)}
-                  />
-                )}
-                {(() => {
-                  const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
-                  return (
-                    <SortableContext
-                      items={uncatVisible.map((item) => `li-${item.id}`)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {uncatVisible.map((item) => (
-                        <SortableLineItemRow
-                          key={item.id}
-                          sortableId={`li-${item.id}`}
-                          dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                          containerId="uncategorized-standalone"
-                          dragDisabled={!canDragEquipment}
-                          item={item}
-                          indent=""
-                          orgId={orgId}
-                          projectId={projectId}
-                          markerByTarget={markerByTarget}
-                          overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                          isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                          showCostColumn={showCostColumn}
-                          isExpanded={expandedParents.has(item.id)}
-                          isSelected={selection.isSelected(`li-${item.id}`)}
-                          selectable={!item.isKitChild}
-                          selectionActive={someLiSelected}
-                          onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                          onClick={(e) => handleRowClick(item.id, e)}
-                          onToggle={() => toggleParent(item.id)}
-                          onEdit={() => {
-                            setEditLineItemPlacement({});
-                            setEditLineItem(item);
-                          }}
-                          onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
-                          onMoveToCategory={() => setMoveItemToCategory({
-                            lineItemId: item.id,
-                          })}
-                          onMoveToGroup={() => setMoveItemToGroup({
-                            lineItemId: item.id,
-                          })}
-                          onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
-                          onRemove={() => handleRemoveItem(item.id)}
-                          onInlineUpdate={handleInlineLineItemUpdate}
-                          moneyLocked={moneyLocked}
-                          lockReason={lockReason}
-                          onUnlockExit={scrollToLockStrip}
-                        />
-                      ))}
-                    </SortableContext>
-                  );
-                })()}
-                {/* Orphan groups (project + sub-hire) — a single flat
-                    "Uncategorized" drop container (useEquipmentDnd's
-                    "uncategorized-groups"), spanning BOTH maps below so a
-                    group dragged out of any category can land among either
-                    kind. Every row here is a valid drop target AND (permission
-                    allowing) a valid drag origin — an orphan group can be
-                    dragged back into a category the same way a standalone
-                    line item already could. It still never reorders against
-                    ITS OWN Uncategorized siblings (`planGroupSameContainerReorder`
-                    treats "uncategorized-groups" as always a no-op internally
-                    — orphan groups have never had reorder buttons), only
-                    originates a move to a real category. */}
-                <SortableContext
-                  items={[
-                    ...orphanProjectGroups.map((g) => `grp-${g.id}`),
-                    ...orphanSubHireGroups.map((g) => `shg-${g.id}`),
-                  ]}
-                  strategy={verticalListSortingStrategy}
-                >
-                {/* Orphan PROJECT groups — categoryId IS NULL (v0.9.4.0
-                    allows groups to live uncategorised). Render with the
-                    full GroupRow affordances (kebab, Move, Delete) so
-                    they're first-class citizens of the Uncategorized
-                    zone alongside orphan sub-hire groups. */}
-                {orphanProjectGroups.map((group) => {
-                  const isExpanded = expandedGroups.has(group.id);
-                  const priceVal = group.price != null ? Number(group.price) : null;
-                  const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
-                  return (
-                    <React.Fragment key={`pg-${group.id}`}>
-                      <SortableGroupRow
-                        sortableId={`grp-${group.id}`}
-                        dropHighlight={dropHighlightFor(`grp-${group.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                        containerId="uncategorized-groups"
-                        dragDisabled={!canDragEquipment}
-                        group={group}
-                        isExpanded={isExpanded}
-                        orgId={orgId}
-                        projectId={projectId}
-                        commentBadge={{
-                          open: commentCounts?.[group.id]?.open ?? 0,
-                          blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
-                        }}
-                        showCostColumn={showCostColumn}
-                        onToggle={() => toggleGroup(group.id)}
-                        onDelete={() => {
-                          setDeleteGroupId(group.id);
-                          setDeleteGroupInfo({
-                            title: group.title,
-                            price: priceVal ?? 0,
-                            itemCount: groupItems.length,
-                          });
-                        }}
-                        onEdit={() => setEditGroupData(group)}
-                        onEditPrice={() => setPriceEditTarget({
-                          kind: "project",
-                          groupId: group.id,
-                          title: group.title,
-                          quantity: group.quantity,
-                          price: priceVal,
-                          discount: group.discount != null ? Number(group.discount) : null,
-                          discountMode: group.discountMode ?? null,
-                        })}
-                        onAddEquipment={() => {
-                          setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
-                          setUnifiedAddKind("own-stock");
-                          setShowUnifiedAdd(true);
-                        }}
-                        onAddKit={() => {
-                          setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
-                          setUnifiedAddKind("kit");
-                          setShowUnifiedAdd(true);
-                        }}
-                        onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
-                        onInlinePriceUpdate={handleInlineGroupPriceUpdate}
-                        moneyLocked={moneyLocked}
-                        lockReason={lockReason}
-                        onUnlockExit={scrollToLockStrip}
-                      />
-                      {isExpanded && groupItems.length === 0 && (
-                        isMobile ? (
-                          <p className="px-3 py-2 text-caption text-muted">No items in this group yet. Add equipment to get started.</p>
-                        ) : (
-                          <TableRow className="hover:bg-transparent">
-                            <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                              No items in this group yet. Add equipment to get started.
-                            </TableCell>
-                          </TableRow>
-                        )
-                      )}
-                      <SortableContext
-                        items={groupItems.map((item: LineItemData) => `li-${item.id}`)}
-                        strategy={verticalListSortingStrategy}
-                      >
-                        {isExpanded && groupItems.map((item: LineItemData) => (
-                          <SortableLineItemRow
-                            key={item.id}
-                            sortableId={`li-${item.id}`}
-                            dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                            containerId={`items:${group.id}`}
-                            dragDisabled={!canDragEquipment}
-                            item={item}
-                            indent="ml-12"
-                            orgId={orgId}
-                            projectId={projectId}
-                            markerByTarget={markerByTarget}
-                            overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                            isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                            showCostColumn={showCostColumn}
-                            isExpanded={expandedParents.has(item.id)}
-                            isSelected={selection.isSelected(`li-${item.id}`)}
-                            selectable={!item.isKitChild}
-                            selectionActive={someLiSelected}
-                            onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                            onClick={(e) => handleRowClick(item.id, e)}
-                            onToggle={() => toggleParent(item.id)}
-                            onEdit={() => {
-                              setEditLineItemPlacement({ groupId: group.id });
-                              setEditLineItem(item);
-                            }}
-                            onEditAccessories={canEditAccessoryPlan(item) ? () => setEditAccessoryItem(item) : undefined}
-                            onMoveToCategory={() => setMoveItemToCategory({
-                              lineItemId: item.id,
-                            })}
-                            onMoveToGroup={() => setMoveItemToGroup({
-                              lineItemId: item.id,
-                              initialGroupId: group.id,
-                            })}
-                            inProjectGroup
-                            onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
-                            onToggleRoiExclusion={() => toggleRoiExclusionMut.mutate({ item })}
-                            onRemove={() => handleRemoveItem(item.id)}
-                            onInlineUpdate={handleInlineLineItemUpdate}
-                            moneyLocked={moneyLocked}
-                            lockReason={lockReason}
-                            onUnlockExit={scrollToLockStrip}
-                          />
-                        ))}
-                      </SortableContext>
-                    </React.Fragment>
-                  );
-                })}
-                {/* Orphan sub-hire groups — targetCategoryId IS NULL.
-                    S13 from the test plan: must surface here, not vanish. */}
-                {orphanSubHireGroups.map((shGroup) => {
-                  const isExpanded = expandedGroups.has(shGroup.id);
-                  const parentLi = (shGroup.lineItems ?? [])[0];
-                  const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
-                  return (
-                    <React.Fragment key={`shg-${shGroup.id}`}>
-                      <SortableSubHireGroupRow
-                        sortableId={`shg-${shGroup.id}`}
-                        dropHighlight={dropHighlightFor(`shg-${shGroup.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
-                        containerId="uncategorized-groups"
-                        dragDisabled={!canDragEquipment}
-                        group={shGroup}
-                        isExpanded={isExpanded}
-                        showCostColumn={showCostColumn}
-                        onToggle={() => toggleGroup(shGroup.id)}
-                        onEdit={() => {
-                          setManagingSubHireId(shGroup.subHire.id);
-                          setShowSubHireOrderDialog(true);
-                        }}
-                        onEditPrice={() => setPriceEditTarget({
-                          kind: "subHire",
-                          groupId: shGroup.id,
-                          title: shGroup.title,
-                          quantity: shGroup.quantity,
-                          cost: shGroup.cost != null ? Number(shGroup.cost) : null,
-                          charge: shGroup.charge != null ? Number(shGroup.charge) : null,
-                        })}
-                        onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
-                        onInlinePriceUpdate={handleInlineSubHireGroupPriceUpdate}
-                      />
-                      {isExpanded && childItems.length === 0 && (
-                        isMobile ? (
-                          <p className="px-3 py-2 text-caption text-muted">No items in this sub-hire group yet.</p>
-                        ) : (
-                          <TableRow className="hover:bg-transparent">
-                            <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
-                              No items in this sub-hire group yet.
-                            </TableCell>
-                          </TableRow>
-                        )
-                      )}
-                      {isExpanded && childItems.map((item) => (
-                        <LineItemRow
-                          key={item.id}
-                          item={item}
-                          indent="ml-8"
-                          markerByTarget={markerByTarget}
-                          overbookedInfo={undefined}
-                          isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
-                          showCostColumn={showCostColumn}
-                          isExpanded={expandedParents.has(item.id)}
-                          isDragDisabled
-                          onToggle={() => toggleParent(item.id)}
-                          onEdit={() => {
-                            setManagingSubHireId(shGroup.subHire.id);
-                            setShowSubHireOrderDialog(true);
-                          }}
-                          onMoveToCategory={() => {
-                            setManagingSubHireId(shGroup.subHire.id);
-                            setShowSubHireOrderDialog(true);
-                          }}
-                          onMoveToGroup={() => {
-                            setManagingSubHireId(shGroup.subHire.id);
-                            setShowSubHireOrderDialog(true);
-                          }}
-                          onRemove={() => handleRemoveItem(item.id)}
-                          onInlineUpdate={handleInlineLineItemUpdate}
-                        />
-                      ))}
-                    </React.Fragment>
-                  );
-                })}
-                </SortableContext>
-          </>
-        );
-        const content = isMobile ? (
-          <div className="space-y-1.5">{equipmentRows}</div>
-        ) : (
-          <div className="overflow-x-auto rounded-[var(--r)] border border-line">
-            <table className="w-full caption-bottom text-[13.5px] table-fixed">
-              <colgroup>
-                <col className="w-10" />
-                <col />
-                <col className="w-16" />
-                <col className="w-28" />
-                {showCostColumn && <col className="w-24" />}
-                <col className="w-28" />
-                <col className="w-32" />
-              </colgroup>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-1" />
-                  <TableHead>
-                    <div className="flex items-center gap-2">
-                      {allLiSortableIds.length > 0 && (
-                        <Checkbox
-                          aria-label="Select all items"
-                          checked={
-                            allLiSelected ? true : someLiSelected ? "indeterminate" : false
-                          }
-                          onCheckedChange={toggleSelectAll}
-                        />
-                      )}
-                      <span>Item</span>
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-center">Qty</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Unit price</TableHead>
-                  {showCostColumn && (
-                    <TableHead className="text-right whitespace-nowrap">Cost</TableHead>
-                  )}
-                  <TableHead className="text-right whitespace-nowrap">Total</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>{equipmentRows}</TableBody>
-            </table>
-          </div>
-        );
-        // Drag-and-drop for LINE ITEMS, GROUPS, and CATEGORIES (see
-        // use-equipment-dnd.ts). A single DndContext wraps both the desktop
-        // table and mobile card shells. `dragHandleRef` now registers the
-        // WHOLE row/card as dnd-kit's measured/dragged node (equipment-rows.tsx's
-        // `DragHandleControls` doc comment), so dnd-kit's own <DragOverlay>
-        // wrapper is sized and positioned to exactly match the row the user
-        // grabbed — this floating label fills that wrapper (`h-full w-full`)
-        // instead of rendering as a small fixed-size chip inside it, which is
-        // what keeps it tracking the exact point the user grabbed rather than
-        // snapping to a corner.
-        //
-        // dnd-kit's <DragOverlay> renders IN PLACE (no portal of its own —
-        // confirmed reading @dnd-kit/core's source) and relies entirely on
-        // `position: fixed` to visually escape the layout. `<FadeIn>`
-        // (src/app/(app)/projects/[id]/page.tsx wraps the whole page in it)
-        // is a Framer Motion `motion.div` whose `animate={{ y: 0 }}` leaves a
-        // persistent (non-`none`) `transform` style on that ancestor even at
-        // rest — any non-`none` transform establishes a NEW containing block
-        // for `position: fixed` descendants, so the overlay was positioning
-        // itself relative to that page wrapper instead of the viewport. That
-        // silent coordinate-system mismatch (not the row-vs-handle sizing
-        // fixed above) is what made the dragged preview appear to "jump to
-        // the top" disconnected from the cursor. Portaling straight to
-        // `document.body` sidesteps this (and any other transformed
-        // ancestor) entirely, matching dnd-kit's own documented fix for this
-        // exact class of bug.
-        return (
-          <DndContext
-            sensors={dnd.sensors}
-            collisionDetection={closestCenter}
-            modifiers={dnd.modifiers}
-            onDragStart={dnd.handleDragStart}
-            onDragOver={dnd.handleDragOver}
-            onDragEnd={dnd.handleDragEnd}
-            onDragCancel={dnd.handleDragCancel}
-          >
-            {content}
-            {typeof document !== "undefined" &&
-              createPortal(
-                <DragOverlay>
-                  {dnd.draggedRowClone ? <DragRowOverlayContent clone={dnd.draggedRowClone} /> : null}
-                </DragOverlay>,
-                document.body,
-              )}
-          </DndContext>
-        );
-      })()}
+      {(hasCategories || hasUncategorized) && (
+        <EquipmentList
+          built={built}
+          columns={listColumns}
+          selection={selection}
+          dnd={dnd}
+          uncatIsEmpty={!hasUncategorized}
+        />
+      )}
 
       {/* ─── Sub-Hire Orders ──────────────────────────────────────────────── */}
       {projectSubHires.length > 0 && (

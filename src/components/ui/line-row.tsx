@@ -177,7 +177,7 @@ function applyWrap(wrap: WrapRow | undefined, row: LineRowData, el: React.ReactE
 }
 
 function MaybeSelect({ row, selection, size }: { row: LineRowData; selection?: RowSelection; size: "sm" | "lg" }) {
-  return selection ? <SelectBox row={row} selection={selection} size={size} /> : null;
+  return selection && row.selectable !== false ? <SelectBox row={row} selection={selection} size={size} /> : null;
 }
 
 function DesktopRow({ row, columns, selection, wrapRow, dragHandle }: RowProps) {
@@ -288,6 +288,12 @@ function LineRow(props: RowProps) {
 export interface LineRowListSection {
   section: LineRowSectionData;
   rows: LineRowData[];
+  /**
+   * Rows with NO head: they continue the previous section's block (e.g. loose
+   * lines that sit after a nested group in a user-ordered list). `section`
+   * only supplies the id; collapse is the caller's (omit the rows to hide them).
+   */
+  headless?: boolean;
   /** Controlled collapse; omit for list-owned state (`defaultCollapsed` is false). */
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
@@ -326,6 +332,7 @@ function ListBody(props: LineRowListProps) {
   return (
     <>
       {props.sections.map((s) => {
+        if (s.headless) return <React.Fragment key={s.section.id}>{s.rows.map(rowEl)}</React.Fragment>;
         const collapsed = s.collapsed ?? owned.has(s.section.id);
         return (
           <React.Fragment key={s.section.id}>

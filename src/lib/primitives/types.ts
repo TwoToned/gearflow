@@ -155,6 +155,8 @@ export interface LineRowData {
   cells?: Record<string, ReactNode>;
   /** One level: kit members, accessories, group members, bulk units, crew. 44 px, no actions. */
   children?: LineRowData[];
+  /** `false` = no select box (derived rows the bulk verbs must never touch, e.g. a sub-hire order's lines). Default true. */
+  selectable?: boolean;
   /** Whole-row open (desktop: navigate/expand; phone: the RowEditorSheet when editable). */
   href?: string;
   onOpen?: () => void;

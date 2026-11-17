@@ -50,6 +50,12 @@ export interface LineItem {
   }>;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** The PM's packing plan (a `projectContainers` id). Present on the live
+   *  payload (whole line docs); drives the `Planned →` glyph. */
+  plannedContainerId?: string | null;
+  /** Per-line accessory selection; `excludedReasons` is the office note D9
+   *  prefills the deploy gate's override reason from. */
+  accessoryPlan?: { excluded?: string[]; excludedReasons?: Array<{ bulkAssetId: string; reason: string }> } | null;
   isContainerLineItem: boolean;
   isCustomItem: boolean;
   /** Units of this line sourced outside the fleet ("prep as custom item") — they

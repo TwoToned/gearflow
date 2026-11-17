@@ -13,7 +13,7 @@
 ## UI Terminology
 - "Check Out" is displayed as **"Deploy"** in the UI
 - "Check In" is displayed as **"Return"** in the UI
-- `CHECKED_OUT` status displays as **"Out"** (D90, UX Phase 0; the verb **Deploy** stays). Stage words live in `src/lib/vocabulary.ts` (`GEAR_STAGE_LABELS`: To pick · Prepped · Out · Returned · De-prepped · Closed) and their colour intents in the `gearStage` category of `src/lib/status-colors.ts` (D2: neutral · info · primary/solid red · warning · success · neutral outline) — one table, read by the lifecycle stepper, stage chips and landing cards. Gear not in a case reads **Loose**. The warehouse tab bar reads **To pick / Prepped / Out / Returned / De-prepped** accordingly.
+- `CHECKED_OUT` status displays as **"Out"** (D90, UX Phase 0; the verb **Deploy** stays). Stage words live in `src/lib/vocabulary.ts` (`GEAR_STAGE_LABELS`: To pick · Prepped · Out · Returned · De-prepped · Closed) and their colour intents in the `gearStage` category of `src/lib/status-colors.ts` (D2: neutral · info · primary/solid red · warning · success · neutral outline) — one table, read by the lifecycle stepper, stage chips and landing cards. Gear not in a case reads **Loose**. The Pick/Prep container rail has no active chip until the packer picks one, and prep then follows the PM's planned case; picking Loose packs loose on purpose (omitted `containerId` = plan, `null` = Loose; see FEATUREDOCS/83). The warehouse tab bar reads **To pick / Prepped / Out / Returned / De-prepped** accordingly.
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
 
 ## Lifecycle Flow

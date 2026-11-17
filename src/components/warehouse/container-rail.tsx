@@ -3,6 +3,7 @@
 import { Package, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { focusRing, cn } from "@/lib/utils";
+import { isLooseChosen, type ContainerChoice } from "@/lib/warehouse-container-choice";
 
 export interface ContainerRailItem {
   id: string;
@@ -14,9 +15,12 @@ export interface ContainerRailItem {
 export interface ContainerRailProps {
   /** Real `projectContainers.listForProject` rows for this job. */
   containers: ContainerRailItem[];
-  /** `null` = Loose (no active container) is selected. */
-  activeContainerId: string | null;
-  onSelect: (id: string | null) => void;
+  /** `string` = that case; `null` = Loose deliberately picked; `undefined` =
+   *  nothing chosen (no chip active, the job's packing plan applies). */
+  activeContainerId: ContainerChoice;
+  /** A chip click selects it; clicking the ALREADY-active chip clears back to
+   *  `undefined` (nothing chosen, the plan applies). */
+  onSelect: (id: ContainerChoice) => void;
   onNew: () => void;
   className?: string;
 }
@@ -32,7 +36,7 @@ function depthOf(item: ContainerRailItem, byId: Map<string, ContainerRailItem>):
  * The warehouse Pick/Prep container picker (#1296 build plan phase 2) —
  * replaces the free-text/creatable `ComboboxPicker` that used to key
  * `prepContainer` off an ad-hoc string. "Loose" (no active container, dashed)
- * is always first; exactly one chip is active at a time. Desktop: the Pick
+ * is always first; at most one chip is active (none = nothing chosen, the plan applies). Desktop: the Pick
  * tab's right column; mobile: a horizontal scroller — both use this same
  * component, the caller picks the wrapping layout via `className`.
  */
@@ -48,9 +52,9 @@ export function ContainerRail({ containers, activeContainerId, onSelect, onNew, 
     >
       <ContainerChip
         label="Loose"
-        active={activeContainerId === null}
+        active={isLooseChosen(activeContainerId)}
         dashed
-        onClick={() => onSelect(null)}
+        onClick={() => onSelect(isLooseChosen(activeContainerId) ? undefined : null)}
       />
       {sorted.map((c) => (
         <ContainerChip
@@ -59,7 +63,7 @@ export function ContainerRail({ containers, activeContainerId, onSelect, onNew, 
           unitCount={c.unitCount}
           indented={depthOf(c, byId) > 0}
           active={activeContainerId === c.id}
-          onClick={() => onSelect(c.id)}
+          onClick={() => onSelect(activeContainerId === c.id ? undefined : c.id)}
         />
       ))}
       <button

@@ -9,7 +9,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
 import { assertArrayMax, assertNumRange, assertStrLen } from "./lib/fieldGuards";
-import { MAX_SHIFT_DAYS, MAX_SHIFT_GROUPS, MAX_SHIFT_SERVICES, shiftDay } from "./lib/serviceSchedule";
+import { MAX_SHIFT_DAYS, MAX_SHIFT_GROUPS, MAX_SHIFT_SERVICES, serviceTypeToPhase, shiftDay } from "./lib/serviceSchedule";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
@@ -75,17 +75,6 @@ function calculateServiceLineTotal(
   // never add to the line total even if a caller reaches this without the guard above.
   const disc = Math.max(0, discount ?? 0);
   return Math.max(0, round(unitPrice - disc));
-}
-
-function serviceTypeToPhase(type: string): string {
-  switch (type) {
-    case "DELIVERY": return "DELIVERY";
-    case "PICKUP": return "PICKUP";
-    case "BUMP_IN": return "BUMP_IN";
-    case "BUMP_OUT": return "BUMP_OUT";
-    case "LABOUR": return "EVENT";
-    default: return "FULL_DURATION"; // MISC
-  }
 }
 
 /** DELIVERY/PICKUP with no crew work window default to scheduledTime → +1 hr. */

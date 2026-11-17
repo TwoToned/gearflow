@@ -20,3 +20,16 @@ export const MAX_SHIFT_SERVICES = 200;
 export function shiftDay(ms: number | undefined, offsetDays: number): number | undefined {
   return ms == null ? undefined : ms + offsetDays * DAY_MS;
 }
+
+/** The crew-assignment phase a service of this type staffs. One definition for the
+ *  service write path and the Logistics "Pick crew" sheet (src imports it). */
+export function serviceTypeToPhase(type: string): string {
+  switch (type) {
+    case "DELIVERY": return "DELIVERY";
+    case "PICKUP": return "PICKUP";
+    case "BUMP_IN": return "BUMP_IN";
+    case "BUMP_OUT": return "BUMP_OUT";
+    case "LABOUR": return "EVENT";
+    default: return "FULL_DURATION"; // MISC
+  }
+}

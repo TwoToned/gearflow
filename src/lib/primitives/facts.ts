@@ -24,7 +24,7 @@ export function factText(fact: Fact): string {
 }
 
 /** A blank money fact has nothing to say: a desktop cell shows `—`, the phone subtitle skips it. */
-export function isBlankFact(fact: Fact): boolean {
+function isBlankFact(fact: Fact): boolean {
   return fact.kind === "money" && fact.amount == null;
 }
 

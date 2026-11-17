@@ -33,6 +33,8 @@ export interface JobRowsCtx {
   needsCheckIds?: ReadonlySet<string>;
   /** Free text filter (Find). */
   query?: string;
+  /** Prepped / Out: each accessory row offers `Verify` (present) and the verified ids feed the deploy / return gates. */
+  verify?: { verified: ReadonlySet<string>; toggle: (accessoryId: string) => void };
 }
 
 export interface JobSection { section: LineRowSectionData; rows: LineRowData[]; key: string }
@@ -89,7 +91,12 @@ function accessoryStatus(packed: boolean, stage: WarehouseStageKey | null) {
 }
 
 /** Accessory rows under a parent: one per accessory line, with its own state word (§9.5). */
-function accessoryRows(li: LineItem, packWithParent: (accessoryId: string) => void, caseOf: (a: LineItem) => string | null): LineRowData[] {
+function accessoryRows(
+  li: LineItem,
+  packWithParent: (accessoryId: string) => void,
+  caseOf: (a: LineItem) => string | null,
+  verify?: JobRowsCtx["verify"],
+): LineRowData[] {
   return accessoryChildrenOf(li).filter((a) => a.status !== "CANCELLED").map((a) => {
     const packed = a.prepStatus === "PACKED";
     const stage = deriveItemStage(a);
@@ -100,15 +107,30 @@ function accessoryRows(li: LineItem, packWithParent: (accessoryId: string) => vo
       facts: { qty: { kind: "qty", value: packed ? a.quantity : 0, of: a.quantity } },
       status: accessoryStatus(packed, stage),
       cells: here ? { place: here } : undefined,
-      primary: canPackWith(li, packed) ? { label: `Pack ${a.quantity} with parent`, onSelect: () => packWithParent(a.id) } : undefined,
+      primary: verify
+        ? { label: verify.verified.has(a.id) ? "Verified" : "Verify", onSelect: () => verify.toggle(a.id) }
+        : canPackWith(li, packed) ? { label: `Pack ${a.quantity} with parent`, onSelect: () => packWithParent(a.id) } : undefined,
     } satisfies LineRowData;
   });
+}
+
+/** Kit members under a kit parent (Prepped / Out only): each can be ticked `Verify` before the kit goes. */
+function kitMemberRows(li: LineItem, verify: NonNullable<JobRowsCtx["verify"]>): LineRowData[] {
+  if (!li.kitId) return [];
+  return (li.childLineItems ?? []).filter((c) => c.childKind !== "ACCESSORY" && c.status !== "CANCELLED").map((c) => ({
+    // `accessory` is the one child kind that carries an action (line-row); a kit member rides the same row.
+    id: c.id, kind: "accessory", title: modelDisplayName(c), tags: [c.asset?.assetTag ?? c.bulkAsset?.assetTag].filter((t): t is string => !!t),
+    facts: { qty: { kind: "qty", value: c.quantity } },
+    status: { label: verify.verified.has(c.id) ? "Verified" : "Not verified", intent: verify.verified.has(c.id) ? ("info" as const) : ("neutral" as const) },
+    primary: { label: verify.verified.has(c.id) ? "Verified" : "Verify", onSelect: () => verify.toggle(c.id) },
+  } satisfies LineRowData));
 }
 
 export function buildJobRow(li: LineItem, ctx: JobRowsCtx, packWithParent: (accessoryId: string) => void = () => {}): LineRowData {
   const caseId = resolveItemContainerId(li);
   const place = caseId ? ctx.containerLabelById.get(caseId) ?? li.prepContainer : li.prepContainer;
-  const children = accessoryRows(li, packWithParent, (a) => { const id = resolveItemContainerId(a); return id ? ctx.containerLabelById.get(id) ?? null : null; });
+  const members = ctx.verify ? kitMemberRows(li, ctx.verify) : [];
+  const children = members.concat(accessoryRows(li, packWithParent, (a) => { const id = resolveItemContainerId(a); return id ? ctx.containerLabelById.get(id) ?? null : null; }, ctx.verify));
   return {
     id: li.id, kind: kindOf(li), title: modelDisplayName(li), tags: tagsOf(li),
     glyphs: glyphsFor(li, ctx), flags: flagsFor(li, ctx),

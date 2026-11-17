@@ -1,5 +1,7 @@
 # Availability & Overbooking Engine
 
+> UI naming (UX Phase 0, D7): the `/availability` page and its nav/palette entries are labelled **Schedule**; the route, code and this doc keep "availability". The crew availability-blocks tab keeps its name.
+
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 ## The Two-Window Date Model (WS2 #941)

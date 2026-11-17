@@ -13,7 +13,7 @@
 ## UI Terminology
 - "Check Out" is displayed as **"Deploy"** in the UI
 - "Check In" is displayed as **"Return"** in the UI
-- `CHECKED_OUT` status displays as **"Deployed"**
+- `CHECKED_OUT` status displays as **"Out"** (D90, UX Phase 0; the verb **Deploy** stays). Stage words live in `src/lib/vocabulary.ts` (`GEAR_STAGE_LABELS`: To pick · Prepped · Out · Returned · De-prepped · Closed) and their colour intents in the `gearStage` category of `src/lib/status-colors.ts` (D2: neutral · info · primary/solid red · warning · success · neutral outline) — one table, read by the lifecycle stepper, stage chips and landing cards. Gear not in a case reads **Loose**. The warehouse tab bar reads **To pick / Prepped / Out / Returned / De-prepped** accordingly.
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
 
 ## Lifecycle Flow
@@ -43,7 +43,7 @@ bugs where the flow appeared to run in reverse:
   so returning gear "went back to Deploy".
 
 **The tabs are named after the stage the gear is IN, not the action** — so the tab bar reads
-exactly like the lifecycle: **Pick → Prepped → Deployed → Returned → De-prepped** (then
+exactly like the lifecycle: **To pick → Prepped → Out → Returned → De-prepped** (then
 **Close-out** as a trailing utility). The primary button inside each tab
 performs the action that advances gear to the next stage:
 

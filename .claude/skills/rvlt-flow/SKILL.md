@@ -110,7 +110,7 @@ Every job sits at one status. Statuses are ordered and mostly move forward.
 | `AWAITING_PAYMENT` | Client agreed and/or an invoice is out; money hasn't landed. | **Hard** |
 | `CONFIRMED` | Paid / locked in. | **Hard** |
 | `PREPPING` | Warehouse is picking and packing. | **Hard** |
-| `CHECKED_OUT` (shown as **Deployed**) | Gear has left the building. | **Hard** |
+| `CHECKED_OUT` (shown as **Out**; the action is still "Deploy") | Gear has left the building. | **Hard** |
 | `ON_SITE` | Job is running. | **Hard** |
 | `RETURNED` | Gear is back. | Released |
 | `COMPLETED` | Job closed out operationally. | Released |

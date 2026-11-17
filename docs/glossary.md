@@ -18,7 +18,7 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Bulk asset** | A quantity-tracked item with no individual identity — `totalQuantity`/`availableQuantity` (`BulkAsset` model). |
 | **Kit** | A container of serialized + bulk assets that travels and prices as one unit (`Kit` model). See [09-kits.md](../FEATUREDOCS/09-kits.md). |
 | **Model** | The equipment type/spec an asset or bulk asset is an instance of (e.g. "Shure SM58"), independent of any single physical unit. |
-| **Project** | A rental job: line items, dates, a client, and a warehouse deploy/return lifecycle. See [10-projects.md](../FEATUREDOCS/10-projects.md). |
+| **Project** (UI: **Job**) | A rental job (the UI says **Job** since UX Phase 0, D7; code, routes, enums and API/MCP names stay `project`): line items, dates, a client, and a warehouse deploy/return lifecycle. See [10-projects.md](../FEATUREDOCS/10-projects.md). |
 | **Line item** | A single row on a project — an asset, bulk quantity, kit, sub-hire, or custom item being rented. |
 | **Client** | The renting party (a customer of the operator's rental business). Code, schema, and UI all say **client**, never "customer" — see [Documented aliases](#documented-aliases). |
 | **Supplier** | A third-party vendor the operator buys from or sub-hires gear from. See [22-suppliers.md](../FEATUREDOCS/22-suppliers.md). |
@@ -32,7 +32,11 @@ For the file-by-file breakdown of where each concept lives, see the
 
 | Term | Meaning |
 |---|---|
-| **Deploy** | UI label for checking an asset **out** of the warehouse onto a project (`CHECKED_OUT` status displays as "Deployed"). See [12-warehouse.md](../FEATUREDOCS/12-warehouse.md). |
+| **Deploy** | UI verb for checking an asset **out** of the warehouse onto a job. The resulting `CHECKED_OUT` status displays as **Out** (D90; formerly "Deployed"). See [12-warehouse.md](../FEATUREDOCS/12-warehouse.md). |
+| **Home** (UI) | The landing page and module name for `/dashboard` (D66); formerly "Dashboard". The customizable widget board is still the dashboard feature (FEATUREDOCS/81). |
+| **Schedule** (UI) | The gear availability calendar at `/availability` (D7); formerly "Availability". The crew *Availability* tab (blocks) is a different thing and keeps its name. |
+| **The floor** (UI) | The warehouse landing page (`/warehouse`). |
+| **Loose** (UI) | Gear not in a case (replaces "Not planned" / "No container"). |
 | **Return** | UI label for checking an asset **in** from a project back to the warehouse. |
 | **Docket** | A delivery or return document generated for a project (delivery docket / return docket) — see [13-pdfs.md](../FEATUREDOCS/13-pdfs.md). |
 | **Prep container (prep)** | A visual grouping label applied to assets during the pick/prep phase of warehouse operations. Not backed by a kit — just a string field on the line item. See [32-preps.md](../FEATUREDOCS/32-preps.md). |

@@ -178,7 +178,7 @@ announced where the person who caused it is looking:
   Quoting. Move it to Quoted? **Move**"). The offer is now the opt-out path, not
   the normal one — `sendNative` returns `autoStatusChange` when it acted and
   `offerStatusChange` only when it didn't, so the two are never both set.
-- **Warehouse + returns station** — a toast ("Job moved to Deployed — nothing left
+- **Warehouse + returns station** — a toast ("Job moved to Out — nothing left
   on the dock"). Fired in the HOOKS (`use-warehouse-writes`, `use-returns`,
   `use-check-record-writes`), once, rather than at each call site: the automation
   is a property of the mutation, not of the button that happened to call it.
@@ -187,7 +187,7 @@ announced where the person who caused it is looking:
   On the six browser-direct warehouse writes (#1222 — see "Undo" below), this
   toast and the new Undo toast are the SAME toast: when a call both advances the
   status and is undoable, the status text folds into the undo toast's title
-  (`Deployed 12 items · job moved to Deployed`) instead of firing twice.
+  (`Deployed 12 items · job moved to Out`) instead of firing twice.
   `src/lib/warehouse-undo-toast.ts`'s `announceWarehouseWrite` is the one place
   that decides.
 - **Activity log** — a `STATUS_CHANGE` row with `metadata.autoAdvanceTrigger`, so

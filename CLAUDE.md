@@ -821,6 +821,17 @@ default, or the scanner silently stops decoding on warehouse wifi.
 the way the pump does, decode it back. The absence of exactly that test is how
 "it doesn't work on iOS" shipped.
 
+### UI vocabulary — words in `src/lib/vocabulary.ts`, intent in `status-colors.ts`
+The UI says **Job** (code, routes, enums, Convex and API/MCP names stay `project`), **Home**
+(`/dashboard`), **Schedule** (`/availability`), **Out** (`CHECKED_OUT`; the verb **Deploy**
+stays), **Loose** (not in a case), **To pick · Prepped · Out · Returned · De-prepped · Closed**.
+Module names and stage words come from `vocabulary.ts` (`MODULE_NAMES`, `GEAR_STAGE_LABELS`,
+`OUT_LABEL`, `LOOSE_LABEL`); stage colours come from the one `gearStage` table in
+`status-colors.ts` — never an inline `bg-*-soft` stage override. Convex-authored error and
+activity text still says "project"/"deployed" (known residue). The phone breakpoint is
+`PHONE_MAX` = 859 (`src/lib/breakpoints.ts`; Tailwind `md` = 860); the 72px tablet rail at
+<= 1023px is a CSS (`max-lg`) swap in `app-sidebar.tsx`, ⌘B collapse is desktop-only.
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

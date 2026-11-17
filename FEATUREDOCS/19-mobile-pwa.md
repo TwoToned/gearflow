@@ -381,3 +381,7 @@ Dialogs that benefit from edge-to-edge space on phones switch to a full-screen
 sheet when `useIsMobile()` is true: `h-[100dvh] max-h-[100dvh] w-full max-w-full
 rounded-none border-0` plus `env(safe-area-inset-*)` padding. Examples:
 `CommandSearch` dialog and the task edit dialog in `tasks-panel.tsx`.
+
+## One phone breakpoint (D68) and the tablet rail (D67)
+
+Phone is `max-width: 859px`; Tailwind's `md` is moved to 860px (`--breakpoint-md` in `globals.css`), so every `md:` class and `useIsMobile()` agree. The constants live in `src/lib/breakpoints.ts` (`PHONE_MAX` 859, `TABLET_MAX` 1023) and `breakpoints.test.ts` fails on a hard-coded 767/768. iPad portrait therefore gets the phone layout. At 860-1023px the sidebar is an automatic 72px icon rail (flyouts carry every sub-page); `⌘B` is a no-op there and collapses to the rail at >= 1024px.

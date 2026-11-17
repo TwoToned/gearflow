@@ -41,6 +41,7 @@ import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { assetStatusLabels, bulkAssetStatusLabels, conditionLabels } from "@/lib/status-labels";
 import { getStatusColor } from "@/lib/status-colors";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyAsset = Record<string, any>;
@@ -118,7 +119,7 @@ function useAssetColumns(
       // source of truth — instead of hardcoded palette swatches.
       filterOptions: [
         { value: "AVAILABLE", label: "Available", color: getStatusColor("asset", "AVAILABLE").dot },
-        { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("asset", "CHECKED_OUT").dot },
+        { value: "CHECKED_OUT", label: OUT_LABEL, color: getStatusColor("asset", "CHECKED_OUT").dot },
         { value: "IN_MAINTENANCE", label: "In maintenance", color: getStatusColor("asset", "IN_MAINTENANCE").dot },
         { value: "RESERVED", label: "Reserved", color: getStatusColor("asset", "RESERVED").dot },
         { value: "RETIRED", label: "Retired", color: getStatusColor("asset", "RETIRED").dot },
@@ -139,7 +140,7 @@ function useAssetColumns(
       cell: (row) => {
         // Text colour derives from the status intent map (status-colors.ts).
         if (row.status === "CHECKED_OUT") {
-          return <span className={cn("text-caption font-medium", getStatusColor("asset", "CHECKED_OUT").text)}>Deployed</span>;
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "CHECKED_OUT").text)}>{OUT_LABEL}</span>;
         }
         if (row.status === "RESERVED") {
           return <span className={cn("text-caption font-medium", getStatusColor("asset", "RESERVED").text)}>Reserved</span>;
@@ -723,7 +724,7 @@ export function AssetTable() {
         open={bulkForceReturnOpen}
         onOpenChange={setBulkForceReturnOpen}
         title={`Force return ${selectedIds.size} asset${selectedIds.size === 1 ? "" : "s"}?`}
-        description="Project assignments are marked returned and statuses reset. Each asset returns to its home location. Use when scanning isn't possible."
+        description="Job assignments are marked returned and statuses reset. Each asset returns to its home location. Use when scanning isn't possible."
         confirmLabel={`Force return ${selectedIds.size}`}
         onConfirm={() => {
           forceReturnMutation.mutate();
@@ -791,7 +792,7 @@ function BulkEditDialog({
             >
               <option value="">— No change —</option>
               <option value="AVAILABLE">Available</option>
-              <option value="CHECKED_OUT">Deployed</option>
+              <option value="CHECKED_OUT">{OUT_LABEL}</option>
               <option value="IN_MAINTENANCE">In maintenance</option>
               <option value="RESERVED">Reserved</option>
               <option value="RETIRED">Retired</option>

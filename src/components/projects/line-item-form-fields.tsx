@@ -164,7 +164,7 @@ export function TaxRateField({ id, value, onValueChange, disabled, label = "Tax 
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ui-text text-muted">%</span>
       </div>
-      <p className="t-micro text-muted">{hint ?? "Leave blank to use the project's rate."}</p>
+      <p className="t-micro text-muted">{hint ?? "Leave blank to use the job's rate."}</p>
     </Field>
   );
 }

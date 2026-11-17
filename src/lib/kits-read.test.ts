@@ -90,7 +90,7 @@ describe("computeKitDeletability", () => {
     expect(r.canHardDelete).toBe(false);
     expect(r.referencingLineItems).toBe(1);
     expect(r.reason).toBe(
-      "Kit is referenced by 1 project line item. Archive it instead, or remove it from those projects first.",
+      "Kit is referenced by 1 job line item. Archive it instead, or remove it from those jobs first.",
     );
   });
 
@@ -98,7 +98,7 @@ describe("computeKitDeletability", () => {
     const r = computeKitDeletability({ id: "k1", status: "AVAILABLE", isActive: true }, 3);
     expect(r.canHardDelete).toBe(false);
     expect(r.reason).toBe(
-      "Kit is referenced by 3 project line items. Archive it instead, or remove it from those projects first.",
+      "Kit is referenced by 3 job line items. Archive it instead, or remove it from those jobs first.",
     );
   });
 

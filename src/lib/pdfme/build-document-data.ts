@@ -331,7 +331,7 @@ export async function buildDocumentData(
   );
 
   if (!projectScalars) {
-    throw new Error(`Project ${projectId} not found`);
+    throw new Error(`Job ${projectId} not found`);
   }
 
   // #1233 (Phase 6) — the SPECIFIC quote's own version + frozen money

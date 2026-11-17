@@ -49,7 +49,7 @@ describe("MobileNav", () => {
 
   it("does not navigate when tapping the already-active tab", () => {
     render(<MobileNav />);
-    fireEvent.click(screen.getByText("Dashboard"));
+    fireEvent.click(screen.getByText("Home"));
     expect(push).not.toHaveBeenCalled();
   });
 });

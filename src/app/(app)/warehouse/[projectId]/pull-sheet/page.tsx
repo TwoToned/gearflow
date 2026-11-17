@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { StickyTable } from "@/components/ui/sticky-table";
 import { getAccessoryChildren } from "@/components/warehouse/pick-list-progress";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 /** First truthy value, or "" — a plain loop (not a chain of `||`/`?.`) keeps
  *  the caller's own branch count down for the complexity ratchet (R-3.6). */
@@ -83,7 +84,7 @@ function AccessoryChildPullSheetRows({ child }: { child: Record<string, unknown>
 const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   ON_SITE: "On site",
   RETURNED: "Returned",
 };
@@ -185,7 +186,7 @@ export default function PullSheetPage({
     return (
       <RequirePermission resource="warehouse" action="read">
         <div className="rounded-[var(--r)] border-l-[3px] border-l-t-out bg-card p-4 ring-1 ring-line">
-          <p className="text-ui-text font-medium text-ink">Project not found</p>
+          <p className="text-ui-text font-medium text-ink">Job not found</p>
           <p className="text-caption text-muted mt-0.5">
             It may have been removed, or you don&apos;t have access to it.
           </p>
@@ -276,7 +277,7 @@ export default function PullSheetPage({
       {/* Equipment grouped */}
       {allGroups.length === 0 ? (
         <p className="text-muted text-center py-8">
-          No equipment items on this project.
+          No equipment items on this job.
         </p>
       ) : (
         allGroups.map((group) => (

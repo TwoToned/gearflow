@@ -144,7 +144,7 @@ async function buildProjectsFeed(
     });
   }
 
-  return generateVCalendar(`${orgName} — Projects`, events, tzid);
+  return generateVCalendar(`${orgName} — Jobs`, events, tzid);
 }
 
 async function buildServicesFeed(

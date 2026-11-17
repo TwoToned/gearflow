@@ -11,6 +11,7 @@
  */
 import type { LineItemData } from "./equipment-row-types";
 import type { CustomUnitLine } from "@/lib/off-inventory";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 // ─── Row descriptor (cross-type unification) ─────────────────────────────────
 //
@@ -37,9 +38,6 @@ export interface RowDescriptor {
   isSale: boolean;
   /** show the expand chevron (kit parent or sub-hire group parent with children). */
   hasChildren: boolean;
-  /** A plain serialised line whose per-unit assets expand into their own rows
-   *  (multi-quantity, ≥2 tagged units, and NOT already a kit/sub-hire parent). */
-  hasExpandableUnits: boolean;
 }
 
 /** Count units carrying a resolved asset/bulk tag (the ones worth expanding). */
@@ -63,11 +61,6 @@ export function describeRow(item: LineItemData): RowDescriptor {
   const hasChildren =
     (item.childLineItems?.length ?? 0) > 0 &&
     (!!item.kitId || (item.subHireId != null && !item.isKitChild) || isAccessoryParent);
-  // A loose/grouped serialised multi-qty line has no childLineItems but multiple
-  // tagged units — expand those into per-unit rows (with fulfillment status). A
-  // single tagged unit stays inline (rendered next to the name). Kit children
-  // themselves never expand their units.
-  const hasExpandableUnits = !hasChildren && !item.isKitChild && taggedUnitCount(item) > 1;
   const source: RowSource = item.isContainerLineItem
     ? "container"
     : item.isCustomItem
@@ -78,7 +71,7 @@ export function describeRow(item: LineItemData): RowDescriptor {
           ? "sale"
           : "owned";
   const role: RowRole = item.isKitChild ? "child" : hasChildren ? "parent" : "standalone";
-  return { source, role, isKit, isSubhire, isSale, hasChildren, hasExpandableUnits };
+  return { source, role, isKit, isSubhire, isSale, hasChildren };
 }
 
 /** #1296 — true when an ordinary (non-container) line has any container
@@ -100,10 +93,10 @@ export function hasContainerChip(item: LineItemData): boolean {
 export function unitFulfillmentBadge(
   status?: string | null,
   returnCondition?: string | null,
-): { label: string; status: "ok" | "warn" | "overbooked" | "repair" | "neutral"; className?: string } {
+): { label: string; status: "ok" | "warn" | "overbooked" | "repair" | "neutral" | "primary"; className?: string } {
   switch (status) {
     case "CHECKED_OUT":
-      return { label: "Deployed", status: "neutral", className: "bg-out-soft text-t-out" };
+      return { label: OUT_LABEL, status: "primary" };
     case "RETURNED":
       if (returnCondition === "DAMAGED") return { label: "Returned · Damaged", status: "warn" };
       if (returnCondition === "MISSING") return { label: "Returned · Missing", status: "overbooked" };

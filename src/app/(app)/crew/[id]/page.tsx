@@ -484,7 +484,7 @@ export default function CrewMemberDetailPage({
   const assignmentColumns: ColumnDef<any>[] = [
     {
       id: "project",
-      header: "Project",
+      header: "Job",
       mobile: "title",
       cell: (a) => (
         <Link
@@ -560,7 +560,7 @@ export default function CrewMemberDetailPage({
     },
     {
       id: "projectStatus",
-      header: "Project status",
+      header: "Job status",
       mobile: "meta",
       cell: (a) => (
         <StatusIndicator
@@ -708,7 +708,7 @@ export default function CrewMemberDetailPage({
     },
     {
       id: "project",
-      header: "Project",
+      header: "Job",
       mobile: "subtitle",
       cell: (entry) =>
         entry.assignment ? (
@@ -1083,11 +1083,11 @@ export default function CrewMemberDetailPage({
                 {/* Assignments Tab */}
                 <TabsContent value="assignments" className="mt-4">
                   <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
-                    <h3 className="text-card-title font-bold text-ink mb-4">Project assignments</h3>
+                    <h3 className="text-card-title font-bold text-ink mb-4">Job assignments</h3>
                       {assignments.length === 0 ? (
                         <EmptyState
-                          title="No project assignments yet"
-                          description="Assign this crew member to a project from the planner or a project's crew tab."
+                          title="No job assignments yet"
+                          description="Assign this crew member to a job from the planner or a job's crew tab."
                         />
                       ) : (
                         <>
@@ -1095,7 +1095,7 @@ export default function CrewMemberDetailPage({
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Project</TableHead>
+                                <TableHead>Job</TableHead>
                                 <TableHead className="hidden md:table-cell">
                                   Role
                                 </TableHead>
@@ -1105,7 +1105,7 @@ export default function CrewMemberDetailPage({
                                 <TableHead>Dates</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead className="hidden md:table-cell">
-                                  Project status
+                                  Job status
                                 </TableHead>
                                 <TableHead className="w-[50px]" />
                               </TableRow>
@@ -1457,7 +1457,7 @@ export default function CrewMemberDetailPage({
                       {!timeEntries || timeEntries.length === 0 ? (
                         <EmptyState
                           title="No time entries recorded yet"
-                          description="Log time against a project assignment or a general shift."
+                          description="Log time against a job assignment or a general shift."
                         />
                       ) : (
                         <>
@@ -1466,7 +1466,7 @@ export default function CrewMemberDetailPage({
                           <TableHeader>
                             <TableRow>
                               <TableHead>Date</TableHead>
-                              <TableHead>Project</TableHead>
+                              <TableHead>Job</TableHead>
                               <TableHead>Role</TableHead>
                               <TableHead>Start</TableHead>
                               <TableHead>End</TableHead>
@@ -2230,7 +2230,7 @@ function AddTimeEntryDialog({
               }}
             >
               <Briefcase className="size-5" />
-              Project
+              Job
             </Button>
             <Button
               type="button"

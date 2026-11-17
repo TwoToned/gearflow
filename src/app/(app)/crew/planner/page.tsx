@@ -505,7 +505,7 @@ export default function CrewPlannerPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search crew, role, or project…"
+              placeholder="Search crew, role, or job…"
               className="pl-9"
               aria-label="Search planner"
             />
@@ -530,15 +530,15 @@ export default function CrewPlannerPage() {
           </Select>
 
           <Select value={projectFilter} onValueChange={setProjectFilter}>
-            <SelectTrigger className="w-full sm:w-52" aria-label="Filter by project">
+            <SelectTrigger className="w-full sm:w-52" aria-label="Filter by job">
               <SelectValue>
                 {projectFilter === ALL
-                  ? "All projects"
-                  : projectOptions.find((p) => p.id === projectFilter)?.label ?? "All projects"}
+                  ? "All jobs"
+                  : projectOptions.find((p) => p.id === projectFilter)?.label ?? "All jobs"}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All projects</SelectItem>
+              <SelectItem value={ALL}>All jobs</SelectItem>
               {projectOptions.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.label}

@@ -318,7 +318,7 @@ function AvailabilityPage() {
                 </div>
               </div>
               <p className="t-small text-muted mt-1.5">
-                When projects are live and gear is committed.
+                When jobs are live and gear is committed.
               </p>
             </div>
 
@@ -347,9 +347,9 @@ function AvailabilityPage() {
               {/* Legend */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 t-micro text-muted">
                 <span className="text-muted">Busy days</span>
-                <LegendSwatch className="bg-blue-soft/40 border-blue/30" label="1 project" />
-                <LegendSwatch className="bg-warn-soft/50 border-warn/30" label="2 projects" />
-                <LegendSwatch className="bg-red-soft border-red/40" label="3+ projects" />
+                <LegendSwatch className="bg-blue-soft/40 border-blue/30" label="1 job" />
+                <LegendSwatch className="bg-warn-soft/50 border-warn/30" label="2 jobs" />
+                <LegendSwatch className="bg-red-soft border-red/40" label="3+ jobs" />
               </div>
 
               {isLoading ? (
@@ -692,7 +692,7 @@ function AgendaView({
           <CalendarDays className="size-5" />
         </div>
         <div>
-          <p className="t-heading text-ink">No projects this month</p>
+          <p className="t-heading text-ink">No jobs this month</p>
           <p className="t-micro text-muted">Nothing&apos;s booked in. Quiet month.</p>
         </div>
       </div>

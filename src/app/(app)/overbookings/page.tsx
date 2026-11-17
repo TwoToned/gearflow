@@ -340,7 +340,7 @@ function MissingCrewSection({ rows }: { rows: OverbookingMissingCrewRow[] }) {
 function UnconfirmedCrewSection({ rows }: { rows: OverbookingUnconfirmedCrewRow[] }) {
   return (
     <div className={TILE}>
-      <SectionHeader icon={UserCheck} title="Unconfirmed crew" subtitle="Not yet CONFIRMED, on a project starting in range" count={rows.length} pillClass={SOFT_PILL} />
+      <SectionHeader icon={UserCheck} title="Unconfirmed crew" subtitle="Not yet CONFIRMED, on a job starting in range" count={rows.length} pillClass={SOFT_PILL} />
       {rows.length === 0 ? (
         <p className="t-micro text-muted">Every upcoming assignment is confirmed.</p>
       ) : (

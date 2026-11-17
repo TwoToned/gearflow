@@ -13,6 +13,7 @@
  * pre-#1160 row, which has no `projectStatusAutomation` key at all) gets the
  * automation without a backfill — the setting only ever records an opt-OUT.
  */
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 export const AUTO_STATUS_KEYS = [
   "quoteSent",
@@ -58,7 +59,7 @@ export const AUTO_STATUS_LABELS: Record<AutoStatusKey, { title: string; moves: s
   },
   allCheckedOut: {
     title: "Everything deployed",
-    moves: "Deployed",
+    moves: OUT_LABEL,
     detail: "When the last packed item leaves the building — nothing is left waiting on the dock.",
   },
   allReturned: {
@@ -97,7 +98,7 @@ export function autoStatusToast(status: string | null | undefined): { title: str
     case "PREPPING":
       return { title: "Job moved to Prepping", description: "First item packed — the job is now in prep." };
     case "CHECKED_OUT":
-      return { title: "Job moved to Deployed", description: "Nothing left on the dock — everything packed has gone out." };
+      return { title: `Job moved to ${OUT_LABEL}`, description: "Nothing left on the dock — everything packed has gone out." };
     case "RETURNED":
       return { title: "Job moved to Returned", description: "Last outstanding item is back in." };
     default:

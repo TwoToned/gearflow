@@ -14,18 +14,19 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
+import { MODULE_NAMES } from "@/lib/vocabulary";
 import { usePlatformName } from "@/lib/use-platform-name";
 
 /** Map route segments to display names */
 const segmentLabels: Record<string, string> = {
-  dashboard: "Dashboard",
+  dashboard: MODULE_NAMES.home,
   assets: "Assets",
   registry: "Registry",
   models: "Models",
   "sales-stock": "Sales Stock",
-  availability: "Availability",
+  availability: MODULE_NAMES.schedule,
   kits: "Kits",
-  projects: "Projects",
+  projects: MODULE_NAMES.jobs,
   templates: "Templates",
   warehouse: "Warehouse",
   clients: "Clients",
@@ -61,7 +62,7 @@ const segmentLabels: Record<string, string> = {
 
 function getPageTitle(pathname: string): string {
   const segments = pathname.split("/").filter(Boolean);
-  if (segments.length === 0) return "Dashboard";
+  if (segments.length === 0) return MODULE_NAMES.home;
 
   // Build display breadcrumb, skipping ID-like segments
   const parts: string[] = [];
@@ -73,7 +74,7 @@ function getPageTitle(pathname: string): string {
     // Skip ID segments (cuid, uuid, etc.)
   }
 
-  return parts.length > 0 ? parts.join(" / ") : "Dashboard";
+  return parts.length > 0 ? parts.join(" / ") : MODULE_NAMES.home;
 }
 
 export function TopBar({ title }: { title?: string }) {
@@ -88,7 +89,8 @@ export function TopBar({ title }: { title?: string }) {
 
   return (
     <header className="sticky z-30 flex shrink-0 items-center gap-2 border-b border-line bg-paper/80 backdrop-blur-md px-4" style={{ top: 0, paddingTop: "env(safe-area-inset-top, 0px)", minHeight: "calc(3.5rem + env(safe-area-inset-top, 0px))" }}>
-      <SidebarTrigger className="-ml-1" />
+      {/* Hidden 860-1023px: the rail is forced there, so the toggle would do nothing (D67). */}
+      <SidebarTrigger className="-ml-1 md:max-lg:hidden" />
       <Separator orientation="vertical" className="mr-2 h-4 hidden sm:block" />
       <Breadcrumb className="hidden sm:flex">
         <BreadcrumbList>

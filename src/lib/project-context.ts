@@ -60,12 +60,12 @@ export interface ScheduleRow {
 export function projectScheduleRows(project: ProjectContextProject): ScheduleRow[] {
   return [
     {
-      label: "Project starts",
+      label: "Job starts",
       date: project.projectStartDate ?? project.loadInDate ?? null,
       time: project.projectStartTime ?? project.loadInTime ?? null,
     },
     {
-      label: "Project ends",
+      label: "Job ends",
       date: project.projectEndDate ?? project.loadOutDate ?? null,
       time: project.projectEndTime ?? project.loadOutTime ?? null,
     },

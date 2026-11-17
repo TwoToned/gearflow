@@ -1010,7 +1010,7 @@ function LogTimeDialog({
                 }}
               >
                 <Briefcase className="size-5" />
-                Project
+                Job
               </Button>
               <Button
                 type="button"
@@ -1068,7 +1068,7 @@ function LogTimeDialog({
                 </div>
               ) : (
                 <p className="text-caption text-muted rounded-[var(--r)] border border-line p-3">
-                  Project assignment selection is not available for multiple crew members. Each member&apos;s entry will be created without a linked assignment, or switch to General mode.
+                  Job assignment selection is not available for multiple crew members. Each member&apos;s entry will be created without a linked assignment, or switch to General mode.
                 </p>
               )
             ) : (

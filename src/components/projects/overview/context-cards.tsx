@@ -49,7 +49,7 @@ export function OverviewScheduleCard({ project }: { project: ProjectContextProje
           ]}
         />
         {rows.length === 0 && (
-          <p className="mt-2 text-caption text-muted">No project window set — same as the rental dates.</p>
+          <p className="mt-2 text-caption text-muted">No job window set — same as the rental dates.</p>
         )}
       </div>
     </Panel>

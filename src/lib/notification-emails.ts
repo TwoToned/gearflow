@@ -88,14 +88,14 @@ export function overdueReturnEmail(data: OverdueReturnEmailData) {
     subject: `Overdue return: ${data.projectNumber} — ${data.projectName}`,
     html: emailWrapper(
       `
-        <h2>Project return is overdue</h2>
+        <h2>Job return is overdue</h2>
         <p>Hi ${escapeHtml(data.recipientName)},</p>
         <p><strong>${escapeHtml(data.projectNumber)} — ${escapeHtml(data.projectName)}</strong> was due back ${
           data.rentalEndDate
             ? `on ${new Date(data.rentalEndDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}`
             : "already"
         }, but ${data.itemsDeployed} item${data.itemsDeployed === 1 ? " is" : "s are"} still deployed.</p>
-        ${ctaButton(link, "Open project")}
+        ${ctaButton(link, "Open job")}
       `,
       data,
     ),
@@ -114,14 +114,14 @@ export function upcomingProjectEmail(data: UpcomingProjectEmailData) {
     subject: `Starting soon: ${data.projectNumber} — ${data.projectName}`,
     html: emailWrapper(
       `
-        <h2>A project is starting soon</h2>
+        <h2>A job is starting soon</h2>
         <p>Hi ${escapeHtml(data.recipientName)},</p>
         <p><strong>${escapeHtml(data.projectNumber)} — ${escapeHtml(data.projectName)}</strong> kicks off ${
           data.rentalStartDate
             ? new Date(data.rentalStartDate).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "short" })
             : "within the next few days"
         }.</p>
-        ${ctaButton(link, "Open project")}
+        ${ctaButton(link, "Open job")}
       `,
       data,
     ),
@@ -251,7 +251,7 @@ export function quoteExpiringEmail(data: QuoteExpiringEmailData) {
         <h2>${data.expired ? "A sent quote has expired" : "A sent quote is expiring soon"}</h2>
         <p>Hi ${escapeHtml(data.recipientName)},</p>
         <p><strong>${escapeHtml(data.projectNumber)} v${data.version}</strong>${clientStr} ${quoteExpiringStatusLine(data)}${totalSuffix}, with no response yet.</p>
-        ${ctaButton(link, "Open project finance")}
+        ${ctaButton(link, "Open job finance")}
       `,
       data,
     ),

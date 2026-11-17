@@ -442,8 +442,8 @@ export function ServicesPanel({
             title="No logistics yet"
             description={
               hasProjectDates
-                ? "Generate delivery, bump-in, and pickup from your project dates — or add them by hand."
-                : "Set project dates first, then generate the run automatically."
+                ? "Generate delivery, bump-in, and pickup from your job dates — or add them by hand."
+                : "Set job dates first, then generate the run automatically."
             }
             action={
               hasProjectDates ? (
@@ -595,7 +595,7 @@ export function ServicesPanel({
             status changes, messaging, and call sheets. */}
         <div className="h-px bg-line" />
         <div className="space-y-3">
-          <h4 className="text-card-title font-semibold text-ink">Project crew</h4>
+          <h4 className="text-card-title font-semibold text-ink">Job crew</h4>
           <CrewPanel projectId={projectId} />
         </div>
 
@@ -604,7 +604,7 @@ export function ServicesPanel({
           open={bulkDeleteOpen}
           onOpenChange={setBulkDeleteOpen}
           title="Delete selected services"
-          description="This removes the selected services and their crew assignments from the project."
+          description="This removes the selected services and their crew assignments from the job."
           count={selectedServiceIds.length}
           itemLabel="service"
           pending={bulkDeleteMut.isPending}
@@ -1043,17 +1043,17 @@ function CloneServicesDialog({
           <DialogTitle>Import services</DialogTitle>
         </DialogHeader>
         <p className="text-ui-text text-ink-2">
-          Clone services from a previous project. Dates will be automatically adjusted to match this project.
+          Clone services from a previous job. Dates will be automatically adjusted to match this job.
         </p>
         <div className="space-y-1.5">
-          <Label>Source project</Label>
+          <Label>Source job</Label>
           <ComboboxPicker
             value={sourceProjectId}
             onChange={setSourceProjectId}
             options={projectOptions}
-            placeholder="Search projects..."
+            placeholder="Search jobs..."
             searchPlaceholder="Search by name or number..."
-            emptyMessage="No projects found"
+            emptyMessage="No jobs found"
           />
         </div>
         <DialogFooter>

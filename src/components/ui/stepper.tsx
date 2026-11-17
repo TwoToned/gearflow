@@ -41,7 +41,7 @@ const stateText: Record<StepState, string> = {
 function LifecycleStepper({
   steps,
   onStepClick,
-  label = "Project lifecycle",
+  label = "Job lifecycle",
   className,
   ...props
 }: React.HTMLAttributes<HTMLOListElement> & {

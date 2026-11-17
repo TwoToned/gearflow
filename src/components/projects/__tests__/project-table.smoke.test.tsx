@@ -110,7 +110,7 @@ describe("ProjectTable (smoke)", () => {
 
   it("debounces the search box instead of firing a query per keystroke", () => {
     render(<ProjectTable />);
-    const input = screen.getByPlaceholderText("Search by name, project #, or location...");
+    const input = screen.getByPlaceholderText("Search by name, job #, or location...");
     fireEvent.change(input, { target: { value: "splendour" } });
     expect((lastProjectsPageArgs as { search?: string })?.search).toBeUndefined();
   });

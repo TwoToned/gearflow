@@ -65,10 +65,10 @@ describe("StickyTable", () => {
     const style = container.querySelector("style")!.innerHTML;
     // The sticky/min-width rules live inside a max-width media query; base rules don't.
     const mobile = style.slice(
-      style.indexOf("@media (max-width:767px)"),
+      style.indexOf("@media (max-width:859px)"),
       style.indexOf("@media print"),
     );
-    expect(style).toContain("@media (max-width:767px)");
+    expect(style).toContain("@media (max-width:859px)");
     expect(mobile).toContain("position:sticky");
     expect(mobile).toContain("min-width:560px");
   });

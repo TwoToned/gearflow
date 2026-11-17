@@ -26,11 +26,16 @@ import { useSidebar } from "@/components/ui/sidebar";
 const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red focus-visible:ring-offset-2 focus-visible:ring-offset-paper";
 
-export function UserNav() {
+/**
+ * `compact` pins the icon-only (rail) rendering. The sidebar renders both its
+ * full and rail views and lets CSS pick (so the tablet rail is right on first
+ * paint), so each view says which it is instead of reading the JS state.
+ */
+export function UserNav({ compact }: { compact?: boolean } = {}) {
   const router = useRouter();
   const { data: session } = useSession();
   const { state, isMobile } = useSidebar();
-  const collapsed = state === "collapsed" && !isMobile;
+  const collapsed = compact ?? (state === "collapsed" && !isMobile);
 
   const user = session?.user;
   const isSiteAdmin = isSiteAdminRole(

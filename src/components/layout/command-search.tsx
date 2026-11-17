@@ -97,7 +97,7 @@ const typeLabels: Record<SearchResultType, string> = {
   kit: "Kit",
   asset: "Asset",
   "bulk-asset": "Bulk Asset",
-  project: "Project",
+  project: "Job",
   client: "Client",
   supplier: "Supplier",
   location: "Location",
@@ -686,7 +686,7 @@ export function CommandSearch() {
     if (!dateInfo) return null;
     return {
       id: `date-${dateInfo.iso}`,
-      title: `Availability for ${dateInfo.formatted}`,
+      title: `Schedule for ${dateInfo.formatted}`,
       subtitle: dateInfo.searchPart
         ? `Showing results for "${dateInfo.searchPart}"`
         : "View asset availability calendar",

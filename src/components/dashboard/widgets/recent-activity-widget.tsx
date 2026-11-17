@@ -52,7 +52,7 @@ function ActivityItem({ item }: { item: TimelineItem }) {
                 {project.name as string}
               </Link>
             ) : (
-              <span className="text-muted">unknown project</span>
+              <span className="text-muted">unknown job</span>
             )}
           </p>
           <p className="mt-0.5 text-[11px] text-muted">

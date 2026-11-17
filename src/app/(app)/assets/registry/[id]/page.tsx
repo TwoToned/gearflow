@@ -527,7 +527,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <TabsContent value="history" className="mt-4">
                 {asset.lineItems.length === 0 ? (
                   <div className="rounded-[var(--r-lg)] border-2 border-border p-7 text-center">
-                    <p className="text-ui-text text-ink-2">No project history yet</p>
+                    <p className="text-ui-text text-ink-2">No job history yet</p>
                     <p className="mt-1 text-caption text-muted">
                       This asset hasn&apos;t been assigned to a project — it&apos;ll show up here once it&apos;s on a job.
                     </p>
@@ -923,7 +923,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         open={forceReturnOpen}
         onOpenChange={setForceReturnOpen}
         title="Force return this asset?"
-        description="All project assignments for this asset will be marked as returned. The asset moves back to AVAILABLE. Use this when scanning isn't possible."
+        description="All job assignments for this asset will be marked as returned. The asset moves back to AVAILABLE. Use this when scanning isn't possible."
         confirmLabel="Force return"
         onConfirm={() => {
           forceReturnMutation.mutate();

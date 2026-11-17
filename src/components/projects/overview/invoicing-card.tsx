@@ -88,7 +88,7 @@ function NoClientPanel() {
   return (
     <Panel className="p-4">
       <OverviewAmount value={null} />
-      <p className="mt-2 text-caption text-muted">Assign a client to this project to raise quotes and invoices.</p>
+      <p className="mt-2 text-caption text-muted">Assign a client to this job to raise quotes and invoices.</p>
     </Panel>
   );
 }

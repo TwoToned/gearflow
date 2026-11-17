@@ -11,7 +11,7 @@ export default function NewTemplatePage() {
         <div>
           <h1 className="t-page-title text-ink">New template</h1>
           <p className="t-body text-muted">
-            Create a reusable project template. Dates are optional for templates.
+            Create a reusable job template. Dates are optional for templates.
           </p>
         </div>
         <ProjectWizard isTemplate />

@@ -313,7 +313,7 @@ export default function GroupTemplatesSettingsPage() {
               Delete Template
             </DialogTitle>
             <DialogDescription>
-              Delete &quot;{deleteTemplate?.name}&quot;? Projects that already used this template
+              Delete &quot;{deleteTemplate?.name}&quot;? Jobs that already used this template
               keep their line items; only the template definition is removed.
             </DialogDescription>
           </DialogHeader>

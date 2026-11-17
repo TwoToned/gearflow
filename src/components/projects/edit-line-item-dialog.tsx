@@ -449,7 +449,7 @@ function EditLineItemDialogBody({
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 {rentalStartDate && rentalEndDate
-                  ? `This will overbook ${requestedQty} units with only ${availableForEdit ?? 0} available across overlapping projects`
+                  ? `This will overbook ${requestedQty} units with only ${availableForEdit ?? 0} available across overlapping jobs`
                   : `Only ${availableForEdit ?? 0} in stock — requesting ${requestedQty}`}
               </span>
             </p>

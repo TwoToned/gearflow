@@ -16,7 +16,7 @@ export default function ProjectsPage() {
     <FadeIn>
       <RequirePermission resource="project" action="read">
         <ListPageLayout
-          title="Projects"
+          title="Jobs"
           description="Gigs, shows, and events — from enquiry to invoice."
         >
           <ProjectsView />

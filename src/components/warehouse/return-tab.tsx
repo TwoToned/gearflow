@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { LOOSE_LABEL, OUT_LABEL } from "@/lib/vocabulary";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -219,8 +220,8 @@ export function ReturnTab({
 
         {checkedOutItems.length === 0 ? (
           <EmptyState
-            title="Nothing out on this project"
-            description="Deployed gear shows here, ready to scan back in."
+            title="Nothing out on this job"
+            description="Gear that is out shows here, ready to scan back in."
           />
         ) : (
           <>
@@ -266,7 +267,7 @@ export function ReturnTab({
                         <TableCell colSpan={5} className="py-1.5">
                           <div className="flex items-center gap-1.5 text-caption font-medium text-muted">
                             <Package className="h-3.5 w-3.5" />
-                            No container
+                            {LOOSE_LABEL}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -281,7 +282,7 @@ export function ReturnTab({
                         {renderGroupHeader(
                           entry, childKeys, selectedIn, setSelectedIn,
                           <TableCell>
-                            <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                            <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />
                           </TableCell>
                         )}
                         {isExpanded && entry.items.map((item, idx) => (
@@ -302,7 +303,7 @@ export function ReturnTab({
                               <TableCell className="text-center tabular-nums">1</TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -345,7 +346,7 @@ export function ReturnTab({
                                 {checkedCount} selected
                               </Badge>
                             ) : (
-                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />
                             )}
                           </TableCell>
                         )}
@@ -444,7 +445,7 @@ export function ReturnTab({
                                 Partial
                               </Badge>
                             ) : (
-                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />
                             )}
                           </TableCell>
                         </TableRow>
@@ -524,7 +525,7 @@ export function ReturnTab({
                                 Partial
                               </Badge>
                             ) : (
-                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />
                             )}
                           </TableCell>
                         </TableRow>
@@ -591,7 +592,7 @@ export function ReturnTab({
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
-                          <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                          <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />
                           <Button
                             variant="ghost"
                             size="icon"
@@ -624,7 +625,7 @@ export function ReturnTab({
                 {container ? (
                   <ScanContainerHeading label={container} />
                 ) : returnContainerGroups.some((g) => g.container !== null) && (
-                  <ScanContainerHeading label="No container" muted />
+                  <ScanContainerHeading label={LOOSE_LABEL} muted />
                 )}
                 {entries.map((entry) => {
                   if (entry.kind === "serialized-group") {
@@ -641,7 +642,7 @@ export function ReturnTab({
                         onToggleExpand={() => toggleExpanded(entry.groupKey)}
                         name={entry.modelName}
                         qtyLabel={entry.items.length}
-                        status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                        status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />}
                       >
                         {entry.items.map((item, idx) => (
                           <ScanItemCard
@@ -652,7 +653,7 @@ export function ReturnTab({
                             name={item.asset?.assetTag ? `${item.model?.name || "Asset"}` : `Unit ${idx + 1}`}
                             assetTag={item.asset?.assetTag || "—"}
                             qtyLabel={1}
-                            status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                            status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />}
                             onReportIssue={() => onReportIssue(item)}
                           />
                         ))}
@@ -680,7 +681,7 @@ export function ReturnTab({
                         status={checkedCount > 0 ? (
                           <Badge status="neutral" className="bg-blue-soft text-blue">{checkedCount} selected</Badge>
                         ) : (
-                          <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                          <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />
                         )}
                       >
                         {childKeys.map((key, idx) => {
@@ -742,7 +743,7 @@ export function ReturnTab({
                         }
                         assetTag={entry.item.kit?.assetTag || "—"}
                         qtyLabel={entry.children.length}
-                        status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                        status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />}
                       >
                         <MobileKitChildCards
                           kitChildren={entry.children}
@@ -789,7 +790,7 @@ export function ReturnTab({
                         }
                         assetTag={entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
                         qtyLabel={entry.item.quantity}
-                        status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                        status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />}
                       >
                         <MobileKitChildCards
                           kitChildren={entry.children}
@@ -838,7 +839,7 @@ export function ReturnTab({
                           <span className="text-muted">/{item.checkedOutQuantity}</span>
                         </>
                       ) : 1}
-                      status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                      status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label={OUT_LABEL} variant="pill" />}
                       onReportIssue={() => onReportIssue(item)}
                     />
                   );

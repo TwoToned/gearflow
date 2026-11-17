@@ -233,13 +233,13 @@ for exactly the role it was built for.
 ## Status tables
 
 **Project:** `ENQUIRY`, `QUOTING`, `QUOTED`, `AWAITING_PAYMENT`, `CONFIRMED`,
-`PREPPING`, `CHECKED_OUT` (displayed "Deployed"), `ON_SITE`, `RETURNED`,
+`PREPPING`, `CHECKED_OUT` (displayed "Out"), `ON_SITE`, `RETURNED`,
 `COMPLETED`, `INVOICED`, `CANCELLED`.
 
 **Line item:** `QUOTED`, `CONFIRMED`, `PREPPED`, `CHECKED_OUT`, `RETURNED`,
 `CANCELLED`. Plus a separate `prepStatus` whose meaningful value is `PACKED`.
 
-**Asset:** `AVAILABLE`, `CHECKED_OUT` ("Deployed"), `IN_MAINTENANCE`, `RESERVED`,
+**Asset:** `AVAILABLE`, `CHECKED_OUT` ("Out"), `IN_MAINTENANCE`, `RESERVED`,
 `RETIRED`, `LOST`, `SOLD`.
 
 **Bulk asset:** `ACTIVE`, `LOW_STOCK`, `OUT_OF_STOCK`, `RETIRED`.

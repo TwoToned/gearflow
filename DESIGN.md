@@ -145,7 +145,7 @@ Eight named hues assigned to modules. **Red is never a module colour.** Each mod
 
 | Module | Token | Soft fill |
 |--------|-------|-----------|
-| Dashboard / Projects | `--blue` / `bg-blue` | `bg-blue-soft` |
+| Home / Jobs | `--blue` / `bg-blue` | `bg-blue-soft` |
 | Crew | `--purple` / `bg-purple` | `bg-purple-soft` |
 | Gear / Assets | `--amber` / `bg-amber` | `bg-amber-soft` |
 | Warehouse | `--teal` / `bg-teal` | `bg-teal-soft` |
@@ -203,7 +203,7 @@ Add `.light` class to `<html>` to switch. Paper uses `--border: var(--ink)` (ful
 ## Layout
 - **Max content width:** 1080px for content zones, full-width for tables and warehouse screens
 - **Grid:** `grid-cols-2` for forms, `grid-cols-4` for stat metrics
-- **Sidebar:** 220px fixed width on desktop
+- **Sidebar:** 220px fixed width at >= 1024px (collapsible to a 72px rail with ⌘B, remembered); the 72px icon rail is automatic at <= 1023px (UX unification D67, Phase 0)
 - **Responsive:** See §15 (Mobile Rules)
 
 ## Border Radius
@@ -443,6 +443,20 @@ All status → color intent mappings live in `src/lib/status-colors.ts`. **Never
 | info | `bg-blue` | `text-blue` | `bg-blue-soft text-blue` | `bg-blue-soft` |
 | neutral | `bg-rep` | `text-rep` | `bg-rep-soft text-rep` | `bg-rep-soft` |
 
+### Gear stages (D2/D90) — one table
+Words: `src/lib/vocabulary.ts` (`GEAR_STAGE_LABELS`). Intent: `status-colors.ts` (`gearStage` category). CHECKED_OUT reads **Out** in every status label; the verb **Deploy** stays.
+
+| Stage | Intent | Why |
+|---|---|---|
+| To pick | neutral | nothing has happened yet |
+| Prepped | info | packed and waiting |
+| Out | primary (solid red) | the CHECKED_OUT / live state |
+| Returned | warning | work remains (de-prep, checks) |
+| De-prepped | success | done |
+| Closed | neutral (outline) | archived |
+
+Gear not in a case reads **Loose**. A new stage renderer reads this table; never an inline `bg-*-soft` override.
+
 **Critical distinction:**
 - `primary` pill = solid `--red` fill (`bg-red text-white`) — live/active
 - `error` pill = `--t-out` text on `--out-soft` tint — problem/overdue
@@ -543,9 +557,9 @@ Archivo is loaded via `next/font/google` with weights 400–900. Always referenc
 ### Responsive Breakpoints
 | Breakpoint | Width | Behavior |
 |-----------|-------|---------|
-| Mobile | < 768px | Bottom nav, card lists, single column |
-| Tablet | 768px–1024px | Side nav collapses to icon-rail, 2-column content |
-| Desktop | > 1024px | Full sidebar, data tables, 2-column detail pages |
+| Mobile | <= 859px (`max-width: 859px`) | Bottom nav, card lists, single column. Tailwind `md` = 860px; one constant in `src/lib/breakpoints.ts` (D68) — iPad portrait gets this layout |
+| Tablet | 860px–1023px | Sidebar is the automatic 72px icon rail (icon + 10.5px label, flyouts for sub-pages), 2-column content (D67) |
+| Desktop | >= 1024px | Full 220px sidebar (⌘B collapses to the rail, remembered), data tables, 2-column detail pages |
 
 ### Viewport Behavior
 - `viewport-fit: cover`, `maximum-scale: 1` (see `layout.tsx`)
@@ -555,10 +569,10 @@ Archivo is loaded via `next/font/google` with weights 400–900. Always referenc
 ## §16 Mobile Navigation (Bottom Nav)
 
 ### Bottom Nav Structure
-5-item fixed bottom navigation bar for mobile (< 768px). Desktop uses the sidebar.
+5-item fixed bottom navigation bar for mobile (<= 859px). Desktop uses the sidebar.
 
 ```
-[ Dashboard ] [ Jobs ] [ Warehouse ] [ Crew ] [ Assets ]
+[ Home ] [ Jobs ] [ Warehouse ] [ Crew ] [ Assets ]
 ```
 
 **Decision D10A (work-layer phase 0.5, #1242): Today replaces Dashboard.**
@@ -603,8 +617,9 @@ are reachable only via "Add widget" on the dashboard board.
 `src/components/layout/mobile-nav.tsx` — **separate** from `app-sidebar.tsx`. Any IA change (add/remove tabs, reorder, rename) MUST be applied to BOTH files in the same PR.
 
 ### What Goes in the Bottom Nav vs Sidebar
+- Labels (D7/D66/D90): the module names live in `src/lib/vocabulary.ts` — Jobs (was Projects), Home (was Dashboard), Schedule (was Availability). Routes do not change.
 - Bottom nav (5 items): Daily-use operator workflows only
-  - Dashboard (org overview, customizable widget board)
+  - Home (org overview, customizable widget board; route `/dashboard`)
   - Jobs (active projects, pull sheets)
   - Warehouse (check-out/in, scanning)
   - Crew (schedule, roster)
@@ -688,3 +703,4 @@ Login / register / onboarding use expressive decorative chrome; app controls, ty
 | 2026-10-19 | `Kbd` restyled to the shared RVLT key-cap spec at 11px | Its old classes resolved to no token; 11px floor |
 | 2026-10-19 | App icon = the R mark in cream on an RVLT-red tile (PWA icons, favicon, in-app favicon default) | Replaces the pre-rebrand teal "G"; same build as Binder's icon |
 | 2026-10-19 | Albert is RVLT's character; the stage light stays Flow's in-app mascot | Brand decision; Albert pack lives in rvlt-designlanguage |
+| 2026-11-17 | Phase 0 vocabulary + tokens (UX unification): Jobs / Home / Schedule, Out / To pick / Loose, one stage→intent table, sidebar 220px, automatic 72px rail at <= 1023px, phone breakpoint 859px | Decisions D2, D7, D66, D67, D68, D90 of docs/designs/ux-unification-2026-10.md; labels only, routes and enums unchanged |

@@ -328,7 +328,7 @@ export function CategoryManager() {
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
         title="Delete this category?"
-        description="Models, assets, and projects assigned to this category will be unlinked. Sub-categories under it will also be removed."
+        description="Models, assets, and jobs assigned to this category will be unlinked. Sub-categories under it will also be removed."
         confirmLabel="Delete category"
         onConfirm={() => {
           if (deleteId) {

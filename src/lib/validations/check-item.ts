@@ -156,7 +156,7 @@ export type CompleteCheckAndStoreValues = z.input<
 // ─── Warehouse Close ────────────────────────────────────────────────────────
 
 export const warehouseCloseSchema = z.object({
-  projectId: z.string().min(1, "Project is required"),
+  projectId: z.string().min(1, "Job is required"),
 });
 
 export type WarehouseCloseFormValues = z.input<typeof warehouseCloseSchema>;

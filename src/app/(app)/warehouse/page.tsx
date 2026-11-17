@@ -27,6 +27,8 @@ import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { ScanButton } from "@/components/scanner/scan-button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { GEAR_STAGE_LABELS, OUT_LABEL, type GearStageKey } from "@/lib/vocabulary";
+import { getStatusColor } from "@/lib/status-colors";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -71,7 +73,7 @@ const statusLabels: Record<string, string> = {
   AWAITING_PAYMENT: "Awaiting payment",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   ON_SITE: "On site",
   RETURNED: "Returned",
 };
@@ -210,11 +212,11 @@ function getPrepSummary(project: Project): PrepSummary {
 // The 5 lifecycle stages, in order. `current` is derived from project status so
 // the card stepper highlights where the project sits at a glance (Gopuff-style).
 const LIFECYCLE_STAGES = [
-  { key: "prep", label: "Prep" },
-  { key: "prepped", label: "Prepped" },
-  { key: "deployed", label: "Deployed" },
-  { key: "returned", label: "Returned" },
-  { key: "closed", label: "Closed" },
+  { key: "prep", label: GEAR_STAGE_LABELS.to_prep },
+  { key: "prepped", label: GEAR_STAGE_LABELS.prepped },
+  { key: "deployed", label: GEAR_STAGE_LABELS.deployed },
+  { key: "returned", label: GEAR_STAGE_LABELS.returned },
+  { key: "closed", label: GEAR_STAGE_LABELS.closed },
 ] as const;
 
 function currentStageIndex(status: string): number {
@@ -233,6 +235,9 @@ function currentStageIndex(status: string): number {
   }
 }
 
+/** Stage colours come from the one gearStage table (D2). */
+const stageStyle = (key: GearStageKey) => getStatusColor("gearStage", key);
+
 const urgencyMeta: Record<
   UrgencyGroup,
   { label: string; dot: string; chip: string }
@@ -249,8 +254,8 @@ const urgencyMeta: Record<
   },
   out: {
     label: "Out on site",
-    dot: "bg-red",
-    chip: "bg-red-soft text-red-text",
+    dot: stageStyle("deployed").dot,
+    chip: `${stageStyle("deployed").bg} ${stageStyle("deployed").text}`,
   },
   upcoming: {
     label: "Upcoming",
@@ -259,8 +264,8 @@ const urgencyMeta: Record<
   },
   returned: {
     label: "Returned · to close out",
-    dot: "bg-rep",
-    chip: "bg-rep-soft text-rep",
+    dot: stageStyle("returned").dot,
+    chip: `${stageStyle("returned").bg} ${stageStyle("returned").text}`,
   },
 };
 
@@ -295,8 +300,8 @@ export default function WarehousePage() {
       await statusBrowser.updateStatus(id, status);
     },
     onSuccess: (_, { status }) => {
-      const label = status === "CHECKED_OUT" ? "Deployed" : status === "RETURNED" ? "Returned" : "Completed";
-      toast.success(`Project marked as ${label}`);
+      const label = status === "CHECKED_OUT" ? OUT_LABEL : status === "RETURNED" ? "Returned" : "Completed";
+      toast.success(`Job marked as ${label}`);
       refetch();
       setPendingAction(null);
     },
@@ -310,7 +315,7 @@ export default function WarehousePage() {
       const succeeded = r.filter((r) => r.success).length;
       const failed = r.filter((r) => !r.success).length;
       if (failed === 0) {
-        toast.success(`${succeeded} project${succeeded !== 1 ? "s" : ""} closed out`);
+        toast.success(`${succeeded} job${succeeded !== 1 ? "s" : ""} closed out`);
       } else {
         toast.warning(`${succeeded} closed, ${failed} failed`);
       }
@@ -336,7 +341,7 @@ export default function WarehousePage() {
       const next = new Set(prev);
       if (next.has(projectId)) next.delete(projectId);
       else if (next.size < 25) next.add(projectId);
-      else toast.error("Maximum 25 projects per batch close-out");
+      else toast.error("Maximum 25 jobs per batch close-out");
       return next;
     });
   }
@@ -384,7 +389,7 @@ export default function WarehousePage() {
       setPendingAction({
         project,
         targetStatus,
-        warningMessage: `Are you sure you want to mark this project as ${targetStatus === "CHECKED_OUT" ? "Deployed" : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
+        warningMessage: `Are you sure you want to mark this job as ${targetStatus === "CHECKED_OUT" ? OUT_LABEL : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
       });
       return;
     }
@@ -397,7 +402,7 @@ export default function WarehousePage() {
         setPendingAction({
           project,
           targetStatus,
-          warningMessage: `${notCheckedOut} item${notCheckedOut !== 1 ? "s are" : " is"} not yet deployed. Are you sure you want to mark this project as Deployed?`,
+          warningMessage: `${notCheckedOut} item${notCheckedOut !== 1 ? "s are" : " is"} not yet deployed. Are you sure you want to mark this job as Deployed?`,
         });
         return;
       }
@@ -411,7 +416,7 @@ export default function WarehousePage() {
         setPendingAction({
           project,
           targetStatus,
-          warningMessage: `${notReturned} item${notReturned !== 1 ? "s have" : " has"} not been returned yet. Are you sure you want to mark this project as ${targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
+          warningMessage: `${notReturned} item${notReturned !== 1 ? "s have" : " has"} not been returned yet. Are you sure you want to mark this job as ${targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
         });
         return;
       }
@@ -420,7 +425,7 @@ export default function WarehousePage() {
     setPendingAction({
       project,
       targetStatus,
-      warningMessage: `Mark this project as ${targetStatus === "CHECKED_OUT" ? "Deployed" : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
+      warningMessage: `Mark this job as ${targetStatus === "CHECKED_OUT" ? OUT_LABEL : targetStatus === "RETURNED" ? "Returned" : "Completed"}?`,
     });
   }
 
@@ -465,7 +470,7 @@ export default function WarehousePage() {
               <div className="relative min-w-0 flex-1">
                 <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-lime" />
                 <AssetTagInput
-                  placeholder="Scan a barcode or search project name / number…"
+                  placeholder="Scan a barcode or search job name / number…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onScan={(scanned) => setSearch(scanned)}
@@ -510,7 +515,7 @@ export default function WarehousePage() {
               </span>
               <div>
                 <p className="t-body font-semibold text-ink">Returns station</p>
-                <p className="t-micro text-muted">Everything out, org-wide — scan to return, no project to pick first</p>
+                <p className="t-micro text-muted">Everything out, org-wide — scan to return, no job to pick first</p>
               </div>
             </div>
             <ArrowRight className="h-4 w-4 flex-shrink-0 text-muted" />
@@ -525,19 +530,19 @@ export default function WarehousePage() {
                 icon={<Boxes className="h-4 w-4" />}
                 value={readyToPrep + prepping}
                 label="To prep"
-                accent="text-lime"
+                accent={stageStyle("to_prep").text}
               />
               <StatCell
                 icon={<Truck className="h-4 w-4" />}
                 value={deployedCount}
-                label="Deployed"
-                accent="text-red-text"
+                label={OUT_LABEL}
+                accent={stageStyle("deployed").text}
               />
               <StatCell
                 icon={<Undo2 className="h-4 w-4" />}
                 value={returnedCount}
                 label="To close out"
-                accent="text-rep"
+                accent={stageStyle("returned").text}
               />
               <StatCell
                 icon={<AlertTriangle className="h-4 w-4" />}
@@ -567,8 +572,8 @@ export default function WarehousePage() {
                 <span className="inline-flex items-center gap-1.5">
                   <Undo2 className="h-4 w-4 text-rep" />
                   {selectedForClose.size > 0
-                    ? `${selectedForClose.size} of ${returnedProjects.length} returned project${returnedProjects.length !== 1 ? "s" : ""} selected`
-                    : `${returnedProjects.length} returned project${returnedProjects.length !== 1 ? "s" : ""} ready to close out`}
+                    ? `${selectedForClose.size} of ${returnedProjects.length} returned job${returnedProjects.length !== 1 ? "s" : ""} selected`
+                    : `${returnedProjects.length} returned job${returnedProjects.length !== 1 ? "s" : ""} ready to close out`}
                 </span>
               </label>
               {selectedForClose.size > 0 && (
@@ -600,8 +605,8 @@ export default function WarehousePage() {
               title="The floor is clear"
               description={
                 search
-                  ? "No projects match that scan or search. Clear it to see the full pipeline."
-                  : "Projects land here the moment they're confirmed and ready to prep."
+                  ? "No jobs match that scan or search. Clear it to see the full pipeline."
+                  : "Jobs land here the moment they're confirmed and ready to prep."
               }
             />
           </FadeIn>
@@ -756,13 +761,13 @@ function PrepProgress({ summary }: { summary: PrepSummary }) {
     <div className="space-y-1.5">
       <div className="flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full bg-paper-2">
         {counts.prepped > 0 && (
-          <span className="bg-warn" style={{ width: pct(counts.prepped) }} />
+          <span className={stageStyle("prepped").dot} style={{ width: pct(counts.prepped) }} />
         )}
         {counts.deployed > 0 && (
-          <span className="bg-red" style={{ width: pct(counts.deployed) }} />
+          <span className={stageStyle("deployed").dot} style={{ width: pct(counts.deployed) }} />
         )}
         {counts.returned > 0 && (
-          <span className="bg-ok" style={{ width: pct(counts.returned) }} />
+          <span className={stageStyle("returned").dot} style={{ width: pct(counts.returned) }} />
         )}
       </div>
       <div className="flex items-center justify-between">
@@ -772,11 +777,11 @@ function PrepProgress({ summary }: { summary: PrepSummary }) {
         <span
           className={`t-mono ${
             allReturned
-              ? "text-ok"
+              ? stageStyle("returned").text
               : allDeployed
-                ? "text-red-text"
+                ? stageStyle("deployed").text
                 : allPacked
-                  ? "text-warn"
+                  ? stageStyle("prepped").text
                   : "text-muted"
           }`}
         >

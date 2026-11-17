@@ -1,5 +1,7 @@
 "use client";
 
+import { MODULE_NAMES } from "@/lib/vocabulary";
+
 import * as React from "react";
 import { useCallback, useState } from "react";
 import Link from "next/link";
@@ -27,6 +29,8 @@ import {
   HardHat,
   Clock,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   AlertTriangle,
   Undo2,
   Landmark,
@@ -98,9 +102,9 @@ const RAIL: RailItem[] = [
   // now hidden; its widgets live on the customizable dashboard board instead).
   // No `resource` gate: Dashboard never had one, so viewer/warehouse roles
   // keep it without project:read.
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
+  { title: MODULE_NAMES.home, url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
   {
-    title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
+    title: MODULE_NAMES.jobs, url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
     subs: [
       { title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" },
       // WS3 #942 — org-wide hard/pencilled overbooking + crew-gap board.
@@ -113,7 +117,7 @@ const RAIL: RailItem[] = [
   // expiring, never sent, deposit due, outstanding.
   // Gated on `invoice` (same resource the per-project Finance tab uses).
   { title: "Finance", url: "/finance", icon: Landmark, hue: "green", resource: "invoice" },
-  { title: "Schedule", url: "/availability", icon: CalendarRange, hue: "green", resource: "asset" },
+  { title: MODULE_NAMES.schedule, url: "/availability", icon: CalendarRange, hue: "green", resource: "asset" },
   {
     title: "Crew", url: "/crew", icon: HardHat, hue: "purple", resource: "crew",
     subs: [
@@ -184,8 +188,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { permissions, isLoading } = useCurrentRole();
-  const { state, isMobile, setOpenMobile } = useSidebar();
-  const collapsed = state === "collapsed" && !isMobile;
+  const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
 
   const [hoverKey, setHoverKey] = useState<string | null>(null);
 
@@ -217,7 +220,7 @@ export function AppSidebar() {
 
   const renderRail = () => (
     <>
-      <SidebarContent className="items-center gap-1 overflow-x-visible px-2 py-2">
+      <SidebarContent className="items-center gap-1 overflow-x-visible px-1 py-2">
         {railItems.map((item) => {
           const active = isWithin(pathname, item.url) || !!item.subs?.some((s) => isWithin(pathname, s.url));
           const subs = item.subs?.filter((s) => hasAccess(s.resource)) ?? [];
@@ -225,7 +228,7 @@ export function AppSidebar() {
             return (
               <NavLink key={item.title} href={item.url} onClick={closeMobile} className={railItemClass(active, item.hue)}>
                 <item.icon className="size-5" />
-                <span className="text-[11px] font-medium leading-none">{item.title}</span>
+                <span className="text-[10.5px] font-medium leading-none">{item.title}</span>
               </NavLink>
             );
           }
@@ -235,7 +238,7 @@ export function AppSidebar() {
               <DropdownMenuTrigger asChild>
                 <button type="button" onMouseEnter={() => setHoverKey(item.title)} className={railItemClass(active, item.hue)}>
                   <item.icon className="size-5" />
-                  <span className="text-[11px] font-medium leading-none">{item.title}</span>
+                  <span className="text-[10.5px] font-medium leading-none">{item.title}</span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-52" onMouseLeave={() => setHoverKey(null)}>
@@ -267,7 +270,7 @@ export function AppSidebar() {
                 )}
               >
                 <MoreHorizontal className="size-5" />
-                <span className="text-[11px] font-medium leading-none">More</span>
+                <span className="text-[10.5px] font-medium leading-none">More</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-52" onMouseLeave={() => setHoverKey(null)}>
@@ -295,10 +298,11 @@ export function AppSidebar() {
             )}
           >
             <Settings className="size-5" />
-            <span className="text-[11px] font-medium leading-none">Settings</span>
+            <span className="text-[10.5px] font-medium leading-none">Settings</span>
           </NavLink>
         )}
-        <UserNav />
+        <UserNav compact />
+        <CollapseButton collapsed onClick={toggleSidebar} />
       </SidebarFooter>
     </>
   );
@@ -392,24 +396,70 @@ export function AppSidebar() {
           </NavLink>
         )}
         <UserNav />
+        <CollapseButton onClick={toggleSidebar} />
       </SidebarFooter>
     </>
   );
 
+  const brand = (compact: boolean) => (
+    <SidebarHeader className={cn("border-b border-line", compact ? "items-center py-3" : "px-3 py-3.5")}>
+      <Link href="/dashboard" aria-label="RVLT Flow — home" className="flex items-center">
+        {compact ? (
+          <span className="flex size-9 items-center justify-center rounded-[var(--r)] bg-red shadow-[var(--lit)]">
+            <RvltMark className="h-4 w-auto [&_path]:fill-white" />
+          </span>
+        ) : (
+          <RvltFlowLogo className="h-5 w-auto" title="RVLT Flow" />
+        )}
+      </Link>
+    </SidebarHeader>
+  );
+
+  // D67: the tablet rail (<= 1023px) is chosen by CSS, not JS, so the first paint is
+  // right. Both views render; `max-lg` / the collapsed-state group variant pick one.
+  // On a phone the sidebar is the Sheet and only the full view is rendered.
   return (
     <Sidebar collapsible="icon" className="border-r border-line bg-paper-2">
-      <SidebarHeader className={cn("border-b border-line", collapsed ? "items-center py-3" : "px-3 py-3.5")}>
-        <Link href="/dashboard" aria-label="RVLT Flow — dashboard" className="flex items-center">
-          {collapsed ? (
-            <span className="flex size-9 items-center justify-center rounded-[var(--r)] bg-red shadow-[var(--lit)]">
-              <RvltMark className="h-4 w-auto [&_path]:fill-white" />
-            </span>
-          ) : (
-            <RvltFlowLogo className="h-5 w-auto" title="RVLT Flow" />
-          )}
-        </Link>
-      </SidebarHeader>
-      {collapsed ? renderRail() : renderExpanded()}
+      <div
+        data-sidebar-view="full"
+        className={cn("flex min-h-0 flex-1 flex-col", !isMobile && "max-lg:hidden group-data-[collapsible=icon]:hidden")}
+      >
+        {brand(false)}
+        {renderExpanded()}
+      </div>
+      {!isMobile && (
+        <div
+          data-sidebar-view="rail"
+          className="hidden min-h-0 flex-1 flex-col max-lg:flex group-data-[collapsible=icon]:flex"
+        >
+          {brand(true)}
+          {renderRail()}
+        </div>
+      )}
     </Sidebar>
+  );
+}
+
+/** Manual collapse / expand (⌘B). Desktop only: below 1024px the rail is automatic. */
+function CollapseButton({ collapsed, onClick }: { collapsed?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      className={cn(
+        "hidden cursor-pointer items-center rounded-[var(--r)] text-muted transition-colors hover:bg-elev hover:text-ink lg:flex",
+        FOCUS,
+        collapsed ? "w-full justify-center py-2" : "gap-2.5 px-2.5 py-1.5 text-[13px]",
+      )}
+    >
+      {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4 shrink-0" />}
+      {!collapsed && (
+        <>
+          <span className="flex-1 text-left">Collapse</span>
+          <kbd className="font-mono text-[11px] text-muted">⌘B</kbd>
+        </>
+      )}
+    </button>
   );
 }

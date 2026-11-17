@@ -6,6 +6,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/formatters";
 import { getScanLog } from "@/server/warehouse";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 /**
  * Per-unit movement timeline. Reuses the existing `getScanLog` server action
@@ -21,7 +22,7 @@ type ScanLog = Awaited<ReturnType<typeof getScanLog>>["logs"][number];
 function scanActionLabel(action: string): string {
   switch (action) {
     case "CHECK_OUT":
-      return "Deployed";
+      return OUT_LABEL;
     case "CHECK_IN":
       return "Returned";
     case "SCAN_VERIFY":

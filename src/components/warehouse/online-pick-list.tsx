@@ -144,7 +144,7 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
 
       {allGroups.length === 0 ? (
         <p className="text-muted text-center py-8">
-          No equipment items on this project.
+          No equipment items on this job.
         </p>
       ) : (
         allGroups.map((group) => (

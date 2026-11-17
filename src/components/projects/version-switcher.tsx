@@ -96,7 +96,7 @@ export function ProjectVersionSwitcher() {
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="line" size="sm" className="gap-1.5" aria-label="Project versions">
+          <Button variant="line" size="sm" className="gap-1.5" aria-label="Job versions">
             <History className="h-3.5 w-3.5" />
             <span>{triggerLabel}</span>
             <ChevronDown className="h-3 w-3 opacity-60" />

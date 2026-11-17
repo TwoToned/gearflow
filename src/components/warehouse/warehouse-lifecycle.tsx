@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getStatusColor } from "@/lib/status-colors";
 import {
   WAREHOUSE_STAGES,
   WAREHOUSE_STAGE_INDEX,
@@ -27,21 +28,8 @@ import {
  * family.
  */
 
-const STAGE_COLOR: Record<
-  WarehouseStageKey,
-  { ring: string; fill: string; text: string; dot: string }
-> = {
-  // to_prep — work waiting on the warehouse
-  to_prep: { ring: "ring-warn", fill: "bg-warn-soft", text: "text-warn", dot: "bg-warn" },
-  // prepped — packed and staged
-  prepped: { ring: "ring-blue", fill: "bg-blue-soft", text: "text-blue", dot: "bg-blue" },
-  // deployed — LIVE / in use on site (DESIGN: red = in-use)
-  deployed: { ring: "ring-red", fill: "bg-red-soft", text: "text-red-text", dot: "bg-red" },
-  // returned — physically back, awaiting de-prep checks
-  returned: { ring: "ring-warn", fill: "bg-warn-soft", text: "text-warn", dot: "bg-warn" },
-  // deprepped — checked and back in inventory (available again)
-  deprepped: { ring: "ring-ok", fill: "bg-ok-soft", text: "text-ok", dot: "bg-ok" },
-};
+// Stage → intent is the one table in status-colors.ts (UX D2).
+const stageStyle = (key: WarehouseStageKey) => getStatusColor("gearStage", key);
 
 /** Connector j sits between node j and node j+1. */
 function connectorClass(j: number, activeIdx: number): string {
@@ -92,7 +80,7 @@ export function WarehouseLifecycle({
           const isActive = i === activeIdx;
           const isFirst = i === 0;
           const isLast = i === WAREHOUSE_STAGES.length - 1;
-          const c = STAGE_COLOR[s.key];
+          const c = stageStyle(s.key);
           const done = allDeprepped && s.key === "deprepped";
 
           return (
@@ -109,7 +97,7 @@ export function WarehouseLifecycle({
                   className={cn(
                     "flex size-10 shrink-0 items-center justify-center rounded-full text-ui-text font-bold tabular-nums transition-colors",
                     populated
-                      ? cn(c.fill, c.text, "ring-2", c.ring)
+                      ? cn(c.bg, c.text, "ring-2", c.ring)
                       : "bg-card text-muted ring-1 ring-line",
                     isActive && populated && "ring-2",
                   )}

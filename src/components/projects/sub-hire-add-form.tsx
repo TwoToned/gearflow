@@ -134,7 +134,7 @@ export function SubHireAddForm({
 
         {/* Hire window */}
         <section className="space-y-4 border-t border-line pt-5">
-          <SectionTitle title="Hire window" hint="Pre-filled from the project dates — adjust if needed." />
+          <SectionTitle title="Hire window" hint="Pre-filled from the job dates — adjust if needed." />
           <div className="grid grid-cols-2 gap-3">
             <Field label="Hire start">
               <Input

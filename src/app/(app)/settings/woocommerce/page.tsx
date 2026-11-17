@@ -214,7 +214,7 @@ export default function WooCommerceSettingsPage() {
       <div>
         <h2 className="t-heading text-fg">WooCommerce Integration</h2>
         <p className="text-[12px] text-fg-3">
-          Automatically create projects from WooCommerce orders.
+          Automatically create jobs from WooCommerce orders.
         </p>
       </div>
 
@@ -224,7 +224,7 @@ export default function WooCommerceSettingsPage() {
           <div>
             <Label>Enable Integration</Label>
             <p className="text-xs text-fg-3">
-              When enabled, incoming WooCommerce webhooks will create projects automatically.
+              When enabled, incoming WooCommerce webhooks will create jobs automatically.
             </p>
           </div>
           <Controller
@@ -378,7 +378,7 @@ export default function WooCommerceSettingsPage() {
         <SettingsCard>
           <FormSection
             title="Date Field Mapping"
-            description="Map WooCommerce order meta fields to project dates."
+            description="Map WooCommerce order meta fields to job dates."
           >
             <div className="sm:col-span-2 space-y-4">
             <button
@@ -477,7 +477,7 @@ export default function WooCommerceSettingsPage() {
 
         {/* Location Mapping */}
         <SettingsCard>
-          <FormSection title="Location Mapping" description="Map a WooCommerce order meta field to a project location. If the value matches an existing location it will be used; otherwise a new venue location is created automatically.">
+          <FormSection title="Location Mapping" description="Map a WooCommerce order meta field to a job location. If the value matches an existing location it will be used; otherwise a new venue location is created automatically.">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
               <Label htmlFor="locationMetaKey">Location Meta Key</Label>
@@ -528,10 +528,10 @@ export default function WooCommerceSettingsPage() {
 
         {/* Project Defaults */}
         <SettingsCard>
-          <FormSection title="Project Defaults">
+          <FormSection title="Job Defaults">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
-              <Label>Default Project Type</Label>
+              <Label>Default Job Type</Label>
               <Controller
                 name="defaultProjectType"
                 control={form.control}
@@ -558,7 +558,7 @@ export default function WooCommerceSettingsPage() {
               <div>
                 <Label>Auto-advance to Quoting</Label>
                 <p className="text-xs text-fg-3">
-                  Set new projects to Quoting instead of Enquiry.
+                  Set new jobs to Quoting instead of Enquiry.
                 </p>
               </div>
               <Controller

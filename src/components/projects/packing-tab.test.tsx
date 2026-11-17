@@ -56,7 +56,7 @@ describe("PackingTab smoke (#1296 build plan phase 4)", () => {
     expect(screen.getByText("Nothing to plan yet")).toBeTruthy();
   });
 
-  it("buckets an unplanned line under Not planned and shows the not-planned count", () => {
+  it("buckets an unplanned line under Loose and shows the not-planned count", () => {
     equipmentFixture = {
       categories: [{ id: "c1", name: "Lighting", sortOrder: 0, groups: [], lineItems: [line({ id: "l1", description: "Par Can" })] }],
       uncategorizedItems: [],
@@ -66,7 +66,7 @@ describe("PackingTab smoke (#1296 build plan phase 4)", () => {
     };
     render(<PackingTab projectId="p1" orgId="org1" />);
     expect(screen.getByText("1 of 1 lines not planned yet")).toBeTruthy();
-    expect(screen.getAllByText("Not planned").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Loose").length).toBeGreaterThan(0);
     expect(screen.getByText("Par Can")).toBeTruthy();
   });
 

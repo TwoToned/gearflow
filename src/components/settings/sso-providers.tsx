@@ -22,7 +22,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Trash2, Copy, Check, Loader2, Search, MoreVertical, Pencil } from "lucide-react";
+import { Plus, Trash2, Copy, Check, Loader2, Search, MoreHorizontal, Pencil } from "lucide-react";
 import { PROVIDER_ICONS, getIconComponent } from "@/lib/sso-icons";
 
 function generateProviderId(): string {
@@ -143,7 +143,7 @@ function ProviderRow({ provider, meta, canUpdate }: { provider: Provider; meta?:
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="touch-target h-8 w-8 shrink-0">
-                <MoreVertical className="h-4 w-4" />
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">

@@ -23,7 +23,7 @@ const entityTypeLabels: Record<string, string> = {
   bulkAsset: "Bulk Asset",
   model: "Model",
   kit: "Kit",
-  project: "Project",
+  project: "Job",
   client: "Client",
   location: "Location",
   category: "Category",

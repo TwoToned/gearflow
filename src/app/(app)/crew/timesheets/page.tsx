@@ -232,7 +232,7 @@ export default function TimesheetsPage() {
     },
     {
       id: "project",
-      header: "Project / description",
+      header: "Job / description",
       sortable: false,
       mobile: "subtitle",
       cell: (row: any) =>
@@ -454,7 +454,7 @@ export default function TimesheetsPage() {
             setSearch(v);
             setPage(1);
           }}
-          searchPlaceholder="Search by name, project, description..."
+          searchPlaceholder="Search by name, job, description..."
           columnVisibility={columnVisibility}
           onToggleColumnVisibility={toggleColumnVisibility}
           onResetPreferences={resetPreferences}
@@ -590,7 +590,7 @@ function EditTimeEntryDialog({
               }}
             >
               <Briefcase className="size-5" />
-              Project
+              Job
             </Button>
             <Button
               type="button"
@@ -932,7 +932,7 @@ function LogTimeDialog({
                 }}
               >
                 <Briefcase className="size-5" />
-                Project
+                Job
               </Button>
               <Button
                 type="button"

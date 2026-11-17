@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { PHONE_MAX } from "@/lib/breakpoints";
 
 /**
  * StickyTable — a horizontally-scrollable data table with a frozen identity column,
@@ -76,7 +77,7 @@ export function StickyTable({
     ];
     // The frozen/scroll treatment is MOBILE ONLY. On desktop the table already fits, so
     // freezing columns there would (a) be pointless and (b) paint opaque frozen cells that
-    // seam against row hover/selection/collab tints. Scoping to <768px keeps desktop a
+    // seam against row hover/selection/collab tints. Scoping to the phone breakpoint (PHONE_MAX) keeps desktop a
     // plain table with no seam. Matches the app's `md` mobile cutover.
     const rows = `${s}tbody tr > `;
     const heads = `${s}thead tr > `;
@@ -111,7 +112,7 @@ export function StickyTable({
       `}`;
     return (
       base.filter(Boolean).join("") +
-      `@media (max-width:767px){${mobile.filter(Boolean).join("")}}` +
+      `@media (max-width:${PHONE_MAX}px){${mobile.filter(Boolean).join("")}}` +
       print
     );
   }, [uid, safeBg, minTableWidth, frozenCount, leftOffsets]);

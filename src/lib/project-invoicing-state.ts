@@ -83,7 +83,7 @@ const isIssued = (inv: InvoiceLike) => inv.status === "ISSUED";
 /** A slice of what's left, sized however the operator likes — available any
  *  time there's a remainder, regardless of how many partials already exist. */
 function derivePartialStep(notYetInvoiced: number | null, depositPercent: number): NextInvoiceStep {
-  if (notYetInvoiced == null) return { kind: "NONE", reason: "Project total not set" };
+  if (notYetInvoiced == null) return { kind: "NONE", reason: "Job total not set" };
   if (notYetInvoiced <= 0.005) return { kind: "NONE", reason: "Fully invoiced" };
   return { kind: "DEPOSIT", label: "Partial balance", depositPercent };
 }
@@ -91,7 +91,7 @@ function derivePartialStep(notYetInvoiced: number | null, depositPercent: number
 /** Whatever's left, in one shot — FULL (itemized) the first time, BALANCE
  *  (summary line) after that. */
 function deriveRemainingStep(notYetInvoiced: number | null, hasAnyInvoice: boolean): NextInvoiceStep {
-  if (notYetInvoiced == null) return { kind: "NONE", reason: "Project total not set" };
+  if (notYetInvoiced == null) return { kind: "NONE", reason: "Job total not set" };
   if (notYetInvoiced <= 0.005) return { kind: "NONE", reason: "Fully invoiced" };
   return hasAnyInvoice
     ? { kind: "BALANCE", label: "Remaining balance" }

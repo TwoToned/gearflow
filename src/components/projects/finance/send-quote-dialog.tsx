@@ -195,7 +195,7 @@ export function SendQuoteDialog({
   function copySummary() {
     const lines = [
       targetVersion
-        ? `Quote — ${projectNumber}, project v${targetVersion.number}`
+        ? `Quote — ${projectNumber}, job v${targetVersion.number}`
         : `Quote — ${projectNumber} v${sent?.version ?? revision}`,
       subtotal != null ? `Subtotal: ${formatCurrency(subtotal)}` : null,
       taxAmount != null ? `GST: ${formatCurrency(taxAmount)}` : null,
@@ -453,7 +453,7 @@ function SendQuoteForm({
               allowClear
             />
           ) : (
-            <p className="text-xs text-fg-4">Assign a client to this project to pick a recipient.</p>
+            <p className="text-xs text-fg-4">Assign a client to this job to pick a recipient.</p>
           )}
         </div>
 

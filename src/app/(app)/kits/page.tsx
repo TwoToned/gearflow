@@ -31,6 +31,7 @@ import { FadeIn } from "@/components/ui/motion";
 
 import { kitStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 import { getStatusColor } from "@/lib/status-colors";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyKit = Record<string, any>;
@@ -89,7 +90,7 @@ function useKitColumns(
       mobile: "badge",
       filterOptions: [
         { value: "AVAILABLE", label: "Available", color: getStatusColor("kit", "AVAILABLE").dot },
-        { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("kit", "CHECKED_OUT").dot },
+        { value: "CHECKED_OUT", label: OUT_LABEL, color: getStatusColor("kit", "CHECKED_OUT").dot },
         { value: "IN_MAINTENANCE", label: "In maintenance", color: getStatusColor("kit", "IN_MAINTENANCE").dot },
         { value: "RETIRED", label: "Retired", color: getStatusColor("kit", "RETIRED").dot },
         { value: "INCOMPLETE", label: "Incomplete", color: getStatusColor("kit", "INCOMPLETE").dot },
@@ -346,7 +347,7 @@ export default function KitsPage() {
       open={bulkForceReturnOpen}
       onOpenChange={setBulkForceReturnOpen}
       title={`Force return ${selectedIds.size} kit${selectedIds.size === 1 ? "" : "s"}?`}
-      description="Project assignments for the selected kits and their contents will be marked as returned. Use when scanning isn't possible."
+      description="Job assignments for the selected kits and their contents will be marked as returned. Use when scanning isn't possible."
       confirmLabel={`Force return ${selectedIds.size}`}
       onConfirm={() => {
         forceReturnMutation.mutate();

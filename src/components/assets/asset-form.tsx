@@ -42,6 +42,7 @@ import { CustomFieldsInput } from "@/components/custom-fields/custom-fields-inpu
 import { CoachingTip } from "@/components/onboarding/coaching-tip";
 import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { activeMilestoneKey } from "@/lib/activation-milestones";
+import { PHONE_MAX } from "@/lib/breakpoints";
 
 interface AssetFormProps {
   initialData?: AssetFormValues & { id: string };
@@ -508,7 +509,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
               <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
                 {modelImage ? (
-                  <AppImage src={modelImage} alt={modelLabel ?? "Asset"} fill sizes="(max-width: 768px) 100vw, 400px" className="object-cover" />
+                  <AppImage src={modelImage} alt={modelLabel ?? "Asset"} fill sizes={`(max-width: ${PHONE_MAX}px) 100vw, 400px`} className="object-cover" />
                 ) : (
                   <Package className="h-8 w-8 text-muted" strokeWidth={1.5} />
                 )}

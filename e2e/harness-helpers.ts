@@ -127,9 +127,9 @@ export async function addModelLineItem(page: Page, projectId: string, modelName:
   await page.getByPlaceholder(/Search by name/).fill(modelName);
   await page.getByRole("button", { name: modelName, exact: true }).click();
   await expectAvailable(addDialog);
-  await page.getByRole("button", { name: "Add to project" }).click();
+  await page.getByRole("button", { name: "Add to job" }).click();
   // The dialog closes on a successful add.
-  await expect(page.getByRole("button", { name: "Add to project" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Add to job" })).toBeHidden();
 }
 
 async function expectAvailable(addDialog: Locator): Promise<void> {

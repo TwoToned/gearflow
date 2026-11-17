@@ -744,7 +744,7 @@ export function EquipmentAddForm({
               (mode === "asset-tag" && !canSubmitAsset)
             }
           >
-            Add to project
+            Add to job
           </Button>
         </DialogFooter>
       </form>

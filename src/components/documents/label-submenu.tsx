@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { LabelIndexEntry } from "@/lib/pdfme/container-labels";
 
-type LabelApiType = "container-label" | "kit-label" | "item-label";
+export type LabelApiType ="container-label" | "kit-label" | "item-label";
 
 type LoadState = { status: "idle" | "loading" | "error" } | { status: "ready"; labels: LabelIndexEntry[] };
 
@@ -24,7 +24,7 @@ type LoadState = { status: "idle" | "loading" | "error" } | { status: "ready"; l
  *  stale answer is never shown for a different project/type. */
 type Settled = { key: string; labels: LabelIndexEntry[] | null };
 
-function useLabelIndex(projectId: string, apiType: LabelApiType, enabled: boolean): LoadState {
+export function useLabelIndex(projectId: string, apiType: LabelApiType, enabled: boolean): LoadState {
   const key = `${projectId}:${apiType}`;
   const [settled, setSettled] = useState<Settled | null>(null);
   useEffect(() => {
@@ -43,7 +43,7 @@ function useLabelIndex(projectId: string, apiType: LabelApiType, enabled: boolea
   return settled.labels ? { status: "ready", labels: settled.labels } : { status: "error" };
 }
 
-const openLabel = (projectId: string, apiType: LabelApiType, labelId?: string) =>
+export const openLabel = (projectId: string, apiType: LabelApiType, labelId?: string) =>
   window.open(`/api/documents/${projectId}?type=${apiType}${labelId ? `&labelId=${encodeURIComponent(labelId)}` : ""}`, "_blank");
 
 export function LabelSubmenu({

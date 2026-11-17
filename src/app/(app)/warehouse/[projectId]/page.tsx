@@ -29,7 +29,13 @@ import type { ScanLookup } from "@/lib/warehouse-scan-classify";
 import type { ActionItem } from "@/lib/primitives/types";
 import { parentAlreadyPrepped } from "@/components/warehouse/warehouse-types";
 import { jobRowIds } from "@/components/warehouse/job/job-table";
-import { keysForRowIds, prepSelectionInfo } from "@/lib/warehouse-job-keys";
+import { keysForRowIds, prepRowIds, prepSelectionInfo } from "@/lib/warehouse-job-keys";
+import { useLabelIndex, openLabel } from "@/components/documents/label-submenu";
+import { labelActionItems } from "@/lib/warehouse-label-items";
+import { useFormatters } from "@/components/providers/format-provider";
+import { projectScheduleRows } from "@/lib/project-context";
+import { announcePrepWrite } from "@/lib/warehouse-prep-announce";
+import { useCanDo } from "@/lib/use-permissions";
 import { focusRing } from "@/lib/utils";
 import { transitionNeedsCheck, lineHasModelChecks } from "@/lib/warehouse-check-policy";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
@@ -114,6 +120,7 @@ import {
   deprepedQuantity,
   isInCheckedOutStage,
   buildContainerGroups,
+  resolveItemContainerId,
   resolveSelectionToUnitIds,
   isMoveableAtDeployStage,
   isMoveableAtReturnStage,
@@ -129,6 +136,7 @@ import {
   pullItem,
   prepItemDirect,
   prepItemsBatch,
+  deprepItemsBatch,
   prepKitChildren,
   prepKitsBatch,
 } from "@/server/check-records";
@@ -218,6 +226,7 @@ function WarehouseProjectPage({
   const { projectId } = use(params);
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { formatDateDayMonth } = useFormatters();
   // The job's stage (spec §9.2): `?stage=` wins, the old `?tab=` deep links alias onto it.
   const [stage, setStageState] = useState<JobStageKey>(() => stageFromParams(searchParams));
   const setStage = useCallback((next: JobStageKey) => {
@@ -253,6 +262,7 @@ function WarehouseProjectPage({
   // chosen, so writes omit `containerId` and the PM's plan applies; `null` =
   // Loose deliberately picked; string = a case.
   const [activeContainerId, setActiveContainerId] = useState<ContainerChoice>(undefined);
+  const canUndoPrep = useCanDo("warehouse", "check_out"); // de-prep (the reverse of a prep) needs check_out
   const [newContainerSheetOpen, setNewContainerSheetOpen] = useState(false);
   const realContainers = useQuery(
     convexApi.projectContainers.listForProject,
@@ -624,14 +634,18 @@ function WarehouseProjectPage({
     }]);
     clearAccessoryVerification([target.lineItemId]);
     scanFeedback.play("success", { label: name, outcome: "Accessories prepped" });
-    toast.success(`Accessories prepped: ${name}`);
+    // No clean reverse for an accessories-only pack: toast only, no Undo.
+    return announcePrepWrite({ doneTitle: `Accessories prepped: ${name}`, undoneTitle: "", reverse: [], canUndo: false, deprep: deprepItemsBatch.bind(null, projectId) });
   }
 
   async function prepScanDirect(target: ScanPrepTarget, name: string, opts: ScanPrepOpts) {
     // No check items — prep directly (set prepStatus=PACKED, no deploy)
     await prepItemDirect(projectId, target.lineItemId, target.assetId || undefined, undefined, selectedContainer || null, opts.includeAccessoryIds, containerArgs(activeContainerId).containerId);
     scanFeedback.play("success", { label: name, outcome: "Prepped" });
-    toast.success(`Prepped: ${name}`);
+    const li = lineItems.find((l) => l.id === target.lineItemId);
+    // A line with its own asset de-preps whole; a multi-quantity line gives back the one unit this scan packed.
+    const reverse = [{ lineItemId: target.lineItemId, ...(li?.assetId ? {} : { quantity: 1 }) }];
+    return announcePrepWrite({ doneTitle: `Prepped: ${name}`, undoneTitle: `Undone — ${name} back in To pick`, reverse, canUndo: canUndoPrep, deprep: deprepItemsBatch.bind(null, projectId) });
   }
 
   // Returns true when the scan was fully handled by a dialog/queue and the
@@ -665,13 +679,13 @@ function WarehouseProjectPage({
       await ensureContainerIfNeeded();
       let outcome: ScanActOutcome;
       if (opts.accessoriesOnly) {
-        await prepScanAccessoriesOnly(target, name, opts);
-        outcome = { text: `Accessories prepped: ${name}` };
+        const w = await prepScanAccessoriesOnly(target, name, opts);
+        outcome = { text: `Accessories prepped: ${name}`, undo: w.scanUndo };
       } else {
         const needsCheck = transitionNeedsCheck("PREP", { hasCheckItems: lineHasModelChecks(li) }) && !!li?.modelId;
         const deferred = deferScanPrep(target, name, opts, needsCheck, modeOverride ?? scanCheckMode);
-        if (!deferred) await prepScanDirect(target, name, opts);
-        outcome = deferred ? { text: `${name}: prep check to run`, tone: "warning" } : { text: `Prepped: ${name}` };
+        const w = deferred ? undefined : await prepScanDirect(target, name, opts);
+        outcome = deferred ? { text: `${name}: prep check to run`, tone: "warning" } : { text: `Prepped: ${name}`, undo: w?.scanUndo };
       }
       scanFocus();
       invalidate();
@@ -2031,7 +2045,8 @@ function WarehouseProjectPage({
   // Pack ONLY the accessories of already-prepped parents. The parent is not
   // re-prepped, and the active container applies to the accessories alone — so
   // batteries can go in the battery box while the beltpacks sit in the pelican.
-  const handlePrepAccessoriesOnly = async (keys?: Iterable<string>) => {
+  // `where`: "active" packs into the active case; "parent" into each parent's own case.
+  const handlePrepAccessoriesOnly = async (keys?: Iterable<string>, where: "active" | "parent" = "active") => {
     try {
       await ensureContainerIfNeeded();
       const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId?: ContainerChoice; accessoriesOnly: true }> = [];
@@ -2043,7 +2058,8 @@ function WarehouseProjectPage({
         // One entry per packed parent asset — a multi-quantity line has no
         // line-level asset, so its accessories are packed per unit.
         for (const assetId of packedParentAssetIds(li)) {
-          items.push({ lineItemId: li.id, assetId, prepContainer: selectedContainer || null, ...containerArgs(activeContainerId), accessoriesOnly: true });
+          const choice: ContainerChoice = where === "parent" ? resolveItemContainerId(li) : activeContainerId;
+          items.push({ lineItemId: li.id, assetId, prepContainer: where === "parent" ? null : selectedContainer || null, ...containerArgs(choice), accessoriesOnly: true });
         }
       }
       if (items.length === 0) {
@@ -2181,15 +2197,16 @@ function WarehouseProjectPage({
     shortById: new Map(Object.entries(overbookedMap).map(([id, o]) => [id, o.overBy])),
   });
   const pickSelection = useRowSelection(jobRowIds(pickSections));
-  const prepAndClear = (run: (keys: string[]) => unknown) => {
-    void run(keysForRowIds(lineItems, pickSelection.selected, "pick"));
+  // The live `prepActionAvailability` gate, kept: parent verbs never see a packed parent, accessory verbs only do.
+  const prepAndClear = (kind: "parents" | "accessories", run: (keys: string[]) => unknown) => {
+    void run(keysForRowIds(lineItems, prepRowIds(lineItems, pickSelection.selected, kind), "pick"));
     pickSelection.clear();
   };
   const pickPrepHandlers: PrepHandlers = {
-    withAccessories: () => prepAndClear((keys) => handlePrepSelected({ keys })),
-    parentOnly: () => prepAndClear((keys) => handlePrepSelected({ keys, withoutAccessories: true })),
-    accessoriesWithParent: () => prepAndClear((keys) => handlePrepAccessoriesOnly(keys)),
-    accessoriesIntoActive: () => prepAndClear((keys) => handlePrepAccessoriesOnly(keys)),
+    withAccessories: () => prepAndClear("parents", (keys) => handlePrepSelected({ keys })),
+    parentOnly: () => prepAndClear("parents", (keys) => handlePrepSelected({ keys, withoutAccessories: true })),
+    accessoriesWithParent: () => prepAndClear("accessories", (keys) => handlePrepAccessoriesOnly(keys, "parent")),
+    accessoriesIntoActive: () => prepAndClear("accessories", (keys) => handlePrepAccessoriesOnly(keys, "active")),
     choose: () => {
       const first = lineItems.find((l) => pickSelection.selected.has(l.id) && scanAccessoryOptions(l).length > 0);
       if (first) void routeScanPrep({ lineItemId: first.id, assetId: first.assetId });
@@ -2255,7 +2272,11 @@ function WarehouseProjectPage({
   };
 
   // --- Header (spec §5.9): the page computes the strings, warehouseHeaderProps shapes them ---
+  // Packer facts come only from data this page already has: the job's start (when gear leaves). No truck or
+  // packer fact is fed: there is no source for either on the project summary, so they are omitted, not invented.
+  const jobStart = project ? projectScheduleRows(project)[0] : undefined;
   const baseHeader = warehouseHeaderProps({
+    loadsOut: jobStart?.date ? `${formatDateDayMonth(jobStart.date)}${jobStart.time ? ` ${jobStart.time}` : ""}` : undefined,
     name: project?.name ?? "",
     status: project?.status ?? "",
     statusLabel: statusLabels[project?.status] || project?.status || "",
@@ -2264,12 +2285,14 @@ function WarehouseProjectPage({
     onViewProject: () => router.push(`/projects/${projectId}`),
     feedback: scanFeedback,
   });
-  const openLabels = (query: string) => () => { window.open(`/api/documents/${projectId}?type=${query}`, "_blank"); };
-  const labelItems: ActionItem[] = [
-    ...realContainers.map((c): ActionItem => ({ key: `label-${c.id}`, label: `Case label: ${c.label}`, group: "documents", onSelect: openLabels(`container-label&labelId=${encodeURIComponent(c.id)}`) })),
-    { key: "kit-labels", label: "Kit labels", group: "documents", onSelect: openLabels("kit-label") },
-    { key: "item-labels", label: "Loose item labels", group: "documents", onSelect: openLabels("item-label") },
-  ];
+  const kitLabelIndex = useLabelIndex(projectId, "kit-label", true);
+  const itemLabelIndex = useLabelIndex(projectId, "item-label", true);
+  const labelItems: ActionItem[] = labelActionItems({
+    containers: realContainers,
+    kit: kitLabelIndex.status === "ready" ? kitLabelIndex.labels : null,
+    item: itemLabelIndex.status === "ready" ? itemLabelIndex.labels : null,
+    open: (type, id) => openLabel(projectId, type, id),
+  });
   const headerProps = { ...baseHeader, documents: { items: [...(baseHeader.documents?.items ?? []), ...labelItems] } };
 
   // --- Shared row renderers ---

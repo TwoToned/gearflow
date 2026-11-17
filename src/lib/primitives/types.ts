@@ -178,6 +178,15 @@ export interface LineRowSectionData {
   /** Tri-state "tick all in this section", driven by the caller. Absent = no box. */
   selectState?: "none" | "some" | "all";
   onToggleSelect?: () => void;
+  /** 1 = a nested section (a Project Group inside a category): indented title, lighter band. Default 0. */
+  depth?: 0 | 1;
+  /**
+   * Desktop only: cell overrides by column id (same ids as `FactColumn.id`),
+   * e.g. an inline-editable price on a group head. Setting any turns the head
+   * from one full-width cell into aligned columns, and the head then OMITS
+   * `amount` (put the figure in the matching column's cell). Phone ignores it.
+   */
+  cells?: Record<string, ReactNode>;
 }
 
 // `primary` exists for ONE row kind only (the warehouse accessory row, §9.5).

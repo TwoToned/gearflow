@@ -398,19 +398,61 @@ export function LineRowList(props: LineRowListProps) {
   );
 }
 
-function SectionHead({ section, collapsed, onToggle }: { section: LineRowSectionData; collapsed: boolean; onToggle: () => void }) {
+function SectionHead({
+  section,
+  collapsed,
+  onToggle,
+  withCells,
+}: {
+  section: LineRowSectionData;
+  collapsed: boolean;
+  onToggle: () => void;
+  /** Column mode: the amount and ⋯ live in their own cells, not in the head. */
+  withCells?: boolean;
+}) {
   return (
-    <div className="flex min-h-11 w-full items-center gap-2 px-1">
+    <div className={cn("flex min-h-11 w-full items-center gap-2 px-1", section.depth === 1 && "pl-6")}>
       {section.selectState && <SectionBox section={section} />}
       <ExpandToggle open={!collapsed} onToggle={onToggle} />
       <span className="min-w-0 truncate text-ui-text font-semibold text-ink">{section.title}</span>
       {section.count != null && <span className="t-mono text-muted">{section.count}</span>}
       {section.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
       <span className="flex-1" />
-      {section.amount !== undefined && <FactBody fact={{ kind: "money", amount: section.amount }} />}
-      {section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
+      {!withCells && section.amount !== undefined && <FactBody fact={{ kind: "money", amount: section.amount }} />}
+      {!withCells && section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
     </div>
   );
+}
+
+/** Desktop head in column mode: one `<tr>`, the head across select+item, then a cell per column. */
+function sectionCellsRow({
+  section,
+  columns,
+  head,
+}: {
+  section: LineRowSectionData;
+  columns: FactColumn[];
+  head: React.ReactNode;
+}) {
+  return (
+    <tr data-section-id={section.id} data-depth={section.depth ?? 0} className={sectionBand(section)}>
+      <td colSpan={2} className="p-0">
+        {head}
+      </td>
+      {columns.map((c) => (
+        <td key={c.id} className={cn("px-2", c.align === "end" && "text-right")}>
+          {section.cells?.[c.id]}
+        </td>
+      ))}
+      <td className="w-11 px-1 text-right">
+        {section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
+      </td>
+    </tr>
+  );
+}
+
+function sectionBand(section: LineRowSectionData): string {
+  return cn("border-t border-line", section.depth === 1 ? "bg-paper-2/20" : "bg-paper-2/40");
 }
 
 function SectionBox({ section }: { section: LineRowSectionData }) {
@@ -455,13 +497,16 @@ export function LineRowSection({
     setInner(!isCollapsed);
     onCollapsedChange?.(!isCollapsed);
   };
-  const head = <SectionHead section={section} collapsed={isCollapsed} onToggle={toggle} />;
+  const withCells = !isMobile && !!section.cells && Object.keys(section.cells).length > 0;
+  const head = <SectionHead section={section} collapsed={isCollapsed} onToggle={toggle} withCells={withCells} />;
   if (isMobile) {
-    const el = <div data-section-id={section.id} className="border-t border-line bg-paper-2/40">{head}</div>;
+    const el = <div data-section-id={section.id} className={sectionBand(section)}>{head}</div>;
     return wrapSection ? wrapSection(el) : el;
   }
-  const tr = (
-    <tr data-section-id={section.id} className="border-t border-line bg-paper-2/40">
+  const tr = withCells ? (
+    sectionCellsRow({ section, columns, head })
+  ) : (
+    <tr data-section-id={section.id} data-depth={section.depth ?? 0} className={sectionBand(section)}>
       <td colSpan={columns.length + 3} className="p-0">
         {head}
       </td>

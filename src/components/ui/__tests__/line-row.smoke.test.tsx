@@ -223,6 +223,42 @@ describe("LineRowSection", () => {
     expect(screen.getByRole("button", { name: "Lighting actions" })).toBeTruthy();
   });
 
+  it("depth 1 indents the title and lightens the band", () => {
+    render(<table><tbody><LineRowSection section={{ ...section, depth: 1 }} columns={columns} /></tbody></table>);
+    const tr = document.querySelector("tr[data-section-id='s']")!;
+    expect(tr.getAttribute("data-depth")).toBe("1");
+    expect(tr.className).toContain("bg-paper-2/20");
+    expect(tr.querySelector("div")!.className).toContain("pl-6");
+  });
+
+  it("desktop cells: aligned column cells, ⋯ in its own cell, amount omitted, wrapSection reaches the <tr>; phone ignores cells", async () => {
+    const user = userEvent.setup();
+    const cells = { price: <button type="button">Edit bundle</button> };
+    const { unmount } = render(
+      <table><tbody>
+        <LineRowSection
+          section={{ ...section, amount: 999, cells }}
+          columns={columns}
+          wrapSection={(el) => React.cloneElement(el as React.ReactElement<{ "data-wrapped": string }>, { "data-wrapped": "y" })}
+        />
+      </tbody></table>,
+    );
+    const tr = document.querySelector("tr[data-section-id='s']")!;
+    expect(tr.getAttribute("data-wrapped")).toBe("y");
+    // select+item span, one td per column, the ⋯ td
+    expect(tr.querySelectorAll("td")).toHaveLength(1 + columns.length + 1);
+    expect(tr.querySelectorAll("td")[0].getAttribute("colspan")).toBe("2");
+    expect(within(tr as HTMLElement).getByRole("button", { name: "Edit bundle" })).toBeTruthy();
+    expect(tr.textContent).not.toContain("$999");
+    await user.click(screen.getByRole("button", { name: "Lighting actions" }));
+    expect(await screen.findByText("Rename")).toBeTruthy();
+    unmount();
+    mobile.value = true;
+    render(<LineRowSection section={{ ...section, amount: 999, cells }} columns={columns} />);
+    expect(screen.queryByRole("button", { name: "Edit bundle" })).toBeNull();
+    expect(document.body.textContent).toContain("$999");
+  });
+
   it("collapsed is controllable", () => {
     render(<table><tbody><LineRowSection section={section} columns={columns} collapsed /></tbody></table>);
     expect(screen.getByRole("button", { name: "Expand" })).toBeTruthy();

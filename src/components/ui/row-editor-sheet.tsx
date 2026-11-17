@@ -181,14 +181,18 @@ const sameMoney = (a: number | null, b: number | null) =>
  * percentage against the new gross is the intent). Anything else leaves the
  * stored dollar amount alone, so a cent of round-trip drift never rewrites it.
  */
+/** Whether the discount is part of this save at all (see `discountPatch`). */
+function discountInScope(initial: RowEditorInitial, d: Draft, qty: number, price: number | undefined): boolean {
+  if (d.discountTouched || d.mode !== (initial.discountMode === "%" ? "%" : "$")) return true;
+  const repriced = qty !== initial.quantity || (price ?? null) !== (initial.unitPrice ?? null);
+  return d.mode === "%" && repriced;
+}
+
 function discountPatch(initial: RowEditorInitial, d: Draft, qty: number, price: number | undefined): RowEditorPatch {
-  const initialMode = initial.discountMode === "%" ? "%" : "$";
-  const modeChanged = d.mode !== initialMode;
-  const repriced =
-    d.mode === "%" && (qty !== initial.quantity || (price ?? null) !== (initial.unitPrice ?? null));
-  if (!d.discountTouched && !modeChanged && !repriced) return {};
+  if (!discountInScope(initial, d, qty, price)) return {};
+  const modeChanged = d.mode !== (initial.discountMode === "%" ? "%" : "$");
   const discount = resolvedDiscount(d, qty, price, initial.duration ?? 1) ?? null;
-  if (sameMoney(discount, initial.discount ?? null) && !modeChanged) return {};
+  if (!modeChanged && sameMoney(discount, initial.discount ?? null)) return {};
   return { discount, discountMode: discount == null ? "$" : d.mode };
 }
 

@@ -27,7 +27,8 @@ import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { ScanButton } from "@/components/scanner/scan-button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { GEAR_STAGE_LABELS, OUT_LABEL } from "@/lib/vocabulary";
+import { GEAR_STAGE_LABELS, OUT_LABEL, type GearStageKey } from "@/lib/vocabulary";
+import { getStatusColor } from "@/lib/status-colors";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -234,6 +235,9 @@ function currentStageIndex(status: string): number {
   }
 }
 
+/** Stage colours come from the one gearStage table (D2). */
+const stageStyle = (key: GearStageKey) => getStatusColor("gearStage", key);
+
 const urgencyMeta: Record<
   UrgencyGroup,
   { label: string; dot: string; chip: string }
@@ -250,8 +254,8 @@ const urgencyMeta: Record<
   },
   out: {
     label: "Out on site",
-    dot: "bg-red",
-    chip: "bg-red-soft text-red-text",
+    dot: stageStyle("deployed").dot,
+    chip: `${stageStyle("deployed").bg} ${stageStyle("deployed").text}`,
   },
   upcoming: {
     label: "Upcoming",
@@ -260,8 +264,8 @@ const urgencyMeta: Record<
   },
   returned: {
     label: "Returned · to close out",
-    dot: "bg-rep",
-    chip: "bg-rep-soft text-rep",
+    dot: stageStyle("returned").dot,
+    chip: `${stageStyle("returned").bg} ${stageStyle("returned").text}`,
   },
 };
 
@@ -526,19 +530,19 @@ export default function WarehousePage() {
                 icon={<Boxes className="h-4 w-4" />}
                 value={readyToPrep + prepping}
                 label="To prep"
-                accent="text-lime"
+                accent={stageStyle("to_prep").text}
               />
               <StatCell
                 icon={<Truck className="h-4 w-4" />}
                 value={deployedCount}
                 label={OUT_LABEL}
-                accent="text-red-text"
+                accent={stageStyle("deployed").text}
               />
               <StatCell
                 icon={<Undo2 className="h-4 w-4" />}
                 value={returnedCount}
                 label="To close out"
-                accent="text-rep"
+                accent={stageStyle("returned").text}
               />
               <StatCell
                 icon={<AlertTriangle className="h-4 w-4" />}
@@ -757,13 +761,13 @@ function PrepProgress({ summary }: { summary: PrepSummary }) {
     <div className="space-y-1.5">
       <div className="flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full bg-paper-2">
         {counts.prepped > 0 && (
-          <span className="bg-warn" style={{ width: pct(counts.prepped) }} />
+          <span className={stageStyle("prepped").dot} style={{ width: pct(counts.prepped) }} />
         )}
         {counts.deployed > 0 && (
-          <span className="bg-red" style={{ width: pct(counts.deployed) }} />
+          <span className={stageStyle("deployed").dot} style={{ width: pct(counts.deployed) }} />
         )}
         {counts.returned > 0 && (
-          <span className="bg-ok" style={{ width: pct(counts.returned) }} />
+          <span className={stageStyle("returned").dot} style={{ width: pct(counts.returned) }} />
         )}
       </div>
       <div className="flex items-center justify-between">
@@ -773,11 +777,11 @@ function PrepProgress({ summary }: { summary: PrepSummary }) {
         <span
           className={`t-mono ${
             allReturned
-              ? "text-ok"
+              ? stageStyle("returned").text
               : allDeployed
-                ? "text-red-text"
+                ? stageStyle("deployed").text
                 : allPacked
-                  ? "text-warn"
+                  ? stageStyle("prepped").text
                   : "text-muted"
           }`}
         >

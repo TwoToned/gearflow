@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
@@ -24,6 +25,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // create-vs-join fork, #1092 B1) or every one of theirs is archived (→ an
   // explanatory screen, not the fork — #1075 A5). The org switcher / picker
   // for 2+ memberships is handled client-side via OrgActivator.
+  // ⌘B / Collapse writes this cookie (ui/sidebar.tsx); read it so the manual
+  // preference survives a reload with no client-side flash.
+  const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
+
   const myOrgs = await getMyOrganizations();
   if (myOrgs.length === 0) {
     if (await hasOnlyArchivedMemberships()) {
@@ -35,8 +40,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="app-shell flex flex-col overflow-hidden md:relative md:inset-auto md:block md:min-h-svh md:overflow-visible">
       <SidebarProvider
+        defaultOpen={sidebarOpen}
         className="min-h-0 flex-1 md:min-h-svh"
-        style={{ "--sidebar-width": "248px", "--sidebar-width-icon": "92px", "--sidebar-width-mobile": "248px" } as React.CSSProperties}
+        style={{ "--sidebar-width": "220px", "--sidebar-width-icon": "72px", "--sidebar-width-mobile": "220px" } as React.CSSProperties}
       >
         <BrandingProvider>
           <FormatProvider>

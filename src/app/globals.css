@@ -524,3 +524,13 @@ body {
 .designer-shell .pdfme-designer-sidebar-toggle svg { stroke: currentColor !important; }
 
 @layer utilities { .t-reading-body { font-size: 16px; line-height: 1.5; font-weight: 400; } }
+
+/* D67: tablet icon rail. At <= 1023px the sidebar is the 72px rail regardless of
+   the manual collapse preference; the layout's inline --sidebar-width is
+   overridden here so the SSR first paint is already correct (no JS flash). The
+   rail/full views swap via `max-lg` in app-sidebar.tsx. */
+@media (width < theme(--breakpoint-lg)) {
+  [data-slot="sidebar-wrapper"] {
+    --sidebar-width: var(--sidebar-width-icon) !important;
+  }
+}

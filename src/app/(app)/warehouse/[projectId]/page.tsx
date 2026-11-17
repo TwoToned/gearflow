@@ -30,7 +30,7 @@ import { LabelSubmenu } from "@/components/documents/label-submenu";
 import { showError } from "@/lib/show-error";
 import { containerArgs, type ContainerChoice } from "@/lib/warehouse-container-choice";
 import { focusRing } from "@/lib/utils";
-import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/warehouse-check-policy";
+import { transitionNeedsCheck, lineHasModelChecks } from "@/lib/warehouse-check-policy";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 
 import {
@@ -89,7 +89,8 @@ import {
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
-import { ItemCheckForm } from "@/components/warehouse/item-check-form";
+import { CheckFlowSheet } from "@/components/warehouse/job/check-flow-sheet";
+import { useCheckQueue, type CheckQueueItem } from "@/components/warehouse/job/use-check-queue";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import {
   ScanAccessoryDialog,
@@ -100,7 +101,6 @@ import {
 } from "@/components/warehouse/scan-prep-dialogs";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
-import { ContainerRail } from "@/components/warehouse/container-rail";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
 import { AccessorySelectionContext } from "@/components/warehouse/kit-child-rows";
@@ -144,16 +144,12 @@ import {
   pullItem,
   prepItemDirect,
   prepItemsBatch,
-  deprepKit,
   deprepItemsBatch,
   prepKitChildren,
   prepKitsBatch,
-  unpackItem,
 } from "@/server/check-records";
 import { useConvex, useConvexAuth, useQuery } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
-import type { CheckRecordFormValues } from "@/lib/validations/check-item";
-import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useDurableScanIntake } from "@/hooks/use-durable-scan-intake";
 import { ScanIntakeStatus } from "@/components/warehouse/scan-intake-status";
@@ -397,58 +393,10 @@ function WarehouseProjectPage({
     verifiedAccessoryIds: string[];
   } | null>(null);
 
-  // Check form state — opens when a scanned item's model has check items
-  const [checkFormOpen, setCheckFormOpen] = useState(false);
-  const [checkFormData, setCheckFormData] = useState<{
-    context: "PREP" | "RETURN";
-    modelId?: string;
-    kitId?: string;
-    assetTag: string;
-    assetName: string;
-    lineItemId: string;
-    assetId: string;
-    bulkAssetId?: string;
-    /** Accessory identities to pack with this unit (prep picker selection). */
-    includeAccessoryIds?: string[];
-    /** When true, this is a kit queue — on complete, deploy/return the kit atomically */
-    kitQueueKitId?: string;
-    kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
-    /** When true, this RETURN check was triggered by a deprep action from the deploy tab. */
-    fromDeprep?: boolean;
-  } | null>(null);
-  const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
-
   // "Report issue" dialog (GitHub #898) — opened from a CHECKED_OUT line item
   // row on the Return tab (Deployed gear). Non-null target = dialog open.
   const [reportIssueTarget, setReportIssueTarget] = useState<LineItem | null>(null);
   const handleReportIssue = (item: LineItem) => setReportIssueTarget(item);
-
-  // Queue for multi-item check flows
-  type CheckQueueItem = {
-    context: "PREP" | "RETURN";
-    modelId?: string;
-    kitId?: string;
-    assetTag: string;
-    assetName: string;
-    lineItemId: string;
-    assetId: string;
-    bulkAssetId?: string;
-    /** Accessory identities to pack with this unit (prep picker selection). */
-    includeAccessoryIds?: string[];
-    /** When set, this queue item is part of a kit PER_ITEM flow */
-    kitQueueKitId?: string;
-    kitQueueReturnCondition?: "GOOD" | "DAMAGED" | "MISSING";
-    /** When true, this RETURN check was triggered by a deprep action from the deploy tab.
-     *  Used to route focus back to the deploy scan input on completion, and to route
-     *  submission through completeCheckAndStore (which transitions the item back to inventory). */
-    fromDeprep?: boolean;
-  };
-  const [checkQueue, setCheckQueue] = useState<CheckQueueItem[]>([]);
-  const [checkQueueIndex, setCheckQueueIndex] = useState(0);
-  // Items that don't need checks — processed after queue completes
-  const [checkQueueDirectItems, setCheckQueueDirectItems] = useState<
-    Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string; includeAccessoryIds?: string[] }>
-  >([]);
 
   // --- Scan-prep options ---
   // Whether a scan that needs a check form opens it now ("inline") or is held
@@ -462,221 +410,6 @@ function WarehouseProjectPage({
   // queue, the rest are prepped in one batch call when the operator finishes.
   const [scanBatch, setScanBatch] = useState<Array<CheckQueueItem & { needsCheck: boolean }>>([]);
 
-  // Start processing a check queue — opens the form for the first item
-  function startCheckQueue(queue: CheckQueueItem[], directItems: Array<{ lineItemId: string; assetId?: string; quantity?: number; returnCondition?: string; notes?: string; includeAccessoryIds?: string[] }> = []) {
-    if (queue.length === 0) return false;
-    setCheckQueue(queue);
-    setCheckQueueIndex(0);
-    setCheckQueueDirectItems(directItems);
-    const first = queue[0];
-    setCheckFormData(first);
-    setCheckFormOpen(true);
-    // Call pullItem/unpackItem for non-kit items (kit items are deployed atomically at the end).
-    // Skip for fromDeprep queues — the item is already returned; we just need to run the check
-    // and then reset prepStatus in completeCheckAndDeprep.
-    if (!first.kitId && !first.kitQueueKitId && !first.fromDeprep) {
-      if (first.context === "PREP") {
-        pullItem(projectId, first.lineItemId).catch(() => {});
-      } else {
-        unpackItem(projectId, first.lineItemId).catch(() => {});
-      }
-    }
-    return true;
-  }
-
-  // Advance to the next item in the queue (called after a successful submit)
-  function advanceCheckQueue() {
-    const nextIndex = checkQueueIndex + 1;
-    if (nextIndex < checkQueue.length) {
-      setCheckQueueIndex(nextIndex);
-      const next = checkQueue[nextIndex];
-      setCheckFormData(next);
-      // Pull/unpack non-kit items (kit items are deployed atomically at the end).
-      // Skip for fromDeprep — item is already returned.
-      if (!next.kitId && !next.kitQueueKitId && !next.fromDeprep) {
-        if (next.context === "PREP") {
-          pullItem(projectId, next.lineItemId).catch(() => {});
-        } else {
-          unpackItem(projectId, next.lineItemId).catch(() => {});
-        }
-      }
-      // Keep form open — it will reset via the modelId/assetTag change
-    } else {
-      // Queue complete — process any direct (no-check) items
-      finishCheckQueue();
-    }
-  }
-
-  // Process remaining direct items after queue completes
-  function finishCheckQueue() {
-    const kitQueueKitId = checkQueue[0]?.kitQueueKitId;
-    const kitQueueContext = checkQueue[0]?.context;
-    const kitQueueReturnCondition = checkQueue[0]?.kitQueueReturnCondition;
-    const finishedContext = checkQueue[0]?.context;
-    const finishedFromDeprep = checkQueue[0]?.fromDeprep === true;
-
-    setCheckFormOpen(false);
-    setCheckFormData(null);
-    setCheckQueue([]);
-    setCheckQueueIndex(0);
-    // Unverified-kit prompts held back while this queue ran can open now.
-    if (kitConfirmBacklogRef.current.length > 0) closeKitConfirm();
-
-    // Return focus to the appropriate scan input so barcode scanners flow uninterrupted.
-    // Wait a frame for the Sheet to release its focus trap before we steal it back.
-    requestAnimationFrame(() => {
-      if (finishedFromDeprep) {
-        deployScanInputRef.current?.focus();
-      } else if (finishedContext === "PREP") {
-        scanInputRef.current?.focus();
-      } else if (finishedContext === "RETURN") {
-        returnScanInputRef.current?.focus();
-      }
-    });
-
-    if (kitQueueKitId) {
-      if (kitQueueContext === "PREP") {
-        // Kit prep: mark all kit children as PACKED after checks completed
-        const kitLi = lineItems.find((l) => l.kitId === kitQueueKitId && !l.isKitChild);
-        if (kitLi) {
-          prepKitChildren(projectId, kitLi.id)
-            .then(() => {
-              toast.success("Kit prepped — ready to deploy");
-              invalidate();
-            })
-            .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
-        } else {
-          toast.success("Kit prepped — ready to deploy");
-          invalidate();
-        }
-      } else if (finishedFromDeprep) {
-        // Kit deprep: checks are already saved, now deprep the kit back to inventory
-        const kitLi = lineItems.find((l) => l.kitId === kitQueueKitId && !l.isKitChild);
-        if (kitLi) {
-          deprepKit(projectId, kitLi.id)
-            .then(() => {
-              toast.success("Kit deprep checked — returned to inventory");
-              invalidate();
-            })
-            .catch((e) => showError(e, { fallbackTitle: "Failed to deprep kit" }));
-        }
-      } else {
-        kitCheckInMutation
-          .mutateAsync({ kitId: kitQueueKitId, returnCondition: kitQueueReturnCondition || "GOOD" })
-          .then(() => { toast.success("Kit returned after checks"); setReturnNotes(""); })
-          .catch(() => {});
-      }
-    } else if (checkQueueDirectItems.length > 0) {
-      // Reuse the snapshot we captured above — avoid re-reading checkQueue[0]
-      // after setCheckQueue([]) was called.
-      if (finishedContext === "PREP") {
-        // Prep remaining items that had no checks (set prepStatus=PACKED) in one
-        // batch call — the server applies them in array order, preserving the old
-        // "sequential to avoid same-lineItemId races" ordering constraint.
-        prepItemsBatch(
-          projectId,
-          checkQueueDirectItems.map((i) => ({
-            lineItemId: i.lineItemId,
-            assetId: i.assetId || undefined,
-            quantity: i.quantity,
-            prepContainer: selectedContainer || null,
-            ...containerArgs(activeContainerId),
-            includeAccessoryIds: i.includeAccessoryIds,
-          })),
-        )
-          .then(() => {
-            clearAccessoryVerification(checkQueueDirectItems.map((i) => i.lineItemId));
-            toast.success("Items prepped — ready to deploy");
-            invalidate();
-          })
-          .catch((e) => showError(e));
-      } else {
-        checkInMutation
-          .mutateAsync({ items: checkQueueDirectItems.map((i) => ({ lineItemId: i.lineItemId, assetId: i.assetId, returnCondition: (i.returnCondition || "GOOD") as "GOOD" | "DAMAGED" | "MISSING", quantity: i.quantity, notes: i.notes })) })
-          .then(() => { toast.success(`Returned remaining items`); setReturnNotes(""); })
-          .catch(() => {});
-      }
-    }
-
-    setCheckQueueDirectItems([]);
-    invalidate();
-  }
-
-  /**
-   * Check if a kit needs check forms before deploy/return.
-   * Returns true if a check flow was started (caller should NOT proceed with direct deploy/return).
-   * Returns false if no checks needed (caller should proceed with normal flow).
-   */
-  function startKitCheckFlow(
-    kitId: string,
-    kitLi: LineItem,
-    context: "PREP" | "RETURN",
-    kitReturnCondition?: "GOOD" | "DAMAGED" | "MISSING",
-    fromDeprep: boolean = false
-  ): boolean {
-    const kit = kitLi.kit;
-    if (!kit) return false;
-
-    // Central policy gate: a plain return-scan (truck-in) never fires a check — the
-    // return check runs only at de-prep (fromDeprep). PREP and de-prep proceed.
-    if (!transitionNeedsCheck(context, { hasCheckItems: true, fromDeprep })) return false;
-
-    const checkMode = kit.checkMode || "KIT_LEVEL";
-    const children = (kitLi.childLineItems || []) as LineItem[];
-
-    if (checkMode === "KIT_LEVEL") {
-      // Kit-level: check the kit once using its own check items
-      if (!kitHasChecks(kit)) return false;
-
-      const queue: CheckQueueItem[] = [{
-        context,
-        kitId: kit.id,
-        assetTag: kit.assetTag,
-        assetName: kit.name,
-        lineItemId: kitLi.id,
-        assetId: "",
-        kitQueueKitId: kit.id,
-        kitQueueReturnCondition: kitReturnCondition,
-        fromDeprep,
-      }];
-      return startCheckQueue(queue);
-    } else {
-      // PER_ITEM: queue each child with model check items
-      const queue: CheckQueueItem[] = [];
-      for (const child of children) {
-        // Skip children not relevant to current flow.
-        // Deprep runs on already-returned kits so the children are not CHECKED_OUT anymore —
-        // use the RETURN-with-fromDeprep branch to include them regardless.
-        if (context === "PREP" && (child.status === "CHECKED_OUT" || child.status === "CANCELLED")) continue;
-        if (context === "RETURN" && !fromDeprep && child.status !== "CHECKED_OUT") continue;
-        if (context === "RETURN" && fromDeprep && child.status === "CANCELLED") continue;
-
-        if (!lineHasModelChecks(child) || !child.modelId) continue;
-
-        // For serialized items, one queue entry per child
-        // For bulk items, expand per quantity
-        const isBulk = !!child.bulkAssetId || (!child.assetId && child.quantity > 1);
-        const count = isBulk ? child.quantity : 1;
-        for (let i = 0; i < count; i++) {
-          queue.push({
-            context,
-            modelId: child.modelId,
-            assetTag: child.asset?.assetTag || child.bulkAsset?.assetTag || "",
-            assetName: `${modelDisplayName(child)}${count > 1 ? ` #${i + 1}` : ""}`,
-            lineItemId: child.id,
-            assetId: child.assetId || "",
-            bulkAssetId: child.bulkAssetId || undefined,
-            kitQueueKitId: kit.id,
-            kitQueueReturnCondition: kitReturnCondition,
-            fromDeprep,
-          });
-        }
-      }
-
-      if (queue.length === 0) return false;
-      return startCheckQueue(queue);
-    }
-  }
 
   // Native warehouse-detail read (Phase 4 — the version-vector server-action path is
   // retired). ONE live `warehouseDetail.bundle` subscription reconstructs the full
@@ -694,8 +427,6 @@ function WarehouseProjectPage({
   // follow-up design decision) — the dialog still records SOME reason either way.
   const { role: currentRole } = useCurrentRole();
   const isManagerTier = currentRole === "owner" || currentRole === "admin" || currentRole === "manager";
-  // Browser-direct check-record writes (deprep/pack/flag/store + kit/child/adhoc).
-  const checkRecordWrites = useCheckRecordWrites();
   // Scan-verdict audio feedback (success/error/exception tones) — see FEATUREDOCS/12.
   const scanFeedback = useScanFeedback();
 
@@ -1430,6 +1161,15 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
+  const checkFlow = useCheckQueue({
+    projectId, lineItems, selectedContainer, activeContainerId, kitCheckInMutation, checkInMutation,
+    clearAccessoryVerification, invalidate, closeKitConfirm,
+    hasKitConfirmBacklog: () => kitConfirmBacklogRef.current.length > 0,
+    setReturnNotes, scanInputRef, deployScanInputRef, returnScanInputRef,
+  });
+  const {
+    setCheckFormData, setCheckFormOpen, startCheckQueue, startKitCheckFlow,
+  } = checkFlow;
   // "Prep as custom item" (FEATUREDOCS/12): which lines are short on stock, and the
   // one-click convert / convert-back. The subscription is reactive, so no invalidate.
   const overbookedMap = useWarehouseOverbooked(orgId, projectId, lineItems);
@@ -3486,238 +3226,14 @@ function WarehouseProjectPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* Check Form Sheet */}
-      {checkFormData && (
-        <ItemCheckForm
-          open={checkFormOpen}
-          onOpenChange={(open) => {
-            if (!open) {
-              setCheckFormOpen(false);
-              setCheckFormData(null);
-              setCheckQueue([]);
-              setCheckQueueIndex(0);
-            }
-          }}
-          modelId={checkFormData.modelId}
-          kitId={checkFormData.kitId}
-          assetTag={checkFormData.assetTag}
-          assetName={checkFormData.assetName}
-          context={checkFormData.context}
-          isSubmitting={checkFormSubmitting}
-          queuePosition={checkQueue.length > 1 ? checkQueueIndex + 1 : undefined}
-          queueTotal={checkQueue.length > 1 ? checkQueue.length : undefined}
-          onCancel={() => {
-            setCheckFormOpen(false);
-            setCheckFormData(null);
-            setCheckQueue([]);
-            setCheckQueueIndex(0);
-          }}
-          onPassAllRemaining={checkQueue.length > 1 ? async () => {
-            // Auto-pass all remaining items in the queue (including current)
-            setCheckFormSubmitting(true);
-            try {
-              const remaining = checkQueue.slice(checkQueueIndex);
-              for (const item of remaining) {
-                const isKitLevelItem = !!item.kitId;
-                const isKitQueueChild = !!item.kitQueueKitId && !item.kitId;
-
-                // Fetch check items (kit-level or model-level)
-                const checkItems = isKitLevelItem
-                  ? await wConvex.query(convexApi.kitCheckItems.assignmentsForKit, { orgId: orgId as string, kitId: item.kitId! })
-                  : await wConvex.query(convexApi.modelCheckItems.assignmentsForModel, { orgId: orgId as string, modelId: item.modelId! });
-                const checks: CheckRecordFormValues[] = (checkItems as Array<{ checkItem: { id: string; type: string } }>).map((mci) => ({
-                  checkItemId: mci.checkItem.id,
-                  result: mci.checkItem.type === "NOTES" ? "NOTES_ONLY" as const : "PASS" as const,
-                  photos: [],
-                }));
-
-                // Empty-checks guard (mirrors the PR #120 form guard for the
-                // "pass all remaining" path). The completeCheck*/saveKit* server
-                // actions enforce checks.min(1) and 500 on an empty array. The
-                // cached project's _count.modelCheckItems gate that queued this
-                // item can diverge from the live getModelCheckItems fetch above
-                // (e.g. an admin removed the model's check items after the
-                // warehouse page cached the project), leaving `checks` empty.
-                // Route those items through their no-check equivalent instead of
-                // crashing — items with no checks are meant to flow through
-                // prepItemDirect / checkInItems, not the check actions.
-                if (checks.length === 0) {
-                  if (isKitLevelItem || isKitQueueChild) {
-                    // Kit deploy/return is finalized in finishCheckQueue — there
-                    // is nothing to record here, so just skip the save.
-                    continue;
-                  }
-                  if (item.context === "PREP") {
-                    await prepItemDirect(
-                      projectId,
-                      item.lineItemId,
-                      item.assetId || undefined,
-                      item.assetId ? undefined : 1,
-                      selectedContainer || null,
-                      undefined,
-                      containerArgs(activeContainerId).containerId,
-                    );
-                  } else if (item.fromDeprep) {
-                    // completeCheckAndDeprep tolerates an empty checks[] (it
-                    // does not re-parse against a .min(1) schema).
-                    await checkRecordWrites.completeCheckAndDeprep({
-                      projectId,
-                      lineItemId: item.lineItemId,
-                      assetId: item.assetId,
-                      bulkAssetId: item.bulkAssetId,
-                      checks,
-                    });
-                  } else {
-                    // RETURN store with no checks — return to inventory via the
-                    // no-check check-in path (same as finishCheckQueue's direct
-                    // items) rather than completeCheckAndStore (min(1)).
-                    await warehouseWrites.checkInItems(projectId, [
-                      {
-                        lineItemId: item.lineItemId,
-                        assetId: item.assetId || undefined,
-                        returnCondition: "GOOD",
-                        quantity: item.assetId ? undefined : 1,
-                      },
-                    ]);
-                  }
-                  continue;
-                }
-
-                if (isKitLevelItem) {
-                  // Kit-level: save records only, deploy happens in finishCheckQueue
-                  await checkRecordWrites.saveKitLevelChecks(projectId, item.kitId!, item.lineItemId, item.context, checks);
-                } else if (isKitQueueChild) {
-                  // PER_ITEM child: save records only, deploy happens in finishCheckQueue
-                  await checkRecordWrites.saveChildItemChecks(projectId, item.lineItemId, item.assetId || undefined, item.bulkAssetId, item.context, checks);
-                } else if (item.context === "PREP") {
-                  await pullItem(projectId, item.lineItemId).catch(() => {});
-                  await checkRecordWrites.completeCheckAndPack({
-                    projectId,
-                    lineItemId: item.lineItemId,
-                    assetId: item.assetId,
-                    bulkAssetId: item.bulkAssetId,
-                    prepContainer: selectedContainer || null,
-                    ...containerArgs(activeContainerId),
-                    checks,
-                    includeAccessoryIds: item.includeAccessoryIds,
-                  });
-                } else if (item.fromDeprep) {
-                  await checkRecordWrites.completeCheckAndDeprep({
-                    projectId,
-                    lineItemId: item.lineItemId,
-                    assetId: item.assetId,
-                    bulkAssetId: item.bulkAssetId,
-                    checks,
-                  });
-                } else {
-                  await unpackItem(projectId, item.lineItemId).catch(() => {});
-                  await checkRecordWrites.completeCheckAndStore({
-                    projectId,
-                    lineItemId: item.lineItemId,
-                    assetId: item.assetId,
-                    bulkAssetId: item.bulkAssetId,
-                    checks,
-                    condition: "GOOD",
-                  });
-                }
-              }
-              toast.success(`Passed all checks for ${remaining.length} item${remaining.length !== 1 ? "s" : ""}`);
-              finishCheckQueue();
-            } catch (e) {
-              showError(e, { fallbackTitle: "Pass all failed" });
-            } finally {
-              setCheckFormSubmitting(false);
-            }
-          } : undefined}
-          onSubmit={async (checks: CheckRecordFormValues[], returnInfo?: { condition: "GOOD" | "DAMAGED" | "MISSING"; notes?: string }) => {
-            if (!checkFormData) return;
-            setCheckFormSubmitting(true);
-            try {
-              const hasFails = checks.some((c) => c.result === "FAIL");
-              const isKitLevelItem = !!checkFormData.kitId;
-              const isKitQueueChild = !!checkFormData.kitQueueKitId && !checkFormData.kitId;
-
-              if (isKitLevelItem) {
-                // Kit-level check: save records, then deploy/return in finishCheckQueue
-                await checkRecordWrites.saveKitLevelChecks(projectId, checkFormData.kitId!, checkFormData.lineItemId, checkFormData.context, checks);
-                toast.success(hasFails ? "Kit check completed with issues" : "Kit check passed");
-              } else if (isKitQueueChild) {
-                // PER_ITEM child: save records only, deploy/return happens in finishCheckQueue
-                await checkRecordWrites.saveChildItemChecks(
-                  projectId,
-                  checkFormData.lineItemId,
-                  checkFormData.assetId || undefined,
-                  checkFormData.bulkAssetId,
-                  checkFormData.context,
-                  checks
-                );
-                toast.success(hasFails ? "Item check completed with issues" : "Item check passed");
-              } else if (checkFormData.context === "PREP") {
-                if (hasFails) {
-                  await checkRecordWrites.completeCheckAndFlag({
-                    projectId,
-                    lineItemId: checkFormData.lineItemId,
-                    assetId: checkFormData.assetId,
-                    bulkAssetId: checkFormData.bulkAssetId,
-                    checks,
-                    flagType: "FLAGGED_FAULTY",
-                  });
-                  toast.success("Item flagged as faulty");
-                } else {
-                  await checkRecordWrites.completeCheckAndPack({
-                    projectId,
-                    lineItemId: checkFormData.lineItemId,
-                    assetId: checkFormData.assetId,
-                    bulkAssetId: checkFormData.bulkAssetId,
-                    prepContainer: selectedContainer || null,
-                    ...containerArgs(activeContainerId),
-                    checks,
-                    includeAccessoryIds: checkFormData.includeAccessoryIds,
-                  });
-                  toast.success("Item checked and packed");
-                }
-              } else if (checkFormData.fromDeprep) {
-                // RETURN deprep — item is already returned, just record checks and reset prepStatus
-                await checkRecordWrites.completeCheckAndDeprep({
-                  projectId,
-                  lineItemId: checkFormData.lineItemId,
-                  assetId: checkFormData.assetId,
-                  bulkAssetId: checkFormData.bulkAssetId,
-                  checks,
-                });
-                toast.success("Item checked and returned to inventory");
-              } else {
-                // RETURN — condition comes from the check form
-                const condition = returnInfo?.condition || "GOOD";
-                await checkRecordWrites.completeCheckAndStore({
-                  projectId,
-                  lineItemId: checkFormData.lineItemId,
-                  assetId: checkFormData.assetId,
-                  bulkAssetId: checkFormData.bulkAssetId,
-                  checks,
-                  condition,
-                  notes: returnInfo?.notes || undefined,
-                });
-                const condLabel = condition === "GOOD" ? "stored" : condition === "DAMAGED" ? "flagged damaged" : "flagged missing";
-                toast.success(`Item checked and ${condLabel}`);
-              }
-
-              // Advance queue or close
-              if (checkQueue.length > 1) {
-                advanceCheckQueue();
-                invalidate();
-              } else {
-                // Single item or last in queue — finish
-                finishCheckQueue();
-              }
-            } catch (e) {
-              showError(e, { fallbackTitle: "Check submission failed" });
-            } finally {
-              setCheckFormSubmitting(false);
-            }
-          }}
-        />
-      )}
+      <CheckFlowSheet
+        flow={checkFlow}
+        projectId={projectId}
+        orgId={orgId}
+        selectedContainer={selectedContainer}
+        activeContainerId={activeContainerId}
+        invalidate={invalidate}
+      />
       <ReportIssueDialog
         open={reportIssueTarget !== null}
         onOpenChange={(open) => {

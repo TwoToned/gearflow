@@ -12,14 +12,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenu } from "@/components/ui/action-menu";
 import { useIsMobile } from "@/hooks/use-mobile";
-import type { BulkAction, RowSelection } from "@/lib/primitives/types";
+import { showError } from "@/lib/show-error";
+import type { ActionMenuSpec, BulkAction, RowSelection } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -55,6 +51,30 @@ export function orderBulkActions(actions: BulkAction[]): BulkAction[] {
   return [...actions.filter((a) => !a.danger), ...actions.filter((a) => a.danger)];
 }
 
+/** Runs a verb; a rejection is surfaced as a toast, never an unhandled rejection. */
+async function runSafely(action: BulkAction): Promise<void> {
+  try {
+    await action.onSelect();
+  } catch (e) {
+    showError(e);
+  }
+}
+
+/** A verb's sub-items as an `ActionMenuSpec`, labels pre-computed with the count,
+ *  so the one menu renderer (`ActionMenu`) draws it. */
+function childSpec(children: BulkAction[], count: number): ActionMenuSpec {
+  return {
+    items: children.map((c) => ({
+      key: c.key,
+      label: c.label(count),
+      group: c.group,
+      danger: c.danger,
+      confirm: c.confirm,
+      onSelect: () => runSafely(c),
+    })),
+  };
+}
+
 function ConfirmDialog({
   action,
   count,
@@ -70,7 +90,7 @@ function ConfirmDialog({
     if (!action) return;
     setBusy(true);
     try {
-      await action.onSelect();
+      await runSafely(action);
     } finally {
       setBusy(false);
       onCancel();
@@ -111,21 +131,16 @@ function Verb({
 }) {
   if (action.children?.length) {
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <ActionMenu
+        spec={childSpec(action.children, count)}
+        label={action.label(count)}
+        trigger={
           <Button size="sm" variant="line" className={verbClass(action)}>
             {action.label(count)}
             <ChevronDown className="h-3 w-3" />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          {action.children.map((c) => (
-            <DropdownMenuItem key={c.key} onSelect={() => onRun(c)}>
-              {c.label(count)}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        }
+      />
     );
   }
   return (
@@ -144,7 +159,7 @@ export function BulkBar({ selection, actions, noun = "item", leading, className 
 
   const run = (a: BulkAction) => {
     if (a.confirm) setPending(a);
-    else void a.onSelect();
+    else void runSafely(a);
   };
 
   const bar = (

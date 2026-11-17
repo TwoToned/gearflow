@@ -96,7 +96,7 @@ export function ScanDock({
         ) : null}
         <input
           // 16 px so iOS does not zoom on focus.
-          className="min-h-11 min-w-0 flex-1 bg-transparent text-[16px] text-ink placeholder:text-muted focus:outline-none"
+          className="min-h-11 min-w-0 flex-1 bg-transparent text-reading-body text-ink placeholder:text-muted focus:outline-none"
           value={value}
           disabled={disabled}
           placeholder={placeholder}

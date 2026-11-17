@@ -26,15 +26,17 @@ https://flow.rvlt.app returns 200/307.
 
 Decisions PR #1377 merged 2026-11-17.
 
+Parallel start (2026-11-17, user asked for phases in parallel where possible): 1a and 1b build off Phase 0's branch against a shared contract commit (`claude/ux-1-contract`) before Phase 0 merges; they merge `main` once it does.
+
 ## Phases
 
 | Phase | Worker | Branch / PR | State | Blockers |
 |---|---|---|---|---|
 | 0 Vocabulary + tokens | Sonnet | `claude/ux-0-vocabulary-tokens` · #1378 (draft) | in review: 4 fixes requested 2026-11-17 | CI pending |
-| 1a LineRow, ActionMenu, StatusWord, StageFilter, glyphs | — | — | waiting on 0 | Phase 0 merge; shared props file |
-| 1b AddBar, FooterTotals, BulkBar, RowEditorSheet, DetailHeader, ScanDock/ScanStrip | — | — | waiting on 0 | Phase 0 merge; 1a's types file |
+| 1a LineRow, ActionMenu, StatusWord, StageFilter, glyphs | Sonnet | `claude/ux-1a-row-primitives` (base `claude/ux-1-contract`) | planning | owns `src/lib/primitives/types.ts` |
+| 1b AddBar, FooterTotals, BulkBar, RowEditorSheet, DetailHeader, ScanDock/ScanStrip | Sonnet | `claude/ux-1b-bar-primitives` (base `claude/ux-1-contract`) | planning | merges after 1a |
 | 2a → 2b Equipment, then Packing | — | — | waiting on 1 | Gate 0 |
-| 2c Plan-honouring prep (only schema change) | — | — | waiting on 1 | Gate 0; merges last in Wave B |
+| 2c Plan-honouring prep (only schema change) | Sonnet | `claude/ux-2c-plan-honouring-prep` | planning | started early (user: parallel where possible); merges right after 0 if no schema change, else last in Wave B. `Planned →` glyph moved to Phase 3 |
 | 3 Warehouse job page (L) | — | — | waiting on 1 | Gate 0; model choice |
 | 5 Logistics (L) | — | — | waiting on 1 | Gate 0; model choice |
 | 6 Shell | — | — | waiting on 1 | Gate 0 |

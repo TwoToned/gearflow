@@ -28,6 +28,7 @@ import {
 import { toast } from "sonner";
 import { LabelSubmenu } from "@/components/documents/label-submenu";
 import { showError } from "@/lib/show-error";
+import type { ContainerChoice } from "@/lib/warehouse-container-choice";
 import { focusRing } from "@/lib/utils";
 import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/warehouse-check-policy";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
@@ -257,7 +258,10 @@ function WarehouseProjectPage({
   // display) keep working; `activeContainerId` (#1296) is the real container
   // now written through alongside it — see `handleSelectContainer`.
   const [selectedContainer, setSelectedContainer] = useState<string>("");
-  const [activeContainerId, setActiveContainerId] = useState<string | null>(null);
+  // Tri-state (see warehouse-container-choice.ts): `undefined` = packer has not
+  // chosen, so writes omit `containerId` and the PM's plan applies; `null` =
+  // Loose deliberately picked; string = a case.
+  const [activeContainerId, setActiveContainerId] = useState<ContainerChoice>(undefined);
   const [newContainerSheetOpen, setNewContainerSheetOpen] = useState(false);
   const realContainers = useQuery(
     convexApi.projectContainers.listForProject,
@@ -2436,7 +2440,7 @@ function WarehouseProjectPage({
   const handlePrepAccessoriesOnly = async () => {
     try {
       await ensureContainerIfNeeded();
-      const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId: string | null; accessoriesOnly: true }> = [];
+      const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId: string | null | undefined; accessoriesOnly: true }> = [];
       const seen = new Set<string>();
       for (const key of selectedPrep) {
         const li = lineItems.find((l) => l.id === key.split(":")[0]);

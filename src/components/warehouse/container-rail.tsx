@@ -3,6 +3,7 @@
 import { Package, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { focusRing, cn } from "@/lib/utils";
+import { isLooseChosen, type ContainerChoice } from "@/lib/warehouse-container-choice";
 
 export interface ContainerRailItem {
   id: string;
@@ -14,8 +15,9 @@ export interface ContainerRailItem {
 export interface ContainerRailProps {
   /** Real `projectContainers.listForProject` rows for this job. */
   containers: ContainerRailItem[];
-  /** `null` = Loose (no active container) is selected. */
-  activeContainerId: string | null;
+  /** `string` = that case; `null` = Loose deliberately picked; `undefined` =
+   *  nothing chosen (no chip active, the job's packing plan applies). */
+  activeContainerId: ContainerChoice;
   onSelect: (id: string | null) => void;
   onNew: () => void;
   className?: string;
@@ -48,7 +50,7 @@ export function ContainerRail({ containers, activeContainerId, onSelect, onNew, 
     >
       <ContainerChip
         label="Loose"
-        active={activeContainerId === null}
+        active={isLooseChosen(activeContainerId)}
         dashed
         onClick={() => onSelect(null)}
       />

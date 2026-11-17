@@ -56,4 +56,17 @@ describe("ContainerRail smoke", () => {
     fireEvent.click(screen.getByText("New"));
     expect(onNew).toHaveBeenCalled();
   });
+
+  it("highlights no chip when nothing is chosen, and Loose only after it is picked", () => {
+    const Harness = () => {
+      const [choice, setChoice] = React.useState<string | null | undefined>(undefined);
+      return <ContainerRail containers={containers} activeContainerId={choice} onSelect={setChoice} onNew={() => {}} />;
+    };
+    render(<Harness />);
+    const checked = () => screen.getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true");
+    expect(checked()).toHaveLength(0);
+    fireEvent.click(screen.getByText("Loose"));
+    expect(checked()).toHaveLength(1);
+    expect(checked()[0].textContent).toContain("Loose");
+  });
 });

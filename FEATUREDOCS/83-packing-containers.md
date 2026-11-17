@@ -431,6 +431,24 @@ used surface, for an interaction-only difference (the underlying effect,
 shipped here). Left for its own dedicated pass; the plain `<select>` ships
 the feature's full underlying value now.
 
+## Plan-honouring prep: omitted vs null (UX Phase 2c)
+
+A prep write's `containerId` has three meanings, and the difference is the whole
+point of the PM's plan (`convex/lib/fulfillment.ts` `resolveContainerForWrite`):
+**omitted (`undefined`)** = "no signal", so a NEW unit packs into the line's
+`plannedContainerId`; **`null`** = Loose chosen on purpose, which overrides the
+plan; **a container id** = always wins. An existing unit is only ever touched by
+an explicit value. This applies equally to API/MCP callers (`prep_item`,
+`stage_pick_list`, `dispatch_gear`): omit `containerId` to follow the plan, send
+`null` to pack loose.
+
+The warehouse page tracks the packer's choice as a tri-state
+(`ContainerChoice`, `src/lib/warehouse-container-choice.ts`): `undefined` until
+they tap a chip, `null` once they pick Loose, a string for a case. The rail
+highlights Loose only when it is exactly `null`; with nothing chosen no chip is
+active because the plan applies. Before this the page defaulted to `null`, so
+the plan never applied from the warehouse.
+
 ## Not yet started
 
 Phase 5 (narrow + retire the legacy `prepContainer` string field and

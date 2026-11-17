@@ -1,5 +1,6 @@
 "use client";
 
+import type { ContainerChoice } from "@/lib/warehouse-container-choice";
 import { Fragment } from "react";
 import {
   ChevronRight,

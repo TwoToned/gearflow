@@ -219,6 +219,48 @@ export async function customUnitAccessoryShare(
     .map((b) => ({ bulkAssetId: b.bulkAssetId, perParent: added.get(b.bulkAssetId)?.quantityPerParent ?? b.quantity }));
 }
 
+type AccessoryChild = Awaited<ReturnType<typeof accessoryChildrenOf>>[number];
+type CustomAccessoryWant = Awaited<ReturnType<typeof resolveCustomAccessories>>;
+
+/** A custom unit's per-parent quantity on one accessory child line, or null when the
+ *  child isn't one it ships with (not a bulk/custom accessory, not in the share, cancelled). */
+function customUnitPerParent(child: AccessoryChild, share: Map<string, number>, wantCustom: CustomAccessoryWant): number | null {
+  if (child.status === "CANCELLED") return null;
+  if (child.customAccessoryKey) return wantCustom.get(child.customAccessoryKey)?.perParent ?? null;
+  if (child.bulkAssetId) return share.get(child.bulkAssetId) ?? null;
+  return null;
+}
+
+/** One packed per-parent row for the custom unit on `child`, then keep the child's own
+ *  quantity at least as large as its rows. */
+async function packCustomUnitShareOn(
+  ctx: Ctx,
+  child: AccessoryChild,
+  perParent: number,
+  args: { organizationId: string; unitId: string },
+  now: number,
+): Promise<void> {
+  const { id } = await ensureAccessoryUnit(ctx, {
+    organizationId: args.organizationId, lineItemId: child.id, parentUnitAssetId: customUnitScope(args.unitId),
+    bulkAssetId: child.bulkAssetId, quantity: perParent,
+  });
+  const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+  if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
+    await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
+  }
+  // Serial prep sizes the accessory line to the parents prepped SO FAR, so it can sit below
+  // the custom unit's share — never leave rows that outnumber the line's own quantity.
+  const rowTotal = (await lineUnits(ctx, child.id)).filter((x) => x.status !== "CANCELLED").reduce((n, x) => n + (x.quantity ?? 0), 0);
+  if (rowTotal > (child.quantity ?? 0)) {
+    await ctx.db.patch(child._id, {
+      quantity: rowTotal,
+      ...(child.description ? { description: child.description.replace(/^\d+x /, `${rowTotal}x `) } : {}),
+      updatedAt: now,
+    });
+  }
+  await syncLineItemRollup(ctx, child.id);
+}
+
 /** Give a custom unit its accessories: one packed per-parent row on each existing bulk
  *  accessory child line the model ships (a custom unit is born prepped, so its share is too). */
 export async function ensureCustomUnitAccessories(
@@ -234,29 +276,8 @@ export async function ensureCustomUnitAccessories(
   if (share.size === 0 && wantCustom.size === 0) return;
   const now = Date.now();
   for (const child of await accessoryChildrenOf(ctx, args.organizationId, args.lineItemId)) {
-    const perParent = child.customAccessoryKey
-      ? wantCustom.get(child.customAccessoryKey)?.perParent
-      : child.bulkAssetId ? share.get(child.bulkAssetId) : undefined;
-    if ((!child.bulkAssetId && !child.customAccessoryKey) || perParent == null || child.status === "CANCELLED") continue;
-    const { id } = await ensureAccessoryUnit(ctx, {
-      organizationId: args.organizationId, lineItemId: child.id, parentUnitAssetId: customUnitScope(args.unitId),
-      bulkAssetId: child.bulkAssetId, quantity: perParent,
-    });
-    const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
-      await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
-    }
-    // Serial prep sizes the accessory line to the parents prepped SO FAR, so it can sit below
-    // the custom unit's share — never leave rows that outnumber the line's own quantity.
-    const rowTotal = (await lineUnits(ctx, child.id)).filter((x) => x.status !== "CANCELLED").reduce((n, x) => n + (x.quantity ?? 0), 0);
-    if (rowTotal > (child.quantity ?? 0)) {
-      await ctx.db.patch(child._id, {
-        quantity: rowTotal,
-        ...(child.description ? { description: child.description.replace(/^\d+x /, `${rowTotal}x `) } : {}),
-        updatedAt: now,
-      });
-    }
-    await syncLineItemRollup(ctx, child.id);
+    const perParent = customUnitPerParent(child, share, wantCustom);
+    if (perParent != null) await packCustomUnitShareOn(ctx, child, perParent, args, now);
   }
 }
 

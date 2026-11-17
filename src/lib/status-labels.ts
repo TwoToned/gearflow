@@ -1,3 +1,5 @@
+import { OUT_LABEL } from "@/lib/vocabulary";
+
 /**
  * Human-readable labels for all enum values displayed in the UI.
  * Use `formatLabel(enumValue)` as a fallback for any enum not listed here.
@@ -6,7 +8,7 @@
 // --- Asset Status ---
 export const assetStatusLabels: Record<string, string> = {
   AVAILABLE: "Available",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   IN_MAINTENANCE: "In maintenance",
   RETIRED: "Retired",
   LOST: "Lost",
@@ -25,7 +27,7 @@ export const bulkAssetStatusLabels: Record<string, string> = {
 // --- Kit Status ---
 export const kitStatusLabels: Record<string, string> = {
   AVAILABLE: "Available",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   IN_MAINTENANCE: "In maintenance",
   RETIRED: "Retired",
   INCOMPLETE: "Incomplete",
@@ -39,7 +41,7 @@ export const projectStatusLabels: Record<string, string> = {
   AWAITING_PAYMENT: "Awaiting payment",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
@@ -52,7 +54,7 @@ export const lineItemStatusLabels: Record<string, string> = {
   QUOTED: "Quoted",
   CONFIRMED: "Confirmed",
   PREPPED: "Prepped",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   RETURNED: "Returned",
   CANCELLED: "Cancelled",
 };

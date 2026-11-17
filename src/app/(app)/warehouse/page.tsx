@@ -27,6 +27,7 @@ import { useWarehouseCloseWrites } from "@/hooks/use-warehouse-close-writes";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { ScanButton } from "@/components/scanner/scan-button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { GEAR_STAGE_LABELS, OUT_LABEL } from "@/lib/vocabulary";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -71,7 +72,7 @@ const statusLabels: Record<string, string> = {
   AWAITING_PAYMENT: "Awaiting payment",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   ON_SITE: "On site",
   RETURNED: "Returned",
 };
@@ -210,11 +211,11 @@ function getPrepSummary(project: Project): PrepSummary {
 // The 5 lifecycle stages, in order. `current` is derived from project status so
 // the card stepper highlights where the project sits at a glance (Gopuff-style).
 const LIFECYCLE_STAGES = [
-  { key: "prep", label: "Prep" },
-  { key: "prepped", label: "Prepped" },
-  { key: "deployed", label: "Deployed" },
-  { key: "returned", label: "Returned" },
-  { key: "closed", label: "Closed" },
+  { key: "prep", label: GEAR_STAGE_LABELS.to_prep },
+  { key: "prepped", label: GEAR_STAGE_LABELS.prepped },
+  { key: "deployed", label: GEAR_STAGE_LABELS.deployed },
+  { key: "returned", label: GEAR_STAGE_LABELS.returned },
+  { key: "closed", label: GEAR_STAGE_LABELS.closed },
 ] as const;
 
 function currentStageIndex(status: string): number {

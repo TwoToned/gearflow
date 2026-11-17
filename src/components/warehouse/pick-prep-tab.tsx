@@ -28,7 +28,7 @@ import {
 import type { LineItem, GroupEntry } from "./warehouse-types";
 import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./warehouse-types";
 import { KitChildRows, MobileKitChildCards, BulkAccessoryRows, MobileBulkAccessoryCards } from "./kit-child-rows";
-import { PrepStatusBadge } from "./prep-status-badge";
+import { GearStageBadge, PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
 import { SaleItemsToPrep } from "./sale-items-to-prep";
 import { CustomUnitPanel } from "./custom-unit-panel";
@@ -276,10 +276,10 @@ export function PickPrepTab({
                           entry, childKeys, selectedPrep, setSelectedPrep,
                           <TableCell>
                             {entry.items.every((i) => i.prepStatus === "PACKED")
-                              ? <Badge status="ok">Prepped</Badge>
+                              ? <GearStageBadge stage="prepped" />
                               : entry.items.some((i) => i.prepStatus === "PACKED")
-                                ? <Badge status="neutral" className="bg-blue-soft text-blue">Partial</Badge>
-                                : <Badge status="warn">Needs prep</Badge>}
+                                ? <Badge status="info">Partial</Badge>
+                                : <GearStageBadge stage="to_prep" />}
                           </TableCell>
                         )}
                         {isExpanded && entry.items.map((item, idx) => (
@@ -569,10 +569,10 @@ export function PickPrepTab({
                     qtyLabel={entry.items.length}
                     status={
                       entry.items.every((i) => i.prepStatus === "PACKED")
-                        ? <Badge status="ok">Prepped</Badge>
+                        ? <GearStageBadge stage="prepped" />
                         : entry.items.some((i) => i.prepStatus === "PACKED")
-                          ? <Badge status="neutral" className="bg-blue-soft text-blue">Partial</Badge>
-                          : <Badge status="warn">Needs prep</Badge>
+                          ? <Badge status="info">Partial</Badge>
+                          : <GearStageBadge stage="to_prep" />
                     }
                   >
                     {entry.items.map((item, idx) => (

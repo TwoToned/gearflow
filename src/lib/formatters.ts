@@ -59,10 +59,14 @@ export function formatConfigFromOrgSettings(settings: OrgSettings | null | undef
 export function formatCurrency(
   value: number | null | undefined,
   config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+  /** `cents: false` prints whole dollars (`$23,880`) for lists (playbook §3.7);
+   *  cents stay the default for finance documents and inline editors. */
+  opts: { cents?: boolean } = {},
 ): string {
   if (value == null) return "\u2014";
   const symbol = currencySymbol(config.currency);
-  return `${symbol}${Number(value).toLocaleString(config.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const digits = opts.cents === false ? 0 : 2;
+  return `${symbol}${Number(value).toLocaleString(config.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
 function formatDateWithOptions(

@@ -4,13 +4,13 @@
 
 Multi-select + bulk actions on list/table surfaces. Shipped across **all four
 project surfaces** — Equipment (Phase 1), then Services, Crew, and Tasks
-(Phases 2–4). The shared pieces (`useSelection`, `BulkActionBar`,
+(Phases 2–4). The shared pieces (`useSelection`, `BulkBar`,
 `BulkDeleteDialog`) are built to scale to other surfaces beyond projects.
 
 ## Other project surfaces (Phases 2–4)
 
 Each surface reuses `useSelection` (plain row ids), renders per-row/-card
-selection checkboxes (hover-reveal + a select-all), and a `BulkActionBar`.
+selection checkboxes (hover-reveal + a select-all), and a `BulkBar`.
 
 > **⚠️ Superseded (Phase 3 browser-direct), same as Phase 1 above.** The names in
 > the "Server actions" column below no longer exist as `src/server/*.ts` actions —
@@ -51,7 +51,7 @@ checkboxes + a header select-all) and act on the whole selection at once:
   intact. It's visible on hover, or always while a selection exists.
 - Row-click selection (plain / cmd / shift) still works alongside the
   checkboxes; the checkbox also supports shift-range.
-- The **`BulkActionBar`** (`src/components/ui/bulk-action-bar.tsx`) appears once
+- The **`BulkBar`** (`src/components/ui/bulk-bar.tsx`) appears once
   ≥1 item is selected — a shared "{n} selected + actions + Clear" bar extracted
   from the Assets pattern (`asset-table.tsx`). Escape clears the selection.
 

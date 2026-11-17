@@ -366,6 +366,17 @@ Micro QR.
 test is why "it doesn't work on iOS" could ship. Unit-testing the UI around a
 decoder proves nothing about whether it decodes.
 
+### ScanDock and ScanStrip (`src/components/ui/scan-dock.tsx`, `scan-strip.tsx`)
+Presentational pieces of the unified scan surface (UX unification §5.7). `ScanDock` is one
+input (keyboard wedge, Enter submits) plus the existing `ScanButton` camera trigger, so the
+camera still opens from a user gesture through the one WASM engine; it adds the active
+target (`Packing into → LX-04 ▾`) and the mode words `Prep as I scan · Check only`.
+`ScanStrip` lists the last scans by tone (success with Undo, warning with Run check, error
+with Add & prep, neutral saved on device · syncing). The strip's Undo is the exact
+`scanUndo` closure from `announceWarehouseWrite`. The single pipeline that feeds them
+(`useDurableScanIntake` → result → `announceWarehouseWrite`) is Phase 3; the legacy
+`ScanHistoryStrip` stays until a surface adopts these.
+
 ### Scan Lookup (`convex/scanLookup.ts`, `resolve` query — formerly `src/server/scan-lookup.ts`)
 Resolves barcode value to entity URL:
 1. Check `Asset` by `assetTag` → `/assets/registry/{id}`

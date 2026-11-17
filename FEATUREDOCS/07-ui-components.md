@@ -91,3 +91,12 @@ ran off the top/bottom with no scrollbar, forcing users to zoom out).
 - **Page titles** use the `.t-page-title` composite (Archivo 24px / 800 / -0.02em) — `PageHeader` and
   every page `h1`. `.t-title` (20px / 700) stays for dialog, card and section titles.
 
+
+## UX unification row primitives (Phase 1a, 2026-11)
+Spec: `docs/designs/ux-unification-2026-10.md` §5.1–§5.4; shared types in `src/lib/primitives/types.ts`.
+- **`LineRow` / `LineRowList`** (`ui/line-row.tsx`) — table row on desktop, 60-64px card on phone; `useRowSelection(visibleIds)` (`src/lib/primitives/use-row-selection.ts`, shift-range in DOM order) feeds the select-page header box. Fact formatting in `src/lib/primitives/facts.ts` (blank money prints `—`, never `$0`).
+- **`ActionMenu`** (`ui/action-menu.tsx`) — dropdown / `BottomSheet` (`ui/bottom-sheet.tsx`, Radix Sheet, not vaul) from an `ActionMenuSpec`; builders in `src/lib/row-actions/` (`buildGearLineActions`). Replaced `RowActionsMenu`. `ConfirmActionMenuItem` is legacy.
+- **`StatusWord`** (`ui/status-word.tsx`, D91) — dot + word; `gearStageValue(stage)`; `StatusIndicator`'s dot variant delegates to it, its pill variant is deprecated.
+- **`StageFilter`** (`ui/stage-filter.tsx`) — controlled underlined-word counts; `clearable` opt-in.
+- **`StateGlyphIcon` / `StateGlyphs`** (`ui/state-glyph.tsx`) — 18px glyphs with tooltips.
+- Surfaces adopt these in later phases (Equipment 2a, warehouse 3, lists 6); the Equipment tab does not use them yet.

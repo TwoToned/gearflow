@@ -284,27 +284,91 @@ function LineRow(props: RowProps) {
   return useIsMobile() ? <PhoneRow {...props} /> : <DesktopRow {...props} />;
 }
 
-/** The list: table + header with the select-page box on desktop, plain list on phone. */
-export function LineRowList({
-  rows,
-  columns,
-  selection,
-  className,
-  wrapRow,
-  dragHandle,
-}: {
+/** One section of a sectioned list: its head data and the rows that follow it. */
+export interface LineRowListSection {
+  section: LineRowSectionData;
   rows: LineRowData[];
+  /** Controlled collapse; omit for list-owned state (`defaultCollapsed` is false). */
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
+}
+
+/**
+ * Ids of the rows a user can see, in DOM order: pass this to `useRowSelection`
+ * so shift-range and select-page skip rows hidden by a collapsed section.
+ * `collapsedIds` is only needed for sections whose collapse the list owns
+ * (i.e. no `collapsed` given); controlled sections use their own flag.
+ */
+export function visibleRowIds(sections: LineRowListSection[], collapsedIds?: ReadonlySet<string>): string[] {
+  return sections.flatMap((s) => ((s.collapsed ?? collapsedIds?.has(s.section.id)) ? [] : s.rows.map((r) => r.id)));
+}
+
+interface ListShared {
   columns: FactColumn[];
   selection?: RowSelection;
   className?: string;
   wrapRow?: WrapRow;
   dragHandle?: (row: LineRowData) => React.ReactNode;
-}) {
-  const isMobile = useIsMobile();
-  const body = rows.map((r) => (
+  wrapSection?: (el: React.ReactElement) => React.ReactElement;
+}
+
+/** Flat `rows` XOR grouped `sections` (mutually exclusive). */
+export type LineRowListProps = ListShared &
+  ({ rows: LineRowData[]; sections?: never } | { sections: LineRowListSection[]; rows?: never });
+
+function ListBody(props: LineRowListProps) {
+  const { columns, selection, wrapRow, dragHandle, wrapSection } = props;
+  const [owned, setOwned] = React.useState<ReadonlySet<string>>(() => new Set());
+  const rowEl = (r: LineRowData) => (
     <LineRow key={r.id} row={r} columns={columns} selection={selection} wrapRow={wrapRow} dragHandle={dragHandle} />
-  ));
-  if (isMobile) return <div className={className}>{body}</div>;
+  );
+  if (!props.sections) return <>{props.rows.map(rowEl)}</>;
+  return (
+    <>
+      {props.sections.map((s) => {
+        const collapsed = s.collapsed ?? owned.has(s.section.id);
+        return (
+          <React.Fragment key={s.section.id}>
+            <LineRowSection
+              section={s.section}
+              columns={columns}
+              collapsed={collapsed}
+              wrapSection={wrapSection}
+              onCollapsedChange={(c) => {
+                setOwned((prev) => {
+                  const next = new Set(prev);
+                  if (c) next.add(s.section.id);
+                  else next.delete(s.section.id);
+                  return next;
+                });
+                s.onCollapsedChange?.(c);
+              }}
+            />
+            {!collapsed && s.rows.map(rowEl)}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * The list: ONE table with ONE header (select-page box on desktop) or a plain
+ * list on phone. Pass flat `rows`, or `sections` (each a `LineRowSection` head
+ * followed by its rows in the same `<tbody>`; collapsed sections hide their
+ * rows). Selection covers the VISIBLE rows in DOM order: derive the ids you
+ * give `useRowSelection` with `visibleRowIds`.
+ */
+export function LineRowList(props: LineRowListProps) {
+  const { columns, selection, className } = props;
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <div className={className}>
+        <ListBody {...props} />
+      </div>
+    );
+  }
   return (
     <table className={cn("w-full border-collapse", className)}>
       <thead>
@@ -327,7 +391,9 @@ export function LineRowList({
           <th className="w-11" />
         </tr>
       </thead>
-      <tbody>{body}</tbody>
+      <tbody>
+        <ListBody {...props} />
+      </tbody>
     </table>
   );
 }

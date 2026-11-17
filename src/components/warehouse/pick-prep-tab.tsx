@@ -57,7 +57,7 @@ export interface PickPrepTabProps {
   // kept in sync by the parent's `onSelectContainer`/`onNewContainer` handlers.
   selectedContainer: string;
   containers: ContainerRailItem[];
-  activeContainerId: string | null;
+  activeContainerId: ContainerChoice;
   onSelectContainer: (id: string | null) => void;
   onNewContainer: () => void;
 

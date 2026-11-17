@@ -6,7 +6,6 @@
 // out of reach), and the double-tap guard.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { api } from "../../../convex/_generated/api";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 
 // `api.warehouseWrites.foo` is backed by a Proxy (convex/server's `anyApi`) that

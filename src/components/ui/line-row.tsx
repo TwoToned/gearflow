@@ -219,7 +219,7 @@ function PhoneRow({ row, columns, selection }: RowProps) {
   );
 }
 
-export function LineRow(props: RowProps) {
+function LineRow(props: RowProps) {
   return useIsMobile() ? <PhoneRow {...props} /> : <DesktopRow {...props} />;
 }
 

@@ -17,7 +17,7 @@ import type { StateGlyph, StateGlyphKey } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
 
 /** One icon per state, the same everywhere (spec §5.4). */
-export const GLYPH_ICONS: Record<StateGlyphKey, LucideIcon> = {
+const GLYPH_ICONS: Record<StateGlyphKey, LucideIcon> = {
   priceHidden: EyeOff,
   hiddenOnDocs: FileMinus,
   excludedFromRoi: CircleSlash,
@@ -32,7 +32,7 @@ export const GLYPH_ICONS: Record<StateGlyphKey, LucideIcon> = {
 const WARM: ReadonlySet<StateGlyphKey> = new Set<StateGlyphKey>(["needsCheck"]);
 
 /** An 18 px glyph with a tooltip. Owns its `TooltipProvider` (CLAUDE.md). */
-export function StateGlyphIcon({ glyph, className }: { glyph: StateGlyph; className?: string }) {
+function StateGlyphIcon({ glyph, className }: { glyph: StateGlyph; className?: string }) {
   const Icon = GLYPH_ICONS[glyph.key];
   return (
     <TooltipProvider delayDuration={150}>

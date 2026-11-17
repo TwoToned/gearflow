@@ -23,7 +23,7 @@ export function factText(fact: Fact): string {
   return (FORMATTERS[fact.kind] as unknown as (f: Fact) => string)(fact);
 }
 
-export function isRightFact(fact: Fact): boolean {
+function isRightFact(fact: Fact): boolean {
   return fact.kind === "qty" || fact.kind === "money";
 }
 

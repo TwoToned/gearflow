@@ -1,0 +1,125 @@
+/**
+ * Pure `LineItem[]` → `LineRowData` sections for the warehouse job table
+ * (spec §9.2, §9.5). Category groups on To pick, case groups from Prepped on;
+ * the stage chip comes from the ONE gear-stage table, so a Returned line can
+ * never read "Prepped" (§1.1).
+ */
+import {
+  accessoryChildrenOf, isInCheckedOutStage, isInDeprepedStage, isInPickPrepStage, isInPreppedStage, isInReturnedStage,
+  modelDisplayName, resolveItemContainerId, type LineItem,
+} from "@/components/warehouse/warehouse-types";
+import { deriveItemStage, type WarehouseStageKey } from "@/components/warehouse/warehouse-stages";
+import type { LineRowData, LineRowSectionData, RowFlag, StateGlyph } from "@/lib/primitives/types";
+import { getStatusIntent } from "@/lib/status-colors";
+import { GEAR_STAGE_LABELS } from "@/lib/vocabulary";
+
+/** The job page's stage filter keys (spec §9.2). `closeout` has no gear rows. */
+export type JobStage = "pick" | "prepped" | "out" | "returned" | "deprepped";
+
+const IN_STAGE: Record<JobStage, (li: LineItem) => boolean> = {
+  pick: isInPickPrepStage, prepped: isInPreppedStage, out: isInCheckedOutStage, returned: isInReturnedStage, deprepped: isInDeprepedStage,
+};
+const GEAR_KEY: Record<JobStage, WarehouseStageKey> = { pick: "to_prep", prepped: "prepped", out: "deployed", returned: "returned", deprepped: "deprepped" };
+
+export interface JobRowsCtx {
+  stage: JobStage;
+  containerLabelById: ReadonlyMap<string, string>;
+  /** Sort key / group title for a To-pick line (the model's category). */
+  categoryOf: (li: LineItem) => string;
+  /** Units short on this line (overbooked), from `useWarehouseOverbooked`. */
+  shortById?: ReadonlyMap<string, number>;
+  /** Lines with a prep check still to run. */
+  needsCheckIds?: ReadonlySet<string>;
+  /** Free text filter (Find). */
+  query?: string;
+}
+
+export interface JobSection { section: LineRowSectionData; rows: LineRowData[]; key: string }
+
+function glyphsFor(li: LineItem, ctx: JobRowsCtx): StateGlyph[] {
+  const out: StateGlyph[] = [];
+  // §5.4 `Planned →`: the PM's plan, shown only while the line is not packed yet (2c moved this glyph here).
+  if (li.plannedContainerId && li.prepStatus !== "PACKED") {
+    const label = ctx.containerLabelById.get(li.plannedContainerId);
+    if (label) out.push({ key: "plannedCase", tooltip: `Planned → ${label}` });
+  }
+  if (ctx.needsCheckIds?.has(li.id)) out.push({ key: "needsCheck", tooltip: "Prep check still to run" });
+  return out;
+}
+
+function flagsFor(li: LineItem, ctx: JobRowsCtx): RowFlag[] {
+  const short = ctx.shortById?.get(li.id) ?? 0;
+  return short > 0 ? [{ label: `Short ${short}`, tone: "error" }] : [];
+}
+
+function kindOf(li: LineItem): LineRowData["kind"] {
+  if (li.kitId) return "kit";
+  if (li.subHireId) return "subhire";
+  return li.isCustomItem ? "custom" : "gear";
+}
+
+function tagsOf(li: LineItem): string[] {
+  const tags = [li.asset?.assetTag ?? li.bulkAsset?.assetTag, li.kit?.assetTag, li.subHireId && li.supplier?.name ? `via ${li.supplier.name}` : null];
+  return tags.filter((t): t is string => !!t);
+}
+
+export function stageStatus(stage: JobStage) {
+  const key = GEAR_KEY[stage];
+  return { label: GEAR_STAGE_LABELS[key], intent: getStatusIntent("gearStage", key) };
+}
+
+const canPackWith = (parent: LineItem, accessoryPacked: boolean) => !accessoryPacked && parent.prepStatus === "PACKED";
+
+function accessoryStatus(packed: boolean, stage: WarehouseStageKey | null) {
+  if (packed) return { label: "Packed", intent: "info" as const };
+  return { label: stage ? GEAR_STAGE_LABELS[stage] : "To pick", intent: "neutral" as const };
+}
+
+/** Accessory rows under a parent: one per accessory line, with its own state word (§9.5). */
+function accessoryRows(li: LineItem, packWithParent: (accessoryId: string) => void, caseOf: (a: LineItem) => string | null): LineRowData[] {
+  return accessoryChildrenOf(li).filter((a) => a.status !== "CANCELLED").map((a) => {
+    const packed = a.prepStatus === "PACKED";
+    const stage = deriveItemStage(a);
+    const here = caseOf(a);
+    return {
+      id: a.id, kind: "accessory", title: a.model?.name ?? a.description ?? "Accessory",
+      tags: [a.accessoryInclusion === "OPTIONAL" ? "OPTIONAL" : "DEFAULT"],
+      facts: { qty: { kind: "qty", value: packed ? a.quantity : 0, of: a.quantity } },
+      status: accessoryStatus(packed, stage),
+      cells: here ? { place: here } : undefined,
+      primary: canPackWith(li, packed) ? { label: `Pack ${a.quantity} with parent`, onSelect: () => packWithParent(a.id) } : undefined,
+    } satisfies LineRowData;
+  });
+}
+
+export function buildJobRow(li: LineItem, ctx: JobRowsCtx, packWithParent: (accessoryId: string) => void = () => {}): LineRowData {
+  const caseId = resolveItemContainerId(li);
+  const place = caseId ? ctx.containerLabelById.get(caseId) ?? li.prepContainer : li.prepContainer;
+  const children = accessoryRows(li, packWithParent, (a) => { const id = resolveItemContainerId(a); return id ? ctx.containerLabelById.get(id) ?? null : null; });
+  return {
+    id: li.id, kind: kindOf(li), title: modelDisplayName(li), tags: tagsOf(li),
+    glyphs: glyphsFor(li, ctx), flags: flagsFor(li, ctx),
+    facts: { qty: { kind: "qty", value: li.quantity }, ...(place ? { place: { kind: "place" as const, label: place } } : {}) },
+    status: stageStatus(ctx.stage),
+    children: children.length ? children : undefined,
+  };
+}
+
+const matches = (li: LineItem, q: string) => !q || modelDisplayName(li).toLowerCase().includes(q) || tagsOf(li).some((t) => t.toLowerCase().includes(q));
+
+/** Sections for the active stage: category groups on To pick, case groups (Loose last) afterwards. */
+export function buildJobSections(items: LineItem[], ctx: JobRowsCtx): JobSection[] {
+  const q = (ctx.query ?? "").trim().toLowerCase();
+  const lines = items.filter((li) => !li.isKitChild && IN_STAGE[ctx.stage](li) && matches(li, q));
+  const groups = new Map<string, LineItem[]>();
+  for (const li of lines) {
+    const key = ctx.stage === "pick" ? ctx.categoryOf(li) : (resolveItemContainerId(li) ?? "");
+    groups.set(key, [...(groups.get(key) ?? []), li]);
+  }
+  const keys = [...groups.keys()].sort((a, b) => (ctx.stage === "pick" ? a.localeCompare(b) : (a ? 0 : 1) - (b ? 0 : 1)));
+  return keys.map((key) => {
+    const title = ctx.stage === "pick" ? key : key ? ctx.containerLabelById.get(key) ?? "Case" : "Loose";
+    const members = groups.get(key) ?? [];
+    return { key: key || "loose", section: { id: key || "loose", title, count: members.length }, rows: members.map((li) => buildJobRow(li, ctx)) };
+  });
+}

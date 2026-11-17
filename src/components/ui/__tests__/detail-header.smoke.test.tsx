@@ -39,7 +39,7 @@ function setup(over: Partial<React.ComponentProps<typeof DetailHeader>> = {}) {
     <DetailHeader
       title="Hilton gala"
       status={{ label: "Confirmed", intent: "success" }}
-      lock={{ label: "Pricing locked", summary: "Locked by Jayden · Thu 6 Nov", menu: lockMenu }}
+      lock={{ label: "Pricing locked", summary: "Read-only while locked: prices, discounts, rates and tax.", menu: lockMenu }}
       meta={["#2341", "Hilton", "6 Nov · 3 days"]}
       primary={{ label: "Advance to Prep", onSelect: vi.fn() }}
       documents={documents}
@@ -72,7 +72,7 @@ describe("DetailHeader", () => {
   it("the lock glyph opens a menu that says what it is and unlocks", async () => {
     const { unlock } = setup();
     await userEvent.click(screen.getByRole("button", { name: "Pricing locked" }));
-    expect(await screen.findByText("Locked by Jayden · Thu 6 Nov")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pricing locked" }).getAttribute("title")).toContain("Read-only");
     await userEvent.click(await screen.findByRole("menuitem", { name: "Unlock pricing" }));
     expect(unlock).toHaveBeenCalledTimes(1);
   });

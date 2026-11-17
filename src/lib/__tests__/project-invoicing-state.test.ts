@@ -29,7 +29,7 @@ describe("partial step — always offered while something remains", () => {
 
   test("unavailable when the project total is unknown", () => {
     const s = deriveInvoicingState([], 25, null);
-    expect(s.partialStep).toEqual({ kind: "NONE", reason: "Project total not set" });
+    expect(s.partialStep).toEqual({ kind: "NONE", reason: "Job total not set" });
   });
 });
 
@@ -54,7 +54,7 @@ describe("remaining step — FULL the first time, BALANCE after that", () => {
   });
 
   test("unavailable when the project total is unknown", () => {
-    expect(deriveInvoicingState([], 25, null).remainingStep).toEqual({ kind: "NONE", reason: "Project total not set" });
+    expect(deriveInvoicingState([], 25, null).remainingStep).toEqual({ kind: "NONE", reason: "Job total not set" });
   });
 });
 

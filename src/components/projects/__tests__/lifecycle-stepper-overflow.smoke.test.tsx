@@ -24,6 +24,6 @@ describe("Lifecycle steppers — mobile overflow", () => {
     );
     const ol = container.querySelector("ol")!;
     expect(ol.className).toContain("overflow-x-auto");
-    expect(screen.getByText("Deployed")).toBeTruthy();
+    expect(screen.getByText("Out")).toBeTruthy();
   });
 });

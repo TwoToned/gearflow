@@ -1,3 +1,4 @@
+import type * as React from "react";
 import { intentStyles, getStatusIntent } from "@/lib/status-colors";
 import { GEAR_STAGE_LABELS, type GearStageKey } from "@/lib/vocabulary";
 import type { StatusValue } from "@/lib/primitives/types";
@@ -12,16 +13,14 @@ import { cn } from "@/lib/utils";
 export function StatusWord({
   status,
   className,
-  title,
+  ...props
 }: {
   status: StatusValue;
-  className?: string;
-  title?: string;
-}) {
+} & React.HTMLAttributes<HTMLSpanElement>) {
   const styles = intentStyles[status.intent];
   return (
     <span
-      title={title}
+      {...props}
       data-intent={status.intent}
       data-outline={status.outline ? "true" : undefined}
       className={cn("inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] font-medium", className)}

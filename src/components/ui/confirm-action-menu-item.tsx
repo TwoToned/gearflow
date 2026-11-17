@@ -5,6 +5,10 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 /**
+ * @deprecated Legacy (R-4.4). New row menus use `ActionMenu` (`confirm` opens a
+ * Dialog). Remove once the crew pages (`crew/[id]`, `crew/timesheets`) and the
+ * delete dialogs migrate to ActionMenu (spec §11, Phase 7).
+ *
  * Inline two-step confirm inside a DropdownMenu.
  *
  * First click renders the item in `confirmLabel` styling (destructive red).

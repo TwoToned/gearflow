@@ -275,3 +275,31 @@ describe("DESIGN.md §15 — 44px minimum tap target", () => {
     expect(violations).toEqual([]);
   });
 });
+
+describe("UX unification §5/§13 — row primitives on a phone", () => {
+  const ui = (name: string) => readFileSync(path.join(SRC, "components/ui", name), "utf8");
+
+  it("the row ⋯ is always rendered, 40px on a phone (D39), with a 44px hit box on touch", () => {
+    const menu = ui("action-menu.tsx");
+    expect(menu).toContain('"size-10"');
+    expect(menu).toContain("touch-target");
+    // never hover-gated: it must not be hidden until hover
+    expect(menu).not.toMatch(/\bhidden\b[^"]*group-hover/);
+  });
+
+  it("stage chips are tap-sized and scroll sideways rather than wrap", () => {
+    const stage = ui("stage-filter.tsx");
+    expect(stage).toContain("min-h-11");
+    expect(stage).toContain("overflow-x-auto");
+  });
+
+  it("phone sheet items are 48px and the sheet respects the safe area", () => {
+    const sheet = ui("bottom-sheet.tsx");
+    expect(sheet).toContain("min-h-12");
+    expect(sheet).toContain("env(safe-area-inset-bottom)");
+  });
+
+  it("the phone row's checkbox is 22px", () => {
+    expect(ui("line-row.tsx")).toContain("[&>span]:size-[22px]");
+  });
+});

@@ -24,7 +24,7 @@ import { PickStage } from "@/components/warehouse/job/pick-stage";
 import type { PrepHandlers } from "@/components/warehouse/job/prep-split-button";
 import { useWarehouseScan, type ScanActOutcome } from "@/hooks/use-warehouse-scan";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
-import { buildJobSections, type JobSection } from "@/lib/warehouse-job-rows";
+import { buildJobSections, type JobRowsCtx, type JobSection } from "@/lib/warehouse-job-rows";
 import type { ScanLookup } from "@/lib/warehouse-scan-classify";
 import type { ActionItem } from "@/lib/primitives/types";
 import { parentAlreadyPrepped } from "@/components/warehouse/warehouse-types";
@@ -99,7 +99,10 @@ import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-
 import { AccessorySelectionContext } from "@/components/warehouse/kit-child-rows";
 import { isRelocatedLineId, relocateAccessories, takeAccessorySelection } from "@/components/warehouse/relocate-accessories";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
-import { ReturnTab } from "@/components/warehouse/return-tab";
+import { MovingStage, type StageAction } from "@/components/warehouse/job/moving-stage";
+import { ReturnConditionBar, type ReturnCondition } from "@/components/warehouse/job/return-condition-bar";
+import { intakeToStripEntries } from "@/lib/durable-scan-strip";
+import type { ActionMenuSpec, RowSelection } from "@/lib/primitives/types";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
@@ -1692,9 +1695,11 @@ function WarehouseProjectPage({
     return false;
   }
 
-  const handleCheckOutSelected = async () => {
-    const outKeys = takeAccessoryStage(selectedOut, "DEPLOY", isMoveableAtDeployStage);
-    if (outKeys.length !== selectedOut.size) setSelectedOut(new Set(outKeys));
+  // `keys`: the Prepped table's ticked rows (legacy keys); omitted = the old tab's own selection.
+  const handleCheckOutSelected = async (keys?: Iterable<string>) => {
+    const source = keys ? new Set(keys) : selectedOut;
+    const outKeys = takeAccessoryStage(source, "DEPLOY", isMoveableAtDeployStage);
+    if (!keys && outKeys.length !== selectedOut.size) setSelectedOut(new Set(outKeys));
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
     const kitLineItemIds: string[] = [];
@@ -2077,9 +2082,10 @@ function WarehouseProjectPage({
     }
   };
 
-  const handleReturnSelected = () => {
-    const inKeys = takeAccessoryStage(selectedIn, "RETURN", isMoveableAtReturnStage, returnCondition as "GOOD" | "DAMAGED" | "MISSING");
-    if (inKeys.length !== selectedIn.size) setSelectedIn(new Set(inKeys));
+  const handleReturnSelected = (keys?: Iterable<string>) => {
+    const source = keys ? new Set(keys) : selectedIn;
+    const inKeys = takeAccessoryStage(source, "RETURN", isMoveableAtReturnStage, returnCondition as "GOOD" | "DAMAGED" | "MISSING");
+    if (!keys && inKeys.length !== selectedIn.size) setSelectedIn(new Set(inKeys));
     const qtyMap = new Map<string, number>();
     const kitIds: string[] = [];
 
@@ -2263,6 +2269,45 @@ function WarehouseProjectPage({
     isOffline: () => typeof navigator !== "undefined" && !navigator.onLine,
     play: (kind) => scanFeedback.play(kind),
   });
+  // --- Prepped / Out stages (spec §9.2): case sections, ticked rows, scans through the durable intake ---
+  const verifyCtx = {
+    verified: verifiedKitItems,
+    toggle: (id: string) => setVerifiedKitItems((p) => { const n = new Set(p); if (!n.delete(id)) n.add(id); return n; }),
+  };
+  const movingCtx = (s: "prepped" | "out"): JobRowsCtx => ({ stage: s, containerLabelById, categoryOf: () => "", verify: verifyCtx });
+  const preppedSections = buildJobSections(equipmentItems, movingCtx("prepped"));
+  const outSections = buildJobSections(equipmentItems, movingCtx("out"));
+  const preppedSelection = useRowSelection(jobRowIds(preppedSections));
+  const outSelection = useRowSelection(jobRowIds(outSections));
+  const keysOf = (sel: RowSelection, s: "prepped" | "out") => keysForRowIds(lineItems, sel.selected, s);
+  const preppedActions: StageAction[] = [
+    { key: "deploy", label: "Deploy", primary: true, loading: checkOutMutation.isPending, run: () => { void handleCheckOutSelected(keysOf(preppedSelection, "prepped")); preppedSelection.clear(); } },
+    { key: "to-pick", label: "Move to To pick", loading: deprepMutation.isPending, run: () => { handleDeprep(new Set(keysOf(preppedSelection, "prepped"))); preppedSelection.clear(); } },
+    { key: "move", label: "Move to case…", run: () => { setSelectedOut(new Set(keysOf(preppedSelection, "prepped"))); setMoveDialogFor("deploy"); } },
+  ];
+  const outActions: StageAction[] = [
+    { key: "return", label: "Return", primary: true, loading: checkInMutation.isPending, run: () => { handleReturnSelected(keysOf(outSelection, "out")); outSelection.clear(); } },
+    { key: "to-prepped", label: "Move to Prepped", loading: undeployMutation.isPending || undeployKitsMutation.isPending, run: () => { handleUndeploy(new Set(keysOf(outSelection, "out"))); outSelection.clear(); } },
+    { key: "move", label: "Move to case…", run: () => { setSelectedIn(new Set(keysOf(outSelection, "out"))); setMoveDialogFor("return"); } },
+    ...(outSelection.count === 1 ? [{ key: "report", label: "Report issue", run: () => { const li = lineItems.find((l) => outSelection.selected.has(l.id)); if (li) handleReportIssue(li); } } satisfies StageAction] : []),
+  ];
+  const preppedCaseMenu = (s: JobSection): ActionMenuSpec | undefined => {
+    if (s.key === "loose") return undefined;
+    return {
+      items: [
+        { key: "deploy-case", label: "Deploy this case", group: "organise", onSelect: () => handleDeployContainer(deployContainerGroups.find((g) => g.container === s.section.title)?.entries ?? []) },
+        { key: "unpack-case", label: "Unpack case", group: "danger", danger: true, onSelect: () => clearContainerMutation.mutate(s.section.title), confirm: { title: `Unpack ${s.section.title}?`, body: "Everything in it goes back to loose; nothing is de-prepped.", confirmLabel: "Unpack" } },
+      ],
+    };
+  };
+  const durableStrip = intakeToStripEntries(durableScans.entries, durableScans.retry, { error: durableScans.error, unsaved: durableScans.unsaved ? { raw: durableScans.unsaved } : null });
+  const movingScan = async (raw: string) => {
+    if (dockMode !== "check") { if (stage === "prepped") captureDeployScan(raw); else captureReturnScan(raw); return; }
+    try {
+      const r = (await lookupAssetForScan(projectId, raw.trim(), stage === "out" ? "checkin" : "checkout")) as ScanLookup;
+      toast.info("found" in r && r.found ? `${raw.trim()}: on this job (check only, nothing changed)` : `${raw.trim()} is not on this job`);
+    } catch (e) { showError(e); }
+  };
   const NEW_CASE = "__new-case";
   const caseTarget = {
     verb: "Prep",
@@ -2396,15 +2441,27 @@ function WarehouseProjectPage({
         stage={stage}
         counts={{ pick: pickPrepItems.length, prepped: preppedItems.length, out: checkedOutItems.length, returned: returnedItems.length, deprepped: deprepedItems.length }}
         onStageChange={setStage}
-        onScan={(raw) => void pickScan.scan(raw)}
+        onScan={(raw) => void (stage === "pick" ? pickScan.scan(raw) : movingScan(raw))}
         mode={dockMode}
         onModeChange={setDockMode}
-        caseTarget={caseTarget}
-        entries={pickScan.entries}
-        showDock={stage === "pick"}
+        caseTarget={stage === "pick" ? caseTarget : undefined}
+        entries={stage === "pick" ? pickScan.entries : durableStrip}
+        showDock={stage === "pick" || stage === "prepped" || stage === "out"}
+        disabledScan={stage !== "pick" && durableScans.busy}
       />
 
-      <ScanIntakeStatus entries={durableScans.entries} error={durableScans.error} unsaved={durableScans.unsaved} retry={durableScans.retry} />
+      {/* Prepped / Out report saved scans in the strip; the other stages still use the intake block. */}
+      {stage !== "prepped" && stage !== "out" && <ScanIntakeStatus entries={durableScans.entries} error={durableScans.error} unsaved={durableScans.unsaved} retry={durableScans.retry} />}
+      {stage === "prepped" && (
+        <MovingStage sections={preppedSections} selection={preppedSelection} actions={preppedActions} sectionMenu={preppedCaseMenu}
+          empty={{ title: "Nothing prepped", description: "Gear you prep on To pick waits here to be deployed." }} />
+      )}
+      {stage === "out" && (
+        <MovingStage sections={outSections} selection={outSelection} actions={outActions}
+          empty={{ title: "Nothing out on this job", description: "Gear that is out shows here, ready to scan back in." }}>
+          <ReturnConditionBar condition={returnCondition as ReturnCondition} notes={returnNotes} onCondition={setReturnCondition} onNotes={setReturnNotes} />
+        </MovingStage>
+      )}
       {/* Strangler: the stage strip above drives the old tabs (no TabsList) for every stage but To pick. */}
       <Tabs value={TAB_FOR_STAGE[stage]}>
         {stage === "pick" && (
@@ -2437,41 +2494,6 @@ function WarehouseProjectPage({
           pending={moveIsPending}
         />
 
-        {/* Deploy Tab */}
-        <AccessorySelectionContext.Provider value={{ selected: selectedOut, toggle: (key) => toggleSelection(selectedOut, setSelectedOut, key) }}>
-        <DeployTab
-          deployScanInputRef={deployScanInputRef}
-          deployScanValue={deployScanValue}
-          setDeployScanValue={setDeployScanValue}
-          handleDeployScanKeyDown={handleDeployScanKeyDown}
-          deployScanMutationMutate={captureDeployScan}
-          deployScanMutationIsPending={durableScans.busy}
-          scanHistoryEntries={scanFeedback.entries}
-          selectedOut={selectedOut}
-          setSelectedOut={setSelectedOut}
-          selectedOutCount={selectedOutCount}
-          allOutKeys={allOutKeys}
-          checkOutItemsList={checkOutItemsList}
-          deployContainerGroups={deployContainerGroups}
-          verifiedKitItems={verifiedKitItems}
-          setVerifiedKitItems={setVerifiedKitItems}
-          expandedGroups={expandedGroups}
-          toggleExpanded={toggleExpanded}
-          handleCheckOutSelected={handleCheckOutSelected}
-          handleDeprep={handleDeprep}
-          deprepIsPending={deprepMutation.isPending}
-          clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
-          clearContainerIsPending={clearContainerMutation.isPending}
-          checkOutIsPending={checkOutMutation.isPending}
-          onMoveSelected={() => setMoveDialogFor("deploy")}
-          onDeployContainer={handleDeployContainer}
-          toggleSelection={toggleSelection}
-          toggleGroupSelection={toggleGroupSelection}
-          toggleAll={toggleAll}
-          renderGroupHeader={renderGroupHeader}
-        />
-        </AccessorySelectionContext.Provider>
-
         {/* De-prep Tab — returned gear, run return checks, back to inventory */}
         <AccessorySelectionContext.Provider value={{ selected: selectedDeprep, toggle: (key) => toggleSelection(selectedDeprep, setSelectedDeprep, key) }}>
         <DeployTab
@@ -2503,43 +2525,6 @@ function WarehouseProjectPage({
           checkOutIsPending={checkOutMutation.isPending}
           onMoveSelected={() => setMoveDialogFor("deprep")}
           onDeployContainer={() => {}}
-          toggleSelection={toggleSelection}
-          toggleGroupSelection={toggleGroupSelection}
-          toggleAll={toggleAll}
-          renderGroupHeader={renderGroupHeader}
-        />
-        </AccessorySelectionContext.Provider>
-
-        {/* Return Tab */}
-        <AccessorySelectionContext.Provider value={{ selected: selectedIn, toggle: (key) => toggleSelection(selectedIn, setSelectedIn, key) }}>
-        <ReturnTab
-          returnScanInputRef={returnScanInputRef}
-          returnScanValue={returnScanValue}
-          setReturnScanValue={setReturnScanValue}
-          handleReturnScanKeyDown={handleReturnScanKeyDown}
-          returnScanMutationMutate={captureReturnScan}
-          returnScanMutationIsPending={durableScans.busy}
-          scanHistoryEntries={scanFeedback.entries}
-          returnCondition={returnCondition}
-          setReturnCondition={setReturnCondition}
-          returnNotes={returnNotes}
-          setReturnNotes={setReturnNotes}
-          selectedIn={selectedIn}
-          setSelectedIn={setSelectedIn}
-          selectedInCount={selectedInCount}
-          allInKeys={allInKeys}
-          checkedOutItems={checkedOutItems}
-          returnContainerGroups={returnContainerGroups}
-          verifiedKitItems={verifiedKitItems}
-          setVerifiedKitItems={setVerifiedKitItems}
-          expandedGroups={expandedGroups}
-          toggleExpanded={toggleExpanded}
-          handleReturnSelected={handleReturnSelected}
-          checkInIsPending={checkInMutation.isPending}
-          handleUndeploy={handleUndeploy}
-          undeployIsPending={undeployMutation.isPending || undeployKitsMutation.isPending}
-          onReportIssue={handleReportIssue}
-          onMoveSelected={() => setMoveDialogFor("return")}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}

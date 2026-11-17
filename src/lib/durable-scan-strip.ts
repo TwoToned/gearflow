@@ -21,7 +21,8 @@ export function intakeToStripEntries(
   const live = entries.filter((e) => e.state !== "confirmed").sort((a, b) => b.createdAt - a.createdAt);
   for (const e of live) {
     const verb = VERB[e.operation];
-    if (e.state === "pending") out.push({ id: e.id, tone: "neutral", text: `${e.raw}: saved on device, syncing`, detail: e.error });
+    // A pending scan keeps its Retry: after a lost acknowledgement it stays pending with a "waiting" note.
+    if (e.state === "pending") out.push({ id: e.id, tone: "neutral", text: `${e.raw}: saved on device, syncing`, detail: e.error, action: { label: "Retry saved scan", onSelect: () => retry(e.id) } });
     else if (e.state === "review") out.push({ id: e.id, tone: "warning", text: `${e.raw}: confirm before it ${verb === "deploy" ? "deploys" : "is received"}`, action: { label: "Review saved scan", onSelect: () => retry(e.id) } });
     else out.push({ id: e.id, tone: "error", text: `${e.raw}: ${e.error ?? "scan failed"}`, action: { label: "Retry saved scan", onSelect: () => retry(e.id) } });
   }

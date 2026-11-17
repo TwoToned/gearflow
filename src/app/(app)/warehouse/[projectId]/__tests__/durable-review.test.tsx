@@ -77,7 +77,7 @@ it('mounted manual review context switch cannot complete the old account operati
 it('mounted scan capture persists the displayed version before deferred lookup',async()=>{
  io.lookup.mockImplementation(()=>new Promise(()=>{}));
  await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
- const input=await screen.findByPlaceholderText('Scan or enter asset tag to return...');
+ const input=await screen.findByPlaceholderText('Scan or enter asset tag to receive…');
  fireEvent.change(input,{target:{value:'KIT'}});fireEvent.keyDown(input,{key:'Enter'});
  await waitFor(()=>expect(io.lookup).toHaveBeenCalledTimes(1));
  expect(new ScanIntake(localStorage).list(scope)[0]).toMatchObject({raw:'KIT',expectedVersionId:'v1',state:'pending'});
@@ -116,10 +116,10 @@ it.each(['verified','all'] as const)('mounted partial accessory verification com
  accessoryProject(true);io.tab='check-out';
  await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
 
- fireEvent.click((await screen.findAllByRole('button',{name:/Lamp.*Accessories/}))[0]);
- const verify=await screen.findAllByRole('button',{name:'Tap to verify present'});fireEvent.click(verify[0]);
+ fireEvent.click((await screen.findAllByRole('button',{name:'Expand'},{timeout:5000}))[0]);
+ const verify=await screen.findAllByRole('button',{name:'Verify'},{timeout:5000});fireEvent.click(verify[0]);
  const q=new ScanIntake(localStorage);
- const input=await screen.findByPlaceholderText('Scan asset tag to deploy...');
+ const input=await screen.findByPlaceholderText('Scan or enter asset tag to deploy…');
  fireEvent.change(input,{target:{value:'A'}});fireEvent.keyDown(input,{key:'Enter'});
  fireEvent.click(await screen.findByRole('button',{name:decision==='verified'?/Deploy Verified Only/:/Deploy All/}));
  await waitFor(()=>expect(q.list(scope)[0].state).toBe('confirmed'));

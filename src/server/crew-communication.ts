@@ -25,6 +25,7 @@ import {
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectByIdMapped } from "@/lib/projects-read";
+import { sendCrewOffersSchema } from "@/lib/validations/crew";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
@@ -209,6 +210,43 @@ export async function sendCrewOfferAll(projectId: string) {
   }
 
   return serialize({ sent, errors, total: assignments.length });
+}
+
+// ─── Send Offers to the ticked assignments ───────────────────────────────────
+
+/**
+ * Offer each ticked assignment (Logistics bulk verb `Send N offers`). Same
+ * per-row path as `sendCrewOffer`; a row that cannot be offered (no email, not
+ * this org's) is reported in `errors`, never thrown, so one bad row does not
+ * stop the rest.
+ */
+export async function sendCrewOffers(input: { assignmentIds: string[] }) {
+  const { organizationId, userId, userName } = await requirePermission("crew", "update");
+  const { assignmentIds } = sendCrewOffersSchema.parse(input);
+
+  let sent = 0;
+  const errors: string[] = [];
+  for (const id of new Set(assignmentIds)) {
+    try {
+      await sendCrewOffer(id);
+      sent++;
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "crew_assignment",
+    entityId: assignmentIds[0],
+    entityName: `${assignmentIds.length} crew assignments`,
+    summary: `Sent ${sent} of ${assignmentIds.length} crew offers`,
+  });
+
+  return serialize({ sent, errors, total: assignmentIds.length });
 }
 
 // ─── Send Confirmation Email ─────────────────────────────────────────────────

@@ -65,7 +65,7 @@ export function Timeline({
               selection={selection}
               className={cn(
                 "table-fixed",
-                "[&_td:nth-child(3)]:w-36 [&_td:nth-child(4)]:w-44 [&_td:nth-child(5)]:w-28",
+                "[&_td:nth-child(3)]:w-28 [&_td:nth-child(4)]:w-28 [&_td:nth-child(5)]:w-24",
                 i > 0 && "[&_thead]:hidden",
               )}
             />

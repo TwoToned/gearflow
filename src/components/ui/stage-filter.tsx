@@ -68,13 +68,13 @@ export function StageFilter({
             onClick={() => onChange(on && clearable ? null : o.key)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent text-[13px] font-semibold outline-none",
+              "inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent text-table-cell font-semibold outline-none",
               "focus-visible:ring-2 focus-visible:ring-red",
               on ? "border-red text-ink" : "text-muted hover:text-ink",
             )}
           >
             {o.label}
-            <span className="font-mono text-[12px] tabular-nums text-faint">{o.count}</span>
+            <span className="t-mono tabular-nums text-faint">{o.count}</span>
           </button>
         );
       })}

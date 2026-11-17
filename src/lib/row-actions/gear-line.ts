@@ -81,8 +81,8 @@ function organiseItems(ctx: GearLineActionCtx): Entry[] {
   ];
 }
 
-function documentItems(row: GearLineActionRow, ctx: GearLineActionCtx): Entry[] {
-  const reveal =
+function revealItem(row: GearLineActionRow, ctx: GearLineActionCtx): Entry {
+  const ok =
     ctx.inRollupCategory &&
     ctx.onTogglePriceReveal &&
     canRevealPriceInRollup({
@@ -90,17 +90,26 @@ function documentItems(row: GearLineActionRow, ctx: GearLineActionCtx): Entry[] 
       isSubHireGroupChild: ctx.isSubHireGroupChild,
       isKitChild: row.isKitChild,
     });
-  const disclose = ctx.inProjectGroup && ctx.onToggleGroupDisclosure && canDiscloseGroupChild(row);
-  return [
-    reveal && {
+  return (
+    ok && {
       key: "price-reveal", label: row.revealPriceInRollup ? "Hide this price" : "Show this price", group: "documents",
       icon: row.revealPriceInRollup ? EyeOff : Eye, onSelect: ctx.onTogglePriceReveal!,
-    },
-    disclose && {
+    }
+  );
+}
+
+function discloseItem(row: GearLineActionRow, ctx: GearLineActionCtx): Entry {
+  const ok = ctx.inProjectGroup && ctx.onToggleGroupDisclosure && canDiscloseGroupChild(row);
+  return (
+    ok && {
       key: "group-disclosure", label: row.showInGroupOnDocs ? "Hide this item" : "Show this item", group: "documents",
       icon: row.showInGroupOnDocs ? EyeOff : Eye, onSelect: ctx.onToggleGroupDisclosure!,
-    },
-  ];
+    }
+  );
+}
+
+function documentItems(row: GearLineActionRow, ctx: GearLineActionCtx): Entry[] {
+  return [revealItem(row, ctx), discloseItem(row, ctx)];
 }
 
 function markerItems(row: GearLineActionRow, ctx: GearLineActionCtx): Entry[] {

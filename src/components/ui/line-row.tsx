@@ -36,7 +36,7 @@ interface RowProps {
 function FlagWord({ flag }: { flag: RowFlag }) {
   const styles = intentStyles[flag.tone];
   return (
-    <span className={cn("inline-flex items-center gap-1 text-[12px] font-medium", styles.text)}>
+    <span className={cn("inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-caption font-medium", styles.text)}>
       <span aria-hidden="true" className={cn("size-1.5 rounded-full", styles.dot)} />
       {flag.label}
     </span>
@@ -45,11 +45,11 @@ function FlagWord({ flag }: { flag: RowFlag }) {
 
 function Tags({ tags }: { tags?: string[] }) {
   if (!tags?.length) return null;
-  return <span className="font-mono text-[12px] text-muted">· {tags.join(" · ")}</span>;
+  return <span className="t-mono text-muted">· {tags.join(" · ")}</span>;
 }
 
 function Title({ row, linkRef }: { row: LineRowData; linkRef: React.Ref<HTMLAnchorElement> }) {
-  const cls = "min-w-0 truncate text-[14px] font-medium text-ink";
+  const cls = "min-w-0 truncate text-ui-text font-medium text-ink";
   return row.href ? (
     <Link ref={linkRef} href={row.href} className={cn(cls, "outline-none focus-visible:underline")}>
       {row.title}
@@ -105,7 +105,7 @@ function FactBody({ fact }: { fact?: Fact }) {
   const right = fact.kind === "qty" || fact.kind === "money";
   const warn = fact.kind === "availability" && fact.state === "short";
   return (
-    <span className={cn("text-[13px]", right && "font-mono tabular-nums", warn ? "text-t-out" : "text-ink-2")}>
+    <span className={cn("text-table-cell", right && "font-mono tabular-nums", warn ? "text-t-out" : "text-ink-2")}>
       {factText(fact)}
     </span>
   );
@@ -115,7 +115,7 @@ function ChildDesktop({ child, columns, span }: { child: LineRowData; columns: F
   return (
     <tr data-child-row className="h-11 bg-paper-2/40">
       <td />
-      <td className="pl-8 text-[13px] text-ink-2">
+      <td className="pl-8 text-table-cell text-ink-2">
         <span className="font-medium">{child.title}</span>
         {child.subtitle && <span className="ml-2 text-muted">{child.subtitle}</span>}
         <Tags tags={child.tags} />
@@ -150,7 +150,7 @@ function DesktopRow({ row, columns, selection }: RowProps) {
             <StateGlyphs glyphs={row.glyphs} />
             <Tags tags={row.tags} />
           </div>
-          {row.subtitle && <div className="truncate text-[12px] text-muted">{row.subtitle}</div>}
+          {row.subtitle && <div className="truncate text-caption text-muted">{row.subtitle}</div>}
         </td>
         {columns.map((c) => (
           <td key={c.id} className={cn("px-2", c.align === "end" && "text-right")}>
@@ -166,7 +166,7 @@ function DesktopRow({ row, columns, selection }: RowProps) {
 
 function PhoneChild({ child }: { child: LineRowData }) {
   return (
-    <div data-child-row className="flex min-h-11 items-center gap-2 bg-paper-2/40 py-1 pl-12 pr-3 text-[13px] text-ink-2">
+    <div data-child-row className="flex min-h-11 items-center gap-2 bg-paper-2/40 py-1 pl-12 pr-3 text-table-cell text-ink-2">
       <span className="min-w-0 flex-1 truncate">{child.title}</span>
       {Object.values(child.facts)
         .slice(0, 1)
@@ -177,11 +177,25 @@ function PhoneChild({ child }: { child: LineRowData }) {
   );
 }
 
+function TitleLine({ row, linkRef }: { row: LineRowData; linkRef: React.Ref<HTMLAnchorElement> }) {
+  return (
+    <>
+      <Title row={row} linkRef={linkRef} />
+      {row.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
+      <StateGlyphs glyphs={row.glyphs} />
+    </>
+  );
+}
+
+function phoneSubtitle(subtitle: string | undefined, folded: Fact[]): string {
+  return [subtitle, ...folded.map(factText)].filter(Boolean).join(" · ");
+}
+
 function PhoneRow({ row, columns, selection }: RowProps) {
   const [expanded, setExpanded] = React.useState(false);
   const { linkRef, open, openable } = useWholeRowOpen(row);
   const { right, folded } = splitPhoneFacts(columns.map((c) => c.id), row.facts);
-  const sub = [row.subtitle, ...folded.map(factText)].filter(Boolean).join(" · ");
+  const sub = phoneSubtitle(row.subtitle, folded);
   const hasChildren = !!row.children?.length;
   return (
     <div data-row-id={row.id} className="border-t border-line">
@@ -193,11 +207,9 @@ function PhoneRow({ row, columns, selection }: RowProps) {
         {hasChildren && <ExpandToggle open={expanded} onToggle={() => setExpanded((v) => !v)} />}
         <div className="min-w-0 flex-1 py-2">
           <div className="flex min-w-0 items-center gap-1.5">
-            <Title row={row} linkRef={linkRef} />
-            {row.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
-            <StateGlyphs glyphs={row.glyphs} />
+            <TitleLine row={row} linkRef={linkRef} />
           </div>
-          {sub && <div className="truncate text-[12px] text-muted">{sub}</div>}
+          {sub && <div className="truncate text-caption text-muted">{sub}</div>}
         </div>
         {right && <FactBody fact={right} />}
         {row.menu && <ActionMenu spec={row.menu} label={`${row.title} actions`} />}
@@ -207,7 +219,7 @@ function PhoneRow({ row, columns, selection }: RowProps) {
   );
 }
 
-export function LineRow(props: RowProps) {
+function LineRow(props: RowProps) {
   return useIsMobile() ? <PhoneRow {...props} /> : <DesktopRow {...props} />;
 }
 
@@ -229,7 +241,7 @@ export function LineRowList({
   return (
     <table className={cn("w-full border-collapse", className)}>
       <thead>
-        <tr className="h-9 text-left text-[11px] font-semibold text-muted">
+        <tr className="h-9 text-left text-badge font-semibold text-muted">
           <th className="w-11 px-1">
             {selection && (
               <Checkbox

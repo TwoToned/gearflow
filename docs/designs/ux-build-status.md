@@ -45,10 +45,12 @@ Parallel start (2026-11-17, user asked for phases in parallel where possible): 1
 | 6 Shell | — | — | waiting on 1 | Gate 0 |
 | 4 Floor + Returning mode | — | — | waiting on 3 | Gate 0 |
 
-## Deferred: needs a decision (schema changes are allowed only in 2c)
+## Schema changes beyond 2c (user approved 2026-11-17, end of Wave A)
 
-| Item | From | Why deferred |
-|---|---|---|
-| Client pick-up / drop-off service types | §8, Phase 5 | new enum values + fields on `projectServices` |
-| Durable prep / de-prep scans | §5.7, Phase 3 | the scan-intake ops union / validators |
-| D10 "remember for the next n" shared across packers | Phase 3 | a stored field; per-device in memory for now |
+Each is built in its own PR with a /code-review; until then it stays listed as deferred in its phase's PR.
+
+| Item | From | Needs | Where it lands |
+|---|---|---|---|
+| Client pick-up / drop-off service types | §8, Phase 5 | new enum values + fields on `projectServices` | 5b |
+| Durable prep / de-prep scans | §5.7, Phase 3 | the scan-intake ops union / validators | Phase 3 follow-up PR |
+| D10 "remember for the next n" shared across packers | Phase 3 | a stored field; per-device in memory for now | Phase 3 follow-up PR |

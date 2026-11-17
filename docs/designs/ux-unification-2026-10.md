@@ -1879,7 +1879,7 @@ left here is the glue between them.
 
 ## 11. Phases
 
-Each phase is one `/autoplan`. Nothing here changes a Convex schema except 2c.
+Each phase is one `/autoplan`. Nothing here changes a Convex schema except 2c. _Amended 2026-11-17 (user, end of Wave A): three more schema changes are approved, each in its own reviewed PR: client pick-up / drop-off service types (5b), durable prep/de-prep scans and a shared D10 memory (Phase 3 follow-ups)._
 
 | # | Phase | Scope | Effort |
 |---|---|---|---|

@@ -9,7 +9,7 @@ vi.mock("@/components/scanner/camera-scanner-dialog", () => ({
     open ? <div role="dialog">{title}</div> : null,
 }));
 
-import { ScanDock } from "@/components/ui/scan-dock";
+import { ScanDock, PREP_SCAN_MODES } from "@/components/ui/scan-dock";
 import { ScanStrip, type ScanStripEntry } from "@/components/ui/scan-strip";
 
 describe("ScanDock", () => {
@@ -46,6 +46,30 @@ describe("ScanDock", () => {
     expect(onChange).toHaveBeenCalledWith("b");
     await userEvent.click(screen.getByRole("radio", { name: "Check only" }));
     expect(onMode).toHaveBeenCalledWith("check");
+  });
+});
+
+describe("ScanDock custom modes", () => {
+  it("renders the stage's own verbs and placeholder and reports the chosen value", async () => {
+    const onMode = vi.fn();
+    render(
+      <ScanDock
+        onScan={() => {}}
+        modes={[{ value: "deploy", label: "Deploy" }, { value: "verify", label: "Verify only" }]}
+        mode="deploy"
+        onModeChange={onMode}
+        placeholder="Scan to deploy…"
+      />,
+    );
+    expect(screen.getByPlaceholderText("Scan to deploy…")).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Prep as I scan" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "Deploy" }).getAttribute("aria-checked")).toBe("true");
+    await userEvent.click(screen.getByRole("radio", { name: "Verify only" }));
+    expect(onMode).toHaveBeenCalledWith("verify");
+  });
+
+  it("defaults to the Prep modes", () => {
+    expect(PREP_SCAN_MODES.map((m) => m.label)).toEqual(["Prep as I scan", "Check only"]);
   });
 });
 

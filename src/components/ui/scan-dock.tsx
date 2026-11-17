@@ -11,12 +11,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-type ScanMode = "prep" | "check";
+interface ScanModeOption {
+  value: string;
+  label: string;
+}
 
-const SCAN_MODE_LABELS: Record<ScanMode, string> = {
-  prep: "Prep as I scan",
-  check: "Check only",
-};
+/** The Prep stage's two modes. Other warehouse stages pass their own verbs
+ *  (Deploy, Receive, De-prep) through the `modes` prop. */
+export const PREP_SCAN_MODES: ScanModeOption[] = [
+  { value: "prep", label: "Prep as I scan" },
+  { value: "check", label: "Check only" },
+];
 
 interface ScanTarget {
   id: string;
@@ -35,8 +40,10 @@ interface ScanTarget {
  */
 export interface ScanDockProps {
   onScan: (raw: string) => void;
-  mode: ScanMode;
-  onModeChange: (mode: ScanMode) => void;
+  /** Mode words under the input; defaults to the Prep stage's two. */
+  modes?: ScanModeOption[];
+  mode: string;
+  onModeChange: (mode: string) => void;
   /** Active target and its alternatives; omit when the surface has no target concept. */
   target?: { verb: string; current: ScanTarget | null; options: ScanTarget[]; onChange: (id: string) => void };
   placeholder?: string;
@@ -47,6 +54,7 @@ export interface ScanDockProps {
 
 export function ScanDock({
   onScan,
+  modes = PREP_SCAN_MODES,
   mode,
   onModeChange,
   target,
@@ -108,19 +116,19 @@ export function ScanDock({
         <ScanButton onScan={onScan} scannerTitle={cameraTitle} continuous disabled={disabled} />
       </div>
       <div role="radiogroup" aria-label="Scan mode" className="flex items-center gap-4 text-caption">
-        {(Object.keys(SCAN_MODE_LABELS) as ScanMode[]).map((m) => (
+        {modes.map((m) => (
           <button
-            key={m}
+            key={m.value}
             type="button"
             role="radio"
-            aria-checked={mode === m}
-            onClick={() => onModeChange(m)}
+            aria-checked={mode === m.value}
+            onClick={() => onModeChange(m.value)}
             className={cn(
               "min-h-11 border-b-2 px-1 font-medium [@media(pointer:fine)]:min-h-8",
-              mode === m ? "border-ink text-ink" : "border-transparent text-muted",
+              mode === m.value ? "border-ink text-ink" : "border-transparent text-muted",
             )}
           >
-            {SCAN_MODE_LABELS[m]}
+            {m.label}
           </button>
         ))}
       </div>

@@ -72,6 +72,7 @@ import { MoveItemToCategoryDialog } from "./move-item-to-category-dialog";
 import { MoveItemToGroupDialog } from "./move-item-to-group-dialog";
 import { EditGroupDialog } from "./edit-group-dialog";
 import { DeleteGroupDialog } from "./delete-group-dialog";
+import { DeleteCategoryDialog } from "./delete-category-dialog";
 import { SaveAsTemplateDialog } from "./save-as-template-dialog";
 import { AddCategoryDialog } from "./add-category-dialog";
 import { RenameCategoryDialog } from "./rename-category-dialog";
@@ -680,6 +681,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
 
   // Delete confirmation state
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<CategoryData | null>(null);
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
   const [deleteGroupInfo, setDeleteGroupInfo] = useState<{
     title: string;
@@ -1745,7 +1747,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           setRenameCategoryId(cat.id);
                           setRenameCategoryValue(cat.name);
                         }}
-                        onDelete={() => deleteCategoryMut.mutate(cat.id)}
+                        onDelete={() => setDeleteCategoryTarget(cat)}
                         onSetPricingDisplay={(pricingDisplay) =>
                           setCategoryPricingDisplayMut.mutate({ id: cat.id, pricingDisplay })
                         }
@@ -2590,6 +2592,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         }}
       />
       {/* Delete confirmation dialog (Phase 7 — extracted) */}
+      <DeleteCategoryDialog
+        category={deleteCategoryTarget}
+        isPending={deleteCategoryMut.isPending}
+        onClose={() => setDeleteCategoryTarget(null)}
+        onConfirm={(id) => {
+          deleteCategoryMut.mutate(id);
+          setDeleteCategoryTarget(null);
+        }}
+      />
       <DeleteGroupDialog
         groupId={deleteGroupId}
         info={deleteGroupInfo}

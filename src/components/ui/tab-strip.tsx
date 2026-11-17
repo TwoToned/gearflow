@@ -74,7 +74,10 @@ export function TabStrip({
           >
             {t.label}
             {t.count !== undefined ? (
-              <span className="text-muted tabular-nums">{" "}{t.count}</span>
+              <>
+                {" "}
+                <span className="text-muted tabular-nums">{t.count}</span>
+              </>
             ) : null}
           </TabsPrimitive.Trigger>
         ))}

@@ -13,7 +13,7 @@ const options = [
 ];
 
 describe("StageFilter", () => {
-  it("shows words with counts and filters on click; clicking the active word clears", async () => {
+  it("shows words with counts and filters on click; the active word clears only when clearable", async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
     const { rerender } = render(<StageFilter options={options} value={null} onChange={onChange} />);
@@ -22,6 +22,9 @@ describe("StageFilter", () => {
     expect(onChange).toHaveBeenLastCalledWith("prepped");
     rerender(<StageFilter options={options} value="prepped" onChange={onChange} />);
     expect(screen.getByRole("button", { name: /Prepped/ }).getAttribute("aria-pressed")).toBe("true");
+    await user.click(screen.getByRole("button", { name: /Prepped/ }));
+    expect(onChange).toHaveBeenLastCalledWith("prepped");
+    rerender(<StageFilter options={options} value="prepped" onChange={onChange} clearable />);
     await user.click(screen.getByRole("button", { name: /Prepped/ }));
     expect(onChange).toHaveBeenLastCalledWith(null);
   });

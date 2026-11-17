@@ -14,7 +14,7 @@ export interface StageFilterOption {
  * The row of stage counts as underlined words with mono counts
  * (`To pick 18 · Prepped 24 · Out 0`, spec §5.3). Controlled so a page can
  * keep the value in the URL. Clicking the active word clears the filter
- * (`onChange(null)`). Scrolls sideways on phone. Arrow keys / Home / End move
+ * (`onChange(null)`) only when `clearable`. Scrolls sideways on phone. Arrow keys / Home / End move
  * focus between words; Enter/Space (native button) selects.
  */
 export function StageFilter({
@@ -22,12 +22,16 @@ export function StageFilter({
   value,
   onChange,
   label = "Filter by stage",
+  clearable = false,
   className,
 }: {
   options: StageFilterOption[];
   value: string | null;
   onChange: (key: string | null) => void;
   label?: string;
+  /** Clicking the active word clears it (`onChange(null)`). Off by default: the
+   *  warehouse job page always has exactly one stage; the floor has an `All` word. */
+  clearable?: boolean;
   className?: string;
 }) {
   const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
@@ -61,7 +65,7 @@ export function StageFilter({
             }}
             type="button"
             aria-pressed={on}
-            onClick={() => onChange(on ? null : o.key)}
+            onClick={() => onChange(on && clearable ? null : o.key)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
               "inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent text-[13px] font-semibold outline-none",

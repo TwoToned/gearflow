@@ -25,6 +25,7 @@ import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { projectStatusLabels } from "@/lib/status-labels";
 import { getStatusColor } from "@/lib/status-colors";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 const typeLabels: Record<string, string> = {
   DRY_HIRE: "Dry hire",
@@ -73,7 +74,7 @@ type AnyProject = Record<string, any>;
 const projectColumns: ColumnDef<AnyProject>[] = [
   {
     id: "projectNumber",
-    header: "Project #",
+    header: "Job #",
     accessorKey: "projectNumber",
     sortKey: "projectNumber",
     alwaysVisible: true,
@@ -173,7 +174,7 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       { value: "AWAITING_PAYMENT", label: "Awaiting payment", color: getStatusColor("project", "AWAITING_PAYMENT").dot },
       { value: "CONFIRMED", label: "Confirmed", color: getStatusColor("project", "CONFIRMED").dot },
       { value: "PREPPING", label: "Prepping", color: getStatusColor("project", "PREPPING").dot },
-      { value: "CHECKED_OUT", label: "Deployed", color: getStatusColor("project", "CHECKED_OUT").dot },
+      { value: "CHECKED_OUT", label: OUT_LABEL, color: getStatusColor("project", "CHECKED_OUT").dot },
       { value: "ON_SITE", label: "On site", color: getStatusColor("project", "ON_SITE").dot },
       { value: "RETURNED", label: "Returned", color: getStatusColor("project", "RETURNED").dot },
       { value: "COMPLETED", label: "Completed", color: getStatusColor("project", "COMPLETED").dot },
@@ -319,7 +320,7 @@ export function ProjectTable() {
       onFilterChange={setFilter}
       searchValue={search}
       onSearchChange={(v) => { setSearch(v); setPage(1); }}
-      searchPlaceholder="Search by name, project #, or location..."
+      searchPlaceholder="Search by name, job #, or location..."
       columnVisibility={columnVisibility}
       onToggleColumnVisibility={toggleColumnVisibility}
       onResetPreferences={resetPreferences}

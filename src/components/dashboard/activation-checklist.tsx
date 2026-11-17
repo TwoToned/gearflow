@@ -25,7 +25,7 @@ const CARD = "rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-
 const LABELS: Record<MilestoneKey, { label: string; cta: string }> = {
   model: { label: "Add a piece of gear you own", cta: "Add a model" },
   asset: { label: "Add a real unit of it", cta: "Add an asset" },
-  project: { label: "Create your first job", cta: "Create a project" },
+  project: { label: "Create your first job", cta: "Create a job" },
   lineItem: { label: "Put that gear on the job", cta: "Add it to the job" },
 };
 

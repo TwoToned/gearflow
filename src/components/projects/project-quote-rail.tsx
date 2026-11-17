@@ -237,7 +237,7 @@ function resolveQuoteRailVersionState(
  *  client before rendering `<ProjectQuoteRail>` — checked at the call site
  *  rather than inside the rail itself, which is already at its complexity
  *  budget (R-3.6). Shared here so the message can't drift between sites. */
-export const ASSIGN_CLIENT_FOR_QUOTES_MESSAGE = "Assign a client to this project to generate quotes.";
+export const ASSIGN_CLIENT_FOR_QUOTES_MESSAGE = "Assign a client to this job to generate quotes.";
 
 export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total, invoices, versionContext }: ProjectQuoteRailProps) {
   // Frozen at mount: `now` only drives the DERIVED expiry read, and a value that
@@ -1151,7 +1151,7 @@ function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClos
         <p className="t-micro text-fg-4">
           {isRecall
             ? "Un-sends this revision so you can edit it. The document you already sent is kept for the record — the client may still be holding it."
-            : "Records that the client declined this revision. The project's status is left alone."}
+            : "Records that the client declined this revision. The job's status is left alone."}
         </p>
         <Textarea
           value={reason}

@@ -19,13 +19,13 @@ import {
 export default function NewProjectPage() {
   return (
     <RequirePermission resource="project" action="create">
-    <CanDo resource="project" action="create" fallback={<div className="mx-auto max-w-3xl py-8 text-center text-muted">You do not have permission to create projects.</div>}>
+    <CanDo resource="project" action="create" fallback={<div className="mx-auto max-w-3xl py-8 text-center text-muted">You do not have permission to create jobs.</div>}>
       <FadeIn>
         <div className="mx-auto max-w-5xl space-y-4">
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink render={<Link href="/projects" />}>Projects</BreadcrumbLink>
+                <BreadcrumbLink render={<Link href="/projects" />}>Jobs</BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>

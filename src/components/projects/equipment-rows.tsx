@@ -106,10 +106,10 @@ export function getDisallowedDropReason(
     return "Own-stock, custom, and kit items can't enter a sub-hire group.";
   }
   if (activeId.startsWith("grp-") && overId.startsWith("shg-")) {
-    return "Project groups can't be nested inside a sub-hire group.";
+    return "Job groups can't be nested inside a sub-hire group.";
   }
   if (activeId.startsWith("shg-") && overId.startsWith("grp-")) {
-    return "Sub-hire groups can't be nested inside a project group.";
+    return "Sub-hire groups can't be nested inside a job group.";
   }
   return null;
 }
@@ -522,7 +522,7 @@ export function GroupRow({
         {onInlinePriceUpdate ? (
           <LockedField
             locked={!!moneyLocked}
-            reason={lockReason ?? "This project's financials are locked."}
+            reason={lockReason ?? "This job's financials are locked."}
             exitLabel="Manage unlock"
             onExit={onUnlockExit}
           >
@@ -1901,7 +1901,7 @@ export function LineItemRow({
         ) : priceEditable ? (
           <LockedField
             locked={!!moneyLocked}
-            reason={lockReason ?? "This project's financials are locked."}
+            reason={lockReason ?? "This job's financials are locked."}
             exitLabel="Manage unlock"
             onExit={onUnlockExit}
           >

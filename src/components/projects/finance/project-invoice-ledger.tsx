@@ -108,7 +108,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
   const [deleteVoidTarget, setDeleteVoidTarget] = useState<{ id: string; label: string } | null>(null);
 
   if (!clientId) {
-    return <p className="t-micro text-fg-4">Assign a client to this project to generate invoices.</p>;
+    return <p className="t-micro text-fg-4">Assign a client to this job to generate invoices.</p>;
   }
   if (invoices === undefined || client === undefined) {
     return <p className="t-micro text-fg-4">Loading…</p>;
@@ -265,7 +265,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
       <Dialog open={!!advanceOffer} onOpenChange={(open) => !open && setAdvanceOffer(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Move this project to Invoiced?</DialogTitle>
+            <DialogTitle>Move this job to Invoiced?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-fg-4">
             {advanceOffer?.invoiceNumber} has been issued. This project can move to Invoiced whenever you&rsquo;re ready — it&rsquo;s not required.

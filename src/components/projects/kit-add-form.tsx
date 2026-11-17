@@ -158,7 +158,7 @@ export function KitAddForm({
     onSuccess: () => {
       onInvalidate();
       refreshProjectDetail(projectId);
-      toast.success("Kit added to project");
+      toast.success("Kit added to job");
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -177,7 +177,7 @@ export function KitAddForm({
 
         {/* Kit */}
         <section className="space-y-4">
-          <SectionTitle title="Kit" hint="Pick a kit to add to this project." />
+          <SectionTitle title="Kit" hint="Pick a kit to add to this job." />
           <Field label="Kit" required>
             <ComboboxPicker
               value={selectedKitId}
@@ -258,7 +258,7 @@ export function KitAddForm({
             Hidden when launched from a specific category/group context. */}
         {!targetLabel && categories && categories.length > 0 && (
           <section className="space-y-4 border-t border-line pt-5">
-            <SectionTitle title="Placement" hint="Where the kit lands on the project." />
+            <SectionTitle title="Placement" hint="Where the kit lands on the job." />
             <PlacementFields
               categories={categories}
               categoryId={selectedCategoryId}

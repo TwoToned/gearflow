@@ -143,7 +143,7 @@ function LocationSelect({
           ))}
       </select>
       <p className="text-xs text-fg-3">
-        Scope to a warehouse location to only show relevant projects.
+        Scope to a warehouse location to only show relevant jobs.
       </p>
     </div>
   );

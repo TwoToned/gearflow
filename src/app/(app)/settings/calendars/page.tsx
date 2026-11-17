@@ -33,8 +33,8 @@ import {
 const FEEDS = [
   {
     key: "projects",
-    label: "Projects",
-    description: "All projects from quoting onwards with load-in through load-out dates.",
+    label: "Jobs",
+    description: "All jobs from quoting onwards with load-in through load-out dates.",
     icon: Briefcase,
   },
   {
@@ -52,7 +52,7 @@ const FEEDS = [
   {
     key: "crew",
     label: "Crew Overview",
-    description: "All confirmed crew assignments across every project.",
+    description: "All confirmed crew assignments across every job.",
     icon: Users,
   },
 ] as const;

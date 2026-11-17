@@ -312,7 +312,7 @@ export default function FinancePage() {
       <div className="space-y-6">
         <PageHeader
           title="Finance"
-          description="Every quote and invoice that needs a decision, org-wide — deep-link into a project's Finance tab to act."
+          description="Every quote and invoice that needs a decision, org-wide — deep-link into a job's Finance tab to act."
           actions={<SearchInput placeholder="Filter by client…" value={clientQuery} onChange={(e) => setClientQuery(e.target.value)} className="w-64" />}
         />
 

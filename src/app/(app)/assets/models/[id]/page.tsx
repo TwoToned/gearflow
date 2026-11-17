@@ -51,6 +51,7 @@ import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/sta
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Panel } from "@/components/ui/card";
 import { cn, focusRing } from "@/lib/utils";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -796,7 +797,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   {model.assetType === "SERIALIZED" && (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-muted">Deployed</span>
+                        <span className="text-muted">{OUT_LABEL}</span>
                         <span className="font-medium text-ink t-data">{deployedCount}</span>
                       </div>
                       <div className="flex justify-between">
@@ -890,7 +891,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
       open={!!forceReturnAssetId}
       onOpenChange={(open) => !open && setForceReturnAssetId(null)}
       title={`Force return ${forceReturnAssetId?.tag ?? ""}?`}
-      description="Project assignments are marked returned, status resets, and the asset returns to its home location. Use when scanning isn't possible."
+      description="Job assignments are marked returned, status resets, and the asset returns to its home location. Use when scanning isn't possible."
       confirmLabel="Force return"
       onConfirm={() => {
         if (forceReturnAssetId) {

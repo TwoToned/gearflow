@@ -297,8 +297,8 @@ export default function GeneralSettingsPage() {
         {/* Project defaults */}
         <div className="border-t border-line">
           <SettingsSection
-            title="Project defaults"
-            description="Applied to new projects. Each project can override these."
+            title="Job defaults"
+            description="Applied to new jobs. Each job can override these."
           >
             <div className="space-y-2 sm:max-w-[240px]">
               <Label htmlFor="defaultTaxRate">Default tax rate (%)</Label>
@@ -314,7 +314,7 @@ export default function GeneralSettingsPage() {
                 disabled={!canEdit}
               />
               <p className="t-micro text-muted">
-                Applied to new projects unless overridden. Used for GST/VAT calculation.
+                Applied to new jobs unless overridden. Used for GST/VAT calculation.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -351,7 +351,7 @@ export default function GeneralSettingsPage() {
           </SettingsSection>
         </div>
 
-        {/* Status automation (#1160) — its own section, not a "Project defaults"
+        {/* Status automation (#1160) — its own section, not a "Job defaults"
             field: these change what the app DOES on its own, which is a different
             kind of setting from a value new projects inherit. */}
         <div className="border-t border-line">

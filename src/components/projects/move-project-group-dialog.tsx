@@ -90,7 +90,7 @@ function MoveProjectGroupDialogBody({
 
   const moveMut = useServerMutation({
     mutationFn: async () => {
-      if (!groupId) throw new Error("No project group selected");
+      if (!groupId) throw new Error("No job group selected");
       if (!selectedCategoryId) throw new Error("Pick a destination");
       return slotWrites.moveProjectGroup({
         groupId,
@@ -111,7 +111,7 @@ function MoveProjectGroupDialogBody({
 
   const createMut = useServerMutation({
     mutationFn: async (name: string) => {
-      if (!groupId) throw new Error("No project group selected");
+      if (!groupId) throw new Error("No job group selected");
       return slotWrites.createCategoryAndPlaceGroup({
         projectId,
         name,

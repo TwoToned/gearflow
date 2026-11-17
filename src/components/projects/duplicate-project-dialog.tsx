@@ -54,7 +54,7 @@ export function DuplicateProjectDialog({
         ? projectWrites.saveAsTemplate(sourceProject.id, name)
         : projectWrites.duplicate(sourceProject.id, projectNumber, name),
     onSuccess: (result) => {
-      toast.success(isTemplate ? "Template created" : "Project duplicated");
+      toast.success(isTemplate ? "Template created" : "Job duplicated");
       onOpenChange(false);
       router.push(`/projects/${result.id}`);
     },
@@ -66,12 +66,12 @@ export function DuplicateProjectDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {isTemplate ? "Save as Template" : "Duplicate Project"}
+            {isTemplate ? "Save as Template" : "Duplicate Job"}
           </DialogTitle>
           <DialogDescription>
             {isTemplate
-              ? "Create a reusable template from this project. Dates and deployment status will not be copied."
-              : "Create a copy of this project with all line items. Dates will be cleared and status set to Enquiry."}
+              ? "Create a reusable template from this job. Dates and deployment status will not be copied."
+              : "Create a copy of this job with all line items. Dates will be cleared and status set to Enquiry."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -83,7 +83,7 @@ export function DuplicateProjectDialog({
           <div className="space-y-4 py-4">
             {!isTemplate && (
               <div className="space-y-2">
-                <Label htmlFor="dup-number">Project Code *</Label>
+                <Label htmlFor="dup-number">Job Code *</Label>
                 <Input
                   id="dup-number"
                   value={projectNumber}

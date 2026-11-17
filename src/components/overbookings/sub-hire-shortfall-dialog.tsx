@@ -60,7 +60,7 @@ export function SubHireShortfallDialog({
 
         <div className="flex flex-col gap-1.5">
           {projects.length === 0 ? (
-            <p className="t-micro text-muted">No contributing projects to show.</p>
+            <p className="t-micro text-muted">No contributing jobs to show.</p>
           ) : (
             projects.map((p) => (
               <Button

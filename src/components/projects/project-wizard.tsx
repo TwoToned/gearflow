@@ -111,7 +111,7 @@ export interface EditableProject {
 type StepKey = "basics" | "schedule" | "site" | "review";
 const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFormValues>[] }[] = [
   { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", fields: ["name", "projectNumber", "clientId", "clientContactId", "type", "description", "tags"] },
-  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten the project window later.", fields: ["rentalStartDate", "rentalEndDate", "projectStartDate", "projectStartTime", "projectEndDate", "projectEndTime"] },
+  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten the job window later.", fields: ["rentalStartDate", "rentalEndDate", "projectStartDate", "projectStartTime", "projectEndDate", "projectEndTime"] },
   { key: "site", label: "Site", tip: "Where it's happening and who to call on the day. All optional.", fields: ["locationId", "siteContactName", "siteContactPhone", "siteContactEmail"] },
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
 ];
@@ -319,7 +319,7 @@ export function ProjectWizard({
         );
         if (!available) {
           throw Object.assign(
-            new Error(`Project code "${data.projectNumber.trim()}" is already in use.`),
+            new Error(`Job code "${data.projectNumber.trim()}" is already in use.`),
             { field: "projectNumber" as const },
           );
         }
@@ -395,7 +395,7 @@ export function ProjectWizard({
     const ok = await form.trigger(STEPS[step].fields);
     // Project code is required (schema allows blank for auto-gen, so enforce here).
     if (step === 0 && !isTemplate && !form.getValues("projectNumber")?.trim()) {
-      form.setError("projectNumber", { type: "manual", message: "Project code is required." });
+      form.setError("projectNumber", { type: "manual", message: "Job code is required." });
       return;
     }
     if (ok) setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -466,7 +466,7 @@ export function ProjectWizard({
                 </Field>
               </div>
               {!isTemplate && (
-                <Field label="Project code" required hint="Pre-filled from your next sequence — edit if you need a custom code." error={form.formState.errors.projectNumber?.message}>
+                <Field label="Job code" required hint="Pre-filled from your next sequence — edit if you need a custom code." error={form.formState.errors.projectNumber?.message}>
                   <Input {...form.register("projectNumber")} placeholder={nextProjectNumber ? `Auto: ${nextProjectNumber}` : "e.g. PROJ-2026-0001"} className="font-mono" />
                 </Field>
               )}
@@ -507,7 +507,7 @@ export function ProjectWizard({
                   />
                 </LockedField>
               </Field>
-              <Field label="Project manager(s)" error={membersError ? "Couldn't load org members — you may not have permission to view them." : undefined}>
+              <Field label="Job manager(s)" error={membersError ? "Couldn't load org members — you may not have permission to view them." : undefined}>
                 <ComboboxPicker value="" onChange={(id) => { if (id && !managerIds.includes(id)) setManagerIds((p) => [...p, id]); }}
                   options={memberOptions.filter((m) => !managerIds.includes(m.value))} placeholder="Add manager…" searchPlaceholder="Search members…" emptyMessage="No members found." />
                 {managerIds.length > 0 && (
@@ -591,9 +591,9 @@ export function ProjectWizard({
                 <ReviewRow label="Contact" value={contactOptions.find((c) => c.value === v.clientContactId)?.label} />
                 <ReviewRow label="Type" value={typeName} />
                 <ReviewRow label="Managers" value={managerIds.length ? `${managerIds.length} assigned` : undefined} />
-                <ReviewRow label="Project code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />
+                <ReviewRow label="Job code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />
                 <ReviewRow label="Rental" value={dateRange(v.rentalStartDate, v.rentalEndDate)} />
-                <ReviewRow label="Project window" value={dateRange(v.projectStartDate, v.projectEndDate) || "Same as rental"} />
+                <ReviewRow label="Job window" value={dateRange(v.projectStartDate, v.projectEndDate) || "Same as rental"} />
                 <ReviewRow label="Location" value={locationName} />
                 <ReviewRow label="Site contact" value={v.siteContactName} />
                 <ReviewRow label="Tags" value={(v.tags && v.tags.length) ? v.tags.join(", ") : undefined} />
@@ -744,9 +744,9 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   // the charged end). Flag it, don't block — an unusual booking is still valid.
   const softWarning =
     projectRange.start && range.start && projectRange.start > range.start
-      ? "The project window starts after the rental window — usually load-in is on or before the rental start."
+      ? "The job window starts after the rental window — usually load-in is on or before the rental start."
       : projectRange.end && range.end && projectRange.end < range.end
-        ? "The project window ends before the rental window — usually load-out is on or after the rental end."
+        ? "The job window ends before the rental window — usually load-out is on or after the rental end."
         : undefined;
 
   return (
@@ -803,7 +803,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
       <Accordion type="single" collapsible defaultValue={projectRange.start ? "project-window" : undefined}>
         <AccordionItem value="project-window" className="border-line">
           <AccordionTrigger>
-            Project window
+            Job window
             {!projectRange.start && <span className="ml-2 t-micro font-normal text-muted">(same as rental)</span>}
           </AccordionTrigger>
           <AccordionContent>
@@ -838,8 +838,8 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
                 <p className="t-micro text-red-text" role="status">{softWarning}</p>
               )}
               <div className="space-y-4 pt-1">
-                <MomentRow icon={Truck} label="Project starts" dateName="projectStartDate" timeName="projectStartTime" form={form} />
-                <MomentRow icon={Truck} label="Project ends" dateName="projectEndDate" timeName="projectEndTime" form={form} />
+                <MomentRow icon={Truck} label="Job starts" dateName="projectStartDate" timeName="projectStartTime" form={form} />
+                <MomentRow icon={Truck} label="Job ends" dateName="projectEndDate" timeName="projectEndTime" form={form} />
               </div>
             </div>
           </AccordionContent>

@@ -108,7 +108,7 @@ export function ClientsDashboard() {
     {
       icon: Banknote,
       figure: formatCurrency(stats.totalValue),
-      label: "Total project value",
+      label: "Total job value",
     },
     {
       icon: Building2,

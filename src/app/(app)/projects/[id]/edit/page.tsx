@@ -32,7 +32,7 @@ export default function EditProjectPage({
   if (!project)
     return (
       <div className="mx-auto max-w-5xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
-        <p className="text-ui-text text-ink-2">Project not found.</p>
+        <p className="text-ui-text text-ink-2">Job not found.</p>
       </div>
     );
 
@@ -44,7 +44,7 @@ export default function EditProjectPage({
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink render={<Link href="/projects" />}>Projects</BreadcrumbLink>
+                <BreadcrumbLink render={<Link href="/projects" />}>Jobs</BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
@@ -57,7 +57,7 @@ export default function EditProjectPage({
             </BreadcrumbList>
           </Breadcrumb>
           <div>
-            <h1 className="t-page-title text-ink">Edit project</h1>
+            <h1 className="t-page-title text-ink">Edit job</h1>
             <p className="t-body text-muted">
               <span className="t-mono">{project.projectNumber}</span> &middot; {project.name}
             </p>

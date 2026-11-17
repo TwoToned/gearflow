@@ -103,7 +103,7 @@ export default function AdHocCheckPage({
           <div>
             <h1 className="t-page-title text-ink">Ad-hoc check</h1>
             <p className="text-ui-text text-muted mt-1">
-              Perform a quality check on an asset outside of a project.
+              Perform a quality check on an asset outside of a job.
             </p>
           </div>
           <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />

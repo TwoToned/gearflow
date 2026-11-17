@@ -262,10 +262,10 @@ export default function XeroSettingsPage() {
             </FormSection>
           </RequirePermission>
 
-          <FormSection title="Invoice numbering" description="Configured on Settings -> General (same format engine as project numbers, namespaced separately). Default: INV-%YYYY-%SEQ, yearly reset, 4 digits.">
+          <FormSection title="Invoice numbering" description="Configured on Settings -> General (same format engine as job numbers, namespaced separately). Default: INV-%YYYY-%SEQ, yearly reset, 4 digits.">
             <SettingsCard>
               <p className="t-micro text-fg-3">
-                Format editing lives on <a className="underline" href="/settings">Settings → General</a> alongside project numbering — one settings surface for both numbering engines.
+                Format editing lives on <a className="underline" href="/settings">Settings → General</a> alongside job numbering — one settings surface for both numbering engines.
               </p>
             </SettingsCard>
           </FormSection>

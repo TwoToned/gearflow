@@ -329,7 +329,7 @@ function SubHireListView({
     <>
       <DialogHeader>
         <DialogTitle>Sub-Hire Orders</DialogTitle>
-        <DialogDescription>Manage sub-hire orders for this project</DialogDescription>
+        <DialogDescription>Manage sub-hire orders for this job</DialogDescription>
       </DialogHeader>
       <div className="py-2">
         {isLoading ? (
@@ -342,7 +342,7 @@ function SubHireListView({
               <ArrowLeft className="h-5 w-5 text-fg-4 rotate-[135deg]" />
             </div>
             <p className="text-sm font-medium text-fg-2 mb-1">No sub-hire orders yet</p>
-            <p className="text-xs text-fg-4 mb-4">Create a sub-hire when you need to rent equipment from a supplier for this project.</p>
+            <p className="text-xs text-fg-4 mb-4">Create a sub-hire when you need to rent equipment from a supplier for this job.</p>
             <CanDo resource="subHire" action="create">
               <Button size="sm" onClick={onCreateNew}>
                 <Plus className="mr-1 h-3 w-3" />
@@ -958,7 +958,7 @@ function SubHireManageView({
 
         {/* Default placement */}
         <div className="rounded-md bg-bg-inset p-3">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-2">Default placement on project</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-2">Default placement on job</div>
           <PlacementPicker
             projectId={projectId}
             value={{

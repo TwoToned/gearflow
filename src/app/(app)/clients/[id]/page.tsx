@@ -139,7 +139,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
     },
     {
       id: "number",
-      header: "Project #",
+      header: "Job #",
       mobile: "subtitle",
       cell: (p) => <span className="t-mono">{p.projectNumber}</span>,
     },
@@ -286,7 +286,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
               <Tabs defaultValue="projects">
                 <TabsList>
                   <TabsTrigger value="projects">
-                    Projects ({client.projects.length})
+                    Jobs ({client.projects.length})
                   </TabsTrigger>
                   <TabsTrigger value="contacts">
                     Contacts {contacts.length > 0 ? `(${contacts.length})` : ""}
@@ -311,20 +311,20 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <h3 className="t-heading mb-4 text-ink">
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4" />
-                        All projects
+                        All jobs
                       </div>
                     </h3>
                     {client.projects.length === 0 ? (
                       <EmptyState
-                        title="No projects yet"
-                        description="Projects for this client will appear here."
+                        title="No jobs yet"
+                        description="Jobs for this client will appear here."
                       />
                     ) : (
                       <div className="hidden rounded-[var(--r)] border border-line md:block">
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Project #</TableHead>
+                              <TableHead>Job #</TableHead>
                               <TableHead>Name</TableHead>
                               <TableHead>Status</TableHead>
                               <TableHead className="text-right">Line items</TableHead>
@@ -491,7 +491,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
         title="Archive this client?"
-        description="The client is hidden from new projects but past projects, quotes, and invoices remain. You can restore the client later from the archived view."
+        description="The client is hidden from new jobs but past jobs, quotes, and invoices remain. You can restore the client later from the archived view."
         confirmLabel="Archive client"
         onConfirm={() => {
           archiveMutation.mutate();

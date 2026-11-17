@@ -63,6 +63,7 @@ import {
 import { kitStatusLabels, lineItemStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 import { formatDate } from "@/lib/formatters";
 import { cn, focusRing, disabledState } from "@/lib/utils";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 
 export default function KitDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -334,7 +335,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const lineItemColumns: ColumnDef<(typeof kit.lineItems)[number]>[] = [
     {
       id: "project",
-      header: "Project",
+      header: "Job",
       mobile: "title",
       cell: (li) => (
         <>
@@ -355,7 +356,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
     },
     {
       id: "deployed",
-      header: "Deployed",
+      header: OUT_LABEL,
       mobile: "meta",
       cell: (li) => <span className="text-table-cell text-ink">{formatDate(li.checkedOutAt)}</span>,
     },
@@ -393,7 +394,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
     },
     {
       id: "project",
-      header: "Project",
+      header: "Job",
       mobile: "meta",
       cell: (log) => (
         <span className="text-table-cell text-ink">
@@ -650,14 +651,14 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
             <div className="space-y-4">
               {kit.lineItems.length > 0 && (
                 <div>
-                  <h3 className="t-heading text-ink mb-3">Project assignments</h3>
+                  <h3 className="t-heading text-ink mb-3">Job assignments</h3>
                   <div className="hidden md:block rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)] overflow-hidden">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Project</TableHead>
+                          <TableHead>Job</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>Deployed</TableHead>
+                          <TableHead>{OUT_LABEL}</TableHead>
                           <TableHead>Returned</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -700,7 +701,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <TableRow>
                           <TableHead>Date</TableHead>
                           <TableHead>Scanned by</TableHead>
-                          <TableHead>Project</TableHead>
+                          <TableHead>Job</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -795,7 +796,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   disabled={statusMutation.isPending}
                 >
                   <option value="AVAILABLE">Available</option>
-                  <option value="CHECKED_OUT">Deployed</option>
+                  <option value="CHECKED_OUT">{OUT_LABEL}</option>
                   <option value="IN_MAINTENANCE">In maintenance</option>
                   <option value="RETIRED">Retired</option>
                   <option value="INCOMPLETE">Incomplete</option>
@@ -911,7 +912,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
       open={forceReturnOpen}
       onOpenChange={setForceReturnOpen}
       title="Force return this kit?"
-      description="All project assignments for the kit and its contents will be marked as returned. The kit moves back to available. Use when scanning isn't possible."
+      description="All job assignments for the kit and its contents will be marked as returned. The kit moves back to available. Use when scanning isn't possible."
       confirmLabel="Force return kit"
       onConfirm={() => {
         forceReturnMutation.mutate();

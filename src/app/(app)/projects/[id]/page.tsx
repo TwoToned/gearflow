@@ -100,6 +100,7 @@ import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
 import { CompareView } from "@/components/projects/compare/compare-view";
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -107,7 +108,7 @@ const projectStatusLabels: Record<string, string> = {
   QUOTED: "Quoted",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   ON_SITE: "On site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
@@ -278,7 +279,7 @@ export default function ProjectDetailPage({
   const archiveMutation = useServerMutation({
     mutationFn: () => projectWrites.archive(id),
     onSuccess: () => {
-      toast.success("Project cancelled");
+      toast.success("Job cancelled");
       refreshProjectDetail(id);
     },
     onError: (e) => toast.error(e.message),
@@ -295,7 +296,7 @@ export default function ProjectDetailPage({
         freedBits.push(`${result.freedKits} kit${result.freedKits === 1 ? "" : "s"}`);
       }
       toast.success(
-        freedBits.length > 0 ? `Project deleted — freed ${freedBits.join(" and ")}` : "Project deleted",
+        freedBits.length > 0 ? `Job deleted — freed ${freedBits.join(" and ")}` : "Job deleted",
       );
       router.push("/projects");
     },
@@ -312,12 +313,12 @@ export default function ProjectDetailPage({
     return (
       <RequirePermission resource="project" action="read">
         <div className="rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
-          <p className="text-ui-text text-ink-2">Project not found.</p>
+          <p className="text-ui-text text-ink-2">Job not found.</p>
           <p className="mt-1 text-caption text-muted">
             It may have been deleted, or you don&apos;t have access to it.
           </p>
           <Button variant="line" size="sm" className="mt-4" asChild>
-            <Link href="/projects">Back to projects</Link>
+            <Link href="/projects">Back to jobs</Link>
           </Button>
         </div>
       </RequirePermission>
@@ -368,7 +369,7 @@ export default function ProjectDetailPage({
             {/* Breadcrumb */}
             <nav className="flex items-center gap-1 text-caption text-muted">
               <Link href="/projects" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
-                Projects
+                Jobs
               </Link>
               <ChevronRight className="h-3 w-3" />
               <span className="t-mono text-ink-2">{project.projectNumber}</span>
@@ -489,7 +490,7 @@ export default function ProjectDetailPage({
                       <DropdownMenuItem
                         onClick={() => window.open(`/api/documents/timeline/${id}`, "_blank")}
                       >
-                        Project timeline
+                        Job timeline
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -526,7 +527,7 @@ export default function ProjectDetailPage({
                       <CanDo resource="project" action="create">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
                           <Copy className="mr-2 h-4 w-4" />
-                          Duplicate project
+                          Duplicate job
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setDupMode("template")}>
                           <BookTemplate className="mr-2 h-4 w-4" />
@@ -542,7 +543,7 @@ export default function ProjectDetailPage({
                             className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Delete project
+                            Delete job
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem
@@ -551,7 +552,7 @@ export default function ProjectDetailPage({
                             className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
                           >
                             <Archive className="mr-2 h-4 w-4" />
-                            Cancel project
+                            Cancel job
                           </DropdownMenuItem>
                         )}
                       </CanDo>
@@ -934,7 +935,7 @@ export default function ProjectDetailPage({
                     milestone — only on the ONE project it tracks (D1's
                     firstProjectId). CoachingTip itself checks whether that
                     milestone is still active (and honors "Hide tips"),
-                    rendering nothing once it isn't — so a normal project's
+                    rendering nothing once it isn't — so a normal job's
                     Equipment tab, or this one after the milestone is done,
                     shows nothing extra here (`SidebarSection`'s own border
                     would look odd wrapping empty content, so this skips
@@ -995,9 +996,9 @@ export default function ProjectDetailPage({
       <DeleteDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete project?"
-        description="This permanently removes the project and its line items, crew assignments, and documents. This cannot be undone."
-        confirmLabel="Delete project"
+        title="Delete job?"
+        description="This permanently removes the job and its line items, crew assignments, and documents. This cannot be undone."
+        confirmLabel="Delete job"
         onConfirm={() => {
           deleteMutation.mutate();
           setDeleteOpen(false);
@@ -1007,10 +1008,10 @@ export default function ProjectDetailPage({
       <DeleteDialog
         open={cancelOpen}
         onOpenChange={setCancelOpen}
-        title="Cancel this project?"
-        description="The project will be marked cancelled. Reservations release and items return to inventory. You can permanently delete a cancelled project later."
-        confirmLabel="Cancel project"
-        cancelLabel="Keep project"
+        title="Cancel this job?"
+        description="The job will be marked cancelled. Reservations release and items return to inventory. You can permanently delete a cancelled job later."
+        confirmLabel="Cancel job"
+        cancelLabel="Keep job"
         onConfirm={() => {
           archiveMutation.mutate();
           setCancelOpen(false);

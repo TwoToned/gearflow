@@ -185,7 +185,7 @@ export function FleetRoi() {
       {rows.length === 0 ? (
         <EmptyState
           title="Nothing to report yet"
-          description="Once projects are completed or invoiced, the gear that went out on them will show up here."
+          description="Once jobs are completed or invoiced, the gear that went out on them will show up here."
         />
       ) : (
         <div className="overflow-x-auto rounded-md border border-line">

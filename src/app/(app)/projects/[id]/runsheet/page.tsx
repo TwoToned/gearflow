@@ -135,7 +135,7 @@ export default function RunsheetPage({
           <div className="flex items-center gap-3">
             <Link
               href={`/projects/${id}`}
-              aria-label="Back to project"
+              aria-label="Back to job"
               className={cn("flex h-11 w-11 items-center justify-center rounded-[var(--r)] hover:bg-paper-2 transition-colors", focusRing)}
             >
               <ArrowLeft className="h-5 w-5 text-muted" />
@@ -196,7 +196,7 @@ export default function RunsheetPage({
             <Clock className="h-10 w-10 text-muted mb-3" />
             <p className="text-ui-text font-medium text-ink-2">No services scheduled</p>
             <p className="text-caption text-muted mt-1">
-              Generate services from the project detail page.
+              Generate services from the job detail page.
             </p>
           </div>
         )}

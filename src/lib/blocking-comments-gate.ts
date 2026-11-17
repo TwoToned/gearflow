@@ -96,7 +96,7 @@ export function evaluateBlockingGate(
     blocked: true,
     reason: "project",
     message:
-      `Can't ${action}: this project has ${n} unresolved blocking comment${n === 1 ? "" : "s"}. ` +
+      `Can't ${action}: this job has ${n} unresolved blocking comment${n === 1 ? "" : "s"}. ` +
       `Resolve ${n === 1 ? "it" : "them"} before prepping or sending out.`,
   };
 }

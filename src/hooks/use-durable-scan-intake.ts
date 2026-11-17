@@ -26,7 +26,7 @@ export function useDurableScanIntake(scope: ScanScope | null, verify: (operation
         if (!captured || !intake || !isCurrent() || !navigator.onLine)
             return;
         const assertCurrent = () => { const now = current.current.scope; if (!isCurrent() || !now || !sameScanScope(now, captured))
-            throw new Error('Scan context changed. Return to the original account and project.'); };
+            throw new Error('Scan context changed. Return to the original account and job.'); };
         setBusy(true);
         try {
             await intake.replay(captured, async () => { assertCurrent(); return true; }, async (e) => {

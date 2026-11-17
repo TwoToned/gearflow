@@ -97,7 +97,7 @@ const columns: ColumnDef<AnyClient>[] = [
   },
   {
     id: "projects",
-    header: "Projects",
+    header: "Jobs",
     sortKey: "name",
     align: "right",
     mobile: "meta",
@@ -252,7 +252,7 @@ export function ClientTable() {
         isLoading={isLoading}
         emptyPreset="clients"
         emptyTitle="No clients yet"
-        emptyDescription="Add a client to start quoting and tracking their projects."
+        emptyDescription="Add a client to start quoting and tracking their jobs."
         enableRowSelection
         selectedRows={selectedIds}
         onSelectionChange={setSelectedIds}
@@ -263,7 +263,7 @@ export function ClientTable() {
         open={bulkArchiveOpen}
         onOpenChange={setBulkArchiveOpen}
         title={`Archive ${selectedIds.size} client${selectedIds.size === 1 ? "" : "s"}?`}
-        description="Archived clients are hidden from the active list but keep their history and projects. You can reactivate a client from its detail page."
+        description="Archived clients are hidden from the active list but keep their history and jobs. You can reactivate a client from its detail page."
         confirmLabel={`Archive ${selectedIds.size}`}
         onConfirm={() => {
           bulkArchiveMutation.mutate();

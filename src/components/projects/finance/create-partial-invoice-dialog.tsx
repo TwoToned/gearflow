@@ -132,7 +132,7 @@ export function CreatePartialInvoiceDialog({
 
           {mode === "%" ? (
             <div className="space-y-1.5">
-              <Label htmlFor="partial-percent">% of project total</Label>
+              <Label htmlFor="partial-percent">% of job total</Label>
               <Input
                 id="partial-percent"
                 type="number"

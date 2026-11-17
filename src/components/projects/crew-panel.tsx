@@ -404,7 +404,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
         title="Remove selected crew"
-        description="This removes the selected crew assignments (and their shifts + linked time entries) from the project."
+        description="This removes the selected crew assignments (and their shifts + linked time entries) from the job."
         count={selectedAssignmentIds.length}
         itemLabel="assignment"
         confirmLabel={`Remove ${selectedAssignmentIds.length} assignment${
@@ -582,9 +582,9 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
       <DeleteDialog
         open={!!removeAssignmentId}
         onOpenChange={(open) => !open && setRemoveAssignmentId(null)}
-        title="Remove crew member from this project?"
+        title="Remove crew member from this job?"
         description="The assignment is removed and the crew member is notified if they had accepted. Past timesheets and call sheets are preserved."
-        confirmLabel="Remove from project"
+        confirmLabel="Remove from job"
         onConfirm={() => {
           if (removeAssignmentId) {
             deleteMutation.mutate(removeAssignmentId);
@@ -1361,7 +1361,7 @@ function AssignmentDialog({
               }
             />
             <Label htmlFor="isProjectManager" className="cursor-pointer">
-              Project manager
+              Job manager
             </Label>
           </div>
 
@@ -1474,11 +1474,11 @@ function BulkMessageDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Message project crew</DialogTitle>
+          <DialogTitle>Message job crew</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-ui-text text-muted">
-            Send an email to all active crew members on this project.
+            Send an email to all active crew members on this job.
           </p>
           <div className="space-y-1.5">
             <Label>Message</Label>

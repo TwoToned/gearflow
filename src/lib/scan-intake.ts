@@ -49,7 +49,7 @@ export class ScanIntake {
     }
     capture(scope: ScanScope, operation: SavedScan['operation'], raw: string, condition: SavedScan['condition'], notes: string) {
         if (!scope.orgId || !scope.userId || !scope.projectId)
-            throw new Error('Sign in to the project before saving a scan.');
+            throw new Error('Sign in to the job before saving a scan.');
         const e: SavedScan = { ...scope, id: crypto.randomUUID(), operation, raw, condition, notes, state: 'pending', createdAt: Date.now() };
         this.save(e);
         return e;

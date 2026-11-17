@@ -139,7 +139,7 @@ export function computeKitDeletability(
         ? `Kit status is ${kit.status} — only AVAILABLE kits can be archived or deleted.`
         : "Kit is already archived.";
   } else if (!canHardDelete) {
-    reason = `Kit is referenced by ${referencingLineItems} project line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those projects first.`;
+    reason = `Kit is referenced by ${referencingLineItems} job line item${referencingLineItems === 1 ? "" : "s"}. Archive it instead, or remove it from those jobs first.`;
   }
 
   return { canArchive, canHardDelete, referencingLineItems, reason };

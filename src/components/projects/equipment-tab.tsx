@@ -2741,7 +2741,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
         title="Remove selected items"
-        description="This removes the selected line items from the project. Kit/accessory members are removed with their parent."
+        description="This removes the selected line items from the job. Kit/accessory members are removed with their parent."
         count={selectedLineItemIds.length}
         itemLabel="line item"
         confirmLabel={`Remove ${selectedLineItemIds.length} item${

@@ -130,8 +130,8 @@ function MoveItemToGroupDialogBody({
         <DialogTitle>Move to group</DialogTitle>
         <DialogDescription>
           {hasGroups
-            ? "Pick a group anywhere in the project. The item moves into the group and adopts its category."
-            : "There are no groups in this project yet. Create a group first, then move items into it."}
+            ? "Pick a group anywhere in the job. The item moves into the group and adopts its category."
+            : "There are no groups in this job yet. Create a group first, then move items into it."}
         </DialogDescription>
       </DialogHeader>
       {hasGroups && (

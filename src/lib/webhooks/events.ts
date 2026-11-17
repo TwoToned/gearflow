@@ -34,8 +34,8 @@ export const WEBHOOK_EVENT_VERSION = "v1" as const;
 
 /** Human descriptions, surfaced by the API so an agent can pick without reading docs. */
 export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEvent, string> = {
-  "project.status_changed": "A project moved to a new status.",
-  "line_item.added": "Gear was added to a project.",
+  "project.status_changed": "A job moved to a new status.",
+  "line_item.added": "Gear was added to a job.",
   "warehouse.checked_out": "Gear physically left the warehouse.",
   "maintenance.created": "A maintenance record was opened.",
   "api_key.created": "A new agent-accessible API key was minted for this org.",

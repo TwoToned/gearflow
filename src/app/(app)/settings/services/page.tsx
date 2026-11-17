@@ -234,7 +234,7 @@ export default function ServiceTemplatesPage() {
         <div>
           <h2 className="t-heading text-fg">Service Templates</h2>
           <p className="text-[12px] text-fg-3">
-            Define default services that can be quickly added to projects.
+            Define default services that can be quickly added to jobs.
           </p>
         </div>
         {canEdit && (
@@ -381,7 +381,7 @@ export default function ServiceTemplatesPage() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title={`Delete template "${deleteTarget?.title ?? ""}"?`}
-        description="This removes the service template. Existing project line items that referenced this template are preserved."
+        description="This removes the service template. Existing job line items that referenced this template are preserved."
         confirmLabel="Delete template"
         onConfirm={() => {
           if (deleteTarget) {
@@ -593,7 +593,7 @@ function TemplateDialog({
                 }
               />
               <Label htmlFor="tmpl-autoAdd" className="text-sm font-normal cursor-pointer">
-                Auto-add to new projects
+                Auto-add to new jobs
               </Label>
             </div>
             <div className="flex items-center gap-2">

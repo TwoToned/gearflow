@@ -156,7 +156,7 @@ function CrewSettingsContent() {
       <div className="space-y-4">
         <PageHeader
           title="Crew roles"
-          description="Roles set the default cost & charge rate crew get on a project — the client price and margin auto-calculate from here."
+          description="Roles set the default cost & charge rate crew get on a job — the client price and margin auto-calculate from here."
           actions={canCreate ? (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />

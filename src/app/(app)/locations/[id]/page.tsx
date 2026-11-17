@@ -214,7 +214,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
   const projectColumns: ColumnDef<ProjectRow>[] = [
     {
       id: "projectNumber",
-      header: "Project #",
+      header: "Job #",
       mobile: "title",
       cell: (p) => (
         <Link href={`/projects/${p.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
@@ -358,8 +358,8 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
             {/* "What's here" count strip — single surface, vertical dividers */}
             <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line sm:grid-cols-4">
               <HereStat icon={Boxes} label="Stored here" figure={here.stored} bright />
-              <HereStat icon={Briefcase} label="Out on a project" figure={here.deployed} accent={here.deployed > 0} />
-              <HereStat icon={FolderOpen} label="Projects using" figure={here.projects} />
+              <HereStat icon={Briefcase} label="Out on a job" figure={here.deployed} accent={here.deployed > 0} />
+              <HereStat icon={FolderOpen} label="Jobs using" figure={here.projects} />
               <HereStat icon={MapPin} label="Sub-locations" figure={location.children?.length ?? 0} />
             </div>
           </div>
@@ -374,7 +374,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                     Stored here ({assetCount})
                   </TabsTrigger>
                   <TabsTrigger value="projects">
-                    Projects ({location._count?.projects || 0})
+                    Jobs ({location._count?.projects || 0})
                   </TabsTrigger>
                   <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="files">
@@ -466,14 +466,14 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
                 <TabsContent value="projects" className="mt-4">
                   {(location.projects?.length || 0) === 0 ? (
-                    <EmptyState title="No projects here" description="Projects using this as a venue or delivery address will appear here." />
+                    <EmptyState title="No jobs here" description="Jobs using this as a venue or delivery address will appear here." />
                   ) : (
                     <>
                     <div className="hidden rounded-[var(--r)] border border-line md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Project #</TableHead>
+                            <TableHead>Job #</TableHead>
                             <TableHead>Name</TableHead>
                             <TableHead>Client</TableHead>
                             <TableHead>Status</TableHead>
@@ -590,7 +590,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                       <div className="flex justify-between border-t border-line pt-1.5">
                         <div className="flex items-center gap-2 text-muted">
                           <Briefcase className="h-3.5 w-3.5" />
-                          <span>Out on a project</span>
+                          <span>Out on a job</span>
                         </div>
                         <span className="t-data font-medium text-red-text tabular-nums">{here.deployed}</span>
                       </div>
@@ -633,7 +633,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete location?"
-        description="This permanently removes the location. Assets, kits, and projects referencing it will be unlinked. This cannot be undone."
+        description="This permanently removes the location. Assets, kits, and jobs referencing it will be unlinked. This cannot be undone."
         confirmLabel="Delete location"
         onConfirm={() => {
           deleteMutation.mutate();

@@ -56,7 +56,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
   const projectColumns: ColumnDef<ModelRoi["projects"][number]>[] = [
     {
       id: "project",
-      header: "Project",
+      header: "Job",
       mobile: "title",
       cell: (p) => (
         <Link href={`/projects/${p.projectId}`} className="text-link hover:underline">
@@ -200,7 +200,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
             <table className="w-full min-w-[560px]">
               <thead>
                 <tr className="border-b border-line bg-paper-2">
-                  <th className="px-3 py-2 text-left text-caption text-muted">Project</th>
+                  <th className="px-3 py-2 text-left text-caption text-muted">Job</th>
                   <th className="px-3 py-2 text-left text-caption text-muted">Status</th>
                   <th className="px-3 py-2 text-left text-caption text-muted">Rental start</th>
                   <th className="px-3 py-2 text-right text-caption text-muted">Attributed</th>

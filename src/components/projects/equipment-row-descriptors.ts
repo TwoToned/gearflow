@@ -11,6 +11,7 @@
  */
 import type { LineItemData } from "./equipment-row-types";
 import type { CustomUnitLine } from "@/lib/off-inventory";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 // ─── Row descriptor (cross-type unification) ─────────────────────────────────
 //
@@ -100,10 +101,10 @@ export function hasContainerChip(item: LineItemData): boolean {
 export function unitFulfillmentBadge(
   status?: string | null,
   returnCondition?: string | null,
-): { label: string; status: "ok" | "warn" | "overbooked" | "repair" | "neutral"; className?: string } {
+): { label: string; status: "ok" | "warn" | "overbooked" | "repair" | "neutral" | "primary"; className?: string } {
   switch (status) {
     case "CHECKED_OUT":
-      return { label: "Deployed", status: "neutral", className: "bg-out-soft text-t-out" };
+      return { label: OUT_LABEL, status: "primary" };
     case "RETURNED":
       if (returnCondition === "DAMAGED") return { label: "Returned · Damaged", status: "warn" };
       if (returnCondition === "MISSING") return { label: "Returned · Missing", status: "overbooked" };

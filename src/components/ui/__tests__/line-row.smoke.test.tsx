@@ -128,4 +128,26 @@ describe("LineRow", () => {
     expect(flag.className).toContain("shrink-0");
     expect(flag.parentElement!.querySelector("span.truncate, a.truncate")).toBeTruthy();
   });
+
+  it("an accessory child renders its primary button and ⋯; other children get neither", async () => {
+    const onPrimary = vi.fn();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const parent: LineRowData = {
+      id: "p", kind: "gear", title: "Desk", facts: {},
+      children: [
+        { id: "acc", kind: "accessory", title: "PSU", facts: {}, primary: { label: "Pack 2 with parent", onSelect: onPrimary }, menu },
+        { id: "kit", kind: "gear", title: "Cable", facts: {}, primary: { label: "Nope", onSelect: vi.fn() }, menu },
+      ],
+    };
+    render(<LineRowList rows={[parent]} columns={[]} />);
+    await user.click(screen.getByRole("button", { name: "Expand" }));
+    await user.click(screen.getByRole("button", { name: "Pack 2 with parent" }));
+    expect(onPrimary).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "PSU actions" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Nope" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cable actions" })).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });

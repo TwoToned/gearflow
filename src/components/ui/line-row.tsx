@@ -111,6 +111,33 @@ function FactBody({ fact }: { fact?: Fact }) {
   );
 }
 
+/** `primary` is sanctioned for accessory rows only (§9.5); ignored (dev warning) elsewhere. */
+function allowedPrimary(row: LineRowData): LineRowData["primary"] {
+  if (!row.primary) return undefined;
+  if (row.kind === "accessory") return row.primary;
+  if (process.env.NODE_ENV !== "production") {
+    // eslint-disable-next-line no-console -- dev-only guard for a rejected pattern
+    console.warn(`LineRow: ignoring \`primary\` on a "${row.kind}" row; it is only for accessory rows (playbook §10).`);
+  }
+  return undefined;
+}
+
+/** A child has no actions, except an accessory row: its quiet text button and ⋯. */
+function ChildActions({ child }: { child: LineRowData }) {
+  const primary = allowedPrimary(child); // also warns on a misplaced `primary`
+  if (child.kind !== "accessory") return null;
+  return (
+    <span className="inline-flex items-center justify-end gap-1">
+      {primary && (
+        <button type="button" onClick={() => void primary.onSelect()} className="min-h-11 px-2 text-caption font-medium text-ink-2 hover:text-ink">
+          {primary.label}
+        </button>
+      )}
+      {child.menu && <ActionMenu spec={child.menu} label={`${child.title} actions`} />}
+    </span>
+  );
+}
+
 function ChildDesktop({ child, columns, span }: { child: LineRowData; columns: FactColumn[]; span: number }) {
   return (
     <tr data-child-row className="h-11 bg-paper-2/40">
@@ -122,10 +149,12 @@ function ChildDesktop({ child, columns, span }: { child: LineRowData; columns: F
       </td>
       {columns.map((c) => (
         <td key={c.id} className={cn("px-2", c.align === "end" && "text-right")}>
-          <FactBody fact={child.facts[c.id]} />
+          {c.id === "status" && child.status ? <StatusWord status={child.status} /> : <FactBody fact={child.facts[c.id]} />}
         </td>
       ))}
-      <td colSpan={Math.max(span - columns.length - 2, 1)} />
+      <td colSpan={Math.max(span - columns.length - 2, 1)} className="px-1 text-right">
+        <ChildActions child={child} />
+      </td>
     </tr>
   );
 }
@@ -173,6 +202,8 @@ function PhoneChild({ child }: { child: LineRowData }) {
         .map((f) => (
           <FactBody key={f.kind} fact={f} />
         ))}
+      {child.status && child.kind === "accessory" && <StatusWord status={child.status} />}
+      <ChildActions child={child} />
     </div>
   );
 }

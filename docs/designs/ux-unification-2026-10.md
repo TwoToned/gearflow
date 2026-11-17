@@ -1872,8 +1872,8 @@ left here is the glue between them.
   (D56) — the job Finance tab (§8b) follows the hub.
 - **Notifications** page gets a "See all" link from the bell (§6c); **changelog** links
   from Settings › General (§9k).
-- **Shell (§6):** D1 (Scan + More in the bottom nav) is still open. The twelve new
-  prototypes keep the kit's nav (`Home · Jobs · Scan · Warehouse · Assets`).
+- **Shell (§6):** D1 (Scan + More in the bottom nav) was accepted 2026-11-17 and is built in
+  Phase 6. The twelve new prototypes still show the kit's nav (`Home · Jobs · Scan · Warehouse · Assets`).
 
 ---
 
@@ -1886,7 +1886,7 @@ Each phase is one `/autoplan`. Nothing here changes a Convex schema except 2c.
 | 0 | Vocabulary + tokens | `vocabulary.ts`, one stage→intent table, rename Projects→Jobs and Availability→Schedule in nav/palette/breadcrumb, sidebar 220, tablet icon rail, `MoreHorizontal` everywhere, dead code in §1.5 removed | S |
 | 1 | Primitives | `LineRow`, `ActionMenu` (+ per-kind specs), `StatusPill`, `StageFilter`, state glyphs, `AddBar`, `FooterTotals`, `BulkBar`, `RowEditorSheet`, `DetailHeader`; jsdom smoke tests that open every menu and sheet | M |
 | 2a | Equipment tab on the primitives | List view, section subtotals, glyphs, one sub-hire row, accessories as one child line + one editor, AddBar, totals footer, phone row sheet, category-delete confirm | M |
-| 2b | Packing view + Client view | Packing tab → view; container cards with rename/move/unpack; Client view = document structuring applied in the tab | M |
+| 2b | Client view + case cards | ~~Packing tab → view~~ (D3 withdrawn; amended 2026-11-17): Equipment's Client view = document structuring applied in the tab; container cards with rename/move/unpack on the existing Packing tab. The rest of the Packing tab and Versions are §7b (Wave D) | M |
 | 2c | Plan-honouring prep | `containerId` only sent when chosen; `Planned →` glyph in the warehouse; a test that a planned line preps into its planned case when the packer has no active case | S |
 | 3 | Warehouse job page | Stage row replaces tabs + stepper; one card, one table (category on Pick, case from Prepped); `ScanDock` + result line; one scan pipeline with Undo + tone for every result; case chips + case headers replace the rail; accessory rows + `Prep ▾` + scan sheet + deploy gate + return check (§9.5); phone pack mode + row sheet; delete the localStorage pick list; the Returned-tab chip bug | L |
 | 4 | The floor + Returns mode | Board, cards, scope-aware scan dock, live returns board, Undo on all returns, `scanLookup.resolve` wired | M |
@@ -1906,19 +1906,19 @@ the recommended option.
 
 | # | Decision | Recommended | Alternative |
 |---|---|---|---|
-| D1 | Bottom nav gets **Scan** in the centre and **More**; Crew and Assets move into More | Yes — half of warehouse work is on phones (TODOS "Mobile-First Overhaul") and there is no scan entry today | Keep §16's five and add a floating scan button (breaks "nothing floats") |
+| D1 | Bottom nav gets **Scan** in the centre and **More**; Crew and Assets move into More | **Accepted 2026-11-17.** Yes — half of warehouse work is on phones (TODOS "Mobile-First Overhaul") and there is no scan entry today | Keep §16's five and add a floating scan button (breaks "nothing floats") |
 | D2 | Stage colours: Out = solid red (live), Returned = amber, De-prepped = green | **Accepted 2026-11-17.** Yes — it is the §1/§3 mapping applied literally | Keep the landing page's amber/green |
 | D3 | Packing tab becomes a view of Equipment | **Withdrawn 2026-10-27** — the Packing view came out of the Equipment prototype; the tab stays and gets the drag-and-drop case planning on its own | — |
-| D4 | Runsheet route is replaced by Logistics day mode on phones | Yes — one rendering of one data set | Keep both |
-| D5 | Mira moves to the top bar | Yes | Keep the floating button, raise it above the bulk bar |
-| D6 | Manual "Mark deployed / returned / completed" leave the floor cards | Yes, into the job ⋯ with a confirm | Keep on the card |
+| D4 | Runsheet route is replaced by Logistics day mode on phones | **Accepted 2026-11-17.** Yes — one rendering of one data set | Keep both |
+| D5 | Mira moves to the top bar | **Accepted 2026-11-17.** Yes | Keep the floating button, raise it above the bulk bar |
+| D6 | Manual "Mark deployed / returned / completed" leave the floor cards | **Accepted 2026-11-17.** Yes, into the job ⋯ with a confirm | Keep on the card |
 | D7 | "Projects" → "Jobs" in every label (routes unchanged) | **Accepted 2026-11-17.** Yes — the bottom nav and "New job" already say it | Rename the bottom nav to Projects |
-| D8 | Bulk accessories (batteries, pouches) verify on **count** at the bin barcode, not one scan per unit | Yes — they carry no tag; the bin barcode + "how many" is one scan | Per-unit scan of a shared bin code |
-| D9 | Managers deploying with a DEFAULT accessory left behind get the reason **prefilled** from the office note, still editable | Yes — one tap, still logged | Managers skip the reason entirely (today's `logAccessoryCheckoutOverride` behaviour) |
-| D10 | "Remember for the next n" on the scan sheet is scoped to the **job** | Yes — the choice is about this job's gear | Per packer session |
-| D11 | List filters, sort, page and view live in the **URL**; `localStorage` persistence goes | Yes — saved views and dashboard tiles become links, back works (§9b.2) | Keep per-browser persistence and add deep links on top |
-| D12 | Assets registry opens on the **Table**; Grid is remembered per user | Yes — operators look things up, browsing is the exception | Keep today's Grid default |
-| D13 | `Needs you` / `Needs attention` are derived list segments, not stored flags | Yes — same rule as the Overview readiness checklist | A stored "flagged" bit set by the writers |
+| D8 | Bulk accessories (batteries, pouches) verify on **count** at the bin barcode, not one scan per unit | **Accepted 2026-11-17.** Yes — they carry no tag; the bin barcode + "how many" is one scan | Per-unit scan of a shared bin code |
+| D9 | Managers deploying with a DEFAULT accessory left behind get the reason **prefilled** from the office note, still editable | **Accepted 2026-11-17.** Yes — one tap, still logged | Managers skip the reason entirely (today's `logAccessoryCheckoutOverride` behaviour) |
+| D10 | "Remember for the next n" on the scan sheet is scoped to the **job** | **Accepted 2026-11-17.** Yes — the choice is about this job's gear | Per packer session |
+| D11 | List filters, sort, page and view live in the **URL**; `localStorage` persistence goes | **Accepted 2026-11-17.** Yes — saved views and dashboard tiles become links, back works (§9b.2) | Keep per-browser persistence and add deep links on top |
+| D12 | Assets registry opens on the **Table**; Grid is remembered per user | **Accepted 2026-11-17.** Yes — operators look things up, browsing is the exception | Keep today's Grid default |
+| D13 | `Needs you` / `Needs attention` are derived list segments, not stored flags | **Accepted 2026-11-17.** Yes — same rule as the Overview readiness checklist | A stored "flagged" bit set by the writers |
 | D14 | ~~The default Home is the fixed calm layout; the customisable grid moves behind ⋯ › Customise…~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
 | D15 | ~~Lists accept URL-only qualifiers so a stat's number matches the list it opens: Jobs `?seg=active` (booked + out) and `?seg=out&overdue=1`, shown as removable filter words~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
 | D16 | ~~Notifications vocabulary: "Mark read" replaces "Dismiss" (same stored dismissal); `Unread · All` strip~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
@@ -1931,10 +1931,10 @@ the recommended option.
 | D23 | Templates become `Start from template ▾` on wizard step one + a `Manage templates…` dialog; `/projects/templates` redirects | Yes — one way to start a job | Keep the list page |
 | D24 | The wizard writes an Enquiry draft at step one (number allocated then) and `Create job` finishes it | Yes — nothing is lost on a dropped connection | Create only on the last step |
 | D25 | Moving rental dates carries a set project window by the same offset | Yes | Leave the window alone |
-| D26 | `/warehouse/returns` becomes a redirect to `/warehouse?mode=returning`; Returns is a mode of the floor | Yes — one scan surface, one dock, one strip, live subscription replaces Refresh | Keep a separate Returns page sharing the dock component |
-| D27 | Floor columns are derived from unit state; no drag, no stored stage; manual overrides only via card ⋯ › Admin (extends D6) | Yes | Allow drag between columns as a manual override |
-| D28 | Phone has no sticky Scan bar on the floor: the dock and the nav's Scan are the primary (amends playbook §5 sticky-primary rule for surfaces whose dock is the primary) | Yes | Add a `Scan` sticky bar that replaces itself with the bulk bar |
-| D29 | `Late` is a derived outcome (out past end, or returned after it), not a recorded one | Yes | Store `returnedLate` on the unit |
+| D26 | `/warehouse/returns` becomes a redirect to `/warehouse?mode=returning`; Returns is a mode of the floor | **Accepted 2026-11-17.** Yes — one scan surface, one dock, one strip, live subscription replaces Refresh | Keep a separate Returns page sharing the dock component |
+| D27 | Floor columns are derived from unit state; no drag, no stored stage; manual overrides only via card ⋯ › Admin (extends D6) | **Accepted 2026-11-17.** Yes | Allow drag between columns as a manual override |
+| D28 | Phone has no sticky Scan bar on the floor: the dock and the nav's Scan are the primary (amends playbook §5 sticky-primary rule for surfaces whose dock is the primary) | **Accepted 2026-11-17.** Yes | Add a `Scan` sticky bar that replaces itself with the bulk bar |
+| D29 | `Late` is a derived outcome (out past end, or returned after it), not a recorded one | **Accepted 2026-11-17.** Yes | Store `returnedLate` on the unit |
 | D30 | Asset detail opens on a new **Overview** tab (health checklist), tabs controlled with `?tab=` | Yes — mirrors #1061 and answers "is it fit to go out" first | Keep History as the landing tab |
 | D31 | `/assets/registry/[id]/edit` and `/new` become the sheet (redirect to `?edit=1` / open over the list) | Yes | Keep the routes as pages |
 | D32 | Delete leaves the ⋯ and lives only inside Retire, enabled only for an asset with no history | Yes — retire is reversible, delete is not | Keep Delete beside Archive |
@@ -1970,12 +1970,12 @@ the recommended option.
 | D62 | Every `/new` and `/[id]/edit` form route becomes a sheet over its list/record (deep links kept) | Yes | Keep full-page forms |
 | D63 | Bulk stock is created from the asset sheet's `Serialised unit · Bulk stock` words | Yes | Separate entry point |
 | D64 | Service schedule stays a small dialog | Yes — five fields, one decision | Make it a sheet |
-| D65 | Bottom nav and More sheet exactly as 6d.6 (supersedes D1's open details: gating, raise, drill-down) | Yes | Five items + floating Scan (6d.7) |
+| D65 | Bottom nav and More sheet exactly as 6d.6 (supersedes D1's open details: gating, raise, drill-down) | **Accepted 2026-11-17.** Yes | Five items + floating Scan (6d.7) |
 | D66 | Sidebar "Dashboard" is named **Home** everywhere | **Accepted 2026-11-17.** Yes — the bottom nav, the prototype and the page already say Home | Keep Dashboard |
 | D67 | Tablet rail is automatic at ≤ 1023 and manual at any width (⌘B, remembered); sub-pages show only under the active module | **Accepted 2026-11-17.** Yes | Always-inline sub rows |
 | D68 | One phone breakpoint constant: 859 (prototypes) replaces 768 (`use-mobile.ts`) | **Accepted 2026-11-17.** Yes — a 768 iPad portrait gets the phone layout, tables need 860+ | Keep 768 and add a tablet layout |
-| D69 | Theme moves into the user menu (reachable on phone); org switcher moves to the sidebar head | Yes | Keep both in the avatar menu |
-| D70 | Bell and Home › Notifications read one feed | Yes | Keep mentions-only bell |
+| D69 | Theme moves into the user menu (reachable on phone); org switcher moves to the sidebar head | **Accepted 2026-11-17.** Yes | Keep both in the avatar menu |
+| D70 | Bell and Home › Notifications read one feed | **Accepted 2026-11-17.** Yes | Keep mentions-only bell |
 | D71 | Order gets a derived `On hire`/`Returned` state and a stored return date; Mark returned and Extend hire verbs | Yes | Keep Received as the only word |
 | D72 | Crew Documents with expiry dates drive an Overview health row | Yes | Keep licences in notes |
 | D73 | Client Merge ships with undo and a named list of what moves | Yes | Archive only |

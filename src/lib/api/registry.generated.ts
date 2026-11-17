@@ -42701,12 +42701,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "now",
+        "name": "moves",
         "optional": false,
-        "type": "number"
+        "type": "array"
       },
       {
-        "name": "offsetDays",
+        "name": "now",
         "optional": false,
         "type": "number"
       },
@@ -42719,15 +42719,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
-      },
-      {
-        "name": "serviceIds",
-        "optional": false,
-        "type": "array"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fa550253d6229705",
+    "argsSha": "b17ed0e27548ac63",
     "returnsSha": "91073b15d3fa7820",
     "stability": "tracks-app",
     "summary": null,

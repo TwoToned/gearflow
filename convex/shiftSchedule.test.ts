@@ -45,10 +45,17 @@ async function seed(t: T) {
 }
 const svc = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 const asg = (t: T) => t.run(async (ctx) => ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", "s1")).collect());
-const shift = (t: T, args: Partial<{ offsetDays: number; serviceIds: string[]; projectId: string; orgId: string; auditId: string }>, as = ORG) =>
+type Move = { offsetDays: number; serviceIds: string[] };
+const shift = (
+  t: T,
+  args: Partial<{ offsetDays: number; serviceIds: string[]; moves: Move[]; projectId: string; auditId: string }> = {},
+  as = ORG,
+) =>
   t.withIdentity(asUser(as)).mutation(api.projectServicesWrites.shiftScheduleNative, {
-    orgId: ORG, projectId: "p1", offsetDays: 2, serviceIds: ["s1", "s2"], now: NOW + 1, actor: ACTOR, auditId: "shift1", ...args,
-  });
+    orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: args.auditId ?? "shift1",
+    projectId: args.projectId ?? "p1",
+    moves: args.moves ?? [{ offsetDays: args.offsetDays ?? 2, serviceIds: args.serviceIds ?? ["s1", "s2"] }],
+  } as never);
 
 describe("shiftScheduleNative", () => {
   test("moves services and their crew calls by whole days; times stay", async () => {
@@ -81,7 +88,7 @@ describe("shiftScheduleNative", () => {
     await shift(t, {});
     const log = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "shift1")).first());
     expect(log?.action).toBe("schedule_shifted");
-    expect(log?.summary).toBe("Moved 2 services and 1 crew call by 2 days");
+    expect(log?.summary).toBe("Moved 2 services and 1 crew call");
   });
 
   test("a service from another org rejects the WHOLE call (nothing moves)", async () => {
@@ -119,6 +126,21 @@ describe("shiftScheduleNative", () => {
     await expect(shift(t, { offsetDays: 400 })).rejects.toThrow(/at most/i);
     await expect(shift(t, { offsetDays: 1.5 })).rejects.toThrow(/whole/i);
     await expect(shift(t, { serviceIds: Array.from({ length: 201 }, (_, i) => `x${i}`) })).rejects.toThrow(/at most/i);
+  });
+
+  test("two offsets in one call move each group by its own amount", async () => {
+    const t = makeT();
+    await seed(t);
+    await shift(t, { moves: [{ offsetDays: 1, serviceIds: ["s1"] }, { offsetDays: 3, serviceIds: ["s2"] }] });
+    expect((await svc(t, "s1"))?.date).toBe(D1 + DAY);
+    expect((await svc(t, "s2"))?.date).toBe(D1 + 3 * DAY);
+  });
+
+  test("the same service in two groups rejects (nothing moves)", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(shift(t, { moves: [{ offsetDays: 1, serviceIds: ["s1"] }, { offsetDays: 2, serviceIds: ["s1"] }] })).rejects.toThrow(/once/i);
+    expect((await svc(t, "s1"))?.date).toBe(D1);
   });
 
   test("offset 0 or no ids is a no-op", async () => {

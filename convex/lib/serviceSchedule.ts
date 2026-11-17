@@ -11,6 +11,8 @@
 export const DAY_MS = 86_400_000;
 /** A shift of more than a year is a typo, not a re-timing. */
 export const MAX_SHIFT_DAYS = 366;
+/** Distinct offsets in one call: load in and load out, with headroom. */
+export const MAX_SHIFT_GROUPS = 4;
 /** Services moved in one call (a job rarely has more than a few dozen). */
 export const MAX_SHIFT_SERVICES = 200;
 

@@ -9,7 +9,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
 import { assertArrayMax, assertNumRange, assertStrLen } from "./lib/fieldGuards";
-import { MAX_SHIFT_DAYS, MAX_SHIFT_SERVICES, shiftDay } from "./lib/serviceSchedule";
+import { MAX_SHIFT_DAYS, MAX_SHIFT_GROUPS, MAX_SHIFT_SERVICES, shiftDay } from "./lib/serviceSchedule";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
@@ -877,8 +877,10 @@ export const shiftScheduleNative = mutation({
   args: {
     orgId: v.string(),
     projectId: v.string(),
-    offsetDays: v.number(),
-    serviceIds: v.array(v.string()),
+    // Load in and load out can move by different amounts (delivery + bump in follow the
+    // first, bump out + pickup the second), so a call carries a few groups, still ONE
+    // transaction. A service may appear in only one group.
+    moves: v.array(v.object({ offsetDays: v.number(), serviceIds: v.array(v.string()) })),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -889,26 +891,38 @@ export const shiftScheduleNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "project", "update");
     const actor = await resolveActor(ctx, a.actor);
 
-    assertNumRange(a.offsetDays, "offsetDays", { min: -MAX_SHIFT_DAYS, max: MAX_SHIFT_DAYS, integer: true });
-    assertArrayMax(a.serviceIds, "serviceIds", MAX_SHIFT_SERVICES);
-    if (a.offsetDays === 0 || a.serviceIds.length === 0) return { services: 0, crewCalls: 0, undated: 0 };
+    assertArrayMax(a.moves, "moves", MAX_SHIFT_GROUPS);
+    let total = 0;
+    for (const m of a.moves) {
+      assertNumRange(m.offsetDays, "offsetDays", { min: -MAX_SHIFT_DAYS, max: MAX_SHIFT_DAYS, integer: true });
+      assertArrayMax(m.serviceIds, "serviceIds", MAX_SHIFT_SERVICES);
+      total += m.serviceIds.length;
+    }
+    assertNumRange(total, "serviceIds", { max: MAX_SHIFT_SERVICES });
 
     // Validate everything first: all-or-nothing.
     await requireProjectInOrg(ctx, a.projectId, a.orgId);
-    const services: Doc<"projectServices">[] = [];
-    for (const id of new Set(a.serviceIds)) {
-      const s = await requireServiceInOrg(ctx, id, a.orgId);
-      if (s.projectId !== a.projectId) throw new ConvexError("Service not found");
-      services.push(s);
+    const seen = new Set<string>();
+    const planned: { service: Doc<"projectServices">; offsetDays: number }[] = [];
+    for (const m of a.moves) {
+      if (m.offsetDays === 0) continue;
+      for (const id of m.serviceIds) {
+        if (seen.has(id)) throw new ConvexError("A service can only be moved once per call");
+        seen.add(id);
+        const service = await requireServiceInOrg(ctx, id, a.orgId);
+        if (service.projectId !== a.projectId) throw new ConvexError("Service not found");
+        planned.push({ service, offsetDays: m.offsetDays });
+      }
     }
+    if (planned.length === 0) return { services: 0, crewCalls: 0, undated: 0 };
 
     let shifted = 0, crewCalls = 0, undated = 0;
-    for (const s of services) {
+    for (const { service: s, offsetDays } of planned) {
       if (s.date == null) { undated++; continue; }
       const next: ServiceSchedule = {
         ...scheduleOf(s),
-        date: shiftDay(s.date, a.offsetDays),
-        endDate: shiftDay(s.endDate, a.offsetDays),
+        date: shiftDay(s.date, offsetDays),
+        endDate: shiftDay(s.endDate, offsetDays),
       };
       await ctx.db.patch(s._id, { date: next.date, endDate: next.endDate, updatedAt: a.now });
       crewCalls += await syncServiceCrewSchedule(ctx, { id: s.id, type: s.type }, a.orgId, next, a.now);
@@ -918,11 +932,11 @@ export const shiftScheduleNative = mutation({
     if (shifted > 0) {
       await logService(ctx, {
         orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
-        action: "schedule_shifted", entityId: services[0].id,
+        action: "schedule_shifted", entityId: planned[0].service.id,
         entityName: `${shifted} service${shifted === 1 ? "" : "s"}`,
-        summary: `Moved ${shifted} service${shifted === 1 ? "" : "s"} and ${crewCalls} crew call${crewCalls === 1 ? "" : "s"} by ${a.offsetDays} day${Math.abs(a.offsetDays) === 1 ? "" : "s"}`,
+        summary: `Moved ${shifted} service${shifted === 1 ? "" : "s"} and ${crewCalls} crew call${crewCalls === 1 ? "" : "s"}`,
         projectId: a.projectId,
-        metadata: { offsetDays: a.offsetDays },
+        metadata: { offsets: a.moves.map((m) => m.offsetDays) },
       });
     }
     return { services: shifted, crewCalls, undated };

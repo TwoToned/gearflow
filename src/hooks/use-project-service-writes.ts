@@ -140,7 +140,7 @@ export function useProjectServiceWrites() {
      *  Undo is this same call with the negative offset. */
     shiftSchedule: async (
       projectId: string,
-      input: { offsetDays: number; serviceIds: string[] },
+      input: { moves: { offsetDays: number; serviceIds: string[] }[] },
     ): Promise<{ services: number; crewCalls: number; undated: number }> => {
       const p = shiftScheduleSchema.parse(input);
       return shiftM({ projectId, orgId: requireOrg(), ...p, now: Date.now(), actor: actor(), auditId: createId() });

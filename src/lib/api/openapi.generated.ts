@@ -32047,20 +32047,16 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "offsetDays": {
-                        "type": "number"
+                      "moves": {
+                        "type": "array"
                       },
                       "projectId": {
                         "type": "string"
-                      },
-                      "serviceIds": {
-                        "type": "array"
                       }
                     },
                     "required": [
-                      "offsetDays",
-                      "projectId",
-                      "serviceIds"
+                      "moves",
+                      "projectId"
                     ],
                     "additionalProperties": false
                   },

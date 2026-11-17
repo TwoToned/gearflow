@@ -56,6 +56,7 @@ export function prepRowIds(lineItems: readonly LineItem[], ids: Iterable<string>
   const byId = new Map(lineItems.map((l) => [l.id, l]));
   return [...ids].filter((id) => {
     const l = byId.get(id);
-    return !!l && parentAlreadyPrepped(l) === (kind === "accessories");
+    // Packed = an accessory parent whose own gear is packed/out, or any line already marked PACKED.
+    return !!l && (parentAlreadyPrepped(l) || l.prepStatus === "PACKED") === (kind === "accessories");
   });
 }

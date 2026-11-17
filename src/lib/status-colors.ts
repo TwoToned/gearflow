@@ -125,13 +125,27 @@ const projectStatusIntent: Record<string, ColorIntent> = {
   CANCELLED: "error",
 };
 
+/**
+ * Gear stage → intent (UX unification D2, spec §4) — the ONE table every stage
+ * renderer reads (warehouse floor cards, lifecycle stepper, stage chips).
+ * Words live in `vocabulary.ts`.
+ */
+const gearStageIntent: Record<GearStageKey, ColorIntent> = {
+  to_prep: "neutral", // nothing has happened yet
+  prepped: "info", // packed and waiting
+  deployed: "primary", // Out: solid red is reserved for CHECKED_OUT / live
+  returned: "warning", // work remains
+  deprepped: "success", // done
+  closed: "neutral", // archived (rendered outline by the caller)
+};
+
 const lineItemStatusIntent: Record<string, ColorIntent> = {
   QUOTED: "info",
   CONFIRMED: "success",
-  PREPPED: "warning",
-  CHECKED_OUT: "primary",
-  // UX D2: gear that is back is "work remains" (de-prep, checks), not live.
-  RETURNED: "warning",
+  // Stage colours are defined once, in gearStageIntent (D2 / R-3.1).
+  PREPPED: gearStageIntent.prepped,
+  CHECKED_OUT: gearStageIntent.deployed,
+  RETURNED: gearStageIntent.returned,
   CANCELLED: "error",
 };
 
@@ -319,20 +333,6 @@ const quoteStatusIntentMap: Record<string, ColorIntent> = {
   DECLINED: "error",
   EXPIRED: "warning",
   RECALLED: "warning",
-};
-
-/**
- * Gear stage → intent (UX unification D2, spec §4) — the ONE table every stage
- * renderer reads (warehouse floor cards, lifecycle stepper, stage chips).
- * Words live in `vocabulary.ts`.
- */
-const gearStageIntent: Record<GearStageKey, ColorIntent> = {
-  to_prep: "neutral", // nothing has happened yet
-  prepped: "info", // packed and waiting
-  deployed: "primary", // Out: solid red is reserved for CHECKED_OUT / live
-  returned: "warning", // work remains
-  deprepped: "success", // done
-  closed: "neutral", // archived (rendered outline by the caller)
 };
 
 // ─── Category Registry ──────────────────────────────────────────

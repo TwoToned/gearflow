@@ -43,6 +43,13 @@ describe("gear stage → intent (D2): the one table", () => {
     expect(getStatusIntent("gearStage", stage)).toBe(intent);
   });
 
+  it("the line-item status map agrees with the gearStage table (defined once)", () => {
+    expect(getStatusIntent("lineItem", "PREPPED")).toBe(getStatusIntent("gearStage", "prepped"));
+    expect(getStatusIntent("lineItem", "CHECKED_OUT")).toBe(getStatusIntent("gearStage", "deployed"));
+    expect(getStatusIntent("lineItem", "RETURNED")).toBe(getStatusIntent("gearStage", "returned"));
+    expect(getStatusIntent("lineItem", "PREPPED")).toBe("info");
+  });
+
   it("line-item RETURNED is warning, CHECKED_OUT primary; the project status intent is unchanged", () => {
     expect(getStatusIntent("lineItem", "RETURNED")).toBe("warning");
     expect(getStatusIntent("lineItem", "CHECKED_OUT")).toBe("primary");

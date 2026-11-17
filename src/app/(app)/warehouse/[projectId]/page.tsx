@@ -1,7 +1,7 @@
 "use client";
-import { GEAR_STAGE_LABELS, OUT_LABEL } from "@/lib/vocabulary";
 import { ReviewScanError } from "@/lib/scan-intake";
 // use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
+import { GEAR_STAGE_LABELS, OUT_LABEL } from "@/lib/vocabulary";
 
 import { use, useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";

@@ -32,7 +32,7 @@ export interface DetailHeaderProps {
   status: StatusValue;
   /**
    * The pricing-lock glyph. `label` titles the menu (`Pricing locked · Jayden ·
-   * Thu 6 Nov`); `summary` says what is read-only and is the glyph's tooltip.
+   * Thu 6 Nov`); `summary` says what is read-only: the menu header (the glyph's tooltip is the label).
    */
   lock?: { label: string; summary: string; menu: ActionMenuSpec };
   /** Job variant: number · client · dates · days, joined with a middle dot. */
@@ -64,11 +64,12 @@ function LockGlyph({ lock }: { lock: NonNullable<DetailHeaderProps["lock"]> }) {
     <ActionMenu
       spec={lock.menu}
       label={lock.label}
+      header={lock.summary}
       trigger={
         <button
           type="button"
           aria-label={lock.label}
-          title={lock.summary}
+          title={lock.label}
           className="inline-flex size-[22px] items-center justify-center rounded-full border border-line-2 text-muted hover:border-control-line hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red [@media(pointer:coarse)]:size-11"
         >
           <Lock className="size-[11px]" aria-hidden="true" />

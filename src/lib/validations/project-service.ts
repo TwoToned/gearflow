@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { crewRateFieldsSchema } from "./crew";
+import { MAX_SHIFT_DAYS, MAX_SHIFT_SERVICES } from "../../../convex/lib/serviceSchedule";
 
 /**
  * One row of the per-service crew rate table (services-panel.tsx). Rate fields are
@@ -76,3 +77,14 @@ export const serviceTemplateSchema = z.object({
 });
 
 export type ServiceTemplateFormValues = z.input<typeof serviceTemplateSchema>;
+
+/**
+ * `projectServicesWrites.shiftScheduleNative` input (linked re-timing, UX
+ * Phase 5). The bounds are the Convex mutation's own constants so the two can
+ * never drift (R-3.1); the server re-checks them (the browser parse is bypassable).
+ */
+export const shiftScheduleSchema = z.object({
+  offsetDays: z.number().int().min(-MAX_SHIFT_DAYS).max(MAX_SHIFT_DAYS),
+  serviceIds: z.array(z.string().min(1)).max(MAX_SHIFT_SERVICES),
+});
+export type ShiftScheduleInput = z.input<typeof shiftScheduleSchema>;

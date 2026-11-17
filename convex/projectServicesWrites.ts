@@ -8,7 +8,8 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
-import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
+import { assertArrayMax, assertNumRange, assertStrLen } from "./lib/fieldGuards";
+import { MAX_SHIFT_DAYS, MAX_SHIFT_SERVICES, shiftDay } from "./lib/serviceSchedule";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
@@ -171,7 +172,7 @@ async function syncServiceCrewSchedule(
   orgId: string,
   next: ServiceSchedule,
   now: number,
-): Promise<void> {
+): Promise<number> {
   const { crewStart, crewEnd } = deriveCrewTimes(next.startTime, next.endTime, next.scheduledTime, service.type);
   const assignments = (
     await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", service.id)).collect()
@@ -193,6 +194,7 @@ async function syncServiceCrewSchedule(
     await recalcServiceCostFromCrew(ctx, service.id, orgId, now);
     await recalcServiceChargeFromCrew(ctx, service.id, orgId, now);
   }
+  return assignments.length;
 }
 
 // Shared service-input args (create + update). Dates are epoch-ms; the hook parses
@@ -858,6 +860,72 @@ export const updateServiceNative = mutation({
     });
 
     return { id: a.id };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// shiftScheduleNative — move N services (and their crew calls) by whole days, ATOMICALLY.
+// The Logistics dates sheet's "move services and crew calls with the window" (spec §8) and
+// its Undo (the same call with the negative offset). Every id is validated (org + project)
+// BEFORE the first write, so one bad id rejects the lot and nothing moves. Date-only: times,
+// money and the pricing lock are untouched (the move does not change what anything costs),
+// and the crew re-sync is the SAME `syncServiceCrewSchedule` updateServiceNative uses.
+// project:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const shiftScheduleNative = mutation({
+  returns: v.object({ services: v.number(), crewCalls: v.number(), undated: v.number() }),
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    offsetDays: v.number(),
+    serviceIds: v.array(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "projectService");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "project", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    assertNumRange(a.offsetDays, "offsetDays", { min: -MAX_SHIFT_DAYS, max: MAX_SHIFT_DAYS, integer: true });
+    assertArrayMax(a.serviceIds, "serviceIds", MAX_SHIFT_SERVICES);
+    if (a.offsetDays === 0 || a.serviceIds.length === 0) return { services: 0, crewCalls: 0, undated: 0 };
+
+    // Validate everything first: all-or-nothing.
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    const services: Doc<"projectServices">[] = [];
+    for (const id of new Set(a.serviceIds)) {
+      const s = await requireServiceInOrg(ctx, id, a.orgId);
+      if (s.projectId !== a.projectId) throw new ConvexError("Service not found");
+      services.push(s);
+    }
+
+    let shifted = 0, crewCalls = 0, undated = 0;
+    for (const s of services) {
+      if (s.date == null) { undated++; continue; }
+      const next: ServiceSchedule = {
+        ...scheduleOf(s),
+        date: shiftDay(s.date, a.offsetDays),
+        endDate: shiftDay(s.endDate, a.offsetDays),
+      };
+      await ctx.db.patch(s._id, { date: next.date, endDate: next.endDate, updatedAt: a.now });
+      crewCalls += await syncServiceCrewSchedule(ctx, { id: s.id, type: s.type }, a.orgId, next, a.now);
+      shifted++;
+    }
+
+    if (shifted > 0) {
+      await logService(ctx, {
+        orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+        action: "schedule_shifted", entityId: services[0].id,
+        entityName: `${shifted} service${shifted === 1 ? "" : "s"}`,
+        summary: `Moved ${shifted} service${shifted === 1 ? "" : "s"} and ${crewCalls} crew call${crewCalls === 1 ? "" : "s"} by ${a.offsetDays} day${Math.abs(a.offsetDays) === 1 ? "" : "s"}`,
+        projectId: a.projectId,
+        metadata: { offsetDays: a.offsetDays },
+      });
+    }
+    return { services: shifted, crewCalls, undated };
   },
 });
 
@@ -1654,6 +1722,9 @@ export const agentOps: AgentOpsAnnotations = {
   deleteServiceNative: { danger: "high" }, // full cascade delete: line item, crew assignments, shifts, time entries
   deleteServiceTemplateNative: { danger: "high" }, // delete/archive tier (§9) even though a template is recreatable
   generateServicesNative: { danger: "medium" },
+  // Moves dates (and the crew calls riding on them) in one transaction; no money, no deletion,
+  // and a repeat call with the negative offset is an exact reverse. Not "high": nothing is lost.
+  shiftScheduleNative: { danger: "medium" },
   updateServiceNative: { danger: "medium" },
   updateServiceStatusNative: { danger: "medium" },
   updateServiceTemplateNative: { danger: "medium" },

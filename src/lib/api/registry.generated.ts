@@ -42675,6 +42675,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectServicesWrites.shiftScheduleNative",
+    "module": "projectServicesWrites",
+    "fn": "shiftScheduleNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "offsetDays",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "serviceIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fa550253d6229705",
+    "returnsSha": "91073b15d3fa7820",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectServicesWrites.updateServiceNative",
     "module": "projectServicesWrites",
     "fn": "updateServiceNative",
@@ -63444,10 +63506,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1231,
-  agentReachable: 603,
+  total: 1232,
+  agentReachable: 604,
   queries: 441,
-  mutations: 790,
+  mutations: 791,
   agentReachableQueries: 306,
-  agentReachableMutations: 297,
+  agentReachableMutations: 298,
 } as const;

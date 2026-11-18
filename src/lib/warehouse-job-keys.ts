@@ -7,6 +7,7 @@
 import {
   accessoryChildrenOf, bulkUnitKey, isBulkItem, parentAlreadyPrepped, type LineItem,
 } from "@/components/warehouse/warehouse-types";
+import { accessoryKey } from "@/components/warehouse/relocate-accessories";
 import { isInternalStockLine } from "@/lib/warehouse-subhire-filter";
 import { stageQuantity, type JobStage } from "@/lib/warehouse-job-rows";
 import type { PrepSelectionInfo } from "@/components/warehouse/job/prep-split-button";
@@ -15,12 +16,25 @@ import type { PrepSelectionInfo } from "@/components/warehouse/job/prep-split-bu
  *  A sub-hire group child is its own line in the legacy page, so it stays selectable. */
 const isRealKitChild = (li: LineItem) => !!li.isKitChild && (!!li.kitId || isInternalStockLine(li.subHireId));
 
+/** Ids of the ACCESSORY lines still nested under a top-level line (the child rows a user can tick). */
+function nestedAccessoryIds(lineItems: readonly LineItem[]): Set<string> {
+  const ids = new Set<string>();
+  for (const li of lineItems) for (const c of li.childLineItems ?? []) if (c.childKind === "ACCESSORY") ids.add(c.id);
+  return ids;
+}
+
 /** Row ids → legacy keys. A bulk line expands to one `id:i` per unit IN `stage`.
  *  A real kit child is rejected outright: it must go through its parent's kit path. */
 export function keysForRowIds(lineItems: readonly LineItem[], ids: Iterable<string>, stage: JobStage): string[] {
   const byId = new Map(lineItems.map((l) => [l.id, l]));
+  const nested = nestedAccessoryIds(lineItems);
   const keys: string[] = [];
   for (const id of ids) {
+    // A ticked accessory CHILD row is actioned on its own (every unit of that accessory line).
+    if (nested.has(id)) {
+      keys.push(accessoryKey(id));
+      continue;
+    }
     const li = byId.get(id);
     if (li && isRealKitChild(li)) continue;
     if (li && isBulkItem(li)) {

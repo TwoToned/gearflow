@@ -32,6 +32,40 @@ const job = () => {
   });
 };
 
+describe("nested accessory child rows are ticked by group key", () => {
+  const stay = () => {
+    const { handhelds } = { handhelds: job() };
+    const acc = handhelds.childLineItems![0];
+    acc.units = [unit({ id: "bu1", bulkAssetId: "AA", parentUnitAssetId: "a1", containerId: "PELICAN" }), unit({ id: "bu2", bulkAssetId: "AA", parentUnitAssetId: "a2", containerId: "PELICAN" })];
+    return handhelds;
+  };
+  const placed = relocateAccessories([stay()]);
+  const ctx = (stage: "prepped" | "pick") => ({
+    stage, containerLabelById: new Map([["PELICAN", "Pelican"]]), categoryOf: () => "",
+    ...(stage === "prepped" ? { verify: { verified: new Set<string>(), toggle: () => {} } } : {}),
+  });
+
+  it("Prepped/Out: the accessory child is selectable; To pick and kit members are not", () => {
+    const row = buildJobSections(placed.items, ctx("prepped"))[0].rows[0];
+    expect(row.children?.[0]).toMatchObject({ id: "batt", selectable: true });
+    const pick = buildJobSections(placed.items.map((l) => ({ ...l, prepStatus: null, units: [] })), ctx("pick"))[0]?.rows[0];
+    expect(pick?.children?.[0].selectable).toBe(false);
+  });
+
+  it("the ticked child becomes the accessory key and resolves to its units, never the parent's", () => {
+    const keys = keysForRowIds(placed.items, ["batt"], "prepped");
+    expect(keys).toEqual(["acc~batt"]);
+    expect(takeAccessorySelection(keys, placed, () => true).unitIds.sort()).toEqual(["bu1", "bu2"]);
+  });
+
+  it("parent and its accessory ticked together action each unit once", () => {
+    const keys = keysForRowIds(placed.items, ["hh", "batt"], "prepped");
+    const { rest, unitIds } = takeAccessorySelection(keys, placed, () => true);
+    expect(unitIds).toEqual([]);
+    expect(rest.every((k) => k.startsWith("hh"))).toBe(true); // the parent's own keys only
+  });
+});
+
 describe("relocated accessory selection by unit key (Prepped)", () => {
   const placed = relocateAccessories([job()]);
   const sections = buildJobSections(placed.items, {

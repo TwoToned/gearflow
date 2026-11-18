@@ -108,6 +108,8 @@ function accessoryRows(
       facts: { qty: { kind: "qty", value: packed ? a.quantity : 0, of: a.quantity } },
       status: accessoryStatus(packed, stage),
       cells: here ? { place: here } : undefined,
+      // Prepped / Out only: a nested accessory is actioned on its own there (`accessoryKey`); on To pick it rides its parent.
+      selectable: !!verify,
       primary: verify
         ? { label: verify.verified.has(a.id) ? "Verified" : "Verify", onSelect: () => verify.toggle(a.id) }
         : canPackWith(li, packed) ? { label: `Pack ${a.quantity} with parent`, onSelect: () => packWithParent(a.id) } : undefined,
@@ -120,7 +122,7 @@ function kitMemberRows(li: LineItem, verify: NonNullable<JobRowsCtx["verify"]>):
   if (!li.kitId) return [];
   return (li.childLineItems ?? []).filter((c) => c.childKind !== "ACCESSORY" && c.status !== "CANCELLED").map((c) => ({
     // `accessory` is the one child kind that carries an action (line-row); a kit member rides the same row.
-    id: c.id, kind: "accessory", title: modelDisplayName(c), tags: [c.asset?.assetTag ?? c.bulkAsset?.assetTag].filter((t): t is string => !!t),
+    id: c.id, kind: "accessory", selectable: false, title: modelDisplayName(c), tags: [c.asset?.assetTag ?? c.bulkAsset?.assetTag].filter((t): t is string => !!t),
     facts: { qty: { kind: "qty", value: c.quantity } },
     status: { label: verify.verified.has(c.id) ? "Verified" : "Not verified", intent: verify.verified.has(c.id) ? ("info" as const) : ("neutral" as const) },
     primary: { label: verify.verified.has(c.id) ? "Verified" : "Verify", onSelect: () => verify.toggle(c.id) },

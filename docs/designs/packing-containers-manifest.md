@@ -4,7 +4,7 @@
 **Owner**: Jayden
 **Date**: 2026-09-27
 **Branch**: `claude/sweet-noether-k2zb8t`
-**Related**: [FEATUREDOCS/32 (prep containers)](../../FEATUREDOCS/32-preps.md), [FEATUREDOCS/12 (warehouse)](../../FEATUREDOCS/12-warehouse.md), [FEATUREDOCS/13 (PDFs)](../../FEATUREDOCS/13-pdfs.md), [archive/pick-list-delivery-docket-grouping.md](./archive/pick-list-delivery-docket-grouping.md)
+**Related**: FEATUREDOCS/32 (prep containers, retired into [83](../../FEATUREDOCS/83-packing-containers.md)), [FEATUREDOCS/12 (warehouse)](../../FEATUREDOCS/12-warehouse.md), [FEATUREDOCS/13 (PDFs)](../../FEATUREDOCS/13-pdfs.md), [archive/pick-list-delivery-docket-grouping.md](./archive/pick-list-delivery-docket-grouping.md)
 
 ## 0. TL;DR
 

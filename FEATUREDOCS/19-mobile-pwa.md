@@ -396,3 +396,14 @@ rounded-none border-0` plus `env(safe-area-inset-*)` padding. Examples:
 ## One phone breakpoint (D68) and the tablet rail (D67)
 
 Phone is `max-width: 859px`; Tailwind's `md` is moved to 860px (`--breakpoint-md` in `globals.css`), so every `md:` class and `useIsMobile()` agree. The constants live in `src/lib/breakpoints.ts` (`PHONE_MAX` 859, `TABLET_MAX` 1023) and `breakpoints.test.ts` fails on a hard-coded 767/768. iPad portrait therefore gets the phone layout. At 860-1023px the sidebar is an automatic 72px icon rail (flyouts carry every sub-page); `⌘B` is a no-op there and collapses to the rail at >= 1024px.
+
+## Warehouse phone pack mode (UX Phase 3, §9.4)
+
+The warehouse job page is the same page on a phone, not a second app. Rows are the phone `LineRow` (62 px);
+a row tap opens `JobRowSheet` (`src/components/warehouse/job/job-row-sheet.tsx`, a `BottomSheet`): status and
+case, tags and count, the accessories first (each with its own `Pack` / `Verify` action), a tick action and the
+row's menu under ⋯. The ticked-row verbs live in `StageActionBar`, which on a phone is portaled to `<body>` and
+pinned above the bottom nav through `PinnedAboveBottomNav` (the dock `BulkBar` uses; the portal is
+load-bearing, see that component). Controls are ≥ 44 px. The scan dock and result strip are the same
+components as desktop; the camera scanner rules above are unchanged. Not yet in the sheet: `Pack into` case
+chips and unit chips. The scan sheet's "Remember for the next n" is in memory per job, never `localStorage`.

@@ -760,3 +760,21 @@ moves it back a stage). Any accessory — nested or relocated — can also be
 selected and actioned on its own, before or after its parent. The rule is
 `convex/lib/accessoryRelocation.ts`. Loose (unpacked) accessories still travel
 with the parent exactly as above.
+
+## Accessories on the floor — the job page (UX Phase 3, §9.5)
+
+- **Scan sheet.** Scanning a parent with unpacked accessories opens `ScanAccessoryDialog` (tick what is with
+  it; `Prep with n` / `without` / accessories-only). **"Remember for the next n units on this job"** (D10)
+  answers the line's next n scans silently: job-scoped, in memory (`src/lib/warehouse-scan-memory.ts`), NOT
+  `localStorage`, not shared between packers (shared = schema follow-up). Only with / without are remembered.
+- **What a pack really did.** `checkRecordOps.prepItems` (accessories-only items) returns
+  `packedAccessoryUnits` (`{ lineItemId, unitId, parentUnitAssetId? }`: the accessory units THIS call flipped
+  to PACKED, per parent unit, honouring `includeAccessoryIds`; one already PACKED is not reported) and
+  `packedAccessoryLineIds` (their child lines). `prepUnit` / `packParentlessAccessories` produce it; it is
+  never a re-read of line state. The deploy gate compares the marked accessories with this set: a short pack
+  keeps the gate open, deploys nothing, and "all" is only logged when nothing was left behind.
+- **Deploy gate** (`DeployGateDialog`): every row decided; D9 prefills a DEFAULT's reason from
+  `accessoryPlan.excludedReasons`; only operator/prefill reasons are logged (an optional leave with no reason
+  logs "No reason recorded").
+- **De-prep scan.** A serial tag carries its `assetId` to `deprepItems`, so THAT unit de-preps; an accessory
+  tag goes through the unit-level `DEPREP`; a bulk bin asks for a count and matches only that bin's units.

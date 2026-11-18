@@ -98,9 +98,13 @@ For a `WET_HIRE` job, crew is not a footnote — it is half the deliverable.
 
 ### Step 5 — pick, pack, paperwork
 
-Gear moves Pick/Prep → Deploy → out. A line leaves Pick/Prep only once it is
-actually `PACKED`. Prep containers ("Case 3", "Rack A") organise the pick — use
-them in your reporting so the warehouse can find things.
+Gear moves To pick → Prepped → Out. A line leaves To pick only once it is
+actually `PACKED`. Cases ("Case 3", "Rack A") are packing containers: the
+Prepped stage groups by case, with relocated accessories listed under the case
+they are really in. Use case names in your reporting so the warehouse can find
+things. On the floor, scanning a serial tag on the Returned stage de-preps that
+one unit; scanning a parent with accessories asks which are with it (and can
+remember the answer for the line's next units on this job).
 
 Regenerate the warehouse documents once the pick is settled:
 

@@ -294,3 +294,23 @@ async function accUnitDoc(ctx: import("./_generated/server").MutationCtx) {
   }
   return null;
 }
+
+describe("prepItems reports what an accessories-only prep actually packed", () => {
+  test("returns the packed accessory child line ids; a plain prep reports none", async () => {
+    const t = makeT();
+    await seed(t);
+    const plain = await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
+    });
+    expect(plain.packedAccessoryLineIds).toEqual([]); // not an accessories-only call
+    const only = await svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR,
+      items: [{ lineItemId: "L1", assetId: "a1", accessoriesOnly: true }],
+    });
+    const kids = await t.run(async (ctx) =>
+      (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect())
+        .filter((c) => c.childKind === "ACCESSORY" && c.prepStatus === "PACKED").map((c) => c.id));
+    expect(kids.length).toBeGreaterThan(0);
+    expect([...only.packedAccessoryLineIds].sort()).toEqual([...kids].sort());
+  });
+});

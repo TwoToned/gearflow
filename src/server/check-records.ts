@@ -177,7 +177,7 @@ export async function prepItemsBatch(
     "warehouse",
     "check_out"
   );
-  if (items.length === 0) return serialize([]);
+  if (items.length === 0) return serialize({ lines: [], packedAccessoryLineIds: [] as string[] });
 
   const convex = await getConvexClient();
 
@@ -240,7 +240,8 @@ export async function prepItemsBatch(
     }),
   );
 
-  return serialize(grafted);
+  // `packedAccessoryLineIds`: what an accessories-only prep really packed (see checkRecordOps.prepItems).
+  return serialize({ lines: grafted, packedAccessoryLineIds: res.packedAccessoryLineIds });
 }
 
 export async function deprepItem(

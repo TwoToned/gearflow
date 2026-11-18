@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
-import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup, resolveOrCreateContainerByLabel, removeCustomUnitAccessories } from "./lib/fulfillment";
+import { accessoryChildrenOf, ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup, resolveOrCreateContainerByLabel, removeCustomUnitAccessories } from "./lib/fulfillment";
 import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 
@@ -196,9 +196,23 @@ export const prepItems = mutation({
     }
     // Once per batch, after every unit has landed — never inside the loop.
     await autoAdvanceIfPrepped(ctx, a, touched.size);
-    return { ids: [...touched] };
+    return { ids: [...touched], packedAccessoryLineIds: await packedAccessoryLineIds(ctx, a.organizationId, a.items) };
   },
 });
+
+/** What an accessories-only prep ACTUALLY left packed (read after the writes, same transaction): the
+ *  ids of the accessory child lines of every `accessoriesOnly` item that now read PACKED. The client
+ *  compares this with what it asked for, so a short pack is never mistaken for a full one. */
+async function packedAccessoryLineIds(ctx: MutationCtx, organizationId: string, items: Array<{ lineItemId: string; accessoriesOnly?: boolean }>): Promise<string[]> {
+  const packed = new Set<string>();
+  const parents = new Set(items.filter((i) => i.accessoriesOnly).map((i) => i.lineItemId));
+  for (const parentId of parents) {
+    for (const child of await accessoryChildrenOf(ctx, organizationId, parentId)) {
+      if (child.prepStatus === "PACKED") packed.add(child.id);
+    }
+  }
+  return [...packed];
+}
 
 /** Core deprep of a single line — extracted so both the single `deprepItem`
  *  mutation and the batched `deprepItems` mutation run byte-identical logic. */

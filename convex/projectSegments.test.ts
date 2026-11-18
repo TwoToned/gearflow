@@ -8,7 +8,14 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { inStatusSegment, isOutPastEnd, matchesJobFilter, overlapsWindow } from "./lib/projectSegments";
+import {
+  BLOCKING_THREAD_CAP,
+  STALE_QUOTE_JOB_CAP,
+  inStatusSegment,
+  isOutPastEnd,
+  matchesJobFilter,
+  overlapsWindow,
+} from "./lib/projectSegments";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -45,7 +52,9 @@ async function seed(t: T) {
     await ctx.db.insert("projects", base("stale", "QUOTED", { updatedAt: NOW - 30 * DAY }));
     // QUOTED, quote sent 2 days ago: fine.
     await ctx.db.insert("projects", base("fresh", "QUOTED", { updatedAt: NOW - 30 * DAY }));
-    await ctx.db.insert("projects", base("conf", "CONFIRMED", { rentalStartDate: NOW + 5 * DAY, rentalEndDate: NOW + 7 * DAY }));
+    // In the overbooking horizon, so it needs a live version (the board reads version-scoped lines).
+    await ctx.db.insert("projects", base("conf", "CONFIRMED", { rentalStartDate: NOW + 5 * DAY, rentalEndDate: NOW + 7 * DAY, liveVersionId: "v-conf" }));
+    await ctx.db.insert("projectVersions", { id: "v-conf", organizationId: ORG, projectId: "conf", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projects", base("late", "CHECKED_OUT", { rentalEndDate: NOW - 2 * DAY }));
     await ctx.db.insert("projects", base("ontime", "ON_SITE", { rentalEndDate: NOW + 2 * DAY }));
     await ctx.db.insert("projects", base("block", "CONFIRMED"));
@@ -158,5 +167,78 @@ describe("projects.listPage list-page filters", () => {
     const t = makeT();
     await seed(t);
     expect((await list(t, {})).items.map((p) => p.id)).not.toContain("foreign");
+  });
+});
+
+describe("needs you: hard-overbooked jobs", () => {
+  async function seedOverbooked(t: T, org: string, prefix: string) {
+    await t.run(async (ctx) => {
+      const model = `${prefix}-mdl`;
+      const project = `${prefix}-job`;
+      await ctx.db.insert("models", { id: model, organizationId: org, name: "IMX6A", assetType: "SERIALIZED" });
+      await ctx.db.insert("assets", { id: `${prefix}-a0`, organizationId: org, modelId: model, assetTag: `${prefix}-0`, status: "AVAILABLE" });
+      await ctx.db.insert("projects", {
+        ...base(project, "CONFIRMED", { rentalStartDate: NOW + 2 * DAY, rentalEndDate: NOW + 5 * DAY, liveVersionId: `${prefix}-v` }),
+        organizationId: org,
+      });
+      await ctx.db.insert("projectVersions", { id: `${prefix}-v`, organizationId: org, projectId: project, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", {
+        id: `${prefix}-l`, organizationId: org, projectId: project, modelId: model, status: "CONFIRMED", quantity: 3, type: "EQUIPMENT",
+        versionId: `${prefix}-v`, lineageId: `${prefix}-l`,
+      });
+    });
+  }
+
+  test("an overbooked job is in needs; a foreign org's overbooked job is not", async () => {
+    const t = makeT();
+    await seed(t);
+    await seedOverbooked(t, ORG, "own");
+    await seedOverbooked(t, OTHER, "far");
+    const ids = await t.withIdentity(asUser).query(api.projects.needsYouIds, { orgId: ORG, now: NOW });
+    expect(ids).toContain("own-job");
+    expect(ids).not.toContain("far-job");
+  });
+});
+
+describe("needs you: bounded reads", () => {
+  const thread = (entityType: string, entityId: string, projectId: string | undefined, at: number) => ({
+    orgId: ORG, entityType, entityId, ...(projectId ? { projectId } : {}), status: "open" as const, isBlocking: true,
+    createdBy: USER, createdByName: "U", createdAt: at, updatedAt: at,
+  });
+
+  test("a blocking thread on a non-project entity does not flag a job with the same id", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("commentThreads", thread("asset", "enq", undefined, NOW));
+    });
+    const ids = await t.withIdentity(asUser).query(api.projects.needsYouIds, { orgId: ORG, now: NOW });
+    expect(ids).not.toContain("enq");
+  });
+
+  test("the blocking-thread cap keeps the newest threads", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", base("oldest", "CONFIRMED"));
+      await ctx.db.insert("commentThreads", thread("project", "oldest", "oldest", NOW - DAY));
+      for (let i = 0; i < BLOCKING_THREAD_CAP; i++) await ctx.db.insert("commentThreads", thread("project", "conf", "conf", NOW));
+    });
+    const ids = await t.withIdentity(asUser).query(api.projects.needsYouIds, { orgId: ORG, now: NOW });
+    expect(ids).toContain("conf");
+    expect(ids).not.toContain("oldest");
+  });
+
+  test("only STALE_QUOTE_JOB_CAP quoted jobs are checked, most recently edited first", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "owner" });
+      for (let i = 0; i <= STALE_QUOTE_JOB_CAP; i++) {
+        await ctx.db.insert("projects", base(`q${i}`, "QUOTED", { updatedAt: NOW - 100 * DAY - i * 1000 }));
+      }
+    });
+    const ids = await t.withIdentity(asUser).query(api.projects.needsYouIds, { orgId: ORG, now: NOW });
+    expect(ids).toHaveLength(STALE_QUOTE_JOB_CAP);
+    expect(ids).not.toContain(`q${STALE_QUOTE_JOB_CAP}`);
   });
 });

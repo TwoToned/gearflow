@@ -129,6 +129,46 @@ export type InlineLineItemPatch =
    *  have no availability concept to overbook. */
   | { field: "quantity"; value: number; allowOverbook: boolean };
 
+/** What the phone `RowEditorSheet` saves: only the changed fields; `null` = cleared (blank), never `0`. */
+export interface RowSheetPatch {
+  quantity?: number;
+  unitPrice?: number | null;
+  discount?: number | null;
+  discountMode?: DiscountMode;
+}
+
+/**
+ * The phone sheet's save, as the SAME payload the dialog and the inline cells send (one
+ * `patchNative` via `updateLineItemMutationFn`). The sheet already resolved the discount to
+ * the stored dollar amount, so it is passed through as-is (never re-derived from a percentage:
+ * that is how a cent of drift rewrites a stored discount), with `discountMode` beside it.
+ */
+export function computeRowSheetPayload(item: LineItemData, patch: RowSheetPatch): EditLineItemPayload {
+  const base = computeEditLineItemPayload(item, buildLineItemFormDefaults(item), toDiscountMode(item.discountMode));
+  const storedDiscount = item.discount != null && Number(item.discount) > 0 ? Number(item.discount) : undefined;
+  const discount = patch.discount !== undefined ? (patch.discount ?? undefined) : storedDiscount;
+  const discountMode = discount == null ? undefined : (patch.discountMode ?? toDiscountMode(item.discountMode));
+  return {
+    ...base,
+    quantity: patch.quantity ?? base.quantity,
+    unitPrice: patch.unitPrice !== undefined ? (patch.unitPrice ?? undefined) : base.unitPrice,
+    discount,
+    discountMode,
+  };
+}
+
+/** The patch that puts back exactly what `patch` changed on `item` (the toast's Undo). */
+export function reverseRowSheetPatch(item: LineItemData, patch: RowSheetPatch): RowSheetPatch {
+  const out: RowSheetPatch = {};
+  if (patch.quantity !== undefined) out.quantity = item.quantity;
+  if (patch.unitPrice !== undefined) out.unitPrice = item.unitPrice != null ? Number(item.unitPrice) : null;
+  if (patch.discount !== undefined || patch.discountMode !== undefined) {
+    out.discount = item.discount != null && Number(item.discount) > 0 ? Number(item.discount) : null;
+    out.discountMode = toDiscountMode(item.discountMode);
+  }
+  return out;
+}
+
 /** Layers a single inline-edited field onto `item`'s current values and
  *  resolves the full update payload — the inline-edit equivalent of the
  *  dialog's `handleSave` calling `computeEditLineItemPayload` with the whole

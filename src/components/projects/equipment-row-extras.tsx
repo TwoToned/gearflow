@@ -42,11 +42,14 @@ export function CommentButton({
   target,
   lineId,
   targetType = "lineItem",
+  touch = false,
 }: {
   target: CommentTarget;
   lineId: string;
   /** `group` for a Project Group head (its thread is keyed by the group id). */
   targetType?: "lineItem" | "group";
+  /** Phone sheet: always visible, with a 44 px target (no hover to reveal it). */
+  touch?: boolean;
 }) {
   const c = target.counts?.[lineId];
   const open = c?.open ?? 0;
@@ -68,7 +71,8 @@ export function CommentButton({
         className={cn(
           "inline-flex shrink-0 items-center gap-0.5 rounded-sm text-caption transition-opacity hover:text-ink focus-visible:opacity-100",
           count > 0 ? (blocking > 0 ? "text-red-text" : "text-ink-2") : "text-muted",
-          count === 0 && targetType === "lineItem" && "opacity-0 group-hover/row:opacity-100",
+          count === 0 && targetType === "lineItem" && !touch && "opacity-0 group-hover/row:opacity-100",
+          touch && "min-h-11 min-w-11 justify-center gap-1 text-table-cell",
         )}
       >
         <MessageCircle className="size-3.5" aria-hidden="true" />

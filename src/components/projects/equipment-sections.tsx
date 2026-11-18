@@ -19,6 +19,7 @@ import type { CategoryData, GroupData, LineItemData, MixedGroupSlot, SubHireGrou
 import type { GroupInlinePricePatch } from "./equipment-rows";
 import { isHiddenFromList } from "./equipment-rows";
 import type { SortableMeta } from "./equipment-list-dnd";
+import type { EquipmentRowEditorTarget } from "./equipment-row-editor";
 import { lineGrossAmount } from "@/lib/discount-mode";
 import { CommentButton, StageCell, type CommentTarget } from "./equipment-row-extras";
 import { InlineEditableDiscount, InlineEditablePercent, InlineEditablePrice, InlineEditableQuantity } from "./line-item-inline-cells";
@@ -55,6 +56,8 @@ interface Placement {
 
 export interface EquipmentHandlers {
   editLine: (item: LineItemData, placement: Placement) => void;
+  /** Phone only: a row tap opens the row editor sheet (absent = the tap opens the edit dialog). */
+  openRowEditor?: (target: EquipmentRowEditorTarget) => void;
   moveLineToCategory: (id: string, initialCategoryId?: string) => void;
   moveLineToGroup: (id: string, initialGroupId?: string) => void;
   editAccessories: (item: LineItemData) => void;
@@ -225,20 +228,7 @@ function lineRow(item: LineItemData, c: Ctx, where: LineWhere): LineRowData {
   const model = equipmentRowModel(item, ctx);
   const h = c.handlers;
   const place: Placement = { categoryId: where.catId, groupId: where.groupId };
-  return {
-    id: item.id,
-    kind: model.kind,
-    title: model.title,
-    subtitle: model.subtitle,
-    tags: model.tags,
-    glyphs: model.glyphs,
-    flags: model.flags,
-    facts: model.facts,
-    status: model.stage ? gearStageValue(model.stage) : undefined,
-    cells: lineCells(item, c, model),
-    children: childRows(item),
-    onOpen: () => h.editLine(item, place),
-    menu: buildGearLineActions(
+  const menu = buildGearLineActions(
       { ...item, title: model.title, hasOpenMarker },
       {
         inRollupCategory: where.inRollup,
@@ -257,7 +247,23 @@ function lineRow(item: LineItemData, c: Ctx, where: LineWhere): LineRowData {
         onRemove: () => h.removeLine(item.id),
         extraItems: customUnitItems(item, c, over),
       },
-    ),
+    );
+  // Phone: a row tap opens the RowEditorSheet (the tab wires `openRowEditor` only there).
+  const phoneEditable = model.kind !== "container" && item.subHireGroupId == null && !!h.openRowEditor;
+  return {
+    id: item.id,
+    kind: model.kind,
+    title: model.title,
+    subtitle: model.subtitle,
+    tags: model.tags,
+    glyphs: model.glyphs,
+    flags: model.flags,
+    facts: model.facts,
+    status: model.stage ? gearStageValue(model.stage) : undefined,
+    cells: lineCells(item, c, model),
+    children: childRows(item),
+    onOpen: phoneEditable ? () => h.openRowEditor?.({ item, menu, over }) : () => h.editLine(item, place),
+    menu,
   };
 }
 

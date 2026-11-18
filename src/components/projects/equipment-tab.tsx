@@ -37,7 +37,15 @@ import {
   type BulkLineItemPatch,
 } from "@/hooks/use-line-item-writes";
 import { lineItemSchema } from "@/lib/validations/line-item";
-import { computeInlineLineItemPayload, type InlineLineItemPatch } from "@/lib/line-item-edit-payload";
+import {
+  computeInlineLineItemPayload,
+  computeRowSheetPayload,
+  reverseRowSheetPatch,
+  type InlineLineItemPatch,
+  type RowSheetPatch,
+} from "@/lib/line-item-edit-payload";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { EquipmentRowEditor, type EquipmentRowEditorTarget } from "./equipment-row-editor";
 import { computeInlineSubHireItemInput, type SubHireItemRowLike, type InlineSubHireItemPatch } from "@/lib/sub-hire-item-edit-payload";
 import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { Button } from "@/components/ui/button";
@@ -392,6 +400,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   const [editAccessoryItem, setEditAccessoryItem] = useState<LineItemData | null>(null);
   // Shortfall → sub-hire sheet target (row ⋯ › "Sub-hire shortfall").
   const [shortfall, setShortfall] = useState<ShortfallTarget | null>(null);
+  // Phone: the row editor sheet (a row tap), instead of the desktop's inline cells.
+  const isPhone = useIsMobile();
+  const [rowEditor, setRowEditor] = useState<EquipmentRowEditorTarget | null>(null);
   // The clicked item's current placement — line items don't carry categoryId/groupId
   // directly (the tree position IS the placement), so each onEdit call site captures
   // it from the same closure the neighbouring onMoveToCategory/onMoveToGroup use.
@@ -843,6 +854,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   // retry from `InlineEditableQuantity`'s overbook prompt) — every other
   // field never touches availability, so `allowOverbook: false` is always
   // correct for them.
+  // The phone sheet's save: ONE patchNative through the same mutation fn as the inline cells and
+  // the dialog. Unlike an inline cell it toasts (with Undo = this same write with the reverse
+  // patch), and its errors reach the sheet (it keeps the typed values and says why: an overbook,
+  // a pricing lock, a cleared price that still has a discount).
+  const saveRowSheet = useCallback(
+    async (item: LineItemData, patch: RowSheetPatch): Promise<void> => {
+      const write = (p: RowSheetPatch) =>
+        updateLineItemMutationFn({ id: item.id, data: computeRowSheetPayload(item, p) as unknown as Record<string, unknown>, allowOverbook: false });
+      await write(patch);
+      invalidate();
+      toast.success("Item updated", {
+        action: {
+          label: "Undo",
+          onClick: () => void write(reverseRowSheetPatch(item, patch)).then(() => invalidate(), (e: Error) => toast.error(e.message)),
+        },
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- updateLineItemMutationFn is re-created per render, reads lineItemWrites
+    [invalidate, lineItemWrites],
+  );
+
   const handleInlineLineItemUpdate = useCallback(
     (item: LineItemData, patch: InlineLineItemPatch) => {
       if (item.subHireGroupId != null) {
@@ -1210,6 +1242,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
     },
     moveLineToCategory: (lineItemId, initialCategoryId) => setMoveItemToCategory({ lineItemId, initialCategoryId }),
     moveLineToGroup: (lineItemId, initialGroupId) => setMoveItemToGroup({ lineItemId, initialGroupId }),
+    openRowEditor: isPhone ? setRowEditor : undefined,
     editAccessories: setEditAccessoryItem,
     // Absent (so no menu entry) unless the member can create sub-hire orders: the sheet reads
     // supplier cost rates and writes an order.
@@ -1638,6 +1671,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
 
       {/* Edit accessories dialog (kebab → "Edit accessories") */}
       <EditAccessoryPlanDialog item={editAccessoryItem} onClose={() => setEditAccessoryItem(null)} />
+
+      {/* Phone row editor (a row tap): qty / price / discount, discussion + serials, availability */}
+      <EquipmentRowEditor
+        target={rowEditor}
+        onClose={() => setRowEditor(null)}
+        comments={orgId ? { orgId, projectId, counts: commentCounts } : undefined}
+        moneyLocked={moneyLocked}
+        onSave={saveRowSheet}
+        onEditDetails={(item) => handlers.editLine(item, {})}
+        onSubHireShortfall={handlers.subHireShortfall}
+      />
 
       {/* Shortfall → sub-hire sheet (row ⋯ › "Sub-hire shortfall") */}
       <SubHireShortfallSheet

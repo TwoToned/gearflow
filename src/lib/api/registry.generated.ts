@@ -32536,6 +32536,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "notificationDismissalsWrites.undismissManyNative",
+    "module": "notificationDismissalsWrites",
+    "fn": "undismissManyNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "notificationKeys",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "56fdfece04caee27",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "notificationEmailLogs.create",
     "module": "notificationEmailLogs",
     "fn": "create",
@@ -32893,6 +32925,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.markUnreadManyNative",
+    "module": "notificationsWrites",
+    "fn": "markUnreadManyNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b67b074b9a2f2e30",
+    "returnsSha": "1ce2050af5634770",
     "stability": "tracks-app",
     "summary": null,
     "danger": "low",
@@ -63444,10 +63508,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1231,
-  agentReachable: 603,
+  total: 1233,
+  agentReachable: 605,
   queries: 441,
-  mutations: 790,
+  mutations: 792,
   agentReachableQueries: 306,
-  agentReachableMutations: 297,
+  agentReachableMutations: 299,
 } as const;

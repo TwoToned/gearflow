@@ -3,36 +3,17 @@
 import { useMemo, useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
-import { useProjectServices, refreshProjectServices, useProjectServicesSummary, refreshProjectServicesSummary, useProjectServicesLiveSync } from "@/hooks/use-project-services";
-import { useServiceTemplates } from "@/hooks/use-service-templates";
+import { refreshProjectServices, refreshProjectServicesSummary, } from "@/hooks/use-project-services";
 import { refreshProjectCrew } from "@/hooks/use-project-crew";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Plus,
-  Pencil,
-  Trash2,
-  Truck,
-  PackageCheck,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  HardHat,
-  Wrench,
-  DollarSign,
-  MapPin,
-  Clock,
-  ChevronDown,
   Loader2,
-  Navigation,
-  Users,
   Send,
   UserCheck,
-  RefreshCw,
   Copy,
   ArrowRightLeft,
-  Sparkles,
   X,
   AlertTriangle,
 } from "lucide-react";
@@ -43,9 +24,6 @@ import {
   generateCrewMessage,
 } from "@/server/project-services";
 import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
-import { useSelection } from "./use-selection";
-import { BulkBar } from "@/components/ui/bulk-bar";
-import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useConvex, useConvexAuth } from "convex/react";
@@ -54,33 +32,27 @@ import {
   projectServiceSchema,
   type ProjectServiceFormValues,
 } from "@/lib/validations/project-service";
-import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from "@/lib/constants/services";
+import { SERVICE_TYPE_LABELS, } from "@/lib/constants/services";
 import { crewRateTypeLabels } from "@/lib/status-labels";
 import { resolveRate, calculateEstimatedCost, resolveChargeRate } from "../../../convex/lib/crewRate";
 import { useIsManagerPlus } from "@/lib/use-permissions";
-import { CrewPanel } from "./crew-panel";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
-import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { PersonAvatar } from "@/components/ui/avatar";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
-import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { ComboboxPicker, MultiComboboxPicker } from "@/components/ui/combobox-picker";
 import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xero-coding-fields";
+import { defaultServiceDay, type ServiceStatus, type ServiceType } from "@/lib/logistics-model";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 import { Button } from "@/components/ui/button";
-import { GatedButton } from "@/components/ui/gated-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 import {
@@ -90,15 +62,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { AddressInput } from "@/components/ui/address-input";
 import type { PlaceResult } from "@/lib/address-autocomplete";
 import {
@@ -119,48 +82,6 @@ import {
 } from "@/components/ui/table";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-type ServiceType = "DELIVERY" | "PICKUP" | "BUMP_IN" | "BUMP_OUT" | "LABOUR" | "MISC";
-type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
-
-const SERVICE_TYPE_ICONS: Record<ServiceType, typeof Truck> = {
-  DELIVERY: Truck,
-  PICKUP: PackageCheck,
-  BUMP_IN: ArrowDownToLine,
-  BUMP_OUT: ArrowUpFromLine,
-  LABOUR: HardHat,
-  MISC: Wrench,
-};
-
-function formatDate(date: string | null | undefined): string {
-  if (!date) return "";
-  return new Date(date).toLocaleDateString("en-AU", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-}
-
-function formatDateLong(date: string): string {
-  return new Date(date).toLocaleDateString("en-AU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface ServicesPanelProps {
-  projectId: string;
-  projectAddress?: string;
-  projectLatitude?: number | null;
-  projectLongitude?: number | null;
-  projectLoadInDate?: string;
-  projectLoadOutDate?: string;
-  projectEventStartDate?: string;
-  projectEventEndDate?: string;
-}
 
 interface ServiceRow {
   id: string;
@@ -200,785 +121,9 @@ interface ServiceRow {
   }[];
 }
 
-// ─── Services Panel (Timeline View) ──────────────────────────────────────────
-
-export function ServicesPanel({
-  projectId,
-  projectAddress,
-  projectLatitude,
-  projectLongitude,
-  projectLoadInDate,
-  projectLoadOutDate,
-  projectEventStartDate,
-  projectEventEndDate,
-}: ServicesPanelProps) {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-  const isManagerPlus = useIsManagerPlus();
-
-  // Cross-tab live sync: re-fetch the services composites when another tab edits.
-  useProjectServicesLiveSync(projectId, orgId);
-
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingService, setEditingService] = useState<Record<string, unknown> | null>(null);
-  const [preselectedType, setPreselectedType] = useState<ServiceType | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
-  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
-  const [messageTarget, setMessageTarget] = useState<{ crewMemberId: string; name: string } | null>(null);
-
-  const { data: services = [], isLoading } = useProjectServices(projectId);
-
-  const { data: summary } = useProjectServicesSummary(projectId);
-
-  const { data: templates = [] } = useServiceTemplates(orgId);
-
-  const svcWrites = useProjectServiceWrites();
-
-  // #1230: adding/deleting a service is structural — never gated by the
-  // pricing lock, so no lock status or justification wrapper is needed here
-  // (the edit dialog's own `svcLockStatus`, further down, still gates money
-  // fields).
-
-  const invalidateAll = () => {
-    refreshProjectServices(projectId);
-    refreshProjectServicesSummary(projectId);
-    refreshProjectDetail(projectId);
-    refreshProjectCrew(projectId);
-  };
-
-  const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => svcWrites.remove(id),
-    onSuccess: () => {
-      toast.success("Service deleted");
-      setDeleteTarget(null);
-      invalidateAll();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const statusMutation = useServerMutation({
-    mutationFn: ({ id, status }: { id: string; status: ServiceStatus }) =>
-      svcWrites.setStatus(id, status),
-    onSuccess: () => {
-      toast.success("Status updated");
-      invalidateAll();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  // ─── Bulk selection ────────────────────────────────────────────────────────
-  const selection = useSelection();
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
-  const allServiceIds = (services as ServiceRow[]).map((s) => s.id);
-  const selectedServiceIds = allServiceIds.filter((id) => selection.isSelected(id));
-  const allSelected =
-    allServiceIds.length > 0 && selectedServiceIds.length === allServiceIds.length;
-
-  const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => svcWrites.bulkDelete(ids),
-    onSuccess: (r: { deleted: number; skipped: number }) => {
-      toast.success(`Deleted ${r.deleted} service${r.deleted === 1 ? "" : "s"}`);
-      selection.clearSelection();
-      setBulkDeleteOpen(false);
-      invalidateAll();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const bulkStatusMut = useServerMutation({
-    mutationFn: ({ ids, status }: { ids: string[]; status: ServiceStatus }) =>
-      svcWrites.bulkSetStatus(ids, status),
-    onSuccess: (_r, { ids }) => {
-      toast.success(`Updated ${ids.length} service${ids.length === 1 ? "" : "s"}`);
-      selection.clearSelection();
-      invalidateAll();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const generateMutation = useServerMutation({
-    mutationFn: () => svcWrites.generate(projectId),
-    onSuccess: (result) => {
-      const r = result as { created: number; lineItemsCreated: number };
-      if (r.created === 0) {
-        toast.info("All services already exist — nothing new to add");
-      } else {
-        toast.success(
-          `Generated ${r.created} services${r.lineItemsCreated > 0 ? `. ${r.lineItemsCreated} added as line items on your quote.` : ""}`,
-        );
-      }
-      invalidateAll();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  function openCreate(type?: ServiceType) {
-    setEditingService(null);
-    setPreselectedType(type ?? null);
-    setDialogOpen(true);
-  }
-
-  function openEdit(service: Record<string, unknown>) {
-    setEditingService(service);
-    setPreselectedType(null);
-    setDialogOpen(true);
-  }
-
-  const grouped = groupByDate(services as ServiceRow[]);
-  const hasProjectDates = !!(projectLoadInDate || projectLoadOutDate || projectEventStartDate);
-  const hasServices = grouped.length > 0;
-
-  if (isLoading) {
-    return (
-      <FadeIn>
-        <div className="space-y-4">
-          {/* Skeleton date groups */}
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-3 w-20" />
-                <div className="h-px flex-1 bg-line" />
-              </div>
-              <Skeleton className="h-16 rounded-[var(--r)]" />
-            </div>
-          ))}
-        </div>
-      </FadeIn>
-    );
-  }
-
-  return (
-    <FadeIn>
-      <div className="space-y-4">
-        {/* Timeline Header */}
-        <div className="flex items-center justify-between gap-2">
-          <CanDo resource="project" action="update">
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* #1230: adding is structural — never gated by the pricing
-                  lock, so the Add ▾ menu is never gated anymore. */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm">
-                      <Plus className="h-4 w-4" />
-                      Add service
-                      <ChevronDown className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>Service type</DropdownMenuLabel>
-                    </DropdownMenuGroup>
-                    {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map((type) => {
-                      const Icon = SERVICE_TYPE_ICONS[type];
-                      return (
-                        <DropdownMenuItem key={type} onClick={() => openCreate(type)}>
-                          <Icon className="mr-2 h-4 w-4" />
-                          {SERVICE_TYPE_LABELS[type]}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                    {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).length > 0 && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel>Templates</DropdownMenuLabel>
-                        </DropdownMenuGroup>
-                        {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).map((t) => {
-                          const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
-                          return (
-                            <DropdownMenuItem
-                              key={t.id as string}
-                              onClick={() => {
-                                setEditingService(null);
-                                setPreselectedType(t.type as ServiceType);
-                                setDialogOpen(true);
-                              }}
-                            >
-                              <Icon className="mr-2 h-4 w-4" />
-                              {t.title as string}
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-              {/* Generate / Regenerate */}
-              {hasProjectDates && (
-                <Button
-                  size="sm"
-                  variant={hasServices ? "line" : "primary"}
-                  onClick={() => generateMutation.mutate()}
-                  disabled={generateMutation.isPending}
-                >
-                  {generateMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : hasServices ? (
-                    <RefreshCw className="h-4 w-4" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  {hasServices ? "Regenerate" : "Generate services"}
-                </Button>
-              )}
-
-              {/* Import from another project */}
-              <Button
-                size="sm"
-                variant="line"
-                onClick={() => setCloneDialogOpen(true)}
-              >
-                <Copy className="h-4 w-4" />
-                Import services
-              </Button>
-            </div>
-          </CanDo>
-        </div>
-
-        {/* Empty State */}
-        {!hasServices && (
-          <EmptyState
-            title="No logistics yet"
-            description={
-              hasProjectDates
-                ? "Generate delivery, bump-in, and pickup from your job dates — or add them by hand."
-                : "Set job dates first, then generate the run automatically."
-            }
-            action={
-              hasProjectDates ? (
-                <Button
-                  variant="line"
-                  size="sm"
-                  onClick={() => generateMutation.mutate()}
-                  disabled={generateMutation.isPending}
-                >
-                  {generateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Generate services
-                </Button>
-              ) : undefined
-            }
-          />
-        )}
-
-        {/* Bulk action bar — appears once one or more services are selected. */}
-        <CanDo resource="project" action="update">
-          <BulkBar
-            noun="service"
-            selection={{ count: selectedServiceIds.length, clear: selection.clearSelection }}
-            leading={
-              <label className="flex items-center gap-1.5 text-caption text-muted">
-              <Checkbox
-                aria-label="Select all services"
-                checked={allSelected}
-                onCheckedChange={(v: boolean | "indeterminate") =>
-                  v === true
-                    ? selection.selectAll(allServiceIds)
-                    : selection.clearSelection()
-                }
-              />
-              All
-            </label>
-            }
-            actions={[
-              {
-                key: "set-status",
-                group: "organise",
-                label: () => "Set status",
-                onSelect: () => {},
-                children: (Object.keys(SERVICE_STATUS_LABELS) as ServiceStatus[]).map((status) => ({
-                  key: status,
-                  group: "organise" as const,
-                  label: () => SERVICE_STATUS_LABELS[status],
-                  onSelect: () => bulkStatusMut.mutate({ ids: selectedServiceIds, status }),
-                })),
-              },
-              // The surface's own BulkDeleteDialog owns the confirm.
-              { key: "delete", group: "danger", danger: true, icon: Trash2, label: () => "Delete", onSelect: () => setBulkDeleteOpen(true) },
-            ]}
-          />
-        </CanDo>
-
-        {/* Timeline — Date Groups */}
-        {hasServices && (
-          <StaggerList>
-            {grouped.map(({ dateLabel, dateKey, dateLong, items }) => (
-              <StaggerItem key={dateKey}>
-                <div className="space-y-2">
-                  {/* Date header — red overline chip + extending line (D3) */}
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-red-soft px-2 py-0.5 text-badge font-bold text-red-text">
-                      {dateLabel}
-                    </span>
-                    <div className="h-px flex-1 bg-line" />
-                    {dateLong && (
-                      <span className="text-caption text-muted">{dateLong}</span>
-                    )}
-                  </div>
-
-                  {/* Service cards within this date */}
-                  <div className="space-y-2">
-                    {items.map((service) => (
-                      <ServiceCard
-                        key={service.id}
-                        service={service}
-                        isManagerPlus={isManagerPlus}
-                        selected={selection.isSelected(service.id)}
-                        selectionActive={selectedServiceIds.length > 0}
-                        onSelectChange={() => selection.toggle(service.id, true)}
-                        onEdit={() => openEdit(service as unknown as Record<string, unknown>)}
-                        onDelete={() => setDeleteTarget({ id: service.id, title: service.title })}
-                        onStatusChange={(status) =>
-                          statusMutation.mutate({ id: service.id, status })
-                        }
-                        onCrewMessage={(crewMemberId, name) =>
-                          setMessageTarget({ crewMemberId, name })
-                        }
-                      />
-                    ))}
-                  </div>
-                </div>
-              </StaggerItem>
-            ))}
-          </StaggerList>
-        )}
-
-        {/* Financial Summary. Third tile used to duplicate "Internal" (both read
-            summary.totalCost, a legacy alias for costTotal) — it's now Margin
-            (charge - cost), gated manager+ along with the cost tile (spec:
-            "cost + margin visible to manager+ only; members see the charge side"). */}
-        {summary && summary.serviceCount > 0 && (
-          <div className="rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)]">
-            <h4 className="t-overline text-muted mb-2 flex items-center gap-1">
-              <DollarSign className="h-3.5 w-3.5" />
-              Services financial summary
-            </h4>
-            <div className={cn("grid gap-4 text-ui-text", isManagerPlus ? "sm:grid-cols-3" : "sm:grid-cols-1")}>
-              <div>
-                <span className="text-muted">On documents</span>
-                <p className="font-medium tabular-nums text-ink-2">{formatCurrency(summary.onDocumentsTotal)}</p>
-              </div>
-              {isManagerPlus && (
-                <div>
-                  <span className="text-muted">Internal</span>
-                  <p className="font-medium tabular-nums text-ink-2">{formatCurrency(summary.internalTotal)}</p>
-                </div>
-              )}
-              {isManagerPlus && (
-                <div>
-                  <span className="text-muted">Margin</span>
-                  <p className={cn("font-semibold tabular-nums", summary.onDocumentsTotal - summary.internalTotal < 0 ? "text-t-out" : "text-ink")}>
-                    {formatCurrency(summary.onDocumentsTotal - summary.internalTotal)}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Project crew — services are the only crew entry point (issue #796): crew
-            are added/rated per-service above; this lists everyone across the whole
-            project (incl. any legacy assignment with no service link) for viewing,
-            status changes, messaging, and call sheets. */}
-        <div className="h-px bg-line" />
-        <div className="space-y-3">
-          <h4 className="text-card-title font-semibold text-ink">Job crew</h4>
-          <CrewPanel projectId={projectId} />
-        </div>
-
-        {/* Bulk delete confirmation */}
-        <BulkDeleteDialog
-          open={bulkDeleteOpen}
-          onOpenChange={setBulkDeleteOpen}
-          title="Delete selected services"
-          description="This removes the selected services and their crew assignments from the job."
-          count={selectedServiceIds.length}
-          itemLabel="service"
-          pending={bulkDeleteMut.isPending}
-          onConfirm={() => bulkDeleteMut.mutate(selectedServiceIds)}
-        />
-
-        {/* Delete Confirmation Dialog */}
-        <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Delete service</DialogTitle>
-            </DialogHeader>
-            <p className="text-ui-text text-ink-2">
-              Are you sure you want to delete &ldquo;{deleteTarget?.title}&rdquo;? This will also
-              remove any linked crew assignments.
-            </p>
-            <DialogFooter>
-              <Button variant="line" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="line"
-                className="border-t-out/40 text-t-out hover:bg-t-out hover:text-paper hover:border-t-out"
-                onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                Delete
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Clone Services Dialog */}
-        <CloneServicesDialog
-          open={cloneDialogOpen}
-          onOpenChange={setCloneDialogOpen}
-          targetProjectId={projectId}
-          onSuccess={invalidateAll}
-        />
-
-        {/* Crew Message Dialog */}
-        <CrewMessageDialog
-          open={!!messageTarget}
-          onOpenChange={() => setMessageTarget(null)}
-          projectId={projectId}
-          crewMemberId={messageTarget?.crewMemberId || ""}
-          crewMemberName={messageTarget?.name || ""}
-        />
-
-        {/* Create/Edit Dialog */}
-        <ServiceDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          projectId={projectId}
-          editingService={editingService}
-          preselectedType={preselectedType}
-          templates={templates as unknown as Record<string, unknown>[]}
-          projectAddress={projectAddress}
-          projectLatitude={projectLatitude}
-          projectLongitude={projectLongitude}
-          projectLoadInDate={projectLoadInDate}
-          projectLoadOutDate={projectLoadOutDate}
-          projectEventStartDate={projectEventStartDate}
-          projectEventEndDate={projectEventEndDate}
-        />
-      </div>
-    </FadeIn>
-  );
-}
-
-// ─── Service Card ─────────────────────────────────────────────────────────────
-
-function ServiceCard({
-  service,
-  isManagerPlus,
-  selected,
-  selectionActive,
-  onSelectChange,
-  onEdit,
-  onDelete,
-  onStatusChange,
-  onCrewMessage,
-}: {
-  service: ServiceRow;
-  isManagerPlus: boolean;
-  selected?: boolean;
-  selectionActive?: boolean;
-  onSelectChange?: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onStatusChange: (status: ServiceStatus) => void;
-  onCrewMessage: (crewMemberId: string, name: string) => void;
-}) {
-  const Icon = SERVICE_TYPE_ICONS[service.type];
-  const isCancelled = service.status === "CANCELLED";
-  const isMultiDay = service.date && service.endDate &&
-    new Date(service.date).toISOString().slice(0, 10) !== new Date(service.endDate).toISOString().slice(0, 10);
-
-  // "Filled" crew — excludes DECLINED/CANCELLED so a declined-and-never-replaced
-  // assignment doesn't silently read as staffed (bug fix, WS3 #942: this predicate
-  // used raw crewAssignments.length, so 2× DECLINED against crewCountRequired: 2
-  // showed a full avatar stack and no "needed" warning). Mirrors
-  // convex/crewAvailability.ts's own EXCLUDED = {CANCELLED, DECLINED} pattern.
-  const filledCrewAssignments = (service.crewAssignments ?? []).filter((a) => isFilledAssignmentStatus(a.status));
-
-  // Crew cost subtotal (D12) — cost of FILLED assignments only (a declined
-  // assignment never actually cost anything).
-  const crewCostTotal = filledCrewAssignments.reduce(
-    (sum, a) => sum + (a.estimatedCost ? Number(a.estimatedCost) : 0),
-    0,
-  );
-
-  return (
-    <div className={`group rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)] ${isCancelled ? "opacity-50" : ""} ${selected ? "ring-2 ring-red/40" : ""}`}>
-      <div className="flex items-start justify-between gap-2">
-        {/* Left side */}
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            {onSelectChange && (
-              <span
-                className={cn(
-                  "shrink-0 transition-opacity",
-                  selected || selectionActive
-                    ? "opacity-100"
-                    : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100",
-                )}
-              >
-                <Checkbox
-                  aria-label="Select service"
-                  checked={!!selected}
-                  onCheckedChange={() => onSelectChange()}
-                />
-              </span>
-            )}
-            <Icon className="h-4 w-4 text-muted shrink-0" />
-            <span className={`font-medium text-ink ${isCancelled ? "line-through" : ""}`}>
-              {service.title}
-            </span>
-            {/* Status pill using StatusIndicator (D2) */}
-            <StatusIndicator
-              category="service"
-              value={service.status}
-              label={SERVICE_STATUS_LABELS[service.status]}
-              variant="pill"
-            />
-          </div>
-
-          {/* Time info */}
-          {isMultiDay && (
-            <div className="flex items-center gap-1 text-ui-text text-muted">
-              <Clock className="h-3 w-3" />
-              <span>{formatDate(service.date)} – {formatDate(service.endDate)}</span>
-            </div>
-          )}
-          {!isMultiDay && (service.startTime || service.endTime) && (
-            <div className="flex items-center gap-1 text-ui-text text-muted">
-              <Clock className="h-3 w-3" />
-              <span>
-                {service.startTime}
-                {service.endTime && ` – ${service.endTime}`}
-              </span>
-            </div>
-          )}
-          {service.scheduledTime && (service.type === "DELIVERY" || service.type === "PICKUP") && (
-            <div className="flex items-center gap-1 text-ui-text text-muted">
-              <Truck className="h-3 w-3" />
-              <span>
-                {service.type === "DELIVERY" ? "Delivery" : "Pickup"} at {service.scheduledTime}
-              </span>
-            </div>
-          )}
-
-          {/* Address */}
-          {service.address && (
-            <div className="flex items-center gap-1 text-ui-text text-muted">
-              <MapPin className="h-3 w-3 shrink-0" />
-              <span className="truncate">{service.address}</span>
-              {service.latitude != null && service.longitude != null && (
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${service.latitude},${service.longitude}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn("inline-flex items-center gap-1 text-caption text-link hover:underline shrink-0 rounded-sm", focusRing)}
-                  title="Get directions"
-                >
-                  <Navigation className="h-3 w-3" />
-                </a>
-              )}
-            </div>
-          )}
-
-          {/* Vehicle */}
-          {service.vehicleDescription && (
-            <div className="text-ui-text text-muted">
-              Vehicle: {service.vehicleDescription}
-            </div>
-          )}
-
-          {/* Crew — avatar stack with 3 max + overflow (D14) */}
-          {(service.crewRole || filledCrewAssignments.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
-            <div className="flex items-center gap-1.5 text-ui-text text-muted flex-wrap">
-              <Users className="h-3 w-3 shrink-0" />
-              {service.crewRole && (
-                <span
-                  className="inline-flex items-center rounded-full border px-2 py-0.5 text-badge font-medium"
-                  style={service.crewRole.color ? { borderColor: service.crewRole.color, color: service.crewRole.color } : undefined}
-                >
-                  {service.crewRole.name}
-                </span>
-              )}
-              {filledCrewAssignments.length > 0 ? (
-                <div className="flex items-center gap-1">
-                  {/* Avatar stack — max 3 */}
-                  <div className="flex -space-x-1">
-                    {filledCrewAssignments.slice(0, 3).map((a) => (
-                      <button
-                        key={a.id}
-                        onClick={() => onCrewMessage(a.crewMember.id, `${a.crewMember.firstName} ${a.crewMember.lastName}`)}
-                        className={cn("relative rounded-full", focusRing)}
-                        title={`${a.crewMember.firstName} ${a.crewMember.lastName} — click to generate message`}
-                      >
-                        <PersonAvatar
-                          name={`${a.crewMember.firstName} ${a.crewMember.lastName}`}
-                          src={a.crewMember.image ?? undefined}
-                          className="size-6 border-2 border-card"
-                        />
-                      </button>
-                    ))}
-                    {filledCrewAssignments.length > 3 && (
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-paper-2 text-badge font-medium">
-                        +{filledCrewAssignments.length - 3}
-                      </span>
-                    )}
-                  </div>
-                  {/* Crew cost subtotal (D12) */}
-                  {crewCostTotal > 0 && (
-                    <span className="text-caption text-muted ml-1">
-                      {filledCrewAssignments.length} crew · {formatCurrency(crewCostTotal)}
-                    </span>
-                  )}
-                </div>
-              ) : service.crewCountRequired != null && service.crewCountRequired > 0 ? (
-                <span className="text-warn">
-                  {service.crewCountRequired} needed — none assigned
-                </span>
-              ) : null}
-              {service.crewCountRequired != null && service.crewCountRequired > 0 && filledCrewAssignments.length > 0 && filledCrewAssignments.length < service.crewCountRequired && (
-                <span className="text-warn text-caption">
-                  ({filledCrewAssignments.length}/{service.crewCountRequired})
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Financial — charge is client-facing (everyone sees it); cost + margin
-              are manager+ only (spec: "members see the charge side"). Margin is
-              charge - cost, UNCLAMPED at this level (a negative margin renders
-              text-t-out rather than being hidden/clamped to 0 — the whole point is
-              to surface a loss-making service). */}
-          {(service.lineTotal != null || service.costTotal != null) && (
-            <div className="flex flex-wrap items-center gap-3 text-ui-text">
-              {service.lineTotal != null && (
-                <div className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 text-muted" />
-                  <span className="font-medium tabular-nums text-ink-2">{formatCurrency(service.lineTotal)}</span>
-                  <span className="text-muted text-caption">charge</span>
-                </div>
-              )}
-              {isManagerPlus && service.costTotal != null && Number(service.costTotal) > 0 && (
-                <div className="flex items-center gap-1">
-                  <span className="tabular-nums text-muted">{formatCurrency(service.costTotal)}</span>
-                  <span className="text-muted text-caption">cost</span>
-                </div>
-              )}
-              {isManagerPlus && service.lineTotal != null && service.costTotal != null && (
-                (() => {
-                  const margin = Number(service.lineTotal) - Number(service.costTotal);
-                  const marginPercent = Number(service.lineTotal) > 0 ? (margin / Number(service.lineTotal)) * 100 : 0;
-                  return (
-                    <div className="flex items-center gap-1">
-                      <span className={cn("font-medium tabular-nums", margin < 0 ? "text-t-out" : "text-ok")}>
-                        {formatCurrency(margin)}
-                      </span>
-                      <span className={cn("text-caption", margin < 0 ? "text-t-out" : "text-muted")}>
-                        margin · {marginPercent.toFixed(0)}%
-                      </span>
-                    </div>
-                  );
-                })()
-              )}
-              {/* Billable iff it has an actual charge — mirrors buildFinanceLines/
-                  recalcProjectTotals (R-3.1), not a separate manual flag. */}
-              {Number(service.lineTotal) > 0 ? (
-                <span className="text-muted text-caption">· On quote</span>
-              ) : (
-                service.costTotal != null && Number(service.costTotal) > 0 && (
-                  <span className="text-muted text-caption">· Internal (not billed)</span>
-                )
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Right side — actions */}
-        <div className="flex items-center gap-1 shrink-0">
-          <CanDo resource="project" action="update">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="touch-target size-8" title="Change status">
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Change status</DropdownMenuLabel>
-                </DropdownMenuGroup>
-                {(
-                  ["PLANNED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as ServiceStatus[]
-                ).map((s) => (
-                  <DropdownMenuItem
-                    key={s}
-                    onClick={() => onStatusChange(s)}
-                    disabled={s === service.status}
-                  >
-                    {SERVICE_STATUS_LABELS[s]}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Button variant="ghost" size="icon" className="touch-target size-8" onClick={onEdit} title="Edit service">
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="touch-target size-8 text-t-out"
-              onClick={onDelete}
-              title="Delete service"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </CanDo>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Date Grouping ────────────────────────────────────────────────────────────
-
-function groupByDate(services: ServiceRow[]) {
-  const groups: { dateLabel: string; dateKey: string; dateLong: string; items: ServiceRow[] }[] = [];
-  const map = new Map<string, ServiceRow[]>();
-
-  for (const s of services) {
-    const key = s.date ? new Date(s.date).toISOString().slice(0, 10) : "no-date";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(s);
-  }
-
-  for (const [key, items] of map) {
-    if (key === "no-date") {
-      groups.push({ dateLabel: "Unscheduled", dateKey: key, dateLong: "", items });
-    } else {
-      groups.push({
-        dateLabel: formatDate(items[0].date),
-        dateKey: key,
-        dateLong: formatDateLong(key),
-        items,
-      });
-    }
-  }
-
-  groups.sort((a, b) => {
-    if (a.dateKey === "no-date") return 1;
-    if (b.dateKey === "no-date") return -1;
-    return a.dateKey.localeCompare(b.dateKey);
-  });
-
-  return groups;
-}
-
 // ─── Clone Services Dialog ────────────────────────────────────────────────────
 
-function CloneServicesDialog({
+export function CloneServicesDialog({
   open,
   onOpenChange,
   targetProjectId,
@@ -1063,7 +208,7 @@ function CloneServicesDialog({
 
 // ─── Crew Message Dialog ──────────────────────────────────────────────────────
 
-function CrewMessageDialog({
+export function CrewMessageDialog({
   open,
   onOpenChange,
   projectId,
@@ -1410,7 +555,7 @@ function CrewRateTableRow({
 
 // ─── Create/Edit Dialog ───────────────────────────────────────────────────────
 
-function ServiceDialog({
+export function ServiceDialog({
   open,
   onOpenChange,
   projectId,
@@ -1462,19 +607,13 @@ function ServiceDialog({
     ? templates.find((t) => t.type === preselectedType && t.isActive)
     : null;
 
+  // One definition of "which day does a new <type> default to" (logistics-model.ts),
+  // shared with the Logistics AddBar's quick add.
   function getDefaultDate(type: ServiceType | null): string {
-    if (!type) return projectEventStartDate || projectLoadInDate || "";
-    switch (type) {
-      case "DELIVERY":
-      case "BUMP_IN":
-        return projectLoadInDate || projectEventStartDate || "";
-      case "PICKUP":
-      case "BUMP_OUT":
-        return projectLoadOutDate || projectEventEndDate || "";
-      case "LABOUR":
-      case "MISC":
-        return projectEventStartDate || projectLoadInDate || "";
-    }
+    return defaultServiceDay(type, {
+      start: projectLoadInDate || projectEventStartDate || "",
+      end: projectLoadOutDate || projectEventEndDate || "",
+    });
   }
 
   const defaultAddress = projectAddress || "";

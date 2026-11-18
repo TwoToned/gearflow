@@ -12889,7 +12889,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1ad4ae8aa65101e3",
+    "argsSha": "77d4b0ebda4c78d6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13046,7 +13046,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1ad4ae8aa65101e3",
+    "argsSha": "77d4b0ebda4c78d6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13078,7 +13078,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b8f8c3ecc1c67ce1",
+    "argsSha": "e7152875afffa989",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13195,7 +13195,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "4b383a98c20f386d",
+    "argsSha": "b5203375dffbacd6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13513,7 +13513,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fe051f8c35b7e1e3",
+    "argsSha": "f090faaff6c90707",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13693,7 +13693,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fa9937ab904fcb45",
+    "argsSha": "3a1688c0b065c9e4",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13946,7 +13946,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "6f51443bf2cc1131",
+    "argsSha": "2f20a2bae9f74dee",
     "returnsSha": "8b114161049d5d20",
     "stability": "stable",
     "summary": null,
@@ -14162,7 +14162,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "066f8ae52bb2f014",
+    "argsSha": "206dc4b98daa8b06",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -41563,7 +41563,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "95bc0d9950df5b63",
+    "argsSha": "134f8097e70b01c8",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41770,7 +41770,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "95bc0d9950df5b63",
+    "argsSha": "134f8097e70b01c8",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41913,7 +41913,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "e7edbf6300b3e145",
+    "argsSha": "51c11c78d222ab02",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41972,7 +41972,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "30194c3fab0d5338",
+    "argsSha": "31d574edaa3dcd90",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -42241,6 +42241,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "clientContactName",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientContactPhone",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientVehicle",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "costTotal",
         "optional": true,
         "type": "number"
@@ -42402,7 +42417,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "81064d667a030d96",
+    "argsSha": "6db6e81d2d5296c0",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42504,7 +42519,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "cd0060ab63d2156d",
+    "argsSha": "590ae705e8606f48",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42768,6 +42783,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "clientContactName",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientContactPhone",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientVehicle",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "costTotal",
         "optional": true,
         "type": "number"
@@ -42919,7 +42949,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "768ec1da1916116c",
+    "argsSha": "67aa945399ca37a6",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -43078,7 +43108,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "cd0060ab63d2156d",
+    "argsSha": "590ae705e8606f48",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -47121,7 +47151,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "3fc51f5453cbf8d2",
+    "argsSha": "31c70a6da0d23307",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -47218,7 +47248,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "3fc51f5453cbf8d2",
+    "argsSha": "31c70a6da0d23307",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -47401,7 +47431,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "be9fbde9494f8d60",
+    "argsSha": "5bfd7b061cb8c825",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -47433,7 +47463,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f9789df04b0d7148",
+    "argsSha": "9add665b302880ce",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

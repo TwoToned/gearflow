@@ -39,7 +39,7 @@ function redactAssignmentCost<
 }
 
 // ── Pure scheduling helpers ported from src/lib/crew-scheduling-read.ts (epoch-ms). ──
-const PHASE_RANK: Record<string, number> = { BUMP_IN: 0, EVENT: 1, BUMP_OUT: 2, DELIVERY: 3, PICKUP: 4, SETUP: 5, REHEARSAL: 6, FULL_DURATION: 7 };
+const PHASE_RANK: Record<string, number> = { BUMP_IN: 0, EVENT: 1, BUMP_OUT: 2, DELIVERY: 3, PICKUP: 4, SETUP: 5, REHEARSAL: 6, FULL_DURATION: 7, HANDOVER: 8, RETURN: 9 };
 const EXCLUDED_STATUSES = new Set(["CANCELLED", "DECLINED"]);
 const isoMs = (ms: number | null | undefined): string | null => (ms != null ? new Date(ms).toISOString() : null);
 function ascNullsLast<T>(a: T | null | undefined, b: T | null | undefined): number {

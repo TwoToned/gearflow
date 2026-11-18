@@ -742,7 +742,7 @@ Line items with `isSubhire: true` and `supplierId` reference third-party equipme
 Structured operational tasks attached to a project (deliveries, pickups, bump in/out, labour, misc).
 
 ### Service Types
-`DELIVERY, PICKUP, BUMP_IN, BUMP_OUT, LABOUR, MISC`
+`DELIVERY, PICKUP, CLIENT_PICKUP, CLIENT_DROPOFF, BUMP_IN, BUMP_OUT, LABOUR, MISC` (the client types: FEATUREDOCS/84)
 
 ### Service Status Flow
 `PLANNED → CONFIRMED → IN_PROGRESS → COMPLETED` (any → `CANCELLED`)

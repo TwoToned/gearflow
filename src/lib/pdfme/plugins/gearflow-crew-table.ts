@@ -24,6 +24,8 @@ const PHASE_LABELS: Record<string, string> = {
   BUMP_OUT: "Bump Out",
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
+  HANDOVER: "Handover",
+  RETURN: "Return",
   SETUP: "Setup",
   REHEARSAL: "Rehearsal",
   FULL_DURATION: "Full Duration",

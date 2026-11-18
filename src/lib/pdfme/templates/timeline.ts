@@ -4,6 +4,7 @@
  * Multi-page: rows are split across pages when content overflows.
  */
 import type { Template } from "@pdfme/common";
+import { SERVICE_TYPE_LABELS as SERVICE_TYPE_WORDS } from "@/lib/constants/services";
 import type { DocumentData, PageHeaderConfig, FooterConfig } from "../types";
 import type { DataTableColumn, DataTableSection } from "../plugins/gearflow-data-table";
 import { formatDate, formatCurrency } from "../plugins/helpers";
@@ -33,14 +34,7 @@ const CONT_TABLE_START_Y = HEADER_Y + HEADER_H + 4;
 const CONT_TABLE_CONTENT_HEIGHT = TABLE_END_Y - CONT_TABLE_START_Y;
 
 // Service types for display
-const SERVICE_TYPE_LABELS: Record<string, string> = {
-  DELIVERY: "Delivery",
-  PICKUP: "Pickup",
-  BUMP_IN: "Bump In",
-  BUMP_OUT: "Bump Out",
-  LABOUR: "Labour",
-  MISC: "Misc",
-};
+const SERVICE_TYPE_LABELS: Record<string, string> = SERVICE_TYPE_WORDS;
 
 export interface TimelineService {
   id: string;

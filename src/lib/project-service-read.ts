@@ -95,6 +95,9 @@ export interface ProjectServiceRow {
   lineItemId: string | null;
   vehicleDescription: string | null;
   numberOfTrips: number | null;
+  clientContactName: string | null;
+  clientContactPhone: string | null;
+  clientVehicle: string | null;
   crewCountRequired: number | null;
   crewRoleId: string | null;
   sortOrder: number;
@@ -167,6 +170,9 @@ export function mapProjectServiceBase(
     lineItemId: orNull(d.lineItemId),
     vehicleDescription: orNull(d.vehicleDescription),
     numberOfTrips: orNull(d.numberOfTrips),
+    clientContactName: orNull(d.clientContactName),
+    clientContactPhone: orNull(d.clientContactPhone),
+    clientVehicle: orNull(d.clientVehicle),
     crewCountRequired: orNull(d.crewCountRequired),
     crewRoleId: orNull(d.crewRoleId),
     sortOrder: d.sortOrder ?? 0,

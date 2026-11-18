@@ -179,7 +179,10 @@ decide whether a client has paid.
 
 Assignment statuses: `PENDING, OFFERED, ACCEPTED, DECLINED, CONFIRMED,
 CANCELLED, COMPLETED`. Phases: `BUMP_IN, EVENT, BUMP_OUT, DELIVERY, PICKUP,
-SETUP, REHEARSAL, FULL_DURATION`.
+HANDOVER, RETURN, SETUP, REHEARSAL, FULL_DURATION`. Service types: `DELIVERY, PICKUP,
+CLIENT_PICKUP, CLIENT_DROPOFF, BUMP_IN, BUMP_OUT, LABOUR, MISC` (the client types are the
+client collecting from / returning to our counter; their contact fields are
+`clientContactName`, `clientContactPhone`, `clientVehicle`).
 
 ## Sub-hires (gear rented in)
 

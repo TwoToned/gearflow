@@ -43,6 +43,7 @@ import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { serviceTypeToPhase } from "../../../convex/lib/serviceSchedule";
 import {
   Dialog,
   DialogContent,
@@ -240,6 +241,8 @@ export function AssignmentDialog({
     "BUMP_OUT",
     "DELIVERY",
     "PICKUP",
+    "HANDOVER",
+    "RETURN",
     "SETUP",
     "REHEARSAL",
     "FULL_DURATION",
@@ -266,14 +269,8 @@ export function AssignmentDialog({
                   if (v) {
                     const svc = (projectServices as { id: string; type: string; date: string | null; endDate: string | null; startTime: string | null; endTime: string | null; crewRoleId: string | null }[]).find((s) => s.id === v);
                     if (svc) {
-                      // Map service type to phase
-                      const phaseMap: Record<string, string> = {
-                        DELIVERY: "DELIVERY", PICKUP: "PICKUP",
-                        BUMP_IN: "BUMP_IN", BUMP_OUT: "BUMP_OUT",
-                        LABOUR: "EVENT", MISC: "FULL_DURATION",
-                      };
-                      const phase = phaseMap[svc.type];
-                      if (phase) form.setValue("phase", phase as CrewAssignmentFormValues["phase"]);
+                      // One definition of service type -> phase (convex/lib/serviceSchedule.ts)
+                      form.setValue("phase", serviceTypeToPhase(svc.type) as CrewAssignmentFormValues["phase"]);
                       if (svc.crewRoleId) form.setValue("crewRoleId", svc.crewRoleId);
                       if (svc.date) {
                         const dateStr = new Date(svc.date).toISOString().split("T")[0];

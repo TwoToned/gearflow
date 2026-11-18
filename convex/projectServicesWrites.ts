@@ -161,7 +161,7 @@ async function syncServiceCrewSchedule(
   orgId: string,
   next: ServiceSchedule,
   now: number,
-): Promise<number> {
+): Promise<{ count: number; held: number }> {
   const { crewStart, crewEnd } = deriveCrewTimes(next.startTime, next.endTime, next.scheduledTime, service.type);
   const assignments = (
     await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", service.id)).collect()
@@ -183,7 +183,9 @@ async function syncServiceCrewSchedule(
     await recalcServiceCostFromCrew(ctx, service.id, orgId, now);
     await recalcServiceChargeFromCrew(ctx, service.id, orgId, now);
   }
-  return assignments.length;
+  // `held`: crew who have said yes (CONFIRMED) or been asked (OFFERED); status is never touched here.
+  const held = assignments.filter((r) => r.status === "CONFIRMED" || r.status === "OFFERED").length;
+  return { count: assignments.length, held };
 }
 
 // Shared service-input args (create + update). Dates are epoch-ms; the hook parses
@@ -923,8 +925,9 @@ export const shiftScheduleNative = mutation({
         endDate: shiftDay(s.endDate, offsetDays),
       };
       await ctx.db.patch(s._id, { date: next.date, endDate: next.endDate, updatedAt: a.now });
-      crewCalls += await syncServiceCrewSchedule(ctx, { id: s.id, type: s.type }, a.orgId, next, a.now);
-      confirmedMoved += await countHeldCrew(ctx, s.id, a.orgId);
+      const synced = await syncServiceCrewSchedule(ctx, { id: s.id, type: s.type }, a.orgId, next, a.now);
+      crewCalls += synced.count;
+      confirmedMoved += synced.held;
       shifted++;
     }
 
@@ -941,12 +944,6 @@ export const shiftScheduleNative = mutation({
     return { services: shifted, crewCalls, undated, confirmedMoved };
   },
 });
-
-/** Crew on a service who have said yes (CONFIRMED) or been asked (OFFERED). */
-async function countHeldCrew(ctx: MutationCtx, serviceId: string, orgId: string): Promise<number> {
-  const rows = await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", serviceId)).collect();
-  return rows.filter((r) => r.organizationId === orgId && (r.status === "CONFIRMED" || r.status === "OFFERED")).length;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // deleteServiceNative — full per-service cascade + recalc. Parity: deleteProjectService.

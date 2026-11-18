@@ -7,7 +7,7 @@
  * (the order owns its money), recomputed from the order on every read, so they
  * cannot drift from it (R-3.1). Pure: no hooks, no JSX.
  */
-import { dayKeyOf, type DayGroup } from "@/lib/logistics-model";
+import { dayKeyOf, type DayGroup, type TransportStop } from "@/lib/logistics-model";
 
 export interface SubHireOrderLite {
   id: string;
@@ -18,17 +18,7 @@ export interface SubHireOrderLite {
   hireEnd?: number;
 }
 
-export interface TransportStop {
-  /** `<orderId>:collect` / `<orderId>:return`; stable across renders. */
-  id: string;
-  subHireId: string;
-  kind: "collect" | "return";
-  /** `YYYY-MM-DD`. */
-  day: string;
-  /** `Collect from Acme Hire` / `Return to Acme Hire`. */
-  title: string;
-  orderNumber: string;
-}
+export type { TransportStop };
 
 const dayOf = (ms: number): string => dayKeyOf(new Date(ms).toISOString());
 

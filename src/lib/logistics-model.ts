@@ -6,7 +6,6 @@
  * these one definitions.
  */
 import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
-import type { TransportStop } from "@/lib/logistics-transport";
 
 export type ServiceType = "DELIVERY" | "PICKUP" | "BUMP_IN" | "BUMP_OUT" | "LABOUR" | "MISC";
 export type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
@@ -132,6 +131,19 @@ export function inLane(s: LogisticsService, lane: Lane): boolean {
 }
 
 // ─── Days ───────────────────────────────────────────────────────────────────
+
+/** A derived, read-only sub-hire collect/return stop (built by `logistics-transport.ts`). */
+export interface TransportStop {
+  /** `<orderId>:collect` / `<orderId>:return`; stable across renders. */
+  id: string;
+  subHireId: string;
+  kind: "collect" | "return";
+  /** `YYYY-MM-DD`. */
+  day: string;
+  /** `Collect from Acme Hire` / `Return to Acme Hire`. */
+  title: string;
+  orderNumber: string;
+}
 
 export interface DayGroup {
   /** `YYYY-MM-DD`, or "" for unscheduled. */

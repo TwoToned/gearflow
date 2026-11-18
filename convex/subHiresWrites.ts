@@ -1414,7 +1414,9 @@ export const coverShortfallNative = mutation({
   },
 });
 
-type ShortfallCoverage = NonNullable<Doc<"subHireItems">["coverage"]>;
+const UNDO_SCAN_CAP = 200;
+
+type ShortfallCoverage =NonNullable<Doc<"subHireItems">["coverage"]>;
 
 /**
  * Load the cover's own item and refuse the undo unless it would remove ONLY what the cover
@@ -1426,7 +1428,9 @@ async function loadUndoableCover(
 ): Promise<{ head: Doc<"subHires">; item: Doc<"subHireItems">; coverage: ShortfallCoverage }> {
   const head = await requireSubHireInOrg(ctx, a.orderId, a.orgId);
   if (head.status !== "DRAFT") throw new ConvexError(`This order is now ${(head.status ?? "").toLowerCase().replace("_", " ")}: edit it from the order instead of undoing`);
-  const items = await ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", a.orderId)).collect();
+  // Bounded read: an order this big is not a "just added" one, so refuse rather than scan it.
+  const items = await ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", a.orderId)).take(UNDO_SCAN_CAP + 1);
+  if (items.length > UNDO_SCAN_CAP) throw new ConvexError("This order has too many items to undo safely: remove the item from the order instead");
   const mine = items.find((i) => i.id === a.itemId);
   if (!mine) throw new ConvexError("The sub-hire item is already gone");
   const coverage = mine.coverage;

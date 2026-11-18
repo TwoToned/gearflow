@@ -145,11 +145,6 @@ describe("undoShortfallNative", () => {
     orgId: ORG, orderId: "ord1", itemId: "it1", now: NOW + 1, actor: ACTOR, auditId: "u1", ...over,
   });
   const coverageOf = (t: T, id = "it1") => t.run(async (ctx) => (await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", id)).first())?.coverage);
-  const setLine = (t: T, patch: Record<string, unknown>, id = "line1") =>
-    t.run(async (ctx) => {
-      const l = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-      await ctx.db.patch(l!._id, patch);
-    });
 
   test("the cover stores its own facts on the item, and the undo restores EXACTLY that quantity", async () => {
     const t = makeT();

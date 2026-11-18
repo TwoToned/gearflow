@@ -44,7 +44,8 @@ export function FormatProvider({ children }: { children: ReactNode }) {
 type DateArg = string | Date | null | undefined;
 
 export interface Formatters {
-  formatCurrency: (value: number | null | undefined) => string;
+  /** `{ cents: false }` prints whole dollars for lists (playbook §3.7). */
+  formatCurrency: (value: number | null | undefined, opts?: { cents?: boolean }) => string;
   /** The "short" role — day, short month, year. */
   formatDate: (date: DateArg) => string;
   /** No year — a compact range/relative label. */
@@ -69,7 +70,8 @@ export function useFormatters(): Formatters {
   const config = useContext(FormatContext);
   return useMemo(
     () => ({
-      formatCurrency: (value: number | null | undefined) => baseFormatCurrency(value, config),
+      formatCurrency: (value: number | null | undefined, opts?: { cents?: boolean }) =>
+        baseFormatCurrency(value, config, opts),
       formatDate: (date: DateArg) => baseFormatDate(date, config),
       formatDateDayMonth: (date: DateArg) => baseFormatDateDayMonth(date, config),
       formatDateLong: (date: DateArg) => baseFormatDateLong(date, config),

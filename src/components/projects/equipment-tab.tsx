@@ -17,7 +17,7 @@ import {
 } from "@/hooks/use-native-line-item-writes";
 import { useEquipmentDnd } from "@/hooks/use-equipment-dnd";
 import { useCanDo } from "@/lib/use-permissions";
-import { MoreHorizontal, Pencil } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,7 +47,6 @@ import { BulkEditLineItemsDialog } from "./bulk-edit-line-items-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/formatters";
 import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
-import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { UnifiedAddDialog, type UnifiedAddKind } from "./unified-add-dialog";
 import { MoveSubHireGroupDialog } from "./move-sub-hire-group-dialog";
@@ -64,11 +63,7 @@ import { RenameCategoryDialog } from "./rename-category-dialog";
 import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
 import { EditAccessoryPlanDialog } from "./edit-accessory-plan-dialog";
-import { SubHireExpandedItems } from "./sub-hire-expanded-items";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
-import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
-import { StatusIndicator } from "@/components/ui/status-indicator";
-import { ArrowLeftRight, ChevronDown } from "lucide-react";
 import {
   type LineItemData,
   type GroupData,
@@ -86,6 +81,8 @@ import { buildBulkEquipmentActions } from "@/lib/row-actions/bulk-equipment";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { EquipmentList } from "./equipment-list";
+import { buildOrdersSection, type OrderSource } from "./equipment-orders-section";
+import type { SubHireOrderStatus } from "@/lib/sub-hire-transitions";
 import { useProject } from "@/hooks/use-projects";
 import { buildEquipmentFooterTotals } from "@/lib/equipment-footer-totals";
 import { buildEquipmentSections, equipmentColumns, withSectionSelection, type EquipmentHandlers } from "./equipment-sections";
@@ -351,7 +348,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   // Sub-hire order dialog state
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
   const [managingSubHireId, setManagingSubHireId] = useState<string | null>(null);
-  const [expandedSubHires, setExpandedSubHires] = useState<Set<string>>(new Set());
 
 
 
@@ -1189,6 +1185,16 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
     setUnifiedAddKind(kind);
     setShowUnifiedAdd(true);
   };
+  // Orders-row ⋯ › next lifecycle step / Cancel: the SAME write the order
+  // dialog's Actions menu fires (`subHireWrites.setStatus`).
+  const setSubHireStatusMut = useServerMutation({
+    mutationFn: ({ id, next }: { id: string; next: SubHireOrderStatus }) => subHireWrites.setStatus(id, next),
+    onSuccess: () => {
+      toast.success("Order status updated");
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const openOrder = (subHireId: string) => {
     setManagingSubHireId(subHireId);
     setShowSubHireOrderDialog(true);
@@ -1280,7 +1286,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   const listColumns = equipmentColumns(showCostColumn);
   const visibleIds = visibleRowIds(built.sections).filter((id) => built.rowMeta.has(id));
   const selection = useRowSelection(visibleIds);
-  const listBuilt = { ...built, sections: withSectionSelection(built.sections, selection) };
+  // The Orders section is pinned AFTER the selection is derived: its rows are
+  // `selectable: false`, so it never joins `visibleIds` or a tick-all.
+  const ordersSection = buildOrdersSection(projectSubHires as OrderSource[], {
+    now: new Date(),
+    showCost: showCostColumn,
+    onOpen: openOrder,
+    onSetStatus: (id, next) => setSubHireStatusMut.mutate({ id, next }),
+  });
+  const listBuilt = {
+    ...built,
+    sections: [...withSectionSelection(built.sections, selection), ...(ordersSection ? [ordersSection] : [])],
+  };
 
   // Clear selection on Escape
   useEffect(() => {
@@ -1427,7 +1444,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
           StickyTable and no horizontal scroll. The row map is built once and
           rendered in whichever shell matches the breakpoint, so the live per-row
           subscriptions aren't duplicated across two DOM trees. */}
-      {(hasCategories || hasUncategorized) && (
+      {(hasCategories || hasUncategorized || projectSubHires.length > 0) && (
         <EquipmentList
           built={listBuilt}
           columns={listColumns}
@@ -1448,91 +1465,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
           onOpenDialog={openAddDialog}
         />
       </div>
-
-      {/* ─── Sub-Hire Orders ──────────────────────────────────────────────── */}
-      {projectSubHires.length > 0 && (
-        <div className="mt-6 rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)]">
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <div className="flex items-center gap-2">
-              <ArrowLeftRight className="h-4 w-4 text-red-text" />
-              <h3 className="text-card-title font-semibold text-ink">Sub-hire orders</h3>
-              <span className="t-mono text-muted">({projectSubHires.length})</span>
-            </div>
-          </div>
-          <div className="divide-y divide-line">
-            {projectSubHires.map((sh: Record<string, unknown>) => {
-              const shId = sh.id as string;
-              const isExpanded = expandedSubHires.has(shId);
-              const margin = Number(sh.totalCharge) - Number(sh.totalCost);
-              const isOverdue = sh.status === "ON_HIRE" && sh.hireEnd && new Date(sh.hireEnd as string) < new Date();
-              const itemCount = (sh._count as Record<string, number>)?.items || 0;
-              return (
-                <div key={shId}>
-                  <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-elev/50 transition-colors">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedSubHires((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(shId)) next.delete(shId);
-                          else next.add(shId);
-                          return next;
-                        })
-                      }
-                      className={cn("rounded-sm text-muted hover:text-ink transition-colors", focusRing)}
-                    >
-                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="t-mono font-medium text-ink-2">{sh.orderNumber as string}</span>
-                        <span className="text-ui-text text-muted">{(sh.supplier as Record<string, unknown>)?.name as string}</span>
-                        {isOverdue ? (
-                          <StatusIndicator category="subHire" intent="error" label="Overdue" value="OVERDUE" />
-                        ) : (
-                          <StatusIndicator
-                            category="subHire"
-                            value={sh.status as string}
-                            label={subHireStatusLabels[sh.status as string] || formatLabel(sh.status as string)}
-                          />
-                        )}
-                        <span className="text-caption text-muted">{itemCount} item{itemCount !== 1 ? "s" : ""}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right">
-                        <div className="text-ui-text tabular-nums text-ink-2">{formatCurrency(Number(sh.totalCharge))}</div>
-                        <div className={`text-caption tabular-nums ${margin > 0 ? "text-ok" : margin < 0 ? "text-t-out" : "text-muted"}`}>
-                          {margin > 0 ? "+" : ""}{formatCurrency(margin)}
-                        </div>
-                      </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="touch-target size-8"
-                        title="Edit sub-hire order"
-                        onClick={() => {
-                          setManagingSubHireId(shId);
-                          setShowSubHireOrderDialog(true);
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                  {/* Expanded items */}
-                  {isExpanded && (
-                    <SubHireExpandedItems
-                      subHireId={shId}
-                      orgId={orgId}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* ─── Billable Services on Documents ─────────────────────────────────── */}
       {(() => {

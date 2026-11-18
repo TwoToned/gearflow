@@ -50153,6 +50153,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "action": "update"
       },
       {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
         "resource": "subHire",
         "action": "delete"
       }
@@ -50170,18 +50174,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "createdOrder",
-        "optional": false,
-        "type": "boolean"
-      },
-      {
         "name": "itemId",
         "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "lineItemId",
-        "optional": true,
         "type": "string"
       },
       {
@@ -50198,20 +50192,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "orgId",
         "optional": false,
         "type": "string"
-      },
-      {
-        "name": "restoreQuantity",
-        "optional": true,
-        "type": "number"
-      },
-      {
-        "name": "trimmedTo",
-        "optional": true,
-        "type": "number"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "36e009188317e1a3",
+    "argsSha": "d47fe6ff1381870e",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,

@@ -35,7 +35,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectTasksWrites.reorderNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.updateNative` (mutation, scope: work:update,project:update)
 - `subHiresWrites.coverShortfallNative` (mutation, scope: subHire:update,subHire:create,project:manage_line_items)
-- `subHiresWrites.undoShortfallNative` (mutation, scope: subHire:update,subHire:delete)
+- `subHiresWrites.undoShortfallNative` (mutation, scope: subHire:update,project:manage_line_items,subHire:delete)
 
 ### asset
 - `assetAccessories.availableSerialized` (query, scope: asset:read)

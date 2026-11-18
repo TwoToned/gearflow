@@ -142,8 +142,76 @@ describe("coverShortfallNative", () => {
 
 describe("undoShortfallNative", () => {
   const undo = (over: Record<string, unknown> = {}) => ({
-    orgId: ORG, orderId: "ord1", itemId: "it1", createdOrder: true, lineItemId: "line1", restoreQuantity: 5, trimmedTo: 3,
-    now: NOW + 1, actor: ACTOR, auditId: "u1", ...over,
+    orgId: ORG, orderId: "ord1", itemId: "it1", now: NOW + 1, actor: ACTOR, auditId: "u1", ...over,
+  });
+  const coverageOf = (t: T, id = "it1") => t.run(async (ctx) => (await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", id)).first())?.coverage);
+  const setLine = (t: T, patch: Record<string, unknown>, id = "line1") =>
+    t.run(async (ctx) => {
+      const l = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      await ctx.db.patch(l!._id, patch);
+    });
+
+  test("the cover stores its own facts on the item, and the undo restores EXACTLY that quantity", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.coverShortfallNative, cover());
+    expect(await coverageOf(t)).toEqual({ lineItemId: "line1", quantityBefore: 5, quantityAfter: 3, createdOrder: true });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.undoShortfallNative, undo());
+    expect(await lineQty(t)).toBe(5);
+  });
+
+  test("a forged restoreQuantity (or any old client arg) is rejected, nothing changes", async () => {
+    const t = makeT();
+    await seed(t);
+    const c = t.withIdentity(asUser(ORG));
+    await c.mutation(api.subHiresWrites.coverShortfallNative, cover());
+    await expect(c.mutation(api.subHiresWrites.undoShortfallNative, undo({ restoreQuantity: 9999, lineItemId: "line1", trimmedTo: 3 }))).rejects.toThrow();
+    expect(await lineQty(t)).toBe(3);
+    expect(await items(t)).toHaveLength(1);
+  });
+
+  test("an item with no coverage (not made by a cover) cannot be undone this way", async () => {
+    const t = makeT();
+    await seed(t);
+    const c = t.withIdentity(asUser(ORG));
+    await c.mutation(api.subHiresWrites.coverShortfallNative, cover({ trimLine: false }));
+    await t.run(async (ctx) => {
+      const i = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", "it1")).first();
+      await ctx.db.patch(i!._id, { coverage: undefined });
+    });
+    await expect(c.mutation(api.subHiresWrites.undoShortfallNative, undo())).rejects.toThrow(/not added by a shortfall cover/);
+  });
+
+  test("a stored coverage pointing at another org's or another job's line is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    const c = t.withIdentity(asUser(ORG));
+    await c.mutation(api.subHiresWrites.coverShortfallNative, cover());
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "lineX", organizationId: OTHER, projectId: "p1", type: "EQUIPMENT", modelId: "mdl1", description: "x", quantity: 3, lineTotal: 0, isKitChild: false, status: "CONFIRMED", versionId: "vX", lineageId: "lineX" });
+      await ctx.db.insert("projectLineItems", { id: "lineY", organizationId: ORG, projectId: "p2", type: "EQUIPMENT", modelId: "mdl1", description: "y", quantity: 3, lineTotal: 0, isKitChild: false, status: "CONFIRMED", versionId: "vY", lineageId: "lineY" });
+      const i = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", "it1")).first();
+      await ctx.db.patch(i!._id, { coverage: { lineItemId: "lineX", quantityBefore: 50, quantityAfter: 3, createdOrder: true } });
+    });
+    await expect(c.mutation(api.subHiresWrites.undoShortfallNative, undo())).rejects.toThrow(/Line item not found/);
+    await t.run(async (ctx) => {
+      const i = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", "it1")).first();
+      await ctx.db.patch(i!._id, { coverage: { lineItemId: "lineY", quantityBefore: 50, quantityAfter: 3, createdOrder: true } });
+    });
+    await expect(c.mutation(api.subHiresWrites.undoShortfallNative, undo())).rejects.toThrow(/no longer matches/);
+    expect(await lineQty(t)).toBe(3);
+    expect(await items(t)).toHaveLength(1);
+  });
+
+  test("a duplicated order does not carry the cover's coverage onto the copy", async () => {
+    const t = makeT();
+    await seed(t);
+    const c = t.withIdentity(asUser(ORG));
+    await c.mutation(api.subHiresWrites.coverShortfallNative, cover());
+    await c.mutation(api.subHiresWrites.duplicateSubHireNative, { sourceId: "ord1", id: "ord2", orgId: ORG, now: NOW, actor: ACTOR, auditId: "d1" });
+    const copies = (await items(t)).filter((i) => i.subHireId === "ord2");
+    expect(copies).toHaveLength(1);
+    expect(copies[0].coverage).toBeUndefined();
   });
 
   test("restores the line and removes the item and the order the cover created", async () => {
@@ -162,7 +230,7 @@ describe("undoShortfallNative", () => {
     const c = t.withIdentity(asUser(ORG));
     await c.mutation(api.subHiresWrites.coverShortfallNative, cover({ trimLine: false }));
     await c.mutation(api.subHiresWrites.coverShortfallNative, cover({ draftOrderId: "ord1", itemId: "it2", trimLine: false, auditId: "a2" }));
-    await c.mutation(api.subHiresWrites.undoShortfallNative, undo({ itemId: "it2", createdOrder: false, lineItemId: undefined, restoreQuantity: undefined, trimmedTo: undefined }));
+    await c.mutation(api.subHiresWrites.undoShortfallNative, undo({ itemId: "it2" }));
     expect(await heads(t)).toHaveLength(1);
     expect((await items(t)).map((i) => i.id)).toEqual(["it1"]);
   });

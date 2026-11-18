@@ -245,14 +245,12 @@ export function useSubHireWrites() {
         actor: actor(),
         auditId: createId(),
       });
-      const trimmed = r.lineQuantityAfter !== r.lineQuantityBefore;
+      // The server stored what the cover did on the item; the undo names only the order + item.
       const undo = async () => {
         await undoShortfallM({
           orgId: org,
           orderId: r.orderId,
           itemId: r.itemId,
-          createdOrder: r.createdOrder,
-          ...(trimmed ? { lineItemId: input.lineItemId, restoreQuantity: r.lineQuantityBefore, trimmedTo: r.lineQuantityAfter } : {}),
           now: Date.now(),
           actor: actor(),
           auditId: createId(),

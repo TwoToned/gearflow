@@ -1405,25 +1405,49 @@ export const coverShortfallNative = mutation({
       showOnQuote, showOnDocs, notes, now: a.now, actor, auditId: `${a.auditId}:item`,
     });
     if (a.trimLine) await patchLineQuantity(ctx, { orgId: a.orgId, line, qty: after, allowOverbook: false, now: a.now, actor, auditId: `${a.auditId}:line` });
+    // The undo's ONLY source of truth: what this cover did, stored on the item it created.
+    const itemDoc = await ctx.db.query("subHireItems").withIndex("by_cuid", (q) => q.eq("id", a.itemId)).first();
+    if (itemDoc && !itemDoc.coverage) {
+      await ctx.db.patch(itemDoc._id, { coverage: { lineItemId: line.id, quantityBefore: before, quantityAfter: after, createdOrder } });
+    }
     return { orderId, itemId: a.itemId, createdOrder, lineQuantityBefore: before, lineQuantityAfter: after };
   },
 });
 
-/** Refuse the undo unless it would remove ONLY what the cover added (see undoShortfallNative). */
-async function assertShortfallUndoable(
+type ShortfallCoverage = NonNullable<Doc<"subHireItems">["coverage"]>;
+
+/**
+ * Load the cover's own item and refuse the undo unless it would remove ONLY what the cover
+ * added. Everything the undo needs comes from the item's stored `coverage`, never from args.
+ */
+async function loadUndoableCover(
   ctx: MutationCtx,
-  a: { orgId: string; orderId: string; itemId: string; createdOrder: boolean },
-): Promise<Doc<"subHireItems">> {
+  a: { orgId: string; orderId: string; itemId: string },
+): Promise<{ head: Doc<"subHires">; item: Doc<"subHireItems">; coverage: ShortfallCoverage }> {
   const head = await requireSubHireInOrg(ctx, a.orderId, a.orgId);
   if (head.status !== "DRAFT") throw new ConvexError(`This order is now ${(head.status ?? "").toLowerCase().replace("_", " ")}: edit it from the order instead of undoing`);
   const items = await ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", a.orderId)).collect();
   const mine = items.find((i) => i.id === a.itemId);
   if (!mine) throw new ConvexError("The sub-hire item is already gone");
+  const coverage = mine.coverage;
+  if (!coverage) throw new ConvexError("This item was not added by a shortfall cover");
   // Items have no creation stamp, but `sortOrder` is max+1 at insert: any other item that sorts
   // after ours was added since; on an order this cover CREATED, any other item at all is "since".
-  const addedSince = items.some((i) => i.id !== mine.id && (a.createdOrder || (i.sortOrder ?? 0) > (mine.sortOrder ?? 0)));
+  const addedSince = items.some((i) => i.id !== mine.id && (coverage.createdOrder || (i.sortOrder ?? 0) > (mine.sortOrder ?? 0)));
   if (addedSince) throw new ConvexError("More items were added to this order since: remove this one from the order instead of undoing");
-  return mine;
+  return { head, item: mine, coverage };
+}
+
+/** The line the cover trimmed, re-verified: same org + job + model, quantity still what the cover left. */
+async function requireUntouchedTrimmedLine(
+  ctx: MutationCtx,
+  a: { orgId: string; head: Doc<"subHires">; item: Doc<"subHireItems">; coverage: ShortfallCoverage },
+): Promise<Doc<"projectLineItems">> {
+  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.coverage.lineItemId)).first();
+  if (!line || line.organizationId !== a.orgId) throw new ConvexError("Line item not found");
+  if (line.projectId !== a.head.projectId || !line.modelId || line.modelId !== a.item.modelId) throw new ConvexError("The line no longer matches this order");
+  if ((line.quantity ?? 1) !== a.coverage.quantityAfter) throw new ConvexError("The line was edited since: change its quantity by hand");
+  return line;
 }
 
 /**
@@ -1438,11 +1462,6 @@ export const undoShortfallNative = mutation({
     orgId: v.string(),
     orderId: v.string(),
     itemId: v.string(),
-    createdOrder: v.boolean(),
-    /** When the cover trimmed a line: which line, and the quantities it moved between. */
-    lineItemId: v.optional(v.string()),
-    restoreQuantity: v.optional(v.number()),
-    trimmedTo: v.optional(v.number()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -1451,21 +1470,20 @@ export const undoShortfallNative = mutation({
     await assertWritesEnabled(ctx, "subHire");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "subHire", "update");
-    if (a.createdOrder) await requireOrgPermission(ctx, a.orgId, "subHire", "delete");
+    // The quantity restore is a line edit: it needs the permission a normal quantity edit needs.
+    await requireOrgPermission(ctx, a.orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, a.actor);
 
-    await assertShortfallUndoable(ctx, a);
-    let line: Doc<"projectLineItems"> | null = null;
-    if (a.lineItemId != null && a.restoreQuantity != null) {
-      line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.lineItemId!)).first();
-      if (!line || line.organizationId !== a.orgId) throw new ConvexError("Line item not found");
-      if (line.quantity !== a.trimmedTo) throw new ConvexError("The line was edited since: change its quantity by hand");
+    const { head, item, coverage } = await loadUndoableCover(ctx, a);
+    if (coverage.createdOrder) await requireOrgPermission(ctx, a.orgId, "subHire", "delete");
+    if (coverage.quantityBefore !== coverage.quantityAfter) {
+      const line = await requireUntouchedTrimmedLine(ctx, { orgId: a.orgId, head, item, coverage });
+      // allowOverbook only ever lets the line return to EXACTLY the stored `quantityBefore`
+      // (the cover's own pre-state, valid before it ran); the figure is never caller-supplied.
+      await patchLineQuantity(ctx, { orgId: a.orgId, line, qty: coverage.quantityBefore, allowOverbook: true, now: a.now, actor, auditId: `${a.auditId}:line` });
     }
-    // Restoring raises the quantity back to a state that may be overbooked (that is why the
-    // shortfall existed), so it is allowed to; it only ever returns the line to its prior value.
-    if (line) await patchLineQuantity(ctx, { orgId: a.orgId, line, qty: a.restoreQuantity!, allowOverbook: true, now: a.now, actor, auditId: `${a.auditId}:line` });
     await ctx.runMutation(api.subHiresWrites.removeSubHireItemNative, { itemId: a.itemId, orgId: a.orgId, now: a.now, actor, auditId: `${a.auditId}:item` });
-    if (a.createdOrder) await ctx.runMutation(api.subHiresWrites.deleteSubHireNative, { id: a.orderId, orgId: a.orgId, now: a.now, actor, auditId: `${a.auditId}:order` });
+    if (coverage.createdOrder) await ctx.runMutation(api.subHiresWrites.deleteSubHireNative, { id: a.orderId, orgId: a.orgId, now: a.now, actor, auditId: `${a.auditId}:order` });
     return { ok: true };
   },
 });

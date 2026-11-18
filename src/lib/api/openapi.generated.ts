@@ -39088,7 +39088,7 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "subHiresWrites.undoShortfallNative",
         "summary": "subHiresWrites.undoShortfallNative (mutation)",
-        "description": "Requires scope: subHire:update or subHire:delete. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: subHire:update or project:manage_line_items or subHire:delete. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
         "requestBody": {
           "required": true,
@@ -39100,27 +39100,14 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "createdOrder": {
-                        "type": "boolean"
-                      },
                       "itemId": {
-                        "type": "string"
-                      },
-                      "lineItemId": {
                         "type": "string"
                       },
                       "orderId": {
                         "type": "string"
-                      },
-                      "restoreQuantity": {
-                        "type": "number"
-                      },
-                      "trimmedTo": {
-                        "type": "number"
                       }
                     },
                     "required": [
-                      "createdOrder",
                       "itemId",
                       "orderId"
                     ],

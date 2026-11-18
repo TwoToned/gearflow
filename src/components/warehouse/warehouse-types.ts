@@ -577,6 +577,11 @@ export function isMoveableAtDeprepStage(u: Unit): boolean {
   return u.status === "RETURNED" && u.prepStatus === "PACKED";
 }
 
+/** De-prepped stage: units back and already de-prepped (the only ones a re-pack may touch). */
+export function isMoveableAtUndeprepStage(u: Unit): boolean {
+  return u.status === "RETURNED" && u.prepStatus !== "PACKED";
+}
+
 /**
  * Resolve a Deploy/Return/De-prep tab's selection — the SAME key format
  * `handleCheckOutSelected`/`handlePrepSelected` already parse: a bare

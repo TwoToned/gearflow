@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 
+import { ConfirmDialog } from "@/components/ui/action-menu";
 import { LineRowList } from "@/components/ui/line-row";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { DraggedRowClone, UseEquipmentDndResult } from "@/hooks/use-equipment-dnd";
@@ -117,7 +118,7 @@ export function EquipmentList({
       onDragEnd={dnd.handleDragEnd}
       onDragCancel={dnd.handleDragCancel}
     >
-      <div className={isMobile ? undefined : "overflow-x-auto rounded-[var(--r)] border border-line"} {...hotkeys}>
+      <div className={isMobile ? undefined : "overflow-x-auto rounded-[var(--r)] border border-line"} {...hotkeys.handlers}>
         <LineRowList
           sections={sections}
           columns={columns}
@@ -127,6 +128,7 @@ export function EquipmentList({
           dragHandle={isMobile ? undefined : () => <DragGrip />}
         />
       </div>
+      <ConfirmDialog item={hotkeys.pending} onClose={hotkeys.clearPending} />
       {/* Portalled to <body>: <DragOverlay> is `position: fixed` and the page's FadeIn
           wrapper leaves a transform on an ancestor, which would re-anchor it. */}
       {typeof document !== "undefined" &&

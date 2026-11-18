@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import type { LineRowListSection } from "@/components/ui/line-row";
+import type { ActionItem } from "@/lib/primitives/types";
 import { isShortcutSuppressed } from "./use-row-shortcuts";
 
 /**
@@ -18,6 +19,7 @@ import { isShortcutSuppressed } from "./use-row-shortcuts";
  */
 export function useRowHotkeys(sections: LineRowListSection[], scope = "equipment") {
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [pending, setPending] = useState<ActionItem | null>(null);
 
   useEffect(() => {
     if (!hoverId) return;
@@ -29,12 +31,23 @@ export function useRowHotkeys(sections: LineRowListSection[], scope = "equipment
       const item = items.find((i) => i.kbd?.toLowerCase() === event.key.toLowerCase());
       if (!item) return;
       event.preventDefault();
-      void item.onSelect();
+      // A confirm item (Delete) goes through the same confirm dialog as the menu.
+      if (item.confirm) setPending(item);
+      else void item.onSelect();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [hoverId, sections, scope]);
 
+  return {
+    /** Render `<ConfirmDialog item={pending} onClose={clearPending} />` next to the list. */
+    pending,
+    clearPending: () => setPending(null),
+    handlers: hoverHandlers(setHoverId),
+  };
+}
+
+function hoverHandlers(setHoverId: React.Dispatch<React.SetStateAction<string | null>>) {
   return {
     onMouseOver: (e: React.MouseEvent) => {
       const id = (e.target as HTMLElement).closest?.("[data-row-id]")?.getAttribute("data-row-id") ?? null;

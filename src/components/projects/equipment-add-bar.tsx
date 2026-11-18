@@ -19,7 +19,7 @@ import type { UnifiedAddKind } from "./unified-add-dialog";
  * data: the dialog opener and `invalidate` are the tab's.
  */
 
-export const ADD_KINDS = [
+const ADD_KINDS = [
   { key: "gear", label: "Gear" },
   { key: "kit", label: "Kit" },
   { key: "sub-hire", label: "Sub-hire" },
@@ -31,7 +31,7 @@ const DIALOG_KINDS: Record<string, UnifiedAddKind> = { "sub-hire": "sub-hire", c
 const DIALOG_NOUN: Record<string, string> = { "sub-hire": "sub-hire item", custom: "custom item", sale: "sale item" };
 
 /** The dialog kind for a result (`gear` is the dialog's `own-stock`). */
-export function dialogKindFor(result: AddBarResult): UnifiedAddKind {
+function dialogKindFor(result: AddBarResult): UnifiedAddKind {
   if (result.kind === "gear") return "own-stock";
   return (DIALOG_KINDS[result.kind] ?? result.kind) as UnifiedAddKind;
 }

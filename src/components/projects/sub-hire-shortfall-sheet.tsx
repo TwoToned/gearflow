@@ -36,7 +36,7 @@ export interface ShortfallTarget {
   short: number;
 }
 
-export interface DraftOrderRef {
+interface DraftOrderRef {
   id: string;
   orderNumber: string;
   supplierId?: string | null;

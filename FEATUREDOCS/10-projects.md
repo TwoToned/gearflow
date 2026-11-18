@@ -703,12 +703,15 @@ designed layout.
 - Responsive: 4-column on desktop, 2x2 grid on mobile
 - Uses existing financial data + `getProjectServicesSummary()` + `getProjectLabourCost()`
 
-### Labour & Logistics Tab
-- Single tab, single component: `ServicesPanel` (`src/components/projects/
-  services-panel.tsx`) is now the **entire** tab — there is no page-level `CrewPanel`
-  sibling anymore (issue #796). `ServicesPanel` renders the services timeline, then
-  a "Project crew" section that mounts `CrewPanel` internally (viewing/status/bulk/
-  messaging/call-sheet for every assignment on the project, service-linked or not).
+### Logistics Tab
+> **Superseded by UX Phase 5a:** the tab is now **Logistics** (`LogisticsTab`,
+> `src/components/projects/logistics/`), replacing `ServicesPanel` + `CrewPanel`. See
+> [84-job-logistics.md](./84-job-logistics.md). The bullets below describe the pre-5a tab where
+> they still apply to the service dialog / date model (the `ServiceDialog` is unchanged).
+
+- Historic: single tab, single component `ServicesPanel` (issue #796) rendering the services
+  timeline then a "Project crew" section that mounted `CrewPanel`
+  (viewing/status/bulk/messaging/call-sheet for every assignment on the project).
 - Timeline view: services grouped by date with SectionHeader overline pattern
 - Service cards show StatusIndicator pills, crew avatar stack (3 max + overflow), inline crew cost
 - "Generate Services" button auto-creates services from project dates + service templates
@@ -877,11 +880,9 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
   (matched `Category.suggestedCrewRoles` to equipment categories) and `getServiceCostHistory`
 
 ### Day-of Runsheet
-- Dedicated route: `/projects/[id]/runsheet`
-- Mobile-first layout: no sidebar/tabs, compact header with venue directions
-- Services grouped by date with crew lists per service
-- Tappable phone numbers (tel: links) for site contact
-- Link from project detail page "Runsheet" button
+- **Retired (UX Phase 5a):** `/projects/[id]/runsheet` now redirects to `?tab=logistics` (with
+  `print=1` for the print view). Its job is the Logistics tab's **phone day mode** (one rendering of
+  one data set, no read-only fork) and `print-runsheet.tsx`. See [84-job-logistics.md](./84-job-logistics.md).
 
 ### Timeline PDF
 - API route: `/api/documents/timeline/[projectId]`

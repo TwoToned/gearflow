@@ -41,6 +41,12 @@ These are the checks Flow's own readiness checklist runs. Each returns
 | **Services** | Work still `PLANNED`, or staffed below required count | Confirm the service, assign more crew |
 | **Pricing** | Lines with no price | Price them, or confirm they are deliberately $0 |
 
+The services and crew work lives on the job's **Logistics** tab (formerly "Labour & logistics"; the
+old `/runsheet` page is its phone day view). A linked sub-hire order also appears there as two
+read-only stops, `Collect from <supplier>` on hire start and `Return to <supplier>` on hire end;
+they are derived from the order, not services, and carry no price. Moving the job's dates offers to
+move the services and crew calls with them.
+
 **`unknown` is not a pass.** A job with no dates cannot have its gear checked —
 report "not checked" and why, never an all-clear. An `unknown` never counts
 toward "everything's fine".

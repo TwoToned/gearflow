@@ -149,4 +149,3 @@ export function useJobStages(deps: {
 
   return { sections, selection, preppedActions, outActions, returnedActions, depreppedActions, preppedCaseMenu, returnedScan, movingScan, binCount, setBinCount, confirmBinCount };
 }
-export type JobStages = ReturnType<typeof useJobStages>;

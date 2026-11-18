@@ -30,9 +30,3 @@ export function takeRememberedScanChoice(projectId: string, lineItemId: string):
   else entry.left -= 1;
   return entry.choice;
 }
-
-/** Forget everything remembered for a job (tests, and an explicit reset). */
-export function clearScanMemory(projectId?: string): void {
-  if (projectId) byProject.delete(projectId);
-  else byProject.clear();
-}

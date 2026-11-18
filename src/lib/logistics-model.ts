@@ -286,6 +286,9 @@ export function counterLocation<L extends { isDefault?: boolean | null; type?: s
   return withAddress.find((l) => l.isDefault) ?? withAddress.find((l) => l.type === "WAREHOUSE") ?? null;
 }
 
+/** The warehouse display's words for a client pick up / drop off (one source; the display shows no truck). */
+export const HANDOVER_TILE_WORDS = { CLIENT_PICKUP: "Client collects", CLIENT_DROPOFF: "Client returns" } as const;
+
 /** The org's Warehouse crew role (by name, case-insensitive): the default for the counter staff. */
 export function warehouseRoleId(roles: { id: string; name: string; isActive?: boolean }[] | undefined): string | null {
   return (roles ?? []).find((r) => r.isActive !== false && r.name.trim().toLowerCase() === "warehouse")?.id ?? null;

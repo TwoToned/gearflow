@@ -169,6 +169,7 @@ import type * as lib_sanitizeSet from "../lib/sanitizeSet.js";
 import type * as lib_scopes from "../lib/scopes.js";
 import type * as lib_searchScore from "../lib/searchScore.js";
 import type * as lib_serviceCost from "../lib/serviceCost.js";
+import type * as lib_serviceSchedule from "../lib/serviceSchedule.js";
 import type * as lib_serviceScheduleCore from "../lib/serviceScheduleCore.js";
 import type * as lib_shardedCounter from "../lib/shardedCounter.js";
 import type * as lib_subHireLineGen from "../lib/subHireLineGen.js";
@@ -486,6 +487,7 @@ declare const fullApi: ApiFromModules<{
   "lib/scopes": typeof lib_scopes;
   "lib/searchScore": typeof lib_searchScore;
   "lib/serviceCost": typeof lib_serviceCost;
+  "lib/serviceSchedule": typeof lib_serviceSchedule;
   "lib/serviceScheduleCore": typeof lib_serviceScheduleCore;
   "lib/shardedCounter": typeof lib_shardedCounter;
   "lib/subHireLineGen": typeof lib_subHireLineGen;

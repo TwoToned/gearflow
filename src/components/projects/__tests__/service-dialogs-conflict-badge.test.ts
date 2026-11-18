@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// services-panel.tsx's `pickConflictBadge` (WS8 #947) — the ONE per-member
+// service-dialogs.tsx's `pickConflictBadge` (WS8 #947) — the ONE per-member
 // badge precedence used by the picker row badge, the CrewRateTable sub-line,
 // the section-level "N of M selected have clashes" summary, AND the
 // "Send offers"/"Confirm all" pre-flight count. This test locks in that
@@ -9,7 +9,7 @@
 // (excluding a "preferred" positive hint from the clash count), matches what
 // the query-level severity model (convex/lib/crewConflicts.ts) would classify.
 import { describe, test, expect } from "vitest";
-import { pickConflictBadge, type CrewConflictSummary } from "@/components/projects/services-panel";
+import { pickConflictBadge, type CrewConflictSummary } from "@/components/projects/service-dialogs";
 
 function summary(over: Partial<CrewConflictSummary> = {}): CrewConflictSummary {
   return { conflicts: [], isUnavailable: false, availability: "available", hasPreferredBlock: false, ...over };
@@ -61,7 +61,7 @@ describe("pickConflictBadge", () => {
 });
 
 describe("pre-flight clash count parity (section summary / bulk 'Send offers' confirm dialog)", () => {
-  // Mirrors services-panel.tsx's `selectedConflictCount`: count members whose
+  // Mirrors service-dialogs.tsx's `selectedConflictCount`: count members whose
   // badge is non-null AND not the "preferred" positive hint.
   function countClashes(members: (CrewConflictSummary | undefined)[]): number {
     return members.filter((m) => {

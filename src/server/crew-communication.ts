@@ -25,6 +25,7 @@ import {
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectByIdMapped } from "@/lib/projects-read";
+import { sendCrewOffersSchema } from "@/lib/validations/crew";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
@@ -114,7 +115,27 @@ export async function sendCrewOffer(assignmentId: string) {
     "crew",
     "update"
   );
+  const { crewName, projectName } = await offerAssignment(assignmentId, organizationId);
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "crew_assignment",
+    entityId: assignmentId,
+    entityName: crewName,
+    summary: `Sent crew offer to ${crewName} for ${projectName}`,
+  });
 
+  return serialize({ success: true });
+}
+
+/**
+ * The offer itself (token, OFFERED status, email), with NO permission check and NO
+ * audit row: the caller has already authorised and owns the audit, so a bulk send
+ * writes ONE summary row instead of N+1 (`sendCrewOffers`).
+ */
+async function offerAssignment(assignmentId: string, organizationId: string) {
   const { assignment, emailData } =
     await buildAssignmentEmailData(assignmentId);
 
@@ -162,18 +183,10 @@ export async function sendCrewOffer(assignmentId: string) {
     html: email.html,
   });
 
-  await logActivity({
-    organizationId,
-    userId,
-    userName,
-    action: "UPDATE",
-    entityType: "crew_assignment",
-    entityId: assignmentId,
-    entityName: `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`,
-    summary: `Sent crew offer to ${assignment.crewMember.firstName} ${assignment.crewMember.lastName} for ${assignment.project.name}`,
-  });
-
-  return serialize({ success: true });
+  return {
+    crewName: `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`,
+    projectName: assignment.project.name,
+  };
 }
 
 // ─── Send Offer to All ───────────────────────────────────────────────────────
@@ -209,6 +222,46 @@ export async function sendCrewOfferAll(projectId: string) {
   }
 
   return serialize({ sent, errors, total: assignments.length });
+}
+
+// ─── Send Offers to the ticked assignments ───────────────────────────────────
+
+/**
+ * Offer each ticked assignment (Logistics bulk verb `Send N offers`). Same
+ * per-row path as `sendCrewOffer`; a row that cannot be offered (no email, not
+ * this org's) is reported in `errors`, never thrown, so one bad row does not
+ * stop the rest.
+ */
+export async function sendCrewOffers(input: { assignmentIds: string[] }) {
+  const { organizationId, userId, userName } = await requirePermission("crew", "update");
+  const { assignmentIds } = sendCrewOffersSchema.parse(input);
+
+  // Deduped: a repeated id is one offer, and the count we report and audit says so.
+  const ids = [...new Set(assignmentIds)];
+  let sent = 0;
+  const errors: string[] = [];
+  for (const id of ids) {
+    try {
+      await offerAssignment(id, organizationId);
+      sent++;
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
+  }
+
+  // ONE audit row for the click (the per-offer path's own row is deliberately skipped).
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "crew_assignment",
+    entityId: ids[0],
+    entityName: `${ids.length} crew assignments`,
+    summary: `Sent ${sent} of ${ids.length} crew offers`,
+  });
+
+  return serialize({ sent, errors, total: ids.length });
 }
 
 // ─── Send Confirmation Email ─────────────────────────────────────────────────

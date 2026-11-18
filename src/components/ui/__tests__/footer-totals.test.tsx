@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import { FooterTotals } from "@/components/ui/footer-totals";
 
 describe("FooterTotals", () => {
-  it("renders caller-derived lines, a blank amount is a dash not $0", () => {
+  it("renders caller-derived lines in whole dollars, a blank amount is a dash not $0", () => {
     render(
       <FooterTotals
         lines={[
@@ -15,9 +15,10 @@ describe("FooterTotals", () => {
         ]}
       />,
     );
-    expect(screen.getByText("$1,200.00")).toBeTruthy();
+    expect(screen.getByText("$1,200")).toBeTruthy();
+    expect(screen.queryByText("$1,200.00")).toBeNull();
     expect(screen.getByText("—")).toBeTruthy();
-    expect(screen.queryByText("$0.00")).toBeNull();
+    expect(screen.queryByText("$0")).toBeNull();
     expect(screen.getByText("incl. GST")).toBeTruthy();
   });
   it("renders nothing without lines", () => {

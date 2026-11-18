@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
  * `FooterTotals` — one muted footer line of derived totals (spec §5.6). The
  * caller derives every `TotalLine` (FEATUREDOCS/74); nothing here is stored or
  * summed. A `null` amount renders blank (`—`), never `$0` (CLAUDE.md "$0 is a
- * PRICE"). Render it once per tab, in the list footer.
+ * PRICE"). Whole dollars, no cents: it is a list footer (playbook §3.7). Render
+ * it once per tab, in the list footer.
  */
 export function FooterTotals({
   lines,
@@ -31,7 +32,7 @@ export function FooterTotals({
       {lines.map((l) => (
         <div key={l.label} className="flex items-baseline gap-2">
           <dt>{l.label}</dt>
-          <dd className="font-medium text-ink-2">{formatCurrency(l.amount)}</dd>
+          <dd className="font-medium text-ink-2">{formatCurrency(l.amount, { cents: false })}</dd>
           {l.note ? <dd className="text-muted">{l.note}</dd> : null}
         </div>
       ))}

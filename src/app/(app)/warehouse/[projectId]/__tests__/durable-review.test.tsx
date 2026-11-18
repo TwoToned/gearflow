@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import {render,screen,fireEvent,waitFor,act,cleanup} from '@testing-library/react';
+import {render,screen,fireEvent,waitFor,act,cleanup,within} from '@testing-library/react';
 import {it,expect,vi,afterEach,beforeEach} from 'vitest';
 const io=vi.hoisted(()=>({tab:'check-in',user:'u',lookup:vi.fn(),commit:vi.fn(),ordinary:vi.fn(),play:vi.fn(),project:null as Record<string,unknown> | null}));
 vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams('tab='+io.tab),useRouter:()=>({push:()=>{}})}));
@@ -88,12 +88,19 @@ function accessoryProject(packed=false) {
  io.project={...io.project,status:'CONFIRMED',lineItems:[{id:'parent',type:'EQUIPMENT',quantity:1,status:'CONFIRMED',checkedOutQuantity:0,prepStatus:'PACKED',assetId:'a',asset:{id:'a',assetTag:'A',status:'AVAILABLE'},modelId:'m',model:{id:'m',name:'Lamp'},childLineItems:[child('acc1'),child('acc2')],units:[]}]};
  io.lookup.mockResolvedValue({found:true,type:'asset',lineItemId:'parent',assetId:'a',assetName:'Lamp'});
 }
+// The deploy gate (DeployGateDialog): mark every unpacked accessory Leave, give each a reason, then Deploy.
+async function leaveAllAndDeploy(){
+ const dialog=await screen.findByRole('dialog');
+ within(dialog).getAllByRole('button',{name:'Leave'}).forEach(b=>fireEvent.click(b));
+ within(dialog).getAllByLabelText(/Reason for leaving/).forEach(i=>fireEvent.change(i,{target:{value:'left on the shelf'}}));
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+}
 it('mounted missing-accessory override retains captured operation, decision and notes through lost acknowledgement',async()=>{
  accessoryProject();
  const q=new ScanIntake(localStorage);const entry=q.capture(scope,'deploy','A','GOOD','captured deploy note');
  io.commit.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValue({confirmed:true});
  await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
- fireEvent.click(await screen.findByRole('button',{name:'Deploy anyway'}));
+ await leaveAllAndDeploy();
  await waitFor(()=>expect(io.commit).toHaveBeenCalledTimes(1));
  expect(io.ordinary).not.toHaveBeenCalled();
  expect(q.list(scope)[0]).toMatchObject({state:'pending'});
@@ -106,10 +113,10 @@ it.each(['account','version'] as const)('mounted accessory %s switch closes revi
  accessoryProject();const q=new ScanIntake(localStorage);q.capture(scope,'deploy','A','GOOD','saved');
  const params=Promise.resolve({projectId:'p'});let view!:ReturnType<typeof render>;
  await act(async()=>{view=render(<Page params={params}/>);});
- await screen.findByRole('button',{name:'Deploy anyway'});
+ await screen.findByText('Accessories not packed');
  if(context==='account') io.user='other';else io.project={...io.project,liveVersionId:'v2'};
  view.rerender(<Page params={params}/>);
- await waitFor(()=>expect(screen.queryByRole('button',{name:'Deploy anyway'})).toBeNull());
+ await waitFor(()=>expect(screen.queryByText('Accessories not packed')).toBeNull());
  expect(q.list(scope)[0].state).toBe('review');expect(io.commit).not.toHaveBeenCalled();expect(io.ordinary).not.toHaveBeenCalled();
 });
 it.each(['verified','all'] as const)('mounted partial accessory verification commits %s decision through saved scan',async decision=>{
@@ -133,7 +140,7 @@ it('mounted rejected accessory commit remains failed and cancellation remains re
  fireEvent.click(await screen.findByRole('button',{name:'Cancel'}));
  expect(q.list(scope)[0]).toMatchObject({state:'review',notes:'retained'});expect(io.commit).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button',{name:'Review saved scan'}));
- fireEvent.click(await screen.findByRole('button',{name:'Deploy anyway'}));
+ await leaveAllAndDeploy();
  await waitFor(()=>expect(q.list(scope)[0]).toMatchObject({state:'failed',error:'Project version changed',notes:'retained'}));
  expect(io.ordinary).not.toHaveBeenCalled();
 });

@@ -101,6 +101,14 @@ import { isRelocatedLineId, relocateAccessories, takeAccessorySelection } from "
 import { DeployTab } from "@/components/warehouse/deploy-tab";
 import { MovingStage, type StageAction } from "@/components/warehouse/job/moving-stage";
 import { ReturnConditionBar, type ReturnCondition } from "@/components/warehouse/job/return-condition-bar";
+import { DeployGateDialog, type GateDecision } from "@/components/warehouse/job/deploy-gate-dialog";
+import { prefillOverrideReason } from "@/lib/warehouse-accessory-rules";
+
+/** An accessory that would be left behind by a Deploy (the gate's row, before it is shown). */
+interface MissingAccessory {
+  parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string;
+  tier: "DEFAULT" | "OPTIONAL"; officeNote: string;
+}
 import { intakeToStripEntries } from "@/lib/durable-scan-strip";
 import type { ActionMenuSpec, RowSelection } from "@/lib/primitives/types";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -378,11 +386,9 @@ function WarehouseProjectPage({
   const [accessoryGate, setAccessoryGate] = useState<{
     durableOperationId?: string;
     pendingCheckOutItems: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>;
-    missingDefaults: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }>;
-    missingOptionals: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }>;
+    missingDefaults: MissingAccessory[];
+    missingOptionals: MissingAccessory[];
   } | null>(null);
-  const [defaultOverrideReason, setDefaultOverrideReason] = useState("");
-  const [optionalSkipReasons, setOptionalSkipReasons] = useState<Record<string, { preset: string; note: string }>>({});
 
   // Accessory partial-verification confirm (issue #794's remaining acceptance
   // criterion) — mirrors the kit prep dialog's "Deploy Verified Only"/"Deploy
@@ -1560,14 +1566,18 @@ function WarehouseProjectPage({
   // --- Checkout / Checkin selected ---
   // A single accessory child's classification for the Deploy gate below — null
   // when it's not "missing" (already deployed/cancelled, or already packed).
-  function missingAccessoryRow(li: LineItem, c: LineItem): { parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string; isOptional: boolean } | null {
+  function missingAccessoryRow(li: LineItem, c: LineItem): (MissingAccessory & { isOptional: boolean }) | null {
     if (c.status === "CANCELLED" || c.status === "CHECKED_OUT" || c.prepStatus === "PACKED") return null;
+    const isOptional = c.accessoryInclusion === "OPTIONAL";
     return {
       parentLineItemId: li.id,
       parentName: modelDisplayName(li),
       accessoryLineItemId: c.id,
       accessoryName: c.model?.name || c.description || "Accessory",
-      isOptional: c.accessoryInclusion === "OPTIONAL",
+      isOptional,
+      tier: isOptional ? "OPTIONAL" : "DEFAULT",
+      // D9: the office's own note on the plan, else the manager's stock wording; editable in the dialog.
+      officeNote: isOptional ? "" : prefillOverrideReason(li, c.bulkAssetId) || (isManagerTier ? "Manager override — deployed without full verification" : ""),
     };
   }
 
@@ -1576,8 +1586,8 @@ function WarehouseProjectPage({
   // behind. DEFAULT-tier misses soft-block Deploy; OPTIONAL-tier misses just
   // need a reason (issue #794 follow-up).
   function computeMissingAccessories(parentLineItemIds: string[]) {
-    const missingDefaults: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }> = [];
-    const missingOptionals: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }> = [];
+    const missingDefaults: MissingAccessory[] = [];
+    const missingOptionals: MissingAccessory[] = [];
     for (const id of parentLineItemIds) {
       const li = lineItems.find((l) => l.id === id);
       if (!li) continue;
@@ -1671,8 +1681,6 @@ function WarehouseProjectPage({
     const lineIds = items.map((i) => i.lineItemId);
     const { missingDefaults, missingOptionals } = computeMissingAccessories(lineIds);
     if (missingDefaults.length > 0 || missingOptionals.length > 0) {
-      setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
-      setOptionalSkipReasons({});
       setAccessoryGate({ durableOperationId, pendingCheckOutItems: items, missingDefaults, missingOptionals });
       return true;
     }
@@ -1746,27 +1754,29 @@ function WarehouseProjectPage({
     runCheckOut(items);
   };
 
-  const confirmAccessoryGate = async () => {
+  // `decisions` (DeployGateDialog): `pack` rows are packed now (accessories-only prep of their parent) and
+  // deploy with it; `leave` rows are the skipped accessories, logged with their reason exactly as before.
+  const confirmAccessoryGate = async (decisions: GateDecision[]) => {
     if (!accessoryGate) return;
     const { pendingCheckOutItems, missingDefaults, missingOptionals } = accessoryGate;
+    const byId = new Map([...missingDefaults, ...missingOptionals].map((m) => [m.accessoryLineItemId, m]));
+    const leaves = decisions.filter((d) => d.action === "leave" && byId.has(d.id));
+    const packParents = [...new Set(decisions.filter((d) => d.action === "pack").map((d) => byId.get(d.id)?.parentLineItemId).filter((x): x is string => !!x))];
 
-    const skipped: Array<{ accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }> = [
-      ...missingDefaults.map((d) => ({
-        accessoryLineItemId: d.accessoryLineItemId,
-        tier: "DEFAULT" as const,
-        reason: defaultOverrideReason.trim(),
-      })),
-      ...missingOptionals.map((o) => {
-        const entry = optionalSkipReasons[o.accessoryLineItemId];
-        const preset = entry?.preset || "Not needed for this job";
-        const note = entry?.note?.trim();
-        return {
-          accessoryLineItemId: o.accessoryLineItemId,
-          tier: "OPTIONAL" as const,
-          reason: note ? `${preset} — ${note}` : preset,
-        };
-      }),
-    ];
+    const skipped: Array<{ accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }> = leaves.map((d) => {
+      const m = byId.get(d.id)!;
+      return { accessoryLineItemId: d.id, tier: m.tier, reason: d.reason.trim() || "Not needed for this job" };
+    });
+
+    if (packParents.length > 0) await handlePrepAccessoriesOnly(packParents, "parent");
+    if (skipped.length === 0) {
+      setAccessoryGate(null);
+      if (accessoryGate.durableOperationId) {
+        const item = pendingCheckOutItems[0];
+        durableScans.review(accessoryGate.durableOperationId, { lineItemId: item.lineItemId, assetId: item.assetId, accessoryDecision: "all" });
+      } else runCheckOut(pendingCheckOutItems);
+      return;
+    }
 
     const parentName = missingDefaults[0]?.parentName ?? missingOptionals[0]?.parentName ?? "line item";
     if (!accessoryGate.durableOperationId) try {
@@ -1792,8 +1802,6 @@ function WarehouseProjectPage({
     });
 
     setAccessoryGate(null);
-    setDefaultOverrideReason("");
-    setOptionalSkipReasons({});
     if (accessoryGate.durableOperationId) {
       const item = narrowedItems[0];
       durableScans.review(accessoryGate.durableOperationId,{lineItemId:item.lineItemId,assetId:item.assetId,accessoryDecision:"override",includeAccessoryIds:item.includeAccessoryIds,skippedAccessories:skipped});
@@ -2697,99 +2705,13 @@ function WarehouseProjectPage({
 
       {/* Accessory checkout gate (issue #794 follow-up) */}
       {accessoryGate && (
-        <Dialog open={true} onOpenChange={() => setAccessoryGate(null)}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Missing accessories</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              {accessoryGate.missingDefaults.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-ui-text font-medium text-t-out">
-                    These default accessories aren&apos;t packed yet:
-                  </p>
-                  <ul className="text-ui-text text-muted list-disc pl-5 space-y-0.5">
-                    {accessoryGate.missingDefaults.map((d) => (
-                      <li key={d.accessoryLineItemId}>
-                        {d.accessoryName} <span className="text-muted">— {d.parentName}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Label htmlFor="default-override-reason" className="text-ui-text">
-                    {isManagerTier ? "Reason (pre-filled — edit or confirm)" : "Reason for deploying without them"}
-                  </Label>
-                  <Textarea
-                    id="default-override-reason"
-                    value={defaultOverrideReason}
-                    onChange={(e) => setDefaultOverrideReason(e.target.value)}
-                    placeholder="Why is it OK to deploy without these?"
-                    rows={2}
-                    className="text-ui-text"
-                  />
-                </div>
-              )}
-              {accessoryGate.missingOptionals.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-ui-text font-medium text-ink">
-                    These optional accessories aren&apos;t packed yet:
-                  </p>
-                  <div className="space-y-2">
-                    {accessoryGate.missingOptionals.map((o) => (
-                      <div key={o.accessoryLineItemId} className="rounded-[var(--r)] border border-line p-2 space-y-1.5">
-                        <p className="text-ui-text text-ink">
-                          {o.accessoryName} <span className="text-muted">— {o.parentName}</span>
-                        </p>
-                        <Select
-                          value={optionalSkipReasons[o.accessoryLineItemId]?.preset ?? "Not needed for this job"}
-                          onValueChange={(val) =>
-                            setOptionalSkipReasons((prev) => ({
-                              ...prev,
-                              [o.accessoryLineItemId]: { preset: val, note: prev[o.accessoryLineItemId]?.note ?? "" },
-                            }))
-                          }
-                        >
-                          <SelectTrigger className="h-9">
-                            <SelectValue>{optionalSkipReasons[o.accessoryLineItemId]?.preset ?? "Not needed for this job"}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Out of stock">Out of stock</SelectItem>
-                            <SelectItem value="Not needed for this job">Not needed for this job</SelectItem>
-                            <SelectItem value="Customer declined">Customer declined</SelectItem>
-                            <SelectItem value="Other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <input
-                          type="text"
-                          value={optionalSkipReasons[o.accessoryLineItemId]?.note ?? ""}
-                          onChange={(e) =>
-                            setOptionalSkipReasons((prev) => ({
-                              ...prev,
-                              [o.accessoryLineItemId]: { preset: prev[o.accessoryLineItemId]?.preset ?? "Not needed for this job", note: e.target.value },
-                            }))
-                          }
-                          placeholder="Optional note..."
-                          className={`flex h-9 w-full rounded-[var(--r)] border border-line bg-transparent px-2.5 text-ui-text text-ink ${focusRing}`}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="line" size="sm" onClick={() => setAccessoryGate(null)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={accessoryGate.missingDefaults.length > 0 && defaultOverrideReason.trim() === ""}
-                onClick={confirmAccessoryGate}
-              >
-                Deploy anyway
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <DeployGateDialog
+          rows={[...accessoryGate.missingDefaults, ...accessoryGate.missingOptionals].map((m) => ({
+            id: m.accessoryLineItemId, name: m.accessoryName, parentName: m.parentName, tier: m.tier, officeNote: m.officeNote,
+          }))}
+          onConfirm={confirmAccessoryGate}
+          onCancel={() => setAccessoryGate(null)}
+        />
       )}
 
       {/* Accessory partial-verification confirm — "Deploy Verified Only" vs

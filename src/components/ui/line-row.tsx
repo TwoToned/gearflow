@@ -152,7 +152,7 @@ function ChildActions({ child }: { child: LineRowData }) {
 }
 
 /** A child row is ticked on its own only when it is an accessory (the one child kind that is actioned). */
-export const isSelectableChild = (c: LineRowData) => c.kind === "accessory" && c.selectable !== false;
+const isSelectableChild = (c: LineRowData) => c.kind === "accessory" && c.selectable !== false;
 
 function ChildDesktop({ child, columns, span, selection }: { child: LineRowData; columns: FactColumn[]; span: number; selection?: RowSelection }) {
   return (

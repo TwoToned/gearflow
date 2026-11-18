@@ -2746,6 +2746,12 @@ export default defineSchema({
     lineItemId: v.optional(v.string()),
     vehicleDescription: v.optional(v.string()),
     numberOfTrips: v.optional(v.number()),
+    // Client pick up / drop off (UX 5b): the client moves the gear themselves, at
+    // our counter. Contact + their vehicle (vehicle and rego, one line). All
+    // optional, additive, no backfill. `address` is the counter, snapshotted at create.
+    clientContactName: v.optional(v.string()),
+    clientContactPhone: v.optional(v.string()),
+    clientVehicle: v.optional(v.string()),
     crewCountRequired: v.optional(v.number()),
     crewRoleId: v.optional(v.string()),
     sortOrder: v.optional(v.number()),

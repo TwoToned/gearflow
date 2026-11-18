@@ -6,6 +6,7 @@
  * Auto-paginates across multiple pages using gearflowDataTable.
  */
 import type { Template } from "@pdfme/common";
+import { SERVICE_TYPE_LABELS as SERVICE_TYPE_WORDS } from "@/lib/constants/services";
 import { getProjectServicesFromConvex } from "@/lib/project-service-read";
 import {
   getAssignmentsByProject,
@@ -41,14 +42,7 @@ const TABLE_AVAIL_HEIGHT = TABLE_END_Y - TABLE_START_Y; // 129mm
 const CONT_TABLE_START_Y = HEADER_Y + HEADER_H + 3; // 42mm
 const CONT_TABLE_AVAIL_HEIGHT = TABLE_END_Y - CONT_TABLE_START_Y; // 142mm
 
-const SERVICE_TYPE_LABELS: Record<string, string> = {
-  DELIVERY: "Delivery",
-  PICKUP: "Pickup",
-  BUMP_IN: "Bump In",
-  BUMP_OUT: "Bump Out",
-  LABOUR: "Labour",
-  MISC: "Misc",
-};
+const SERVICE_TYPE_LABELS: Record<string, string> = SERVICE_TYPE_WORDS;
 
 interface ServiceRow {
   crewName: string;

@@ -189,6 +189,14 @@ export interface FactColumn {
   align?: "start" | "end";
   /** Columns beyond 8 are opt-in from ⋯ › Columns (playbook §3.8). */
   optional?: boolean;
+  /** Makes the header a sort button (needs `LineRowList`'s `onSort`); the key the caller sorts by. */
+  sortKey?: string;
+}
+
+/** The list's current sort: the active `sortKey` and its direction. */
+export interface ListSort {
+  key: string;
+  dir: "asc" | "desc";
 }
 
 // ─── Selection (playbook §3.5) ───────────────────────────────────────────

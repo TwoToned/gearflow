@@ -8,6 +8,7 @@ import {
   accessoryChildrenOf, bulkStageUnitCount, isBulkItem, isInCheckedOutStage, isInDeprepedStage, isInPickPrepStage, isInPreppedStage, isInReturnedStage,
   modelDisplayName, resolveItemContainerId, type LineItem,
 } from "@/components/warehouse/warehouse-types";
+import { isRelocatedLineId } from "@/components/warehouse/relocate-accessories";
 import { deriveItemStage, type WarehouseStageKey } from "@/components/warehouse/warehouse-stages";
 import type { LineRowData, LineRowSectionData, RowFlag, StateGlyph } from "@/lib/primitives/types";
 import { getStatusIntent } from "@/lib/status-colors";
@@ -140,6 +141,24 @@ export function buildJobRow(li: LineItem, ctx: JobRowsCtx, packWithParent: (acce
   };
 }
 
+/**
+ * A relocated accessory group (`reloc~…`, one container + stage) with several units lists ONE row per unit,
+ * id `${groupId}:${i}`: the unit key `takeAccessorySelection` already resolves, so a single unit can be
+ * ticked, moved, deployed or returned on its own (#1296). One unit stays the bare group row.
+ */
+function rowsFor(li: LineItem, ctx: JobRowsCtx): LineRowData[] {
+  const units = li.units ?? [];
+  if (!isRelocatedLineId(li.id) || units.length < 2) return [buildJobRow(li, ctx)];
+  const base = buildJobRow(li, ctx);
+  return units.map((u, i) => {
+    const tag = u.asset?.assetTag ?? u.bulkAsset?.assetTag;
+    return {
+      ...base, id: `${li.id}:${i}`, tags: tag ? [tag] : base.tags,
+      facts: { ...base.facts, qty: { kind: "qty" as const, value: u.quantity ?? 1 } },
+    };
+  });
+}
+
 const matches = (li: LineItem, q: string) => !q || modelDisplayName(li).toLowerCase().includes(q) || tagsOf(li).some((t) => t.toLowerCase().includes(q));
 
 /** Sections for the active stage: category groups on To pick, case groups (Loose last) afterwards. */
@@ -158,6 +177,6 @@ export function buildJobSections(items: LineItem[], ctx: JobRowsCtx): JobSection
   return keys.map((key) => {
     const title = ctx.stage === "pick" ? key : key ? ctx.containerLabelById.get(key) ?? "Case" : "Loose";
     const members = groups.get(key) ?? [];
-    return { key: key || "loose", section: { id: key || "loose", title, count: members.length }, rows: members.map((li) => buildJobRow(li, ctx)) };
+    return { key: key || "loose", section: { id: key || "loose", title, count: members.length }, rows: members.flatMap((li) => rowsFor(li, ctx)) };
   });
 }

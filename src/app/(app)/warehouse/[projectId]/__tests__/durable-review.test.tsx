@@ -117,7 +117,7 @@ async function gateRows(){
  return {dialog,rows};
 }
 it('gate: Pack now packs ONLY the marked accessory, the Leave one is skipped and logged (override, not all)',async()=>{
- accessoryProject();prepItemsBatch.mockReset().mockResolvedValue([]);
+ accessoryProject();prepItemsBatch.mockReset().mockResolvedValue({lines:[],packedAccessoryLineIds:['acc1']} as never);
  new ScanIntake(localStorage).capture(scope,'deploy','A','GOOD','n');
  await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
  const {dialog,rows}=await gateRows();
@@ -129,6 +129,30 @@ it('gate: Pack now packs ONLY the marked accessory, the Leave one is skipped and
  expect(prepItemsBatch).toHaveBeenCalledTimes(1);
  expect(prepItemsBatch.mock.calls[0][1]).toEqual([expect.objectContaining({lineItemId:'parent',accessoriesOnly:true,includeAccessoryIds:['acc1']})]);
  expect(io.commit.mock.calls[0][1].effect).toMatchObject({accessoryDecision:'override',includeAccessoryIds:['acc1'],skippedAccessories:[{accessoryLineItemId:'acc2',tier:'DEFAULT',reason:'still charging'}]});
+});
+it('gate: a SHORT pack (the server packed fewer than marked) keeps the gate open, never deploys and invents no reason',async()=>{
+ accessoryProject();prepItemsBatch.mockReset().mockResolvedValue({lines:[],packedAccessoryLineIds:[]} as never);
+ const q=new ScanIntake(localStorage);q.capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ fireEvent.click(within(rows[0]).getByRole('button',{name:'Pack now'}));
+ fireEvent.click(within(rows[1]).getByRole('button',{name:'Leave'}));
+ fireEvent.change(within(dialog).getByLabelText(/Reason for leaving/),{target:{value:'still charging'}});
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+ await waitFor(()=>expect(prepItemsBatch).toHaveBeenCalled());
+ await act(async()=>{await Promise.resolve();});
+ expect(io.commit).not.toHaveBeenCalled();expect(io.ordinary).not.toHaveBeenCalled();
+ expect(screen.getByText('Accessories not packed')).toBeTruthy();
+ expect(q.list(scope)[0].state).toBe('review');
+});
+it('gate: Deploy stays disabled until EVERY row is decided',async()=>{
+ accessoryProject();
+ new ScanIntake(localStorage).capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ expect((within(dialog).getByRole('button',{name:'Deploy'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(within(rows[0]).getByRole('button',{name:'Pack now'}));
+ expect((within(dialog).getByRole('button',{name:'Deploy'}) as HTMLButtonElement).disabled).toBe(true); // the other row is undecided
 });
 it('gate: a failed pack keeps the gate open and never deploys',async()=>{
  accessoryProject();prepItemsBatch.mockReset().mockRejectedValue(new Error('pack failed'));

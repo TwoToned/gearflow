@@ -68,6 +68,7 @@ function reasonText(r: ScanLookup, stage: ScanStage): string {
     not_checked_out: "Asset is not deployed on this job",
     already_returned: "All units already returned",
     asset_unavailable: `Asset is ${status} and cannot be deployed`,
+    not_deprepable: r.detail ?? "Not waiting to be de-prepped on this job",
     tt_blocked: `Test & Tag ${(r.ttStatus ?? "").toLowerCase()}${due ? ` — next test due ${due}` : ""}. Cannot deploy until tested.`,
   };
   return messages[r.reason ?? ""] ?? (stage === "out" ? "Cannot return this asset" : "Cannot deploy this asset");

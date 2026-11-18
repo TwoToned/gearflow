@@ -277,8 +277,11 @@ test.describe("harness: primary revenue path", () => {
       const stage = (word: RegExp) => page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: word });
       await clickRacingAssignDialog(page, stage(/^Out/));
       await clickRacingAssignDialog(page, page.getByRole("checkbox", { name: /^Select all in/ }).first());
-      // Condition defaults to "Good" — happy path needs no extra input.
       await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Return \(\d+\)$/ }));
+      // The return check (spec §9.5) opens first: condition defaults to "Good", so the happy path just confirms it.
+      const returnCheck = page.getByRole("dialog");
+      await expect(returnCheck.getByRole("radio", { name: "Good" })).toBeChecked();
+      await returnCheck.getByRole("button", { name: "Return", exact: true }).click();
 
       await expect(stage(/^Returned 1$/)).toBeVisible();
       await expect(stage(/^Out 0$/)).toBeVisible();

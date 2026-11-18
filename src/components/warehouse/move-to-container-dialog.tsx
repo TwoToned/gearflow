@@ -13,7 +13,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { focusRing, cn } from "@/lib/utils";
-import type { ContainerRailItem } from "./container-rail";
+
+/** A case the Move-to dialog can send units to (the job's real containers). */
+export interface ContainerRailItem {
+  id: string;
+  label: string;
+  parentContainerId?: string | null;
+  unitCount: number;
+}
 
 export interface MoveToContainerDialogProps {
   open: boolean;

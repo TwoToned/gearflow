@@ -9,11 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useNativeWarehouseProject } from "@/hooks/use-native-warehouse";
-import {
-  ChevronRight,
-  ArrowLeft,
-  Undo2,
-} from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
 import { containerArgs, type ContainerChoice } from "@/lib/warehouse-container-choice";
@@ -36,7 +32,6 @@ import { useFormatters } from "@/components/providers/format-provider";
 import { projectScheduleRows } from "@/lib/project-context";
 import { announcePrepWrite } from "@/lib/warehouse-prep-announce";
 import { useCanDo } from "@/lib/use-permissions";
-import { focusRing } from "@/lib/utils";
 import { transitionNeedsCheck, lineHasModelChecks } from "@/lib/warehouse-check-policy";
 import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 
@@ -47,25 +42,14 @@ import {
 import { useWarehouseWrites, type AccessoryStageOp } from "@/hooks/use-warehouse-writes";
 import { useWarehouseOverbooked } from "@/hooks/use-warehouse-overbooked";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   Tabs,
   TabsContent,
 } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -96,9 +80,7 @@ import {
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import { MoveToContainerDialog } from "@/components/warehouse/move-to-container-dialog";
-import { AccessorySelectionContext } from "@/components/warehouse/kit-child-rows";
-import { isRelocatedLineId, relocateAccessories, takeAccessorySelection } from "@/components/warehouse/relocate-accessories";
-import { DeployTab } from "@/components/warehouse/deploy-tab";
+import { relocateAccessories, takeAccessorySelection } from "@/components/warehouse/relocate-accessories";
 import { MovingStage, type StageAction } from "@/components/warehouse/job/moving-stage";
 import { ReturnConditionBar, type ReturnCondition } from "@/components/warehouse/job/return-condition-bar";
 import { DeployGateDialog, type GateDecision } from "@/components/warehouse/job/deploy-gate-dialog";
@@ -111,7 +93,6 @@ interface MissingAccessory {
 }
 import { intakeToStripEntries } from "@/lib/durable-scan-strip";
 import type { ActionMenuSpec, RowSelection } from "@/lib/primitives/types";
-import { EmptyState } from "@/components/ui/empty-state";
 import type { LineItem, AvailableAsset, GroupEntry } from "@/components/warehouse/warehouse-types";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { resolvePickerScan, countAssigned } from "@/lib/asset-picker-scan";
@@ -128,7 +109,6 @@ import {
   isInPreppedStage,
   isInReturnedStage,
   isInDeprepedStage,
-  deprepedQuantity,
   isInCheckedOutStage,
   buildContainerGroups,
   resolveItemContainerId,
@@ -137,10 +117,8 @@ import {
   isMoveableAtReturnStage,
   isMoveableAtDeprepStage,
   keysForGroupEntries,
-  selectionKeysForEntries,
   accessoryAssetIds,
   groupItems,
-  groupCheckinItems,
 } from "@/components/warehouse/warehouse-types";
 import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
 import {
@@ -154,7 +132,6 @@ import {
 import { useConvex, useConvexAuth, useQuery } from "convex/react";
 import { api as convexApi } from "../../../../../convex/_generated/api";
 import { useDurableScanIntake } from "@/hooks/use-durable-scan-intake";
-import { ScanIntakeStatus } from "@/components/warehouse/scan-intake-status";
 import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { useCurrentRole } from "@/lib/use-permissions";
 import { isInternalStockLine } from "@/lib/warehouse-subhire-filter";
@@ -252,10 +229,10 @@ function WarehouseProjectPage({
   const deployScanInputRef = useRef<HTMLInputElement>(null);
   const returnScanInputRef = useRef<HTMLInputElement>(null);
 
-  const [scanValue, setScanValue] = useState("");
-  const [deployScanValue, setDeployScanValue] = useState("");
-  const [returnScanValue, setReturnScanValue] = useState("");
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [, setScanValue] = useState("");
+  const [, setDeployScanValue] = useState("");
+  const [, setReturnScanValue] = useState("");
+  const [, setExpandedGroups] = useState<Set<string>>(new Set());
   const [returnCondition, setReturnCondition] = useState("GOOD");
   const [returnNotes, setReturnNotes] = useState("");
   const { data: activeOrg } = useActiveOrganization();
@@ -291,16 +268,6 @@ function WarehouseProjectPage({
     setSelectedContainer(container.label);
     setNewContainerSheetOpen(false);
   }, []);
-  // #1296 phase 2 — scan-to-activate: scanning a container's OWN asset tag
-  // (the case/tub itself, not its contents) on the pick/prep scan bar
-  // switches the active rail chip instead of running the normal
-  // lookupAssetForScan prep flow, which would otherwise either try to
-  // (re-)prep the container's own line item or report it as unassigned.
-  const matchContainerByTag = useCallback(
-    (scannedTag: string) => realContainers.find((c) => c.tag && c.tag === scannedTag) ?? null,
-    [realContainers],
-  );
-
   // Selection state
   const [selectedPrep, setSelectedPrep] = useState<Set<string>>(new Set());
   const [selectedOut, setSelectedOut] = useState<Set<string>>(new Set());
@@ -737,170 +704,6 @@ function WarehouseProjectPage({
       .catch((e) => showError(e, { fallbackTitle: "Prep failed" }));
   }
 
-  // --- Scan mutations ---
-  const scanMutation = useServerMutation({
-    mutationFn: (assetTag: string) => lookupAssetForScan(projectId, assetTag, "checkout"),
-    onSuccess: async (result, scannedTag) => {
-      // Handle kit scans — prep the kit (not deploy)
-      if (result.found && result.type === "kit") {
-        const kitResult = result as { kitId: string; kitAssetTag: string; assetName: string; lineItemId: string | null; reason: string | null };
-        if (kitResult.lineItemId && !kitResult.reason) {
-          const kitLi = lineItems.find((l) => l.kitId === kitResult.kitId && !l.isKitChild);
-          // Check verification status before prepping
-          const children = kitLi ? ((kitLi.childLineItems || []) as LineItem[]) : [];
-          const allIds = collectAllVerifiableIds(children, "deploy");
-          const verifiedIds = allIds.filter((id) => verifiedKitItems.has(id));
-          if (allIds.length > 0 && verifiedIds.length < allIds.length) {
-            setKitConfirm({
-              action: "deploy",
-              kitName: kitResult.assetName,
-              kitId: kitResult.kitId,
-              parentLineItemId: kitLi?.id || kitResult.lineItemId || "",
-              verifiedCount: verifiedIds.length,
-              totalCount: allIds.length,
-              verifiedIds,
-            });
-            setScanValue("");
-            scanInputRef.current?.focus();
-          } else {
-            // Try to start kit check flow; if no checks needed, prep directly
-            const started = kitLi ? startKitCheckFlow(kitResult.kitId, kitLi, "PREP") : false;
-            if (!started && kitLi) {
-              // No checks — mark kit children as prepped
-              prepKitChildren(projectId, kitLi.id)
-                .then(() => {
-                  scanFeedback.play("success", { label: kitResult.assetName, outcome: "Kit prepped" });
-                  toast.success(`Kit prepped: ${kitResult.assetName}`);
-                  invalidate();
-                })
-                .catch((e) => {
-                  scanFeedback.play("error", {
-                    label: kitResult.assetName,
-                    outcome: e instanceof Error ? e.message : "Failed to prep kit",
-                  });
-                  showError(e, { fallbackTitle: "Failed to prep kit" });
-                });
-              setScanValue("");
-              scanInputRef.current?.focus();
-            }
-          }
-        } else {
-          const messages: Record<string, string> = {
-            not_on_project: "Kit not assigned to this job",
-            already_checked_out: "Kit already deployed",
-          };
-          const outcome = messages[kitResult.reason as string] || "Cannot prep this kit";
-          scanFeedback.play("error", { label: kitResult.assetName, outcome });
-          toast.error(outcome);
-          setScanValue("");
-          scanInputRef.current?.focus();
-        }
-        return;
-      }
-
-      // Handle kit member scans — verify the item is present in the kit
-      if (result.found && result.type === "kit_member") {
-        const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetId: string | null; assetName: string };
-        const kitOnProject = memberResult.kitId && lineItems.find((li) => li.kitId === memberResult.kitId && !li.isKitChild);
-        if (kitOnProject && memberResult.assetId) {
-          const children = (kitOnProject.childLineItems || []) as LineItem[];
-          const childLi = children.find((c) => c.assetId === memberResult.assetId)
-            || children.flatMap((c) => (c.childLineItems || []) as LineItem[]).find((c) => c.assetId === memberResult.assetId);
-          if (childLi) {
-            setVerifiedKitItems((prev) => {
-              const next = new Set(prev);
-              next.add(childLi.id);
-              return next;
-            });
-          }
-          const kitGroupKey = `kit-${kitOnProject.id}`;
-          setExpandedGroups((prev) => {
-            const next = new Set(prev);
-            next.add(kitGroupKey);
-            return next;
-          });
-          scanFeedback.play("success", { label: memberResult.assetName, outcome: "Verified" });
-          toast.success(`Verified: ${memberResult.assetName}`);
-        } else {
-          scanFeedback.play("error", { label: memberResult.assetName, outcome: "Not on this job" });
-          toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this job.`);
-        }
-        setScanValue("");
-        scanInputRef.current?.focus();
-        return;
-      }
-
-      if (result.found && result.type === "asset_child") {
-        const r = result as { assetName: string; parentAssetTag: string | null };
-        // Disambiguation needed — scanned an accessory, not its parent. Resolved
-        // but needs attention, not a hard failure.
-        scanFeedback.play("exception", { label: r.assetName, outcome: "Accessory — scan the parent instead" });
-        toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent; accessories move with it.`);
-        setScanValue("");
-        scanInputRef.current?.focus();
-        return;
-      }
-
-      if (result.found && result.lineItemId) {
-        routeScanPrep({ lineItemId: result.lineItemId, assetId: result.assetId, assetName: result.assetName });
-      } else if (result.found && !result.lineItemId) {
-        if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
-          // Asset found but not on this project — resolved but needs a decision
-          // (add it?), not a hard failure.
-          scanFeedback.play("exception", { label: result.assetName || "Unknown asset", outcome: "Not on this job" });
-          // Prompt user to add asset to the project
-          setAddPromptData({
-            assetName: result.assetName || "Unknown asset",
-            modelId: result.modelId as string,
-            assetId: result.assetId || null,
-            bulkAssetId: (result as Record<string, unknown>).bulkAssetId as string | null,
-            isBulk: !!(result as Record<string, unknown>).isBulk,
-          });
-          setAddPromptOpen(true);
-          setScanValue("");
-          return;
-        }
-        const detail = "detail" in result ? (result.detail as string) : "";
-        const assetStatus = "assetStatus" in result ? (result.assetStatus as string) : "";
-        const ttStatus = "ttStatus" in result ? (result.ttStatus as string) : "";
-        const ttNextDue =
-          "ttNextDueDate" in result && result.ttNextDueDate
-            ? new Date(result.ttNextDueDate as unknown as string).toLocaleDateString()
-            : "";
-        const messages: Record<string, string> = {
-          already_checked_out: "Already deployed on this job",
-          asset_checked_out_elsewhere: `Already deployed${detail}`,
-          not_on_project: "Asset not assigned to this job",
-          not_checked_out: "Asset is not deployed on this job",
-          already_returned: "All units already returned",
-          asset_unavailable: `Asset is ${assetStatus.replace("_", " ").toLowerCase()} and cannot be deployed`,
-          tt_blocked: `Test & Tag ${ttStatus.toLowerCase()}${ttNextDue ? ` — next test due ${ttNextDue}` : ""}. Cannot deploy until tested.`,
-        };
-        // "already_returned" is resolved but needs attention (all units are back
-        // already) rather than a hard failure — every other reason here blocks
-        // the scan outright.
-        const outcome = messages[result.reason as string] || "Cannot deploy this asset";
-        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error", { label: scannedTag, outcome });
-        toast.error(outcome);
-        setScanValue("");
-        scanInputRef.current?.focus();
-      } else {
-        // Unknown tag — resolved (we know it's not in the system) but needs the
-        // operator's attention, not a hard error.
-        scanFeedback.play("exception", { label: scannedTag, outcome: "Asset not found" });
-        toast.error("Asset not found");
-        setScanValue("");
-        scanInputRef.current?.focus();
-      }
-    },
-    onError: (e, scannedTag) => {
-      scanFeedback.play("error", { label: scannedTag, outcome: e instanceof Error ? e.message : "Scan failed" });
-      showError(e);
-      setScanValue("");
-      scanInputRef.current?.focus();
-    },
-  });
-
   const durableScans = useDurableScanIntake(
     wAuthed && orgId && scanSession?.user.id ? { orgId, userId: scanSession.user.id, projectId, expectedVersionId: project?.liveVersionId || "" } : null,
     async operation => {
@@ -978,67 +781,6 @@ function WarehouseProjectPage({
   };
   const captureReturnScan = (raw:string) => {
     if (durableScans.capture("return",raw,returnCondition as "GOOD"|"DAMAGED"|"MISSING",returnNotes)) setReturnScanValue("");
-  };
-
-  const handleDeployScanKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && deployScanValue.trim()) {
-        e.preventDefault();
-        captureDeployScan(deployScanValue);
-      }
-    },
-    [deployScanValue, captureDeployScan]
-  );
-
-  const handleReturnScanKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && returnScanValue.trim()) {
-        e.preventDefault();
-        captureReturnScan(returnScanValue);
-      }
-    },
-    [returnScanValue, captureReturnScan]
-  );
-
-  // --- Selection helpers ---
-  function toggleSelection(set: Set<string>, setFn: (s: Set<string>) => void, key: string) {
-    const next = new Set(set);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    setFn(next);
-  }
-
-  function toggleGroupSelection(
-    set: Set<string>,
-    setFn: (s: Set<string>) => void,
-    keys: string[]
-  ) {
-    const allSelected = keys.every((k) => set.has(k));
-    const next = new Set(set);
-    if (allSelected) {
-      keys.forEach((k) => next.delete(k));
-    } else {
-      keys.forEach((k) => next.add(k));
-    }
-    setFn(next);
-  }
-
-  function toggleAll(
-    set: Set<string>,
-    setFn: (s: Set<string>) => void,
-    allKeys: string[]
-  ) {
-    const allSelected = allKeys.length > 0 && allKeys.every((k) => set.has(k));
-    setFn(allSelected ? new Set() : new Set(allKeys));
-  }
-
-  const toggleExpanded = (key: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   };
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
@@ -1205,8 +947,6 @@ function WarehouseProjectPage({
   const checkedOutItems = equipmentItems.filter(isInCheckedOutStage);
 
   const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");
-  // De-prep reuses the deploy grouping (same GroupEntry shape + selection keys).
-  const groupedDeprep = groupItems(returnedItems, "deploy", "returned");
 
   // Group deploy items by container for visual sectioning — real containerId
   // preferred over the legacy prepContainer label (buildContainerGroups,
@@ -1215,20 +955,6 @@ function WarehouseProjectPage({
   const deployContainerGroups = useMemo(
     () => buildContainerGroups(groupedOut, representativeItem, containerLabelById),
     [groupedOut, containerLabelById],
-  );
-
-  // Group de-prep items by the container they came back in (visual sectioning).
-  const deprepContainerGroups = useMemo(
-    () => buildContainerGroups(groupedDeprep, representativeItem, containerLabelById),
-    [groupedDeprep, containerLabelById],
-  );
-
-  const groupedIn = groupCheckinItems(checkedOutItems);
-
-  // Group return items by container for visual sectioning
-  const returnContainerGroups = useMemo(
-    () => buildContainerGroups(groupedIn, representativeItem, containerLabelById),
-    [groupedIn, containerLabelById],
   );
 
   // #1296 phase 2 — Move to…: reassign a Deploy/Return/De-prep selection to a
@@ -1273,19 +999,6 @@ function WarehouseProjectPage({
       setMoveIsPending(false);
     }
   };
-
-  // Build all selectable keys for pick/prep
-
-  // Build all selectable keys for check-out
-  const allOutKeys = useMemo(() => selectionKeysForEntries(groupedOut), [groupedOut]);
-
-  const allDeprepKeys = useMemo(() => selectionKeysForEntries(groupedDeprep), [groupedDeprep]);
-
-  const allInKeys = useMemo(() => selectionKeysForEntries(groupedIn), [groupedIn]);
-
-  const selectedOutCount = selectedOut.size;
-  const selectedDeprepCount = selectedDeprep.size;
-  const selectedInCount = selectedIn.size;
 
   // --- Prep selected items (for manual selection without scanner) ---
   // `withoutAccessories` packs the parents only (`includeAccessoryIds: []`);
@@ -2399,67 +2112,6 @@ function WarehouseProjectPage({
     open: (type, id) => openLabel(projectId, type, id),
   });
   const headerProps = { ...baseHeader, documents: { items: [...(baseHeader.documents?.items ?? []), ...labelItems] } };
-
-  // --- Shared row renderers ---
-  function renderGroupHeader(
-    entry: { kind: "serialized-group"; groupKey: string; modelName: string; items: LineItem[] } | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number },
-    childKeys: string[],
-    selection: Set<string>,
-    setSelection: (s: Set<string>) => void,
-    qtyLabel: React.ReactNode,
-  ) {
-    const isExpanded = expandedGroups.has(entry.groupKey);
-    const allChecked = childKeys.length > 0 && childKeys.every((k) => selection.has(k));
-    const someChecked = childKeys.some((k) => selection.has(k));
-    const name = entry.kind === "serialized-group" ? entry.modelName : modelDisplayName(entry.item);
-    const count = entry.kind === "serialized-group" ? entry.items.length : entry.unitCount;
-    const hasSubhire = entry.kind === "serialized-group"
-      ? entry.items.some((i) => i.subHireId != null)
-      : entry.item.subHireId != null;
-    const supplierName = entry.kind === "serialized-group"
-      ? entry.items.find((i) => i.subHireId != null && i.supplier)?.supplier?.name
-      : entry.item.supplier?.name;
-
-    return (
-      <TableRow
-        className={`cursor-pointer hover:bg-elev ${focusRing}`}
-        onClick={() => toggleExpanded(entry.groupKey)}
-        role="button"
-        tabIndex={0}
-        aria-expanded={isExpanded}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            toggleExpanded(entry.groupKey);
-          }
-        }}
-      >
-        <TableCell onClick={(e) => e.stopPropagation()}>
-          <Checkbox
-            checked={allChecked ? true : someChecked ? "indeterminate" : false}
-            onCheckedChange={() => toggleGroupSelection(selection, setSelection, childKeys)}
-          />
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-1.5">
-            <ChevronRight className={`h-4 w-4 text-muted transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-            <span className="font-medium text-ink">{name}</span>
-            {hasSubhire && (
-              <Badge status="neutral" className="ml-1.5 bg-blue-soft text-blue">Subhire</Badge>
-            )}
-            {hasSubhire && supplierName && (
-              <span className="text-caption text-muted ml-1">via {supplierName}</span>
-            )}
-          </div>
-        </TableCell>
-        <TableCell className="t-mono text-muted">
-          {entry.kind === "bulk-group" ? (entry.item.bulkAsset?.assetTag || "—") : ""}
-        </TableCell>
-        <TableCell className="text-center tabular-nums">{count}</TableCell>
-        {qtyLabel}
-      </TableRow>
-    );
-  }
 
   if (isLoading) {
     return (

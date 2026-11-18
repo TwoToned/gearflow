@@ -16,7 +16,9 @@ import { BulkBar } from "@/components/ui/bulk-bar";
 import { FooterTotals } from "@/components/ui/footer-totals";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { groupByDay, inLane, needsLine, totalsOf, type LogisticsService } from "@/lib/logistics-model";
+import { counterLocation, groupByDay, inLane, needsLine, totalsOf, warehouseRoleId, type LogisticsService } from "@/lib/logistics-model";
+import { useCrewRoles } from "@/hooks/use-crew";
+import { useLocations } from "@/hooks/use-locations";
 import { mergeStops } from "@/lib/logistics-transport";
 import type { TotalLine } from "@/lib/primitives/types";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
@@ -95,6 +97,12 @@ function useBodyModel(projectId: string, data: Data) {
   const loadInDay = schedule.loadIn || schedule.rentalStart;
   const loadOutDay = schedule.loadOut || schedule.rentalEnd;
   const where = whereOf(data.project, site);
+  const locations = useLocations(data.orgId);
+  const roles = useCrewRoles(data.orgId);
+  const counterLoc = counterLocation(locations);
+  const counter = counterLoc
+    ? { address: counterLoc.address ?? "", latitude: counterLoc.latitude ?? null, longitude: counterLoc.longitude ?? null }
+    : null;
 
   // Sub-hire stops are transport: they ride the All and Transport lanes only.
   const stops = ui.lane === "all" || ui.lane === "transport" ? data.stops : [];
@@ -113,7 +121,10 @@ function useBodyModel(projectId: string, data: Data) {
     dayTargets: dayTargetsOf(groups),
   };
   const quick = useQuickAdd(
-    { projectId, ...where, window: { start: loadInDay, end: loadOutDay }, templates: data.templates },
+    {
+      projectId, ...where, window: { start: loadInDay, end: loadOutDay }, templates: data.templates,
+      counter, warehouseRoleId: warehouseRoleId(roles),
+    },
     (id) => ui.setEditId(id),
   );
   const pageMenu = buildPageMenu({
@@ -201,7 +212,7 @@ function LogisticsBody({ projectId, data }: { projectId: string; data: Data }) {
       <PrintRunsheet title={String(data.project?.name ?? "Job")} services={data.services} site={m.site} />
       <LogisticsDialogs
         p={{
-          projectId, orgId: data.orgId, projectStatus: data.project?.status as string | undefined, schedule: m.schedule, site: m.where,
+          projectId, orgId: data.orgId, projectStatus: data.project?.status as string | undefined, schedule: m.schedule, site: m.where, contact: { name: m.site.contactName, phone: m.site.contactPhone },
           services: data.services, crew: data.crew, templates: data.templates, ui, w: m.w,
           offerRows: offerRowsFor(ui.offerIds ?? [], data.crew, data.conflicts),
           selectedIds: [...m.selection.selected], clear: m.selection.clear,

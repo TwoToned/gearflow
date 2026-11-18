@@ -109,25 +109,25 @@ function inWindow(date: Date | null, gteMs: number, ltMs: number): boolean {
   return ms >= gteMs && ms < ltMs;
 }
 
-/** type === "DELIVERY", status !== "CANCELLED", date in [gteMs, ltMs). */
+/** type === "DELIVERY" (or a client pick up, which is gear going out the door), status !== "CANCELLED", date in [gteMs, ltMs). */
 export function filterDeliveryServices(
   services: DisplayServiceRow[],
   gteMs: number,
   ltMs: number
 ): DisplayServiceRow[] {
   return services.filter(
-    (s) => s.type === "DELIVERY" && s.status !== "CANCELLED" && inWindow(s.date, gteMs, ltMs)
+    (s) => (s.type === "DELIVERY" || s.type === "CLIENT_PICKUP") && s.status !== "CANCELLED" && inWindow(s.date, gteMs, ltMs)
   );
 }
 
-/** type === "PICKUP", status !== "CANCELLED", date in [gteMs, ltMs). */
+/** type === "PICKUP" (or a client drop off, gear coming back to the counter), status !== "CANCELLED", date in [gteMs, ltMs). */
 export function filterPickupServices(
   services: DisplayServiceRow[],
   gteMs: number,
   ltMs: number
 ): DisplayServiceRow[] {
   return services.filter(
-    (s) => s.type === "PICKUP" && s.status !== "CANCELLED" && inWindow(s.date, gteMs, ltMs)
+    (s) => (s.type === "PICKUP" || s.type === "CLIENT_DROPOFF") && s.status !== "CANCELLED" && inWindow(s.date, gteMs, ltMs)
   );
 }
 

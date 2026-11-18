@@ -317,6 +317,8 @@ export const PROJECT_PHASE_RANK: Record<string, number> = {
   SETUP: 5,
   REHEARSAL: 6,
   FULL_DURATION: 7,
+  HANDOVER: 8,
+  RETURN: 9,
 };
 
 const ACTIVE_ASSIGNMENT_STATUSES = new Set(["CONFIRMED", "ACCEPTED"]);

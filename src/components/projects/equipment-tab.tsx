@@ -1651,18 +1651,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
             .then(() => invalidate())
             .catch((e: Error) => toast.error(e.message));
         }}
-        onAccessoryPlanChange={(id, plan) => {
-          // Its own mutation (it reconciles CHILD line items, not fields on this
-          // row), fired by the dialog only when the picker's selection actually
-          // moved — and only after the line patch above resolves, so a quantity
-          // change in the same save is the quantity the child rescale reads.
-          lineItemWrites
-            .updateAccessoryPlan(id, plan)
-            .then(() => {
-              invalidate();
-              toast.success("Accessories updated");
-            })
-            .catch((e: Error) => toast.error(e.message));
+        onEditAccessories={(line) => {
+          // The ONE accessory editor (spec §7.2): swap this dialog for it.
+          setEditLineItem(null);
+          setEditAccessoryItem(line);
         }}
         onSubmit={(id, data, allowOverbook, baseUpdatedAt) => {
           // Optimistically overlay the edited fields onto the row so it updates

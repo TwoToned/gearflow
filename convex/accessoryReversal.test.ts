@@ -296,21 +296,46 @@ async function accUnitDoc(ctx: import("./_generated/server").MutationCtx) {
 }
 
 describe("prepItems reports what an accessories-only prep actually packed", () => {
-  test("returns the packed accessory child line ids; a plain prep reports none", async () => {
-    const t = makeT();
+  /** Prep both parents, then put every accessory unit back to "not packed" so an accessories-only call has work. */
+  async function prepThenUnpackAccessories(t: T) {
     await seed(t);
-    const plain = await svc(t).mutation(api.checkRecordOps.prepItems, {
-      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR, items: [{ lineItemId: "L1", assetId: "a1" }],
-    });
+    const plain = await prepBoth(t);
     expect(plain.packedAccessoryLineIds).toEqual([]); // not an accessories-only call
-    const only = await svc(t).mutation(api.checkRecordOps.prepItems, {
-      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR,
-      items: [{ lineItemId: "L1", assetId: "a1", accessoriesOnly: true }],
+    await t.run(async (ctx) => {
+      for (const u of await ctx.db.query("projectLineItemUnits").collect()) {
+        if (u.parentUnitAssetId) await ctx.db.patch(u._id, { prepStatus: undefined });
+      }
     });
-    const kids = await t.run(async (ctx) =>
-      (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "L1")).collect())
-        .filter((c) => c.childKind === "ACCESSORY" && c.prepStatus === "PACKED").map((c) => c.id));
-    expect(kids.length).toBeGreaterThan(0);
-    expect([...only.packedAccessoryLineIds].sort()).toEqual([...kids].sort());
+  }
+  const accessoriesOnly = (t: T, items: Array<{ assetId: string; includeAccessoryIds?: string[] }>) =>
+    svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR,
+      items: items.map((i) => ({ lineItemId: "L1", accessoriesOnly: true, ...i })),
+    });
+
+  test("reports the accessory units THIS call packed, per parent unit", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    const res = await accessoriesOnly(t, [{ assetId: "a1" }, { assetId: "a2" }]);
+    expect(res.packedAccessoryUnits.map((u) => u.parentUnitAssetId).sort()).toEqual(["a1", "a2"]);
+    expect(res.packedAccessoryLineIds.length).toBeGreaterThan(0);
+  });
+
+  test("an accessory already PACKED before the call is not reported as packed by it", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    await accessoriesOnly(t, [{ assetId: "a1" }]); // a1's accessory is now packed (earlier)
+    const again = await accessoriesOnly(t, [{ assetId: "a1" }, { assetId: "a2" }]);
+    expect(again.packedAccessoryUnits.map((u) => u.parentUnitAssetId)).toEqual(["a2"]); // only a2's is new
+  });
+
+  test("a narrowed includeAccessoryIds reports only those accessories", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    const none = await accessoriesOnly(t, [{ assetId: "a1", includeAccessoryIds: ["not-an-accessory"] }]);
+    expect(none.packedAccessoryUnits).toEqual([]);
+    expect(none.packedAccessoryLineIds).toEqual([]);
+    const some = await accessoriesOnly(t, [{ assetId: "a1", includeAccessoryIds: ["c1"] }]);
+    expect(some.packedAccessoryUnits.map((u) => u.parentUnitAssetId)).toEqual(["a1"]);
   });
 });

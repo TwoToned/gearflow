@@ -248,6 +248,8 @@ export const phaseLabels: Record<string, string> = {
   BUMP_OUT: "Bump out",
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
+  HANDOVER: "Handover",
+  RETURN: "Return",
   SETUP: "Setup",
   REHEARSAL: "Rehearsal",
   FULL_DURATION: "Full duration",

@@ -55,6 +55,8 @@ const MULTI_DAY_TYPES = new Set(["BUMP_IN", "BUMP_OUT", "LABOUR"]);
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
+  CLIENT_PICKUP: "Client pick up",
+  CLIENT_DROPOFF: "Client drop off",
   BUMP_IN: "Bump In",
   BUMP_OUT: "Bump Out",
   LABOUR: "Labour",
@@ -216,6 +218,9 @@ const serviceInputArgs = {
   taxable: v.boolean(),
   vehicleDescription: v.optional(v.string()),
   numberOfTrips: v.optional(v.number()),
+  clientContactName: v.optional(v.string()),
+  clientContactPhone: v.optional(v.string()),
+  clientVehicle: v.optional(v.string()),
   crewCountRequired: v.optional(v.number()),
   crewRoleId: v.optional(v.string()),
   xeroAccountCode: v.optional(v.string()),
@@ -247,6 +252,9 @@ type ServiceInput = {
   taxable: boolean;
   vehicleDescription?: string;
   numberOfTrips?: number;
+  clientContactName?: string;
+  clientContactPhone?: string;
+  clientVehicle?: string;
   crewCountRequired?: number;
   crewRoleId?: string;
   xeroAccountCode?: string;
@@ -261,8 +269,18 @@ type ServiceInput = {
  * bounds (`unitPrice`/`discount`/`costTotal` non-negative + finite) are already
  * enforced just below. `quantity` was the one bound neither path re-checked.
  */
-function assertServiceFields(f: { quantity?: number; xeroAccountCode?: string; xeroTaxType?: string }): void {
+function assertServiceFields(f: {
+  quantity?: number;
+  xeroAccountCode?: string;
+  xeroTaxType?: string;
+  clientContactName?: string;
+  clientContactPhone?: string;
+  clientVehicle?: string;
+}): void {
   assertNumRange(f.quantity, "quantity", { min: 1 });
+  assertStrLen(f.clientContactName, "clientContactName", { max: 120 });
+  assertStrLen(f.clientContactPhone, "clientContactPhone", { max: 40 });
+  assertStrLen(f.clientVehicle, "clientVehicle", { max: 120 });
   assertStrLen(f.xeroAccountCode, "xeroAccountCode", { max: 50 });
   assertStrLen(f.xeroTaxType, "xeroTaxType", { max: 50 });
 }
@@ -277,7 +295,14 @@ function buildServiceFields(a: ServiceInput) {
   assertFinite(a.discount, "discount");
   assertFinite(a.costTotal, "costTotal");
   assertFinite(a.chargeRateOverride, "chargeRateOverride");
-  assertServiceFields({ quantity: a.quantity, xeroAccountCode: a.xeroAccountCode, xeroTaxType: a.xeroTaxType });
+  assertServiceFields({
+    quantity: a.quantity,
+    xeroAccountCode: a.xeroAccountCode,
+    xeroTaxType: a.xeroTaxType,
+    clientContactName: a.clientContactName,
+    clientContactPhone: a.clientContactPhone,
+    clientVehicle: a.clientVehicle,
+  });
   // Bound money NON-NEGATIVE (browser-direct bypasses the server Zod min(0)). A negative
   // discount would INFLATE the customer-facing service line total (max(0, unitPrice - disc)
   // → serviceRevenue → project total); a negative costTotal would INFLATE project margin
@@ -323,6 +348,9 @@ function buildServiceFields(a: ServiceInput) {
     taxable: a.taxable,
     vehicleDescription: a.vehicleDescription || null,
     numberOfTrips: a.numberOfTrips || null,
+    clientContactName: a.clientContactName || null,
+    clientContactPhone: a.clientContactPhone || null,
+    clientVehicle: a.clientVehicle || null,
     crewCountRequired: a.crewCountRequired || null,
     crewRoleId: a.crewRoleId || null,
     xeroAccountCode: a.xeroAccountCode || null,
@@ -605,6 +633,9 @@ export const createServiceNative = mutation({
       taxable: fields.taxable,
       ...(fields.vehicleDescription != null ? { vehicleDescription: fields.vehicleDescription } : {}),
       ...(fields.numberOfTrips != null ? { numberOfTrips: fields.numberOfTrips } : {}),
+      ...(fields.clientContactName != null ? { clientContactName: fields.clientContactName } : {}),
+      ...(fields.clientContactPhone != null ? { clientContactPhone: fields.clientContactPhone } : {}),
+      ...(fields.clientVehicle != null ? { clientVehicle: fields.clientVehicle } : {}),
       ...(fields.crewCountRequired != null ? { crewCountRequired: fields.crewCountRequired } : {}),
       ...(fields.crewRoleId != null ? { crewRoleId: fields.crewRoleId } : {}),
       ...(fields.xeroAccountCode != null ? { xeroAccountCode: fields.xeroAccountCode } : {}),
@@ -739,6 +770,9 @@ export const updateServiceNative = mutation({
     setOrClear("chargeRateOverride", fields.chargeRateOverride);
     setOrClear("vehicleDescription", fields.vehicleDescription);
     setOrClear("numberOfTrips", fields.numberOfTrips);
+    setOrClear("clientContactName", fields.clientContactName);
+    setOrClear("clientContactPhone", fields.clientContactPhone);
+    setOrClear("clientVehicle", fields.clientVehicle);
     setOrClear("crewCountRequired", fields.crewCountRequired);
     setOrClear("crewRoleId", fields.crewRoleId);
     setOrClear("xeroAccountCode", fields.xeroAccountCode);
@@ -1137,6 +1171,8 @@ function getServiceDateForType(
 ): { date: number | null; endDate: number | null } {
   switch (type) {
     case "DELIVERY": return { date: window.start, endDate: window.start };
+    case "CLIENT_PICKUP": return { date: window.start, endDate: window.start };
+    case "CLIENT_DROPOFF": return { date: window.end, endDate: window.end };
     case "BUMP_IN": return { date: window.start, endDate: window.start };
     case "BUMP_OUT": return { date: window.end, endDate: window.end };
     case "PICKUP": return { date: window.end, endDate: window.end };
@@ -1447,6 +1483,9 @@ export const cloneServicesNative = mutation({
         taxable: svc.taxable ?? true,
         ...(svc.vehicleDescription != null ? { vehicleDescription: svc.vehicleDescription } : {}),
         ...(svc.numberOfTrips != null ? { numberOfTrips: svc.numberOfTrips } : {}),
+        // clientContactName / clientContactPhone / clientVehicle are deliberately NOT cloned:
+        // a clone reuses a plan on ANOTHER job (often another client), so one client's
+        // contact details must never follow it. The type and counter address do.
         ...(svc.crewCountRequired != null ? { crewCountRequired: svc.crewCountRequired } : {}),
         ...(svc.crewRoleId != null && validRoles.has(svc.crewRoleId) ? { crewRoleId: svc.crewRoleId } : {}),
         status: "PLANNED",

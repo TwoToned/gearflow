@@ -44,8 +44,42 @@ date-move target. Read through `api.subHires.listByProject` (org-filtered on the
 `by_projectId` index) plus `suppliers.list`, both gated on `subHire:read` + `supplier:read` so a role
 without them simply sees no stops (`use-subhire-stops.ts`).
 
+## The service sheet (5b)
+
+Row open (and the AddBar's second Enter) opens `service-sheet/service-sheet.tsx`: a Dialog on desktop, a
+bottom sheet on the phone, five sections in this order: **When** (date / end date for multi-day
+types, start / end, the truck's own time), **Where** (address + `Use venue`, vehicle with the org's recent
+vehicles derived from its services, trips), **Crew** (role, needed, the rate table, `Pick crew`, `Send
+offers`, `Confirm all accepted`), **Money** (charge, discount, cost, live derived margin, charge-rate
+override, Xero coding) and **Notes**. It replaced `ServiceDialog`; every field and gate survived: the
+pricing lock still wraps charge / discount / cost in `LockedField` (the charge-rate override stays
+unwrapped because the server does not gate it), cost and margin are manager-only, conflict badges and the
+non-gating clash count stay.
+
+The sheet only EDITS (the AddBar creates the row first). The form is seeded once per open, keyed by
+service id, so a live push never overwrites typing. Two write paths, stated in the Crew hint: Pick crew,
+Remove, Send offers and Confirm act immediately; the rate table's edits save with the service, and Save
+always sends every live assignment as the desired crew set (leaving one out would delete it).
+
+## Client pick up / drop off
+
+Two service types, `CLIENT_PICKUP` and `CLIENT_DROPOFF` (one list: `convex/lib/serviceTypes.ts`). The
+client moves the gear themselves at OUR counter. They sit in the Transport lane, AddBar chips
+`Client pick up` / `Client drop off`, and the sheet swaps Where for **Who collects / Who drops off**:
+`clientContactName`, `clientContactPhone`, `clientVehicle` (vehicle and rego, one line), plus `Use the site
+contact`. `address` is the counter, snapshotted at create from the org's default location (else the first
+WAREHOUSE location with an address, else blank with the hint "Set a warehouse location"), so later
+location edits never change a sent document. Quick add defaults: one Warehouse-role person (by name),
+no charge (a handling fee can be typed). The truck time becomes `Client collects at` / `Client drops off
+at`. Crew phases `HANDOVER` / `RETURN` (new `ProjectPhase` members). Xero account: the MISC default (a
+handling fee is not transport). The warehouse TV display reuses the dispatch / return tiles with
+`Client collects` / `Client returns` and no vehicle line; the call sheet prints the client line ahead
+of the notes; the runsheet's Where line shows counter, client and rego. The three contact fields are PII
+(`docs/pii-inventory.md`) and redacted from the API request log.
+
+Schema: additive only (two union members, three optional fields, two phase members; no backfill).
+
 ## Not built (deferred)
 
-- Client pick up / drop off service types (spec §8): needs a `projectServices.type` schema change.
-- The five-section service sheet (Phase 5b); today the existing `ServiceDialog` opens.
+- A freshly quick-added service with a headcount does not auto-open the picker on save.
 - Crew rows with checkboxes under a service (needs LineRowList `sections`); verbs stay in By person.

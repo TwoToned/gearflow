@@ -1,17 +1,21 @@
-import type { ServiceType } from "@/generated/prisma/client";
+import type { ServiceTypeValue } from "../../../convex/lib/serviceTypes";
 
-export const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
+export const SERVICE_TYPE_LABELS: Record<ServiceTypeValue, string> = {
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
+  CLIENT_PICKUP: "Client pick up",
+  CLIENT_DROPOFF: "Client drop off",
   BUMP_IN: "Bump In",
   BUMP_OUT: "Bump Out",
   LABOUR: "Labour",
   MISC: "Misc",
 };
 
-export const SERVICE_TYPE_ICONS: Record<ServiceType, string> = {
+export const SERVICE_TYPE_ICONS: Record<ServiceTypeValue, string> = {
   DELIVERY: "Truck",
   PICKUP: "Truck",
+  CLIENT_PICKUP: "Store",
+  CLIENT_DROPOFF: "Store",
   BUMP_IN: "ArrowDownToLine",
   BUMP_OUT: "ArrowUpFromLine",
   LABOUR: "HardHat",
@@ -33,12 +37,3 @@ export const SERVICE_STATUS_COLORS: Record<string, string> = {
   COMPLETED: "text-teal-600 dark:text-teal-400",
   CANCELLED: "text-red-600 dark:text-red-400",
 };
-
-export const SERVICE_TYPES = [
-  "DELIVERY",
-  "PICKUP",
-  "BUMP_IN",
-  "BUMP_OUT",
-  "LABOUR",
-  "MISC",
-] as const;

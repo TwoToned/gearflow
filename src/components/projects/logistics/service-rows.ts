@@ -5,6 +5,7 @@
  * construction. Pure: no hooks, no JSX.
  */
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
+import { isClientServiceType } from "../../../../convex/lib/serviceTypes";
 import {
   crewShort, filledOf, TYPE_WORDS, truckText, whenText,
   type LogisticsAssignment, type LogisticsService,
@@ -39,6 +40,10 @@ export const personName = (a: LogisticsAssignment): string => `${a.crewMember.fi
 
 /** Where, folded under the title as one muted line: address · truck · vehicle · trips. */
 export function whereLine(s: LogisticsService): string {
+  // A client pick up / drop off happens at our counter: no truck, no trips.
+  if (isClientServiceType(s.type)) {
+    return [s.address, truckText(s), s.clientContactName, s.clientVehicle].filter(Boolean).join(" · ");
+  }
   const trips = s.numberOfTrips && s.numberOfTrips > 1 ? `${s.numberOfTrips} trips` : "";
   return [s.address, truckText(s), s.vehicleDescription, trips].filter(Boolean).join(" · ");
 }

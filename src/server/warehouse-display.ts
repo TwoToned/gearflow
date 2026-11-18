@@ -11,6 +11,7 @@ import { logActivity } from "@/lib/activity-log";
 import { getLocationById, getLocationMap } from "@/lib/locations-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import { getProjectWindow } from "@/lib/project-window";
+import { HANDOVER_TILE_WORDS } from "@/lib/logistics-model";
 import {
   getDisplayServices,
   getDisplayLineItems,
@@ -314,6 +315,8 @@ interface ReturnProject {
   name: string;
   dueTime: string | null;
   expectedItems: number;
+  /** "Client returns" for a client drop off (no truck); absent for a normal pickup. */
+  label?: string;
 }
 
 interface PrepCard {
@@ -478,8 +481,9 @@ export async function getWarehouseDisplayData(
       projectNumber: p.projectNumber,
       name: p.name,
       deliveryTime: svc.scheduledTime || svc.startTime || null,
-      destination: svc.address || null,
-      vehicle: svc.vehicleDescription || null,
+      // A client pick up is the client's own transport: the tile says so, with no truck line.
+      destination: svc.type === "CLIENT_PICKUP" ? HANDOVER_TILE_WORDS.CLIENT_PICKUP : svc.address || null,
+      vehicle: svc.type === "CLIENT_PICKUP" ? null : svc.vehicleDescription || null,
       status: p.status ?? "",
       totalItems: totalCountMap.get(p.id) ?? 0,
       checkedOutItems: checkedOutCountMap.get(p.id) ?? 0,
@@ -513,6 +517,7 @@ export async function getWarehouseDisplayData(
       name: p.name,
       dueTime: svc.scheduledTime || svc.startTime || null,
       expectedItems: checkedOutCountMap.get(p.id) ?? 0,
+      ...(svc.type === "CLIENT_DROPOFF" ? { label: HANDOVER_TILE_WORDS.CLIENT_DROPOFF } : {}),
     });
   }
 

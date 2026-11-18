@@ -15,7 +15,7 @@ import {
 export type UrlWriteMode = "push" | "replace";
 
 /** The next URL: the list's own params replaced, any other param (`tab`) kept. */
-export function listHref(pathname: string, current: URLSearchParams, state: ListUrlState, spec: ListUrlSpec): string {
+function listHref(pathname: string, current: URLSearchParams, state: ListUrlState, spec: ListUrlSpec): string {
   const next = new URLSearchParams(current.toString());
   for (const k of listParamKeys(spec)) next.delete(k);
   for (const [k, v] of serializeListState(state, spec)) next.set(k, v);

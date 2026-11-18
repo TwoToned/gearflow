@@ -29,7 +29,7 @@ export interface ListSegment {
   count?: number;
 }
 
-export interface FilterOption {
+interface FilterOption {
   value: string;
   label: string;
 }
@@ -95,7 +95,7 @@ export function ListSegments({
 // ─── Filter word ─────────────────────────────────────────────────────────
 
 /** `Status` when idle; `Status: Booked` or `Status: 2 chosen` once something is picked. */
-export function filterWordLabel(def: ListFilterDef, chosen: string[]): string {
+function filterWordLabel(def: ListFilterDef, chosen: string[]): string {
   if (chosen.length === 0) return def.label;
   if (chosen.length > 1) return `${def.label}: ${chosen.length} chosen`;
   const opt = def.options.find((o) => o.value === chosen[0]);
@@ -128,7 +128,7 @@ function FilterSearch({ search }: { search: NonNullable<ListFilterDef["search"]>
  * popup). Chosen values print in the word with a ✕ beside it that clears just
  * this filter.
  */
-export function FilterWord({
+function FilterWord({
   def,
   chosen,
   onChange,
@@ -265,7 +265,7 @@ export function ListToolbar({
 
 // ─── Footer ──────────────────────────────────────────────────────────────
 
-export function pageRange(total: number, page: number, pageSize: number): { from: number; to: number; pages: number } {
+function pageRange(total: number, page: number, pageSize: number): { from: number; to: number; pages: number } {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   return { from, to: Math.min(total, page * pageSize), pages };

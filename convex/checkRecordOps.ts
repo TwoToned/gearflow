@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
-import { accessoryChildrenOf, ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, type PackedAccessoryUnit, syncLineItemRollup, resolveOrCreateContainerByLabel, removeCustomUnitAccessories } from "./lib/fulfillment";
+import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, type PackedAccessoryUnit, syncLineItemRollup, resolveOrCreateContainerByLabel, removeCustomUnitAccessories } from "./lib/fulfillment";
 import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 

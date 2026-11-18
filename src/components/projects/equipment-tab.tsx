@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { createPortal } from "react-dom";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { api } from "../../../convex/_generated/api";
@@ -25,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EquipmentAddMenuTrigger } from "./equipment-add-menu-trigger";
+import { EquipmentAddBar } from "./equipment-add-bar";
 import { toast } from "sonner";
 import { ConvexError } from "convex/values";
 
@@ -96,11 +95,6 @@ interface EquipmentTabProps {
   projectId: string;
   rentalStartDate?: Date | null;
   rentalEndDate?: Date | null;
-  /** When provided, the primary "Add ▾" menu is portalled into this element
-   *  (the tab row) instead of the in-panel toolbar. The page renders an empty
-   *  slot inline with the Equipment/Labour/Tasks tabs and hands the node here so
-   *  the Add action sits on the tab row. */
-  addMenuSlot?: HTMLElement | null;
   /** D3 (#1107) — auto-opens the "Add equipment" dialog with this model
    *  pre-selected, once, when set. Set only by the "Add <model> to it"
    *  chained hand-off deep link (`?modelId=` on this tab's URL), never by
@@ -131,7 +125,7 @@ interface EquipmentTabProps {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId, versionId, addDisabledReason }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOpenAddModelId, versionId, addDisabledReason }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const warehouseWrites = useWarehouseWrites();
@@ -1332,40 +1326,24 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   const selectedLineItemIds = visibleIds.filter((id) => selection.isSelected(id));
 
-  // Primary "Add ▾" menu (item / group / category) — extracted to
-  // `equipment-add-menu-trigger.tsx` (Phase 5, #1231) so its two render
-  // paths (normal menu vs. greyed+tooltipped while viewing a non-live
-  // version, `addDisabledReason`) are independently testable. The three add
-  // actions reuse the exact handlers the old three buttons triggered
-  // (UnifiedAddDialog, AddGroupToolbarDialog, AddCategoryDialog) — no
-  // behaviour change. Rendered either inline in the in-panel toolbar
-  // (fallback) or portalled onto the tab row when the page supplies
-  // `addMenuSlot`. #1230: adding is always structural (never gated by the
-  // pricing lock — a locked project just defaults a new add's price to $0 +
-  // Unpriced badge), so this is never gated by the PRICING lock.
-  const addMenu = (
-    <EquipmentAddMenuTrigger
-      disabledReason={addDisabledReason}
-      onAddItem={() => {
-        setUnifiedAddTarget({});
-        setShowUnifiedAdd(true);
-      }}
-      onAddGroup={() => setShowAddGroupFromToolbar(true)}
-      onAddCategory={() => setShowAddCategory(true)}
-    />
-  );
+  // Adding goes through the AddBar under the list (Enter adds with a blank price
+  // so the server auto-prices; a second Enter opens this dialog). New group /
+  // New category live in the list's ⋯. #1230: adding is structural, never gated
+  // by the PRICING lock. `addDisabledReason` (non-live version) disables both.
+  const openAddDialog = (kind: UnifiedAddKind, modelId?: string) => {
+    setUnifiedAddTarget({});
+    setUnifiedAddKind(kind);
+    setPendingAutoModelId(modelId);
+    setShowUnifiedAdd(true);
+  };
 
   return (
     <ReassignProvider value={reassignValue}>
     <CustomUnitProvider value={customUnitValue}>
     <div className="space-y-3" data-shortcut-scope="equipment">
-      {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
-          inline in this toolbar. Sync accessories/kits + the margin toggle are
-          secondary, infrequent actions — tucked behind the "More" menu so the
-          toolbar itself stays to the one primary action. */}
-      {addMenuSlot ? createPortal(addMenu, addMenuSlot) : null}
+      {/* The list's ⋯: New group / New category, Sync accessories/kits and the
+          margin toggle: secondary, infrequent actions. */}
       <div className="flex items-center gap-2">
-        {!addMenuSlot && addMenu}
         <div className="flex-1" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -1374,6 +1352,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {!addDisabledReason && (
+              <>
+                <DropdownMenuItem onClick={() => setShowAddGroupFromToolbar(true)}>New group</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowAddCategory(true)}>New category</DropdownMenuItem>
+              </>
+            )}
             {canDragEquipment && (
               <DropdownMenuItem
                 disabled={resyncAccessoriesMut.isPending}
@@ -1445,6 +1429,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
           uncatIsEmpty={!hasUncategorized}
         />
       )}
+
+      <div data-tour-anchor="tour-equipment-add">
+        <EquipmentAddBar
+          projectId={projectId}
+          orgId={orgId}
+          versionId={versionId}
+          disabledReason={addDisabledReason}
+          invalidate={invalidate}
+          onOpenDialog={openAddDialog}
+        />
+      </div>
 
       {/* ─── Sub-Hire Orders ──────────────────────────────────────────────── */}
       {projectSubHires.length > 0 && (

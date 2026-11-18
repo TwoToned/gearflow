@@ -1,5 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
+import { api } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
@@ -1300,8 +1301,184 @@ export const duplicateSubHireNative = mutation({
   },
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Shortfall cover (spec §7.5, atomic). ONE transaction: append to the supplier's
+// DRAFT order (or create one), add the item, and (optionally) trim the short stock
+// line by the units now covered externally. Composes the EXISTING mutations through
+// `ctx.runMutation` — nested calls run as sub-transactions of THIS one, so a throw at
+// any step rolls the whole thing back (no stray draft order, no untrimmed line), and
+// pricing/lock/FK logic has exactly one copy (R-3.1): the money is whatever
+// `addSubHireItemNative` already accepts, nothing new originates from the client.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The short project line: org-checked (by_cuid is global), a model-backed stock line. */
+async function requireShortLine(ctx: MutationCtx, lineId: string, orgId: string, modelId: string | undefined): Promise<Doc<"projectLineItems">> {
+  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineId)).first();
+  if (!line || line.organizationId !== orgId) throw new ConvexError("Line item not found");
+  if (!line.modelId || line.modelId !== modelId) throw new ConvexError("The sub-hire item must be for this line's model");
+  if (line.subHireId) throw new ConvexError("A sub-hire line cannot be covered by another sub-hire");
+  return line;
+}
+
+/** An existing order the shortfall may be appended to: this org, still DRAFT, same job + supplier. */
+async function requireAppendableDraft(ctx: MutationCtx, orderId: string, orgId: string, line: Doc<"projectLineItems">, supplierId: string): Promise<void> {
+  const head = await requireSubHireInOrg(ctx, orderId, orgId);
+  if (head.status !== "DRAFT") throw new ConvexError("Only a draft order can be added to");
+  if (head.projectId !== line.projectId) throw new ConvexError("That order belongs to a different job");
+  if (head.supplierId !== supplierId) throw new ConvexError("That order is for a different supplier");
+}
+
+type NestedActor = { userId: string; userName: string };
+
+async function patchLineQuantity(ctx: MutationCtx, a: { orgId: string; line: Doc<"projectLineItems">; qty: number; allowOverbook: boolean; now: number; actor: NestedActor; auditId: string }): Promise<void> {
+  await ctx.runMutation(api.lineItemWrites.patchNative, {
+    id: a.line.id,
+    orgId: a.orgId,
+    set: { quantity: a.qty },
+    clear: [],
+    entityName: a.line.description ?? "Item",
+    allowOverbook: a.allowOverbook,
+    emitSideEffects: true,
+    actor: a.actor,
+    auditId: a.auditId,
+    now: a.now,
+  });
+}
+
+export const coverShortfallNative = mutation({
+  returns: v.object({
+    orderId: v.string(),
+    itemId: v.string(),
+    createdOrder: v.boolean(),
+    /** The line's quantity before/after the trim (equal when `trimLine` was off). */
+    lineQuantityBefore: v.number(),
+    lineQuantityAfter: v.number(),
+  }),
+  args: {
+    orgId: v.string(),
+    /** The short stock line on the job. */
+    lineItemId: v.string(),
+    supplierId: v.string(),
+    /** The supplier's DRAFT order on this job to append to; absent = create one (as `newOrderId`). */
+    draftOrderId: v.optional(v.string()),
+    newOrderId: v.string(),
+    itemId: v.string(),
+    hireStart: v.optional(v.number()),
+    hireEnd: v.optional(v.number()),
+    ...itemInputArgs,
+    description: v.string(),
+    /** Reduce the line to (its quantity − the covered quantity); the server computes the figure. */
+    trimLine: v.boolean(),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    // Permission floor for the whole composite; each nested write re-checks its own.
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    if (!a.draftOrderId) await requireOrgPermission(ctx, a.orgId, "subHire", "create");
+    if (a.trimLine) await requireOrgPermission(ctx, a.orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, a.actor);
+
+    assertItemMoney(a);
+    await requireSupplierInOrg(ctx, a.supplierId, a.orgId);
+    const line = await requireShortLine(ctx, a.lineItemId, a.orgId, a.modelId);
+    const before = line.quantity ?? 1;
+    const after = a.trimLine ? before - a.quantity : before;
+    if (a.trimLine && after < 1) throw new ConvexError("Cannot cover the whole line and keep it: reduce the quantity or leave the line as is");
+
+    const createdOrder = !a.draftOrderId;
+    const orderId = a.draftOrderId ?? a.newOrderId;
+    if (a.draftOrderId) await requireAppendableDraft(ctx, a.draftOrderId, a.orgId, line, a.supplierId);
+    else {
+      await ctx.runMutation(api.subHiresWrites.createSubHireNative, {
+        id: orderId, orgId: a.orgId, supplierId: a.supplierId, projectId: line.projectId,
+        hireStart: a.hireStart, hireEnd: a.hireEnd, showOnDocs: false,
+        now: a.now, actor, auditId: `${a.auditId}:order`,
+      });
+    }
+    const { modelId, description, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote, showOnDocs, notes } = a;
+    await ctx.runMutation(api.subHiresWrites.addSubHireItemNative, {
+      id: a.itemId, orgId: a.orgId, subHireId: orderId, modelId, description, quantity, unitCost, unitCharge, pricingType, duration, discount,
+      showOnQuote, showOnDocs, notes, now: a.now, actor, auditId: `${a.auditId}:item`,
+    });
+    if (a.trimLine) await patchLineQuantity(ctx, { orgId: a.orgId, line, qty: after, allowOverbook: false, now: a.now, actor, auditId: `${a.auditId}:line` });
+    return { orderId, itemId: a.itemId, createdOrder, lineQuantityBefore: before, lineQuantityAfter: after };
+  },
+});
+
+/** Refuse the undo unless it would remove ONLY what the cover added (see undoShortfallNative). */
+async function assertShortfallUndoable(
+  ctx: MutationCtx,
+  a: { orgId: string; orderId: string; itemId: string; createdOrder: boolean },
+): Promise<Doc<"subHireItems">> {
+  const head = await requireSubHireInOrg(ctx, a.orderId, a.orgId);
+  if (head.status !== "DRAFT") throw new ConvexError(`This order is now ${(head.status ?? "").toLowerCase().replace("_", " ")}: edit it from the order instead of undoing`);
+  const items = await ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", a.orderId)).collect();
+  const mine = items.find((i) => i.id === a.itemId);
+  if (!mine) throw new ConvexError("The sub-hire item is already gone");
+  // Items have no creation stamp, but `sortOrder` is max+1 at insert: any other item that sorts
+  // after ours was added since; on an order this cover CREATED, any other item at all is "since".
+  const addedSince = items.some((i) => i.id !== mine.id && (a.createdOrder || (i.sortOrder ?? 0) > (mine.sortOrder ?? 0)));
+  if (addedSince) throw new ConvexError("More items were added to this order since: remove this one from the order instead of undoing");
+  return mine;
+}
+
+/**
+ * The reverse of `coverShortfallNative`, ONE transaction and ONE closure for the toast's
+ * Undo. Refuses (changing nothing) when the order is no longer DRAFT, other items joined
+ * it after this one, or the stock line was edited since; otherwise restores the line's
+ * quantity and removes the item (and the order, only if the cover created it).
+ */
+export const undoShortfallNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: {
+    orgId: v.string(),
+    orderId: v.string(),
+    itemId: v.string(),
+    createdOrder: v.boolean(),
+    /** When the cover trimmed a line: which line, and the quantities it moved between. */
+    lineItemId: v.optional(v.string()),
+    restoreQuantity: v.optional(v.number()),
+    trimmedTo: v.optional(v.number()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    if (a.createdOrder) await requireOrgPermission(ctx, a.orgId, "subHire", "delete");
+    const actor = await resolveActor(ctx, a.actor);
+
+    await assertShortfallUndoable(ctx, a);
+    let line: Doc<"projectLineItems"> | null = null;
+    if (a.lineItemId != null && a.restoreQuantity != null) {
+      line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.lineItemId!)).first();
+      if (!line || line.organizationId !== a.orgId) throw new ConvexError("Line item not found");
+      if (line.quantity !== a.trimmedTo) throw new ConvexError("The line was edited since: change its quantity by hand");
+    }
+    // Restoring raises the quantity back to a state that may be overbooked (that is why the
+    // shortfall existed), so it is allowed to; it only ever returns the line to its prior value.
+    if (line) await patchLineQuantity(ctx, { orgId: a.orgId, line, qty: a.restoreQuantity!, allowOverbook: true, now: a.now, actor, auditId: `${a.auditId}:line` });
+    await ctx.runMutation(api.subHiresWrites.removeSubHireItemNative, { itemId: a.itemId, orgId: a.orgId, now: a.now, actor, auditId: `${a.auditId}:item` });
+    if (a.createdOrder) await ctx.runMutation(api.subHiresWrites.deleteSubHireNative, { id: a.orderId, orgId: a.orgId, now: a.now, actor, auditId: `${a.auditId}:order` });
+    return { ok: true };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
   addSubHireItemNative: { danger: "medium" },
+  // Stock-affecting AND commitment-creating in one call: trims a project line's quantity (the
+  // gear no longer reserved from stock) while creating/extending a supplier order. Composite of a
+  // "high" project quantity change and a "medium" order write; classed by its worst part.
+  coverShortfallNative: { danger: "high" },
+  // Deletes a sub-hire item (and the draft order the cover created) and raises a line quantity
+  // back: a delete, so "high" like removeSubHireItemNative/deleteSubHireNative.
+  undoShortfallNative: { danger: "high" },
   // Deletes the OLD project's linked lines unconditionally (unlike deleteSubHireNative,
   // it does NOT guard against a CHECKED_OUT line before doing so) and regenerates the
   // NEW project's lines — a warehouse-movement-adjacent structural rewrite across two

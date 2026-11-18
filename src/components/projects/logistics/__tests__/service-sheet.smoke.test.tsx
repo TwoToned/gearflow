@@ -99,6 +99,13 @@ describe("service sheet (opens)", () => {
     expect(await screen.findByText("Delete service")).toBeTruthy();
   });
 
+  it("on the phone no field is focused on open (iOS would raise the keyboard over the sheet)", () => {
+    h.mobile = true;
+    render(<ServiceSheet {...props(base())} />);
+    const active = document.activeElement;
+    expect(active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)).toBeFalsy();
+  });
+
   it("opens as a bottom sheet on the phone", () => {
     h.mobile = true;
     render(<ServiceSheet {...props(base())} />);

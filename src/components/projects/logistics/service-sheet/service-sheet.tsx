@@ -131,7 +131,7 @@ export function ServiceSheet(p: ServiceSheetProps) {
   const body = <Body key={p.service.id} p={p} service={p.service} />;
   if (isMobile) {
     return (
-      <BottomSheet open={open} onOpenChange={onOpenChange} title={`Edit ${SERVICE_TYPE_LABELS[p.service.type].toLowerCase()}`} className="max-h-[92dvh]">
+      <BottomSheet open={open} onOpenChange={onOpenChange} title={`Edit ${SERVICE_TYPE_LABELS[p.service.type].toLowerCase()}`} className="max-h-[92dvh]" onOpenAutoFocus={(e) => e.preventDefault()}>
         {body}
       </BottomSheet>
     );

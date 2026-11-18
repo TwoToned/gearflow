@@ -129,6 +129,20 @@ describe("pricing lock", () => {
     expect(h.update.mock.calls[0][1].crew).toEqual([]);
   });
 
+  it("a crew pick made while the sheet is open survives Save (crew is the live set at save time)", async () => {
+    const user = userEvent.setup();
+    const p = props(base());
+    const { rerender } = render(<ServiceSheet {...p} />);
+    // Pick crew writes immediately; the live query pushes the new assignment into the open sheet.
+    const picked = base({
+      crewAssignments: [{ id: "a9", status: "PENDING", estimatedCost: null, crewMember: { id: "m9", firstName: "New", lastName: "Hire", image: null } }],
+    });
+    rerender(<ServiceSheet {...props(picked)} />);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(h.update).toHaveBeenCalled());
+    expect(h.update.mock.calls[0][1].crew.map((c: { crewMemberId: string }) => c.crewMemberId)).toEqual(["m9"]);
+  });
+
   it("cost and margin are manager-only", () => {
     h.manager = false;
     render(<ServiceSheet {...props(base())} />);

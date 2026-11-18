@@ -1483,9 +1483,9 @@ export const cloneServicesNative = mutation({
         taxable: svc.taxable ?? true,
         ...(svc.vehicleDescription != null ? { vehicleDescription: svc.vehicleDescription } : {}),
         ...(svc.numberOfTrips != null ? { numberOfTrips: svc.numberOfTrips } : {}),
-        ...(svc.clientContactName != null ? { clientContactName: svc.clientContactName } : {}),
-        ...(svc.clientContactPhone != null ? { clientContactPhone: svc.clientContactPhone } : {}),
-        ...(svc.clientVehicle != null ? { clientVehicle: svc.clientVehicle } : {}),
+        // clientContactName / clientContactPhone / clientVehicle are deliberately NOT cloned:
+        // a clone reuses a plan on ANOTHER job (often another client), so one client's
+        // contact details must never follow it. The type and counter address do.
         ...(svc.crewCountRequired != null ? { crewCountRequired: svc.crewCountRequired } : {}),
         ...(svc.crewRoleId != null && validRoles.has(svc.crewRoleId) ? { crewRoleId: svc.crewRoleId } : {}),
         status: "PLANNED",

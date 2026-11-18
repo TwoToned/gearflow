@@ -90,6 +90,35 @@ describe("createServiceNative / updateServiceNative with a client type", () => {
     expect(after?.clientVehicle).toBeUndefined();
   });
 
+  test("cloning onto another job keeps the type and counter but NEVER the client's contact details", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p2", organizationId: ORG, projectNumber: "P-2", name: "Other client", status: "QUOTED",
+        total: 0, taxRate: 10, liveVersionId: "v-p2",
+      });
+      await ctx.db.insert("projectVersions", {
+        id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
+      });
+    });
+    await t.withIdentity(asUser).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...input, address: "14 Industry Rd",
+      clientContactName: "Priya Shah", clientContactPhone: "0412 555 019", clientVehicle: "Van CXQ 412",
+      now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    await t.withIdentity(asUser).mutation(api.projectServicesWrites.cloneServicesNative, {
+      targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 5, actor: ACTOR, auditId: "logcl",
+    });
+    const cloned = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p2")).collect());
+    expect(cloned).toHaveLength(1);
+    expect(cloned[0].type).toBe("CLIENT_PICKUP");
+    expect(cloned[0].address).toBe("14 Industry Rd");
+    expect(cloned[0].clientContactName).toBeUndefined();
+    expect(cloned[0].clientContactPhone).toBeUndefined();
+    expect(cloned[0].clientVehicle).toBeUndefined();
+  });
+
   test("over-length client fields are rejected server-side", async () => {
     const t = makeT();
     await seed(t);

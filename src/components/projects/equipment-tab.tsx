@@ -86,6 +86,8 @@ import { buildBulkEquipmentActions } from "@/lib/row-actions/bulk-equipment";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { EquipmentList } from "./equipment-list";
+import { useProject } from "@/hooks/use-projects";
+import { buildEquipmentFooterTotals } from "@/lib/equipment-footer-totals";
 import { buildEquipmentSections, equipmentColumns, withSectionSelection, type EquipmentHandlers } from "./equipment-sections";
 import type { CommentCount } from "./equipment-row-extras";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
@@ -227,6 +229,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
     categoryWrites,
     onSettled: invalidate,
   });
+
+  // Footer totals = the project's STORED anchors, live version only (a viewed
+  // historical version has no stored totals of its own, so it prints none).
+  const projectDoc = useProject(projectId);
+  const footerTotals = versionId ? [] : buildEquipmentFooterTotals(projectDoc);
 
   const native = useNativeEquipmentTab(
     projectId,
@@ -1427,6 +1434,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
           selection={selection}
           dnd={dnd}
           uncatIsEmpty={!hasUncategorized}
+          totals={footerTotals}
         />
       )}
 

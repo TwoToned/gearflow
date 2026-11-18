@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 import { EquipmentList } from "./equipment-list";
 import type { EquipmentSections } from "./equipment-sections";
@@ -65,5 +65,22 @@ describe("EquipmentList (dnd-kit through the LineRowList slots)", () => {
     // category head is sortable (hold anywhere), and the Uncategorised zone shows its hint
     expect(document.querySelector("tr[data-section-id='cat-c1']")!.hasAttribute("data-drag-row")).toBe(true);
     expect(screen.getByText(/Drag items or groups here/)).toBeTruthy();
+  });
+
+  it("prints FooterTotals once, from the totals prop", () => {
+    render(
+      <EquipmentList
+        built={built}
+        columns={equipmentColumns(false)}
+        selection={selection}
+        dnd={dnd}
+        uncatIsEmpty
+        totals={[{ label: "Subtotal", amount: 1000 }, { label: "Total", amount: 1100 }]}
+      />,
+    );
+    expect(screen.getAllByLabelText("Totals")).toHaveLength(1);
+    const totals = within(screen.getByLabelText("Totals"));
+    expect(totals.getByText("Subtotal")).toBeTruthy();
+    expect(totals.getByText("Total")).toBeTruthy();
   });
 });

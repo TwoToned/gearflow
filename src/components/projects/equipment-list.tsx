@@ -5,10 +5,11 @@ import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 
 import { ConfirmDialog } from "@/components/ui/action-menu";
+import { FooterTotals } from "@/components/ui/footer-totals";
 import { LineRowList } from "@/components/ui/line-row";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { DraggedRowClone, UseEquipmentDndResult } from "@/hooks/use-equipment-dnd";
-import type { FactColumn, LineRowData, RowSelection } from "@/lib/primitives/types";
+import type { FactColumn, LineRowData, RowSelection, TotalLine } from "@/lib/primitives/types";
 import type { DropHighlight } from "./equipment-row-types";
 import { DragGrip, SortableWrap, UNCAT_ZONE_ID, UncatDropWrap } from "./equipment-list-dnd";
 import type { EquipmentSections } from "./equipment-sections";
@@ -68,12 +69,15 @@ export function EquipmentList({
   selection,
   dnd,
   uncatIsEmpty,
+  totals,
 }: {
   built: EquipmentSections;
   columns: FactColumn[];
   selection: RowSelection;
   dnd: UseEquipmentDndResult;
   uncatIsEmpty: boolean;
+  /** The stored project totals (never re-summed here); printed ONCE in the list footer. */
+  totals?: TotalLine[];
 }) {
   const isMobile = useIsMobile();
   const { rowMeta, sectionMeta, sections } = built;
@@ -128,6 +132,7 @@ export function EquipmentList({
           dragHandle={isMobile ? undefined : () => <DragGrip />}
         />
       </div>
+      {totals && totals.length > 0 && <FooterTotals lines={totals} className="mt-3" />}
       <ConfirmDialog item={hotkeys.pending} onClose={hotkeys.clearPending} />
       {/* Portalled to <body>: <DragOverlay> is `position: fixed` and the page's FadeIn
           wrapper leaves a transform on an ancestor, which would re-anchor it. */}

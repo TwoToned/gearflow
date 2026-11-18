@@ -26,7 +26,7 @@ import {
 import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { PackingTab } from "@/components/projects/packing-tab";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
-import { ServicesPanel } from "@/components/projects/services-panel";
+import { LogisticsTab } from "@/components/projects/logistics/logistics-tab";
 import { TasksPanel } from "@/components/projects/tasks-panel";
 import { useProjectTaskList } from "@/hooks/use-project-task-list";
 import { FinancialSummary } from "@/components/projects/financial-summary";
@@ -100,7 +100,7 @@ import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
 import { CompareView } from "@/components/projects/compare/compare-view";
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
-import { OUT_LABEL } from "@/lib/vocabulary";
+import { MODULE_NAMES, OUT_LABEL } from "@/lib/vocabulary";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -173,7 +173,8 @@ export default function ProjectDetailPage({
   // renders a TabsTrigger for it) via `normalizeTabParam` below, so an old
   // bookmark/notification link doesn't silently fall back to Overview.
   const VALID_TABS = ["overview", "equipment", "packing", "labour", "finance", "tasks", "notes", "files"] as const;
-  const normalizeTabParam = (tab: string | null): string | null => (tab === "work" ? "tasks" : tab);
+  const normalizeTabParam = (tab: string | null): string | null =>
+    tab === "work" ? "tasks" : tab === "logistics" ? "labour" : tab;
   const requestedTab = normalizeTabParam(searchParams.get("tab"));
   // D3 (#1107) — the "Add <model> to it" chained hand-off deep-links here as
   // `?tab=equipment&modelId=<id>`; EquipmentTab auto-opens its add dialog
@@ -682,7 +683,7 @@ export default function ProjectDetailPage({
                     {!project.isTemplate && (
                       <TabsTrigger value="packing">Packing</TabsTrigger>
                     )}
-                    <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
+                    <TabsTrigger value="labour">{MODULE_NAMES.logistics}</TabsTrigger>
                     {!project.isTemplate && (
                       <TabsTrigger value="finance">Finance</TabsTrigger>
                     )}
@@ -784,9 +785,9 @@ export default function ProjectDetailPage({
                   </TabsContent>
                 )}
 
-                {/* Labour & Logistics Tab — services (incl. per-service crew rate
-                    tables) is the sole crew UI; ServicesPanel renders the project
-                    crew list itself (see FEATUREDOCS/31, issue #796). */}
+                {/* Logistics tab (value stays `labour` so Overview deep links keep working;
+                    `?tab=logistics` is an accepted alias). Services, their crew and the
+                    By person list all live in LogisticsTab (FEATUREDOCS/31, /80). */}
                 <TabsContent value="labour">
                   <div className="space-y-6 pt-4">
                     {/* Services (a VERSIONED_PLAN_TABLES member) and crew
@@ -794,41 +795,11 @@ export default function ProjectDetailPage({
                         stay LIVE regardless of `?v=` this phase — Phase 5
                         scoped its version-read wiring to the Equipment tab
                         (the mockups' one worked example); wiring
-                        `ServicesPanel` onto `projectServices.listByProject`'s
+                        `LogisticsTab` onto `projectServices.listByProject`'s
                         own `versionId` arg is a documented follow-up, not
                         silently dropped. */}
                     <VersionNotTrackedNote what="Services & crew" />
-                    <ServicesPanel
-                      projectId={id}
-                      projectAddress={project.location?.address || ""}
-                      projectLatitude={project.location?.latitude ?? null}
-                      projectLongitude={project.location?.longitude ?? null}
-                      // WS2 (#941): fed from the PROJECT window (falling back to the
-                      // deprecated loadIn/loadOut fields for a project the backfill
-                      // hasn't reached yet) — ServicesPanel's own loadIn/eventStart
-                      // fallback-of-a-fallback logic is unchanged, so both props
-                      // carrying the same window value is harmless.
-                      projectLoadInDate={
-                        (composedProject.projectStartDate ?? composedProject.loadInDate)
-                          ? new Date((composedProject.projectStartDate ?? composedProject.loadInDate) as unknown as string).toISOString().slice(0, 10)
-                          : ""
-                      }
-                      projectLoadOutDate={
-                        (composedProject.projectEndDate ?? composedProject.loadOutDate)
-                          ? new Date((composedProject.projectEndDate ?? composedProject.loadOutDate) as unknown as string).toISOString().slice(0, 10)
-                          : ""
-                      }
-                      projectEventStartDate={
-                        (composedProject.projectStartDate ?? composedProject.loadInDate)
-                          ? new Date((composedProject.projectStartDate ?? composedProject.loadInDate) as unknown as string).toISOString().slice(0, 10)
-                          : ""
-                      }
-                      projectEventEndDate={
-                        (composedProject.projectEndDate ?? composedProject.loadOutDate)
-                          ? new Date((composedProject.projectEndDate ?? composedProject.loadOutDate) as unknown as string).toISOString().slice(0, 10)
-                          : ""
-                      }
-                    />
+                    <LogisticsTab projectId={id} />
                   </div>
                 </TabsContent>
 

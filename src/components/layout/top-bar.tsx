@@ -5,6 +5,7 @@ import { ChevronLeft } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { CommandSearch } from "./command-search";
 import { Notifications } from "./notifications";
+import { MiraLauncher } from "@/components/mira/mira-launcher";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import { Breadcrumbs, useTrail } from "@/components/layout/breadcrumbs";
 import { NavLink } from "@/components/layout/nav-link";
@@ -46,6 +47,7 @@ export function TopBar() {
       <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
         <CommandSearch />
         <ShortcutsDialog />
+        <MiraLauncher />
         <Notifications />
       </div>
     </header>

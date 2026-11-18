@@ -10,7 +10,7 @@ import { BreadcrumbProvider } from "@/components/layout/breadcrumbs";
 import { BrandingProvider } from "@/components/providers/branding-provider";
 import { FormatProvider } from "@/components/providers/format-provider";
 import MiraContextProvider from "@/components/providers/mira-context-provider";
-import { MiraLauncher } from "@/components/mira/mira-launcher";
+import { MiraPanelHost } from "@/components/mira/mira-launcher";
 import { getSession } from "@/lib/auth-server";
 import { getMyOrganizations, hasOnlyArchivedMemberships } from "@/server/public-org";
 import { OrgActivator } from "@/components/providers/org-activator";
@@ -51,7 +51,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <BrandingProvider>
           <FormatProvider>
             <MiraContextProvider>
-              <MiraLauncher />
+              <MiraPanelHost />
               <OrgActivator />
               <PostHogIdentify />
               <DynamicFavicon />

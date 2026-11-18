@@ -1,110 +1,52 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { ThemeToggle } from "./theme-toggle";
 import { CommandSearch } from "./command-search";
 import { Notifications } from "./notifications";
 import { ShortcutsDialog } from "./shortcuts-dialog";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
-import { MODULE_NAMES } from "@/lib/vocabulary";
+import { Breadcrumbs, useTrail } from "@/components/layout/breadcrumbs";
+import { NavLink } from "@/components/layout/nav-link";
 import { usePlatformName } from "@/lib/use-platform-name";
 
-/** Map route segments to display names */
-const segmentLabels: Record<string, string> = {
-  dashboard: MODULE_NAMES.home,
-  assets: "Assets",
-  registry: "Registry",
-  models: "Models",
-  "sales-stock": "Sales Stock",
-  availability: MODULE_NAMES.schedule,
-  kits: "Kits",
-  projects: MODULE_NAMES.jobs,
-  templates: "Templates",
-  warehouse: "Warehouse",
-  clients: "Clients",
-  suppliers: "Suppliers",
-  orders: "Orders",
-  crew: "Crew",
-  locations: "Locations",
-  maintenance: "Maintenance",
-  "test-and-tag": "Test & Tag",
-  "quick-test": "Quick Test",
-  categories: "Categories",
-  reports: "Reports",
-  builder: "Report Builder",
-  settings: "Settings",
-  billing: "Billing",
-  services: "Services",
-  branding: "Branding",
-  team: "Team",
-  activity: "Activity Log",
-  account: "Account",
-  changelog: "Changelog",
-  new: "New",
-  edit: "Edit",
-  "pull-sheet": "Pull Sheet",
-  timesheets: "Timesheets",
-  planner: "Planner",
-  sso: "Single Sign-On",
-  displays: "Displays",
-  woocommerce: "WooCommerce",
-  xero: "Xero",
-  "api-keys": "API Keys",
-};
-
-function getPageTitle(pathname: string): string {
-  const segments = pathname.split("/").filter(Boolean);
-  if (segments.length === 0) return MODULE_NAMES.home;
-
-  // Build display breadcrumb, skipping ID-like segments
-  const parts: string[] = [];
-  for (const seg of segments) {
-    const label = segmentLabels[seg];
-    if (label) {
-      parts.push(label);
-    }
-    // Skip ID segments (cuid, uuid, etc.)
-  }
-
-  return parts.length > 0 ? parts.join(" / ") : MODULE_NAMES.home;
+/** The page's identity for the tab title: the trail's last segment (one source, §6d.9). */
+function useDocumentTitle(title: string) {
+  const platformName = usePlatformName();
+  useEffect(() => {
+    document.title = `${title} — ${platformName}`;
+  }, [title, platformName]);
 }
 
-export function TopBar({ title }: { title?: string }) {
-  const pathname = usePathname();
-  const platformName = usePlatformName();
-  const displayTitle = title || getPageTitle(pathname);
-
-  // Update document title based on current page
-  useEffect(() => {
-    document.title = `${displayTitle} — ${platformName}`;
-  }, [displayTitle, platformName]);
+/**
+ * The top bar (56): a real trail (`Jobs › #2341 Hilton › Equipment`, each segment a
+ * link, the last in ink), the search field, then the shell actions. On a phone the
+ * trail collapses to a back chevron (to the parent crumb) and the title.
+ */
+export function TopBar() {
+  const trail = useTrail();
+  const title = trail[trail.length - 1].label;
+  const parentHref = trail.length > 1 ? trail[trail.length - 2].href : undefined;
+  useDocumentTitle(title);
 
   return (
-    <header className="sticky z-30 flex shrink-0 items-center gap-2 border-b border-line bg-paper/80 backdrop-blur-md px-4" style={{ top: 0, paddingTop: "env(safe-area-inset-top, 0px)", minHeight: "calc(3.5rem + env(safe-area-inset-top, 0px))" }}>
-      {/* Hidden 860-1023px: the rail is forced there, so the toggle would do nothing (D67); on a phone the hamburger drawer is gone (bottom nav + More). */}
+    <header
+      className="sticky z-30 flex shrink-0 items-center gap-2 border-b border-line bg-paper/80 px-4 backdrop-blur-md"
+      style={{ top: 0, paddingTop: "env(safe-area-inset-top, 0px)", minHeight: "calc(3.5rem + env(safe-area-inset-top, 0px))" }}
+    >
+      {/* Hidden <= 1023px: the rail is forced at 860-1023 (D67) and a phone has no drawer (bottom nav + More). */}
       <SidebarTrigger className="-ml-1 max-lg:hidden" />
-      <Separator orientation="vertical" className="mr-2 h-4 hidden sm:block" />
-      <Breadcrumb className="hidden sm:flex">
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbPage className="truncate max-w-[200px]">{displayTitle}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+      {parentHref && (
+        <NavLink href={parentHref} aria-label="Back" className="-ml-2 grid size-11 shrink-0 place-items-center rounded-[var(--r)] text-ink md:hidden">
+          <ChevronLeft className="size-5" />
+        </NavLink>
+      )}
+      <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink md:hidden">{title}</span>
+      <Breadcrumbs trail={trail} className="hidden flex-1 md:block" />
+      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
         <CommandSearch />
         <ShortcutsDialog />
         <Notifications />
-        <Separator orientation="vertical" className="h-4 hidden sm:block" />
-        <span className="hidden sm:flex"><ThemeToggle /></span>
       </div>
     </header>
   );

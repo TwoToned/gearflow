@@ -6,6 +6,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { DynamicFavicon } from "@/components/layout/dynamic-favicon";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { ScanTargetProvider } from "@/components/scanner/scan-target";
+import { BreadcrumbProvider } from "@/components/layout/breadcrumbs";
 import { BrandingProvider } from "@/components/providers/branding-provider";
 import { FormatProvider } from "@/components/providers/format-provider";
 import MiraContextProvider from "@/components/providers/mira-context-provider";
@@ -41,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="app-shell flex flex-col overflow-hidden md:relative md:inset-auto md:block md:min-h-svh md:overflow-visible">
      <ScanTargetProvider>
+     <BreadcrumbProvider>
       <SidebarProvider
         defaultOpen={sidebarOpen}
         className="min-h-0 flex-1 md:min-h-svh"
@@ -67,6 +69,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </BrandingProvider>
       </SidebarProvider>
       <MobileNav />
+     </BreadcrumbProvider>
      </ScanTargetProvider>
     </div>
   );

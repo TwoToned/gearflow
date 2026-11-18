@@ -1097,10 +1097,11 @@ export function CommandSearch() {
       {/* Desktop search trigger */}
       <button
         onClick={() => setOpen(true)}
-        className="hidden md:flex items-center gap-2 text-fg-3 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+        aria-label="Search or jump to (⌘K)"
+        className="hidden h-9 w-64 items-center gap-2 rounded-[var(--r)] border border-line bg-paper-2 px-3 text-[13px] text-muted transition-colors hover:border-line-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red md:flex lg:w-80"
       >
-        <Search className="h-4 w-4" />
-        <span>Search...</span>
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="flex-1 truncate text-left">Search or jump to…</span>
         <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-bg-inset px-1.5 font-mono font-medium text-fg-3 sm:flex" style={{ fontSize: KB_HINT_FONT_SIZE }}>
           <span className="text-xs">&#8984;</span>K
         </kbd>

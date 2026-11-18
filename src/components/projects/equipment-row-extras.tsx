@@ -71,7 +71,7 @@ export function CommentButton({
         className={cn(
           "inline-flex shrink-0 items-center gap-0.5 rounded-sm text-caption transition-opacity hover:text-ink focus-visible:opacity-100",
           count > 0 ? (blocking > 0 ? "text-red-text" : "text-ink-2") : "text-muted",
-          count === 0 && targetType === "lineItem" && !touch && "opacity-0 group-hover/row:opacity-100",
+          count === 0 && targetType === "lineItem" && !touch && "opacity-0 group-hover/row:opacity-100 pointer-coarse:opacity-100",
           touch && "min-h-11 min-w-11 justify-center gap-1 text-table-cell",
         )}
       >

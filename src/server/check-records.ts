@@ -359,7 +359,7 @@ export async function deprepKit(
  */
 export async function deprepItemsBatch(
   projectId: string,
-  ops: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }>
+  ops: Array<{ lineItemId: string; quantity?: number; isKit?: boolean; assetId?: string }>
 ) {
   const { organizationId, userId, userName } = await requirePermission(
     "warehouse",

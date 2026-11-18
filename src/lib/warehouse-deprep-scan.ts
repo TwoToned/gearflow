@@ -15,7 +15,8 @@ export type DeprepScanResult =
   | { kind: "bulk"; lineItemId: string; name: string; remaining: number };
 
 export type DeprepPlan =
-  | { kind: "keys"; keys: string[]; text: string }
+  /** `assetId`: the scanned serialised asset, so the server de-preps THAT unit (not "one by count"). */
+  | { kind: "keys"; keys: string[]; text: string; assetId?: string }
   | { kind: "accessoryUnit"; unitId: string; text: string }
   | { kind: "askCount"; lineItemId: string; name: string; remaining: number; text: string }
   | { kind: "refuse"; text: string; tone: "warning" | "error" };
@@ -30,7 +31,7 @@ export function planDeprepScan(r: DeprepScanResult): DeprepPlan {
     case "none": return { kind: "refuse", tone: "warning", text: "Asset not found" };
     case "refuse": return { kind: "refuse", tone: "error", text: r.text };
     case "kit": return { kind: "keys", keys: [r.lineItemId], text: `De-prepping kit ${r.name}` };
-    case "unit": return { kind: "keys", keys: bulkDeprepKeys(r.lineItemId, 1), text: `De-prepping ${r.name}` };
+    case "unit": return { kind: "keys", keys: bulkDeprepKeys(r.lineItemId, 1), text: `De-prepping ${r.name}`, assetId: r.assetId };
     case "accessory": return { kind: "accessoryUnit", unitId: r.unitId, text: `De-prepping accessory ${r.name}` };
     case "bulk": return { kind: "askCount", lineItemId: r.lineItemId, name: r.name, remaining: r.remaining, text: `${r.name}: count what came back (${r.remaining} waiting)` };
   }

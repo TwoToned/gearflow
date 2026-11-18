@@ -113,7 +113,7 @@ export function useJobStages(deps: {
   const runPlan = (r: DeprepScanResult | undefined): ScanActOutcome => {
     if (!r) return { text: "Asset not found", tone: "warning" };
     const plan = planDeprepScan(r);
-    if (plan.kind === "keys") stageActions.handleDeprep(new Set(plan.keys));
+    if (plan.kind === "keys") stageActions.handleDeprep(new Set(plan.keys), plan.assetId);
     else if (plan.kind === "accessoryUnit") stageActions.stageAccessories([plan.unitId], "DEPREP");
     else if (plan.kind === "askCount") setBinCount({ lineItemId: plan.lineItemId, name: plan.name, remaining: plan.remaining });
     return plan.kind === "refuse" ? { text: plan.text, tone: plan.tone } : { text: plan.text, ...(plan.kind === "askCount" ? { tone: "neutral" as const } : {}) };

@@ -6,9 +6,17 @@ const h = vi.hoisted(() => ({
   asset: null as Record<string, unknown> | null,
   bulk: null as Record<string, unknown> | null,
   kit: null as Record<string, unknown> | null,
+  denied: false,
+  asked: [] as string[],
 }));
 
-vi.mock("@/lib/org-context", () => ({ getOrgContext: async () => ({ organizationId: "org1" }) }));
+vi.mock("@/lib/org-context", () => ({
+  requirePermission: async (resource: string, action: string) => {
+    if (h.denied) throw new Error(`Forbidden: ${resource}:${action}`);
+    h.asked.push(`${resource}:${action}`);
+    return { organizationId: "org1" };
+  },
+}));
 vi.mock("@/lib/serialize", () => ({ serialize: <T,>(v: T) => v }));
 vi.mock("@/lib/kits-read", () => ({ getKitByAssetTag: async () => h.kit }));
 vi.mock("@/lib/assets-read", () => ({ getAssetByAssetTag: async () => h.asset, getBulkAssetByAssetTag: async () => h.bulk }));
@@ -23,7 +31,36 @@ vi.mock("../../../convex/_generated/api", () => ({
 import { lookupDeprepScan } from "../warehouse-deprep-scan";
 
 const waiting = { status: "RETURNED", prepStatus: "PACKED" };
-beforeEach(() => { h.lines = []; h.units = []; h.asset = null; h.bulk = null; h.kit = null; });
+beforeEach(() => { h.lines = []; h.units = []; h.asset = null; h.bulk = null; h.kit = null; h.denied = false; h.asked = []; });
+
+describe("lookupDeprepScan is gated and org-scoped", () => {
+  it("needs the same warehouse permission as the de-prep write; a role without it is rejected", async () => {
+    h.asset = { id: "a1", assetTag: "T1", modelId: "m" };
+    h.lines = [{ id: "L1", status: "RETURNED" }];
+    await lookupDeprepScan("p", "T1");
+    expect(h.asked).toEqual(["warehouse:check_out"]);
+    h.denied = true;
+    await expect(lookupDeprepScan("p", "T1")).rejects.toThrow(/Forbidden/);
+  });
+  it("a project outside the caller's org (no lines come back) resolves nothing", async () => {
+    h.asset = { id: "a1", assetTag: "T1", modelId: "m" };
+    h.units = [{ id: "u1", lineItemId: "L1", assetId: "a1", ...waiting }];
+    h.lines = [];
+    expect(await lookupDeprepScan("foreign", "T1")).toMatchObject({ kind: "refuse" });
+  });
+  it("a bin scan never matches a SERIALISED line of the same model", async () => {
+    h.bulk = { id: "b1", assetTag: "B1", modelId: "m" };
+    h.lines = [{ id: "SL", modelId: "m", status: "RETURNED", prepStatus: "PACKED" }]; // serial line, model-level, no bulkAssetId
+    h.units = [{ id: "s1", lineItemId: "SL", assetId: "a1", quantity: 1, ...waiting }, { id: "s2", lineItemId: "SL", assetId: "a2", quantity: 1, ...waiting }];
+    expect(await lookupDeprepScan("p", "B1")).toMatchObject({ kind: "refuse" });
+  });
+  it("the waiting count only counts units of THIS bin", async () => {
+    h.bulk = { id: "b1", assetTag: "B1", modelId: "m" };
+    h.lines = [{ id: "ML", modelId: "m" }];
+    h.units = [{ id: "u1", lineItemId: "ML", bulkAssetId: "b1", quantity: 4, ...waiting }, { id: "u2", lineItemId: "ML", assetId: "a9", quantity: 1, ...waiting }];
+    expect(await lookupDeprepScan("p", "B1")).toMatchObject({ kind: "bulk", lineItemId: "ML", remaining: 4 });
+  });
+});
 
 describe("lookupDeprepScan validates on the server", () => {
   it("an unknown tag is not found", async () => {

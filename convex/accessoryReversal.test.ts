@@ -295,6 +295,46 @@ async function accUnitDoc(ctx: import("./_generated/server").MutationCtx) {
   return null;
 }
 
+describe("a de-prep scan on a multi-serial line de-preps THAT asset's unit", () => {
+  test("two serial units on one line, scan the second tag: exactly the second unit is de-prepped", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW,
+      items: [{ lineItemId: "L1", returnCondition: "GOOD" }],
+    });
+    const prep = () => t.run(async (ctx) => Object.fromEntries(
+      (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => [u.assetId, u.prepStatus])));
+    expect(await prep()).toEqual({ a1: "PACKED", a2: "PACKED" });
+    await svc(t).mutation(api.checkRecordOps.deprepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, assetId: "a2" }],
+    });
+    expect(await prep()).toEqual({ a1: "PACKED", a2: "PENDING" });
+    // The FIRST unit by ordinal: count-based LIFO would have taken a2 again, so this proves the asset is honoured.
+    await svc(t).mutation(api.checkRecordOps.deprepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, assetId: "a1" }],
+    });
+    expect(await prep()).toEqual({ a1: "PENDING", a2: "PENDING" });
+  });
+  test("scanning a1 first de-preps a1, leaving a2", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW,
+      items: [{ lineItemId: "L1", returnCondition: "GOOD" }],
+    });
+    await svc(t).mutation(api.checkRecordOps.deprepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, assetId: "a1" }],
+    });
+    const us = await t.run(async (ctx) => (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()));
+    expect(Object.fromEntries(us.map((u) => [u.assetId, u.prepStatus]))).toEqual({ a1: "PENDING", a2: "PACKED" });
+  });
+});
+
 describe("prepItems reports what an accessories-only prep actually packed", () => {
   /** Prep both parents, then put every accessory unit back to "not packed" so an accessories-only call has work. */
   async function prepThenUnpackAccessories(t: T) {

@@ -213,7 +213,7 @@ export const prepItems = mutation({
  *  mutation and the batched `deprepItems` mutation run byte-identical logic. */
 async function deprepItemInner(
   ctx: Ctx,
-  a: { organizationId: string; projectId: string; lineItemId: string; quantity: number; now: number },
+  a: { organizationId: string; projectId: string; lineItemId: string; quantity: number; assetId?: string; now: number },
 ) {
   const line = await lineByCuid(ctx, a.lineItemId);
   if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
@@ -224,7 +224,7 @@ async function deprepItemInner(
   // left its RETURNED+PACKED accessories behind, which keeps the parent on the
   // Returned tab (isInReturnedStage) with every retry a no-op.
   if (line.status === "RETURNED") {
-    await deprepReturnedLine(ctx, line, { count: a.quantity, assetId: line.assetId ?? "", now: a.now });
+    await deprepReturnedLine(ctx, line, { count: a.quantity, assetId: a.assetId ?? line.assetId ?? "", now: a.now });
     await syncLineItemRollup(ctx, a.lineItemId);
     return;
   }
@@ -528,6 +528,8 @@ export const deprepItems = mutation({
         lineItemId: v.string(),
         quantity: v.optional(v.number()),
         isKit: v.optional(v.boolean()),
+        /** The scanned serialised asset: de-prep THAT unit, not "one by count". */
+        assetId: v.optional(v.string()),
       }),
     ),
     now: v.number(),
@@ -546,6 +548,7 @@ export const deprepItems = mutation({
           projectId: a.projectId,
           lineItemId: op.lineItemId,
           quantity: op.quantity ?? 1,
+          assetId: op.assetId,
           now: a.now,
         });
       }

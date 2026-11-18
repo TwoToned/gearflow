@@ -1,6 +1,6 @@
 "use server";
 
-import { getOrgContext } from "@/lib/org-context";
+import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { getConvexClient } from "@/lib/convex-client";
 import { getKitByAssetTag } from "@/lib/kits-read";
@@ -18,7 +18,8 @@ const NOT_WAITING = "Not waiting to be de-prepped on this job";
  * are refused here, so the dock never trusts a client-held list.
  */
 export async function lookupDeprepScan(projectId: string, tag: string): Promise<DeprepScanResult> {
-  const { organizationId } = await getOrgContext();
+  // The same permission the live de-prep write needs (`deprepItemsBatch`): a role that can't de-prep can't resolve tags.
+  const { organizationId } = await requirePermission("warehouse", "check_out");
   const raw = tag.trim();
   if (!raw) return serialize({ kind: "none" as const });
   const [asset, bulk, kit] = await Promise.all([
@@ -26,7 +27,9 @@ export async function lookupDeprepScan(projectId: string, tag: string): Promise<
   ]);
   if (!asset && !bulk && !kit) return serialize({ kind: "none" as const });
   const convex = await getConvexClient();
+  // `listByProject` returns [] for a project outside the caller's org, so a foreign projectId matches nothing below.
   const lines = (await convex.query(api.projectLineItems.listByProject, { projectId, orgId: organizationId })).filter((l) => l.status !== "CANCELLED");
+  if (lines.length === 0) return serialize({ kind: "refuse" as const, text: "Job not found" });
   const waiting = (l: { status?: string | null; prepStatus?: string | null }) => l.status === "RETURNED" && l.prepStatus === "PACKED";
 
   if (kit) {
@@ -49,11 +52,20 @@ export async function lookupDeprepScan(projectId: string, tag: string): Promise<
       : { kind: "unit" as const, lineItemId: line.id, assetId: asset.id, name });
   }
   const bin = bulk!;
-  const line = lines.find((l) => l.bulkAssetId === bin.id || (!l.bulkAssetId && l.modelId === bin.modelId && !l.isKitChild));
   const model = await getModelById(bin.modelId);
   const name = model?.name ?? bin.assetTag;
-  if (!line) return serialize({ kind: "refuse" as const, text: "Asset not assigned to this job" });
-  const units = await convex.query(api.projectLineItemUnits.listByLineItem, { lineItemId: line.id });
-  const remaining = units.filter((u) => u.status === "RETURNED" && u.prepStatus === "PACKED").reduce((n, u) => n + (u.quantity ?? 1), 0);
-  return serialize(remaining > 0 ? { kind: "bulk" as const, lineItemId: line.id, name, remaining } : { kind: "refuse" as const, text: `${name}: ${NOT_WAITING.toLowerCase()}` });
+  // Genuine bulk lines only: the line names this bin, or it is an untagged model-level line (no assetId, no
+  // kit parent). Then the bin's own units decide: a SERIALISED line of the same model never carries a unit
+  // with `bulkAssetId === bin.id`, so a bin scan can never de-prep serial units.
+  const candidates = lines.filter((l) => !l.isKitChild && (l.bulkAssetId === bin.id || (!l.bulkAssetId && !l.assetId && l.modelId === bin.modelId)));
+  if (candidates.length === 0) return serialize({ kind: "refuse" as const, text: "Asset not assigned to this job" });
+  let onJob = false;
+  for (const line of candidates) {
+    const binUnits = (await convex.query(api.projectLineItemUnits.listByLineItem, { lineItemId: line.id })).filter((u) => u.bulkAssetId === bin.id);
+    if (binUnits.length === 0 && line.bulkAssetId !== bin.id) continue;
+    onJob = true;
+    const remaining = binUnits.filter((u) => u.status === "RETURNED" && u.prepStatus === "PACKED").reduce((n, u) => n + (u.quantity ?? 1), 0);
+    if (remaining > 0) return serialize({ kind: "bulk" as const, lineItemId: line.id, name, remaining });
+  }
+  return serialize({ kind: "refuse" as const, text: onJob ? `${name}: ${NOT_WAITING.toLowerCase()}` : "Asset not assigned to this job" });
 }

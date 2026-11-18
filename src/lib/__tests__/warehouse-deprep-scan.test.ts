@@ -4,7 +4,7 @@ import { classifyScan } from "../warehouse-scan-classify";
 
 describe("planDeprepScan: one scan, one unit", () => {
   it("a serialised unit de-preps exactly ONE unit through a per-unit key", () => {
-    expect(planDeprepScan({ kind: "unit", lineItemId: "L1", assetId: "a1", name: "Lamp" })).toMatchObject({ kind: "keys", keys: ["L1:0"] });
+    expect(planDeprepScan({ kind: "unit", lineItemId: "L1", assetId: "a1", name: "Lamp" })).toMatchObject({ kind: "keys", keys: ["L1:0"], assetId: "a1" }); // the scanned asset rides along so the server de-preps THAT unit
   });
   it("a kit goes whole, by its line id", () => {
     expect(planDeprepScan({ kind: "kit", lineItemId: "K1", kitId: "k", name: "Kit" })).toMatchObject({ kind: "keys", keys: ["K1"] });

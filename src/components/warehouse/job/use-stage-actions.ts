@@ -119,10 +119,13 @@ export function useStageActions(deps: {
     new Set(rest.map((k) => k.split(":")[0])).forEach((id) => mutations.undeprepMutation.mutate(id));
   };
 
-  const queueBulkDeprep = (lineItemId: string, count: number, queue: CheckQueueItem[], direct: DirectDeprep[]) => {
+  const queueBulkDeprep = (lineItemId: string, count: number, queue: CheckQueueItem[], direct: DirectDeprep[], scannedAssetId?: string) => {
     const li = lineItems.find((l) => l.id === lineItemId);
-    if (!li || !deprepNeedsCheck(li)) { direct.push({ lineItemId, quantity: count }); return; }
-    for (let i = 0; i < count; i++) queue.push(deprepEntry(li, lineItemId, reasonableName(li, count, i)));
+    if (!li || !deprepNeedsCheck(li)) { direct.push({ lineItemId, quantity: count, ...(scannedAssetId ? { assetId: scannedAssetId } : {}) }); return; }
+    for (let i = 0; i < count; i++) {
+      const entry = deprepEntry(li, lineItemId, reasonableName(li, count, i));
+      queue.push(scannedAssetId ? { ...entry, assetId: scannedAssetId } : entry);
+    }
   };
   const queueWholeDeprep = (id: string, queue: CheckQueueItem[], direct: DirectDeprep[]) => {
     const li = lineItems.find((l) => l.id === id);
@@ -134,17 +137,17 @@ export function useStageActions(deps: {
     else direct.push({ lineItemId: id });
   };
   /** De-prep: return checks where the model has them, else straight back into inventory. */
-  const handleDeprep = (ids: Set<string>) => {
+  const handleDeprep = (ids: Set<string>, scannedAssetId?: string) => {
     if (ids.size === 0) return;
     // "Move to Pick" (packed and waiting) and "De-prep" (returned) share this handler; the server's DEPREP does the right one per unit.
     const rest = takeAccessoryStage(ids, "DEPREP", (u) => isMoveableAtDeployStage(u) || isMoveableAtDeprepStage(u));
     const { counts, ids: wholeIds } = splitKeys(rest);
     const queue: CheckQueueItem[] = [];
     const direct: DirectDeprep[] = [];
-    for (const [lineItemId, count] of counts) queueBulkDeprep(lineItemId, count, queue, direct);
+    for (const [lineItemId, count] of counts) queueBulkDeprep(lineItemId, count, queue, direct, scannedAssetId);
     for (const id of wholeIds) queueWholeDeprep(id, queue, direct);
     // One batch call for every direct de-prep; ops keep their array order so shared-line sequencing holds server-side.
-    if (direct.length > 0) mutations.deprepMutation.mutate(direct.map((d) => ({ lineItemId: d.lineItemId, quantity: d.quantity, isKit: d.isKit })));
+    if (direct.length > 0) mutations.deprepMutation.mutate(direct.map((d) => ({ lineItemId: d.lineItemId, quantity: d.quantity, isKit: d.isKit, assetId: d.assetId })));
     if (queue.length > 0) startCheckQueue(queue);
     clear.deprep();
     clear.out();
@@ -216,6 +219,6 @@ export function useStageActions(deps: {
   return { stageAccessories, takeAccessoryStage, handleUndeploy, handleUnreturn, handleUndeprep, handleDeprep, handleReturnSelected };
 }
 
-type DirectDeprep = { lineItemId: string; quantity?: number; isKit?: boolean };
+type DirectDeprep = { lineItemId: string; quantity?: number; isKit?: boolean; assetId?: string };
 type ReturnItem = { lineItemId: string; assetId?: string; returnCondition: ReturnConditionValue; quantity: number; notes?: string };
 export type StageActions = ReturnType<typeof useStageActions>;

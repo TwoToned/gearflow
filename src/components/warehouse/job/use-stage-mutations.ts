@@ -89,7 +89,7 @@ export function useStageMutations({
   // Batched deprep — reverse prep for every selected item + kit in one call.
   // (Drives the deprep buttons' pending state via `.isPending`.)
   const deprepMutation = useServerMutation({
-    mutationFn: (ops: Array<{ lineItemId: string; quantity?: number; isKit?: boolean }>) =>
+    mutationFn: (ops: Array<{ lineItemId: string; quantity?: number; isKit?: boolean; assetId?: string }>) =>
       deprepItemsBatch(projectId, ops),
     onSuccess: (_res, ops) => {
       toast.success(`Removed ${ops.length} from prep`);

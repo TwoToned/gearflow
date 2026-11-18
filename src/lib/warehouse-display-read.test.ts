@@ -181,3 +181,15 @@ describe("buildLineItemCountMaps", () => {
     expect(checkedOutCountMap.size).toBe(0);
   });
 });
+
+describe("client pick up / drop off on the display (UX 5b)", () => {
+  it("a client pick up is dispatch and a client drop off is a return; the types stay apart", () => {
+    const rows = [
+      svc({ projectId: "a", type: "CLIENT_PICKUP" }),
+      svc({ projectId: "b", type: "CLIENT_DROPOFF" }),
+      svc({ projectId: "c", type: "CLIENT_PICKUP", status: "CANCELLED" }),
+    ];
+    expect(filterDeliveryServices(rows, TODAY_START, TODAY_END).map((s) => s.projectId)).toEqual(["a"]);
+    expect(filterPickupServices(rows, TODAY_START, TODAY_END).map((s) => s.projectId)).toEqual(["b"]);
+  });
+});

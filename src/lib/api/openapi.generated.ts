@@ -31701,6 +31701,15 @@ export const OPENAPI_DOCUMENT = {
                       "chargeRateOverride": {
                         "type": "number"
                       },
+                      "clientContactName": {
+                        "type": "string"
+                      },
+                      "clientContactPhone": {
+                        "type": "string"
+                      },
+                      "clientVehicle": {
+                        "type": "string"
+                      },
                       "costTotal": {
                         "type": "number"
                       },
@@ -32287,6 +32296,15 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "chargeRateOverride": {
                         "type": "number"
+                      },
+                      "clientContactName": {
+                        "type": "string"
+                      },
+                      "clientContactPhone": {
+                        "type": "string"
+                      },
+                      "clientVehicle": {
+                        "type": "string"
                       },
                       "costTotal": {
                         "type": "number"

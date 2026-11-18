@@ -21,7 +21,10 @@ export function BottomSheet({
   description,
   children,
   className,
+  onOpenAutoFocus,
 }: {
+  /** Pass `(e) => e.preventDefault()` to stop Radix focusing the first field (iOS raises the keyboard over the sheet). */
+  onOpenAutoFocus?: (event: Event) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Visible heading, or screen-reader-only context for the sheet. */
@@ -37,6 +40,7 @@ export function BottomSheet({
         <SheetOverlay />
         <DialogPrimitive.Content
           aria-describedby={undefined}
+          onOpenAutoFocus={onOpenAutoFocus}
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] flex-col overflow-y-auto overscroll-contain",
             "rounded-t-[var(--radius)] border-2 border-b-0 border-border bg-elev text-ink shadow-[var(--sh-card),var(--lit)]",

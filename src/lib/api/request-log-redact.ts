@@ -18,6 +18,7 @@ const REDACTED_FIELD_NAMES = new Set(
     "dateOfBirth", "abnOrGst", "latitude", "longitude",
     "token", "password", "secret", "apiKey", "authorization", "icalToken",
     "ipAddress", "userAgent", "ssn", "creditCard",
+    "clientContactName", "clientContactPhone", "clientVehicle",
   ].map((f) => f.toLowerCase()),
 );
 
@@ -28,6 +29,9 @@ const MAX_ARRAY_ITEMS = 10;
 function isSensitiveKey(key: string): boolean {
   const lower = key.toLowerCase();
   if (REDACTED_FIELD_NAMES.has(lower)) return true;
+  // Fail closed for the SHAPE of a contact field (a future `siteContactPhone`, `billingEmail`…),
+  // not just the names listed above. Suffix-only: a bare "name" match would redact titles.
+  if (/(contactname|contactphone|contactemail|phone|email)$/i.test(key)) return true;
   return /token|password|secret|apikey|authorization|ssn|creditcard/i.test(key);
 }
 

@@ -173,7 +173,8 @@ still cheap to fix. Work backwards from the gear-committed start.
 Pull the job and run the five readiness checks Flow itself uses: **gear**
 (enough stock for the window), **conflicts** (specific assets double-booked),
 **crew** (assignments still awaiting a yes), **services** (work still `PLANNED`,
-or understaffed against the required crew count), **pricing** (unpriced lines).
+or understaffed against the required crew count; a **client pick up / drop off** is a service too, staffed
+at our counter by one Warehouse person, not a truck), **pricing** (unpriced lines).
 Each returns blocking / warning / pass / unknown. Report the blockers first, and
 be explicit about anything that came back `unknown` — a dateless job cannot have
 its gear checked, and that is not the same as being fine.

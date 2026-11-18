@@ -23,6 +23,8 @@ const KINDS = [
   { key: "delivery", label: "Delivery" },
   { key: "pickup", label: "Pickup" },
   { key: "call", label: "Call" },
+  { key: "clientpickup", label: "Client pick up" },
+  { key: "clientdropoff", label: "Client drop off" },
   { key: "labour", label: "Labour" },
   { key: "misc", label: "Misc" },
 ];
@@ -31,6 +33,8 @@ const KIND_TYPES: Record<string, ServiceType[]> = {
   delivery: ["DELIVERY"],
   pickup: ["PICKUP"],
   call: ["BUMP_IN", "BUMP_OUT"],
+  clientpickup: ["CLIENT_PICKUP"],
+  clientdropoff: ["CLIENT_DROPOFF"],
   labour: ["LABOUR"],
   misc: ["MISC"],
 };

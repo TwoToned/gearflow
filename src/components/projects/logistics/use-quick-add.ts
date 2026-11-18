@@ -13,6 +13,7 @@ import type { AddBarResult } from "@/components/ui/add-bar";
 import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
 import { dayLabel, defaultServiceDay, TYPE_WORDS, type ServiceType } from "@/lib/logistics-model";
 import type { ProjectServiceFormValues } from "@/lib/validations/project-service";
+import { isClientServiceType } from "../../../../convex/lib/serviceTypes";
 import { parseResultId, type ServiceTemplateLite } from "./add-service-bar";
 import { refreshLogistics } from "./use-logistics-writes";
 
@@ -24,6 +25,9 @@ export interface QuickAddContext {
   /** Effective job window as `yyyy-MM-dd`. */
   window: { start: string; end: string };
   templates: (ServiceTemplateLite & Record<string, unknown>)[];
+  /** The warehouse counter (default location) and Warehouse role, for client pick up / drop off. */
+  counter?: { address: string; latitude: number | null; longitude: number | null } | null;
+  warehouseRoleId?: string | null;
 }
 
 /** What a template contributes on top of the type's defaults (nothing without one). */
@@ -39,13 +43,38 @@ function templateDefaults(tpl?: Record<string, unknown>): Partial<ProjectService
   };
 }
 
+/** Client pick up / drop off: at OUR counter, one Warehouse person, no charge, no truck. */
+function clientValues(
+  type: ServiceType,
+  day: string,
+  ctx: Pick<QuickAddContext, "counter" | "warehouseRoleId">,
+  tpl?: Record<string, unknown>,
+): ProjectServiceFormValues {
+  return {
+    type,
+    title: TYPE_WORDS[type],
+    date: day,
+    endDate: day,
+    address: ctx.counter?.address ?? "",
+    latitude: ctx.counter?.latitude ?? null,
+    longitude: ctx.counter?.longitude ?? null,
+    showOnDocuments: false,
+    quantity: 1,
+    taxable: true,
+    crewCountRequired: 1,
+    crewRoleId: ctx.warehouseRoleId ?? "",
+    ...templateDefaults(tpl),
+  };
+}
+
 /** The create payload for a type (and optionally the template it came from). */
 export function quickAddValues(
   type: ServiceType,
-  ctx: Pick<QuickAddContext, "address" | "latitude" | "longitude" | "window">,
+  ctx: Pick<QuickAddContext, "address" | "latitude" | "longitude" | "window" | "counter" | "warehouseRoleId">,
   tpl?: Record<string, unknown>,
 ): ProjectServiceFormValues {
   const day = defaultServiceDay(type, ctx.window);
+  if (isClientServiceType(type)) return clientValues(type, day, ctx, tpl);
   return {
     type,
     title: TYPE_WORDS[type],

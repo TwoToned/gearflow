@@ -432,6 +432,8 @@ export const ProjectPhase = v.union(
   v.literal("BUMP_OUT"),
   v.literal("DELIVERY"),
   v.literal("PICKUP"),
+  v.literal("HANDOVER"),
+  v.literal("RETURN"),
   v.literal("SETUP"),
   v.literal("REHEARSAL"),
   v.literal("FULL_DURATION"),
@@ -458,6 +460,8 @@ export const TimeEntryStatus = v.union(
 export const ServiceType = v.union(
   v.literal("DELIVERY"),
   v.literal("PICKUP"),
+  v.literal("CLIENT_PICKUP"),
+  v.literal("CLIENT_DROPOFF"),
   v.literal("BUMP_IN"),
   v.literal("BUMP_OUT"),
   v.literal("LABOUR"),

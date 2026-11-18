@@ -58,6 +58,8 @@ export interface EquipmentHandlers {
   moveLineToCategory: (id: string, initialCategoryId?: string) => void;
   moveLineToGroup: (id: string, initialGroupId?: string) => void;
   editAccessories: (item: LineItemData) => void;
+  /** Opens the shortfall → sub-hire sheet for a line that is `short` units over stock. */
+  subHireShortfall: (item: LineItemData, short: number) => void;
   removeLine: (id: string) => void;
   inlineUpdate: (item: LineItemData, patch: InlineLineItemPatch) => Promise<unknown>;
   toggleLinePriceReveal: (item: LineItemData) => void;
@@ -203,6 +205,11 @@ interface LineWhere {
   container?: string;
 }
 
+/** A top-level model-backed line that is short of stock and not itself a sub-hire/child. */
+function canSubHireShortfall(item: LineItemData, over?: OverbookedInfo | null): boolean {
+  return !!over && over.overBy > 0 && !over.inherited && !!item.modelId && !item.isKitChild && item.subHireId == null;
+}
+
 function lineRow(item: LineItemData, c: Ctx, where: LineWhere): LineRowData {
   const over = item.subHireId != null ? undefined : c.overbookedMap[item.id];
   const marker = c.markerByTarget?.get(item.id);
@@ -240,6 +247,7 @@ function lineRow(item: LineItemData, c: Ctx, where: LineWhere): LineRowData {
         onMoveToCategory: () => h.moveLineToCategory(item.id, where.catId),
         onMoveToGroup: () => h.moveLineToGroup(item.id, where.groupId),
         onEditAccessories: canEditAccessoryPlan(item) ? () => h.editAccessories(item) : undefined,
+        onSubHireShortfall: canSubHireShortfall(item, over) ? () => h.subHireShortfall(item, over!.overBy) : undefined,
         onMarker: (s) => h.setMarker(item.id, s),
         onReportIssue: item.status === "CHECKED_OUT" ? () => h.reportIssue(item) : undefined,
         onTogglePriceReveal: () => h.toggleLinePriceReveal(item),

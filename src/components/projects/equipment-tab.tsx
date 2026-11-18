@@ -64,6 +64,7 @@ import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
 import { EditAccessoryPlanDialog } from "./edit-accessory-plan-dialog";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
+import { SubHireShortfallSheet, type ShortfallTarget } from "./sub-hire-shortfall-sheet";
 import {
   type LineItemData,
   type GroupData,
@@ -388,6 +389,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   // accessoryPlan itself (not on LineItemData), so this just needs enough of
   // the row to resolve the accessory catalog (modelId/assetId/quantity).
   const [editAccessoryItem, setEditAccessoryItem] = useState<LineItemData | null>(null);
+  // Shortfall → sub-hire sheet target (row ⋯ › "Sub-hire shortfall").
+  const [shortfall, setShortfall] = useState<ShortfallTarget | null>(null);
   // The clicked item's current placement — line items don't carry categoryId/groupId
   // directly (the tree position IS the placement), so each onEdit call site captures
   // it from the same closure the neighbouring onMoveToCategory/onMoveToGroup use.
@@ -1207,6 +1210,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
     moveLineToCategory: (lineItemId, initialCategoryId) => setMoveItemToCategory({ lineItemId, initialCategoryId }),
     moveLineToGroup: (lineItemId, initialGroupId) => setMoveItemToGroup({ lineItemId, initialGroupId }),
     editAccessories: setEditAccessoryItem,
+    subHireShortfall: (item, short) => setShortfall({ item, short }),
     removeLine: handleRemoveItem,
     inlineUpdate: handleInlineLineItemUpdate,
     toggleLinePriceReveal: (item) => togglePriceRevealMut.mutate({ item }),
@@ -1631,6 +1635,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
 
       {/* Edit accessories dialog (kebab → "Edit accessories") */}
       <EditAccessoryPlanDialog item={editAccessoryItem} onClose={() => setEditAccessoryItem(null)} />
+
+      {/* Shortfall → sub-hire sheet (row ⋯ › "Sub-hire shortfall") */}
+      <SubHireShortfallSheet
+        target={shortfall}
+        projectId={projectId}
+        orgId={orgId}
+        hireStart={rentalStartDate}
+        hireEnd={rentalEndDate}
+        draftOrders={(projectSubHires as OrderSource[]).filter((o) => o.status === "DRAFT")}
+        onSetLineQuantity={(item, qty) => handlers.inlineUpdate(item, { field: "quantity", value: qty, allowOverbook: false })}
+        onClose={() => setShortfall(null)}
+      />
 
       {/* Move-item-to-category dialog (kebab → "Move to category").
           Item lands as standalone under the picked category. */}

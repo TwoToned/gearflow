@@ -11,6 +11,7 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
+  Truck,
 } from "lucide-react";
 
 import { canRevealPriceInRollup } from "@/lib/category-pricing-display";
@@ -48,6 +49,8 @@ export interface GearLineActionCtx {
   onMoveToCategory?: () => void;
   onMoveToGroup?: () => void;
   onEditAccessories?: () => void;
+  /** Present only on a line that is short of stock (the `Short n` flag): opens the sub-hire sheet. */
+  onSubHireShortfall?: () => void;
   onMarker?: (status: "needs_review" | "follow_up" | "resolved") => void;
   onReportIssue?: () => void;
   onTogglePriceReveal?: () => void;
@@ -71,6 +74,9 @@ function editItems(ctx: GearLineActionCtx): Entry[] {
 
 function organiseItems(ctx: GearLineActionCtx): Entry[] {
   return [
+    ctx.onSubHireShortfall && {
+      key: "sub-hire-shortfall", label: "Sub-hire shortfall", group: "organise", icon: Truck, onSelect: ctx.onSubHireShortfall,
+    },
     ctx.onMoveToCategory && {
       key: "move-category", label: "Move to category", group: "organise", kbd: "M", icon: ArrowRightLeft,
       onSelect: ctx.onMoveToCategory,

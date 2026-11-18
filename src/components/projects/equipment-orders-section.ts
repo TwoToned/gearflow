@@ -20,6 +20,7 @@ export interface OrderSource {
   id: string;
   orderNumber: string;
   status: string;
+  supplierId?: string | null;
   supplier?: { name?: string | null } | null;
   hireEnd?: string | Date | null;
   totalCharge?: number | null;

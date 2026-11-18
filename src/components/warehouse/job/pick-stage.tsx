@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { StageActionBar } from "@/components/warehouse/job/stage-action-bar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CustomUnitPanel, type CustomUnitPanelLine } from "@/components/warehouse/custom-unit-panel";
 import { SaleItemsToPrep, type SaleItemsToPrepProps } from "@/components/warehouse/sale-items-to-prep";
@@ -40,12 +40,9 @@ export function PickStage({ sections, selection, prepInfo, prepHandlers, saleIte
       ) : (
         <JobTable sections={sections} selection={selection} />
       )}
-      {selection.count > 0 && (
-        <div className="flex items-center gap-2">
-          <PrepSplitButton selection={prepInfo} handlers={prepHandlers} />
-          <Button size="sm" variant="line" onClick={selection.clear}>Clear</Button>
-        </div>
-      )}
+      <StageActionBar selection={selection}>
+        <PrepSplitButton selection={prepInfo} handlers={prepHandlers} />
+      </StageActionBar>
     </div>
   );
 }

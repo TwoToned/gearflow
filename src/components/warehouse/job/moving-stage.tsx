@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { JobTable } from "@/components/warehouse/job/job-table";
+import { StageActionBar } from "@/components/warehouse/job/stage-action-bar";
 import type { ActionMenuSpec, RowFlag, RowSelection } from "@/lib/primitives/types";
 import type { JobSection } from "@/lib/warehouse-job-rows";
 
@@ -40,16 +41,13 @@ export function MovingStage({
       ) : (
         <JobTable sections={sections} selection={selection} sectionMenu={sectionMenu} sectionFlags={sectionFlags} />
       )}
-      {selection.count > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          {actions.map((a) => (
-            <Button key={a.key} size="sm" variant={a.primary ? "primary" : "line"} disabled={a.disabled} loading={a.loading} onClick={a.run}>
-              {a.label} ({selection.count})
-            </Button>
-          ))}
-          <Button size="sm" variant="line" onClick={selection.clear}>Clear</Button>
-        </div>
-      )}
+      <StageActionBar selection={selection}>
+        {actions.map((a) => (
+          <Button key={a.key} size="sm" variant={a.primary ? "primary" : "line"} disabled={a.disabled} loading={a.loading} onClick={a.run}>
+            {a.label} ({selection.count})
+          </Button>
+        ))}
+      </StageActionBar>
     </div>
   );
 }

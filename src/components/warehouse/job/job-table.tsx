@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { JobRowSheet } from "@/components/warehouse/job/job-row-sheet";
 import { LineRowList, visibleRowIds, type LineRowListSection } from "@/components/ui/line-row";
 import type { ActionMenuSpec, FactColumn, RowFlag, RowSelection } from "@/lib/primitives/types";
 import type { JobSection } from "@/lib/warehouse-job-rows";
@@ -37,6 +39,9 @@ export function JobTable({
   /** `Sealed` / `Packing` / `Active` dot-words. */
   sectionFlags?: (s: JobSection) => RowFlag[];
 }) {
+  const isMobile = useIsMobile();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openRow = useMemo(() => sections.flatMap((s) => s.rows).find((r) => r.id === openId) ?? null, [sections, openId]);
   const list = useMemo(
     () =>
       toListSections(sections, (s) => {
@@ -54,5 +59,23 @@ export function JobTable({
       }),
     [sections, selection, sectionMenu, sectionFlags],
   );
-  return <LineRowList sections={list} columns={JOB_COLUMNS} selection={selection} />;
+  // Phone: a row tap opens the row sheet (§9.4); desktop keeps whole-row open off.
+  const phoneList = useMemo(
+    () => (isMobile ? list.map((s) => ({ ...s, rows: s.rows.map((r) => ({ ...r, onOpen: () => setOpenId(r.id) })) })) : list),
+    [isMobile, list],
+  );
+  return (
+    <>
+      <LineRowList sections={phoneList} columns={JOB_COLUMNS} selection={selection} />
+      {isMobile && (
+        <JobRowSheet
+          row={openRow}
+          open={openRow !== null}
+          onOpenChange={(o) => !o && setOpenId(null)}
+          selected={openRow ? selection.isSelected(openRow.id) : false}
+          onToggleSelect={() => openRow && selection.toggle(openRow.id)}
+        />
+      )}
+    </>
+  );
 }

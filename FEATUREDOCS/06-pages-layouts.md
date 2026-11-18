@@ -17,6 +17,8 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 └── MobileNav (shrink-0, hidden on md+)
 ```
 
+**The shell (6a)** is built from one table, `src/lib/nav.ts` (`NAV`): `AppSidebar` (220 px, three hairline groups, org switcher in the head), the 72 px rail flyouts (`sidebar-rail.tsx`), `MobileNav` + `MoreSheet`, the top bar's `Breadcrumbs` (`src/lib/breadcrumbs.ts`; `document.title` is the trail's last segment), the user menu (personal: Theme words, shortcuts, Sign out last), the bell (`useShellFeed`: derived feed + stored mentions, Mark all read + Undo through `markUnreadManyNative`/`undismissManyNative`) and the palette `@` pages. Gating is applied once in `useNavItems()`. `ScanTargetProvider`/`BreadcrumbProvider` wrap the `(app)` layout.
+
 **`MobileNav` (`src/components/layout/mobile-nav.tsx`) single-flight navigation guard.**
 Mobile bug: rapidly tapping one bottom-nav tab then a different one could snap the
 user back to the first tab — the App Router doesn't guarantee two overlapping soft
@@ -26,8 +28,8 @@ distinct bug class from the `useServerMutation` stale-navigation guard (see
 FEATUREDOCS/54 — that one gates a mutation's `onSuccess` `router.push` on the
 triggering view still being mounted; this one guards two competing plain
 navigations). `useSingleFlightNavClick` replaces `next/link`'s `<Link>` with a
-`router.push`-driven `<a onClick>` (same reason `app-sidebar.tsx`'s desktop
-`NavLink` isn't a plain `<Link>`, though for a different underlying bug) that
+`router.push`-driven `<a onClick>` (same reason the shared `NavLink`
+(`nav-link.tsx`) isn't a plain `<Link>`, though for a different underlying bug) that
 tracks one pending destination in a ref: a second tap on a *different* tab while
 a navigation is still in flight is dropped, and a 1.5s safety-valve timeout clears
 the guard if a navigation stalls so the bar never gets stuck. Tapping the

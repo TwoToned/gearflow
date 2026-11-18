@@ -49,10 +49,11 @@ Parallel start (2026-11-17, user asked for phases in parallel where possible): 1
 
 ## Schema changes beyond 2c (user approved 2026-11-17, end of Wave A)
 
-Each is built in its own PR with a /code-review; until then it stays listed as deferred in its phase's PR.
+Each is built in its own PR with a /code-review; until then it stays listed as deferred in its phase's PR. The `coverage` row was approved 2026-11-19.
 
 | Item | From | Needs | Where it lands |
 |---|---|---|---|
 | Client pick-up / drop-off service types | §8, Phase 5 | new enum values + fields on `projectServices` | 5b |
 | Durable prep / de-prep scans | §5.7, Phase 3 | the scan-intake ops union / validators | Phase 3 follow-up PR |
 | D10 "remember for the next n" shared across packers | Phase 3 | a stored field; per-device in memory for now | Phase 3 follow-up PR |
+| `subHireItems.coverage` (what a shortfall cover changed, so Undo restores exactly that) | Phase 2a | one optional object field | 2a (#1388) |

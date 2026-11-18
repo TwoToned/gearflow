@@ -8522,7 +8522,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c4e7cd4ad7822730",
+    "argsSha": "fb082419c5e6d951",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

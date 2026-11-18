@@ -28,16 +28,13 @@ type NavGroupIndex = 0 | 1 | 2;
 /** The phone More sheet's groups (§6d.6). */
 export type MoreGroup = "plan" | "gear" | "people" | "account";
 
-export const MORE_GROUP_LABELS: Record<MoreGroup, string> = {
+const MORE_GROUP_LABELS: Record<MoreGroup, string> = {
   plan: "Plan",
   gear: "Crew and gear",
   people: "People",
   account: "Account",
 };
-export const MORE_GROUP_ORDER: readonly MoreGroup[] = ["plan", "gear", "people", "account"];
-
-/** A count the shell can badge a row with — only where a query already exists. */
-export type NavCountSource = "overdueInvoices" | "overbookings";
+const MORE_GROUP_ORDER: readonly MoreGroup[] = ["plan", "gear", "people", "account"];
 
 export interface NavSub {
   key: string;
@@ -46,7 +43,8 @@ export interface NavSub {
   icon: NavIconKey;
   /** Any-of. Absent = ungated. */
   resource?: Resource | readonly Resource[];
-  countSource?: NavCountSource;
+  /** Fuller label when the row stands alone in the phone More sheet ("Job templates"). */
+  moreLabel?: string;
 }
 
 export interface NavItem {
@@ -62,7 +60,6 @@ export interface NavItem {
   subs?: readonly NavSub[];
   /** Extra path prefixes that make this module "active" (url's own prefix is implied). */
   matchPrefixes?: readonly string[];
-  countSource?: NavCountSource;
 }
 
 export const NAV: readonly NavItem[] = [
@@ -72,11 +69,11 @@ export const NAV: readonly NavItem[] = [
     key: "jobs", label: MODULE_NAMES.jobs, url: "/projects", icon: "jobs", hue: "blue", group: 0, moreGroup: "plan",
     resource: "project",
     subs: [
-      { key: "job-templates", label: "Templates", url: "/projects/templates", icon: "templates", resource: "project" },
-      { key: "overbookings", label: "Overbookings", url: "/overbookings", icon: "overbookings", resource: "project", countSource: "overbookings" },
+      { key: "job-templates", label: "Templates", url: "/projects/templates", icon: "templates", resource: "project", moreLabel: "Job templates" },
+      { key: "overbookings", label: "Overbookings", url: "/overbookings", icon: "overbookings", resource: "project" },
     ],
   },
-  { key: "finance", label: "Finance", url: "/finance", icon: "finance", hue: "green", group: 0, moreGroup: "plan", resource: "invoice", countSource: "overdueInvoices" },
+  { key: "finance", label: "Finance", url: "/finance", icon: "finance", hue: "green", group: 0, moreGroup: "plan", resource: "invoice" },
   { key: "schedule", label: MODULE_NAMES.schedule, url: "/availability", icon: "schedule", hue: "green", group: 0, moreGroup: "plan", resource: "asset" },
   // Group 1
   {
@@ -127,7 +124,7 @@ const SETTINGS_NAV: NavItem = {
 export const ALL_NAV: readonly NavItem[] = [...NAV, SETTINGS_NAV];
 
 /** The phone bottom bar's three route tabs (Scan and More are not routes). */
-export const BOTTOM_NAV_KEYS = ["home", "jobs", "warehouse"] as const;
+const BOTTOM_NAV_KEYS = ["home", "jobs", "warehouse"] as const;
 export type BottomNavKey = (typeof BOTTOM_NAV_KEYS)[number];
 
 /**
@@ -200,6 +197,39 @@ export function bottomNavActive(pathname: string): BottomNavKey | "more" | null 
   const item = findNavItem(pathname);
   if (!item) return isWithinUrl(pathname, "/account") ? "more" : null;
   return (BOTTOM_NAV_KEYS as readonly string[]).includes(item.key) ? (item.key as BottomNavKey) : "more";
+}
+
+export interface MoreRow {
+  key: string;
+  label: string;
+  url: string;
+  icon: NavIconKey;
+  /** Drill-down targets (`Open X ›` + these). Empty = a plain link. */
+  subs: readonly NavSub[];
+}
+
+/**
+ * The phone More sheet's groups (§6d.6) from the (already gated) NAV items. The
+ * three bottom-bar modules are tabs already, so only their sub-pages appear here
+ * (Job templates, Overbookings, Returns) as flat rows; every other module is a row,
+ * drillable when it has sub-pages — so all 13 sub-pages stay two taps away.
+ */
+export function moreSheetGroups(items: readonly NavItem[]): { group: MoreGroup; label: string; rows: MoreRow[] }[] {
+  const byGroup = new Map<MoreGroup, MoreRow[]>(MORE_GROUP_ORDER.map((g) => [g, []]));
+  for (const item of items) {
+    if (item.key === "home") continue;
+    const rows = byGroup.get(item.moreGroup)!;
+    if ((BOTTOM_NAV_KEYS as readonly string[]).includes(item.key)) {
+      for (const s of item.subs ?? []) {
+        rows.push({ key: s.key, label: s.moreLabel ?? s.label, url: s.url, icon: s.icon, subs: [] });
+      }
+    } else {
+      rows.push({ key: item.key, label: item.label, url: item.url, icon: item.icon, subs: item.subs ?? [] });
+    }
+  }
+  return MORE_GROUP_ORDER.map((group) => ({ group, label: MORE_GROUP_LABELS[group], rows: byGroup.get(group)! })).filter(
+    (g) => g.rows.length > 0,
+  );
 }
 
 // ── Gating (applied once; consumers never re-check) ────────────────────────────

@@ -89,8 +89,8 @@ export function TopBar({ title }: { title?: string }) {
 
   return (
     <header className="sticky z-30 flex shrink-0 items-center gap-2 border-b border-line bg-paper/80 backdrop-blur-md px-4" style={{ top: 0, paddingTop: "env(safe-area-inset-top, 0px)", minHeight: "calc(3.5rem + env(safe-area-inset-top, 0px))" }}>
-      {/* Hidden 860-1023px: the rail is forced there, so the toggle would do nothing (D67). */}
-      <SidebarTrigger className="-ml-1 md:max-lg:hidden" />
+      {/* Hidden 860-1023px: the rail is forced there, so the toggle would do nothing (D67); on a phone the hamburger drawer is gone (bottom nav + More). */}
+      <SidebarTrigger className="-ml-1 max-lg:hidden" />
       <Separator orientation="vertical" className="mr-2 h-4 hidden sm:block" />
       <Breadcrumb className="hidden sm:flex">
         <BreadcrumbList>

@@ -112,7 +112,7 @@ export const listPage = query({
     const clientNameFor = (id: string | null | undefined) => (id ? clientMap.get(id)?.name : undefined);
     const locationNameFor = (id: string | null | undefined) => (id ? locationMap.get(id)?.name : undefined);
 
-    const needsYou = segment === "needs" ? await needsYouProjectIds(ctx, a.orgId, rows, a.now ?? Date.now()) : new Set<string>();
+    const needsYou = segment === "needs" ? await needsYouProjectIds(ctx, a.orgId, rows, a.now) : new Set<string>();
     const filter: JobListFilter = { ...a, segment };
     const filtered = rows.filter((p) => {
       if (!matchesJobFilter(p, filter, needsYou)) return false;
@@ -147,7 +147,7 @@ export const segmentCounts = query({
   handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "project");
     const rows = (await loadOrgProjects(ctx, orgId)).filter((p) => !p.isTemplate);
-    const needsYou = await needsYouProjectIds(ctx, orgId, rows, now ?? Date.now());
+    const needsYou = await needsYouProjectIds(ctx, orgId, rows, now);
     const counts: Record<JobSegmentKey, number> = { all: 0, quoting: 0, booked: 0, out: 0, done: 0, needs: needsYou.size };
     for (const key of JOB_SEGMENT_KEYS) {
       if (key === "needs") continue;
@@ -167,7 +167,7 @@ export const needsYouIds = query({
   handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "project");
     const rows = (await loadOrgProjects(ctx, orgId)).filter((p) => !p.isTemplate);
-    const ids = await needsYouProjectIds(ctx, orgId, rows, now ?? Date.now());
+    const ids = await needsYouProjectIds(ctx, orgId, rows, now);
     return [...ids].sort();
   },
 });

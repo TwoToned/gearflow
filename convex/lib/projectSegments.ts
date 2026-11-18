@@ -32,6 +32,19 @@ export const STALE_QUOTE_JOB_CAP = 200;
 
 type Project = Doc<"projects">;
 
+const NOW_SKEW_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The clock the derived `needs` set reads. Callers pass a mount-time snapshot (a
+ * fresh `Date.now()` in query args would re-key the subscription), but a client
+ * must not steer the overbooking board's read window with it: the caller's value
+ * is used only within ±48 h of the server clock, otherwise the server's own.
+ */
+export function resolveNow(now: number | undefined): number {
+  const server = Date.now();
+  return now != null && Number.isFinite(now) && Math.abs(now - server) <= NOW_SKEW_MS ? now : server;
+}
+
 /** Pure: does `p` belong in `segment` (not `needs`, which needs the derived id set)? */
 export function inStatusSegment(p: Pick<Project, "status">, segment: Exclude<JobSegmentKey, "needs">): boolean {
   if (segment === "all") return p.status !== "CANCELLED";
@@ -105,15 +118,21 @@ async function staleQuotedIds(ctx: QueryCtx, orgId: string, rows: Project[], now
  * `STALE_QUOTE_DAYS`, or a hard-overbooked job (the Overbookings board's
  * `gear.hard` over its default 30-day horizon, via `hardOverbookedProjectIds`,
  * so the math lives once). The overbooking read only runs for callers of this
- * function, i.e. when `needs` is asked for or counted. `rows` is the caller's
- * already-loaded, org-checked project set (templates and cancelled excluded here).
+ * function, i.e. when `needs` is asked for or counted. That is the same bounded
+ * work `overbookingBoard.counts` already does for Home's chips; `listPage` calls
+ * it only for the `needs` segment and the Jobs page subscribes to
+ * `segmentCounts` once with `{ orgId, now }` (filters never re-key it).
+ * `callerNow` is clamped by `resolveNow` here, so every caller (`segmentCounts`,
+ * `needsYouIds`, `listPage`) is covered. `rows` is the caller's already-loaded,
+ * org-checked project set (templates and cancelled excluded here).
  */
 export async function needsYouProjectIds(
   ctx: QueryCtx,
   orgId: string,
   rows: Project[],
-  now: number,
+  callerNow: number | undefined,
 ): Promise<Set<string>> {
+  const now = resolveNow(callerNow);
   const live = rows.filter((p) => !p.isTemplate && p.status !== "CANCELLED");
   const [blocked, stale, overbooked] = await Promise.all([
     blockedProjectIds(ctx, orgId),

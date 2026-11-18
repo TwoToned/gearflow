@@ -162,7 +162,9 @@ export const BOARD_DEFAULT_HORIZON_DAYS = 30;
  * No auth here: the caller has already authorised `orgId`.
  */
 export async function hardOverbookedProjectIds(ctx: QueryCtx, orgId: string, now: number): Promise<Set<string>> {
-  const { gear } = await computeBoardBundle(ctx, orgId, now, now + BOARD_DEFAULT_HORIZON_DAYS * 86_400_000);
+  const rangeEnd = now + BOARD_DEFAULT_HORIZON_DAYS * 86_400_000;
+  validateRange(now, rangeEnd);
+  const { gear } = await computeBoardBundle(ctx, orgId, now, rangeEnd);
   return new Set(gear.hard.flatMap((row) => row.projects.map((p) => p.id)));
 }
 

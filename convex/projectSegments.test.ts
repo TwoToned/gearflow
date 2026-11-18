@@ -5,7 +5,7 @@
 // cross-tenant case for every new read.
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
-import { describe, test, expect } from "vitest";
+import { afterAll, beforeAll, describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import {
@@ -15,6 +15,7 @@ import {
   isOutPastEnd,
   matchesJobFilter,
   overlapsWindow,
+  resolveNow,
 } from "./lib/projectSegments";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -26,6 +27,13 @@ const USER = "user_1";
 const asUser = { subject: USER, orgId: ORG };
 const NOW = Date.UTC(2026, 10, 19);
 const DAY = 24 * 60 * 60 * 1000;
+
+// The server clamps a caller's `now` to ±48 h of its own clock, so pin the clock to NOW.
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+afterAll(() => vi.useRealTimers());
 
 function makeT(): T {
   const t = convexTest(schema, modules);
@@ -197,6 +205,24 @@ describe("needs you: hard-overbooked jobs", () => {
     const ids = await t.withIdentity(asUser).query(api.projects.needsYouIds, { orgId: ORG, now: NOW });
     expect(ids).toContain("own-job");
     expect(ids).not.toContain("far-job");
+  });
+});
+
+describe("needs you: the caller's clock is clamped", () => {
+  test("resolveNow keeps a near value and replaces a far one with the server clock", () => {
+    expect(resolveNow(NOW + DAY)).toBe(NOW + DAY);
+    expect(resolveNow(NOW + 400 * DAY)).toBe(NOW);
+    expect(resolveNow(Number.NaN)).toBe(NOW);
+    expect(resolveNow(undefined)).toBe(NOW);
+  });
+
+  test("a far-future now cannot steer the read window", async () => {
+    const t = makeT();
+    await seed(t);
+    const ids = await t.withIdentity(asUser).query(api.projects.needsYouIds, { orgId: ORG, now: NOW + 400 * DAY });
+    // Honoured, "ontime" (ends NOW+2d) would be out past its end; clamped, it is not.
+    expect(ids).not.toContain("ontime");
+    expect(ids).toEqual(["block", "late", "stale"]);
   });
 });
 

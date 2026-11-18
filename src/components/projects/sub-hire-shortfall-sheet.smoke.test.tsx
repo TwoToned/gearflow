@@ -18,11 +18,9 @@ beforeAll(() => {
   };
 });
 
+const undo = vi.fn(async () => {});
 const writes = {
-  create: vi.fn(async () => ({ id: "o-new" })),
-  addItem: vi.fn(async () => ({ id: "it1" })),
-  removeItem: vi.fn(async () => {}),
-  remove: vi.fn(async () => {}),
+  coverShortfall: vi.fn(async (_input: Record<string, unknown>) => ({ orderId: "o-new", itemId: "it1", createdOrder: true, undo })),
 };
 vi.mock("@/hooks/use-sub-hire-writes", () => ({ useSubHireWrites: () => writes }));
 vi.mock("@/hooks/use-suppliers", () => ({ useSupplierSearch: () => [], useSupplier: () => undefined }));
@@ -55,7 +53,6 @@ const ITEM = {
 
 describe("SubHireShortfallSheet", () => {
   it("opens prefilled, shows a live margin from the chip's cached rate, and writes through the existing mutations", async () => {
-    const onSetLineQuantity = vi.fn(async () => {});
     const onClose = vi.fn();
     render(
       <SubHireShortfallSheet
@@ -64,7 +61,6 @@ describe("SubHireShortfallSheet", () => {
         hireStart={new Date("2026-06-01T00:00:00Z")}
         hireEnd={new Date("2026-06-04T00:00:00Z")}
         draftOrders={[]}
-        onSetLineQuantity={onSetLineQuantity}
         onClose={onClose}
       />,
     );
@@ -75,10 +71,17 @@ describe("SubHireShortfallSheet", () => {
     expect(margin.getByText(/40%/)).toBeTruthy();
     expect(screen.getByText(/Creates a new draft order/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add sub-hire" }));
-    await waitFor(() => expect(writes.addItem).toHaveBeenCalled());
-    expect(writes.create).toHaveBeenCalled();
-    expect(writes.addItem).toHaveBeenCalledWith("o-new", expect.objectContaining({ modelId: "m1", quantity: 2, unitCost: 30, unitCharge: 50, duration: 3 }));
-    await waitFor(() => expect(onSetLineQuantity).toHaveBeenCalledWith(ITEM, 3));
+    await waitFor(() => expect(writes.coverShortfall).toHaveBeenCalledTimes(1));
+    // ONE atomic write: no separate create / addItem / quantity calls from the client
+    expect(writes.coverShortfall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lineItemId: "li1",
+        supplierId: "s1",
+        draftOrderId: undefined,
+        trimLine: true,
+        item: expect.objectContaining({ modelId: "m1", quantity: 2, unitCost: 30, unitCharge: 50, duration: 3 }),
+      }),
+    );
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
@@ -88,7 +91,6 @@ describe("SubHireShortfallSheet", () => {
         target={{ item: ITEM, short: 2 }}
         projectId="p1"
         draftOrders={[{ id: "o-draft", orderNumber: "SH-0007", supplierId: "s2" }]}
-        onSetLineQuantity={vi.fn()}
         onClose={vi.fn()}
       />,
     );

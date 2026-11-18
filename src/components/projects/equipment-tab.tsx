@@ -181,6 +181,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   // write. #1230: reordering/moving is structural and never rejected by the
   // pricing lock, so there is no longer a locked state to also disable it for.
   const canDragEquipment = useCanDo("project", "manage_line_items");
+  const canCreateSubHire = useCanDo("subHire", "create");
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -1210,7 +1211,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
     moveLineToCategory: (lineItemId, initialCategoryId) => setMoveItemToCategory({ lineItemId, initialCategoryId }),
     moveLineToGroup: (lineItemId, initialGroupId) => setMoveItemToGroup({ lineItemId, initialGroupId }),
     editAccessories: setEditAccessoryItem,
-    subHireShortfall: (item, short) => setShortfall({ item, short }),
+    // Absent (so no menu entry) unless the member can create sub-hire orders: the sheet reads
+    // supplier cost rates and writes an order.
+    subHireShortfall: canCreateSubHire ? (item, short) => setShortfall({ item, short }) : undefined,
     removeLine: handleRemoveItem,
     inlineUpdate: handleInlineLineItemUpdate,
     toggleLinePriceReveal: (item) => togglePriceRevealMut.mutate({ item }),
@@ -1644,7 +1647,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
         hireStart={rentalStartDate}
         hireEnd={rentalEndDate}
         draftOrders={(projectSubHires as OrderSource[]).filter((o) => o.status === "DRAFT")}
-        onSetLineQuantity={(item, qty) => handlers.inlineUpdate(item, { field: "quantity", value: qty, allowOverbook: false })}
         onClose={() => setShortfall(null)}
       />
 

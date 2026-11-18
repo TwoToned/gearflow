@@ -59,7 +59,8 @@ export interface EquipmentHandlers {
   moveLineToGroup: (id: string, initialGroupId?: string) => void;
   editAccessories: (item: LineItemData) => void;
   /** Opens the shortfall → sub-hire sheet for a line that is `short` units over stock. */
-  subHireShortfall: (item: LineItemData, short: number) => void;
+  /** Absent when the member cannot create sub-hire orders: the row then has no shortfall action. */
+  subHireShortfall?: (item: LineItemData, short: number) => void;
   removeLine: (id: string) => void;
   inlineUpdate: (item: LineItemData, patch: InlineLineItemPatch) => Promise<unknown>;
   toggleLinePriceReveal: (item: LineItemData) => void;
@@ -247,7 +248,7 @@ function lineRow(item: LineItemData, c: Ctx, where: LineWhere): LineRowData {
         onMoveToCategory: () => h.moveLineToCategory(item.id, where.catId),
         onMoveToGroup: () => h.moveLineToGroup(item.id, where.groupId),
         onEditAccessories: canEditAccessoryPlan(item) ? () => h.editAccessories(item) : undefined,
-        onSubHireShortfall: canSubHireShortfall(item, over) ? () => h.subHireShortfall(item, over!.overBy) : undefined,
+        onSubHireShortfall: h.subHireShortfall && canSubHireShortfall(item, over) ? () => h.subHireShortfall?.(item, over!.overBy) : undefined,
         onMarker: (s) => h.setMarker(item.id, s),
         onReportIssue: item.status === "CHECKED_OUT" ? () => h.reportIssue(item) : undefined,
         onTogglePriceReveal: () => h.toggleLinePriceReveal(item),

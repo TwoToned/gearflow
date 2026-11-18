@@ -15,7 +15,7 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { useSupplier, useSupplierSearch } from "@/hooks/use-suppliers";
 import { defaultHireDuration, previewShortfall, type ShortfallPricingType } from "@/lib/sub-hire-shortfall";
-import { applyShortfall } from "@/lib/sub-hire-shortfall-apply";
+import { subHireItemSchema } from "@/lib/validations/sub-hire";
 import { getSupplierRateHistory } from "@/server/sub-hires";
 import { cn } from "@/lib/utils";
 import { Field } from "./line-item-form-fields";
@@ -25,9 +25,10 @@ import type { LineItemData } from "./equipment-row-types";
  * Shortfall → sub-hire (spec §7.5, first cut). Opens from an overbooked line's
  * ⋯ › "Sub-hire shortfall", prefilled: model, the short quantity, the job's hire
  * window, supplier chips with their cached last rate, cost, charge (the line's own
- * rate) and a live margin. Writes through the EXISTING sub-hire mutations only
- * (`applyShortfall`): a draft order for the supplier is appended to, else created.
- * Optionally trims the stock line by the covered units, with one Undo for it all.
+ * rate) and a live margin. Writes through ONE atomic mutation
+ * (`coverShortfallNative`): a draft order for the supplier is appended to, else
+ * created; optionally trims the stock line by the covered units. One guarded
+ * server-side Undo (`done.undo`) reverses exactly that, or refuses with a reason.
  */
 
 export interface ShortfallTarget {
@@ -56,8 +57,6 @@ export interface SubHireShortfallSheetProps {
   hireEnd?: Date | null;
   /** The job's DRAFT sub-hire orders, so an existing one for the supplier is appended to. */
   draftOrders: DraftOrderRef[];
-  /** Trims the stock line (the tab's own inline quantity write). */
-  onSetLineQuantity: (item: LineItemData, qty: number) => Promise<unknown>;
   onClose: () => void;
 }
 
@@ -136,12 +135,15 @@ function ShortfallBody({ target, ...p }: Omit<SubHireShortfallSheetProps, "targe
   const canTrim = item.quantity > quantity;
 
   const mutation = useServerMutation({
+    // ONE server transaction (order + item + trim); the same Zod bounds the server mirrors run first.
     mutationFn: () =>
-      applyShortfall({
-        writes,
-        head: { supplierId, projectId: p.projectId, hireStart: p.hireStart ?? undefined, hireEnd: p.hireEnd ?? undefined },
+      writes.coverShortfall({
+        lineItemId: item.id,
+        supplierId,
         draftOrderId: draft?.id,
-        item: {
+        hireStart: p.hireStart ?? undefined,
+        hireEnd: p.hireEnd ?? undefined,
+        item: subHireItemSchema.parse({
           modelId: item.modelId ?? undefined,
           description: modelName,
           quantity,
@@ -150,8 +152,8 @@ function ShortfallBody({ target, ...p }: Omit<SubHireShortfallSheetProps, "targe
           pricingType,
           duration: toNum(duration) ?? 1,
           discount: 0,
-        },
-        reduce: trim && canTrim ? { from: item.quantity, to: item.quantity - quantity, setQuantity: (n) => p.onSetLineQuantity(item, n) } : undefined,
+        }),
+        trimLine: trim && canTrim,
       }),
     onSuccess: (done) => {
       toast.success(`Sub-hire added for ${modelName}`, {

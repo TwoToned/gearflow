@@ -91,6 +91,17 @@ describe("buildEquipmentSections", () => {
     expect(picked.size).toBe(0);
   });
 
+  it("the shortfall action exists only for a short line AND a member who can create sub-hires", () => {
+    const modelLine = { ...line("a"), modelId: "m1" } as LineItemData;
+    const shortCat = { ...cat, lineItems: [modelLine, line("b"), line("c")] } as unknown as CategoryData;
+    const over = { a: { overBy: 2, inherited: false } } as unknown as EquipmentSectionsInput["overbookedMap"];
+    const keys = (h: Partial<EquipmentHandlers>) =>
+      buildEquipmentSections(input({ categories: [shortCat], overbookedMap: over, handlers: h as EquipmentHandlers })).sections[0].rows[0].menu?.items.map((i) => i.key) ?? [];
+    expect(keys({ editLine: () => {}, subHireShortfall: () => {} })).toContain("sub-hire-shortfall");
+    // no subHire:create: the tab leaves the handler undefined, so the row has no action at all
+    expect(keys({ editLine: () => {} })).not.toContain("sub-hire-shortfall");
+  });
+
   it("cannot drag without permission; the Cost column is opt-in", () => {
     const { rowMeta } = buildEquipmentSections(input({ canDrag: false }));
     expect(rowMeta.get("a")?.disabled).toBe(true);

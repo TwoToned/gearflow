@@ -262,8 +262,10 @@ export async function getSubHire(id: string) {
 
 // ─── Supplier Rate Memory ────────────────────────────────────────────────────
 
+// Cached supplier cost rates are cost data: both reads need `subHire:read` and are scoped to
+// the caller's org (the Convex query takes the org from `requirePermission`, never an argument).
 export async function getSupplierModelRate(supplierId: string, modelId: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("subHire", "read");
   const convex = await getConvexClient();
   const rate = await convex.query(api.supplierModelRates.getByComposite, {
     organizationId,
@@ -284,7 +286,7 @@ export async function getSupplierModelRate(supplierId: string, modelId: string) 
 }
 
 export async function getSupplierRateHistory(modelId: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("subHire", "read");
   const convex = await getConvexClient();
   const rates = await convex.query(api.supplierModelRates.listByModel, {
     organizationId,

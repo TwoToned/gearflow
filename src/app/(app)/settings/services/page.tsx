@@ -16,8 +16,11 @@ import {
   ArrowUpFromLine,
   HardHat,
   Wrench,
+  Store,
   Loader2,
 } from "lucide-react";
+import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
+import type { ServiceTypeValue } from "../../../../../convex/lib/serviceTypes";
 import { toast } from "sonner";
 
 import { useServiceTemplateWrites } from "@/hooks/use-service-template-writes";
@@ -61,24 +64,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type ServiceType = "DELIVERY" | "PICKUP" | "BUMP_IN" | "BUMP_OUT" | "LABOUR" | "MISC";
+type ServiceType = ServiceTypeValue;
 
 const SERVICE_TYPE_ICONS: Record<ServiceType, typeof Truck> = {
   DELIVERY: Truck,
   PICKUP: PackageCheck,
+  CLIENT_PICKUP: Store,
+  CLIENT_DROPOFF: Store,
   BUMP_IN: ArrowDownToLine,
   BUMP_OUT: ArrowUpFromLine,
   LABOUR: HardHat,
   MISC: Wrench,
-};
-
-const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
-  DELIVERY: "Delivery",
-  PICKUP: "Pickup",
-  BUMP_IN: "Bump In",
-  BUMP_OUT: "Bump Out",
-  LABOUR: "Labour",
-  MISC: "Misc",
 };
 
 const PRICING_TYPE_LABELS: Record<string, string> = {

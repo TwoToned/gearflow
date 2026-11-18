@@ -45,7 +45,7 @@ Crew management tracks people (employees, freelancers, contractors, volunteers) 
 - `id, organizationId, projectId, crewMemberId`
 - `crewRoleId?` — role for this assignment
 - `status` — PENDING, OFFERED, ACCEPTED, DECLINED, CONFIRMED, CANCELLED, COMPLETED
-- `phase?` — BUMP_IN, EVENT, BUMP_OUT, DELIVERY, PICKUP, SETUP, REHEARSAL, FULL_DURATION
+- `phase?` — BUMP_IN, EVENT, BUMP_OUT, DELIVERY, PICKUP, HANDOVER, RETURN, SETUP, REHEARSAL, FULL_DURATION (HANDOVER / RETURN staff a client pick up / drop off)
 - `isProjectManager` — boolean, PMs shown first
 - `startDate?, startTime?, endDate?, endTime?`
 - `rateOverride?, rateType?, estimatedHours?, estimatedCost?`

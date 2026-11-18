@@ -75,7 +75,7 @@ export const crewAssignmentSchema = z.object({
   crewMemberId: z.string().min(1, "Crew member is required"),
   crewRoleId: z.string().optional().or(z.literal("")),
   status: z.enum(["PENDING", "OFFERED", "ACCEPTED", "DECLINED", "CONFIRMED", "CANCELLED", "COMPLETED"]).default("PENDING"),
-  phase: z.enum(["BUMP_IN", "EVENT", "BUMP_OUT", "DELIVERY", "PICKUP", "SETUP", "REHEARSAL", "FULL_DURATION"]).optional().or(z.literal("")),
+  phase: z.enum(["BUMP_IN", "EVENT", "BUMP_OUT", "DELIVERY", "PICKUP", "HANDOVER", "RETURN", "SETUP", "REHEARSAL", "FULL_DURATION"]).optional().or(z.literal("")),
   isProjectManager: z.boolean().default(false),
   startDate: z.union([z.literal(""), z.coerce.date()]).optional()
     .transform(v => v === "" ? undefined : v),

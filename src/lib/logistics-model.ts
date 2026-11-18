@@ -7,13 +7,19 @@
  */
 import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
 
-export type ServiceType = "DELIVERY" | "PICKUP" | "BUMP_IN" | "BUMP_OUT" | "LABOUR" | "MISC";
+import type { ServiceTypeValue } from "../../convex/lib/serviceTypes";
+
+export type ServiceType = ServiceTypeValue;
 export type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 
 export interface LogisticsAssignment {
   id: string;
   status: string;
   estimatedCost: number | null;
+  /** The per-assignment rate inputs the service sheet's rate table edits. */
+  rateOverride?: number | null;
+  rateType?: string | null;
+  estimatedHours?: number | null;
   crewMember: { id: string; firstName: string; lastName: string; image: string | null };
 }
 
@@ -34,6 +40,10 @@ export interface LogisticsService {
   notes?: string | null;
   vehicleDescription: string | null;
   numberOfTrips?: number | null;
+  /** Client pick up / drop off: who comes to the counter (UX 5b). */
+  clientContactName?: string | null;
+  clientContactPhone?: string | null;
+  clientVehicle?: string | null;
   lineTotal: number | null;
   costTotal: number | null;
   crewCountRequired: number | null;
@@ -54,6 +64,8 @@ export const LANE_LABELS: Record<Lane, string> = {
 const TYPE_LANE: Record<ServiceType, Exclude<Lane, "all" | "needs">> = {
   DELIVERY: "transport",
   PICKUP: "transport",
+  CLIENT_PICKUP: "transport",
+  CLIENT_DROPOFF: "transport",
   BUMP_IN: "site",
   BUMP_OUT: "site",
   MISC: "site",
@@ -64,6 +76,8 @@ const TYPE_LANE: Record<ServiceType, Exclude<Lane, "all" | "needs">> = {
 export const TYPE_WORDS: Record<ServiceType, string> = {
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
+  CLIENT_PICKUP: "Client pick up",
+  CLIENT_DROPOFF: "Client drop off",
   BUMP_IN: "Bump in",
   BUMP_OUT: "Bump out",
   LABOUR: "Labour",
@@ -179,6 +193,8 @@ export function truckText(s: LogisticsService): string {
   if (!s.scheduledTime) return "";
   if (s.type === "DELIVERY") return `drop ${s.scheduledTime}`;
   if (s.type === "PICKUP") return `collect ${s.scheduledTime}`;
+  if (s.type === "CLIENT_PICKUP") return `client collects ${s.scheduledTime}`;
+  if (s.type === "CLIENT_DROPOFF") return `client drops ${s.scheduledTime}`;
   return "";
 }
 
@@ -186,6 +202,7 @@ export function truckText(s: LogisticsService): string {
 export function defaultServiceDay(type: ServiceType | null, w: { start: string; end: string }): string {
   switch (type) {
     case "PICKUP":
+    case "CLIENT_DROPOFF":
     case "BUMP_OUT":
       return w.end || w.start;
     default:
@@ -221,8 +238,8 @@ export function planShift(
   const follows = (types: ServiceType[]) =>
     services.filter((s) => s.date && s.status !== "CANCELLED" && types.includes(s.type)).map((s) => s.id);
   return [
-    { offsetDays: moved.loadInDays, serviceIds: follows(["DELIVERY", "BUMP_IN"]) },
-    { offsetDays: moved.loadOutDays, serviceIds: follows(["BUMP_OUT", "PICKUP"]) },
+    { offsetDays: moved.loadInDays, serviceIds: follows(["DELIVERY", "CLIENT_PICKUP", "BUMP_IN"]) },
+    { offsetDays: moved.loadOutDays, serviceIds: follows(["BUMP_OUT", "PICKUP", "CLIENT_DROPOFF"]) },
   ].filter((m) => m.offsetDays !== 0 && m.serviceIds.length > 0);
 }
 
@@ -254,4 +271,25 @@ export function crewPickRank(severity: "hard" | "soft" | "preferred" | null): nu
     case "soft": return 2;
     case "hard": return 3;
   }
+}
+
+/**
+ * The warehouse counter a client collects from / returns to: the org's default
+ * location, else its first WAREHOUSE-type one, else nothing (the sheet then asks
+ * for a warehouse location). Snapshotted onto the service at create so old
+ * documents never change when the location is later edited.
+ */
+export function counterLocation<L extends { isDefault?: boolean | null; type?: string | null; address?: string | null }>(
+  locations: L[] | undefined,
+): L | null {
+  const withAddress = (locations ?? []).filter((l) => !!l.address);
+  return withAddress.find((l) => l.isDefault) ?? withAddress.find((l) => l.type === "WAREHOUSE") ?? null;
+}
+
+/** The warehouse display's words for a client pick up / drop off (one source; the display shows no truck). */
+export const HANDOVER_TILE_WORDS = { CLIENT_PICKUP: "Client collects", CLIENT_DROPOFF: "Client returns" } as const;
+
+/** The org's Warehouse crew role (by name, case-insensitive): the default for the counter staff. */
+export function warehouseRoleId(roles: { id: string; name: string; isActive?: boolean }[] | undefined): string | null {
+  return (roles ?? []).find((r) => r.isActive !== false && r.name.trim().toLowerCase() === "warehouse")?.id ?? null;
 }

@@ -27,6 +27,8 @@ export function serviceTypeToPhase(type: string): string {
   switch (type) {
     case "DELIVERY": return "DELIVERY";
     case "PICKUP": return "PICKUP";
+    case "CLIENT_PICKUP": return "HANDOVER";
+    case "CLIENT_DROPOFF": return "RETURN";
     case "BUMP_IN": return "BUMP_IN";
     case "BUMP_OUT": return "BUMP_OUT";
     case "LABOUR": return "EVENT";

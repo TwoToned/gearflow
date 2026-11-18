@@ -582,6 +582,12 @@ function WarehouseProjectPage({
     setSelectedDeprep(new Set());
   };
 
+  // De-prepped → Returned: accessory units (relocated rows / `acc~`) by unit, every other line by id.
+  const handleUndeprep = (keys: string[]) => {
+    const rest = takeAccessoryStage(keys, "UNDEPREP", () => true);
+    new Set(rest.map((k) => k.split(":")[0])).forEach((id) => undeprepMutation.mutate(id));
+  };
+
   // --- Scan prep routing ---
   // 1) a parent with accessories on the job asks which ones are with it,
   // 2) then the scan is prepped now, run through the check form, or held for the
@@ -1761,14 +1767,17 @@ function WarehouseProjectPage({
     const { pendingCheckOutItems, missingDefaults, missingOptionals } = accessoryGate;
     const byId = new Map([...missingDefaults, ...missingOptionals].map((m) => [m.accessoryLineItemId, m]));
     const leaves = decisions.filter((d) => d.action === "leave" && byId.has(d.id));
-    const packParents = [...new Set(decisions.filter((d) => d.action === "pack").map((d) => byId.get(d.id)?.parentLineItemId).filter((x): x is string => !!x))];
+    const packIds = new Set(decisions.filter((d) => d.action === "pack" && byId.has(d.id)).map((d) => d.id));
+    const packParents = [...new Set([...packIds].map((id) => byId.get(id)!.parentLineItemId))];
 
-    const skipped: Array<{ accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }> = leaves.map((d) => {
-      const m = byId.get(d.id)!;
-      return { accessoryLineItemId: d.id, tier: m.tier, reason: d.reason.trim() || "Not needed for this job" };
-    });
+    // Pack EXACTLY the `pack` rows. A failed pack keeps the gate open (the handler already toasted) and never deploys.
+    if (packIds.size > 0 && !(await handlePrepAccessoriesOnly(packParents, "parent", packIds))) return;
 
-    if (packParents.length > 0) await handlePrepAccessoriesOnly(packParents, "parent");
+    // Re-compute what is still missing: anything not packed just now is skipped and logged — never "all".
+    const reasonOf = new Map(leaves.map((d) => [d.id, d.reason.trim()]));
+    const skipped: Array<{ accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }> = [...byId.values()]
+      .filter((m) => !packIds.has(m.accessoryLineItemId))
+      .map((m) => ({ accessoryLineItemId: m.accessoryLineItemId, tier: m.tier, reason: reasonOf.get(m.accessoryLineItemId) || "Not needed for this job" }));
     if (skipped.length === 0) {
       setAccessoryGate(null);
       if (accessoryGate.durableOperationId) {
@@ -2059,34 +2068,40 @@ function WarehouseProjectPage({
   // re-prepped, and the active container applies to the accessories alone — so
   // batteries can go in the battery box while the beltpacks sit in the pelican.
   // `where`: "active" packs into the active case; "parent" into each parent's own case.
-  const handlePrepAccessoriesOnly = async (keys?: Iterable<string>, where: "active" | "parent" = "active") => {
+  // `onlyAccessoryIds`: pack EXACTLY these accessory child lines (the deploy gate's explicit `Pack now` rows),
+  // never the rest of the parent's accessories. Resolves true when everything asked for was packed.
+  const handlePrepAccessoriesOnly = async (keys?: Iterable<string>, where: "active" | "parent" = "active", onlyAccessoryIds?: ReadonlySet<string>): Promise<boolean> => {
     try {
       await ensureContainerIfNeeded();
-      const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId?: ContainerChoice; accessoriesOnly: true }> = [];
+      const items: Array<{ lineItemId: string; assetId: string; prepContainer: string | null; containerId?: ContainerChoice; includeAccessoryIds?: string[]; accessoriesOnly: true }> = [];
       const seen = new Set<string>();
       for (const key of keys ?? selectedPrep) {
         const li = lineItems.find((l) => l.id === key.split(":")[0]);
         if (!li || !isAccessoryParent(li) || seen.has(li.id)) continue;
         seen.add(li.id);
+        const narrowed = onlyAccessoryIds ? accessoryAssetIds(accessoryChildrenOf(li).filter((c) => onlyAccessoryIds.has(c.id))) : undefined;
+        if (narrowed && narrowed.length === 0) continue;
         // One entry per packed parent asset — a multi-quantity line has no
         // line-level asset, so its accessories are packed per unit.
         for (const assetId of packedParentAssetIds(li)) {
           const choice: ContainerChoice = where === "parent" ? resolveItemContainerId(li) : activeContainerId;
-          items.push({ lineItemId: li.id, assetId, prepContainer: where === "parent" ? null : selectedContainer || null, ...containerArgs(choice), accessoriesOnly: true });
+          items.push({ lineItemId: li.id, assetId, prepContainer: where === "parent" ? null : selectedContainer || null, ...containerArgs(choice), ...(narrowed ? { includeAccessoryIds: narrowed } : {}), accessoriesOnly: true });
         }
       }
       if (items.length === 0) {
         toast.error("Select prepped items that have accessories");
-        return;
+        return false;
       }
       await prepItemsBatch(projectId, items);
       clearAccessoryVerification(items.map((i) => i.lineItemId));
       setSelectedPrep(new Set());
       toast.success("Accessories prepped");
       invalidate();
+      return true;
     } catch (e) {
       showError(e, { fallbackTitle: "Accessory prep failed" });
       invalidate();
+      return false;
     }
   };
 
@@ -2282,12 +2297,49 @@ function WarehouseProjectPage({
     verified: verifiedKitItems,
     toggle: (id: string) => setVerifiedKitItems((p) => { const n = new Set(p); if (!n.delete(id)) n.add(id); return n; }),
   };
-  const movingCtx = (s: "prepped" | "out"): JobRowsCtx => ({ stage: s, containerLabelById, categoryOf: () => "", verify: verifyCtx });
+  // Verify circles (kit members / accessories) belong to the stages that still gate a move forward.
+  const movingCtx = (s: "prepped" | "out" | "returned" | "deprepped"): JobRowsCtx => ({
+    stage: s, containerLabelById, categoryOf: () => "", ...(s === "prepped" || s === "out" ? { verify: verifyCtx } : {}),
+  });
   const preppedSections = buildJobSections(equipmentItems, movingCtx("prepped"));
   const outSections = buildJobSections(equipmentItems, movingCtx("out"));
+  const returnedSections = buildJobSections(equipmentItems, movingCtx("returned"));
+  const depreppedSections = buildJobSections(equipmentItems, movingCtx("deprepped"));
   const preppedSelection = useRowSelection(jobRowIds(preppedSections));
   const outSelection = useRowSelection(jobRowIds(outSections));
-  const keysOf = (sel: RowSelection, s: "prepped" | "out") => keysForRowIds(lineItems, sel.selected, s);
+  const returnedSelection = useRowSelection(jobRowIds(returnedSections));
+  const depreppedSelection = useRowSelection(jobRowIds(depreppedSections));
+  const keysOf = (sel: RowSelection, s: "prepped" | "out" | "returned" | "deprepped") => keysForRowIds(lineItems, sel.selected, s);
+  // Returned: de-prep is the forward verb (return checks run inside handleDeprep); De-prepped is the terminal list.
+  const returnedActions: StageAction[] = [
+    { key: "deprep", label: "De-prep", primary: true, loading: deprepMutation.isPending, run: () => { handleDeprep(new Set(keysOf(returnedSelection, "returned"))); returnedSelection.clear(); } },
+    { key: "to-out", label: "Move to Out", loading: unreturnMutation.isPending || unreturnKitsMutation.isPending, run: () => { handleUnreturn(new Set(keysOf(returnedSelection, "returned"))); returnedSelection.clear(); } },
+    { key: "move", label: "Move to case…", run: () => { setSelectedDeprep(new Set(keysOf(returnedSelection, "returned"))); setMoveDialogFor("deprep"); } },
+  ];
+  const depreppedActions: StageAction[] = [
+    { key: "to-returned", label: "Move to Returned", primary: true, loading: undeprepMutation.isPending, run: () => { handleUndeprep(keysOf(depreppedSelection, "deprepped")); depreppedSelection.clear(); } },
+  ];
+  // De-prep by scan: online-direct (resolved against this job's Returned gear, so nothing is saved offline).
+  const returnedScan = useWarehouseScan({
+    stage: "returned",
+    mode: dockMode === "check" ? "check" : "prep",
+    lookup: async (raw) => {
+      const tag = raw.trim().toLowerCase();
+      const hit = returnedItems.find((l) => [l.asset?.assetTag, l.bulkAsset?.assetTag, l.kit?.assetTag].some((t) => t?.toLowerCase() === tag));
+      return hit
+        ? { found: true, type: hit.kitId && !hit.isKitChild ? "kit" : "serialized", lineItemId: hit.id, assetId: hit.assetId, kitId: hit.kitId, assetName: modelDisplayName(hit) }
+        : { found: false };
+    },
+    context: () => ({ containersByTag: new Map() }),
+    setCase: () => {},
+    verifyKitMember: () => {},
+    actKit: async (p) => { handleDeprep(new Set([p.lineItemId])); return { text: `De-prepping kit ${p.name}` }; },
+    act: async (p) => { handleDeprep(new Set([p.lineItemId])); return { text: `De-prepping ${p.name}` }; },
+    describe: (p) => ({ text: `${p.name}: back from the job (check only, nothing de-prepped)`, tone: "neutral" }),
+    addAndAct: async (o) => ({ text: `${o.name} is not on this job`, tone: "warning" }),
+    isOffline: () => typeof navigator !== "undefined" && !navigator.onLine,
+    play: (kind) => scanFeedback.play(kind),
+  });
   const preppedActions: StageAction[] = [
     { key: "deploy", label: "Deploy", primary: true, loading: checkOutMutation.isPending, run: () => { void handleCheckOutSelected(keysOf(preppedSelection, "prepped")); preppedSelection.clear(); } },
     { key: "to-pick", label: "Move to To pick", loading: deprepMutation.isPending, run: () => { handleDeprep(new Set(keysOf(preppedSelection, "prepped"))); preppedSelection.clear(); } },
@@ -2449,17 +2501,22 @@ function WarehouseProjectPage({
         stage={stage}
         counts={{ pick: pickPrepItems.length, prepped: preppedItems.length, out: checkedOutItems.length, returned: returnedItems.length, deprepped: deprepedItems.length }}
         onStageChange={setStage}
-        onScan={(raw) => void (stage === "pick" ? pickScan.scan(raw) : movingScan(raw))}
+        onScan={(raw) => void (stage === "pick" ? pickScan.scan(raw) : stage === "returned" ? returnedScan.scan(raw) : movingScan(raw))}
         mode={dockMode}
         onModeChange={setDockMode}
         caseTarget={stage === "pick" ? caseTarget : undefined}
-        entries={stage === "pick" ? pickScan.entries : durableStrip}
-        showDock={stage === "pick" || stage === "prepped" || stage === "out"}
-        disabledScan={stage !== "pick" && durableScans.busy}
+        entries={stage === "pick" ? pickScan.entries : stage === "returned" ? returnedScan.entries : durableStrip}
+        showDock={stage === "pick" || stage === "prepped" || stage === "out" || stage === "returned"}
+        disabledScan={(stage === "prepped" || stage === "out") && durableScans.busy}
       />
-
-      {/* Prepped / Out report saved scans in the strip; the other stages still use the intake block. */}
-      {stage !== "prepped" && stage !== "out" && <ScanIntakeStatus entries={durableScans.entries} error={durableScans.error} unsaved={durableScans.unsaved} retry={durableScans.retry} />}
+      {stage === "returned" && (
+        <MovingStage sections={returnedSections} selection={returnedSelection} actions={returnedActions}
+          empty={{ title: "Nothing to de-prep", description: "Gear scanned back in waits here; de-prep puts it back into inventory." }} />
+      )}
+      {stage === "deprepped" && (
+        <MovingStage sections={depreppedSections} selection={depreppedSelection} actions={depreppedActions}
+          empty={{ title: "Nothing de-prepped yet", description: "Gear you de-prep from Returned lands here, back in inventory." }} />
+      )}
       {stage === "prepped" && (
         <MovingStage sections={preppedSections} selection={preppedSelection} actions={preppedActions} sectionMenu={preppedCaseMenu}
           empty={{ title: "Nothing prepped", description: "Gear you prep on To pick waits here to be deployed." }} />
@@ -2501,107 +2558,6 @@ function WarehouseProjectPage({
           onConfirm={handleConfirmMove}
           pending={moveIsPending}
         />
-
-        {/* De-prep Tab — returned gear, run return checks, back to inventory */}
-        <AccessorySelectionContext.Provider value={{ selected: selectedDeprep, toggle: (key) => toggleSelection(selectedDeprep, setSelectedDeprep, key) }}>
-        <DeployTab
-          mode="deprep"
-          deployScanInputRef={deployScanInputRef}
-          deployScanValue={deployScanValue}
-          setDeployScanValue={setDeployScanValue}
-          handleDeployScanKeyDown={handleDeployScanKeyDown}
-          deployScanMutationMutate={captureDeployScan}
-          deployScanMutationIsPending={durableScans.busy}
-          scanHistoryEntries={scanFeedback.entries}
-          selectedOut={selectedDeprep}
-          setSelectedOut={setSelectedDeprep}
-          selectedOutCount={selectedDeprepCount}
-          allOutKeys={allDeprepKeys}
-          checkOutItemsList={returnedItems}
-          deployContainerGroups={deprepContainerGroups}
-          verifiedKitItems={verifiedKitItems}
-          setVerifiedKitItems={setVerifiedKitItems}
-          expandedGroups={expandedGroups}
-          toggleExpanded={toggleExpanded}
-          handleCheckOutSelected={handleCheckOutSelected}
-          handleDeprep={handleDeprep}
-          deprepIsPending={deprepMutation.isPending}
-          handleUnreturn={handleUnreturn}
-          unreturnIsPending={unreturnMutation.isPending || unreturnKitsMutation.isPending}
-          clearContainerMutate={(c) => clearContainerMutation.mutate(c)}
-          clearContainerIsPending={clearContainerMutation.isPending}
-          checkOutIsPending={checkOutMutation.isPending}
-          onMoveSelected={() => setMoveDialogFor("deprep")}
-          onDeployContainer={() => {}}
-          toggleSelection={toggleSelection}
-          toggleGroupSelection={toggleGroupSelection}
-          toggleAll={toggleAll}
-          renderGroupHeader={renderGroupHeader}
-        />
-        </AccessorySelectionContext.Provider>
-
-        {/* De-prepped Tab — terminal stage, read-only: gear back in inventory */}
-        <TabsContent value="deprepped">
-          <div className="space-y-4 pt-4">
-            {deprepedItems.length === 0 ? (
-              <EmptyState
-                title="Nothing de-prepped yet"
-                description="Gear you deprep on the Returned tab lands here, checked back into inventory."
-              />
-            ) : (
-              <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Asset tag</TableHead>
-                      <TableHead className="text-center w-16">Qty</TableHead>
-                      <TableHead className="w-32">Status</TableHead>
-                      <TableHead className="w-40 text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {deprepedItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <span className="font-medium text-ink">
-                            {isKitParent(item)
-                              ? item.description || item.kit?.name || "Kit"
-                              : modelDisplayName(item)}
-                          </span>
-                          {isKitParent(item) && (
-                            <Badge status="neutral" className="ml-1.5">Kit</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="t-mono text-muted">
-                          {item.asset?.assetTag || item.bulkAsset?.assetTag || item.kit?.assetTag || "—"}
-                        </TableCell>
-                        <TableCell className="text-center tabular-nums">{deprepedQuantity(item)}</TableCell>
-                        <TableCell>
-                          <Badge status="ok" className="bg-ok-soft text-ok">Back in inventory</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {/* Move back a stage: re-pack this returned item (→ Returned). */}
-                          <Button
-                            variant="line"
-                            size="sm"
-                            onClick={() => (isRelocatedLineId(item.id)
-                              ? stageAccessories((item.units ?? []).map((u) => u.id), "UNDEPREP")
-                              : undeprepMutation.mutate(item.id))}
-                            disabled={undeprepMutation.isPending}
-                          >
-                            <Undo2 className="mr-1.5 h-4 w-4" />
-                            Move to Returned
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        </TabsContent>
 
 
         {/* ================================================================ */}

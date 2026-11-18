@@ -17,6 +17,8 @@ vi.mock('@/hooks/use-project-container-writes',()=>({useProjectContainerWrites:(
 vi.mock('@/hooks/use-scan-feedback',()=>({useScanFeedback:()=>({play:io.play,entries:[],history:[],clearHistory:vi.fn(),enabled:false,setEnabled:vi.fn()})}));
 vi.mock('@/hooks/use-server-query',()=>({useServerQuery:()=>({data:[],isLoading:false})}));
 import Page from '../page';
+import {prepItemsBatch as prepItemsBatchReal} from '@/server/check-records';
+const prepItemsBatch=vi.mocked(prepItemsBatchReal);
 import {ScanIntake} from '@/lib/scan-intake';
 const scope={orgId:'o',userId:'u',projectId:'p',expectedVersionId:'v1'};
 beforeEach(()=>{
@@ -108,6 +110,38 @@ it('mounted missing-accessory override retains captured operation, decision and 
  await waitFor(()=>expect(q.list(scope)[0].state).toBe('confirmed'));
  expect(io.commit.mock.calls[0][1]).toEqual(io.commit.mock.calls[1][1]);
  expect(io.commit.mock.calls[0][1]).toMatchObject({operationId:entry.id,expectedVersionId:'v1',notes:'captured deploy note',effect:{lineItemId:'parent',assetId:'a',accessoryDecision:'override',includeAccessoryIds:[],skippedAccessories:[{accessoryLineItemId:'acc1',tier:'DEFAULT',reason:expect.any(String)},{accessoryLineItemId:'acc2',tier:'DEFAULT',reason:expect.any(String)}]}});
+});
+async function gateRows(){
+ const dialog=await screen.findByRole('dialog');
+ const rows=within(dialog).getAllByRole('listitem');
+ return {dialog,rows};
+}
+it('gate: Pack now packs ONLY the marked accessory, the Leave one is skipped and logged (override, not all)',async()=>{
+ accessoryProject();prepItemsBatch.mockReset().mockResolvedValue([]);
+ new ScanIntake(localStorage).capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ fireEvent.click(within(rows[0]).getByRole('button',{name:'Pack now'}));
+ fireEvent.click(within(rows[1]).getByRole('button',{name:'Leave'}));
+ fireEvent.change(within(dialog).getByLabelText(/Reason for leaving/),{target:{value:'still charging'}});
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+ await waitFor(()=>expect(io.commit).toHaveBeenCalledTimes(1));
+ expect(prepItemsBatch).toHaveBeenCalledTimes(1);
+ expect(prepItemsBatch.mock.calls[0][1]).toEqual([expect.objectContaining({lineItemId:'parent',accessoriesOnly:true,includeAccessoryIds:['acc1']})]);
+ expect(io.commit.mock.calls[0][1].effect).toMatchObject({accessoryDecision:'override',includeAccessoryIds:['acc1'],skippedAccessories:[{accessoryLineItemId:'acc2',tier:'DEFAULT',reason:'still charging'}]});
+});
+it('gate: a failed pack keeps the gate open and never deploys',async()=>{
+ accessoryProject();prepItemsBatch.mockReset().mockRejectedValue(new Error('pack failed'));
+ const q=new ScanIntake(localStorage);q.capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ rows.forEach(r=>fireEvent.click(within(r).getByRole('button',{name:'Pack now'})));
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+ await waitFor(()=>expect(prepItemsBatch).toHaveBeenCalled());
+ await act(async()=>{await Promise.resolve();});
+ expect(io.commit).not.toHaveBeenCalled();expect(io.ordinary).not.toHaveBeenCalled();
+ expect(screen.getByText('Accessories not packed')).toBeTruthy();
+ expect(q.list(scope)[0].state).toBe('review');
 });
 it.each(['account','version'] as const)('mounted accessory %s switch closes review and retains original intent',async context=>{
  accessoryProject();const q=new ScanIntake(localStorage);q.capture(scope,'deploy','A','GOOD','saved');

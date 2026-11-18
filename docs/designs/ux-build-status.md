@@ -30,6 +30,8 @@ Workers run in harness-managed worktrees and write with the file tools only (use
 
 Parallel start (2026-11-17, user asked for phases in parallel where possible): 1a and 1b build off Phase 0's branch against a shared contract commit (`claude/ux-1-contract`) before Phase 0 merges; they merge `main` once it does.
 
+**Blocked 2026-11-18:** every PR's Hygiene fails on `pnpm audit --audit-level high` for picomatch GHSA-fc5q-39xc-vjpf, whose fix (4.0.8) is not published. Needs the user's call (a §15 exception like the braces precedent, or wait). No PR can merge until then. Small fixes waiting: #1389 (FooterTotals whole dollars).
+
 ## Phases
 
 | Phase | Worker | Branch / PR | State | Blockers |
@@ -38,11 +40,11 @@ Parallel start (2026-11-17, user asked for phases in parallel where possible): 1
 | 1a LineRow, ActionMenu, StatusWord, StageFilter, glyphs | Sonnet | `claude/ux-1a-row-primitives` · #1382 | **merged 2026-11-17** (03dfbe1a) | — |
 | 1b AddBar, FooterTotals, BulkBar, RowEditorSheet, DetailHeader, ScanDock/ScanStrip | Sonnet | `claude/ux-1b-bar-primitives` · #1383 | **merged 2026-11-17** (95d33848), code-reviewed (9 fixes) | — |
 | 1c Row slots: sections, cells, wrapRow, LineRowSection (added for 2a/3) | Sonnet | `claude/ux-1c-row-slots` · #1386 | **merged 2026-11-17** (02711770) | — |
-| 2a → 2b Equipment, then Client view + case cards | Sonnet | `claude/ux-2a-equipment` | building | 2b after 2a |
+| 2a → 2b Equipment, then Client view + case cards | Sonnet | `claude/ux-2a-equipment` · #1388 (draft) | building in slices: sections, restores, AddBar done; accessories/footer/Orders/shortfall next | 2b after 2a |
 | 2c Plan-honouring prep (only schema change) | Sonnet | `claude/ux-2c-plan-honouring-prep` · #1380 | **merged 2026-11-17** (a5c18a83); no schema change, code-reviewed | `Planned →` glyph moved to Phase 3 |
-| 3 Warehouse job page (L) | Sonnet | `claude/ux-3-warehouse-job` · #1385 (draft) | building: the swap | `scanIntake.commit` return change needs /code-review |
-| 5 Logistics (L): 5a now, 5b service sheet after | Sonnet | `claude/ux-5-logistics` · #1387 (draft) | 5a finishing | `shiftScheduleNative` + `sendCrewOffers` need /code-review |
-| 6 Shell | — | — | waiting on 1 | Gate 0 |
+| 3 Warehouse job page (L) | Sonnet | `claude/ux-3-warehouse-job` · #1385 (draft) | building in slices: To pick, Prepped, Out done; Returned/De-prepped + deletion next | `scanIntake.commit` return change needs /code-review |
+| 5 Logistics (L) | Sonnet | 5a `claude/ux-5-logistics` · #1387; 5b `claude/ux-5b-service-sheet` | 5a review passed, waiting on the audit gate; 5b planning (service sheet + client pick-up/drop-off) | audit gate |
+| 6 Shell: 6a chrome now, 6b list pages after | Sonnet | `claude/ux-6a-shell` | 6a planning | — |
 | 4 Floor + Returning mode | — | — | waiting on 3 | Gate 0 |
 
 ## Schema changes beyond 2c (user approved 2026-11-17, end of Wave A)

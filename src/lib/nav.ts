@@ -23,7 +23,7 @@ export type NavIconKey =
   | "reports" | "more";
 
 /** The sidebar's three hairline groups (§6d.2). */
-export type NavGroupIndex = 0 | 1 | 2;
+type NavGroupIndex = 0 | 1 | 2;
 
 /** The phone More sheet's groups (§6d.6). */
 export type MoreGroup = "plan" | "gear" | "people" | "account";
@@ -118,7 +118,7 @@ export const NAV: readonly NavItem[] = [
 ];
 
 /** Settings sits in the sidebar foot (and the More sheet's Account group), not in a group. */
-export const SETTINGS_NAV: NavItem = {
+const SETTINGS_NAV: NavItem = {
   key: "settings", label: "Settings", url: "/settings", icon: "settings", hue: null, group: 2, moreGroup: "account",
   resource: ["orgSettings", "orgMembers"],
 };

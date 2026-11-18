@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,12 +13,19 @@ import { TooltipProvider } from "@/components/ui/tooltip";
  * and the rail's flyout menus, which carry every sub-page.
  */
 
+let pathname = "/assets/registry";
+const push = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
-  usePathname: () => "/assets/registry",
+  useRouter: () => ({ push }),
+  usePathname: () => pathname,
 }));
+let perms: Record<string, string[]> | null = null;
 vi.mock("@/lib/use-permissions", () => ({
-  useCurrentRole: () => ({ permissions: null, isLoading: true }),
+  useCurrentRole: () => ({ permissions: perms, isLoading: perms === null }),
+}));
+vi.mock("@/hooks/use-org-switch", () => ({
+  orgInitials: () => "TT",
+  useOrgSwitch: () => ({ orgs: [], activeOrgId: "o1", activeOrgName: "Two Toned", switchingId: null, switchTo: vi.fn() }),
 }));
 vi.mock("@/components/layout/user-nav", () => ({
   UserNav: ({ compact }: { compact?: boolean }) => <div data-testid={compact ? "user-compact" : "user-full"} />,
@@ -63,6 +70,9 @@ const wrapperState = () => document.querySelector('[data-slot="sidebar"]')!.getA
 
 beforeEach(() => {
   tablet = false;
+  pathname = "/assets/registry";
+  perms = null;
+  push.mockClear();
   document.cookie = "sidebar_state=; max-age=0; path=/";
 });
 
@@ -116,6 +126,50 @@ describe("AppSidebar tablet rail (D67)", () => {
     });
     for (const sub of ["Open Assets", "Models", "Categories", "Kits", "Fleet ROI", "Sales Stock"]) {
       expect(await screen.findByRole("menuitem", { name: new RegExp(sub) })).toBeTruthy();
+    }
+  });
+
+  const full = () => document.querySelector('[data-sidebar-view="full"]') as HTMLElement;
+
+  it("shows sub-pages only under the active module, and a hover toggle reveals the rest (D67)", () => {
+    renderShell();
+    expect(within(full()).getByText("Models")).toBeTruthy(); // Assets is active
+    expect(within(full()).queryByText("Planner")).toBeNull(); // Crew is not
+    fireEvent.click(within(full()).getByRole("button", { name: "Show Crew pages" }));
+    expect(within(full()).getByText("Planner")).toBeTruthy();
+    expect(within(full()).getByText("Timesheets")).toBeTruthy();
+  });
+
+  it("renders three hairline groups from NAV and no My tasks", () => {
+    renderShell();
+    const groups = full().querySelectorAll('[role="group"]');
+    expect(groups.length).toBe(3);
+    expect(within(full()).queryByText(/My tasks/)).toBeNull();
+    for (const l of ["Clients", "Suppliers", "Locations", "Activity", "Settings"]) {
+      expect(within(full()).getByText(l)).toBeTruthy();
+    }
+  });
+
+  it("gated rows are absent, not greyed (a viewer without warehouse/crew)", () => {
+    perms = { project: ["read"], client: ["read"] };
+    renderShell();
+    expect(within(full()).queryByText("Warehouse")).toBeNull();
+    expect(within(full()).queryByText("Crew")).toBeNull();
+    expect(within(full()).queryByText("Settings")).toBeNull();
+    expect(within(full()).getByText("Jobs")).toBeTruthy();
+    expect(within(full()).getByText("Clients")).toBeTruthy();
+  });
+
+  it("the rail's More flyout holds the secondary rows", async () => {
+    renderShell();
+    const rail = document.querySelector('[data-sidebar-view="rail"]') as HTMLElement;
+    const more = Array.from(rail.querySelectorAll("button")).find((b) => b.textContent === "More")!;
+    await act(async () => {
+      fireEvent.mouseEnter(more);
+      fireEvent.pointerDown(more, { button: 0, ctrlKey: false });
+    });
+    for (const l of ["Clients", "Suppliers", "Locations", "Activity"]) {
+      expect(await screen.findByRole("menuitem", { name: new RegExp(l) })).toBeTruthy();
     }
   });
 });

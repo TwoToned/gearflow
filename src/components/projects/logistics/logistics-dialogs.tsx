@@ -8,7 +8,8 @@ import type { LogisticsService } from "@/lib/logistics-model";
 import { AssignmentDialog, BulkMessageDialog, RequestAvailabilityDialog } from "../crew-dialogs";
 import { CallSheetDialog } from "../call-sheet-dialog";
 import { SubHireOrderDialog } from "../sub-hire-order-dialog";
-import { CloneServicesDialog, CrewMessageDialog, ServiceDialog } from "../service-dialogs";
+import { CloneServicesDialog, CrewMessageDialog } from "../service-dialogs";
+import { ServiceSheet } from "./service-sheet/service-sheet";
 import { LogisticsDatesSheet, type ScheduleSnapshot } from "./dates-sheet";
 import type { LogisticsState } from "./logistics-state";
 import type { CrewAssignmentRow } from "./people-view";
@@ -23,6 +24,8 @@ export interface DialogsProps {
   projectStatus: string | undefined;
   schedule: ScheduleSnapshot;
   site: { address: string; latitude: number | null; longitude: number | null };
+  /** The job's site contact, for the client pick up / drop off "Use the site contact" chip. */
+  contact: { name: string; phone: string };
   services: LogisticsService[];
   crew: CrewAssignmentRow[];
   templates: (ServiceTemplateLite & Record<string, unknown>)[];
@@ -35,23 +38,18 @@ export interface DialogsProps {
 
 function ServiceEditor({ p }: { p: DialogsProps }) {
   const editing = p.services.find((s) => s.id === p.ui.editId) ?? null;
-  const loadIn = p.schedule.loadIn || p.schedule.rentalStart;
-  const loadOut = p.schedule.loadOut || p.schedule.rentalEnd;
   return (
-    <ServiceDialog
-      open={!!editing}
-      onOpenChange={(o) => !o && p.ui.setEditId(null)}
+    <ServiceSheet
+      service={editing}
+      onClose={() => p.ui.setEditId(null)}
       projectId={p.projectId}
-      editingService={editing as unknown as Record<string, unknown> | null}
-      preselectedType={null}
-      templates={p.templates}
-      projectAddress={p.site.address}
-      projectLatitude={p.site.latitude}
-      projectLongitude={p.site.longitude}
-      projectLoadInDate={loadIn}
-      projectLoadOutDate={loadOut}
-      projectEventStartDate={loadIn}
-      projectEventEndDate={loadOut}
+      orgId={p.orgId}
+      venue={p.site.address}
+      contact={p.contact}
+      services={p.services}
+      onPickCrew={(id) => p.ui.setPickId(id)}
+      onRemoveCrew={(id) => void p.w.removeCrew([id])}
+      onDelete={(id) => void p.w.deleteServices([id])}
     />
   );
 }

@@ -16,6 +16,10 @@ export interface LogisticsAssignment {
   id: string;
   status: string;
   estimatedCost: number | null;
+  /** The per-assignment rate inputs the service sheet's rate table edits. */
+  rateOverride?: number | null;
+  rateType?: string | null;
+  estimatedHours?: number | null;
   crewMember: { id: string; firstName: string; lastName: string; image: string | null };
 }
 
@@ -267,4 +271,22 @@ export function crewPickRank(severity: "hard" | "soft" | "preferred" | null): nu
     case "soft": return 2;
     case "hard": return 3;
   }
+}
+
+/**
+ * The warehouse counter a client collects from / returns to: the org's default
+ * location, else its first WAREHOUSE-type one, else nothing (the sheet then asks
+ * for a warehouse location). Snapshotted onto the service at create so old
+ * documents never change when the location is later edited.
+ */
+export function counterLocation<L extends { isDefault?: boolean | null; type?: string | null; address?: string | null }>(
+  locations: L[] | undefined,
+): L | null {
+  const withAddress = (locations ?? []).filter((l) => !!l.address);
+  return withAddress.find((l) => l.isDefault) ?? withAddress.find((l) => l.type === "WAREHOUSE") ?? null;
+}
+
+/** The org's Warehouse crew role (by name, case-insensitive): the default for the counter staff. */
+export function warehouseRoleId(roles: { id: string; name: string; isActive?: boolean }[] | undefined): string | null {
+  return (roles ?? []).find((r) => r.isActive !== false && r.name.trim().toLowerCase() === "warehouse")?.id ?? null;
 }

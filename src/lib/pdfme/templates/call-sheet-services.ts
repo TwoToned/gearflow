@@ -6,6 +6,7 @@
  * Auto-paginates across multiple pages using gearflowDataTable.
  */
 import type { Template } from "@pdfme/common";
+import { isClientServiceType } from "../../../../convex/lib/serviceTypes";
 import { SERVICE_TYPE_LABELS as SERVICE_TYPE_WORDS } from "@/lib/constants/services";
 import { getProjectServicesFromConvex } from "@/lib/project-service-read";
 import {
@@ -260,7 +261,15 @@ export async function buildCallSheetFromServices(
       type: s.type,
       startTime: s.startTime,
       endTime: s.endTime,
-      notes: s.notes,
+      // A client pick up / drop off prints who is coming to the counter, ahead of the notes.
+      notes: [
+        isClientServiceType(s.type)
+          ? ["Client: " + [s.clientContactName, s.clientContactPhone, s.clientVehicle].filter(Boolean).join(" · ")]
+              .filter((l) => l !== "Client: ")
+              .join("")
+          : "",
+        s.notes,
+      ].filter(Boolean).join(" | ") || s.notes,
       crewAssignments: (assignmentsByService.get(s.id) ?? []).map((a) => {
         const member = memberMap.get(a.crewMemberId);
         const role = a.crewRoleId ? roleMap.get(a.crewRoleId) : undefined;

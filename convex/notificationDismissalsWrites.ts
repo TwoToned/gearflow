@@ -175,18 +175,21 @@ export const undismissManyNative = mutation({
     await requireSelfScope(ctx, "write");
     await assertBulkSizeOk(ctx, notificationKeys.length);
     for (const key of notificationKeys) assertStrLen(key, "notificationKey", { min: 1, max: 256 });
-    const wanted = new Set(notificationKeys);
-    const rows = await ctx.db
-      .query("notificationDismissals")
-      .withIndex("by_organizationId_userId", (q) =>
-        q.eq("organizationId", auth.orgId as string).eq("userId", auth.userId),
-      )
-      .collect();
+    // Indexed per-key lookup (a user has at most one row per (org, key); the
+    // bounded take only spans that user's same key across orgs).
     let restored = 0;
-    for (const r of rows) {
-      if (wanted.has(r.notificationKey)) {
-        await ctx.db.delete(r._id);
-        restored++;
+    for (const key of new Set(notificationKeys)) {
+      const rows = await ctx.db
+        .query("notificationDismissals")
+        .withIndex("by_userId_notificationKey", (q) =>
+          q.eq("userId", auth.userId).eq("notificationKey", key),
+        )
+        .take(50);
+      for (const r of rows) {
+        if (r.organizationId === auth.orgId) {
+          await ctx.db.delete(r._id);
+          restored++;
+        }
       }
     }
     return { restored };

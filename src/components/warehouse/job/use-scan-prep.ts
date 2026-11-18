@@ -10,7 +10,8 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import type { ScanActOutcome } from "@/hooks/use-warehouse-scan";
 import type { useScanFeedback } from "@/hooks/use-scan-feedback";
 import { pullItem, prepItemDirect, prepItemsBatch, deprepItemsBatch } from "@/server/check-records";
-import { modelDisplayName, prepActionAvailability, scanAccessoryOptions, type LineItem } from "@/components/warehouse/warehouse-types";
+import { rememberScanChoice, takeRememberedScanChoice } from "@/lib/warehouse-scan-memory";
+import { bulkUnpackedRemaining, modelDisplayName, prepActionAvailability, scanAccessoryOptions, type LineItem } from "@/components/warehouse/warehouse-types";
 import type { ScanAccessoryDecision, ScanAccessoryPromptData, ScanCheckMode } from "@/components/warehouse/scan-prep-dialogs";
 import type { CheckQueueItem } from "./use-check-queue";
 import type { CaseSelection } from "./use-case-selection";
@@ -130,14 +131,21 @@ export function useScanPrep(deps: {
     }
     const options = li ? scanAccessoryOptions(li) : [];
     if (li && options.length > 0) {
-      setScanAccessoryPrompt({ target, data: { parentName: modelDisplayName(li), parentPrepped: prepActionAvailability([li.id], [li]).canPrepAccessoriesOnly, options } });
+      const parentPrepped = prepActionAvailability([li.id], [li]).canPrepAccessoriesOnly;
+      // D10: "Remember for the next n" answers this line's following scans on this job without the sheet.
+      const remembered = parentPrepped ? null : takeRememberedScanChoice(projectId, li.id);
+      if (remembered) return proceedScanPrep(target, { includeAccessoryIds: remembered.kind === "without" ? [] : remembered.accessoryIds });
+      setScanAccessoryPrompt({ target, data: { parentName: modelDisplayName(li), parentPrepped, options, rememberCount: Math.max(0, bulkUnpackedRemaining(li) - 1) } });
       return { text: `${name}: choose which accessories`, tone: "neutral" };
     }
     return proceedScanPrep(target, {});
   };
 
-  const decideScanAccessories = (prompt: { target: Target }, d: ScanAccessoryDecision) => {
+  const decideScanAccessories = (prompt: { target: Target; data: ScanAccessoryPromptData }, d: ScanAccessoryDecision, remember = false) => {
     setScanAccessoryPrompt(null);
+    if (remember && (d.kind === "with" || d.kind === "without")) {
+      rememberScanChoice(projectId, prompt.target.lineItemId, d.kind === "with" ? { kind: "with", accessoryIds: d.accessoryIds } : { kind: "without" }, prompt.data.rememberCount ?? 0);
+    }
     if (d.kind === "without") void proceedScanPrep(prompt.target, { includeAccessoryIds: [] });
     else if (d.kind === "with") void proceedScanPrep(prompt.target, { includeAccessoryIds: d.accessoryIds });
     else void proceedScanPrep(prompt.target, { includeAccessoryIds: d.accessoryIds, accessoriesOnly: true });

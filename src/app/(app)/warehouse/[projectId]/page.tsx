@@ -317,7 +317,7 @@ function WarehouseProjectPage({ params }: { params: Promise<{ projectId: string 
         <ScanAccessoryDialog
           key={scanPrep.scanAccessoryPrompt.target.lineItemId + (scanPrep.scanAccessoryPrompt.target.assetId ?? "")}
           prompt={scanPrep.scanAccessoryPrompt.data}
-          onDecide={(d) => scanPrep.decideScanAccessories(scanPrep.scanAccessoryPrompt!, d)}
+          onDecide={(d, remember) => scanPrep.decideScanAccessories(scanPrep.scanAccessoryPrompt!, d, remember)}
           onDiscard={() => {
             scanFeedback.play("info", { label: scanPrep.scanAccessoryPrompt!.data.parentName, outcome: "Scan discarded" });
             scanPrep.setScanAccessoryPrompt(null);

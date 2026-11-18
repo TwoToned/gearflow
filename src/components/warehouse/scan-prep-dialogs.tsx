@@ -22,6 +22,8 @@ export interface ScanAccessoryPromptData {
   /** Parent already packed — only its accessories are left to prep. */
   parentPrepped: boolean;
   options: ScanAccessoryOption[];
+  /** Units of this line still to pick after this scan: "Remember for the next n" is offered when > 0 (D10). */
+  rememberCount?: number;
 }
 
 export type ScanAccessoryDecision =
@@ -41,10 +43,13 @@ export function ScanAccessoryDialog({
   onDiscard,
 }: {
   prompt: ScanAccessoryPromptData;
-  onDecide: (d: ScanAccessoryDecision) => void;
+  /** `remember`: the operator ticked "Remember for the next n" (only ever true for with / without). */
+  onDecide: (d: ScanAccessoryDecision, remember: boolean) => void;
   onDiscard: () => void;
 }) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set(prompt.options.map((o) => o.id)));
+  const [remember, setRemember] = useState(false);
+  const rememberCount = prompt.parentPrepped ? 0 : (prompt.rememberCount ?? 0);
   const selected = prompt.options.filter((o) => checked.has(o.id));
   // All ticked = no narrowing, so the server's full roll-up applies unchanged.
   const accessoryIds =
@@ -79,6 +84,12 @@ export function ScanAccessoryDialog({
             </li>
           ))}
         </ul>
+        {rememberCount > 0 && (
+          <label className="flex items-center gap-2 text-ui-text text-ink cursor-pointer">
+            <Checkbox checked={remember} onCheckedChange={(v) => setRemember(v === true)} aria-label={`Remember for the next ${rememberCount}`} />
+            <span>Remember for the next {rememberCount} unit{rememberCount === 1 ? "" : "s"} on this job</span>
+          </label>
+        )}
         <DialogFooter className="flex-col sm:flex-row gap-2">
           <Button variant="line" size="sm" onClick={onDiscard}>
             Discard scan
@@ -87,19 +98,19 @@ export function ScanAccessoryDialog({
             <Button
               size="sm"
               disabled={selected.length === 0}
-              onClick={() => onDecide({ kind: "accessoriesOnly", accessoryIds })}
+              onClick={() => onDecide({ kind: "accessoriesOnly", accessoryIds }, false)}
             >
               Prep accessories only ({selected.length})
             </Button>
           ) : (
             <>
-              <Button variant="line" size="sm" onClick={() => onDecide({ kind: "without" })}>
+              <Button variant="line" size="sm" onClick={() => onDecide({ kind: "without" }, remember)}>
                 Prep without accessories
               </Button>
               <Button
                 size="sm"
                 disabled={selected.length === 0}
-                onClick={() => onDecide({ kind: "with", accessoryIds })}
+                onClick={() => onDecide({ kind: "with", accessoryIds }, remember)}
               >
                 Prep with {selected.length} accessor{selected.length === 1 ? "y" : "ies"}
               </Button>

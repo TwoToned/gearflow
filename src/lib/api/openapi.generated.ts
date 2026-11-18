@@ -34509,13 +34509,31 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "clientIn": {
+                        "type": "array"
+                      },
+                      "dateFrom": {
+                        "type": "number"
+                      },
+                      "dateTo": {
+                        "type": "number"
+                      },
+                      "includeCancelled": {
+                        "type": "boolean"
+                      },
                       "page": {
                         "type": "number"
                       },
                       "pageSize": {
                         "type": "number"
                       },
+                      "pmIn": {
+                        "type": "array"
+                      },
                       "search": {
+                        "type": "string"
+                      },
+                      "segment": {
                         "type": "string"
                       },
                       "sortBy": {
@@ -34529,6 +34547,132 @@ export const OPENAPI_DOCUMENT = {
                         "type": "array"
                       }
                     },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projects.needsYouIds": {
+      "post": {
+        "operationId": "projects.needsYouIds",
+        "summary": "projects.needsYouIds (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projects.segmentCounts": {
+      "post": {
+        "operationId": "projects.segmentCounts",
+        "summary": "projects.segmentCounts (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
                     "additionalProperties": false
                   }
                 },

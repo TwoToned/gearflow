@@ -41219,6 +41219,31 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "clientIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "dateFrom",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "dateTo",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "includeCancelled",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
@@ -41234,7 +41259,17 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "pmIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
         "optional": true,
         "type": "string"
       },
@@ -41260,12 +41295,49 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "3c853939a9bde1ee",
+    "argsSha": "832c0061f28e8e87",
     "returnsSha": "74234e98afe7498f",
     "stability": "stable",
     "summary": "Filtered, sorted, paginated project list with client join.",
     "danger": "low",
     "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projects.needsYouIds",
+    "module": "projects",
+    "fn": "needsYouIds",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Ids of jobs that need attention: open blocking comment, out past end date, or a stale quote.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -41330,6 +41402,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projects.segmentCounts",
+    "module": "projects",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Counts for the Jobs list strip: all, quoting, booked, out, done and needs-you.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -63531,10 +63640,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1232,
-  agentReachable: 604,
-  queries: 441,
+  total: 1234,
+  agentReachable: 606,
+  queries: 443,
   mutations: 791,
-  agentReachableQueries: 306,
+  agentReachableQueries: 308,
   agentReachableMutations: 298,
 } as const;

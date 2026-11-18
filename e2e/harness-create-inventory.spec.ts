@@ -89,7 +89,9 @@ test.describe("harness: create inventory", () => {
       // above) — a prefix + zero-padded counter (default "ASSET0001", see
       // src/server/settings.ts), rendered in the registry detail page's
       // "Asset tag" row.
-      await expect(page.getByText(/^[A-Z]+-?\d{3,}$/).first()).toBeVisible({ timeout: 20000 });
+      // The top bar also carries the tag as a phone-only (md:hidden) title, so
+      // pick the visible match rather than the first in DOM order.
+      await expect(page.getByText(/^[A-Z]+-?\d{3,}$/).filter({ visible: true }).first()).toBeVisible({ timeout: 20000 });
     });
   });
 });

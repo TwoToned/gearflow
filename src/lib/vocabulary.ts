@@ -45,3 +45,17 @@ export const GEAR_STAGE_LABELS: Record<GearStageKey, string> = {
 
 /** The word for gear whose line / asset / kit / job status is CHECKED_OUT. */
 export const OUT_LABEL = GEAR_STAGE_LABELS.deployed;
+
+/**
+ * The floor's five columns (spec §9c.2, D27). A JOB's stage, derived by
+ * `warehouseStage()` (`convex/lib/warehouseStage.ts`) from its unit counts;
+ * keys are that function's. Gear-stage words are reused where they mean the
+ * same thing.
+ */
+export const FLOOR_STAGE_LABELS = {
+  topick: GEAR_STAGE_LABELS.to_prep,
+  prepping: "Prepping",
+  ready: "Ready",
+  out: OUT_LABEL,
+  returning: "Returning",
+} as const;

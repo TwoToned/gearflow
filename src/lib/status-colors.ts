@@ -139,6 +139,18 @@ const gearStageIntent: Record<GearStageKey, ColorIntent> = {
   closed: "neutral", // archived (rendered outline by the caller)
 };
 
+/**
+ * The floor's job stages (spec §9c.2) borrow the gear-stage intent of the gear
+ * stage they wait on, so the two can never drift (R-3.1).
+ */
+export const floorStageIntent = {
+  topick: gearStageIntent.to_prep,
+  prepping: gearStageIntent.prepped,
+  ready: gearStageIntent.prepped,
+  out: gearStageIntent.deployed,
+  returning: gearStageIntent.returned,
+} as const satisfies Record<string, ColorIntent>;
+
 const lineItemStatusIntent: Record<string, ColorIntent> = {
   QUOTED: "info",
   CONFIRMED: "success",

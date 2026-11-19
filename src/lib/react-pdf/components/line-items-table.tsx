@@ -41,10 +41,13 @@ import { ROLLUP_SUBTOTAL_LABEL } from "@/lib/category-pricing-display";
 import {
   PRICING_COLUMN_KEYS,
   buildLineItemsTableModel,
+  childItemName,
+  childQtyText,
   priceGatedCellText,
   qtyCellText,
   type ColumnDef,
   type RowDisplay,
+  type TableModelChild,
 } from "../line-items-table-model";
 import { RichText } from "./rich-text";
 import { Checkbox } from "./checkbox";
@@ -440,7 +443,7 @@ function ItemRow({
 // ─── Kit / Group / Accessory children (level 2) ────────────────────────────
 
 function ChildDescriptionCell({ col, child, isNestedKit }: { col: ColumnDef; child: DocumentLineItem; isNestedKit: boolean }) {
-  const childName = child.model?.name || child.description || "-";
+  const childName = childItemName(child);
   const displayName = isNestedKit ? `[Kit] ${childName}` : childName;
   const badge = getChildBadge(child);
 
@@ -494,7 +497,8 @@ function renderTierPricingCell(col: ColumnDef, config: TablePluginConfig, fontSi
   );
 }
 
-function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TablePluginConfig, isNestedKit: boolean) {
+function renderChildCell(col: ColumnDef, entry: TableModelChild, config: TablePluginConfig) {
+  const { item: child, isNestedKit } = entry;
   if (PRICING_COLUMN_KEYS.has(col.key)) {
     return renderTierPricingCell(col, config, FONT_SIZE.child, COLORS.childText, child);
   }
@@ -509,7 +513,7 @@ function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TableP
     case "qty":
       return (
         <Cell key={col.key} col={col} fontSize={FONT_SIZE.child} color={COLORS.childText}>
-          {isNestedKit ? String((child.childLineItems || []).length) : String(child.quantity)}
+          {childQtyText(entry)}
         </Cell>
       );
     case "assetTag": {
@@ -534,14 +538,13 @@ function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TableP
   }
 }
 
-function ChildRow({ child, columns, config }: { child: DocumentLineItem; columns: ColumnDef[]; config: TablePluginConfig }) {
-  const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+function ChildRow({ entry, columns, config }: { entry: TableModelChild; columns: ColumnDef[]; config: TablePluginConfig }) {
   return (
     <View
       wrap={false}
       style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: COLORS.border, borderBottomStyle: "solid", paddingVertical: "1.5mm" }}
     >
-      {columns.map((col) => renderChildCell(col, child, config, isNestedKit))}
+      {columns.map((col) => renderChildCell(col, entry, config))}
     </View>
   );
 }
@@ -558,7 +561,7 @@ function renderGrandchildCell(col: ColumnDef, nested: DocumentLineItem, config: 
     case "description":
       return (
         <View key={col.key} style={{ width: col.width, paddingHorizontal: "1.5mm", paddingLeft: "27mm" }}>
-          <Text style={{ fontSize: FONT_SIZE.grandchild, color: COLORS.grandchildText }}>{nested.model?.name || nested.description || "-"}</Text>
+          <Text style={{ fontSize: FONT_SIZE.grandchild, color: COLORS.grandchildText }}>{childItemName(nested)}</Text>
         </View>
       );
     case "qty":
@@ -602,24 +605,18 @@ function GrandchildRow({ nested, columns, config }: { nested: DocumentLineItem; 
 
 // ─── Children block (level 2 + their per-unit rows + level 3) ─────────────
 
-/** `levelTwo` is the model's status-filtered level-2 rows
- *  (`TableModelItemRow.children`). */
-function ChildrenBlock({ levelTwo, columns, config }: { levelTwo: DocumentLineItem[]; columns: ColumnDef[]; config: TablePluginConfig }) {
+/** `levelTwo` is the model's status-filtered level-2 rows and the level-3
+ *  rows under each (`TableModelItemRow.children`). */
+function ChildrenBlock({ levelTwo, columns, config }: { levelTwo: TableModelChild[]; columns: ColumnDef[]; config: TablePluginConfig }) {
   return (
     <>
-      {levelTwo.map((child) => {
-        const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-        const childHasAccessories = !child.kitId && (child.childLineItems?.some((gc) => gc.childKind === "ACCESSORY") ?? false);
-        const childName = child.model?.name || child.description || "-";
-
-        let grandchildren = child.childLineItems || [];
-        if (config.filterByStatus) {
-          grandchildren = grandchildren.filter((gc) => config.filterByStatus!.includes(gc.status));
-        }
+      {levelTwo.map((entry) => {
+        const { item: child, isNestedKit, grandchildren } = entry;
+        const childName = childItemName(child);
 
         return (
           <View key={child.id}>
-            <ChildRow child={child} columns={columns} config={config} />
+            <ChildRow entry={entry} columns={columns} config={config} />
 
             {listsUnits(config) && !isNestedKit && child.quantity > 1 && (
               <>
@@ -638,8 +635,7 @@ function ChildrenBlock({ levelTwo, columns, config }: { levelTwo: DocumentLineIt
               </>
             )}
 
-            {(isNestedKit || childHasAccessories) &&
-              grandchildren.map((nested) => (
+            {grandchildren.map((nested) => (
                 <View key={nested.id}>
                   <GrandchildRow nested={nested} columns={columns} config={config} />
                   {listsUnits(config) && nested.childKind === "ACCESSORY" && nested.quantity > 1 && (
@@ -649,7 +645,7 @@ function ChildrenBlock({ levelTwo, columns, config }: { levelTwo: DocumentLineIt
                           key={i}
                           unit={(nested.units ?? [])[i]}
                           index={i}
-                          fallbackName={nested.model?.name || nested.description || "-"}
+                          fallbackName={childItemName(nested)}
                           indent="25mm"
                           size={6}
                           checked={i < (nested.checkedOutQuantity || 0)}

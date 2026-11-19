@@ -98,7 +98,7 @@ describe("buildLineItemsTableModel", () => {
       childLineItems: [makeItem({ id: "acc", isKitChild: true, childKind: "ACCESSORY" })],
     });
     const rows = buildLineItemsTableModel([group, kit, accParent], QUOTE_TABLE_CONFIG).sections[0].rows;
-    const children = rows.map((r) => (r.kind === "item" ? r.children?.map((c) => c.id) ?? null : null));
+    const children = rows.map((r) => (r.kind === "item" ? r.children?.map((c) => c.item.id) ?? null : null));
     expect(children).toEqual([["m1"], null, null]);
   });
 
@@ -114,6 +114,14 @@ describe("buildLineItemsTableModel", () => {
       ],
     });
     const row = buildLineItemsTableModel([kit], { ...WAREHOUSE, filterByStatus: ["CHECKED_OUT"] }).sections[0].rows[0];
-    expect(row.kind === "item" && row.children?.map((c) => c.id)).toEqual(["out"]);
+    expect(row.kind === "item" && row.children?.map((c) => c.item.id)).toEqual(["out"]);
+  });
+
+  it("lists a disclosed member's own accessories as its grandchildren", () => {
+    const acc = makeItem({ id: "acc", isKitChild: true, childKind: "ACCESSORY" });
+    const member = makeItem({ id: "m1", isKitChild: true, childLineItems: [acc] });
+    const group = makeItem({ id: "g", groupName: "Audio", isGroupRow: true, childLineItems: [member] });
+    const row = buildLineItemsTableModel([group], QUOTE_TABLE_CONFIG).sections[0].rows[0];
+    expect(row.kind === "item" && row.children?.[0].grandchildren.map((c) => c.id)).toEqual(["acc"]);
   });
 });

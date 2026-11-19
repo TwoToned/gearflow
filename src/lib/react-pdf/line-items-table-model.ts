@@ -343,6 +343,17 @@ export function rollupAmountForBucket(items: DocumentLineItem[], config: TableMo
 
 // ─── The table model (what LineItemsTable renders) ─────────────────────────
 
+/** A level-2 row (kit member, disclosed group member, accessory) and the
+ *  level-3 rows under it. */
+export interface TableModelChild {
+  item: DocumentLineItem;
+  /** A kit nested inside a kit: its own members print below it. */
+  isNestedKit: boolean;
+  /** Level-3 rows (a nested kit's members, or this child's own accessories),
+   *  status-filtered; empty when none render. */
+  grandchildren: DocumentLineItem[];
+}
+
 /** A top-level item row and what renders under it. */
 export interface TableModelItemRow {
   kind: "item";
@@ -351,7 +362,17 @@ export interface TableModelItemRow {
   /** 1-based across every rendered top-level row of the table, not per section. */
   rowNum: number;
   /** The level-2 rows to render below (status-filtered), or `null` for none. */
-  children: DocumentLineItem[] | null;
+  children: TableModelChild[] | null;
+}
+
+/** A child or grandchild row's printed name. */
+export function childItemName(child: DocumentLineItem): string {
+  return child.model?.name || child.description || "-";
+}
+
+/** A level-2 row's qty cell: a nested kit prints its member count. */
+export function childQtyText(child: TableModelChild): string {
+  return child.isNestedKit ? String((child.item.childLineItems || []).length) : String(child.item.quantity);
 }
 
 /** A `byContainer` container band (`isContainerRow`). */
@@ -397,14 +418,22 @@ function sectionHeader(
  *  (src/lib/group-child-disclosure.ts), so the presence of children IS the
  *  intent — gating them behind `showKitChildren` would make the toggle
  *  silently do nothing on exactly the documents it exists for. */
-function renderedChildren(item: DocumentLineItem, display: RowDisplay, config: TableModelConfig): DocumentLineItem[] | null {
+function renderedChildren(item: DocumentLineItem, display: RowDisplay, config: TableModelConfig): TableModelChild[] | null {
   const shouldRenderChildren = display.isParentWithChildren && (config.showKitChildren || item.isGroupRow === true);
   if (!shouldRenderChildren) return null;
-  let children = item.childLineItems || [];
-  if (config.filterByStatus) {
-    children = children.filter((c) => config.filterByStatus!.includes(c.status));
-  }
-  return children;
+  return byStatus(item.childLineItems || [], config).map((child) => {
+    const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+    const childHasAccessories = !child.kitId && (child.childLineItems?.some((gc) => gc.childKind === "ACCESSORY") ?? false);
+    return {
+      item: child,
+      isNestedKit,
+      grandchildren: isNestedKit || childHasAccessories ? byStatus(child.childLineItems || [], config) : [],
+    };
+  });
+}
+
+function byStatus(rows: DocumentLineItem[], config: TableModelConfig): DocumentLineItem[] {
+  return config.filterByStatus ? rows.filter((r) => config.filterByStatus!.includes(r.status)) : rows;
 }
 
 /**

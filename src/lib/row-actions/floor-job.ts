@@ -14,8 +14,7 @@ import { OUT_LABEL } from "@/lib/vocabulary";
 export type OverrideTarget = "CHECKED_OUT" | "RETURNED" | "COMPLETED";
 
 /** The shape `warehouseHeaderProps({ overrides })` takes, so the warehouse job
- *  header and the floor card share ONE override list (D6). The job page wires
- *  it in build step 5; until then it is module-internal. */
+ *  header and the floor card share ONE override list (D6). */
 interface AdminOverride {
   key: string;
   label: string;
@@ -54,8 +53,9 @@ function overrideBody(target: OverrideTarget, job: OverrideJob): string {
   return `The job moves to ${WORD[target]}. This cannot be undone from here.`;
 }
 
-/** Admin · ignores item state. Absent unless the user may check out. */
-function adminOverrides(
+/** Admin · ignores item state. Absent unless the user may check out. The floor
+ *  card and the warehouse job header both read this ONE list (D6). */
+export function adminOverrides(
   job: OverrideJob,
   ctx: { canCheckOut: boolean; setStatus: (target: OverrideTarget) => void | Promise<void> },
 ): AdminOverride[] {
@@ -80,6 +80,8 @@ export interface FloorJobCtx {
   closeOut: () => void | Promise<void>;
   /** Opens the packer picker for this job; absent without `warehouse:check_out`. */
   assignPacker?: () => void;
+  /** Opens the pull-sheet dialog (spec §9c.5). */
+  openPullSheet: () => void;
 }
 
 const doc = (key: FloorDocType, label: string, ctx: FloorJobCtx): ActionItem => ({
@@ -92,6 +94,7 @@ export function buildFloorJobActions(job: FloorJob, ctx: FloorJobCtx): ActionMen
     { key: "open", label: "Open job", group: "organise", icon: ExternalLink, onSelect: () => ctx.open(`/warehouse/${job.id}`) },
     { key: "overview", label: "Job overview", group: "organise", icon: LayoutDashboard, onSelect: () => ctx.open(`/projects/${job.id}`) },
     ...(ctx.assignPacker ? [{ key: "packer", label: "Assign packer…", group: "organise" as const, icon: UserRound, onSelect: ctx.assignPacker }] : []),
+    { key: "pull-sheet", label: "Pull sheet", group: "documents", icon: FileText, onSelect: ctx.openPullSheet },
     doc("pull-slip", "Pull slip", ctx),
     doc("delivery-docket", "Delivery docket", ctx),
     doc("return-sheet", "Return sheet", ctx),
@@ -120,11 +123,23 @@ const CLOSE_OUT_CAP = 25;
 /** Bulk verbs over the ticked cards. `Close out n` counts only closeable jobs. */
 export function buildFloorBulkActions(
   jobs: readonly FloorJob[],
-  ctx: { canCloseOut: boolean; closeOut: (ids: string[]) => void | Promise<void>; assignPacker?: (ids: string[]) => void },
+  ctx: {
+    canCloseOut: boolean;
+    closeOut: (ids: string[]) => void | Promise<void>;
+    assignPacker?: (ids: string[]) => void;
+    printPullSheets?: (ids: string[]) => void;
+  },
 ): BulkAction[] {
-  const packer: BulkAction[] = ctx.assignPacker && jobs.length > 0
-    ? [{ key: "packer", label: (n) => `Assign packer… ${n}`, group: "organise", icon: UserRound, onSelect: () => ctx.assignPacker!(jobs.map((j) => j.id)) }]
-    : [];
+  const ids = jobs.map((j) => j.id);
+  const packer: BulkAction[] = [];
+  if (ctx.printPullSheets && jobs.length > 0) {
+    const print = ctx.printPullSheets;
+    packer.push({ key: "pull-sheets", label: (n) => `Print pull sheets ${n}`, group: "documents", icon: FileText, onSelect: () => print(ids) });
+  }
+  if (ctx.assignPacker && jobs.length > 0) {
+    const assign = ctx.assignPacker;
+    packer.push({ key: "packer", label: (n) => `Assign packer… ${n}`, group: "organise", icon: UserRound, onSelect: () => assign(ids) });
+  }
   const closeable = jobs.filter(isCloseable).slice(0, CLOSE_OUT_CAP);
   if (!ctx.canCloseOut || closeable.length === 0) return packer;
   const n = closeable.length;

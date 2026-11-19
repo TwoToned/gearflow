@@ -33,6 +33,7 @@ import { useFloorWrites } from "./use-floor-writes";
 import { FLOOR_DOCK_MODES, ReturningMode } from "./returning-mode";
 import { FloorFilters } from "./floor-filters";
 import { PackerDialog } from "./packer-dialog";
+import { PullSheetDialog } from "@/components/warehouse/pull-sheet-dialog";
 import { useMemberRoster } from "@/hooks/use-member-roster";
 import { useScanTarget } from "@/components/scanner/scan-target";
 import type { FloorUrlState } from "@/lib/warehouse-floor";
@@ -135,6 +136,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
   const inputRef = useRef<HTMLInputElement>(null);
   const [ringedId, setRingedId] = useState<string | null>(null);
   const [packerFor, setPackerFor] = useState<string[] | null>(null);
+  const [pullSheetFor, setPullSheetFor] = useState<string[] | null>(null);
 
   const visible = useMemo(
     () => jobs.filter((j) => inScope(j, state.scope, { now, userId }) && matchesQuery(j, state.q) && matchesFilters(j, state, now)),
@@ -169,6 +171,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
         setStatus: (target) => writes.setStatus(job.id, target),
         closeOut: () => writes.closeOut([job.id]),
         assignPacker: canCheckOut ? () => setPackerFor([job.id]) : undefined,
+        openPullSheet: () => setPullSheetFor([job.id]),
       }),
     [canCheckOut, canCloseOut, router, writes],
   );
@@ -178,6 +181,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
     canCloseOut,
     closeOut: async (ids) => { await writes.closeOut(ids); selection.clear(); },
     assignPacker: canCheckOut ? setPackerFor : undefined,
+    printPullSheets: setPullSheetFor,
   });
   const filters = <FloorFilters jobs={jobs} members={roster.options} state={state} update={update} />;
 
@@ -245,6 +249,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
           selection.clear();
         }}
       />
+      <PullSheetDialog projectIds={pullSheetFor} onClose={() => setPullSheetFor(null)} />
     </div>
   );
 }

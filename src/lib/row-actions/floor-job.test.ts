@@ -3,7 +3,7 @@ import { buildFloorBulkActions, buildFloorJobActions, type FloorJobCtx } from ".
 import { floorJob } from "@/lib/__tests__/floor-fixtures";
 
 const ctx = (over: Partial<FloorJobCtx> = {}): FloorJobCtx => ({
-  canCheckOut: true, canCloseOut: true, open: vi.fn(), openDocument: vi.fn(), setStatus: vi.fn(), closeOut: vi.fn(), ...over,
+  canCheckOut: true, canCloseOut: true, open: vi.fn(), openDocument: vi.fn(), setStatus: vi.fn(), closeOut: vi.fn(), openPullSheet: vi.fn(), ...over,
 });
 const keys = (spec: { items: { key: string }[] }) => spec.items.map((i) => i.key);
 const admin = (spec: ReturnType<typeof buildFloorJobActions>) => spec.items.find((i) => i.key === "admin")?.children ?? [];
@@ -11,7 +11,8 @@ const admin = (spec: ReturnType<typeof buildFloorJobActions>) => spec.items.find
 describe("floor card ⋯ (absent, never disabled)", () => {
   it("opens, documents, and Admin overrides that follow the status", () => {
     const spec = buildFloorJobActions(floorJob({ id: "a", status: "CONFIRMED" }), ctx());
-    expect(keys(spec)).toEqual(["open", "overview", "pull-slip", "delivery-docket", "return-sheet", "admin"]);
+    expect(keys(spec)).toEqual(["open", "overview", "pull-sheet", "pull-slip", "delivery-docket", "return-sheet", "admin"]);
+    expect(keys(buildFloorJobActions(floorJob({ id: "a" }), ctx({ assignPacker: vi.fn() })))).toContain("packer");
     expect(admin(spec).map((c) => c.key)).toEqual(["override-CHECKED_OUT"]);
     const out = buildFloorJobActions(floorJob({ id: "b", status: "CHECKED_OUT", stage: "out" }), ctx());
     expect(admin(out).map((c) => c.key)).toEqual(["override-RETURNED", "override-COMPLETED"]);

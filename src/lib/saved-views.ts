@@ -12,6 +12,11 @@ export interface SavedViewConfig {
   sortOrder?: "asc" | "desc";
   columnVisibility?: Record<string, boolean>;
   pageSize?: number;
+  /**
+   * URL-state lists (Jobs, Assets): the list's query string. When present it IS the
+   * view; the fields above are the legacy shape, converted on read.
+   */
+  query?: string;
 }
 
 /** A saved view as returned to the client (dates serialised to strings). */

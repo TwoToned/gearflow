@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { MAX_VIEW_QUERY } from "./lib/viewLimits";
 
 /**
  * Native SAVED-TABLE-VIEW write mutations (Phase 3 browser-direct — replaces the
@@ -55,6 +56,16 @@ function assertName(name: string): string {
   return trimmed;
 }
 
+/** `config` is free-form (v.any), but a URL-state view's `query` must be a bounded string. */
+function assertViewConfig(config: unknown): void {
+  if (config === null || typeof config !== "object") throw new ConvexError("View config must be an object");
+  const query = (config as { query?: unknown }).query;
+  if (query === undefined) return;
+  if (typeof query !== "string" || query.length > MAX_VIEW_QUERY) {
+    throw new ConvexError(`View query must be text of ${MAX_VIEW_QUERY} characters or fewer`);
+  }
+}
+
 export const createNative = mutation({
   returns: v.object({ id: v.string(), name: v.string() }),
   args: {
@@ -72,6 +83,7 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     const { userId, orgId, actor } = await requireUserOrg(ctx, suppliedActor);
     const cleanName = assertName(name);
+    assertViewConfig(config);
 
     // Dup-guard the client-minted id (by_cuid is global) so a retried create is
     // idempotent and a colliding id can't make requireOwnView's .first() nondeterministic.
@@ -145,6 +157,7 @@ export const updateNative = mutation({
     const doc = await requireOwnView(ctx, id, userId, orgId);
 
     const cleanName = name !== undefined ? assertName(name) : undefined;
+    if (config !== undefined) assertViewConfig(config);
     await ctx.db.patch(doc._id, {
       ...(cleanName !== undefined ? { name: cleanName } : {}),
       ...(config !== undefined ? { config } : {}),

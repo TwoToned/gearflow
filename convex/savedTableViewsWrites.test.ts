@@ -146,3 +146,19 @@ describe("savedTableViewsWrites", () => {
     ).rejects.toThrow(/Unauthorized/i);
   });
 });
+
+describe("URL-mode view config (query string)", () => {
+  test("stores a bounded query; rejects a non-string, over-long or non-object config", async () => {
+    const t = makeT();
+    await create(t, { config: { query: "seg=out&status=QUOTED" } });
+    expect((await getView(t, "v1"))?.config).toEqual({ query: "seg=out&status=QUOTED" });
+    await expect(create(t, { id: "v2", config: { query: 5 } })).rejects.toThrow(/query/i);
+    await expect(create(t, { id: "v3", config: { query: "x".repeat(1001) } })).rejects.toThrow(/query/i);
+    await expect(create(t, { id: "v4", config: "seg=out" })).rejects.toThrow(/object/i);
+    await expect(
+      t.withIdentity(asUser).mutation(api.savedTableViewsWrites.updateNative, {
+        id: "v1", config: { query: "x".repeat(1001) }, now: NOW + 1, actor, auditId: "a9",
+      }),
+    ).rejects.toThrow(/query/i);
+  });
+});

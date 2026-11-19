@@ -868,6 +868,18 @@ open. `trigger` swaps the default ⋯ for any element (`Documents ▾`, a lock g
 dropdown is `modal={false}` so a confirm Dialog opening as it closes is not click-locked.
 `ConfirmActionMenuItem` is legacy (R-4.4); don't use it in new menus.
 
+### ListPage over LineRowList — the URL is the state
+A list page (Jobs `src/components/projects/jobs-list.tsx`, Assets `src/components/assets/assets-list.tsx`)
+is a config handed to `ListPage` (`src/components/ui/list-page.tsx`), which renders rows through
+`LineRowList`, NOT `DataTable` (that stays for lists not yet migrated). Segment, filters, sort,
+page, search and view are query params (`src/lib/list-url-state.ts`: defaults omitted, junk
+dropped), so never mirror them into localStorage or component state; only `colVis` and the
+Assets grid/table choice stay local. Never put `Date.now()` in the query args (date filters
+resolve through `useStableNow`). A saved view on such a list stores `{ query }` (the query
+string); `UrlSavedViewsMenu` converts old `{filters, sortBy}` rows on read, don't backfill them.
+A row/bulk verb exists only if an existing mutation backs it; bulk writes are per-row gated, name
+what they skipped and share ONE Undo closure (`announceListWrite`).
+
 ### Equipment tab (Phase 2a) — AddBar, one accessories editor, one shortfall mutation
 The Equipment tab is `LineRowList` sections (`equipment-sections.tsx`); `AddBar` under the list **replaces the old
 `Add ▾` menu** (Enter adds a gear/kit line with a blank price, the server auto-prices; sub-hire/custom/sale open the

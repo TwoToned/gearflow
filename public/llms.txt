@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (608 agent-reachable)
+## Operations (613 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -57,6 +57,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `assets.listGallery` (query, scope: asset:read)
 - `assets.listPage` (query, scope: asset:read)
 - `assets.registryPhotos` (query, scope: asset:read)
+- `assets.rowExtras` (query, scope: asset:read)
 - `assetScanLogs.getById` (query, scope: asset:read)
 - `assetScanLogs.list` (query, scope: asset:read)
 - `assetScanLogs.listByKitId` (query, scope: asset:read)
@@ -462,6 +463,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projects.listBoard` (query, scope: project:read)
 - `projects.listByIds` (query, scope: project:read)
 - `projects.listPage` (query, scope: project:read)
+- `projects.needsYouIds` (query, scope: project:read)
+- `projects.segmentCounts` (query, scope: project:read)
 - `projectServices.getById` (query, scope: project:read)
 - `projectServices.list` (query, scope: project:read)
 - `projectServices.listByProject` (query, scope: project:read)
@@ -475,11 +478,13 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectServicesWrites.shiftScheduleNative` (mutation, scope: project:update)
 - `projectServicesWrites.updateServiceNative` (mutation, scope: project:update)
 - `projectServicesWrites.updateServiceStatusNative` (mutation, scope: project:update)
+- `projectWrites.addTagNative` (mutation, scope: project:update)
 - `projectWrites.archiveNative` (mutation, scope: project:update)
 - `projectWrites.createNative` (mutation, scope: project:create)
 - `projectWrites.deleteNative` (mutation, scope: project:delete)
 - `projectWrites.deleteTemplateNative` (mutation, scope: project:delete)
 - `projectWrites.duplicateNative` (mutation, scope: project:create)
+- `projectWrites.removeTagNative` (mutation, scope: project:update)
 - `projectWrites.saveAsTemplateNative` (mutation, scope: project:create)
 - `projectWrites.updateNative` (mutation, scope: project:update)
 - `projectWrites.updateNotesNative` (mutation, scope: project:update)

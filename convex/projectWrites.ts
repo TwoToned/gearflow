@@ -1618,8 +1618,8 @@ export const saveAsTemplateNative = mutation({
 
 /** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
 export const agentOps: AgentOpsAnnotations = {
-  addTagNative: { summary: "Add one tag to several jobs, keeping each job's other tags; returns the ids it was newly added to.", danger: "low" },
-  removeTagNative: { summary: "Remove one tag from several jobs; returns the ids it was removed from.", danger: "low" },
+  addTagNative: { summary: "Add one tag to several jobs, keeping each job's other tags; returns the ids it was newly added to.", danger: "medium" },
+  removeTagNative: { summary: "Remove one tag from several jobs; returns the ids it was removed from.", danger: "medium" },
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },

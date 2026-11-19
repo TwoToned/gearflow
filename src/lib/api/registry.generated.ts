@@ -43941,7 +43941,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "ac5c884bf86cc237",
     "stability": "tracks-app",
     "summary": "Add one tag to several jobs, keeping each job's other tags; returns the ids it was newly added to.",
-    "danger": "low",
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44528,7 +44528,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "ac5c884bf86cc237",
     "stability": "tracks-app",
     "summary": "Remove one tag from several jobs; returns the ids it was removed from.",
-    "danger": "low",
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null

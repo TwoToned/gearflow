@@ -523,6 +523,32 @@ async function soleContainerInOrg(ctx: MutationCtx, ids: Set<string>, orgId: str
   return c && c.organizationId === orgId ? { id: c.id, label: c.label } : null;
 }
 
+function planChangeSummary(count: number, target: { label: string } | null, from: { label: string } | null): string {
+  const lines = `${count} ${count === 1 ? "line" : "lines"}`;
+  if (target) return `Planned ${lines} into container "${target.label}"`;
+  if (from) return `Unplanned ${lines} from container "${from.label}" (now loose)`;
+  return `Cleared the planned container on ${lines}`;
+}
+
+/** Patch `plannedContainerId` on each in-org line; report what changed. */
+async function applyPlannedContainer(
+  ctx: MutationCtx,
+  { orgId, lineItemIds, containerId, now }: { orgId: string; lineItemIds: string[]; containerId: string | null; now: number },
+) {
+  const updatedIds: string[] = [];
+  const previous = new Set<string>();
+  let projectId: string | null = null;
+  for (const lineItemId of lineItemIds) {
+    const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
+    if (!line || line.organizationId !== orgId) continue; // missing/cross-org — skipped
+    if (line.plannedContainerId) previous.add(line.plannedContainerId);
+    projectId ??= line.projectId;
+    await ctx.db.patch(line._id, { plannedContainerId: containerId ?? undefined, updatedAt: now });
+    updatedIds.push(lineItemId);
+  }
+  return { updatedIds, previous, projectId };
+}
+
 /** The one audit row of a `setPlannedContainerNative` call. Planning names
  *  the case the lines now go in; clearing names the case they were planned
  *  into when that is one case (a case card's "Unpack"), else the first line. */
@@ -541,14 +567,8 @@ async function logPlanChange(
     lineItemIds: string[];
   },
 ) {
-  const count = args.lineItemIds.length;
-  const noun = count === 1 ? "line" : "lines";
   const caseRef = args.target ?? args.from;
-  const summary = args.target
-    ? `Planned ${count} ${noun} into container "${args.target.label}"`
-    : args.from
-      ? `Unplanned ${count} ${noun} from container "${args.from.label}" (now loose)`
-      : `Cleared the planned container on ${count} ${noun}`;
+  const summary = planChangeSummary(args.lineItemIds.length, args.target, args.from);
   await writeActivityLog(ctx, {
     id: args.auditId,
     organizationId: args.orgId,
@@ -587,17 +607,7 @@ export const setPlannedContainerNative = mutation({
 
     const target = containerId ? await requireContainerInOrg(ctx, containerId, orgId) : null;
 
-    const updatedIds: string[] = [];
-    const previous = new Set<string>();
-    let projectId: string | null = null;
-    for (const lineItemId of lineItemIds) {
-      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
-      if (!line || line.organizationId !== orgId) continue; // missing/cross-org — skipped
-      if (line.plannedContainerId) previous.add(line.plannedContainerId);
-      projectId ??= line.projectId;
-      await ctx.db.patch(line._id, { plannedContainerId: containerId ?? undefined, updatedAt: now });
-      updatedIds.push(lineItemId);
-    }
+    const { updatedIds, previous, projectId } = await applyPlannedContainer(ctx, { orgId, lineItemIds, containerId, now });
     if (projectId) {
       await logPlanChange(ctx, {
         orgId, actor, auditId, now, projectId,

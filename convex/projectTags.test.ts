@@ -74,6 +74,17 @@ describe("projectWrites.addTagNative / removeTagNative", () => {
     expect(await tagsOf(t, "p1")).toEqual(maxed);
   });
 
+  test("writes one activity row per changed job, each with its own entityId, idempotent on auditId", async () => {
+    const t = makeT();
+    await seed(t, [{ id: "p1" }, { id: "p2" }, { id: "p3", tags: ["vip"] }]);
+    await user(t).mutation(api.projectWrites.addTagNative, a(["p1", "p2", "p3"]));
+    const rows = await t.run((ctx) => ctx.db.query("activityLogs").collect());
+    expect(rows.map((r) => r.entityId).sort()).toEqual(["p1", "p2"]);
+    expect(rows.map((r) => r.id).sort()).toEqual(["log-t:0", "log-t:1"]);
+    expect(new Set(rows.map((r) => r.summary)).size).toBe(1);
+    expect(rows[0].summary).toBe("Tagged 2 jobs: vip");
+  });
+
   test("a foreign-org id is rejected and nothing is written", async () => {
     const t = makeT();
     await seed(t, [{ id: "p1" }, { id: "px", org: OTHER }]);

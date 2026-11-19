@@ -608,7 +608,7 @@ async function applyTagBatch(
   await assertBulkSizeOk(ctx, a.ids.length);
   await requireOrgPermission(ctx, a.orgId, "project", "update");
   const actor = await resolveActor(ctx, a.actor);
-  const changed: string[] = [];
+  const changed: { id: string; name: string }[] = [];
   const full: string[] = [];
   for (const id of new Set(a.ids)) {
     const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -620,18 +620,22 @@ async function applyTagBatch(
       continue;
     }
     await ctx.db.patch(p._id, { tags: next, updatedAt: a.now });
-    changed.push(id);
+    changed.push({ id, name: p.name });
   }
-  if (changed.length > 0) {
+  // One activity row PER changed job (each job's own Activity must show it), sharing one
+  // summary. Bounded by assertBulkSizeOk above; `${auditId}:${i}` keeps each row idempotent
+  // (the scanIntake pattern).
+  const summary = `${mode === "add" ? "Tagged" : "Removed tag from"} ${changed.length} job${changed.length === 1 ? "" : "s"}: ${tag}`;
+  for (const [i, c] of changed.entries()) {
     await writeActivityLog(ctx, {
-      id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "project",
-      entityId: changed[0], entityName: `${changed.length} job${changed.length === 1 ? "" : "s"}`,
+      id: `${a.auditId}:${i}`, organizationId: a.orgId, action: "UPDATE", entityType: "project",
+      entityId: c.id, entityName: c.name,
       userId: actor.userId, userName: actor.userName,
-      summary: `${mode === "add" ? "Tagged" : "Removed tag from"} ${changed.length} job${changed.length === 1 ? "" : "s"}: ${tag}`,
+      summary,
       createdAt: a.now,
     });
   }
-  return { changed, full };
+  return { changed: changed.map((c) => c.id), full };
 }
 
 /** True when `tag` cannot be added because the list is at MAX_TAGS (and doesn't already hold it). */

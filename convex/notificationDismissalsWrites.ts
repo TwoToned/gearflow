@@ -2,7 +2,8 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { getAuthContext, isMemberAuth, requireSelfScope } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertStrLen } from "./lib/fieldGuards";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -151,10 +152,56 @@ export const pruneStaleNative = mutation({
 });
 
 /**
+ * The reverse of `dismissManyNative` — the bell's Undo for a dismissal (UX
+ * unification D70 / 6a). Removes the caller's dismissal rows for the given keys in
+ * their ACTIVE org only: the lookup is the (organizationId, userId) index, both
+ * taken from the verified token, so a key dismissed in another org (the two crew
+ * keys recur across orgs) is never touched. Idempotent — a key with no row is
+ * skipped. Capped by the identity-derived bulk cap.
+ */
+export const undismissManyNative = mutation({
+  returns: v.object({ restored: v.number() }),
+  args: { notificationKeys: v.array(v.string()) },
+  handler: async (ctx, { notificationKeys }) => {
+    await assertWritesEnabled(ctx, "notifications");
+    await enforceBrowserWriteLimit(ctx);
+    const auth = await getAuthContext(ctx);
+    if (!isMemberAuth(auth)) {
+      throw new ConvexError("Unauthorized: a signed-in user is required.");
+    }
+    if (!auth.orgId) {
+      throw new ConvexError("Forbidden: no active organization.");
+    }
+    await requireSelfScope(ctx, "write");
+    await assertBulkSizeOk(ctx, notificationKeys.length);
+    for (const key of notificationKeys) assertStrLen(key, "notificationKey", { min: 1, max: 256 });
+    // Indexed per-key lookup (a user has at most one row per (org, key); the
+    // bounded take only spans that user's same key across orgs).
+    let restored = 0;
+    for (const key of new Set(notificationKeys)) {
+      const rows = await ctx.db
+        .query("notificationDismissals")
+        .withIndex("by_userId_notificationKey", (q) =>
+          q.eq("userId", auth.userId).eq("notificationKey", key),
+        )
+        .take(50);
+      for (const r of rows) {
+        if (r.organizationId === auth.orgId) {
+          await ctx.db.delete(r._id);
+          restored++;
+        }
+      }
+    }
+    return { restored };
+  },
+});
+
+/**
  * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
  * Personal-scope (self:write) UI preference bookkeeping — no domain effect.
  */
 export const agentOps: AgentOpsAnnotations = {
+  undismissManyNative: { danger: "low" },
   dismissManyNative: { danger: "low" },
   pruneStaleNative: { danger: "low" },
 };

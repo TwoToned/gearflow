@@ -68,6 +68,7 @@ import { Input } from "@/components/ui/input";
 import { type SearchResult, type SearchResultType } from "@/lib/search-types";
 import { useGlobalSearch } from "@/hooks/use-global-search";
 import { matchPageCommands, type PageCommand } from "@/lib/page-commands";
+import { NAV_ICONS } from "@/components/layout/nav-icons";
 import { matchSlashCommands, extractEntityId, type SlashCommand } from "@/lib/slash-commands";
 import { signOut } from "@/lib/auth-client";
 import { useCurrentRole } from "@/lib/use-permissions";
@@ -118,6 +119,11 @@ const pageIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   LogOut, CheckCircle, CircleCheck, CircleX, StickyNote, Share2, HardHat,
   Briefcase, Clock, CalendarOff, ClipboardCheck, Bookmark, PackageOpen, Sun,
 };
+
+/** Palette icon by name: the hand-listed names above, else a NAV icon key (NAV rows carry theirs), else Package. */
+function pageIcon(name: string): React.ComponentType<{ className?: string }> {
+  return pageIcons[name] ?? (NAV_ICONS as Record<string, React.ComponentType<{ className?: string }>>)[name] ?? Package;
+}
 
 function normalize(s: string): string {
   return s.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
@@ -221,7 +227,7 @@ export function CommandSearch() {
 
     for (const match of slashMatches) {
       const cmd = match.command;
-      const IconComp = pageIcons[cmd.icon] || Package;
+      const IconComp = pageIcon(cmd.icon);
       const item: DisplayItem = {
         id: `slash-${cmd.id}`,
         title: cmd.label,
@@ -371,7 +377,7 @@ export function CommandSearch() {
     // When there's entity text, show: parent page, matching child pages, then entity results
     if (hasEntityQuery && topMatch && topMatch.score >= 60) {
       const cmd = topMatch.command;
-      const IconComp = pageIcons[cmd.icon] || Package;
+      const IconComp = pageIcon(cmd.icon);
 
       // Parent page
       items.push({
@@ -386,7 +392,7 @@ export function CommandSearch() {
       // Child pages (always show — auto-select will pick the best match)
       if (cmd.children) {
         for (const child of cmd.children) {
-          const ChildIcon = pageIcons[child.icon] || Package;
+          const ChildIcon = pageIcon(child.icon);
           items.push({
             id: `page-${child.href}`,
             title: child.label,
@@ -425,7 +431,7 @@ export function CommandSearch() {
       if (shown.has(cmd.href)) continue;
       shown.add(cmd.href);
 
-      const IconComp = pageIcons[cmd.icon] || Package;
+      const IconComp = pageIcon(cmd.icon);
       items.push({
         id: `page-${cmd.href}`,
         title: cmd.label,
@@ -440,7 +446,7 @@ export function CommandSearch() {
         for (const child of cmd.children) {
           if (shown.has(child.href)) continue;
           shown.add(child.href);
-          const ChildIcon = pageIcons[child.icon] || Package;
+          const ChildIcon = pageIcon(child.icon);
           items.push({
             id: `page-${child.href}`,
             title: child.label,
@@ -895,7 +901,7 @@ export function CommandSearch() {
           title: c.label,
           subtitle: c.description,
           href: c.href,
-          icon: pageIcons[c.icon] || Package,
+          icon: pageIcon(c.icon),
         }));
         setDrillParent(item);
         setDrillChildren(childItems);
@@ -1081,7 +1087,7 @@ export function CommandSearch() {
 
   // Determine breadcrumb
   const breadcrumb = isAtEntityMode && atEntityPage
-    ? { label: atEntityPage.label, icon: pageIcons[atEntityPage.icon] || Package }
+    ? { label: atEntityPage.label, icon: pageIcon(atEntityPage.icon) }
     : isDrilling && drillParent
       ? { label: drillParent.title, icon: drillParent.icon }
       : null;
@@ -1097,10 +1103,11 @@ export function CommandSearch() {
       {/* Desktop search trigger */}
       <button
         onClick={() => setOpen(true)}
-        className="hidden md:flex items-center gap-2 text-fg-3 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+        aria-label="Search or jump to (⌘K)"
+        className="hidden h-9 w-64 items-center gap-2 rounded-[var(--r)] border border-line bg-paper-2 px-3 text-[13px] text-muted transition-colors hover:border-line-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red md:flex lg:w-80"
       >
-        <Search className="h-4 w-4" />
-        <span>Search...</span>
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="flex-1 truncate text-left">Search or jump to…</span>
         <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-bg-inset px-1.5 font-mono font-medium text-fg-3 sm:flex" style={{ fontSize: KB_HINT_FONT_SIZE }}>
           <span className="text-xs">&#8984;</span>K
         </kbd>

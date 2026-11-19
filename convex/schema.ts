@@ -782,6 +782,12 @@ export default defineSchema({
     targetCategoryId: v.optional(v.string()),
     targetGroupId: v.optional(v.string()),
     notes: v.optional(v.string()),
+    // Set ONLY by subHiresWrites.coverShortfallNative: the facts of the one "cover this shortfall"
+    // that created this item, so undoShortfallNative derives everything from server records
+    // (never from client args). Describes one cover: never copied to a duplicated item.
+    coverage: v.optional(
+      v.object({ lineItemId: v.string(), quantityBefore: v.number(), quantityAfter: v.number(), createdOrder: v.boolean() }),
+    ),
   })
     .index("by_cuid", ["id"])
     .index("by_subHireId", ["subHireId"])

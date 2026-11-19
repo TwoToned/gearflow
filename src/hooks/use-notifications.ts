@@ -33,6 +33,13 @@ export function useNotifications() {
     await archiveM({ id });
   }, [archiveM]);
 
+  const markUnreadManyM = useMutation(api.notificationsWrites.markUnreadManyNative);
+  /** The reverse of `markAllRead` for exactly the ids it marked — the bell's Undo. */
+  const markUnreadMany = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    await markUnreadManyM({ ids });
+  }, [markUnreadManyM]);
+
   return {
     /** Recent, non-archived notifications (reactive; `undefined` while loading). */
     notifications: notifications as Doc<"notifications">[] | undefined,
@@ -40,6 +47,7 @@ export function useNotifications() {
     unreadCount: unreadCount as number | undefined,
     markRead,
     markAllRead,
+    markUnreadMany,
     archive,
   };
 }

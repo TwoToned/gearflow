@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { resetHarnessDb } from "./harness-db-reset";
+import { addModelViaAddBar } from "./harness-helpers";
 
 /**
  * Primary revenue path (POLICY.md R-8.8.3 / #621, docs/critical-flows.md flows
@@ -201,43 +202,12 @@ test.describe("harness: primary revenue path", () => {
     const projectId = new URL(page.url()).pathname.split("/")[2]!;
 
     await test.step("add the model as a line item + pricing (flow 6)", async () => {
-      // #1061 — a project now lands on the Overview tab (its home), not
-      // Equipment. The "Add ▾" menu is portalled into the tab row BY the
-      // Equipment tab, so it only exists once that tab is selected. Clicking
-      // through is what a real operator does, and it keeps this step honest
-      // about the extra hop rather than hiding it behind a `?tab=` deep link.
-      await page.getByRole("tab", { name: "Equipment", exact: true }).click();
-      await page.getByRole("button", { name: "Add", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Add item" }).click();
-      // WS3 (#942) added a persistent "Overbookings" sidebar nav item, which
-      // matches a page-wide /overbook/i locator used below — but the model
-      // search ("Search models" button) opens a Radix Popover/Command portalled
-      // to document.body as a SIBLING of the dialog, not a DOM descendant, so
-      // it can't be reached through a dialog-scoped locator (that hung forever
-      // waiting for a placeholder that's structurally outside the dialog root —
-      // see CLAUDE.md's Radix-portal note). Keep the search flow unscoped on
-      // `page`, and only scope the two assertions that actually collide with
-      // the sidebar text (title "Add equipment" for the "Own stock" tab/kind).
-      const addDialog = page.getByRole("dialog", { name: "Add equipment" });
-      await page.getByRole("tab", { name: "Own stock" }).click();
-      await page.getByRole("button", { name: "Search models" }).click();
-      await page.getByPlaceholder(/Search by name/).fill(modelName);
-      await page.getByRole("button", { name: modelName, exact: true }).click();
-
-      // Availability check (flow 7) is inline and automatic here: with exactly
-      // one asset created above and quantity defaulted to 1, it renders
-      // "1 available out of 1 ..." with no overbook warning/checkbox to confirm.
-      // The check itself is async (a Convex query) and can start from a 0/0
-      // placeholder before the real count resolves — under CI load that can take
-      // a while, so wait for the SPECIFIC "1 available" text (not just the
-      // generic "available out of" phrase, which matches the placeholder too)
-      // before asserting there's no overbook warning.
-      await expect(addDialog.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
-      await expect(addDialog.getByText(/overbook/i)).toHaveCount(0);
-
-      await page.getByRole("button", { name: "Add to job" }).click();
-      // The dialog closes on a successful add.
-      await expect(page.getByRole("button", { name: "Add to job" })).toBeHidden();
+      // #1061 — a project lands on the Overview tab; the helper clicks through to Equipment like
+      // an operator. UX 2a: the AddBar REPLACED "Add ▾ > Add item" + the "Add equipment" dialog
+      // for a plain gear add (spec reason: the control was deliberately removed). Availability
+      // (flow 7) is now enforced by the server on add: with one asset and quantity 1 the line
+      // lands with no overbook step and no "Short" flag (see addModelViaAddBar).
+      await addModelViaAddBar(page, modelName);
     });
 
     await test.step("check the gear out through the warehouse pipeline (flow 8)", async () => {

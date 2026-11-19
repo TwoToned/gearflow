@@ -153,10 +153,14 @@ export interface LineRowData {
    * opens the row (`onOpen` / the RowEditorSheet) to edit.
    */
   cells?: Record<string, ReactNode>;
-  /** Only read on a CHILD row of kind "accessory": it gets its own checkbox (selected by its id) unless `false`. */
-  selectable?: boolean;
   /** One level: kit members, accessories, group members, bulk units, crew. 44 px, no actions. */
   children?: LineRowData[];
+  /**
+   * `false` = no select box and never part of `visibleRowIds`: derived rows the bulk verbs must never
+   * touch (e.g. a sub-hire order's lines). On a CHILD row of kind "accessory" it is the opt-out of that
+   * child's own checkbox (selected by its id). Default true.
+   */
+  selectable?: boolean;
   /** Whole-row open (desktop: navigate/expand; phone: the RowEditorSheet when editable). */
   href?: string;
   onOpen?: () => void;
@@ -180,6 +184,15 @@ export interface LineRowSectionData {
   /** Tri-state "tick all in this section", driven by the caller. Absent = no box. */
   selectState?: "none" | "some" | "all";
   onToggleSelect?: () => void;
+  /** 1 = a nested section (a Project Group inside a category): indented title, lighter band. Default 0. */
+  depth?: 0 | 1;
+  /**
+   * Desktop only: cell overrides by column id (same ids as `FactColumn.id`),
+   * e.g. an inline-editable price on a group head. Setting any turns the head
+   * from one full-width cell into aligned columns, and the head then OMITS
+   * `amount` (put the figure in the matching column's cell). Phone ignores it.
+   */
+  cells?: Record<string, ReactNode>;
 }
 
 // `primary` exists for ONE row kind only (the warehouse accessory row, §9.5).

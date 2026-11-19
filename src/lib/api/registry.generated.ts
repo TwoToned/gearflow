@@ -32536,6 +32536,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "notificationDismissalsWrites.undismissManyNative",
+    "module": "notificationDismissalsWrites",
+    "fn": "undismissManyNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "notificationKeys",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "56fdfece04caee27",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "notificationEmailLogs.create",
     "module": "notificationEmailLogs",
     "fn": "create",
@@ -32893,6 +32925,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "bcde375ebd4cbacf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "notificationsWrites.markUnreadManyNative",
+    "module": "notificationsWrites",
+    "fn": "markUnreadManyNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b67b074b9a2f2e30",
+    "returnsSha": "1ce2050af5634770",
     "stability": "tracks-app",
     "summary": null,
     "danger": "low",
@@ -49484,6 +49548,171 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "subHiresWrites.coverShortfallNative",
+    "module": "subHiresWrites",
+    "fn": "coverShortfallNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      },
+      {
+        "resource": "subHire",
+        "action": "create"
+      },
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "discount",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "draftOrderId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "groupId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "hireEnd",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "hireStart",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "itemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "lineItemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "modelId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "newOrderId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "pricingType",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "quantity",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "showOnDocs",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "showOnQuote",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "targetCategoryId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "targetGroupId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "trimLine",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "unitCharge",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "unitCost",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6a4dfbcd13c1c65d",
+    "returnsSha": "1967a16c6378ac58",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "subHiresWrites.createSubHireGroupNative",
     "module": "subHiresWrites",
     "fn": "createSubHireGroupNative",
@@ -50057,6 +50286,71 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "subHiresWrites.undoShortfallNative",
+    "module": "subHiresWrites",
+    "fn": "undoShortfallNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
+        "resource": "subHire",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "itemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orderId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d47fe6ff1381870e",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -63600,10 +63894,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1234,
-  agentReachable: 606,
+  total: 1238,
+  agentReachable: 610,
   queries: 443,
-  mutations: 791,
+  mutations: 795,
   agentReachableQueries: 308,
-  agentReachableMutations: 298,
+  agentReachableMutations: 302,
 } as const;

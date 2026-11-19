@@ -1,95 +1,158 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AtSign, Bell } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Bell } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useShellFeed, type ShellFeed } from "@/hooks/use-shell-feed";
+import type { ShellNotice } from "@/lib/notification-feed";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatDistanceToNow } from "date-fns";
-import { useNotifications } from "@/hooks/use-notifications";
 
-// Work-layer phase 0 (#1241, work-layer.md §10.2) — the bell reads the stored
-// `notifications` table (mentions today; other work-layer event types land as
-// later phases emit them) instead of the derived nine-type org-wide scan. The
-// dashboard's "Needs attention" chip tray keeps reading the derived feed
-// (src/server/notifications.ts) unchanged — only the bell moved.
-const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  mentioned: AtSign,
-};
+/** A dated row: unread dot, title, the type word, one muted line, the time. */
+function NoticeBody({ notice }: { notice: ShellNotice }) {
+  return (
+    <span className="flex min-w-0 flex-1 items-start gap-2.5">
+      <span
+        aria-label={notice.unread ? "Unread" : undefined}
+        className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", notice.unread ? "bg-red" : "bg-transparent")}
+      />
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="flex items-baseline justify-between gap-2">
+          <span className={cn("truncate text-[13px]", notice.unread ? "font-medium text-ink" : "text-ink-2")}>{notice.title}</span>
+          <span className="shrink-0 font-mono text-[11px] text-muted">
+            {formatDistanceToNow(new Date(notice.at), { addSuffix: true })}
+          </span>
+        </span>
+        <span className="truncate text-[12px] text-muted">
+          <span className="text-ink-2">{notice.typeLabel}</span>
+          {notice.line ? ` · ${notice.line}` : ""}
+        </span>
+      </span>
+    </span>
+  );
+}
 
+function BellHead({ feed }: { feed: ShellFeed }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2">
+      <span className="text-[13px] font-semibold text-ink">Notifications</span>
+      {feed.unreadCount > 0 && (
+        <button
+          type="button"
+          className="min-h-9 cursor-pointer rounded px-1 text-[12px] text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
+          onClick={(e) => {
+            e.stopPropagation();
+            void feed.markAllRead();
+          }}
+        >
+          Mark all read
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Empty() {
+  return <div className="px-3 py-6 text-center text-[13px] text-muted">All clear. Nothing needs you.</div>;
+}
+
+/** The trigger: bell + a mono count (no filled badge, no `9+`). */
+function BellButton({ unread, ...props }: { unread: number } & React.ComponentProps<"button">) {
+  return (
+    <button
+      type="button"
+      aria-label={`Notifications, ${unread} unread`}
+      aria-haspopup="menu"
+      {...props}
+      className={cn(
+        "flex h-9 cursor-pointer items-center gap-1 rounded-[var(--r)] px-2 text-muted transition-colors hover:bg-elev hover:text-ink max-md:size-11 max-md:justify-center",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
+        props.className,
+      )}
+    >
+      <Bell className="size-4 max-md:size-5" aria-hidden />
+      <span className={cn("font-mono text-[11px] tabular-nums", unread === 0 && "opacity-50")}>{unread}</span>
+    </button>
+  );
+}
+
+/**
+ * The bell (D70): the derived feed and the stored mentions in ONE list (`useShellFeed`),
+ * dated rows, Open = mark read, `Mark all read` with Undo, `All notifications ›` to
+ * the full page. A dropdown on desktop, a bottom sheet on a phone.
+ */
 export function Notifications() {
   const router = useRouter();
-  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const isMobile = useIsMobile();
+  const feed = useShellFeed();
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  const visible = notifications ?? [];
-  const count = unreadCount ?? 0;
+  const go = (n: ShellNotice) => {
+    void feed.open(n);
+    router.push(n.href);
+  };
+
+  if (isMobile) {
+    return (
+      <>
+        <BellButton unread={feed.unreadCount} onClick={() => setSheetOpen(true)} />
+        <BottomSheet open={sheetOpen} onOpenChange={setSheetOpen} title="Notifications">
+          <BellHead feed={feed} />
+          {feed.items.length === 0 && <Empty />}
+          {feed.items.map((n) => (
+            <button
+              key={n.uid}
+              type="button"
+              onClick={() => {
+                setSheetOpen(false);
+                go(n);
+              }}
+              className="flex min-h-12 w-full items-start px-4 py-2 text-left active:bg-paper-2"
+            >
+              <NoticeBody notice={n} />
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setSheetOpen(false);
+              router.push("/notifications");
+            }}
+            className="min-h-12 w-full px-4 text-left text-[13px] text-muted"
+          >
+            All notifications ›
+          </button>
+        </BottomSheet>
+      </>
+    );
+  }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
-          <Bell className="h-4 w-4" />
-          {count > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-white">
-              {count > 9 ? "9+" : count}
-            </span>
-          )}
-        </Button>
+        <BellButton unread={feed.unreadCount} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="flex items-center justify-between gap-2">
-            <span>Notifications</span>
-            {count > 0 && (
-              <button
-                type="button"
-                className="text-xs font-normal text-muted hover:text-fg"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void markAllRead();
-                }}
-              >
-                Mark all read
-              </button>
-            )}
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {visible.length === 0 ? (
-            <div className="py-6 text-center text-sm text-muted">
-              All clear — no notifications.
-            </div>
-          ) : (
-            visible.map((n) => {
-              const Icon = typeIcons[n.type] || Bell;
-              return (
-                <DropdownMenuItem
-                  key={n.id}
-                  onClick={() => {
-                    if (!n.readAt) void markRead(n.id);
-                    router.push(n.href);
-                  }}
-                  className="flex items-start gap-3 py-2.5"
-                >
-                  <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${n.readAt ? "text-muted" : "text-primary"}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm truncate ${n.readAt ? "font-normal" : "font-medium"}`}>{n.title}</p>
-                    {n.body && <p className="text-xs text-muted truncate">{n.body}</p>}
-                    <p className="text-xs text-muted mt-0.5">
-                      {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
-                    </p>
-                  </div>
-                </DropdownMenuItem>
-              );
-            })
-          )}
-        </DropdownMenuGroup>
+      <DropdownMenuContent align="end" className="w-96 p-0">
+        <BellHead feed={feed} />
+        <div className="max-h-[60vh] overflow-y-auto border-t border-line">
+          {feed.items.length === 0 && <Empty />}
+          {feed.items.map((n) => (
+            <DropdownMenuItem key={n.uid} onClick={() => go(n)} className="items-start rounded-none px-3 py-2.5">
+              <NoticeBody notice={n} />
+            </DropdownMenuItem>
+          ))}
+        </div>
+        <DropdownMenuItem onClick={() => router.push("/notifications")} className="rounded-none border-t border-line px-3 py-2.5 text-[13px] text-muted">
+          All notifications ›
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

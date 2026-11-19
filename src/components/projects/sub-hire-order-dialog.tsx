@@ -22,6 +22,7 @@ import { useSuppliers } from "@/hooks/use-suppliers";
 import { useModels } from "@/hooks/use-models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { subHireStatusLabels, supplierOrderStatusLabels, formatLabel } from "@/lib/status-labels";
+import { SUB_HIRE_TRANSITIONS } from "@/lib/sub-hire-transitions";
 import { buildOrderHeaderPrefill, mapSubHireItemsToOrderItems, defaultOrderNumberFor } from "@/lib/sub-hire-to-order";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -207,15 +208,6 @@ function PlacementPicker({
   );
 }
 
-// ─── Status transitions ──────────────────────────────────────────────────────
-
-const VALID_TRANSITIONS: Record<string, { forward?: { status: SubHireStatus; label: string }; cancel?: boolean }> = {
-  DRAFT: { forward: { status: "CONFIRMED", label: "Confirm" }, cancel: true },
-  CONFIRMED: { forward: { status: "RETURNED", label: "Mark Returned" }, cancel: true },
-  ON_HIRE: { forward: { status: "RETURNED", label: "Mark Returned" }, cancel: true },
-  RETURNED: {},
-  CANCELLED: {},
-};
 
 // ─── Main Dialog ─────────────────────────────────────────────────────────────
 
@@ -772,7 +764,7 @@ function SubHireManageView({
     );
   }
 
-  const transitions = VALID_TRANSITIONS[subHire.status] || {};
+  const transitions = SUB_HIRE_TRANSITIONS[subHire.status] || {};
   const margin = Number(subHire.totalCharge) - Number(subHire.totalCost);
   const isOverdue = subHire.status === "ON_HIRE" && subHire.hireEnd && new Date(subHire.hireEnd) < new Date();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

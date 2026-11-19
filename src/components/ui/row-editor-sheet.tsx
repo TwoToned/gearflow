@@ -75,6 +75,12 @@ export interface RowEditorSheetProps {
     action?: { label: string; onSelect: () => void };
   };
   drillIns?: RowEditorDrillIn[];
+  /**
+   * Row furniture the surface shows in its desktop `cells` that a phone sheet must not lose
+   * (the Equipment tab's discussion badge and serial indicator). Rendered under the total,
+   * above the drill-ins; the surface owns its content and its 44 px targets.
+   */
+  contextSlot?: React.ReactNode;
   /** The rest of the row's menu. */
   menu?: ActionMenuSpec;
 }
@@ -344,6 +350,7 @@ export function RowEditorSheet({
   priceEditable = true,
   availability,
   drillIns,
+  contextSlot,
   menu,
 }: RowEditorSheetProps) {
   const { formatCurrency } = useFormatters();
@@ -424,6 +431,8 @@ export function RowEditorSheet({
             {formatCurrency(total)}
           </output>
         </div>
+
+        {contextSlot}
 
         {drillIns?.length ? <DrillIns items={drillIns} /> : null}
 

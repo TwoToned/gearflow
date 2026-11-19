@@ -1,8 +1,41 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { getProjectWindow } from "./lib/projectWindow";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
+import { floorCounts, warehouseStage } from "./lib/warehouseStage";
+import { earliestOutbound, OUTBOUND_SERVICE_TYPES, type OutboundServiceLike } from "./lib/outboundTruck";
+
+export const agentOps: AgentOpsAnnotations = {
+  bundle: {
+    summary:
+      "Org-wide warehouse floor: every pipeline job with its derived floor stage (to pick / prepping / ready / out / returning), unit counts, PM and outbound truck time.",
+    danger: "low",
+    mcpTier: 1,
+  },
+};
+
+/** Outbound services read per job and type. A job has a handful; the cap only
+ *  bounds a pathological one (R-9.8), and the earliest is what matters. */
+const MAX_OUTBOUND_PER_TYPE = 25;
+
+/** The job's earliest outbound truck (`convex/lib/outboundTruck.ts`), from its
+ *  LIVE version's transport services. `by_versionId_type` is a GLOBAL index —
+ *  org-check every row (R-8.4.3). */
+async function outboundFor(ctx: QueryCtx, versionId: string, orgId: string) {
+  const perType = await Promise.all(
+    OUTBOUND_SERVICE_TYPES.map((type) =>
+      ctx.db
+        .query("projectServices")
+        .withIndex("by_versionId_type", (q) => q.eq("versionId", versionId).eq("type", type))
+        .take(MAX_OUTBOUND_PER_TYPE),
+    ),
+  );
+  const services: OutboundServiceLike[] = perType.flat().filter((s) => s.organizationId === orgId);
+  return earliestOutbound(services);
+}
 
 /**
  * BROWSER-facing native replacement for the warehouse LANDING list
@@ -48,6 +81,13 @@ type ProjectDoc = {
   projectStartDate?: number;
   projectEndDate?: number;
   clientId?: string;
+  projectManagerId?: string;
+};
+
+type FloorFacts = {
+  lineItems: Array<{ status: string; type: string; isKitChild: boolean }>;
+  counts: ReturnType<typeof floorCounts>;
+  outbound: Awaited<ReturnType<typeof outboundFor>>;
 };
 
 export const bundle = query({
@@ -71,24 +111,29 @@ export const bundle = query({
       .filter((p) => p.isTemplate !== true)
       .sort((a, b) => (getProjectWindow(a).start ?? 0) - (getProjectWindow(b).start ?? 0));
 
-    // Thin line items per project (only the 3 fields the stage counter reads).
-    const lineItemsByProject = new Map<
-      string,
-      Array<{ status: string; type: string; isKitChild: boolean }>
-    >();
-    // LIVE-ONLY (#1228) — the warehouse landing counts the live plan.
+    // Per project, from the LIVE version (#1228 — the floor counts the live
+    // plan): the thin line items (kept for existing consumers), the floor's
+    // derived unit counts (convex/lib/warehouseStage.ts) and the outbound truck.
+    const factsByProject = new Map<string, FloorFacts>();
     await Promise.all(
       pipeline.map(async (p) => {
         const versionId = await resolveLiveVersionIdForProject(ctx, p.id, orgId);
-        const rows = await versionRows(ctx, "projectLineItems", versionId);
-        lineItemsByProject.set(
-          p.id,
-          rows.map((li) => ({
+        const [rows, outbound] = await Promise.all([
+          versionRows(ctx, "projectLineItems", versionId),
+          outboundFor(ctx, versionId, orgId),
+        ]);
+        // `by_versionId` is global; the version came from an org-checked
+        // project, but re-check the rows (R-8.4.3).
+        const own = rows.filter((li) => li.organizationId === orgId);
+        factsByProject.set(p.id, {
+          lineItems: own.map((li) => ({
             status: li.status ?? "",
             type: li.type ?? "EQUIPMENT",
             isKitChild: li.isKitChild === true,
           })),
-        );
+          counts: floorCounts(own),
+          outbound,
+        });
       }),
     );
 
@@ -103,21 +148,31 @@ export const bundle = query({
     );
 
     return {
-      projects: pipeline.map((p) => ({
-        id: p.id,
-        name: p.name,
-        projectNumber: p.projectNumber,
-        status: p.status ?? "",
-        rentalStartDate: p.rentalStartDate ?? null,
-        rentalEndDate: p.rentalEndDate ?? null,
-        // Gear-committed window — falls back to rental when unset (see
-        // project-window.ts). The list's urgency classifier reads THESE, not the
-        // raw rental pair above (kept for reference/other display uses).
-        projectStartDate: p.projectStartDate ?? null,
-        projectEndDate: p.projectEndDate ?? null,
-        client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
-        lineItems: lineItemsByProject.get(p.id) ?? [],
-      })),
+      projects: pipeline.map((p) => projectRow(p, clientMap, factsByProject.get(p.id))),
     };
   },
 });
+
+function projectRow(p: ProjectDoc, clientMap: Map<string, { name: string }>, facts: FloorFacts | undefined) {
+  const counts = facts?.counts ?? floorCounts([]);
+  return {
+    id: p.id,
+    name: p.name,
+    projectNumber: p.projectNumber,
+    status: p.status ?? "",
+    rentalStartDate: p.rentalStartDate ?? null,
+    rentalEndDate: p.rentalEndDate ?? null,
+    // Gear-committed window — falls back to rental when unset (see
+    // project-window.ts). The list's urgency classifier reads THESE, not the
+    // raw rental pair above (kept for reference/other display uses).
+    projectStartDate: p.projectStartDate ?? null,
+    projectEndDate: p.projectEndDate ?? null,
+    client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+    lineItems: facts?.lineItems ?? [],
+    // Phase 4 floor (additive). DERIVED on read, never stored (D27).
+    projectManagerId: p.projectManagerId ?? null,
+    counts,
+    stage: warehouseStage(counts),
+    outbound: facts?.outbound ?? null,
+  };
+}

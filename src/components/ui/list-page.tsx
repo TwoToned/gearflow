@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
 
-import { BulkBar } from "@/components/ui/bulk-bar";
+import { BulkBar, PinnedAboveBottomNav } from "@/components/ui/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { LineRowList } from "@/components/ui/line-row";
 import {
@@ -126,17 +125,13 @@ function useAccumulatedRows(rows: LineRowData[], resetKey: string, enabled: bool
 
 /** The phone's primary: fixed above the bottom nav, replaced by BulkBar while rows are selected. */
 function StickyPrimary({ primary }: { primary: ListPrimary }) {
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <div
-      className="fixed inset-x-3 z-30"
-      style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)" }}
-    >
+  // Same dock as BulkBar, so "above the nav" is defined once (the shell's 3.5rem tab row + safe area).
+  return (
+    <PinnedAboveBottomNav>
       <Button className="w-full" onClick={primary.onSelect}>
         {primary.label}
       </Button>
-    </div>,
-    document.body,
+    </PinnedAboveBottomNav>
   );
 }
 

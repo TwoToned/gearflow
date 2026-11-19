@@ -51,7 +51,7 @@ export function TagPromptDialog({
         <Input
           aria-label="Tag"
           autoFocus
-          maxLength={MAX_TAG_LENGTH}
+          maxLength={MAX_TAG_LEN}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {

@@ -22,7 +22,7 @@ vi.mock("@/lib/kits-read", () => ({ getKitByAssetTag: async () => h.kit }));
 vi.mock("@/lib/assets-read", () => ({ getAssetByAssetTag: async () => h.asset, getBulkAssetByAssetTag: async () => h.bulk }));
 vi.mock("@/lib/models-read", () => ({ getModelById: async () => ({ name: "Model" }) }));
 vi.mock("@/lib/convex-client", () => ({
-  getConvexClient: async () => ({ query: async (fn: { name: string }, args: Record<string, unknown>) => (String(fn).includes("listByProject") || fn.name === "listByProject" ? h.lines : h.units.filter((u) => !args.assetId || u.assetId === args.assetId)) }),
+  getConvexClient: async () => ({ query: async (fn: { name: string }, args: Record<string, unknown>) => (String(fn).includes("listByProject") || fn.name === "listByProject" ? h.lines : h.units.filter((u) => (!args.assetId || u.assetId === args.assetId) && (!args.lineItemId || u.lineItemId === args.lineItemId))) }),
 }));
 vi.mock("../../../convex/_generated/api", () => ({
   api: { projectLineItems: { listByProject: { name: "listByProject" } }, projectLineItemUnits: { listByOrgAndAsset: { name: "units" }, listByLineItem: { name: "units" } } },
@@ -59,6 +59,15 @@ describe("lookupDeprepScan is gated and org-scoped", () => {
     h.lines = [{ id: "ML", modelId: "m" }];
     h.units = [{ id: "u1", lineItemId: "ML", bulkAssetId: "b1", quantity: 4, ...waiting }, { id: "u2", lineItemId: "ML", assetId: "a9", quantity: 1, ...waiting }];
     expect(await lookupDeprepScan("p", "B1")).toMatchObject({ kind: "bulk", lineItemId: "ML", remaining: 4 });
+  });
+});
+
+describe("lookupDeprepScan bin scan over several candidate lines", () => {
+  it("takes the FIRST candidate line (in line order) that has waiting units of this bin", async () => {
+    h.bulk = { id: "b1", assetTag: "B1", modelId: "m" };
+    h.lines = [{ id: "L1", modelId: "m" }, { id: "L2", modelId: "m" }];
+    h.units = [{ id: "u1", lineItemId: "L1", bulkAssetId: "b1", quantity: 2, ...waiting }, { id: "u2", lineItemId: "L2", bulkAssetId: "b1", quantity: 5, ...waiting }];
+    expect(await lookupDeprepScan("p", "B1")).toMatchObject({ kind: "bulk", lineItemId: "L1", remaining: 2 });
   });
 });
 

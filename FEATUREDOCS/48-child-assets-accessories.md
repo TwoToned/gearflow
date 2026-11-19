@@ -770,9 +770,17 @@ with the parent exactly as above.
 - **What a pack really did.** `checkRecordOps.prepItems` (accessories-only items) returns
   `packedAccessoryUnits` (`{ lineItemId, unitId, parentUnitAssetId? }`: the accessory units THIS call flipped
   to PACKED, per parent unit, honouring `includeAccessoryIds`; one already PACKED is not reported) and
-  `packedAccessoryLineIds` (their child lines). `prepUnit` / `packParentlessAccessories` produce it; it is
-  never a re-read of line state. The deploy gate compares the marked accessories with this set: a short pack
+  `packedAccessoryLineIds`: the accessory child LINES that read FULLY packed for the requested parent units
+  after the write (`accessoryPackState`; an already-PACKED unit counts as packed, a line with a requested
+  unit still unpacked does not). The gate compares the marked accessories with this set: a short pack
   keeps the gate open, deploys nothing, and "all" is only logged when nothing was left behind.
+- **A custom (free-text) accessory** has no asset or bulk id, so `accessoryAssetIds()` names it by its child
+  LINE id; the gate's `Pack now` narrowing therefore reaches it (test in `customAccessories.test.ts`).
+- **De-prep by asset.** `deprepItems` `op.assetId` is exact: on a prepped line it removes THAT unit and
+  refuses (`ConvexError`) if it is not a prepped unit there; on a RETURNED line it refuses when the asset is
+  not waiting ("already de-prepped") instead of falling back to LIFO (LIFO stays only with no asset); on a
+  line that still has units out it de-preps one returned unit and touches nothing else. No asset on a line
+  that rolls up CHECKED_OUT still refuses.
 - **Deploy gate** (`DeployGateDialog`): every row decided; D9 prefills a DEFAULT's reason from
   `accessoryPlan.excludedReasons`; only operator/prefill reasons are logged (an optional leave with no reason
   logs "No reason recorded").

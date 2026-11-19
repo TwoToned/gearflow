@@ -60,8 +60,10 @@ export async function lookupDeprepScan(projectId: string, tag: string): Promise<
   const candidates = lines.filter((l) => !l.isKitChild && (l.bulkAssetId === bin.id || (!l.bulkAssetId && !l.assetId && l.modelId === bin.modelId)));
   if (candidates.length === 0) return serialize({ kind: "refuse" as const, text: "Asset not assigned to this job" });
   let onJob = false;
-  for (const line of candidates) {
-    const binUnits = (await convex.query(api.projectLineItemUnits.listByLineItem, { lineItemId: line.id })).filter((u) => u.bulkAssetId === bin.id);
+  // One read per candidate, in parallel; the first match is still taken in the lines' own order.
+  const unitsByLine = await Promise.all(candidates.map((line) => convex.query(api.projectLineItemUnits.listByLineItem, { lineItemId: line.id })));
+  for (const [i, line] of candidates.entries()) {
+    const binUnits = unitsByLine[i].filter((u) => u.bulkAssetId === bin.id);
     if (binUnits.length === 0 && line.bulkAssetId !== bin.id) continue;
     onJob = true;
     const remaining = binUnits.filter((u) => u.status === "RETURNED" && u.prepStatus === "PACKED").reduce((n, u) => n + (u.quantity ?? 1), 0);

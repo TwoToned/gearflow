@@ -668,12 +668,13 @@ export function accessoryChildrenForStage(item: LineItem, countStage?: UnitCount
 export function accessoryAssetIds(children: LineItem[]): string[] {
   const ids = new Set<string>();
   for (const c of children) {
-    if (c.assetId) ids.add(c.assetId);
-    if (c.bulkAssetId) ids.add(c.bulkAssetId);
-    for (const u of c.units ?? []) {
-      if (u.assetId) ids.add(u.assetId);
-      if (u.bulkAssetId) ids.add(u.bulkAssetId);
+    let found = false;
+    for (const id of [c.assetId, c.bulkAssetId, ...(c.units ?? []).flatMap((u) => [u.assetId, u.bulkAssetId])]) {
+      if (id) { ids.add(id); found = true; }
     }
+    // A custom (free-text) accessory has no asset or bulk id anywhere: the server identifies it by its child LINE id
+    // (`resolveCustomAccessories`, CLAUDE.md "Custom accessories"), so a narrowed call must name that, or it is dropped.
+    if (!found) ids.add(c.id);
   }
   return [...ids];
 }

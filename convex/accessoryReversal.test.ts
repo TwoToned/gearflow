@@ -335,6 +335,57 @@ describe("a de-prep scan on a multi-serial line de-preps THAT asset's unit", () 
   });
 });
 
+describe("de-prep by asset is exact, never a LIFO guess", () => {
+  const deprep = (t: T, assetId?: string) =>
+    svc(t).mutation(api.checkRecordOps.deprepItems, { organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, ...(assetId ? { assetId } : {}) }] });
+  const unitsLeft = (t: T) =>
+    t.run(async (ctx) => (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => [u.assetId, u.prepStatus, u.status] as const).sort());
+
+  test("a PACKED (never out) two-serial line: de-prep by assetId removes exactly that unit and its accessory", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deprep(t, "a1"); // LIFO would have removed a2
+    expect((await unitsLeft(t)).map((u) => u[0])).toEqual(["a2"]);
+    expect(await accUnit(t, "a1")).toBeNull();
+    expect(await accUnit(t, "a2")).not.toBeNull();
+  });
+
+  test("a named asset that is not a prepped unit on the line is refused, not guessed", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await expect(deprep(t, "a9")).rejects.toThrow(/isn't a prepped unit/);
+    expect((await unitsLeft(t)).length).toBe(2);
+  });
+
+  test("RETURNED line: a named asset that is already de-prepped is refused (no LIFO fallback); no assetId keeps LIFO", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, { organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", returnCondition: "GOOD" }] });
+    await deprep(t, "a1");
+    await expect(deprep(t, "a1")).rejects.toThrow(/already de-prepped/);
+    expect(await unitsLeft(t)).toEqual([["a1", "PENDING", "RETURNED"], ["a2", "PACKED", "RETURNED"]]); // a2 untouched by the refused call
+    await deprep(t); // no asset named: LIFO as before
+    expect((await unitsLeft(t)).every((u) => u[1] === "PENDING")).toBe(true);
+  });
+
+  test("partially returned line: a returned unit de-preps by asset while the sibling is still out; without an asset the guard holds", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, { organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", assetId: "a1", returnCondition: "GOOD" }] });
+    await expect(deprep(t)).rejects.toThrow(/already deployed/);
+    await deprep(t, "a1");
+    expect(await unitsLeft(t)).toEqual([["a1", "PENDING", "RETURNED"], ["a2", "PACKED", "CHECKED_OUT"]]);
+    expect(await asset(t, "a2")).toBe("CHECKED_OUT");
+    await expect(deprep(t, "a2")).rejects.toThrow(/already deployed/); // still out: not de-preppable
+  });
+});
+
 describe("prepItems reports what an accessories-only prep actually packed", () => {
   /** Prep both parents, then put every accessory unit back to "not packed" so an accessories-only call has work. */
   async function prepThenUnpackAccessories(t: T) {
@@ -367,6 +418,29 @@ describe("prepItems reports what an accessories-only prep actually packed", () =
     await accessoriesOnly(t, [{ assetId: "a1" }]); // a1's accessory is now packed (earlier)
     const again = await accessoriesOnly(t, [{ assetId: "a1" }, { assetId: "a2" }]);
     expect(again.packedAccessoryUnits.map((u) => u.parentUnitAssetId)).toEqual(["a2"]); // only a2's is new
+    // ...but the LINES: an already-packed accessory still reads packed for the requested parent units.
+    const l1 = (await accUnit(t, "a1"))!.lineItemId;
+    const l2 = (await accUnit(t, "a2"))!.lineItemId;
+    expect(again.packedAccessoryLineIds).toEqual(expect.arrayContaining([l1, l2]));
+    const justA1 = await accessoriesOnly(t, [{ assetId: "a1" }]); // nothing flipped at all, still packed
+    expect(justA1.packedAccessoryUnits).toEqual([]);
+    expect(justA1.packedAccessoryLineIds).toContain(l1);
+  });
+
+  test("a line with a requested parent unit that is still unpacked is not reported as packed", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    // a2's accessory unit can't be packed any more (already returned), so the line is only partly packed for {a1, a2}.
+    await t.run(async (ctx) => {
+      for (const u of await ctx.db.query("projectLineItemUnits").collect()) if (u.parentUnitAssetId === "a2") await ctx.db.patch(u._id, { status: "RETURNED", prepStatus: undefined });
+    });
+    const l1 = (await accUnit(t, "a1"))!.lineItemId;
+    const l2 = (await accUnit(t, "a2"))!.lineItemId;
+    const res = await accessoriesOnly(t, [{ assetId: "a1" }, { assetId: "a2" }]);
+    expect(res.packedAccessoryUnits.map((u) => u.parentUnitAssetId)).toEqual(["a1"]); // per-unit state is still reported
+    expect(res.packedAccessoryLineIds).not.toContain(l2);
+    // A shared line (both parents' units on one line) is partial; separate lines report a1's as packed.
+    expect(res.packedAccessoryLineIds.includes(l1)).toBe(l1 !== l2);
   });
 
   test("a narrowed includeAccessoryIds reports only those accessories", async () => {

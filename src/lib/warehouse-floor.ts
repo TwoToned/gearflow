@@ -5,7 +5,7 @@
  * — the ONE derivation); nothing here re-derives it.
  */
 import { z } from "zod";
-import { format } from "date-fns";
+import { formatDateDayMonth, formatWeekday, formatWeekdayDayMonth } from "@/lib/formatters";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../convex/_generated/api";
 import { FLOOR_STAGE_KEYS, type FloorStage } from "../../convex/lib/warehouseStage";
@@ -137,9 +137,9 @@ export function dispatchText(j: FloorJob): string | null {
   const o = j.outbound;
   if (!o) {
     const start = windowStart(j);
-    return start == null ? null : `Out ${format(start, "EEE d MMM")}`;
+    return start == null ? null : `Out ${formatWeekdayDayMonth(start)}`;
   }
-  const when = [o.date == null ? null : format(o.date, "EEE"), o.time].filter(Boolean).join(" ");
+  const when = [o.date == null ? null : formatWeekday(o.date), o.time].filter(Boolean).join(" ");
   const head = o.kind === "client" ? "Client collects" : "Truck";
   return [`${head}${when ? ` ${when}` : ""}`, o.vehicle].filter(Boolean).join(" · ");
 }
@@ -153,14 +153,14 @@ export function nextOutText(jobs: readonly FloorJob[], now: number): string | nu
     if (!PRE_OUT.includes(j.stage) || at == null || at < today) continue;
     if (!next || at < (dispatchAt(next) ?? Infinity)) next = j;
   }
-  return next ? `next out #${next.projectNumber} ${format(dispatchAt(next)!, "EEE")}` : null;
+  return next ? `next out #${next.projectNumber} ${formatWeekday(dispatchAt(next))}` : null;
 }
 
 /** `client · 12 – 14 Nov` (the window falls back to rental dates when unset). */
 export function windowText(j: FloorJob): string {
   const s = windowStart(j);
   const e = windowEnd(j);
-  const range = s == null ? "" : e == null || startOfDay(e) === startOfDay(s) ? format(s, "d MMM") : `${format(s, "d")} – ${format(e, "d MMM")}`;
+  const range = s == null ? "" : e == null || startOfDay(e) === startOfDay(s) ? formatDateDayMonth(new Date(s)) : `${new Date(s).getDate()} – ${formatDateDayMonth(new Date(e))}`;
   return [j.client?.name, range].filter(Boolean).join(" · ");
 }
 

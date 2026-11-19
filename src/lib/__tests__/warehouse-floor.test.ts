@@ -71,7 +71,8 @@ describe("card text", () => {
     const tue = new Date(2026, 10, 17).getTime();
     expect(dispatchText(floorJob({ id: "a", outbound: { kind: "truck", date: tue, time: "06:30", vehicle: "Van 2" } }))).toBe("Truck Tue 06:30 · Van 2");
     expect(dispatchText(floorJob({ id: "b", outbound: { kind: "client", date: tue, time: "10:00", vehicle: null } }))).toBe("Client collects Tue 10:00");
-    expect(dispatchText(floorJob({ id: "c", projectStartDate: tue }))).toBe("Out Tue 17 Nov");
+    // The locale role's own shape (en-AU prints a comma after the weekday).
+    expect(dispatchText(floorJob({ id: "c", projectStartDate: tue }))).toBe("Out Tue, 17 Nov");
   });
   it("window text is client · range", () => {
     expect(windowText(floorJob({ id: "a", projectStartDate: new Date(2026, 10, 12).getTime(), projectEndDate: new Date(2026, 10, 14).getTime() }))).toBe("Acme · 12 – 14 Nov");

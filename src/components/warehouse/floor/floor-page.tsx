@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { format } from "date-fns";
+import { formatDateLong } from "@/lib/formatters";
 import { ExternalLink, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ActionMenu } from "@/components/ui/action-menu";
@@ -68,7 +68,7 @@ function FloorHead({ count, overdue, nextOut, now, onScan, menu, isMobile }: {
   count: number; overdue: number; nextOut: string | null; now: number; onScan: () => void; menu: ActionMenuSpec; isMobile: boolean;
 }) {
   const late = overdue ? `${overdue} overdue` : null;
-  const sub = isMobile ? [`${count} jobs`, late] : [format(now, "EEEE d MMMM"), nextOut, late];
+  const sub = isMobile ? [`${count} jobs`, late] : [formatDateLong(new Date(now)), nextOut, late];
   return (
     <header className="flex items-start gap-3">
       <div className="min-w-0 flex-1">

@@ -144,6 +144,22 @@ export function formatDateDayMonth(
   return formatDateWithOptions(date, config, { day: "numeric", month: "short" });
 }
 
+/** Short weekday only \u2014 a near-term time label (e.g. "Tue" in `Truck Tue 06:30`). */
+export function formatWeekday(
+  date: string | Date | number | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date == null ? date : new Date(date), config, { weekday: "short" });
+}
+
+/** Short weekday + day + short month, no year (e.g. AU "Tue 17 Nov"). */
+export function formatWeekdayDayMonth(
+  date: string | Date | number | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date == null ? date : new Date(date), config, { weekday: "short", day: "numeric", month: "short" });
+}
+
 /** Weekday + full month + year \u2014 a page-header-style date (e.g. US "Monday,
  *  July 15, 2024"), always with the year (some pre-#1082 call sites dropped
  *  it inconsistently; the role always includes it). */

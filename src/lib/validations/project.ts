@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_TAG_LEN, MAX_TAGS } from "../../../convex/lib/tagLimits";
 
 export const projectSchema = z.object({
   projectNumber: z.string().max(50).optional().default(""),
@@ -79,7 +80,7 @@ export const projectSchema = z.object({
   // (src/lib/validations/client.ts); depositPaid/invoicedTotal are now
   // recalc-derived from the project's invoices, never hand-typed. All three
   // removed from this form schema — see FEATUREDOCS/66-finance-quotes-invoices.md.
-  tags: z.array(z.string()).default([]),
+  tags: z.array(z.string().trim().min(1).max(MAX_TAG_LEN)).max(MAX_TAGS).default([]),
 });
 
 export type ProjectFormValues = z.input<typeof projectSchema>;

@@ -117,6 +117,14 @@ Every job sits at one status. Statuses are ordered and mostly move forward.
 | `INVOICED` | Closed out financially. | Released |
 | `CANCELLED` | Dead. Releases stock. | Released |
 
+**What the Jobs list calls them.** The Jobs page groups statuses into segments, and
+operators use these words: **Quoting** (`ENQUIRY`, `QUOTING`, `QUOTED`), **Booked**
+(`AWAITING_PAYMENT`, `CONFIRMED`, `PREPPING`), **Out** (`CHECKED_OUT`, `ON_SITE`),
+**Done** (`RETURNED`, `COMPLETED`, `INVOICED`), and **Needs you**, a derived set (an
+unresolved blocking discussion, an Out job past its end date, a quote untouched for 12
+days, or a hard-overbooked job). **All** is every job except `CANCELLED`. Saved views
+`My jobs`, `Out this week` and `Unquoted enquiries` are built in.
+
 **Pencilled vs hard is the single most important distinction in availability.**
 A pencilled job's gear is a soft hold — it shows in conflict views but does not
 stop anyone booking the same stock. A hard job's gear is genuinely committed.

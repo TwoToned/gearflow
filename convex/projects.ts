@@ -1,11 +1,32 @@
 import { v, ConvexError } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, type QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { createLiveVersionForProject } from "./lib/projectVersionState";
+import {
+  JOB_SEGMENT_KEYS,
+  inStatusSegment,
+  matchesJobFilter,
+  needsYouProjectIds,
+  type JobListFilter,
+  type JobSegmentKey,
+} from "./lib/projectSegments";
+
+/** The org's project rows, shared by listPage / segmentCounts / needsYouIds (one org-wide read, one place to bound later). */
+async function loadOrgProjects(ctx: QueryCtx, orgId: string) {
+  return await ctx.db
+    .query("projects")
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: T3-style pagination rework approved but unshipped (no search index on projects yet) — see docs/exceptions.md R-8.3.3
+    .collect();
+}
+
+/** An unknown segment key reads as "no segment" (a stale bookmark must still list). */
+function parseSegment(raw: string | undefined): JobSegmentKey | undefined {
+  return JOB_SEGMENT_KEYS.find((k) => k === raw);
+}
 
 /**
  * Thin CRUD for Project (Convex table "projects"). GENERATED — Phase 2/5.
@@ -57,6 +78,15 @@ export const listPage = query({
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+    // List-page filters (UX unification §9b.3): all optional; absent = old behaviour.
+    segment: v.optional(v.string()),
+    includeCancelled: v.optional(v.boolean()),
+    clientIn: v.optional(v.array(v.string())),
+    pmIn: v.optional(v.array(v.string())),
+    dateFrom: v.optional(v.number()),
+    dateTo: v.optional(v.number()),
+    /** Stable clock for the derived `needs` segment (a caller snapshot, never a fresh Date.now()). */
+    now: v.optional(v.number()),
   },
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "project"); // Phase 2 read bootstrap (#998)
@@ -64,13 +94,14 @@ export const listPage = query({
     const pageSize = a.pageSize ?? 25;
     const sortBy = a.sortBy ?? "rentalStartDate";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+    const segment = parseSegment(a.segment);
 
     // locationNameFor is only consulted inside the `a.search` branch below (location
     // isn't a column on this table, only a search-widening field) — skip the read
     // entirely on every unfiltered/non-search page load instead of always collecting
     // the whole locations table.
     const [rows, clients, locations] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: T3-style pagination rework approved but unshipped (no search index on projects yet) — see docs/exceptions.md R-8.3.3
+      loadOrgProjects(ctx, a.orgId),
       ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
       a.search
         ? ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
@@ -81,11 +112,11 @@ export const listPage = query({
     const clientNameFor = (id: string | null | undefined) => (id ? clientMap.get(id)?.name : undefined);
     const locationNameFor = (id: string | null | undefined) => (id ? locationMap.get(id)?.name : undefined);
 
+    const needsYou = segment === "needs" ? await needsYouProjectIds(ctx, a.orgId, rows, a.now) : new Set<string>();
+    const filter: JobListFilter = { ...a, segment };
     const filtered = rows.filter((p) => {
-      if (p.isTemplate) return false;
-      if (a.statusIn && a.statusIn.length > 0 && !(p.status && a.statusIn.includes(p.status))) return false;
-      if (a.typeIn && a.typeIn.length > 0 && !(p.type && a.typeIn.includes(p.type))) return false;
-      if (a.search && !matchesSearch([p.name, p.projectNumber, locationNameFor(p.locationId)], a.search)) return false;
+      if (!matchesJobFilter(p, filter, needsYou)) return false;
+      if (a.search && !matchesSearch([p.name, p.projectNumber, clientNameFor(p.clientId), locationNameFor(p.locationId)], a.search)) return false;
       return true;
     });
 
@@ -102,6 +133,42 @@ export const listPage = query({
     }));
 
     return { items, total, page, pageSize, totalPages };
+  },
+});
+
+/**
+ * Counts for the Jobs list's quick strip (§9b.3), one number per segment key,
+ * derived on read. `all` excludes CANCELLED; `needs` is the derived "needs you"
+ * set (`convex/lib/projectSegments.ts`). Read-only; org-scoped by the guard and
+ * by the `by_organizationId` read.
+ */
+export const segmentCounts = query({
+  args: { orgId: v.string(), now: v.optional(v.number()) },
+  handler: async (ctx, { orgId, now }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+    const rows = (await loadOrgProjects(ctx, orgId)).filter((p) => !p.isTemplate);
+    const needsYou = await needsYouProjectIds(ctx, orgId, rows, now);
+    const counts: Record<JobSegmentKey, number> = { all: 0, quoting: 0, booked: 0, out: 0, done: 0, needs: needsYou.size };
+    for (const key of JOB_SEGMENT_KEYS) {
+      if (key === "needs") continue;
+      counts[key] = rows.filter((p) => inStatusSegment(p, key)).length;
+    }
+    return counts;
+  },
+});
+
+/**
+ * Ids of the jobs in the derived "needs you" set (blocking discussion, out past
+ * end date, quote untouched 12+ days), so a surface can highlight or open them.
+ * Overbooked jobs are not part of it (that math lives in `src/lib`).
+ */
+export const needsYouIds = query({
+  args: { orgId: v.string(), now: v.optional(v.number()) },
+  handler: async (ctx, { orgId, now }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+    const rows = (await loadOrgProjects(ctx, orgId)).filter((p) => !p.isTemplate);
+    const ids = await needsYouProjectIds(ctx, orgId, rows, now);
+    return [...ids].sort();
   },
 });
 
@@ -521,6 +588,8 @@ export const agentOps: AgentOpsAnnotations = {
   list: { summary: "List all projects for an org.", danger: "low", mcpTier: 2 },
   getById: { summary: "Get one project by id.", danger: "low", mcpTier: 1 },
   listPage: { summary: "Filtered, sorted, paginated project list with client join.", danger: "low", mcpTier: 1 },
+  segmentCounts: { summary: "Counts for the Jobs list strip: all, quoting, booked, out, done and needs-you.", danger: "low", mcpTier: 3 },
+  needsYouIds: { summary: "Ids of jobs that need attention: open blocking comment, out past end date, or a stale quote.", danger: "low", mcpTier: 3 },
   listBoard: { summary: "Browse an org's non-template, non-cancelled projects grouped for the kanban board.", danger: "low", mcpTier: 2 },
   listByIds: { summary: "Batch point-read projects by id, scoped to one org.", danger: "low", mcpTier: 2 },
   getByOrgAndNumber: { summary: "Look up a project by its human-facing project number.", danger: "low", mcpTier: 1 },

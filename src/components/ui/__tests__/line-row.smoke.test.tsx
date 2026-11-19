@@ -367,6 +367,52 @@ describe("LineRowList sections", () => {
   });
 });
 
+describe("LineRowList header, sort and leading props", () => {
+  beforeEach(() => {
+    mobile.value = false;
+  });
+  const sortable: FactColumn[] = [
+    { id: "qty", header: "Qty", align: "end", sortKey: "qty" },
+    { id: "price", header: "Price", align: "end" },
+  ];
+
+  it("defaults the first header to Item and renders a custom one", () => {
+    const { rerender } = render(<LineRowList rows={rows} columns={columns} />);
+    expect(screen.getByRole("columnheader", { name: "Item" })).toBeTruthy();
+    rerender(<LineRowList rows={rows} columns={columns} itemHeader="Job" />);
+    expect(screen.getByRole("columnheader", { name: "Job" })).toBeTruthy();
+  });
+
+  it("without onSort the headers are plain text with no aria-sort", () => {
+    render(<LineRowList rows={rows} columns={sortable} itemSortKey="title" />);
+    expect(screen.queryByRole("button", { name: /Qty/ })).toBeNull();
+    expect(screen.getByRole("columnheader", { name: "Qty" }).getAttribute("aria-sort")).toBeNull();
+  });
+
+  it("sortable headers call onSort and expose aria-sort", async () => {
+    const user = userEvent.setup();
+    const onSort = vi.fn();
+    render(<LineRowList rows={rows} columns={sortable} itemHeader="Job" itemSortKey="title" sort={{ key: "qty", dir: "desc" }} onSort={onSort} />);
+    expect(screen.getByRole("columnheader", { name: /Qty/ }).getAttribute("aria-sort")).toBe("descending");
+    expect(screen.getByRole("columnheader", { name: /Job/ }).getAttribute("aria-sort")).toBe("none");
+    expect(screen.getByRole("columnheader", { name: "Price" }).getAttribute("aria-sort")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /Job/ }));
+    expect(onSort).toHaveBeenCalledWith("title");
+    await user.click(screen.getByRole("button", { name: /Qty/ }));
+    expect(onSort).toHaveBeenLastCalledWith("qty");
+  });
+
+  it("renders the leading slot on desktop and phone", () => {
+    const leading = (r: LineRowData) => <i data-testid={`lead-${r.id}`} />;
+    const { unmount } = render(<LineRowList rows={rows} columns={columns} leading={leading} />);
+    expect(screen.getByTestId("lead-a")).toBeTruthy();
+    unmount();
+    mobile.value = true;
+    render(<LineRowList rows={rows} columns={columns} leading={leading} />);
+    expect(screen.getByTestId("lead-b")).toBeTruthy();
+  });
+});
+
 describe("selectable accessory children", () => {
   const withKids: LineRowListSection[] = [{
     section: { id: "s", title: "Case", count: 2 },

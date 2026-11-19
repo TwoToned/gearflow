@@ -147,10 +147,17 @@ export const STABLE_CONTRACT: Record<string, { reachable: boolean; fields: reado
   "projects.listPage": {
     "reachable": true,
     "fields": [
+      "clientIn",
+      "dateFrom",
+      "dateTo",
+      "includeCancelled",
+      "now",
       "orgId",
       "page",
       "pageSize",
+      "pmIn",
       "search",
+      "segment",
       "sortBy",
       "sortOrder",
       "statusIn",

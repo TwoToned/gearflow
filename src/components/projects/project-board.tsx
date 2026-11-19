@@ -133,8 +133,15 @@ export function resolveBoardDrop(e: DragEndEvent, projectById: Map<string, AnyPr
   return { projectId, currentStatus: project.status as string, nextStatus: targetStage.statuses[0] };
 }
 
-export function ProjectBoard() {
-  const [search, setSearch] = useState("");
+/**
+ * `search` (optional, additive): when a host page owns the search box (the Jobs ListPage's
+ * `q`), pass its value and the board hides its own toolbar and filters by it; omitted, the
+ * board keeps its own search box exactly as before.
+ */
+export function ProjectBoard({ search: hostSearch }: { search?: string } = {}) {
+  const [ownSearch, setSearch] = useState("");
+  const hosted = hostSearch !== undefined;
+  const search = hosted ? hostSearch : ownSearch;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const [now] = useState(() => Date.now());
@@ -222,7 +229,7 @@ export function ProjectBoard() {
 
   return (
     <div className="space-y-4">
-      <BoardToolbar search={search} onSearchChange={setSearch} />
+      {!hosted && <BoardToolbar search={search} onSearchChange={setSearch} />}
       <BoardBody
         isLoading={isLoading}
         search={search}

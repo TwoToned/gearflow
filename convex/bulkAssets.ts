@@ -47,6 +47,31 @@ const BULK_STATUS_RANK: Record<string, number> = { ACTIVE: 0, LOW_STOCK: 1, OUT_
  * T&T-new picker (one-shot, non-reactive) and AssetTable's bulk view (live, via
  * useAuthedQuery — see docs/designs/perf-convex-efficiency-2026-06.md Finding #1).
  */
+interface BulkMultiFilter {
+  statusIn?: string[];
+  locationIdIn?: string[];
+  categoryIdIn?: string[];
+  modelIdIn?: string[];
+  tagsHasSome?: string[];
+}
+
+const anyOf = (list: string[] | undefined, value: string | null | undefined) =>
+  !list || list.length === 0 || (value != null && list.includes(value));
+
+/** The multi-value filter words (an empty or absent list = no filter). */
+function matchesBulkMultiFilters(
+  b: { status?: string | null; locationId?: string | null; modelId: string; tags?: string[] | null },
+  f: BulkMultiFilter,
+  categoryId: string | null | undefined,
+): boolean {
+  if (!anyOf(f.statusIn, b.status ?? "ACTIVE")) return false;
+  if (!anyOf(f.locationIdIn, b.locationId)) return false;
+  if (!anyOf(f.categoryIdIn, categoryId)) return false;
+  if (!anyOf(f.modelIdIn, b.modelId)) return false;
+  const tags = f.tagsHasSome;
+  return !tags || tags.length === 0 || (b.tags ?? []).some((t) => tags.includes(t));
+}
+
 export const listPage = query({
   args: {
     orgId: v.string(),
@@ -56,6 +81,11 @@ export const listPage = query({
     locationId: v.optional(v.string()),
     modelId: v.optional(v.string()),
     isActive: v.optional(v.boolean()),
+    statusIn: v.optional(v.array(v.string())),
+    locationIdIn: v.optional(v.array(v.string())),
+    categoryIdIn: v.optional(v.array(v.string())),
+    modelIdIn: v.optional(v.array(v.string())),
+    tagsHasSome: v.optional(v.array(v.string())),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
@@ -88,6 +118,7 @@ export const listPage = query({
       if (a.locationId && (b.locationId ?? null) !== a.locationId) return false;
       if (a.modelId && b.modelId !== a.modelId) return false;
       if (a.categoryId && categoryFor(b.modelId) !== a.categoryId) return false;
+      if (!matchesBulkMultiFilters(b, a, categoryFor(b.modelId))) return false;
       if (a.search && !matchesSearch([b.assetTag, modelNameFor(b.modelId)], a.search)) return false;
       return true;
     });

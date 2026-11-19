@@ -13,6 +13,7 @@ import { getCategoryMap, getCategoriesByOrg } from "@/lib/categories-read";
 import { getLocationMap, getLocationsByOrg } from "@/lib/locations-read";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
+import { toCsv } from "@/lib/csv";
 import { logActivity } from "@/lib/activity-log";
 
 // Model writes in CSV import are dual-written to Convex (the reactive read
@@ -648,33 +649,9 @@ export async function importModelRatesCSV(csvContent: string): Promise<ImportRes
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
-/** Characters that trigger formula execution in spreadsheet applications */
-function hasFormulaPrefix(s: string): boolean {
-  if (!s) return false;
-  const first = s.charCodeAt(0);
-  // ASCII: = + - @ \t \r
-  if (first === 0x3D || first === 0x2B || first === 0x2D || first === 0x40 || first === 0x09 || first === 0x0D) return true;
-  // Full-width Unicode variants: ＝ ＋ － ＠
-  if (first === 0xFF1D || first === 0xFF0B || first === 0xFF0D || first === 0xFF20) return true;
-  return false;
-}
-
+/** Formula-safe cell escaping lives in one place: `@/lib/csv` (R-3.1). */
 function escapeCSV(headers: string[], rows: string[][]): string {
-  const escapeLine = (fields: string[]) =>
-    fields
-      .map((f) => {
-        // Sanitize formula injection: prefix dangerous characters with tab inside quotes
-        const needsFormulaGuard = hasFormulaPrefix(f);
-        const safeValue = needsFormulaGuard ? `\t${f}` : f;
-
-        if (safeValue.includes(",") || safeValue.includes('"') || safeValue.includes("\n") || needsFormulaGuard) {
-          return `"${safeValue.replace(/"/g, '""')}"`;
-        }
-        return safeValue;
-      })
-      .join(",");
-
-  return [escapeLine(headers), ...rows.map(escapeLine)].join("\n");
+  return toCsv(headers, rows);
 }
 
 function parseCSV(csv: string): string[][] {

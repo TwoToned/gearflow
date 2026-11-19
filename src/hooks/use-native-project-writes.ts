@@ -219,6 +219,8 @@ export function useProjectWrites(orgId: string | undefined) {
   const deleteTemplateM = useMutation(api.projectWrites.deleteTemplateNative);
   const createM = useMutation(api.projectWrites.createNative);
   const updateM = useMutation(api.projectWrites.updateNative);
+  const addTagM = useMutation(api.projectWrites.addTagNative);
+  const removeTagM = useMutation(api.projectWrites.removeTagNative);
   const duplicateM = useMutation(api.projectWrites.duplicateNative);
   const saveAsTemplateM = useMutation(api.projectWrites.saveAsTemplateNative);
   const deleteM = useMutation(api.projectWrites.deleteNative);
@@ -585,5 +587,28 @@ export function useProjectWrites(orgId: string | undefined) {
     }
   };
 
-  return { enabled, archive, deleteTemplate, create, update, updateSchedule, duplicate, saveAsTemplate, remove };
+  /**
+   * Add (or remove) one tag on many jobs. The server reads each job's CURRENT tags, so
+   * another edit's tags are never overwritten. Resolves to the ids that actually changed
+   * (Undo of an add is `removeTag` over exactly those) and the ids skipped because their
+   * tag list was already full.
+   */
+  const tagBatch = (m: typeof addTagM) => async (ids: string[], tag: string): Promise<{ changed: string[]; full: string[] }> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      const r = await m({
+        orgId, ids, tag,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        auditId: createId(),
+        now: Date.now(),
+      });
+      return { changed: r.changed, full: r.full };
+    } catch (e) {
+      throw mapProjectWriteError(e, false);
+    }
+  };
+  const addTag = tagBatch(addTagM);
+  const removeTag = tagBatch(removeTagM);
+
+  return { enabled, archive, deleteTemplate, create, update, updateSchedule, addTag, removeTag, duplicate, saveAsTemplate, remove };
 }

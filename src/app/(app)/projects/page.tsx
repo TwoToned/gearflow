@@ -1,10 +1,9 @@
 "use client";
-// use-client: client navigation hooks (useRouter/useSearchParams) (R-8.1.1)
+// use-client: client navigation hooks (useRouter) (R-8.1.1)
 
 import { useRouter } from "next/navigation";
-import { ProjectsView } from "@/components/projects/projects-view";
+import { JobsList } from "@/components/projects/jobs-list";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { ListPageLayout } from "@/components/layout/page-layouts";
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
 import { FadeIn } from "@/components/ui/motion";
 
@@ -15,12 +14,7 @@ export default function ProjectsPage() {
   return (
     <FadeIn>
       <RequirePermission resource="project" action="read">
-        <ListPageLayout
-          title="Jobs"
-          description="Gigs, shows, and events — from enquiry to invoice."
-        >
-          <ProjectsView />
-        </ListPageLayout>
+        <JobsList />
       </RequirePermission>
     </FadeIn>
   );

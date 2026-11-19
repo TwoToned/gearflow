@@ -40,8 +40,11 @@ type AnyAsset = Record<string, any>;
  * The toolbar slot (`toolbar`) is injected by AssetsView so the Grid⇄Table toggle
  * sits inline with the search box.
  */
-export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
-  const [search, setSearch] = useState("");
+export function AssetGallery({ toolbar, hostSearch }: { toolbar?: React.ReactNode; hostSearch?: string }) {
+  const [ownSearch, setSearch] = useState("");
+  // Hosted by ListPage (which owns the search box and the New-asset primary): no toolbar of our own.
+  const hosted = hostSearch !== undefined;
+  const search = hosted ? hostSearch : ownSearch;
 
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -106,7 +109,7 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
   return (
     <div className="space-y-4">
       {/* toolbar: search + view toggle + new-asset */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!hosted && <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="max-w-xs flex-1">
           <SearchInput
             value={search}
@@ -124,7 +127,7 @@ export function AssetGallery({ toolbar }: { toolbar?: React.ReactNode }) {
             </Button>
           </CanDo>
         </div>
-      </div>
+      </div>}
 
       {/* grid */}
       {isLoading ? (

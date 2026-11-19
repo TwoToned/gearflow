@@ -278,42 +278,106 @@ describe("returnBulkNative allocations + Undo", () => {
       orgId: ORG, bulkAssetId: "ba1", projectId: "p1", quantity, returnCondition: "GOOD", auditId: "log1", now: NOW, actor: SPOOF,
     });
 
-  test("returns the per-line allocations and the auto-advance audit id", async () => {
+  const undo = (t: T, res: { returnedUnitIds: string[]; autoStatusAuditId: string | null }) =>
+    t.withIdentity(asUser(ORG)).mutation(api.returnsWrites.unreturnBulkNative, {
+      orgId: ORG, projectId: "p1", unitIds: res.returnedUnitIds, auditId: "undo1",
+      revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined, now: NOW + 1, actor: SPOOF,
+    });
+
+  /** An ACCESSORY child line on `bl` with the given units. */
+  async function seedAccessory(t: T, units: Array<{ id: string; status: string; containerId?: string }>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("acc", "p1", {
+        modelId: "m1", quantity: units.length, checkedOutQuantity: units.length, isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "bl",
+      }));
+      for (const [i, u] of units.entries()) {
+        await ctx.db.insert("projectLineItemUnits", {
+          id: u.id, organizationId: ORG, lineItemId: "acc", ordinal: i, quantity: 1, status: u.status as never,
+          ...(u.containerId ? { containerId: u.containerId } : {}), createdAt: NOW, updatedAt: NOW,
+        });
+      }
+    });
+  }
+
+  test("returns the allocations, the exact units it flipped and the auto-advance audit id", async () => {
     const t = makeT();
     await seedBulk(t, { qty: 10 });
     const res = await returnBulk(t, 10);
     expect(res.allocations).toEqual([{ lineItemId: "bl", quantity: 10 }]);
+    expect(res.returnedUnitIds).toEqual(["bu1"]);
     expect(res.distributed).toBe(10);
     expect(res.autoStatus).toBe("RETURNED");
     expect(res.autoStatusAuditId).toEqual(expect.any(String));
     expect(res.exactUndo).toBe(true);
   });
 
-  test("Undo through unreturnItems with exactly those allocations puts the line and the job back out", async () => {
+  test("Undo moves exactly those units back out and reverts the job's auto-advance", async () => {
     const t = makeT();
     await seedBulk(t, { qty: 10 });
     const res = await returnBulk(t, 10);
     expect((await projectById(t, "p1"))?.status).toBe("RETURNED");
-    await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.unreturnItems, {
-      orgId: ORG, projectId: "p1", items: res.allocations, auditIds: ["undo1"],
-      revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined, now: NOW + 1, actor: SPOOF,
-    });
+    await undo(t, res);
     const unit = await unitById(t, "bu1");
     expect(unit?.status).toBe("CHECKED_OUT");
     expect(unit?.returnedQuantity ?? 0).toBe(0);
     expect((await projectById(t, "p1"))?.status).toBe("CHECKED_OUT");
   });
 
-  test("a partial return, or one onto a line with an earlier return, is NOT exactly reversible", async () => {
+  test("an accessory returned separately AFTER the bulk return stays RETURNED through its Undo", async () => {
     const t = makeT();
     await seedBulk(t, { qty: 10 });
-    expect((await returnBulk(t, 4)).exactUndo).toBe(false);
+    // ac2 is packed in another container, so the parent's cascade leaves it out.
+    await seedAccessory(t, [{ id: "ac1", status: "CHECKED_OUT" }, { id: "ac2", status: "CHECKED_OUT", containerId: "case-9" }]);
+    const res = await returnBulk(t, 10);
+    expect(res.returnedUnitIds.sort()).toEqual(["ac1", "bu1"]);
+    await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.stageAccessoryUnits, {
+      orgId: ORG, projectId: "p1", unitIds: ["ac2"], to: "RETURN", auditId: "log2", now: NOW, actor: SPOOF,
+    });
+    expect((await unitById(t, "ac2"))?.status).toBe("RETURNED");
 
-    const t2 = makeT();
-    await seedBulk(t2, { qty: 10, returned: 4 });
-    const res = await returnBulk(t2, 6);
-    expect(res.allocations).toEqual([{ lineItemId: "bl", quantity: 6 }]);
+    await undo(t, res);
+    expect((await unitById(t, "bu1"))?.status).toBe("CHECKED_OUT");
+    expect((await unitById(t, "ac1"))?.status).toBe("CHECKED_OUT");
+    expect((await unitById(t, "ac2"))?.status).toBe("RETURNED");
+  });
+
+  test("an accessory returned BEFORE the bulk return is not in its Undo", async () => {
+    const t = makeT();
+    await seedBulk(t, { qty: 10 });
+    await seedAccessory(t, [{ id: "ac1", status: "RETURNED" }, { id: "ac2", status: "CHECKED_OUT" }]);
+    const res = await returnBulk(t, 10);
+    expect(res.returnedUnitIds.sort()).toEqual(["ac2", "bu1"]);
+    await undo(t, res);
+    expect((await unitById(t, "ac1"))?.status).toBe("RETURNED");
+    expect((await unitById(t, "ac2"))?.status).toBe("CHECKED_OUT");
+  });
+
+  test("Undo refuses when one of its units has changed since", async () => {
+    const t = makeT();
+    await seedBulk(t, { qty: 10 });
+    const res = await returnBulk(t, 10);
+    await t.run(async (ctx) => {
+      const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", "bu1")).unique();
+      await ctx.db.patch(u!._id, { status: "CHECKED_OUT" as never });
+    });
+    await expect(undo(t, res)).rejects.toThrow(/changed since/i);
+  });
+
+  test("Undo rejects a unit from another org", async () => {
+    const t = makeT();
+    await seedBulk(t, { qty: 10 });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItemUnits", { id: "foreign", organizationId: OTHER, lineItemId: "bl", ordinal: 9, quantity: 1, status: "RETURNED" as never, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(undo(t, { returnedUnitIds: ["foreign"], autoStatusAuditId: null })).rejects.toThrow(/not on this job/i);
+  });
+
+  test("a partial bulk return has no exact Undo", async () => {
+    const t = makeT();
+    await seedBulk(t, { qty: 10 });
+    const res = await returnBulk(t, 4);
     expect(res.exactUndo).toBe(false);
+    expect(res.returnedUnitIds).toEqual([]);
   });
 
   test("a foreign org's bulk asset is rejected", async () => {

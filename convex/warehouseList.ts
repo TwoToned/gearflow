@@ -169,13 +169,17 @@ function projectRow(p: ProjectDoc, clientMap: Map<string, { name: string }>, fac
   return { ...identityFields(p, clientMap), ...floorFields(p, facts) };
 }
 
+/** Who the floor's `Mine` and packer line are about (Phase 4, additive). */
+function peopleFields(p: ProjectDoc) {
+  return { projectManagerId: p.projectManagerId ?? null, packerUserId: p.packerUserId ?? null };
+}
+
 /** Phase 4 floor (additive). DERIVED on read, never stored (D27). */
 function floorFields(p: ProjectDoc, facts: FloorFacts | undefined) {
   const counts = facts?.counts ?? floorCounts([]);
   return {
     lineItems: facts?.lineItems ?? [],
-    projectManagerId: p.projectManagerId ?? null,
-    packerUserId: p.packerUserId ?? null,
+    ...peopleFields(p),
     counts,
     stage: warehouseStage(counts),
     outbound: facts?.outbound.outbound ?? null,
@@ -199,5 +203,8 @@ function identityFields(p: ProjectDoc, clientMap: Map<string, { name: string }>)
     projectStartDate: p.projectStartDate ?? null,
     projectEndDate: p.projectEndDate ?? null,
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+    // Phase 4 (additive): the floor's `Client ▾` filters on it. Only an
+    // org-checked client (one in clientMap) is reported.
+    clientId: p.clientId && clientMap.has(p.clientId) ? p.clientId : null,
   };
 }

@@ -44742,6 +44742,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectWrites.setPackerNative",
+    "module": "projectWrites",
+    "fn": "setPackerNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "assignments",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0a5633d56899c7f1",
+    "returnsSha": "156059a7523d837d",
+    "stability": "tracks-app",
+    "summary": "Set the packer (an org member, or null) on several jobs; returns each job's previous packer in the same shape, for Undo.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectWrites.updateNative",
     "module": "projectWrites",
     "fn": "updateNative",
@@ -64256,10 +64308,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1244,
-  agentReachable: 616,
+  total: 1245,
+  agentReachable: 617,
   queries: 446,
-  mutations: 798,
+  mutations: 799,
   agentReachableQueries: 311,
-  agentReachableMutations: 305,
+  agentReachableMutations: 306,
 } as const;

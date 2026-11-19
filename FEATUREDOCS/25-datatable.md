@@ -2,6 +2,21 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
 
+## ListPage — the new list pattern (Jobs and Assets, #1393; Wave D migrates the rest)
+`ListPage` (`src/components/ui/list-page.tsx`, parts in `list-page-parts.tsx`) owns the page
+chrome (head, segment strip, search, filter words, views, bulk bar, footer, empty states) and
+renders rows through `LineRowList` — **not** `DataTable`. It is config-driven
+(`{ segments, filters, sorts, columns, rowOf, rowMenu, bulk, primary, pageMenu, empty }`);
+per-list configs live in `src/lib/list-views/{jobs,assets}.ts` and row menus in
+`src/lib/row-actions/`. **The URL is the state** (D11): `src/lib/list-url-state.ts` is the pure
+codec (defaults omitted, unknown/invalid params dropped), `useListUrlState` reads/writes it
+(`replace` while typing, `push` for segment/filter/sort/page so Back works). `FilterWord` is a
+Radix multi-select (`Status: 2 chosen ✕`); `ListEmpty` separates "none yet" from "nothing
+matches" (`Clear filters`); phone shows cards, a sticky primary that `BulkBar` replaces, and
+`Show 25 more`. `LineRowList` gained three additive props for this: `itemHeader`, sortable
+headers (`sort`/`onSort`, `aria-sort`) and a `leading` slot. `useTablePreferences` and
+`DataTable` remain for every list not yet migrated.
+
 ## Core Component: `DataTable<TData>` (`src/components/ui/data-table.tsx`)
 - **Props**: `data`, `columns`, `totalRows`, `page`, `pageSize`, `sortField`, `sortDirection`, `filters`, `searchValue`, `columnVisibility`, plus callbacks
 - **Features**: Server-side pagination/sorting, column visibility toggles (localStorage), enum filter dropdowns as checkbox popovers, text search, row selection, active filter chips
@@ -23,9 +38,9 @@
 ## Tables Using DataTable
 | Table | Location | Key Filters |
 |-------|----------|-------------|
-| Assets Registry | `src/components/assets/asset-table.tsx` | Status, Condition, Location, Category |
+| Assets Registry | (ListPage, see above: `src/components/assets/assets-list.tsx`) | Status, Condition, Location, Category, Tags, Model |
 | Equipment Models | `src/components/assets/model-table.tsx` | Category, Asset Type |
-| Projects | `src/components/projects/project-table.tsx` | Status, Type |
+| Projects | (ListPage, see above: `src/components/projects/jobs-list.tsx`) | Status, Type, Client, PM, Dates |
 | Kits | `src/app/(app)/kits/page.tsx` | Status, Condition, Location, Category |
 | Clients | `src/components/clients/client-table.tsx` | Type |
 | Locations | `src/components/locations/location-table.tsx` | Type |
@@ -70,9 +85,19 @@ single live localStorage state per table.
   "Save current view…" (with a "make default" checkbox), per-view star (default toggle) and
   delete, and "Clear view". The **default view auto-applies on first mount** only when the
   table has no active filters, so it never clobbers a deep-linked or in-progress filter set.
+- **URL mode (Jobs, Assets — `UrlSavedViewsMenu`, `src/components/ui/url-saved-views.tsx`):**
+  a view's `config` is `{ query }`, the list's query string (`src/lib/list-views/saved-view-url.ts`;
+  bounded by `MAX_VIEW_QUERY` in `convex/lib/viewLimits.ts`, enforced in `createNative`/
+  `updateNative`). Applying a view is `router.push`; a saved view, a bookmark and a link are the
+  same thing. Search text and the page are never captured. **Legacy rows** (`{ filters, sortBy,
+  sortOrder }`) are converted ON READ by `viewQuery` (renamed keys via an alias map, anything the
+  list no longer knows dropped) with no backfill. The active view is derived by matching the
+  current query, so it survives a reload. A default applies only when the URL carries no list
+  params. Built-ins (Jobs: My jobs, Out this week, Unquoted enquiries) are not stored and have no
+  star or delete.
 - **Wired on:** the 12 list pages that use `useTablePreferences` (assets, models, clients,
   crew, locations, projects, suppliers, kits, maintenance, T&T registry, activity log,
-  timesheets). Damage and Stocktakes were both removed as features (`chore: remove
+  timesheets); assets and projects now use URL mode. Damage and Stocktakes were both removed as features (`chore: remove
   Damage Capture feature`, `chore: remove Stocktake feature`) and no longer appear.
 
 ## Mobile data-table primitives (mobile-first redesign, Phase 1)

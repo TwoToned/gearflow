@@ -16,8 +16,11 @@ import {
   ArrowUpFromLine,
   HardHat,
   Wrench,
+  Store,
   Loader2,
 } from "lucide-react";
+import { SERVICE_TYPE_LABELS } from "@/lib/constants/services";
+import type { ServiceTypeValue } from "../../../../../convex/lib/serviceTypes";
 import { toast } from "sonner";
 
 import { useServiceTemplateWrites } from "@/hooks/use-service-template-writes";
@@ -61,24 +64,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type ServiceType = "DELIVERY" | "PICKUP" | "BUMP_IN" | "BUMP_OUT" | "LABOUR" | "MISC";
+type ServiceType = ServiceTypeValue;
 
 const SERVICE_TYPE_ICONS: Record<ServiceType, typeof Truck> = {
   DELIVERY: Truck,
   PICKUP: PackageCheck,
+  CLIENT_PICKUP: Store,
+  CLIENT_DROPOFF: Store,
   BUMP_IN: ArrowDownToLine,
   BUMP_OUT: ArrowUpFromLine,
   LABOUR: HardHat,
   MISC: Wrench,
-};
-
-const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
-  DELIVERY: "Delivery",
-  PICKUP: "Pickup",
-  BUMP_IN: "Bump In",
-  BUMP_OUT: "Bump Out",
-  LABOUR: "Labour",
-  MISC: "Misc",
 };
 
 const PRICING_TYPE_LABELS: Record<string, string> = {
@@ -234,7 +230,7 @@ export default function ServiceTemplatesPage() {
         <div>
           <h2 className="t-heading text-fg">Service Templates</h2>
           <p className="text-[12px] text-fg-3">
-            Define default services that can be quickly added to projects.
+            Define default services that can be quickly added to jobs.
           </p>
         </div>
         {canEdit && (
@@ -381,7 +377,7 @@ export default function ServiceTemplatesPage() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title={`Delete template "${deleteTarget?.title ?? ""}"?`}
-        description="This removes the service template. Existing project line items that referenced this template are preserved."
+        description="This removes the service template. Existing job line items that referenced this template are preserved."
         confirmLabel="Delete template"
         onConfirm={() => {
           if (deleteTarget) {
@@ -593,7 +589,7 @@ function TemplateDialog({
                 }
               />
               <Label htmlFor="tmpl-autoAdd" className="text-sm font-normal cursor-pointer">
-                Auto-add to new projects
+                Auto-add to new jobs
               </Label>
             </div>
             <div className="flex items-center gap-2">

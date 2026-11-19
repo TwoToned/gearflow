@@ -77,7 +77,7 @@ export const PERMISSION_REGISTRY: Record<
     ],
   },
   project: {
-    label: "Projects",
+    label: "Jobs",
     actions: [
       { key: "read", label: "View" },
       { key: "create", label: "Create" },

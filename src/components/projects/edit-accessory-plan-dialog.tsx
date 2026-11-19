@@ -62,20 +62,16 @@ export function EditAccessoryPlanDialog({ item, onClose }: EditAccessoryPlanDial
         <DialogHeader>
           <DialogTitle>Edit accessories</DialogTitle>
         </DialogHeader>
-        {item && editor.accessories.length === 0 ? (
-          <p className="text-caption text-muted">
-            {item.description ?? "This item"} has no configurable accessories.
-          </p>
-        ) : (
-          <AccessorySelectionFields
-            accessories={editor.accessories}
-            quantity={item?.quantity ?? 1}
-            selection={editor.selection}
-            onSelectionChange={editor.setSelection}
-            excludeReasons={editor.excludeReasons}
-            onExcludeReasonsChange={editor.setExcludeReasons}
-          />
-        )}
+        <AccessorySelectionFields
+          accessories={editor.accessories}
+          quantity={item?.quantity ?? 1}
+          selection={editor.selection}
+          onSelectionChange={editor.setSelection}
+          excludeReasons={editor.excludeReasons}
+          onExcludeReasonsChange={editor.setExcludeReasons}
+          custom={editor.custom}
+          onCustomChange={editor.setCustom}
+        />
         <DialogFooter>
           <Button type="button" variant="line" onClick={onClose}>
             Cancel
@@ -83,7 +79,7 @@ export function EditAccessoryPlanDialog({ item, onClose }: EditAccessoryPlanDial
           <Button
             type="button"
             loading={mutation.isPending}
-            disabled={!lineItemWrites.enabled || editor.accessories.length === 0}
+            disabled={!lineItemWrites.enabled || !editor.loaded}
             onClick={() => mutation.mutate()}
           >
             Save

@@ -50,8 +50,17 @@ export interface LineItem {
   }>;
   prepStatus: string | null;
   prepContainer: string | null;
+  /** The PM's packing plan (a `projectContainers` id). Present on the live
+   *  payload (whole line docs); drives the `Planned →` glyph. */
+  plannedContainerId?: string | null;
+  /** Per-line accessory selection; `excludedReasons` is the office note D9
+   *  prefills the deploy gate's override reason from. */
+  accessoryPlan?: { excluded?: string[]; excludedReasons?: Array<{ bulkAssetId: string; reason: string }> } | null;
   isContainerLineItem: boolean;
   isCustomItem: boolean;
+  /** Units of this line sourced outside the fleet ("prep as custom item") — they
+   *  hold no stock; each is backed by a generic (asset-less) unit in `units`. */
+  offInventoryQuantity?: number;
   /** Sub-hire association — null = own-stock, non-null = sub-hire from supplier. */
   subHireId: string | null;
   supplier: { name: string } | null;
@@ -189,7 +198,7 @@ export function accessoryChildrenOf(item: LineItem): LineItem[] {
 
 /** An accessory parent whose OWN gear is already packed (or already out), so only
  *  its accessories are left to prep — the Pick/Prep buttons key off this. */
-function parentAlreadyPrepped(item: LineItem): boolean {
+export function parentAlreadyPrepped(item: LineItem): boolean {
   if (!isAccessoryParent(item)) return false;
   if (isBulkItem(item)) return multiQtyParentFullyPrepped(item);
   return item.prepStatus === "PACKED" || item.status === "CHECKED_OUT" || item.status === "RETURNED";
@@ -568,6 +577,11 @@ export function isMoveableAtDeprepStage(u: Unit): boolean {
   return u.status === "RETURNED" && u.prepStatus === "PACKED";
 }
 
+/** De-prepped stage: units back and already de-prepped (the only ones a re-pack may touch). */
+export function isMoveableAtUndeprepStage(u: Unit): boolean {
+  return u.status === "RETURNED" && u.prepStatus !== "PACKED";
+}
+
 /**
  * Resolve a Deploy/Return/De-prep tab's selection — the SAME key format
  * `handleCheckOutSelected`/`handlePrepSelected` already parse: a bare
@@ -621,7 +635,7 @@ export function resolveSelectionToUnitIds(
 
 /** Per-unit count of a bulk line that is actionable in a stage: units still to
  *  pick (`prep`), packed-and-waiting (`prepped`), else the whole quantity. */
-function bulkStageUnitCount(item: LineItem, countStage?: UnitCountStage): number {
+export function bulkStageUnitCount(item: LineItem, countStage?: UnitCountStage): number {
   if (countStage === "prep") return bulkUnpackedRemaining(item);
   if (countStage === "prepped") return bulkPackedWaiting(item);
   if (countStage === "returned") {
@@ -654,12 +668,13 @@ export function accessoryChildrenForStage(item: LineItem, countStage?: UnitCount
 export function accessoryAssetIds(children: LineItem[]): string[] {
   const ids = new Set<string>();
   for (const c of children) {
-    if (c.assetId) ids.add(c.assetId);
-    if (c.bulkAssetId) ids.add(c.bulkAssetId);
-    for (const u of c.units ?? []) {
-      if (u.assetId) ids.add(u.assetId);
-      if (u.bulkAssetId) ids.add(u.bulkAssetId);
+    let found = false;
+    for (const id of [c.assetId, c.bulkAssetId, ...(c.units ?? []).flatMap((u) => [u.assetId, u.bulkAssetId])]) {
+      if (id) { ids.add(id); found = true; }
     }
+    // A custom (free-text) accessory has no asset or bulk id anywhere: the server identifies it by its child LINE id
+    // (`resolveCustomAccessories`, CLAUDE.md "Custom accessories"), so a narrowed call must name that, or it is dropped.
+    if (!found) ids.add(c.id);
   }
   return [...ids];
 }

@@ -12,7 +12,12 @@ import { mapNativeWriteError } from "@/lib/native-writes";
 // that also re-exports server-only code trips Turbopack's scope-hoist merge
 // (`EcmascriptModuleContent::new_merged failed`). See the CLAUDE.md composition note.
 import { UserFacingError } from "@/lib/errors/user-facing-error";
-import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
+import {
+  projectSchema,
+  projectSchedulePatchSchema,
+  type ProjectFormValues,
+  type ProjectSchedulePatch,
+} from "@/lib/validations/project";
 import { datePartsInTimezone } from "@/lib/project-number";
 import {
   getProjectNumberConfig,
@@ -157,14 +162,14 @@ function mapProjectWriteError(e: unknown, isTemplate = false): unknown {
     if (code === "NOT_FOUND") {
       return new UserFacingError({
         code: "NOT_FOUND",
-        title: "Project not found",
-        message: "This project was deleted or moved. Refresh the page to see the latest state.",
+        title: "Job not found",
+        message: "This job was deleted or moved. Refresh the page to see the latest state.",
       });
     }
     if (code === "DUPLICATE_PROJECT_CODE") {
       return new UserFacingError({
         code,
-        title: isTemplate ? "Template code already in use" : "Project code already in use",
+        title: isTemplate ? "Template code already in use" : "Job code already in use",
         message: message ?? `A ${isTemplate ? "template" : "project"} with that code already exists.`,
         field: "projectNumber",
       });
@@ -172,9 +177,9 @@ function mapProjectWriteError(e: unknown, isTemplate = false): unknown {
     if (code === "DELETE_GUARD") {
       return new UserFacingError({
         code,
-        title: "Cannot delete this project",
-        message: message ?? "Only cancelled projects can be deleted.",
-        hint: "Set the project status to Cancelled first, then try again.",
+        title: "Cannot delete this job",
+        message: message ?? "Only cancelled jobs can be deleted.",
+        hint: "Set the job status to Cancelled first, then try again.",
       });
     }
   }
@@ -278,8 +283,8 @@ export function useProjectWrites(orgId: string | undefined) {
     if (!isTemplate && !parsed.projectNumber && !useAutoNumber) {
       throw new UserFacingError({
         code: "MISSING_PROJECT_CODE",
-        title: "Project code is required",
-        message: "Enter a project code (e.g. P-2024-001) before saving.",
+        title: "Job code is required",
+        message: "Enter a job code (e.g. P-2024-001) before saving.",
         field: "projectNumber",
       });
     }
@@ -352,7 +357,7 @@ export function useProjectWrites(orgId: string | undefined) {
       if (!created.created) {
         throw new UserFacingError({
           code: "DUPLICATE_PROJECT_CODE",
-          title: "Project code already in use",
+          title: "Job code already in use",
           message: `A ${isTemplate ? "template" : "project"} with code "${templateNumber ?? parsed.projectNumber}" already exists.`,
           field: "projectNumber",
         });
@@ -387,7 +392,7 @@ export function useProjectWrites(orgId: string | undefined) {
       if (!available) {
         throw new UserFacingError({
           code: "DUPLICATE_PROJECT_CODE",
-          title: "Project code already in use",
+          title: "Job code already in use",
           message: `A ${isTemplate ? "template" : "project"} with code "${parsed.projectNumber}" already exists.`,
           field: "projectNumber",
         });
@@ -465,6 +470,33 @@ export function useProjectWrites(orgId: string | undefined) {
     }
 
     return { id };
+  };
+
+  /**
+   * Partial write for the Logistics tab: rental / job window dates + times and the
+   * site contact. `undefined` leaves a field, `""` clears it. Same `updateNative`
+   * (and the same server-side checks) as the full edit, with only these keys.
+   */
+  const updateSchedule = async (id: string, patch: ProjectSchedulePatch): Promise<void> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    const parsed = projectSchedulePatchSchema.parse(patch);
+    const set: Record<string, unknown> = { updatedAt: Date.now() };
+    const clear: string[] = [];
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === undefined) continue;
+      if (value === "") clear.push(key);
+      else set[key] = /Date$/.test(key) ? new Date(value).getTime() : value;
+    }
+    try {
+      await updateM({
+        id, orgId, set, clear,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapProjectWriteError(e, false);
+    }
   };
 
   /**
@@ -553,5 +585,5 @@ export function useProjectWrites(orgId: string | undefined) {
     }
   };
 
-  return { enabled, archive, deleteTemplate, create, update, duplicate, saveAsTemplate, remove };
+  return { enabled, archive, deleteTemplate, create, update, updateSchedule, duplicate, saveAsTemplate, remove };
 }

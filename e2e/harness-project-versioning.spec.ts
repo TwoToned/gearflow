@@ -95,7 +95,7 @@ test.describe("harness: project versioning v2", () => {
       await page.getByRole("button", { name: "Search models" }).click();
       await page.getByPlaceholder(/Search by name/).fill(modelName);
       await page.getByRole("button", { name: modelName, exact: true }).click();
-      await page.getByRole("button", { name: "Add to project" }).click();
+      await page.getByRole("button", { name: "Add to job" }).click();
       await expect(addDialog).toBeHidden();
     });
 
@@ -128,7 +128,7 @@ test.describe("harness: project versioning v2", () => {
     });
 
     await test.step("open the version menu and create a new version", async () => {
-      await page.getByRole("button", { name: "Project versions" }).click();
+      await page.getByRole("button", { name: "Job versions" }).click();
       await page.getByRole("menuitem", { name: /new version/i }).click();
       // Switching to the new version updates the header pill and the URL's
       // `?v=` param (design §3.1 — per-user, never a DB field).
@@ -171,19 +171,22 @@ test.describe("harness: project versioning v2", () => {
 
     await test.step("check the line item's unit out through the warehouse pipeline", async () => {
       await page.getByRole("link", { name: "Warehouse" }).click();
-      await page.getByRole("tab", { name: /^Pick/ }).click();
-      await page.locator("table thead").getByRole("checkbox").click();
-      await page.getByRole("button", { name: /^Prep( \(\d+\))?$/ }).click();
-      await page.getByRole("tab", { name: /^Prepped/ }).click();
-      await page.locator("table thead").getByRole("checkbox").click();
-      await page.getByRole("button", { name: /^Deploy/ }).click();
-      await expect(page.getByRole("tab", { name: /^Deployed \(1\)/ })).toBeVisible({ timeout: 20000 });
+      // Stage strip (StageFilter toggles named "<word> <count>") + the section's "Select all in …" box.
+      const stage = (word: RegExp) => page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: word });
+      const tickAll = page.getByRole("checkbox", { name: /^Select all in/ }).first();
+      await stage(/^To pick/).click();
+      await tickAll.click();
+      await page.getByRole("button", { name: /^Prep( \d+)?( \+ accessories)?$/ }).click();
+      await stage(/^Prepped/).click();
+      await tickAll.click();
+      await page.getByRole("button", { name: /^Deploy \(\d+\)$/ }).click();
+      await expect(stage(/^Out 1$/)).toBeVisible({ timeout: 20000 });
     });
 
     await test.step("create a new version that removes the checked-out line", async () => {
       await page.goBack();
       await page.getByRole("tab", { name: "Equipment", exact: true }).click();
-      await page.getByRole("button", { name: "Project versions" }).click();
+      await page.getByRole("button", { name: "Job versions" }).click();
       await page.getByRole("menuitem", { name: /new version/i }).click();
       await expect(page).toHaveURL(/[?&]v=\d+/, { timeout: 20000 });
 
@@ -193,7 +196,7 @@ test.describe("harness: project versioning v2", () => {
     });
 
     await test.step("make this version live — the conflict (checked-out unit) is listed", async () => {
-      await page.getByRole("button", { name: "Project versions" }).click();
+      await page.getByRole("button", { name: "Job versions" }).click();
       await page.getByRole("menuitem", { name: "Manage versions…" }).click();
       const panel = page.getByRole("dialog", { name: "Versions" });
       const nonLiveRow = panel.locator("div").filter({ hasText: /^v2/ }).first();
@@ -208,7 +211,7 @@ test.describe("harness: project versioning v2", () => {
 
     await test.step("the checked-out gear stays on the job (still shown as deployed in the warehouse)", async () => {
       await page.getByRole("link", { name: "Warehouse" }).click();
-      await expect(page.getByRole("tab", { name: /^Deployed \(1\)/ })).toBeVisible({ timeout: 20000 });
+      await expect(page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: /^Out 1$/ })).toBeVisible({ timeout: 20000 });
     });
   });
 
@@ -276,7 +279,7 @@ test.describe("harness: project versioning v2", () => {
 
     await test.step("create a new (non-live) version on the Finance tab", async () => {
       await page.getByRole("tab", { name: "Finance", exact: true }).click();
-      await page.getByRole("button", { name: "Project versions" }).click();
+      await page.getByRole("button", { name: "Job versions" }).click();
       await page.getByRole("menuitem", { name: /new version/i }).click();
       await expect(page).toHaveURL(/[?&]v=\d+/, { timeout: 20000 });
       await expect(page.getByText(/a draft version, fully editable/i)).toBeVisible();
@@ -300,7 +303,7 @@ test.describe("harness: project versioning v2", () => {
 
     await test.step("the sent quote shows SENT, tagged to project version 2 — nothing hidden (D19)", async () => {
       await expect(page.getByText("SENT")).toBeVisible();
-      await expect(page.getByText("for project version 2")).toBeVisible();
+      await expect(page.getByText("for job version 2")).toBeVisible();
     });
 
     await test.step("back to live: v1's pricing is untouched — no lock, no non-live Send verb", async () => {

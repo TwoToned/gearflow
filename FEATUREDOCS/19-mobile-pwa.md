@@ -366,6 +366,17 @@ Micro QR.
 test is why "it doesn't work on iOS" could ship. Unit-testing the UI around a
 decoder proves nothing about whether it decodes.
 
+### ScanDock and ScanStrip (`src/components/ui/scan-dock.tsx`, `scan-strip.tsx`)
+Presentational pieces of the unified scan surface (UX unification §5.7). `ScanDock` is one
+input (keyboard wedge, Enter submits) plus the existing `ScanButton` camera trigger, so the
+camera still opens from a user gesture through the one WASM engine; it adds the active
+target (`Packing into → LX-04 ▾`) and the mode words `Prep as I scan · Check only`.
+`ScanStrip` lists the last scans by tone (success with Undo, warning with Run check, error
+with Add & prep, neutral saved on device · syncing). The strip's Undo is the exact
+`scanUndo` closure from `announceWarehouseWrite`. The single pipeline that feeds them
+(`useDurableScanIntake` → result → `announceWarehouseWrite`) is Phase 3; the legacy
+`ScanHistoryStrip` stays until a surface adopts these.
+
 ### Scan Lookup (`convex/scanLookup.ts`, `resolve` query — formerly `src/server/scan-lookup.ts`)
 Resolves barcode value to entity URL:
 1. Check `Asset` by `assetTag` → `/assets/registry/{id}`
@@ -381,3 +392,18 @@ Dialogs that benefit from edge-to-edge space on phones switch to a full-screen
 sheet when `useIsMobile()` is true: `h-[100dvh] max-h-[100dvh] w-full max-w-full
 rounded-none border-0` plus `env(safe-area-inset-*)` padding. Examples:
 `CommandSearch` dialog and the task edit dialog in `tasks-panel.tsx`.
+
+## One phone breakpoint (D68) and the tablet rail (D67)
+
+Phone is `max-width: 859px`; Tailwind's `md` is moved to 860px (`--breakpoint-md` in `globals.css`), so every `md:` class and `useIsMobile()` agree. The constants live in `src/lib/breakpoints.ts` (`PHONE_MAX` 859, `TABLET_MAX` 1023) and `breakpoints.test.ts` fails on a hard-coded 767/768. iPad portrait therefore gets the phone layout. At 860-1023px the sidebar is an automatic 72px icon rail (flyouts carry every sub-page); `⌘B` is a no-op there and collapses to the rail at >= 1024px.
+
+## Warehouse phone pack mode (UX Phase 3, §9.4)
+
+The warehouse job page is the same page on a phone, not a second app. Rows are the phone `LineRow` (62 px);
+a row tap opens `JobRowSheet` (`src/components/warehouse/job/job-row-sheet.tsx`, a `BottomSheet`): status and
+case, tags and count, the accessories first (each with its own `Pack` / `Verify` action), a tick action and the
+row's menu under ⋯. The ticked-row verbs live in `StageActionBar`, which on a phone is portaled to `<body>` and
+pinned above the bottom nav through `PinnedAboveBottomNav` (the dock `BulkBar` uses; the portal is
+load-bearing, see that component). Controls are ≥ 44 px. The scan dock and result strip are the same
+components as desktop; the camera scanner rules above are unchanged. Not yet in the sheet: `Pack into` case
+chips and unit chips. The scan sheet's "Remember for the next n" is in memory per job, never `localStorage`.

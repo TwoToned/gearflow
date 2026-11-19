@@ -23,6 +23,7 @@ interface ReturnProject {
   name: string;
   dueTime: string | null;
   expectedItems: number;
+  label?: string;
 }
 
 interface PrepCard {
@@ -480,7 +481,7 @@ function ReturnCard({
       </div>
       {project.dueTime && (
         <p className={`mt-2 ${large ? "text-base" : "text-sm"} text-gray-400`}>
-          Due back by {project.dueTime}
+          {project.label ? `${project.label} · ` : ""}Due back by {project.dueTime}
         </p>
       )}
     </div>

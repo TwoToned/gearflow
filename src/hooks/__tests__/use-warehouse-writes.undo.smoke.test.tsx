@@ -6,7 +6,7 @@
 // let the TooltipProvider crash class ship). Uses the real `sonner` Toaster,
 // not a mock.
 import React from "react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -63,6 +63,17 @@ describe("useWarehouseWrites undo toast — smoke", () => {
       autoStatusAuditId: null,
     });
     spyFor(api.warehouseWrites.undeployItems).mockResolvedValue({ updatedLineIds: ["li1"] });
+  });
+
+  // The last test's toast is still on screen when the file ends. Dismissing it
+  // schedules sonner's own 200ms removal timer (`deleteToast` -> setTimeout), and
+  // if that fires after vitest has torn jsdom down it throws `window is not
+  // defined` as an UNHANDLED error — the run exits 1 although every test passed.
+  // Dismiss and wait for the removal to land while the Toaster is still mounted;
+  // this describe-level hook runs before Testing Library's auto-cleanup unmounts it.
+  afterEach(async () => {
+    toast.dismiss();
+    await waitFor(() => expect(document.querySelector("[data-sonner-toast]")).toBeNull());
   });
 
   it("renders the toast with an Undo action and clicking it calls the reverse mutation", async () => {

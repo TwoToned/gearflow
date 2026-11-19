@@ -21,7 +21,7 @@ import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { api } from "../../../convex/_generated/api";
 import { checkAvailability, lookupAssetByTag, type ModelAccessoryDetail } from "@/server/line-items";
-import type { AccessoryPlanInput } from "@/hooks/use-line-item-writes";
+import type { AccessoryPlanInput, CustomAccessoryInput } from "@/hooks/use-line-item-writes";
 import {
   accessoryPlansEqual,
   derivePlanToSave,
@@ -37,6 +37,9 @@ export interface AccessoryPlanEditor {
   setSelection: (next: Record<string, boolean>) => void;
   excludeReasons: Record<string, string>;
   setExcludeReasons: (next: Record<string, string>) => void;
+  /** Free-text accessories on this line (not in the catalog). */
+  custom: CustomAccessoryInput[];
+  setCustom: (next: CustomAccessoryInput[]) => void;
   /** The full plan the current checkboxes describe. */
   planToSave: AccessoryPlanInput;
   /** True once the line's own plan has loaded AND the checkboxes describe a
@@ -114,6 +117,18 @@ function useSeededAccessorySelection(
   return { selection, setSelection, excludeReasons, setExcludeReasons, seeded: seedKey !== null && seedKey === seededKey };
 }
 
+/** Per-line free-text accessories, seeded from the stored plan once per line
+ *  (same during-render reseed as `useSeededAccessorySelection`). */
+function useSeededCustomAccessories(item: LineItemData | null, currentPlan: AccessoryPlanInput | undefined, lineDocLoaded: boolean) {
+  const [custom, setCustom] = useState<CustomAccessoryInput[]>([]);
+  const [seededFor, setSeededFor] = useState<string | null>(null);
+  if (item && lineDocLoaded && seededFor !== item.id) {
+    setSeededFor(item.id);
+    setCustom(currentPlan?.custom ?? []);
+  }
+  return { custom, setCustom };
+}
+
 export function useAccessoryPlanEditor(
   item: LineItemData | null,
   enabled = true,
@@ -125,16 +140,18 @@ export function useAccessoryPlanEditor(
   const currentPlan = (lineDoc as { accessoryPlan?: AccessoryPlanInput } | null | undefined)?.accessoryPlan;
 
   const accessories = useAccessoryCatalog(item, enabled);
-  const { selection, setSelection, excludeReasons, setExcludeReasons, seeded } = useSeededAccessorySelection(
+  const { selection, setSelection, excludeReasons, setExcludeReasons } = useSeededAccessorySelection(
     item,
     accessories,
     currentPlan,
     lineDoc !== undefined,
   );
 
+  const { custom, setCustom } = useSeededCustomAccessories(item, currentPlan, lineDoc !== undefined);
+
   const planToSave = useMemo(
-    () => derivePlanToSave(accessories, selection, excludeReasons),
-    [accessories, selection, excludeReasons],
+    () => derivePlanToSave(accessories, selection, excludeReasons, custom),
+    [accessories, selection, excludeReasons, custom],
   );
 
   return {
@@ -143,8 +160,11 @@ export function useAccessoryPlanEditor(
     setSelection,
     excludeReasons,
     setExcludeReasons,
+    custom,
+    setCustom,
     planToSave,
-    loaded: seeded,
-    isDirty: seeded && !accessoryPlansEqual(currentPlan, planToSave),
+    loaded: lineDoc !== undefined,
+    // `seeded` is false for a model with no catalog accessories, but custom ones can still change.
+    isDirty: lineDoc !== undefined && !accessoryPlansEqual(currentPlan, planToSave),
   };
 }

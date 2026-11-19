@@ -38,7 +38,7 @@ export function ConfirmStatusImpactDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-warn" />
-            Confirming this project will create a gap
+            Confirming this job will create a gap
           </DialogTitle>
           <DialogDescription asChild>
             <div className="space-y-1.5 text-left">

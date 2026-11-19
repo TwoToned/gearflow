@@ -25,6 +25,8 @@ below; (3) Deploy now soft-blocks when a parent's DEFAULT accessories aren't
 packed yet, and asks for a reason when OPTIONALs are skipped — see "Checkout
 accessory gate" below.
 
+**Custom (off-inventory) units** (FEATUREDOCS/12) keep the model's bulk accessories too: their share lives on the same child lines as per-parent rows keyed `parentUnitAssetId = custom:<unitId>` instead of an asset id (`convex/lib/fulfillment.ts` `customUnitScope`). Anything that scopes an accessory cascade by parent must accept that key.
+
 Accessories are **not kits**. A kit is a physical container with its own asset
 tag and rental contract; an accessory is inseparable from its parent — no
 container, no separate booking, no separate price. The implementation is
@@ -532,6 +534,55 @@ exactly the existing "verified subset" filter both of those functions already
 respect (issue #794's partial-deploy escape hatch), so no new gate was needed
 on the Convex side — the client just wasn't setting it on the override path.
 
+## Custom (free-text) accessories
+
+For an item you want packed with something but haven't got in the system — gaffer
+tape, a foam windshield, a pouch. No catalog entry, no asset: just a name and a
+count. It is a **normal accessory child line** (`isKitChild`, `childKind: ACCESSORY`,
+`parentLineItemId`) — the only difference is identity: `projectLineItems.customAccessoryKey`
+instead of `assetId`/`bulkAssetId`, and its text lives in `description` (`"3x Gaffer tape"`,
+the same shape bulk children use). Two sources, one materialisation:
+
+- **Per model** — `modelCustomAccessories` (`convex/modelCustomAccessoriesWrites.ts`;
+  `DEFAULT`/`OPTIONAL` tier like `modelBulkAccessories`; UI: `ModelCustomAccessoriesManager`
+  on the Model page). Identified on lines as `modelCustomAccessoryKey(id)` = `"m:<id>"`.
+  The picker lists them next to the bulk rows (`ModelAccessoryDetail.bulkAssetId` carries
+  that key, `assetTag` the name), and `accessoryPlan.excluded` / `.added` use the key —
+  so deselecting a default (with a typed reason) or opting into an optional needs no
+  new plumbing.
+- **Per line** — `accessoryPlan.custom: { key, name, quantityPerParent }[]` (client-minted
+  cuid key), added from the "Custom (this line only)" row of `AccessorySelectionFields`
+  (add form, Edit Item, row kebab "Edit accessories"). Bounded server-side
+  (`assertAccessoryPlanFields`: ≤50, name 1–120, qty int 1–1000).
+
+**On a custom item.** A free-text line (`isCustomItem`, no model/asset) can carry per-line custom
+accessories too: the Custom-item add form has an Accessories box, `addCustomNative` takes `accessoryPlan`
+(only `custom` is meaningful) and expands the children in the same transaction, and Edit item /
+"Edit accessories" are offered (`canEditAccessoryPlan` / `assertLineOwnsAccessoryPlan` /
+`isAccessoryResyncEligible` all accept `isCustomItem`). Quantity changes rescale them; whole-line prep packs
+them through the parent-less path (`packParentlessAccessories`) and deploy/return cascade unscoped.
+
+**One resolver.** `resolveCustomAccessories` (`convex/lib/fulfillment.ts`) is the custom
+twin of `resolveLineAccessoryPlan`; `expandAccessoryChildLines`, `reconcileLineAccessoryChildren`,
+`rescaleAccessoryChildrenToQuantity` and `expandAccessoriesForAsset` all call it. Quantity is
+`quantityPerParent × parent quantity`, and a custom child follows every plan edit / quantity
+change / resync exactly like a bulk child.
+
+**Warehouse.** Units are asset-less (`assetId`/`bulkAssetId` absent): per parent unit for
+serialised parents (`ensureAccessoryUnit`, `parentUnitAssetId = parent asset`), one parent-less
+unit for bulk/untagged parents (`ensureGenericParentlessUnit`), and a per-custom-unit share for
+off-inventory units. Deploy / return / de-prep / reverse are unit-generic so they need no custom
+branch. `includeAccessoryIds` narrowing identifies a custom unit by its **child line id** (there
+is no asset id) — `accessoryAssetIds` on the warehouse page already includes line ids.
+
+**Documents.** Nothing custom: PDFs, pull sheets and the warehouse tabs key off `childKind` and
+print `model?.name || description`, so a custom accessory prints indented under its parent on
+every warehouse doc and is hidden on quote/invoice, same as any accessory
+(`accessories-render.test.tsx`).
+
+Tests: `convex/customAccessories.test.ts` (expand, plan exclude/add, reconcile in/out, prep→deploy→return),
+`accessory-plan-editor.test.ts`, `custom-accessory-fields.smoke.test.tsx`.
+
 ## Not in v1
 
 Bulk parents (only serialised assets can be parents), nested accessories,
@@ -709,3 +760,29 @@ moves it back a stage). Any accessory — nested or relocated — can also be
 selected and actioned on its own, before or after its parent. The rule is
 `convex/lib/accessoryRelocation.ts`. Loose (unpacked) accessories still travel
 with the parent exactly as above.
+
+## Accessories on the floor — the job page (UX Phase 3, §9.5)
+
+- **Scan sheet.** Scanning a parent with unpacked accessories opens `ScanAccessoryDialog` (tick what is with
+  it; `Prep with n` / `without` / accessories-only). **"Remember for the next n units on this job"** (D10)
+  answers the line's next n scans silently: job-scoped, in memory (`src/lib/warehouse-scan-memory.ts`), NOT
+  `localStorage`, not shared between packers (shared = schema follow-up). Only with / without are remembered.
+- **What a pack really did.** `checkRecordOps.prepItems` (accessories-only items) returns
+  `packedAccessoryUnits` (`{ lineItemId, unitId, parentUnitAssetId? }`: the accessory units THIS call flipped
+  to PACKED, per parent unit, honouring `includeAccessoryIds`; one already PACKED is not reported) and
+  `packedAccessoryLineIds`: the accessory child LINES that read FULLY packed for the requested parent units
+  after the write (`accessoryPackState`; an already-PACKED unit counts as packed, a line with a requested
+  unit still unpacked does not). The gate compares the marked accessories with this set: a short pack
+  keeps the gate open, deploys nothing, and "all" is only logged when nothing was left behind.
+- **A custom (free-text) accessory** has no asset or bulk id, so `accessoryAssetIds()` names it by its child
+  LINE id; the gate's `Pack now` narrowing therefore reaches it (test in `customAccessories.test.ts`).
+- **De-prep by asset.** `deprepItems` `op.assetId` is exact: on a prepped line it removes THAT unit and
+  refuses (`ConvexError`) if it is not a prepped unit there; on a RETURNED line it refuses when the asset is
+  not waiting ("already de-prepped") instead of falling back to LIFO (LIFO stays only with no asset); on a
+  line that still has units out it de-preps one returned unit and touches nothing else. No asset on a line
+  that rolls up CHECKED_OUT still refuses.
+- **Deploy gate** (`DeployGateDialog`): every row decided; D9 prefills a DEFAULT's reason from
+  `accessoryPlan.excludedReasons`; only operator/prefill reasons are logged (an optional leave with no reason
+  logs "No reason recorded").
+- **De-prep scan.** A serial tag carries its `assetId` to `deprepItems`, so THAT unit de-preps; an accessory
+  tag goes through the unit-level `DEPREP`; a bulk bin asks for a count and matches only that bin's units.

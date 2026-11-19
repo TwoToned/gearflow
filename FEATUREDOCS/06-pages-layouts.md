@@ -10,7 +10,7 @@
 ```
 div.app-shell (fixed inset-0 on mobile, relative on desktop)
 ├── SidebarProvider (flex-1, min-h-0)
-│   ├── AppSidebar (Sheet on mobile, fixed sidebar on desktop)
+│   ├── AppSidebar (Sheet <= 859px; 220px sidebar >= 1024px; automatic 72px icon rail 860-1023px — a CSS (`max-lg`) swap between two rendered views so SSR paint is right; ⌘B collapses to the rail at >= 1024px, remembered in the `sidebar_state` cookie read by this layout)
 │   └── SidebarInset (flex column)
 │       ├── TopBar (sticky, safe area padding)
 │       └── main (flex-1, overflow-auto, content scrolls here)
@@ -78,7 +78,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/kits/[id]/edit` | Edit kit |
 | `/projects` | Project list (filterable by status, client, date) |
 | `/projects/new` | Create project |
-| `/projects/[id]` | Project detail — tabs: Equipment · Labour & logistics · **Finance** (#989 — quote revisions, send/issue dialogs, invoices; retired the old "Financials" tab, not duplicated) · Tasks · Notes · Files |
+| `/projects/[id]` | Project detail — tabs: Equipment · Logistics (`?tab=logistics`, FEATUREDOCS/84; `/runsheet` redirects here) · **Finance** (#989 — quote revisions, send/issue dialogs, invoices; retired the old "Financials" tab, not duplicated) · Tasks · Notes · Files |
 | `/projects/[id]/edit` | Edit project |
 | `/projects/templates` | Template list |
 | `/projects/templates/new` | Create template |

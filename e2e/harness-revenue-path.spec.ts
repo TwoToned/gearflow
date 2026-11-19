@@ -235,9 +235,9 @@ test.describe("harness: primary revenue path", () => {
       await expect(addDialog.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
       await expect(addDialog.getByText(/overbook/i)).toHaveCount(0);
 
-      await page.getByRole("button", { name: "Add to project" }).click();
+      await page.getByRole("button", { name: "Add to job" }).click();
       // The dialog closes on a successful add.
-      await expect(page.getByRole("button", { name: "Add to project" })).toBeHidden();
+      await expect(page.getByRole("button", { name: "Add to job" })).toBeHidden();
     });
 
     await test.step("check the gear out through the warehouse pipeline (flow 8)", async () => {
@@ -255,27 +255,36 @@ test.describe("harness: primary revenue path", () => {
       // enough to hang the whole test on a swallowed click if the dialog
       // reopens between the previous check and this click — exactly what
       // happened in CI (the "Prepped" tab click itself was unprotected).
-      await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Pick/ }));
-      await clickRacingAssignDialog(page, page.locator("table thead").getByRole("checkbox"));
-      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Prep( \(\d+\))?$/ }));
+      // The job page's stage strip (StageFilter) replaced the tab row: each stage is a toggle button
+      // named "<word> <count>"; rows are ticked through the section's "Select all in …" box.
+      const stage = (word: RegExp) => page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: word });
+      const tickAll = page.getByRole("checkbox", { name: /^Select all in/ }).first();
+
+      await clickRacingAssignDialog(page, stage(/^To pick/));
+      await clickRacingAssignDialog(page, tickAll);
+      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Prep( \d+)?( \+ accessories)?$/ }));
       await resolveAssignAssetsDialogIfPresent(page);
 
-      await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Prepped/ }));
-      await clickRacingAssignDialog(page, page.locator("table thead").getByRole("checkbox"));
-      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Deploy/ }));
+      await clickRacingAssignDialog(page, stage(/^Prepped/));
+      await clickRacingAssignDialog(page, tickAll);
+      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Deploy \(\d+\)$/ }));
       await resolveAssignAssetsDialogIfPresent(page);
 
-      await expect(page.getByRole("tab", { name: /^Deployed \(1\)/ })).toBeVisible();
+      await expect(stage(/^Out 1$/)).toBeVisible();
     });
 
     await test.step("return the gear (flow 9)", async () => {
-      await clickRacingAssignDialog(page, page.getByRole("tab", { name: /^Deployed/ }));
-      await clickRacingAssignDialog(page, page.locator("table thead").getByRole("checkbox"));
-      // Condition defaults to "Good" — happy path needs no extra input.
-      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Return/ }));
+      const stage = (word: RegExp) => page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: word });
+      await clickRacingAssignDialog(page, stage(/^Out/));
+      await clickRacingAssignDialog(page, page.getByRole("checkbox", { name: /^Select all in/ }).first());
+      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Return \(\d+\)$/ }));
+      // The return check (spec §9.5) opens first: condition defaults to "Good", so the happy path just confirms it.
+      const returnCheck = page.getByRole("dialog");
+      await expect(returnCheck.getByRole("radio", { name: "Good" })).toBeChecked();
+      await returnCheck.getByRole("button", { name: "Return", exact: true }).click();
 
-      await expect(page.getByRole("tab", { name: /^Returned \(1\)/ })).toBeVisible();
-      await expect(page.getByRole("tab", { name: /^Deployed \(0\)/ })).toBeVisible();
+      await expect(stage(/^Returned 1$/)).toBeVisible();
+      await expect(stage(/^Out 0$/)).toBeVisible();
     });
   });
 });

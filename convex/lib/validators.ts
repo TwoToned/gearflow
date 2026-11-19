@@ -274,6 +274,13 @@ export const AccessoryPlanArg = v.object({
     bulkAssetId: v.string(),
     reason: v.string(),
   }))),
+  // Ad-hoc accessories typed in for THIS line only (not in the catalog): each
+  // becomes a normal accessory child line keyed by `key` (client-minted cuid).
+  custom: v.optional(v.array(v.object({
+    key: v.string(),
+    name: v.string(),
+    quantityPerParent: v.number(),
+  }))),
 });
 export const AllocationBasis = v.union(
   v.literal("DIRECT"),
@@ -425,6 +432,8 @@ export const ProjectPhase = v.union(
   v.literal("BUMP_OUT"),
   v.literal("DELIVERY"),
   v.literal("PICKUP"),
+  v.literal("HANDOVER"),
+  v.literal("RETURN"),
   v.literal("SETUP"),
   v.literal("REHEARSAL"),
   v.literal("FULL_DURATION"),
@@ -451,6 +460,8 @@ export const TimeEntryStatus = v.union(
 export const ServiceType = v.union(
   v.literal("DELIVERY"),
   v.literal("PICKUP"),
+  v.literal("CLIENT_PICKUP"),
+  v.literal("CLIENT_DROPOFF"),
   v.literal("BUMP_IN"),
   v.literal("BUMP_OUT"),
   v.literal("LABOUR"),

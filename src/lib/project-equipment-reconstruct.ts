@@ -207,6 +207,7 @@ export interface MappedLineItem {
   checkedOutQuantity: number;
   returnedQuantity: number;
   assignedQuantity: number;
+  offInventoryQuantity: number;
   packedQuantity: number;
   damagedQuantity: number;
   lostQuantity: number;
@@ -281,6 +282,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     checkedOutQuantity: d.checkedOutQuantity ?? 0,
     returnedQuantity: d.returnedQuantity ?? 0,
     assignedQuantity: d.assignedQuantity ?? 0,
+    offInventoryQuantity: d.offInventoryQuantity ?? 0,
     packedQuantity: d.packedQuantity ?? 0,
     damagedQuantity: d.damagedQuantity ?? 0,
     lostQuantity: d.lostQuantity ?? 0,

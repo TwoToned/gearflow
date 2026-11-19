@@ -23,8 +23,8 @@ export interface RoleOption {
 
 export const ASSIGNABLE_ROLE_OPTIONS: RoleOption[] = [
   { value: "admin", label: "Admin", description: "Full access, including billing and settings." },
-  { value: "manager", label: "Manager", description: "Runs the day-to-day — projects, quotes, gear — without settings or billing." },
-  { value: "member", label: "Member", description: "Creates and edits projects and gear. No settings access." },
+  { value: "manager", label: "Manager", description: "Runs the day-to-day — jobs, quotes, gear — without settings or billing." },
+  { value: "member", label: "Member", description: "Creates and edits jobs and gear. No settings access." },
   { value: "warehouse", label: "Warehouse", description: "Check gear in and out, scan, close pull sheets. Read-only everywhere else." },
   { value: "viewer", label: "Viewer", description: "Read-only access across the app." },
 ];

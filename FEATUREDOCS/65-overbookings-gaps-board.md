@@ -197,6 +197,10 @@ this window still have gear?" and "are the crew still free?" are different
 questions with different data sources; bundling them would make one dialog say
 two unrelated things. Crew stays a follow-on.
 
+## Off-inventory units clear shortages
+
+Gear demand on this board is `stockBackedQty(line)` (`quantity − offInventoryQuantity`), so a unit converted with **Prep as custom item** (FEATUREDOCS/12) stops counting against the model's stock and the shortage row disappears — `applyDemandLine` in `convex/lib/overbookingBoard.ts` is the site. The confirm-impact gate and the readiness checklist share the same aggregation and clear with it. Pinned by `convex/offInventoryBoard.test.ts`.
+
 ## Known limitations / deferred
 
 - ~~**Whole-range sums, not day-sliced.**~~ **Fixed (2026-09).** Gear

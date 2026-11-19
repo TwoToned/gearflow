@@ -390,7 +390,7 @@ export default function CheckItemsPage() {
           open={!!deleteTarget}
           onOpenChange={(open) => !open && setDeleteTarget(null)}
           title={`Delete "${deleteTarget?.label ?? ""}"?`}
-          description="This removes the check item from new model/kit templates. Existing checklist instances on past projects are preserved."
+          description="This removes the check item from new model/kit templates. Existing checklist instances on past jobs are preserved."
           confirmLabel="Delete check item"
           onConfirm={() => {
             if (deleteTarget) {

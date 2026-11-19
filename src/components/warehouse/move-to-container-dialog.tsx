@@ -13,7 +13,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { focusRing, cn } from "@/lib/utils";
-import type { ContainerRailItem } from "./container-rail";
+
+/** A case the Move-to dialog can send units to (the job's real containers). */
+export interface ContainerRailItem {
+  id: string;
+  label: string;
+  parentContainerId?: string | null;
+  unitCount: number;
+}
 
 export interface MoveToContainerDialogProps {
   open: boolean;
@@ -76,11 +83,11 @@ function ContainerOption({
  * before opening this dialog, so this component only ever deals in a plain
  * count + a container choice — no selection-key parsing here.
  *
- * Deliberately NOT `ContainerRail`: the rail always has exactly one chip
- * "active" (it mirrors live prep state), where this dialog starts with
- * NOTHING chosen each time it opens — reusing the rail's always-one-active
- * radiogroup would either falsely pre-select Loose or need a second
- * "nothing chosen yet" state the rail was never built to express.
+ * Deliberately NOT `ContainerRail`: the rail mirrors LIVE prep state, where a
+ * chip click toggles (clicking the active chip clears the choice). This is a
+ * one-shot destination pick that starts with nothing chosen and must require
+ * an explicit choice (a case or Loose) before Confirm enables, so it keeps its
+ * own radio list rather than the rail's click-again-to-clear behaviour.
  */
 export function MoveToContainerDialog({
   open,

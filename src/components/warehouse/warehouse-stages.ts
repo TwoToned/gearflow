@@ -1,7 +1,7 @@
 // Warehouse item lifecycle — the single source of truth for "what stage is this
 // piece of gear at?". Gear moves strictly left to right:
 //
-//   Pick/prep → Prepped → Deployed → Returned → De-prepped
+//   To pick → Prepped → Out → Returned → De-prepped
 //
 // The data model carries two fields per line:
 //   - status:     CONFIRMED | CHECKED_OUT | ON_SITE | RETURNED | COMPLETED | CANCELLED
@@ -14,14 +14,11 @@
 // must NEVER be re-derived as "needs prepping" just because its prepStatus is no
 // longer PACKED. status === RETURNED always wins.
 
+import { GEAR_STAGE_LABELS, type GearStageKey } from "@/lib/vocabulary";
 import { accessoryChildrenOf, isAccessoryParent, type LineItem } from "./warehouse-types";
 
-export type WarehouseStageKey =
-  | "to_prep"
-  | "prepped"
-  | "deployed"
-  | "returned"
-  | "deprepped";
+/** The warehouse stepper's stages — every gear stage except the archived "closed". */
+export type WarehouseStageKey = Exclude<GearStageKey, "closed">;
 
 export interface WarehouseStageMeta {
   key: WarehouseStageKey;
@@ -31,21 +28,12 @@ export interface WarehouseStageMeta {
 }
 
 export const WAREHOUSE_STAGES: WarehouseStageMeta[] = [
-  { key: "to_prep", label: "Pick", hint: "Pull gear and pack it ready to go." },
-  { key: "prepped", label: "Prepped", hint: "Packed and waiting to be deployed." },
-  { key: "deployed", label: "Deployed", hint: "Out on site with the crew." },
-  { key: "returned", label: "Returned", hint: "Physically back — run return checks." },
-  { key: "deprepped", label: "De-prepped", hint: "Checked and back in inventory." },
+  { key: "to_prep", label: GEAR_STAGE_LABELS.to_prep, hint: "Pull gear and pack it ready to go." },
+  { key: "prepped", label: GEAR_STAGE_LABELS.prepped, hint: "Packed and waiting to be deployed." },
+  { key: "deployed", label: GEAR_STAGE_LABELS.deployed, hint: "Out on site with the crew." },
+  { key: "returned", label: GEAR_STAGE_LABELS.returned, hint: "Physically back — run return checks." },
+  { key: "deprepped", label: GEAR_STAGE_LABELS.deprepped, hint: "Checked and back in inventory." },
 ];
-
-export const WAREHOUSE_STAGE_INDEX: Record<WarehouseStageKey, number> =
-  WAREHOUSE_STAGES.reduce(
-    (acc, s, i) => {
-      acc[s.key] = i;
-      return acc;
-    },
-    {} as Record<WarehouseStageKey, number>,
-  );
 
 export type WarehouseStageCounts = Record<WarehouseStageKey, number>;
 

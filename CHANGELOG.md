@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Custom accessories.** Pack something that isn't in the system with any item: type it in
+  per job (Add / Edit item → Accessories → "Custom") or once per model (Model page →
+  Custom accessories, default or optional). They behave like normal accessories — scaled by
+  quantity, prepped, deployed and returned in the warehouse, and printed on every warehouse
+  document (hidden on quotes/invoices like other accessories).
+
 ### Changed
 
 - **A quote's expiry date no longer blocks accepting it.** `validUntil` is an

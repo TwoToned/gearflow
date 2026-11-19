@@ -77,7 +77,7 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
 }
 
 function openMenu() {
-  const trigger = screen.getByRole("button", { name: /project versions/i });
+  const trigger = screen.getByRole("button", { name: /job versions/i });
   trigger.focus();
   fireEvent.keyDown(trigger, { key: "Enter" });
   return trigger;
@@ -93,7 +93,7 @@ describe("ProjectVersionSwitcher smoke", () => {
   it("renders the trigger with the live version's label", () => {
     mockUseProjectVersion.mockReturnValue(baseCtx());
     render(<ProjectVersionSwitcher />);
-    expect(screen.getByRole("button", { name: /project versions/i }).textContent).toMatch(/v4 · Live/);
+    expect(screen.getByRole("button", { name: /job versions/i }).textContent).toMatch(/v4 · Live/);
   });
 
   it("opens the menu and lists every version, marking the active one", async () => {

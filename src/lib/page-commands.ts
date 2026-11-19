@@ -4,6 +4,8 @@
  * Pages can have children that support drill-down via Tab.
  */
 
+import { MODULE_NAMES } from "@/lib/vocabulary";
+
 export interface PageCommand {
   /** Display label */
   label: string;
@@ -36,7 +38,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
     // 0.5/#1242) — this entry absorbs Today's old aliases (including the
     // "My tasks" command's, since /my-tasks and /today both just redirect
     // here now).
-    label: "Dashboard",
+    label: MODULE_NAMES.home,
     href: "/dashboard",
     aliases: ["dashboard", "overview", "dash", "home", "main", "today", "mytasks", "tasks", "todo", "mytodo"],
     icon: "LayoutDashboard",
@@ -81,11 +83,11 @@ export const PAGE_COMMANDS: PageCommand[] = [
     ],
   },
   {
-    label: "Projects",
+    label: MODULE_NAMES.jobs,
     href: "/projects",
     aliases: ["projects", "project", "jobs", "rentals", "hires", "gigs"],
     icon: "FolderOpen",
-    description: "Rental projects and jobs",
+    description: "Rental jobs",
     searchable: true,
     searchType: "project",
     children: [
@@ -94,12 +96,12 @@ export const PAGE_COMMANDS: PageCommand[] = [
         href: "/projects/templates",
         aliases: ["templates", "projecttemplates", "template"],
         icon: "BookTemplate",
-        description: "Project templates",
+        description: "Job templates",
       },
     ],
   },
   {
-    label: "Availability",
+    label: MODULE_NAMES.schedule,
     href: "/availability",
     aliases: ["availability", "calendar", "avail", "bookings", "schedule"],
     icon: "CalendarRange",
@@ -121,7 +123,7 @@ export const PAGE_COMMANDS: PageCommand[] = [
         href: "/warehouse",
         aliases: ["deploy", "checkout", "sendout", "prep"],
         icon: "PackageCheck",
-        description: "Deploy assets to a project",
+        description: "Deploy assets to a job",
         searchable: true,
         searchType: "project",
         searchHrefPrefix: "/warehouse",

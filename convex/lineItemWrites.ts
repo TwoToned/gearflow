@@ -10,7 +10,7 @@ import { assertOverbookAllowed, assertEmitSideEffectsAgentTrue } from "./lib/age
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertDiscountMode, assertLineMoneyFields } from "./lib/moneyGuards";
-import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
+import { assertStrLen, assertArrayMax, assertNumRange } from "./lib/fieldGuards";
 import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
@@ -264,8 +264,14 @@ function assertLineItemFields(f: { description?: string | null; subhireOrderNumb
 
 /** Bound `accessoryPlan.excluded`/`.added` (R-8.6.2) — a browser-direct caller
  *  bypassing the add-form picker could otherwise send an unbounded array. */
-function assertAccessoryPlanFields(plan?: { excluded: string[]; added: { bulkAssetId: string }[]; excludedReasons?: { bulkAssetId: string; reason: string }[] }): void {
+function assertAccessoryPlanFields(plan?: { excluded: string[]; added: { bulkAssetId: string }[]; excludedReasons?: { bulkAssetId: string; reason: string }[]; custom?: { key: string; name: string; quantityPerParent: number }[] }): void {
   if (!plan) return;
+  assertArrayMax(plan.custom, "accessoryPlan.custom", 50);
+  for (const c of plan.custom ?? []) {
+    assertStrLen(c.key, "accessoryPlan.custom.key", { min: 1, max: 64 });
+    assertStrLen(c.name.trim(), "accessoryPlan.custom.name", { min: 1, max: 120 });
+    assertNumRange(c.quantityPerParent, "accessoryPlan.custom.quantityPerParent", { min: 1, max: 1000, integer: true });
+  }
   assertArrayMax(plan.excluded, "accessoryPlan.excluded", 200);
   assertArrayMax(plan.added, "accessoryPlan.added", 200);
   assertArrayMax(plan.excludedReasons, "accessoryPlan.excludedReasons", 200);
@@ -536,6 +542,9 @@ const LINE_IMMUTABLE_ON_PATCH = [
   "kitId", "isKitChild", "childKind", "parentLineItemId", "pricingMode", "isCustomItem", "isContainerLineItem",
   "status", "returnStatus", "prepStatus", "prepContainer", "returnCondition", "returnNotes",
   "checkedOutQuantity", "returnedQuantity", "assignedQuantity", "packedQuantity", "damagedQuantity", "lostQuantity",
+  // Server-owned: written only by warehouseOps.convertUnit*OffInventory* (it moves with a
+  // generic unit row, so a client patch would desync stock demand from fulfilment).
+  "offInventoryQuantity",
   "checkedOutAt", "checkedOutById", "returnedAt", "returnedById",
   "allocatedRevenue", "allocationBasis",
   "subHireId", "subHireItemId", "subHireGroupId", "supplierOrderId",
@@ -558,6 +567,51 @@ const LINE_NEVER_CLEAR = new Set<string>(["id", "organizationId", ...LINE_IMMUTA
  * lost-update race; see the hook's comment. recalc stays server-side (post-write, via
  * a separate recalcNative call).
  */
+/**
+ * A line with custom (off-inventory) units keeps them coherent across edits
+ * (FEATUREDOCS/12): the counter and its generic unit rows describe THIS model on THIS
+ * line, so the edits that would silently break either are refused up front.
+ *  - changing the model / type, clearing the model, or pinning a specific (bulk) asset
+ *    would move or drop the demand without anyone converting anything;
+ *  - lowering the quantity below (custom + serial units) would drop a stock-backed
+ *    unit instead of the custom one the user presumably meant.
+ */
+/** Would this edit move a line's demand to a different model, type or asset? */
+function editChangesLineIdentity(
+  doc: Doc<"projectLineItems">,
+  clearSet: Set<string>,
+  setObj: Record<string, unknown>,
+): boolean {
+  if (clearSet.has("modelId") || setObj.assetId || setObj.bulkAssetId) return true;
+  if (setObj.modelId !== undefined && setObj.modelId !== doc.modelId) return true;
+  return setObj.type !== undefined && setObj.type !== (doc.type ?? "EQUIPMENT");
+}
+
+/** Units on the line that a serial (asset or bulk asset) backs. */
+async function taggedUnitCount(ctx: MutationCtx, lineId: string): Promise<number> {
+  return (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineId)).collect())
+    .filter((u) => u.status !== "CANCELLED" && (u.assetId || u.bulkAssetId))
+    .reduce((n, u) => n + (u.quantity ?? 1), 0);
+}
+
+async function assertCustomUnitsStayCoherent(
+  ctx: MutationCtx,
+  doc: Doc<"projectLineItems">,
+  edit: { newQty: number; clearSet: Set<string>; setObj: Record<string, unknown> },
+): Promise<void> {
+  const custom = doc.offInventoryQuantity ?? 0;
+  if (custom < 1) return;
+  if (editChangesLineIdentity(doc, edit.clearSet, edit.setObj)) {
+    throw new ConvexError(`${custom} unit(s) of this line are custom — convert them back to inventory before changing its model, type or asset.`);
+  }
+  const tagged = await taggedUnitCount(ctx, doc.id);
+  if (edit.newQty < custom + tagged) {
+    throw new ConvexError(
+      `${custom} unit(s) of this line are custom and ${tagged} have serials — convert custom units back to inventory (or remove assigned units) before lowering the quantity below ${custom + tagged}.`,
+    );
+  }
+}
+
 export const patchNative = mutation({
   returns: v.object({ projectId: v.string() }),
   args: {
@@ -697,6 +751,7 @@ export const patchNative = mutation({
     const effType = effField("type");
     const effModelId = effField("modelId") as string | undefined;
     const newQty = clearSet.has("quantity") ? currentQty : ((setObj.quantity as number | undefined) ?? currentQty);
+    await assertCustomUnitsStayCoherent(ctx, doc, { newQty, clearSet, setObj: setObj as Record<string, unknown> });
 
     // Asset REASSIGNMENT (`assetId` actually changing to a different value) — the same
     // hard guards the dedicated `swapLineItemAsset` mutation runs (model match, kit
@@ -1255,6 +1310,24 @@ async function emitLineItemAdded(
  * NO availability check to keep server-side — this is a fully-native add. sortOrder is
  * computed in-mutation (nextLineSort replica); recalc stays server-side (post-write).
  */
+/** A custom (free-text) item has no catalog accessories — only the per-line `plan.custom` ones — so
+ *  expand just those, in the add transaction. No-op without any. */
+async function expandCustomItemAccessories(
+  ctx: MutationCtx,
+  a: {
+    id: string; organizationId: string; projectId: string; versionId: string | undefined;
+    fields: { quantity: number; categoryId?: string; groupId?: string; duration?: number; pricingType?: string };
+    accessoryPlan: { custom?: unknown[] } | undefined;
+  },
+): Promise<void> {
+  if (!a.accessoryPlan?.custom?.length) return;
+  await expandAccessoryChildLines(ctx, {
+    id: a.id, assetId: null, modelId: null, quantity: a.fields.quantity, categoryId: a.fields.categoryId,
+    groupId: a.fields.groupId, duration: a.fields.duration, pricingType: a.fields.pricingType,
+    organizationId: a.organizationId, projectId: a.projectId, accessoryPlan: a.accessoryPlan as AccessoryPlan, versionId: a.versionId,
+  });
+}
+
 export const addCustomNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
@@ -1298,9 +1371,12 @@ export const addCustomNative = mutation({
     // against `project` (same org + project) by resolveWriteVersionId — a
     // caller can't smuggle a line onto a foreign project's version.
     versionId: v.optional(v.string()),
+    // Free-text accessories for this custom item (only `custom` is meaningful —
+    // there's no catalog entry to include/exclude from). FEATUREDOCS/48.
+    accessoryPlan: v.optional(enums.AccessoryPlanArg),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, versionId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, versionId, accessoryPlan, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1330,6 +1406,7 @@ export const addCustomNative = mutation({
     // bounds (assertLineItemFields), so checked inline rather than shared.
     assertStrLen(fields.description, "description", { min: 1, max: 200 });
     assertStrLen(fields.notes, "notes", { max: 500 });
+    assertAccessoryPlanFields(accessoryPlan);
 
     // lineTotal is a DERIVED value — see addNative's comment for the full rationale.
     // The legit client already computes it this exact way (use-line-item-writes.ts
@@ -1353,10 +1430,12 @@ export const addCustomNative = mutation({
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
       pricedUnderLock: pricedUnderLockOnInsert(defaultToZero),
+      accessoryPlan,
       sortOrder,
       createdAt: now,
       updatedAt: now,
     });
+    await expandCustomItemAccessories(ctx, { id, organizationId, projectId, fields, accessoryPlan, versionId: targetVersionId });
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -1689,12 +1768,13 @@ export const addNative = mutation({
  *  (issue #794 decision 2: post-deploy edits are hard-blocked). Extracted so
  *  the mutation handler stays under the complexity ratchet (R-3.6). */
 function assertLineOwnsAccessoryPlan(
-  line: { organizationId: string; childKind?: string; modelId?: string; assetId?: string; checkedOutQuantity?: number; status?: string } | null,
+  line: { organizationId: string; childKind?: string; modelId?: string; assetId?: string; isCustomItem?: boolean; checkedOutQuantity?: number; status?: string } | null,
   organizationId: string,
 ): asserts line is NonNullable<typeof line> {
   if (!line || line.organizationId !== organizationId) throw new ConvexError("Line item not found");
   if (line.childKind) throw new ConvexError("Only a parent equipment line can have an accessory plan");
-  if (!line.modelId && !line.assetId) {
+  // A custom (free-text) item has no catalog entry, but can still carry per-line custom accessories.
+  if (!line.modelId && !line.assetId && !line.isCustomItem) {
     throw new ConvexError("This line has no model or asset — there's nothing to attach accessories to");
   }
   if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") {
@@ -1791,7 +1871,7 @@ export const updateAccessoryPlanNative = mutation({
  *  from, and hasn't deployed yet — same gate as `assertLineOwnsAccessoryPlan`. */
 function isAccessoryResyncEligible(line: Doc<"projectLineItems">): boolean {
   if (line.isKitChild || line.childKind) return false; // accessory/kit children have no plan of their own
-  if (!line.modelId && !line.assetId) return false;
+  if (!line.modelId && !line.assetId && !line.isCustomItem) return false;
   if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") return false; // deployed — warehouse owns it now
   return true;
 }

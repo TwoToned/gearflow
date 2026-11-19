@@ -85,6 +85,10 @@ without re-scanning.
   consumer in the unit row) to avoid threading props through every `LineItemRow`
   call site. Returned units offer no control (history).
 
+## Custom (off-inventory) units on a line
+
+A line can carry units that no serial backs: `offInventoryQuantity` on the line plus one **generic unit** (no `assetId`/`bulkAssetId`) per custom unit. They render as a `N custom` badge on the line and a serial-less unit row; the kebab offers "Convert 1 to custom item" (overbooked lines) and "Convert 1 back to inventory". See [12](./12-warehouse.md#prep-as-custom-item-off-inventory-units) and the demand rule in [11](./11-availability.md).
+
 ## History retention
 
 RETURNED unit rows persist through check-in **and** close-out and render inline

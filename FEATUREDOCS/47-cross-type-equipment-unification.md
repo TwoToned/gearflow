@@ -237,14 +237,8 @@ actions (`addLineItem`, `addKitLineItem`, `addCustomLineItem`) already accepted
 change. Placement pickers stay hidden when the form is launched from a specific
 category/group context (a `targetLabel` chip shows the destination instead).
 
-`add-service-dialog.tsx` (the standalone Add service/other dialog, separate
-from `UnifiedAddDialog`) got the same dialog-context treatment: its two raw
-`<select>` elements (type, pricing type) are now the registry `Select` with
-explicit `SelectValue` children, the hand-rolled `Loader2` spinner is replaced
-by `Button loading`, error copy moved to `t-out`/`t-micro`, a `line` Cancel
-button was added to match the other dialogs, and labels/title are sentence
-case. The group `ComboboxPicker` (creatable) and the `addLineItem` mutation
-are unchanged.
+The standalone `add-service-dialog.tsx` was dead code (no importer) and was removed in
+the UX unification Phase 0 (services are added through `UnifiedAddDialog`).
 
 Both move-item dialogs replaced the combined `move-line-item-dialog.tsx`
 in v0.9.3.0. The server action (`moveLineItemToGroup`) is unchanged —
@@ -692,3 +686,12 @@ SubHireGroup synthetic parents — pre-dates this work, no changes needed.
   warehouse + PDF pipelines still see them.
 - The merge behaviour described in [10-projects.md §Sub-hire merge rules](./10-projects.md) —
   unchanged.
+
+## Warehouse job rows (UX Phase 3)
+
+The warehouse stages render these same lines through `buildJobSections` / `buildJobRow`
+(`src/lib/warehouse-job-rows.ts`) into the shared `LineRowList`: category groups on To pick, case groups
+(Loose last) from Prepped. A kit child never becomes a top-level row (it rides its kit parent); only a
+sub-hire GROUP child (no `kitId`) is its own line, the legacy `equipmentItems` rule. Accessory and kit-member
+rows are children of the parent row, selectable on Prepped/Out (relocated accessory units by unit key). The
+old per-tab renderers (`deploy-tab`, `kit-child-rows`, `return-tab`, `container-rail`) are deleted.

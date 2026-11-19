@@ -20,6 +20,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { getProjectWindow } from "./projectWindow";
+import { stockBackedQty } from "./stockBackedQty";
 
 // ─── Pure stock breakdown (copied byte-for-byte from overbooking-core.ts) ─────
 
@@ -250,7 +251,7 @@ export function computeModelAvailability(
     );
   }
 
-  const booked = overlapping.reduce((sum, li) => sum + (li.quantity ?? 0), 0);
+  const booked = overlapping.reduce((sum, li) => sum + stockBackedQty(li), 0);
   const { totalStock, effectiveStock, unavailable } = computeStockBreakdown(modelForBreakdown);
   const available = Math.max(0, effectiveStock - booked);
 

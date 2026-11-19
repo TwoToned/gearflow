@@ -41,6 +41,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 const statusColors: Record<string, string> = {
   ENQUIRY: "bg-gray-400",
@@ -62,7 +63,7 @@ const statusLabels: Record<string, string> = {
   QUOTED: "Quoted",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
-  CHECKED_OUT: "Deployed",
+  CHECKED_OUT: OUT_LABEL,
   ON_SITE: "On Site",
   RETURNED: "Returned",
   COMPLETED: "Completed",
@@ -595,7 +596,7 @@ export function BookingCalendar({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Project</TableHead>
+                    <TableHead>Job</TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Start</TableHead>

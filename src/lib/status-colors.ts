@@ -21,6 +21,8 @@
  *   --out-soft = rgba(224,54,61,.18) (subtle red tint for error bg)
  */
 
+import type { GearStageKey } from "@/lib/vocabulary";
+
 export type ColorIntent = "success" | "warning" | "error" | "info" | "neutral" | "primary";
 
 /** CSS classes for each color intent — dot + text pattern */
@@ -29,6 +31,8 @@ export const intentStyles: Record<ColorIntent, {
   text: string;
   pill: string;
   bg: string;
+  /** Ring colour for stepper nodes (e.g. the warehouse lifecycle). */
+  ring: string;
 }> = {
   // RVLT token names: --ok (green), --warn (amber), --red/--t-out (red),
   // --blue (info), --rep (neutral/muted), --red (primary/live)
@@ -37,36 +41,42 @@ export const intentStyles: Record<ColorIntent, {
     text: "text-ok",
     pill: "bg-ok-soft text-ok",
     bg: "bg-ok-soft",
+    ring: "ring-ok",
   },
   warning: {
     dot: "bg-warn",
     text: "text-warn",
     pill: "bg-warn-soft text-warn",
     bg: "bg-warn-soft",
+    ring: "ring-warn",
   },
   error: {
     dot: "bg-t-out",
     text: "text-t-out",
     pill: "bg-out-soft text-t-out",
     bg: "bg-out-soft",
+    ring: "ring-t-out",
   },
   info: {
     dot: "bg-blue",
     text: "text-info",
     pill: "bg-blue-soft text-info",
     bg: "bg-blue-soft",
+    ring: "ring-blue",
   },
   neutral: {
     dot: "bg-rep",
     text: "text-rep",
     pill: "bg-rep-soft text-rep",
     bg: "bg-rep-soft",
+    ring: "ring-rep",
   },
   primary: {
     dot: "bg-red",
     text: "text-red-text",
     pill: "bg-primary text-white",
     bg: "bg-red-soft",
+    ring: "ring-red",
   },
 };
 
@@ -115,12 +125,27 @@ const projectStatusIntent: Record<string, ColorIntent> = {
   CANCELLED: "error",
 };
 
+/**
+ * Gear stage → intent (UX unification D2, spec §4) — the ONE table every stage
+ * renderer reads (warehouse floor cards, lifecycle stepper, stage chips).
+ * Words live in `vocabulary.ts`.
+ */
+const gearStageIntent: Record<GearStageKey, ColorIntent> = {
+  to_prep: "neutral", // nothing has happened yet
+  prepped: "info", // packed and waiting
+  deployed: "primary", // Out: solid red is reserved for CHECKED_OUT / live
+  returned: "warning", // work remains
+  deprepped: "success", // done
+  closed: "neutral", // archived (rendered outline by the caller)
+};
+
 const lineItemStatusIntent: Record<string, ColorIntent> = {
   QUOTED: "info",
   CONFIRMED: "success",
-  PREPPED: "warning",
-  CHECKED_OUT: "primary",
-  RETURNED: "primary",
+  // Stage colours are defined once, in gearStageIntent (D2 / R-3.1).
+  PREPPED: gearStageIntent.prepped,
+  CHECKED_OUT: gearStageIntent.deployed,
+  RETURNED: gearStageIntent.returned,
   CANCELLED: "error",
 };
 
@@ -337,7 +362,8 @@ export type StatusCategory =
   | "testTag"
   | "testTagResult"
   | "conflictSeverity"
-  | "quote";
+  | "quote"
+  | "gearStage";
 
 const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   asset: assetStatusIntent,
@@ -365,6 +391,7 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   testTagResult: testTagResultIntent,
   conflictSeverity: conflictSeverityIntent,
   quote: quoteStatusIntentMap,
+  gearStage: gearStageIntent,
 };
 
 /**

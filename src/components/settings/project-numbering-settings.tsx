@@ -49,7 +49,7 @@ export function ProjectNumberingSettings({ format, reset, padding, disabled, onC
   return (
     <div className="sm:col-span-2 space-y-3 rounded-lg border border-border/60 bg-bg-2/40 p-4">
       <div>
-        <h4 className="t-body font-medium text-fg">Auto project numbers</h4>
+        <h4 className="t-body font-medium text-fg">Auto job numbers</h4>
         <p className="t-micro text-fg-3">
           Leave the format blank to enter project codes manually. Set a template to
           auto-generate the code when a project is created (the field can be left empty on the form).
@@ -118,7 +118,7 @@ export function ProjectNumberingSettings({ format, reset, padding, disabled, onC
         <p className="t-micro text-destructive">{formatError}</p>
       ) : enabled && preview ? (
         <p className="t-micro text-fg-2">
-          Next project number: <span className="font-mono font-medium text-fg">{preview}</span>
+          Next job number: <span className="font-mono font-medium text-fg">{preview}</span>
         </p>
       ) : null}
     </div>

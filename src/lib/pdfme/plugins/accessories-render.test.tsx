@@ -234,4 +234,38 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
     expect(rendered.fullText).toContain("IMX6A Headset");
     expect(renderedPlain.fullText).toContain("IMX6A Headset");
   });
+
+  it("prints a CUSTOM (free-text, no model/asset) accessory like any other — warehouse docs only, per unit on packing lists", async () => {
+    const tape = makeLineItem({
+      id: "acc-tape",
+      isKitChild: true,
+      childKind: "ACCESSORY",
+      quantity: 3,
+      status: "CONFIRMED",
+      description: "3x Gaffer tape",
+    });
+    const parent = makeLineItem({
+      id: "parent-cam",
+      quantity: 1,
+      status: "CONFIRMED",
+      model: { name: "Cine Camera" } as never,
+      description: "Cine Camera",
+      childLineItems: [tape],
+    });
+    const data = makeSpikeData({ line_items: [parent], total_items: 1 });
+
+    const packing = await renderPdfPages(<PackingListDocument data={data} />);
+    expect(packing.fullText).toMatch(/Cine Camera/);
+    expect(packing.fullText).toMatch(/Gaffer tape/);
+
+    const docket = await renderPdfPages(<DeliveryDocketDocument data={makeSpikeData({
+      line_items: [{ ...parent, status: "CHECKED_OUT", childLineItems: [{ ...tape, status: "CHECKED_OUT" }] }],
+      total_items: 1,
+    })} />);
+    expect(docket.fullText).toMatch(/Gaffer tape/);
+
+    const quote = await renderPdfPages(<QuoteDocument data={data} />);
+    expect(quote.fullText).toMatch(/Cine Camera/);
+    expect(quote.fullText).not.toMatch(/Gaffer tape/);
+  });
 });

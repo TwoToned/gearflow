@@ -75,7 +75,7 @@ export const crewAssignmentSchema = z.object({
   crewMemberId: z.string().min(1, "Crew member is required"),
   crewRoleId: z.string().optional().or(z.literal("")),
   status: z.enum(["PENDING", "OFFERED", "ACCEPTED", "DECLINED", "CONFIRMED", "CANCELLED", "COMPLETED"]).default("PENDING"),
-  phase: z.enum(["BUMP_IN", "EVENT", "BUMP_OUT", "DELIVERY", "PICKUP", "SETUP", "REHEARSAL", "FULL_DURATION"]).optional().or(z.literal("")),
+  phase: z.enum(["BUMP_IN", "EVENT", "BUMP_OUT", "DELIVERY", "PICKUP", "HANDOVER", "RETURN", "SETUP", "REHEARSAL", "FULL_DURATION"]).optional().or(z.literal("")),
   isProjectManager: z.boolean().default(false),
   startDate: z.union([z.literal(""), z.coerce.date()]).optional()
     .transform(v => v === "" ? undefined : v),
@@ -136,3 +136,11 @@ export const crewTimeEntrySchema = z.object({
 });
 
 export type CrewTimeEntryFormValues = z.input<typeof crewTimeEntrySchema>;
+
+/** Most offers one "Send N offers" click may fan out (each is an email). */
+const MAX_OFFER_BATCH = 100;
+
+/** `sendCrewOffers` input: the assignments ticked on the Logistics tab. */
+export const sendCrewOffersSchema = z.object({
+  assignmentIds: z.array(z.string().min(1)).min(1).max(MAX_OFFER_BATCH),
+});

@@ -99,7 +99,7 @@ function gearCheck(input: BuildChecksInput): ReadinessCheck {
       id: "gear",
       severity: "unknown",
       title: "Gear availability not checked",
-      detail: "Set rental dates to check this project's gear against everything else booked.",
+      detail: "Set rental dates to check this job's gear against everything else booked.",
       actionLabel: "Set dates",
     };
   }

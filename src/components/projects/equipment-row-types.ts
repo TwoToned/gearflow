@@ -17,6 +17,7 @@ export interface LineItemData {
    *  object (MappedLineItem carries both; equipment-tab-reconstruct's attach
    *  helpers spread the full row), just not previously declared here. */
   assetId?: string | null;
+  bulkAssetId?: string | null;
   checkedOutQuantity?: number;
   description: string | null;
   quantity: number;
@@ -59,6 +60,9 @@ export interface LineItemData {
   pricedUnderLock?: boolean;
   // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
   isCustomItem?: boolean;
+  /** Units sourced outside the fleet ("prep as custom item", FEATUREDOCS/12): same
+   *  price and document row, no stock held. Absent = 0. */
+  offInventoryQuantity?: number;
   /** A container row (road case, trolley). `isNonGear` in the allocator, so it
    *  takes no share of any pool — see canExcludeFromRoi (src/lib/roi.ts). */
   isContainerLineItem?: boolean;
@@ -95,7 +99,7 @@ export interface LineItemData {
   status?: string;
   prepStatus?: string | null;
   supplier?: { name: string } | null;
-  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
+  model?: { name: string; assetType?: string | null; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
   asset?: { assetTag?: string | null } | null;
   /** Post-cutover per-unit assignments. Source of truth for which
    *  physical assets a multi-quantity line is using. `status` /
@@ -104,6 +108,7 @@ export interface LineItemData {
   units?: Array<{
     id: string;
     ordinal: number;
+    quantity?: number | null;
     status?: string | null;
     returnCondition?: string | null;
     asset?: { id: string; assetTag: string } | null;

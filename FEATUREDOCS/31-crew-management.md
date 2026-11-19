@@ -45,7 +45,7 @@ Crew management tracks people (employees, freelancers, contractors, volunteers) 
 - `id, organizationId, projectId, crewMemberId`
 - `crewRoleId?` — role for this assignment
 - `status` — PENDING, OFFERED, ACCEPTED, DECLINED, CONFIRMED, CANCELLED, COMPLETED
-- `phase?` — BUMP_IN, EVENT, BUMP_OUT, DELIVERY, PICKUP, SETUP, REHEARSAL, FULL_DURATION
+- `phase?` — BUMP_IN, EVENT, BUMP_OUT, DELIVERY, PICKUP, HANDOVER, RETURN, SETUP, REHEARSAL, FULL_DURATION (HANDOVER / RETURN staff a client pick up / drop off)
 - `isProjectManager` — boolean, PMs shown first
 - `startDate?, startTime?, endDate?, endTime?`
 - `rateOverride?, rateType?, estimatedHours?, estimatedCost?`
@@ -287,6 +287,13 @@ create/update permission gates.
 - `getCrewMemberById` returns `isOwnProfile: true` when the logged-in user matches the crew member's `userId`
 
 ## Project Detail Integration
+> **UX Phase 5a:** the "Labour & logistics" tab is now **Logistics**
+> (`src/components/projects/logistics/`, [84-job-logistics.md](./84-job-logistics.md)); `ServicesPanel`
+> and `CrewPanel` are gone. Crew are child rows under their service (read-only) and, with every verb
+> (offers, confirm, status, remove with Undo), in the **By person** view; **Pick crew** is one sheet;
+> `sendCrewOffers` sends offers; `shiftScheduleNative` moves services and crew calls with the job
+> dates. The text below describes the pre-5a panel; the data model and cost linkage are unchanged.
+
 There is **no separate "Crew" tab** — the "Labour & logistics" tab on the project
 detail page (`/projects/[id]`) is entirely owned by `ServicesPanel`
 (`src/components/projects/services-panel.tsx`), which is now the **sole crew UI**

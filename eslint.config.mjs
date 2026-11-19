@@ -34,6 +34,9 @@ const eslintConfig = [
       ".claude/worktrees/**",
       // Generated code — excluded from length/naming rules per POLICY.md R-0.5
       "src/generated/**",
+      // UX prototype kit: design scaffolding (vanilla browser JS assembled into
+      // throwaway HTML), not app code — docs/designs/ux-redesign-playbook.md §7
+      "docs/designs/prototype-kit/**",
     ],
   },
   {

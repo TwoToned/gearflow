@@ -345,7 +345,7 @@ export default function ReturnsStationPage() {
             </span>
             <h1 className="t-page-title text-ink">Returns</h1>
             <p className="t-body text-muted">
-              Everything out, org-wide — scan a tag to return it. No project to pick first.
+              Everything out, org-wide — scan a tag to return it. No job to pick first.
             </p>
           </div>
           <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
@@ -578,7 +578,7 @@ export default function ReturnsStationPage() {
         <Dialog open={!!disambiguation} onOpenChange={(open) => !open && setDisambiguation(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Which project?</DialogTitle>
+              <DialogTitle>Which job?</DialogTitle>
               <DialogDescription>
                 {disambiguation?.assetTag} is checked out on more than one project — pick which one this return is for.
               </DialogDescription>

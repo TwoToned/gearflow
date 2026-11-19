@@ -208,7 +208,7 @@ project document types now uses one fixed pipeline (`document-layouts.ts` →
 see FEATUREDOCS/13.
 
 ## Dashboard & Reporting
-- **Dashboard** (`/dashboard`): the user's home screen. Leads with a personalised greeting
+- **Home** (`/dashboard`; labelled "Dashboard" before UX Phase 0, D66): the user's home screen. Leads with a personalised greeting
   (time-of-day + first name) and a **"Your projects"** section — projects the signed-in user
   manages, found via BOTH `Project.projectManagerId` AND the `ProjectManager` join
   (`home` query in `convex/dashboardLists.ts`, active projects only). Each card shows status,

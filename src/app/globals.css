@@ -160,6 +160,9 @@
 }
 
 @theme inline {
+  /* D68: phone is max-width 859px, so Tailwind's `md` starts at 860px. The TS
+     constant (src/lib/breakpoints.ts) is held in step by breakpoints.test.ts. */
+  --breakpoint-md: 860px;
   /* brand palette → bg-paper, text-ink, border-line-2, text-ok, bg-ok-soft, bg-red… */
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
@@ -387,7 +390,7 @@
 html {
   min-height: calc(100% + env(safe-area-inset-top));
 }
-@media (max-width: 767px) {
+@media (width < theme(--breakpoint-md)) {
   .app-shell {
     position: fixed;
     inset: 0;
@@ -521,3 +524,13 @@ body {
 .designer-shell .pdfme-designer-sidebar-toggle svg { stroke: currentColor !important; }
 
 @layer utilities { .t-reading-body { font-size: 16px; line-height: 1.5; font-weight: 400; } }
+
+/* D67: tablet icon rail. At <= 1023px the sidebar is the 72px rail regardless of
+   the manual collapse preference; the layout's inline --sidebar-width is
+   overridden here so the SSR first paint is already correct (no JS flash). The
+   rail/full views swap via `max-lg` in app-sidebar.tsx. */
+@media (width < theme(--breakpoint-lg)) {
+  [data-slot="sidebar-wrapper"] {
+    --sidebar-width: var(--sidebar-width-icon) !important;
+  }
+}

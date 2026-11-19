@@ -6,9 +6,10 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
-import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
+import { assertArrayMax, assertNumRange, assertStrLen } from "./lib/fieldGuards";
+import { MAX_SHIFT_DAYS, MAX_SHIFT_GROUPS, MAX_SHIFT_SERVICES, serviceTypeToPhase, shiftDay } from "./lib/serviceSchedule";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
@@ -54,6 +55,8 @@ const MULTI_DAY_TYPES = new Set(["BUMP_IN", "BUMP_OUT", "LABOUR"]);
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   DELIVERY: "Delivery",
   PICKUP: "Pickup",
+  CLIENT_PICKUP: "Client pick up",
+  CLIENT_DROPOFF: "Client drop off",
   BUMP_IN: "Bump In",
   BUMP_OUT: "Bump Out",
   LABOUR: "Labour",
@@ -74,17 +77,6 @@ function calculateServiceLineTotal(
   // never add to the line total even if a caller reaches this without the guard above.
   const disc = Math.max(0, discount ?? 0);
   return Math.max(0, round(unitPrice - disc));
-}
-
-function serviceTypeToPhase(type: string): string {
-  switch (type) {
-    case "DELIVERY": return "DELIVERY";
-    case "PICKUP": return "PICKUP";
-    case "BUMP_IN": return "BUMP_IN";
-    case "BUMP_OUT": return "BUMP_OUT";
-    case "LABOUR": return "EVENT";
-    default: return "FULL_DURATION"; // MISC
-  }
 }
 
 /** DELIVERY/PICKUP with no crew work window default to scheduledTime → +1 hr. */
@@ -171,7 +163,7 @@ async function syncServiceCrewSchedule(
   orgId: string,
   next: ServiceSchedule,
   now: number,
-): Promise<void> {
+): Promise<{ count: number; held: number }> {
   const { crewStart, crewEnd } = deriveCrewTimes(next.startTime, next.endTime, next.scheduledTime, service.type);
   const assignments = (
     await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", service.id)).collect()
@@ -193,6 +185,9 @@ async function syncServiceCrewSchedule(
     await recalcServiceCostFromCrew(ctx, service.id, orgId, now);
     await recalcServiceChargeFromCrew(ctx, service.id, orgId, now);
   }
+  // `held`: crew who have said yes (CONFIRMED) or been asked (OFFERED); status is never touched here.
+  const held = assignments.filter((r) => r.status === "CONFIRMED" || r.status === "OFFERED").length;
+  return { count: assignments.length, held };
 }
 
 // Shared service-input args (create + update). Dates are epoch-ms; the hook parses
@@ -223,6 +218,9 @@ const serviceInputArgs = {
   taxable: v.boolean(),
   vehicleDescription: v.optional(v.string()),
   numberOfTrips: v.optional(v.number()),
+  clientContactName: v.optional(v.string()),
+  clientContactPhone: v.optional(v.string()),
+  clientVehicle: v.optional(v.string()),
   crewCountRequired: v.optional(v.number()),
   crewRoleId: v.optional(v.string()),
   xeroAccountCode: v.optional(v.string()),
@@ -254,6 +252,9 @@ type ServiceInput = {
   taxable: boolean;
   vehicleDescription?: string;
   numberOfTrips?: number;
+  clientContactName?: string;
+  clientContactPhone?: string;
+  clientVehicle?: string;
   crewCountRequired?: number;
   crewRoleId?: string;
   xeroAccountCode?: string;
@@ -268,8 +269,18 @@ type ServiceInput = {
  * bounds (`unitPrice`/`discount`/`costTotal` non-negative + finite) are already
  * enforced just below. `quantity` was the one bound neither path re-checked.
  */
-function assertServiceFields(f: { quantity?: number; xeroAccountCode?: string; xeroTaxType?: string }): void {
+function assertServiceFields(f: {
+  quantity?: number;
+  xeroAccountCode?: string;
+  xeroTaxType?: string;
+  clientContactName?: string;
+  clientContactPhone?: string;
+  clientVehicle?: string;
+}): void {
   assertNumRange(f.quantity, "quantity", { min: 1 });
+  assertStrLen(f.clientContactName, "clientContactName", { max: 120 });
+  assertStrLen(f.clientContactPhone, "clientContactPhone", { max: 40 });
+  assertStrLen(f.clientVehicle, "clientVehicle", { max: 120 });
   assertStrLen(f.xeroAccountCode, "xeroAccountCode", { max: 50 });
   assertStrLen(f.xeroTaxType, "xeroTaxType", { max: 50 });
 }
@@ -284,7 +295,14 @@ function buildServiceFields(a: ServiceInput) {
   assertFinite(a.discount, "discount");
   assertFinite(a.costTotal, "costTotal");
   assertFinite(a.chargeRateOverride, "chargeRateOverride");
-  assertServiceFields({ quantity: a.quantity, xeroAccountCode: a.xeroAccountCode, xeroTaxType: a.xeroTaxType });
+  assertServiceFields({
+    quantity: a.quantity,
+    xeroAccountCode: a.xeroAccountCode,
+    xeroTaxType: a.xeroTaxType,
+    clientContactName: a.clientContactName,
+    clientContactPhone: a.clientContactPhone,
+    clientVehicle: a.clientVehicle,
+  });
   // Bound money NON-NEGATIVE (browser-direct bypasses the server Zod min(0)). A negative
   // discount would INFLATE the customer-facing service line total (max(0, unitPrice - disc)
   // → serviceRevenue → project total); a negative costTotal would INFLATE project margin
@@ -330,6 +348,9 @@ function buildServiceFields(a: ServiceInput) {
     taxable: a.taxable,
     vehicleDescription: a.vehicleDescription || null,
     numberOfTrips: a.numberOfTrips || null,
+    clientContactName: a.clientContactName || null,
+    clientContactPhone: a.clientContactPhone || null,
+    clientVehicle: a.clientVehicle || null,
     crewCountRequired: a.crewCountRequired || null,
     crewRoleId: a.crewRoleId || null,
     xeroAccountCode: a.xeroAccountCode || null,
@@ -612,6 +633,9 @@ export const createServiceNative = mutation({
       taxable: fields.taxable,
       ...(fields.vehicleDescription != null ? { vehicleDescription: fields.vehicleDescription } : {}),
       ...(fields.numberOfTrips != null ? { numberOfTrips: fields.numberOfTrips } : {}),
+      ...(fields.clientContactName != null ? { clientContactName: fields.clientContactName } : {}),
+      ...(fields.clientContactPhone != null ? { clientContactPhone: fields.clientContactPhone } : {}),
+      ...(fields.clientVehicle != null ? { clientVehicle: fields.clientVehicle } : {}),
       ...(fields.crewCountRequired != null ? { crewCountRequired: fields.crewCountRequired } : {}),
       ...(fields.crewRoleId != null ? { crewRoleId: fields.crewRoleId } : {}),
       ...(fields.xeroAccountCode != null ? { xeroAccountCode: fields.xeroAccountCode } : {}),
@@ -746,6 +770,9 @@ export const updateServiceNative = mutation({
     setOrClear("chargeRateOverride", fields.chargeRateOverride);
     setOrClear("vehicleDescription", fields.vehicleDescription);
     setOrClear("numberOfTrips", fields.numberOfTrips);
+    setOrClear("clientContactName", fields.clientContactName);
+    setOrClear("clientContactPhone", fields.clientContactPhone);
+    setOrClear("clientVehicle", fields.clientVehicle);
     setOrClear("crewCountRequired", fields.crewCountRequired);
     setOrClear("crewRoleId", fields.crewRoleId);
     setOrClear("xeroAccountCode", fields.xeroAccountCode);
@@ -858,6 +885,97 @@ export const updateServiceNative = mutation({
     });
 
     return { id: a.id };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// shiftScheduleNative — move N services (and their crew calls) by whole days, ATOMICALLY.
+// The Logistics dates sheet's "move services and crew calls with the window" (spec §8) and
+// its Undo (the same call with the negative offset). Every id is validated (org + project)
+// BEFORE the first write, so one bad id rejects the lot and nothing moves. Date-only: times,
+// money and the pricing lock are untouched (the move does not change what anything costs),
+// and the crew re-sync is the SAME `syncServiceCrewSchedule` updateServiceNative uses.
+// project:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const shiftScheduleNative = mutation({
+  // `confirmedMoved`: moved crew calls whose status is CONFIRMED or OFFERED, i.e. people the
+  // move may surprise. Their status is NOT changed; the caller just tells the operator.
+  returns: v.object({ services: v.number(), crewCalls: v.number(), undated: v.number(), confirmedMoved: v.number() }),
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    // Load in and load out can move by different amounts (delivery + bump in follow the
+    // first, bump out + pickup the second), so a call carries a few groups, still ONE
+    // transaction. A service may appear in only one group.
+    moves: v.array(v.object({ offsetDays: v.number(), serviceIds: v.array(v.string()) })),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "projectService");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "project", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    assertArrayMax(a.moves, "moves", MAX_SHIFT_GROUPS);
+    let total = 0;
+    for (const m of a.moves) {
+      assertNumRange(m.offsetDays, "offsetDays", { min: -MAX_SHIFT_DAYS, max: MAX_SHIFT_DAYS, integer: true });
+      assertArrayMax(m.serviceIds, "serviceIds", MAX_SHIFT_SERVICES);
+      total += m.serviceIds.length;
+    }
+    assertNumRange(total, "serviceIds", { max: MAX_SHIFT_SERVICES });
+    // The cap comes from the verified identity: 50 for an agent, 500 for a person (CLAUDE.md).
+    await assertBulkSizeOk(ctx, total);
+
+    // Validate everything first: all-or-nothing.
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    const seen = new Set<string>();
+    const planned: { service: Doc<"projectServices">; offsetDays: number }[] = [];
+    for (const m of a.moves) {
+      if (m.offsetDays === 0) continue;
+      for (const id of m.serviceIds) {
+        if (seen.has(id)) throw new ConvexError("A service can only be moved once per call");
+        seen.add(id);
+        const service = await requireServiceInOrg(ctx, id, a.orgId);
+        if (service.projectId !== a.projectId) throw new ConvexError("Service not found");
+        planned.push({ service, offsetDays: m.offsetDays });
+      }
+    }
+    if (planned.length === 0) return { services: 0, crewCalls: 0, undated: 0, confirmedMoved: 0 };
+
+    // PRICING LOCK: deliberately NOT gated. A whole-day shift keeps each service's span, and
+    // crew cost is `rate x (days in span)` (calculateEstimatedCost: no weekday/weekend term),
+    // so the re-sync below rewrites `estimatedCost` to the same number and the recalcs are
+    // date-invariant. Proved across a weekend in convex/shiftSchedule.test.ts. If a date-
+    // sensitive rate is ever added, this must call assertPricingUnlocked first.
+    let shifted = 0, crewCalls = 0, undated = 0, confirmedMoved = 0;
+    for (const { service: s, offsetDays } of planned) {
+      if (s.date == null) { undated++; continue; }
+      const next: ServiceSchedule = {
+        ...scheduleOf(s),
+        date: shiftDay(s.date, offsetDays),
+        endDate: shiftDay(s.endDate, offsetDays),
+      };
+      await ctx.db.patch(s._id, { date: next.date, endDate: next.endDate, updatedAt: a.now });
+      const synced = await syncServiceCrewSchedule(ctx, { id: s.id, type: s.type }, a.orgId, next, a.now);
+      crewCalls += synced.count;
+      confirmedMoved += synced.held;
+      shifted++;
+    }
+
+    if (shifted > 0) {
+      await logService(ctx, {
+        orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+        action: "schedule_shifted", entityId: planned[0].service.id,
+        entityName: `${shifted} service${shifted === 1 ? "" : "s"}`,
+        summary: `Moved ${shifted} service${shifted === 1 ? "" : "s"} and ${crewCalls} crew call${crewCalls === 1 ? "" : "s"}`,
+        projectId: a.projectId,
+        metadata: { offsets: a.moves.map((m) => m.offsetDays) },
+      });
+    }
+    return { services: shifted, crewCalls, undated, confirmedMoved };
   },
 });
 
@@ -1053,6 +1171,8 @@ function getServiceDateForType(
 ): { date: number | null; endDate: number | null } {
   switch (type) {
     case "DELIVERY": return { date: window.start, endDate: window.start };
+    case "CLIENT_PICKUP": return { date: window.start, endDate: window.start };
+    case "CLIENT_DROPOFF": return { date: window.end, endDate: window.end };
     case "BUMP_IN": return { date: window.start, endDate: window.start };
     case "BUMP_OUT": return { date: window.end, endDate: window.end };
     case "PICKUP": return { date: window.end, endDate: window.end };
@@ -1363,6 +1483,9 @@ export const cloneServicesNative = mutation({
         taxable: svc.taxable ?? true,
         ...(svc.vehicleDescription != null ? { vehicleDescription: svc.vehicleDescription } : {}),
         ...(svc.numberOfTrips != null ? { numberOfTrips: svc.numberOfTrips } : {}),
+        // clientContactName / clientContactPhone / clientVehicle are deliberately NOT cloned:
+        // a clone reuses a plan on ANOTHER job (often another client), so one client's
+        // contact details must never follow it. The type and counter address do.
         ...(svc.crewCountRequired != null ? { crewCountRequired: svc.crewCountRequired } : {}),
         ...(svc.crewRoleId != null && validRoles.has(svc.crewRoleId) ? { crewRoleId: svc.crewRoleId } : {}),
         status: "PLANNED",
@@ -1654,6 +1777,9 @@ export const agentOps: AgentOpsAnnotations = {
   deleteServiceNative: { danger: "high" }, // full cascade delete: line item, crew assignments, shifts, time entries
   deleteServiceTemplateNative: { danger: "high" }, // delete/archive tier (§9) even though a template is recreatable
   generateServicesNative: { danger: "medium" },
+  // Moves dates (and the crew calls riding on them) in one transaction; no money, no deletion,
+  // and a repeat call with the negative offset is an exact reverse. Not "high": nothing is lost.
+  shiftScheduleNative: { danger: "medium" },
   updateServiceNative: { danger: "medium" },
   updateServiceStatusNative: { danger: "medium" },
   updateServiceTemplateNative: { danger: "medium" },

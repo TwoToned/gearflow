@@ -172,7 +172,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
     },
     {
       id: "project",
-      header: "Project",
+      header: "Job",
       mobile: "meta",
       cell: (order) =>
         order.project ? (
@@ -264,7 +264,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
     },
     {
       id: "project",
-      header: "Project",
+      header: "Job",
       mobile: "subtitle",
       cell: (sh) =>
         sh.project ? (
@@ -455,7 +455,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                             <TableHead>Order #</TableHead>
                             <TableHead>Type</TableHead>
                             <TableHead>Status</TableHead>
-                            <TableHead className="hidden md:table-cell">Project</TableHead>
+                            <TableHead className="hidden md:table-cell">Job</TableHead>
                             <TableHead className="hidden md:table-cell">Items</TableHead>
                             <TableHead className="hidden text-right sm:table-cell">Total</TableHead>
                             <TableHead className="hidden md:table-cell">Date</TableHead>
@@ -568,7 +568,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                           <TableRow>
                             <TableHead>Order #</TableHead>
                             <TableHead>Status</TableHead>
-                            <TableHead className="hidden md:table-cell">Project</TableHead>
+                            <TableHead className="hidden md:table-cell">Job</TableHead>
                             <TableHead className="hidden text-right sm:table-cell">Cost</TableHead>
                             <TableHead className="hidden text-right sm:table-cell">Charge</TableHead>
                             <TableHead className="text-right">Margin</TableHead>

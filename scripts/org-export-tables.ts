@@ -75,6 +75,7 @@ export const DIRECT_TABLES = [
   "maintenanceRecords",
   "members",
   "modelBulkAccessories",
+  "modelCustomAccessories",
   "modelCheckItems",
   "modelMedia",
   "models",
@@ -282,7 +283,9 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // Customizable dashboard: +1 — dashboardLayouts (DIRECT — per-user
 // saved widget-board arrangement, has its own by_organizationId index
 // alongside the read path's by_organizationId_userId).
-export const EXPECTED_TABLE_COUNT = 127;
+// Custom accessories: +1 — modelCustomAccessories (DIRECT — free-text model-level
+// accessory, has its own by_organizationId index).
+export const EXPECTED_TABLE_COUNT = 128;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

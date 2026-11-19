@@ -1037,6 +1037,26 @@ export default defineSchema({
     .index("by_addedById", ["addedById"])
     .index("by_modelId_bulkAssetId", ["modelId", "bulkAssetId"]),
 
+  // ModelCustomAccessory — a free-text (not-in-inventory) accessory every unit of
+  // a model ships with. Materialises as a normal accessory child line keyed
+  // `customAccessoryKey = "m:" + id`; excluded/added per line through the same
+  // accessoryPlan arrays as a bulk accessory, using that key as the id.
+  modelCustomAccessories: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    modelId: v.string(),
+    name: v.string(),
+    quantity: v.number(),
+    inclusion: v.optional(enums.AccessoryInclusion),
+    sortOrder: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    addedAt: v.optional(v.number()),
+    addedById: v.string(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_modelId", ["modelId"]),
+
   // Location
   locations: defineTable({
     id: v.string(),
@@ -1575,6 +1595,9 @@ export default defineSchema({
     // cross-referencing the parent's accessoryPlan/model config. Only set on
     // lines with isKitChild + childKind === "ACCESSORY".
     accessoryInclusion: v.optional(enums.AccessoryInclusion),
+    // Identity of a free-text accessory child (no asset/bulkAsset): a
+    // `modelCustomAccessories` key ("m:<id>") or a per-line plan.custom key.
+    customAccessoryKey: v.optional(v.string()),
     pricingMode: v.optional(enums.KitPricingMode),
     description: v.optional(v.string()),
     quantity: v.optional(v.number()),
@@ -1651,6 +1674,10 @@ export default defineSchema({
     packedQuantity: v.optional(v.number()),
     damagedQuantity: v.optional(v.number()),
     lostQuantity: v.optional(v.number()),
+    // Units of this line sourced outside the fleet ("prep as custom item"):
+    // they stay on the line (price/docs unchanged) but never count as stock
+    // demand — read via `stockBackedQty`. Absent = 0.
+    offInventoryQuantity: v.optional(v.number()),
     checkedOutAt: v.optional(v.number()),
     checkedOutById: v.optional(v.string()),
     returnedAt: v.optional(v.number()),
@@ -2719,6 +2746,12 @@ export default defineSchema({
     lineItemId: v.optional(v.string()),
     vehicleDescription: v.optional(v.string()),
     numberOfTrips: v.optional(v.number()),
+    // Client pick up / drop off (UX 5b): the client moves the gear themselves, at
+    // our counter. Contact + their vehicle (vehicle and rego, one line). All
+    // optional, additive, no backfill. `address` is the counter, snapshotted at create.
+    clientContactName: v.optional(v.string()),
+    clientContactPhone: v.optional(v.string()),
+    clientVehicle: v.optional(v.string()),
     crewCountRequired: v.optional(v.number()),
     crewRoleId: v.optional(v.string()),
     sortOrder: v.optional(v.number()),

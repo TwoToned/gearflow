@@ -431,6 +431,24 @@ used surface, for an interaction-only difference (the underlying effect,
 shipped here). Left for its own dedicated pass; the plain `<select>` ships
 the feature's full underlying value now.
 
+## Plan-honouring prep: omitted vs null (UX Phase 2c)
+
+A prep write's `containerId` has three meanings, and the difference is the whole
+point of the PM's plan (`convex/lib/fulfillment.ts` `resolveContainerForWrite`):
+**omitted (`undefined`)** = "no signal", so a NEW unit packs into the line's
+`plannedContainerId`; **`null`** = Loose chosen on purpose, which overrides the
+plan; **a container id** = always wins. An existing unit is only ever touched by
+an explicit value. This applies equally to API/MCP callers (`prep_item`,
+`stage_pick_list`, `dispatch_gear`): omit `containerId` to follow the plan, send
+`null` to pack loose.
+
+The warehouse page tracks the packer's choice as a tri-state
+(`ContainerChoice`, `src/lib/warehouse-container-choice.ts`): `undefined` until
+they tap a chip, `null` once they pick Loose, a string for a case. The rail
+highlights Loose only when it is exactly `null`; with nothing chosen no chip is
+active because the plan applies. Clicking the already-active chip clears the choice back to `undefined`, so a packer can return to "follow the plan" without reloading; the page builds every write's `containerId` through `containerArgs(choice)`, which omits the key when nothing is chosen. Before this the page defaulted to `null`, so
+the plan never applied from the warehouse.
+
 ## Not yet started
 
 Phase 5 (narrow + retire the legacy `prepContainer` string field and
@@ -452,3 +470,19 @@ of the parent's `childLineItems` into their own row in the receiving case
 manifest / delivery docket / return sheet list them where they physically are,
 with an "accessory of X" note. Unassigned or same-case units stay nested under the
 parent. `container-labels.ts` reads the hoisted rows for the same output as before.
+
+## Batched prep (carried over from the retired FEATUREDOCS/32)
+
+Doc 32 ("Prep containers", the free-text `prepContainer` label with a combobox and `clearPrepContainer`) is
+retired: the label is the legacy widen-step string; cases are `projectContainers` above. What survives of it:
+
+- Bulk prep flows (Prep ▾, finish-check-queue direct prep, asset-picker confirm, the dock's batch) call
+  `prepItemsBatch(projectId, items[])` (`src/server/check-records.ts`): ONE round-trip to the atomic
+  `checkRecordOps.prepItems`, which loops `prepUnit` over the items **in array order** (same-`lineItemId`
+  ordering, as the old per-item loop). Quantity is pre-expanded one entry per unit. The blocking-comment gate
+  is read once for the batch; a blocker fails the whole atomic batch.
+- It returns `{ ids, packedAccessoryUnits, packedAccessoryLineIds }` (see FEATUREDOCS/48): what an
+  accessories-only item actually packed.
+- Permission: `warehouse.check_out`. The job page (FEATUREDOCS/12) chooses the case from the case chips /
+  active case; "Unpack case" returns everything in it to loose without de-prepping.
+- Settings → Assets still holds the case-category setting (`prepKitCategoryId`).

@@ -291,7 +291,7 @@ export function CallSheetDialog({
                   </>
                 ) : availableDates.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    No dates found for this project.
+                    No dates found for this job.
                   </p>
                 ) : (
                   availableDates.map((dateKey) => {

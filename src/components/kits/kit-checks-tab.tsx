@@ -354,7 +354,7 @@ export function KitChecksTab({ kitId, checkMode }: KitChecksTabProps) {
         open={!!removeTarget}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
         title={`Remove "${removeTarget?.label ?? ""}" from this kit?`}
-        description="The check item is removed from this kit's checklist template. Past check responses on previous projects are preserved."
+        description="The check item is removed from this kit's checklist template. Past check responses on previous jobs are preserved."
         confirmLabel="Remove check"
         onConfirm={() => {
           if (removeTarget) {

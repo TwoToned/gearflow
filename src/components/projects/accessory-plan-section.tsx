@@ -36,6 +36,8 @@ export function AccessoryPlanSection({
         onSelectionChange={editor.setSelection}
         excludeReasons={editor.excludeReasons}
         onExcludeReasonsChange={editor.setExcludeReasons}
+        custom={editor.custom}
+        onCustomChange={editor.setCustom}
       />
     </section>
   );

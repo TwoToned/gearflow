@@ -13,8 +13,47 @@
 ## UI Terminology
 - "Check Out" is displayed as **"Deploy"** in the UI
 - "Check In" is displayed as **"Return"** in the UI
-- `CHECKED_OUT` status displays as **"Deployed"**
+- `CHECKED_OUT` status displays as **"Out"** (D90, UX Phase 0; the verb **Deploy** stays). Stage words live in `src/lib/vocabulary.ts` (`GEAR_STAGE_LABELS`: To pick · Prepped · Out · Returned · De-prepped · Closed) and their colour intents in the `gearStage` category of `src/lib/status-colors.ts` (D2: neutral · info · primary/solid red · warning · success · neutral outline) — one table, read by the lifecycle stepper, stage chips and landing cards. Gear not in a case reads **Loose**. The Pick/Prep container rail has no active chip until the packer picks one, and prep then follows the PM's planned case; picking Loose packs loose on purpose (omitted `containerId` = plan, `null` = Loose; see FEATUREDOCS/83). The warehouse tab bar reads **To pick / Prepped / Out / Returned / De-prepped** accordingly.
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
+
+## The job page (UX Phase 3 — the stage row replaces the tabs)
+
+`/warehouse/[projectId]` is ONE card: a stage row (`To pick · Prepped · Out · Returned · De-prepped ·
+Close-out`, counts on each), one `ScanDock` + result strip, one `JobTable`. The old Pick/Prep, Deploy,
+Return and De-prep **tabs** below are now stages of that card; read the "Tab" headings as the stage of the
+same name. `?stage=` selects a stage; the old `?tab=` links (emails, bookmarks) alias onto it
+(`stageFromParams`: `pick-prep`→`pick`, `check-out`→`prepped`, `check-in`→`out`, `deprep`→`returned`,
+`close-out`→`closeout`). The page (`page.tsx`) stays **≤ 800 lines**, a hard test
+(`page-size.test.ts`); logic lives in `src/components/warehouse/job/use-*` hooks and dialogs.
+
+- **One scan pipeline.** Every stage's scan goes through `useWarehouseScan`: prep scans via `useScanPrep`,
+  Prepped/Out writes via the durable intake (`durableScans.capture`, offline-safe, reviewed in the strip),
+  and the Returned dock resolves on the SERVER (`lookupDeprepScan`, `src/server/warehouse-deprep-scan.ts`,
+  gated by `warehouse:check_out`, refuses anything not RETURNED+PACKED on this job). Each outcome is a
+  strip entry with tone and, where a write is reversible, the SAME Undo closure the toast uses
+  (`announceWarehouseWrite` → `scanUndo`).
+- **A de-prep scan de-preps ONE unit, the scanned one.** A serial tag carries its `assetId` to
+  `checkRecordOps.deprepItems` (`op.assetId`), which de-preps THAT unit (not "one by count"); a bulk bin tag
+  asks for the count (D8) and matches only genuine bulk lines (units with `bulkAssetId === bin`), never a
+  serialised line of the same model; a kit goes whole; an accessory tag goes through the unit-level DEPREP.
+- **Scan sheet (D10).** Scanning a parent with unpacked accessories opens `ScanAccessoryDialog`; "Remember
+  for the next n units on this job" answers the line's next n scans without it. The memory is **job-scoped
+  and in memory** (`src/lib/warehouse-scan-memory.ts`, keyed by `projectId` + line): no `localStorage`, not
+  shared across packers (a shared version needs a schema; follow-up).
+- **Deploy gate.** `DeployGateDialog` (§9.5): one row per unpacked/skipped accessory, `Pack now` / `Leave`;
+  a left DEFAULT asks why (D9 prefill from `accessoryPlan.excludedReasons`). Every row must be decided;
+  `Pack now` packs exactly the marked accessories (`includeAccessoryIds`) and compares them with what the
+  server says THIS call packed (`checkRecordOps.prepItems` → `packedAccessoryUnits` per parent unit and
+  `packedAccessoryLineIds`, never a re-read of line state). A short pack keeps the gate open and deploys
+  nothing.
+- **Return check.** `ReturnCheckDialog` (condition + notes for the selection; "Received scans save as …"
+  for the dock). The old `ReturnConditionBar` is gone.
+- **Phone pack mode (§9.4).** A row tap opens `JobRowSheet` (status + case, tags, count, accessories first
+  with their own action, a tick action, the row's menu under ⋯). The stage verbs sit in `StageActionBar`,
+  pinned above the bottom nav (`PinnedAboveBottomNav`, shared with `BulkBar`). Not yet built: `Pack into`
+  case chips and unit chips in the sheet.
+- **No localStorage pick list.** The online pick list and its tick persistence are deleted; "picked" is the
+  `To pick → Prepped` move (the pull sheet document remains under Documents).
 
 ## Lifecycle Flow
 
@@ -43,7 +82,7 @@ bugs where the flow appeared to run in reverse:
   so returning gear "went back to Deploy".
 
 **The tabs are named after the stage the gear is IN, not the action** — so the tab bar reads
-exactly like the lifecycle: **Pick → Prepped → Deployed → Returned → De-prepped** (then
+exactly like the lifecycle: **To pick → Prepped → Out → Returned → De-prepped** (then
 **Close-out** as a trailing utility). The primary button inside each tab
 performs the action that advances gear to the next stage:
 
@@ -662,7 +701,9 @@ Children of a kit/prep-kit that are themselves kits render with:
 - Auto-generated `PREP-*` tags: hidden (display `—`)
 
 ## Prep Containers
-Container dropdown on Pick/Prep tab for visual asset grouping. See [Preps](./32-preps.md) for full details.
+Superseded: cases are first-class `projectContainers` (membership on the unit) with case chips and case
+section heads on the job page. See [83 — Packing containers](./83-packing-containers.md) (which absorbed the
+retired doc 32).
 
 ## Partial Deploy/Return
 Kits and prep-kits support partial deployment:
@@ -710,6 +751,18 @@ Custom line items (`isCustomItem: true`) appear in all three warehouse tabs with
 
 **Scan conflict:** Custom items have no barcode. If an operator scans a barcode that doesn't match any asset, the existing "not found" error is returned — no conflict with custom items.
 
+## Prep as Custom Item (off-inventory units)
+
+A job books 3× a serialised model but only 2 are free. At the bench you can turn the leftover unit into a **custom unit**: it stays on the line (still "3× 4099" on the quote, invoice and PDFs, same price, same group/category), but no serial backs it and it **holds no stock**, so the overbook clears. Meant as a temporary stop-gap (sourced elsewhere / hand-built), reversible in one click.
+
+- **Where.** Warehouse Pick/Prep tab: a **"Short on stock?"** panel (`custom-unit-panel.tsx`) above the table lists overbooked lines with a free unit — **Prep as custom item** (counts as the first prep for the `PREP_STARTED` status auto-advance) — and, for a line with a custom unit not yet deployed, **Convert back**. The Equipment tab's line kebab offers **Convert 1 to custom item** (no status auto-advance — planning never moves the job) and **Convert 1 back to inventory** via `custom-unit-context.tsx`. One offer rule for both: `src/lib/off-inventory.ts` (`canConvertToCustomUnit` / `canConvertBackToInventory`); the server is the authority.
+- **Data.** One field, `projectLineItems.offInventoryQuantity` (absent = 0) — the single source of truth for stock demand (FEATUREDOCS/11 invariant 6) and the "N custom" badge. No per-unit flag: the fulfilment side is just a **generic unit** (a `projectLineItemUnits` row with no asset/bulk, qty 1 — the shape `prepUnit` already creates for untagged multi-quantity lines).
+- **Mutations.** `warehouseOps.convertUnitToOffInventoryCore` / `convertUnitBackToInventoryCore` (counter ± 1 and the generic unit, in one transaction, then `syncLineItemRollup`), wrapped browser-direct by `warehouseWrites.convertUnitToOffInventory` (`startPrep`: true at the bench = counts as the first prep, false when planning) / `convertUnitBackToInventory` (`warehouse:check_out`, org-checked, audit row; `agentOps` danger `medium`). **A custom unit is born prepped** (nothing physical to pick), so there is no half-prepped custom state. Preconditions: plain `EQUIPMENT` model line (not a kit/kit child/accessory/container/custom item/sub-hire/sale/cancelled, not pinned to a specific asset via `line.assetId`), serialised (not bulk), on the project's LIVE version, project not COMPLETED/INVOICED/CANCELLED, and a free unit (`quantity − Σ non-cancelled unit qty ≥ 1`). Convert-back removes the highest-ordinal custom unit that isn't deployed/returned.
+- **Accessories stay with a custom unit.** A custom unit ships with the MODEL's bulk accessories (`modelBulkAccessories`: DEFAULTs minus the line's `accessoryPlan.excluded`, plus OPTIONALs it opted into — `customUnitAccessoryShare`); permanent per-asset accessories can't apply (no asset). Its share is a set of packed per-parent rows on the existing accessory child lines, scoped by a synthetic key `parentUnitAssetId = custom:<unitId>` where a serial uses its asset id (`ensureCustomUnitAccessories` / `removeCustomUnitAccessories`), so every scoped cascade works unchanged: deploying the custom unit deploys exactly its clips (`checkOutGenericUnits` returns the flipped ids → `finalizeCheckoutItem`'s `accessoryScopes`), returning it brings them back (`returnLineUnits` reports `genericUnitIds` → `checkinAccessoryChildren`), and convert back / de-prep removes them. `expandAccessoriesForAsset` adds `offInventoryQuantity × per-parent` to the accessory demand — before this, preparing a serial after a conversion silently shrank the accessory line and dropped the custom unit's share. Plain untagged lines (no custom units) keep their unscoped cascades. Limitation: editing the line's accessory plan after converting doesn't add the new accessories to the custom unit — convert back and re-convert to refresh.
+- **Scanning.** A generic unit counts toward `assignedQuantity`, so `lookupAssetForScan`'s spare-capacity test (`assignedQuantity < quantity`) no longer offers a filled slot — no scan change needed.
+- **Keeping the counter and the unit rows in step.** De-prepping a line (`deprepItemInner`) that removes a generic unit decrements `offInventoryQuantity` with it — "Remove from prep" on a custom unit puts the slot back on inventory. The counter is *reality*, not plan: `copyPlanGraph` does not clone it, and make-live (`carryRealityByLineage`) sets the target line's counter from the outgoing line as it moves the generic units. `patchNative` refuses edits that would desync it: changing a line's model/type, clearing the model, pinning an asset, or lowering the quantity below (custom + serial units).
+- **Prep / deploy / return.** A whole-line deploy (`expandPrepUnitAssignments`) now includes prepped generic units on a line that also has serialised units — before this it expanded only asset/bulk units and would have stranded the custom one. Return uses the existing whole-line path (generic units already flip). A returned custom unit is history and can't be converted back.
+
 ## Force Return
 When assets or kits are stuck in `CHECKED_OUT` status (e.g., project deleted while items deployed, data inconsistency), "Force Return" buttons allow resetting them to `AVAILABLE`:
 
@@ -741,7 +794,9 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 - Kit/prep-kit parents are NOT counted as 1 — instead, all individual children and nested kit grandchildren are counted.
 - Delivery docket counts only deployed children (`CHECKED_OUT`). Pull slip counts all children.
 
-## Online Pick List
+## Online Pick List — REMOVED (Phase 3)
+The online pick list dialog and its `localStorage` ticks are deleted (see "The job page" above); the notes below describe the printable pull sheet rows, which still render accessories as before.
+
 Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children. Permanent accessories render indented under their parent asset line, badged "Accessory", and count toward pick progress (`pick-list-progress.ts`) — the same rows appear on the printable pull sheet (`pull-sheet/page.tsx`). (Issue #794 current-state audit found `pickListProgress` counted these rows but neither `online-pick-list.tsx` nor `pull-sheet/page.tsx` actually rendered them, making the progress bar un-completable on any project with accessories — both now render `getAccessoryChildren(item)` as independent, indented, individually-checkable rows.) On mobile the pull sheet uses **`StickyTable`** (frozen checkbox + Item columns, the rest scroll sideways with smart wrapping so nothing overlaps; empty cells render blank, no "—" noise). All sticky/scroll enhancements reset under `@media print`, so the physical printed sheet is unchanged. See `FEATUREDOCS/25-datatable.md` → Mobile data-table primitives. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ## Warehouse Dashboard Display (TV Screen)

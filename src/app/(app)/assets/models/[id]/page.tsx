@@ -45,11 +45,13 @@ import { ModelChecksTab } from "@/components/assets/model-checks-tab";
 import { ModelRoiTab } from "@/components/assets/model-roi-tab";
 import { ModelFailureAnalytics } from "@/components/assets/model-failure-analytics";
 import { ModelAccessoriesManager } from "@/components/assets/model-accessories-manager";
+import { ModelCustomAccessoriesManager } from "@/components/assets/model-custom-accessories-manager";
 
 import { assetStatusLabels, bulkAssetStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Panel } from "@/components/ui/card";
 import { cn, focusRing } from "@/lib/utils";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -795,7 +797,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   {model.assetType === "SERIALIZED" && (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-muted">Deployed</span>
+                        <span className="text-muted">{OUT_LABEL}</span>
                         <span className="font-medium text-ink t-data">{deployedCount}</span>
                       </div>
                       <div className="flex justify-between">
@@ -822,7 +824,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   resource="model"
                   action="update"
                   fallback={
-                    model.bulkAccessories && model.bulkAccessories.length > 0 ? (
+                    (model.bulkAccessories?.length ?? 0) + (model.customAccessories?.length ?? 0) > 0 ? (
                       <ul className="space-y-1 text-table-cell">
                         {model.bulkAccessories.map((c) => (
                           <li key={c.id} className="flex items-center gap-2">
@@ -835,17 +837,33 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                             </span>
                           </li>
                         ))}
+                        {(model.customAccessories ?? []).map((c) => (
+                          <li key={c.id} className="flex items-center gap-2">
+                            <span className="text-muted select-none">└─</span>
+                            <span className="font-medium text-ink">{c.quantity}× {c.name}</span>
+                            <span className="ml-auto text-badge text-muted">
+                              {c.inclusion === "OPTIONAL" ? "optional" : "default"}
+                            </span>
+                          </li>
+                        ))}
                       </ul>
                     ) : (
                       <p className="text-table-cell text-muted">No accessories.</p>
                     )
                   }
                 >
-                  <ModelAccessoriesManager
-                    modelId={id}
-                    bulkAccessories={model.bulkAccessories ?? []}
-                    onChanged={refetch}
-                  />
+                  <div className="space-y-5">
+                    <ModelAccessoriesManager
+                      modelId={id}
+                      bulkAccessories={model.bulkAccessories ?? []}
+                      onChanged={refetch}
+                    />
+                    <ModelCustomAccessoriesManager
+                      modelId={id}
+                      customAccessories={model.customAccessories ?? []}
+                      onChanged={refetch}
+                    />
+                  </div>
                 </CanDo>
               </SidebarSection>
 
@@ -873,7 +891,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
       open={!!forceReturnAssetId}
       onOpenChange={(open) => !open && setForceReturnAssetId(null)}
       title={`Force return ${forceReturnAssetId?.tag ?? ""}?`}
-      description="Project assignments are marked returned, status resets, and the asset returns to its home location. Use when scanning isn't possible."
+      description="Job assignments are marked returned, status resets, and the asset returns to its home location. Use when scanning isn't possible."
       confirmLabel="Force return"
       onConfirm={() => {
         if (forceReturnAssetId) {

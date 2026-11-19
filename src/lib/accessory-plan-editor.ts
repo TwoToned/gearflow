@@ -12,7 +12,7 @@
  */
 
 import type { ModelAccessoryDetail } from "@/server/line-items";
-import type { AccessoryPlanInput } from "@/hooks/use-line-item-writes";
+import type { AccessoryPlanInput, CustomAccessoryInput } from "@/hooks/use-line-item-writes";
 
 export interface AccessorySelectionState {
   /** Accessory catalog-row id → included on this line. */
@@ -65,6 +65,7 @@ export function derivePlanToSave(
   accessories: ModelAccessoryDetail[],
   selection: Record<string, boolean>,
   excludeReasons: Record<string, string>,
+  custom: CustomAccessoryInput[] = [],
 ): AccessoryPlanInput {
   const excludedRows = accessories.filter((a) => a.inclusion !== "OPTIONAL" && selection[a.id] === false);
   const added = accessories
@@ -74,8 +75,14 @@ export function derivePlanToSave(
     excluded: excludedRows.map((a) => a.bulkAssetId),
     added,
     excludedReasons: excludedRows.map((a) => ({ bulkAssetId: a.bulkAssetId, reason: excludeReasons[a.id] ?? "" })),
+    // Omitted when empty: the save replaces the whole plan, so absent = no custom accessories.
+    ...(custom.length > 0 ? { custom } : {}),
   };
 }
+
+/** Stable, order-insensitive identity of a custom-accessory list (key + name + count). */
+const customSignature = (plan: AccessoryPlanInput | undefined): string[] =>
+  (plan?.custom ?? []).map((c) => `${c.key}|${c.name}|${c.quantityPerParent}`).sort();
 
 /** Order-insensitive comparison of the parts `updateAccessoryPlanNative` acts
  *  on — which children exist (`excluded`/`added`), not the free-text reasons
@@ -93,7 +100,11 @@ export function accessoryPlansEqual(
   });
   const left = ids(a);
   const right = ids(b);
+  const leftCustom = customSignature(a);
+  const rightCustom = customSignature(b);
   return (
+    leftCustom.length === rightCustom.length &&
+    leftCustom.every((v, i) => v === rightCustom[i]) &&
     left.excluded.length === right.excluded.length &&
     left.excluded.every((v, i) => v === right.excluded[i]) &&
     left.added.length === right.added.length &&

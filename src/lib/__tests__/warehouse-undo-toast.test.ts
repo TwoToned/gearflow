@@ -52,7 +52,7 @@ describe("announceWarehouseWrite", () => {
     );
     expect(toastSuccessMock).toHaveBeenCalledTimes(1);
     const [title] = toastSuccessMock.mock.calls[0];
-    expect(title).toBe("Deployed 12 items · job moved to Deployed");
+    expect(title).toBe("Deployed 12 items · job moved to Out");
   });
 
   it("an unmapped/null autoStatus never appends a fragment", () => {

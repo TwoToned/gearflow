@@ -12,6 +12,7 @@ import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
 
 const shortcuts = [
   { keys: "⌘K", description: "Open search" },
+  { keys: "⌘B", description: "Collapse or expand the sidebar (desktop)" },
   { keys: "N", description: "New item (on list pages)" },
   { keys: "?", description: "Show this dialog" },
 ] as const;

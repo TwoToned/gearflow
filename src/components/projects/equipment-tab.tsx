@@ -49,7 +49,7 @@ import { computeInlineSubHireItemInput, type SubHireItemRowLike, type InlineSubH
 import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { BulkBar } from "@/components/ui/bulk-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { BulkEditLineItemsDialog } from "./bulk-edit-line-items-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -103,6 +103,7 @@ import {
 } from "./equipment-rows";
 import { dropHighlightClass } from "./equipment-row-types";
 import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
+import { CustomUnitProvider, type CustomUnitContextValue } from "./custom-unit-context";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useSelection } from "./use-selection";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -881,6 +882,46 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     [projectId, warehouseWrites],
   );
 
+  // "Convert to custom item" (FEATUREDOCS/12): planning-time conversion. The custom unit is
+  // born prepped (nothing to pick); startPrep:false so planning never moves the job to PREPPING.
+  const [customUnitPendingLineIds, setCustomUnitPendingLineIds] = useState<ReadonlySet<string>>(new Set());
+  const runCustomUnitWrite = useCallback(
+    (lineItemId: string, write: () => Promise<unknown>, success: string, failure: string) => {
+      setCustomUnitPendingLineIds((prev) => new Set(prev).add(lineItemId));
+      write()
+        .then(() => toast.success(success))
+        .catch((e: unknown) => toast.error(e instanceof Error ? e.message : failure))
+        .finally(() =>
+          setCustomUnitPendingLineIds((prev) => {
+            const next = new Set(prev);
+            next.delete(lineItemId);
+            return next;
+          }),
+        );
+    },
+    [],
+  );
+  const customUnitValue = React.useMemo<CustomUnitContextValue>(
+    () => ({
+      pendingLineIds: customUnitPendingLineIds,
+      convert: (lineItemId) =>
+        runCustomUnitWrite(
+          lineItemId,
+          () => warehouseWrites.convertUnitToOffInventory(projectId, lineItemId, false),
+          "Converted 1 to a custom item",
+          "Couldn't convert to a custom item",
+        ),
+      convertBack: (lineItemId) =>
+        runCustomUnitWrite(
+          lineItemId,
+          () => warehouseWrites.convertUnitBackToInventory(projectId, lineItemId),
+          "Converted back to inventory",
+          "Couldn't convert back to inventory",
+        ),
+    }),
+    [customUnitPendingLineIds, runCustomUnitWrite, warehouseWrites, projectId],
+  );
+
   const reassignValue = React.useMemo(
     () => ({
       targetsByModel: reassignTargetsByModel,
@@ -1601,6 +1642,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   return (
     <ReassignProvider value={reassignValue}>
+    <CustomUnitProvider value={customUnitValue}>
     <div className="space-y-3" data-shortcut-scope="equipment">
       {/* Add ▾ goes on the tab row when a slot is supplied; otherwise it stays
           inline in this toolbar. Sync accessories/kits + the margin toggle are
@@ -1651,32 +1693,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       )}
 
       {/* Bulk action bar — appears once one or more line items are selected. */}
-      <BulkActionBar
-        count={selectedLineItemIds.length}
-        onClear={selection.clearSelection}
-      >
-        <Button size="sm" variant="line" onClick={() => setBulkEditOpen(true)}>
-          <Pencil className="mr-2 h-3 w-3" />
-          Edit
-        </Button>
-        <Button size="sm" variant="line" onClick={() => setBulkMoveGroupOpen(true)}>
-          <ArrowLeftRight className="mr-2 h-3 w-3" />
-          Move to group
-        </Button>
-        <Button size="sm" variant="line" onClick={() => setBulkMoveCategoryOpen(true)}>
-          <FolderTree className="mr-2 h-3 w-3" />
-          Move to category
-        </Button>
-        <Button
-          size="sm"
-          variant="line"
-          className="text-destructive"
-          onClick={() => setBulkDeleteOpen(true)}
-        >
-          <Trash2 className="mr-2 h-3 w-3" />
-          Delete
-        </Button>
-      </BulkActionBar>
+      <BulkBar
+        noun="line"
+        selection={{ count: selectedLineItemIds.length, clear: selection.clearSelection }}
+        actions={[
+          { key: "edit", group: "edit", icon: Pencil, label: () => "Edit", onSelect: () => setBulkEditOpen(true) },
+          { key: "move-group", group: "organise", icon: ArrowLeftRight, label: () => "Move to group", onSelect: () => setBulkMoveGroupOpen(true) },
+          { key: "move-category", group: "organise", icon: FolderTree, label: () => "Move to category", onSelect: () => setBulkMoveCategoryOpen(true) },
+          // The surface's own BulkDeleteDialog owns the confirm (it names what stays).
+          { key: "delete", group: "danger", danger: true, icon: Trash2, label: () => "Delete", onSelect: () => setBulkDeleteOpen(true) },
+        ]}
+      />
 
       {/* Equipment list. Desktop renders the full data table; below md the rows
           self-branch into stacked cards (§15) — same data, same handlers, no
@@ -2699,7 +2726,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
         title="Remove selected items"
-        description="This removes the selected line items from the project. Kit/accessory members are removed with their parent."
+        description="This removes the selected line items from the job. Kit/accessory members are removed with their parent."
         count={selectedLineItemIds.length}
         itemLabel="line item"
         confirmLabel={`Remove ${selectedLineItemIds.length} item${
@@ -2844,6 +2871,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         }}
       />
     </div>
+    </CustomUnitProvider>
     </ReassignProvider>
   );
 }

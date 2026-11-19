@@ -87,9 +87,10 @@ group: a group hides its contents, a rollup shows them. A single row can be
 revealed back into printing its own price, and is still counted in the section
 subtotal.
 
-**Prep container ("prep")** — a grouping label applied during picking, e.g.
-"Case 3". Not a kit, just a label on the line. Used to organise the pick and the
-packing list.
+**Packing container (case)** — a first-class case on the job, e.g. "Case 3".
+Not a kit and never priced; a unit's membership is on the unit, not the line.
+The old free-text "prep container" label it replaced still exists only as a
+legacy string. Used to organise the pick, the Prepped stage and the documents.
 
 ## Availability
 
@@ -127,8 +128,8 @@ A top-level equipment line sits in exactly one stage:
 
 | Stage | Meaning |
 |---|---|
-| **Pick/Prep** | Still needs picking and/or packing. |
-| **Deploy** | `PACKED` and waiting to go out. |
+| **To pick** (code: Pick/Prep) | Still needs picking and/or packing. |
+| **Prepped** (code: Deploy) | `PACKED` and waiting to go out. |
 | *(deployed)* | `CHECKED_OUT` — out of the building. |
 | **Returned** | Physically back but still packed. |
 | **De-prepped** | Unpacked and checked back into stock. Terminal. |
@@ -136,7 +137,7 @@ A top-level equipment line sits in exactly one stage:
 Bulk lines are quantity-aware: a line shows in Pick/Prep while *any* ordered
 unit is still unpacked, even once some units are already packed or deployed. So
 a partially picked bulk line legitimately appears in two mental buckets at once
-— that is not a bug, and "the line is in Deploy" does not mean all of it is.
+— that is not a bug, and "the line is in Prepped" does not mean all of it is.
 
 Kit parents have no state of their own; their stage rolls up from members. An
 accessory parent is a real asset that *also* has children, so its stage
@@ -233,13 +234,13 @@ for exactly the role it was built for.
 ## Status tables
 
 **Project:** `ENQUIRY`, `QUOTING`, `QUOTED`, `AWAITING_PAYMENT`, `CONFIRMED`,
-`PREPPING`, `CHECKED_OUT` (displayed "Deployed"), `ON_SITE`, `RETURNED`,
+`PREPPING`, `CHECKED_OUT` (displayed "Out"), `ON_SITE`, `RETURNED`,
 `COMPLETED`, `INVOICED`, `CANCELLED`.
 
 **Line item:** `QUOTED`, `CONFIRMED`, `PREPPED`, `CHECKED_OUT`, `RETURNED`,
 `CANCELLED`. Plus a separate `prepStatus` whose meaningful value is `PACKED`.
 
-**Asset:** `AVAILABLE`, `CHECKED_OUT` ("Deployed"), `IN_MAINTENANCE`, `RESERVED`,
+**Asset:** `AVAILABLE`, `CHECKED_OUT` ("Out"), `IN_MAINTENANCE`, `RESERVED`,
 `RETIRED`, `LOST`, `SOLD`.
 
 **Bulk asset:** `ACTIVE`, `LOW_STOCK`, `OUT_OF_STOCK`, `RETIRED`.

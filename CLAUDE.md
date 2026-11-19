@@ -91,6 +91,19 @@ pnpm run api:mcp            # Regenerate the MCP tool manifest (src/lib/api/mcp-
 pnpm run mcp:stdio-proxy    # Local stdio↔HTTP bridge to /api/v1/mcp (decision 4, #999)
 ```
 
+### Regenerating the lockfile — fresh installs fail where yours doesn't
+Re-resolving the whole tree (`pnpm update --depth Infinity`, `pnpm install --fix-lockfile`)
+can rewrite the lockfile **without `hasBin: true`** on dozens of packages. Your own
+`node_modules` already has the bin links, so everything passes locally; CI's fresh
+`--frozen-lockfile` install then never links them and `next dev` dies with
+`Error: Binary posthog-cli not found` (this broke both E2E jobs on a security-bump PR).
+For a security bump prefer plain `pnpm install` after editing `package.json` /
+`pnpm-workspace.yaml` overrides, then check the lockfile lost nothing:
+`git diff origin/main -- pnpm-lock.yaml | grep '^[-+].*hasBin'` — a removed line is only
+legitimate when that package's version changed, and is then paired with a `+` line for
+the new version's entry. To be sure, `git worktree add` the commit,
+`pnpm install --frozen-lockfile` there and run `pnpm dev`.
+
 ### Worktree Setup
 
 Git worktrees don't share `node_modules/` or `.env` with the main repo. Run this to bootstrap a new worktree:
@@ -652,6 +665,22 @@ client a different document under the same name (#987). Three rules follow:
    (`buildDocumentData`'s `stampedDates`). Recomputing `quote_valid_until` at render time
    is what used to silently extend how long a quote was valid every time it was re-opened.
 
+### Off-inventory units — the counter is the truth, demand goes through `stockBackedQty`
+"Prep as custom item" (FEATUREDOCS/12) lets a leftover unit of an overbooked serialised line stay on the line (price/docs unchanged) with no serial and no stock held. Three rules:
+
+1. **`projectLineItems.offInventoryQuantity` is the ONE source of truth.** Do not add a per-unit "is custom" flag — the unit side is just a generic (asset-less, qty-1) `projectLineItemUnits` row, the same shape `prepUnit` creates for untagged lines. It is server-owned: only `warehouseOps.convertUnit*`, `deprepItemInner` (decrements with the deleted generic unit) and make-live's `carryRealityByLineage` (re-derives it with the carried units — `copyPlanGraph` deliberately does NOT clone it) write it (it is in `LINE_IMMUTABLE_ON_PATCH`); `patchNative` refuses edits that would desync it (model/type/asset change, quantity below custom + serial units). A custom unit is born prepped — never reintroduce a PENDING custom unit; the warehouse stage logic can't place one.
+2. **Every stock-demand sum reads `stockBackedQty(line)` (`convex/lib/stockBackedQty.ts`), never raw `quantity`.** `convex/stockBackedQtyGuard.test.ts` lists the sites; a new availability/overbooking site goes on that list. Billing, PDFs, ROI and the warehouse "everything deployed" test (`projectAutoStatus`) keep the full `quantity` on purpose.
+3. **A custom unit keeps the model's accessories.** Its share is per-parent rows on the existing accessory child lines keyed `parentUnitAssetId = customUnitScope(unitId)` (`custom:<unitId>`). Any new accessory cascade that scopes by `parentUnitAssetId` must treat that as a valid parent key, and anything that sums accessory demand per parent must add `offInventoryQuantity × per-parent` (`expandAccessoriesForAsset` does).
+4. **A whole-line deploy must include prepped generic units on a mixed line** (`expandPrepUnitAssignments`) — otherwise the custom unit is stranded.
+
+### Custom accessories — free text, but still a real accessory child
+A not-in-inventory accessory (`modelCustomAccessories` per model, `accessoryPlan.custom` per line,
+FEATUREDOCS/48) is an ordinary ACCESSORY child line keyed by `customAccessoryKey` (no asset/bulkAsset).
+Never give it a second code path: expansion/reconcile/rescale go through `resolveCustomAccessories`
+(`convex/lib/fulfillment.ts`), its units are asset-less rows, and `includeAccessoryIds` identifies it
+by child LINE id. A site that filters accessory children by `assetId ?? bulkAssetId` must fall back to
+`child.id`, or custom accessories silently stop deploying under a narrowed ("Deploy Verified Only") call.
+
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev
@@ -806,6 +835,61 @@ statically; a hoisted `const` is silently dropped). `globals.css` consumes the
 families by literal name (`--font-sans: "Hanken Grotesk"`), so the `@font-face`
 `font-family` must stay the real name. Verify a font change with network blocked:
 `HTTPS_PROXY=http://127.0.0.1:1 pnpm build`.
+
+### UI vocabulary — words in `src/lib/vocabulary.ts`, intent in `status-colors.ts`
+The UI says **Job** (code, routes, enums, Convex and API/MCP names stay `project`), **Home**
+(`/dashboard`), **Schedule** (`/availability`), **Out** (`CHECKED_OUT`; the verb **Deploy**
+stays), **Loose** (not in a case), **To pick · Prepped · Out · Returned · De-prepped · Closed**.
+Module names and stage words come from `vocabulary.ts` (`MODULE_NAMES`, `GEAR_STAGE_LABELS`,
+`OUT_LABEL`, `LOOSE_LABEL`); stage colours come from the one `gearStage` table in
+`status-colors.ts` — never an inline `bg-*-soft` stage override. Convex-authored error and
+activity text still says "project"/"deployed" (known residue). The phone breakpoint is
+`PHONE_MAX` = 859 (`src/lib/breakpoints.ts`; Tailwind `md` = 860); the 72px tablet rail at
+<= 1023px is a CSS (`max-lg`) swap in `app-sidebar.tsx`, ⌘B collapse is desktop-only.
+
+### ActionMenu — one row menu, absent-not-disabled, builders in `src/lib/row-actions`
+`ActionMenu` (`src/components/ui/action-menu.tsx`) is the ONLY row/overflow menu: a Radix
+DropdownMenu on desktop, a 48px `BottomSheet` on phone (it replaced `row-actions-menu.tsx`,
+deleted). It renders an `ActionMenuSpec` built by a pure per-row-kind function in
+`src/lib/row-actions/` (`buildGearLineActions` is the first; the project and the warehouse
+share it). Rules: an action that does not apply is **absent** from the spec, never
+`disabled` (there is no such field); `danger` items go last and red and carry a `confirm`
+(rendered with `Dialog`; there is no AlertDialog) unless their handler already opens its own
+dialog; one sub-level via `children`; shortcuts (`kbd`) fire only while the desktop menu is
+open. `trigger` swaps the default ⋯ for any element (`Documents ▾`, a lock glyph). The
+dropdown is `modal={false}` so a confirm Dialog opening as it closes is not click-locked.
+`ConfirmActionMenuItem` is legacy (R-4.4); don't use it in new menus.
+
+### BulkBar and ScanStrip — two footguns
+`BulkBar` (`src/components/ui/bulk-bar.tsx`, replaced `BulkActionBar`) is the ONE bulk
+surface. On a phone it is **portaled to `<body>`** and pinned above the bottom nav:
+the app-shell `<main>` keeps a lingering `transform` from its page-enter animation, so a
+`fixed` bar left in place resolves against `<main>` and an inline one reflows the list on
+every tap. Don't remove the portal. A verb with no `confirm` fires immediately (the
+surface owns its own dialog, as the three legacy consumers' `BulkDeleteDialog` does).
+
+`ScanStrip`'s `undo` MUST be `AnnouncedWrite.scanUndo` from `announceWarehouseWrite`,
+passed through unchanged: it is the exact guarded closure the toast's Undo calls, so the
+toast and the strip can never disagree about whether an undo fired. The strip calls it
+once per click and adds no guard of its own; never derive a second reverse mutation.
+
+### The warehouse job page — one scan pipeline, one stage row, no pick list, ≤ 800 lines
+`/warehouse/[projectId]` is ONE card (stage row + `ScanDock` + `JobTable`), FEATUREDOCS/12.
+- **`?stage=` is the selector; `?tab=` is an alias** (`stageFromParams` in `job/stage-card.tsx`:
+  `pick-prep`→`pick`, `check-out`→`prepped`, `check-in`→`out`, `deprep`→`returned`). Old emails and
+  bookmarks use `?tab=`: keep the alias; a new stage goes into `STAGE_KEYS` or its deep link falls back.
+- **Every scan goes through `useWarehouseScan`.** Never add a stage-private scan input or a second
+  lookup path. The Returned dock resolves on the SERVER (`lookupDeprepScan`, `warehouse:check_out`) and a
+  scan de-preps ONE unit: a serial tag passes its `assetId` to `deprepItems` (never "one by count"), a bin
+  tag only matches units with `bulkAssetId === bin`.
+- **There is no localStorage pick list** (deleted; "picked" is To pick → Prepped). The scan sheet's
+  "Remember for the next n" is job-scoped **in memory** (`warehouse-scan-memory.ts`), not `localStorage`
+  and not shared across packers (that is a schema follow-up).
+- **`prepItems` reports what THIS call packed** (`packedAccessoryUnits` per parent unit,
+  `packedAccessoryLineIds`), never a re-read of line state; the deploy gate compares marked vs that set.
+- **`page.tsx` must stay ≤ 800 lines** (`page-size.test.ts`, a real assertion, no ratchet): put logic in
+  `components/warehouse/job/use-*` hooks and dialogs.
+- Phone: `StageActionBar` + `JobRowSheet`; the pinned dock is `PinnedAboveBottomNav` (shared with `BulkBar`).
 
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase

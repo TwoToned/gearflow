@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (597 agent-reachable)
+## Operations (604 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -312,6 +312,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `modelCheckItems.listByCheckItemId` (query, scope: model:read)
 - `modelCheckItems.listByModel` (query, scope: model:read)
 - `modelCheckItems.listByModelId` (query, scope: model:read)
+- `modelCustomAccessories.listByModelId` (query, scope: model:read)
+- `modelCustomAccessoriesWrites.addNative` (mutation, scope: model:update)
+- `modelCustomAccessoriesWrites.removeNative` (mutation, scope: model:update)
+- `modelCustomAccessoriesWrites.updateNative` (mutation, scope: model:update)
 - `modelMedia.list` (query, scope: model:read)
 - `models.counts` (query, scope: model:read)
 - `models.detail` (query, scope: model:read)
@@ -466,6 +470,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectServicesWrites.createServiceNative` (mutation, scope: project:update)
 - `projectServicesWrites.deleteServiceNative` (mutation, scope: project:update)
 - `projectServicesWrites.generateServicesNative` (mutation, scope: project:update)
+- `projectServicesWrites.shiftScheduleNative` (mutation, scope: project:update)
 - `projectServicesWrites.updateServiceNative` (mutation, scope: project:update)
 - `projectServicesWrites.updateServiceStatusNative` (mutation, scope: project:update)
 - `projectWrites.archiveNative` (mutation, scope: project:update)
@@ -636,6 +641,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `warehouseWrites.checkOutKit` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.checkOutKitsBatch` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.clearPrepContainer` (mutation, scope: warehouse:check_out)
+- `warehouseWrites.convertUnitBackToInventory` (mutation, scope: warehouse:check_out)
+- `warehouseWrites.convertUnitToOffInventory` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.ensureContainerOnProject` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.forceReturnAsset` (mutation, scope: warehouse:check_in)
 - `warehouseWrites.forceReturnKit` (mutation, scope: warehouse:check_in)

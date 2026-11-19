@@ -5,6 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import {
   projectServiceSchema,
+  shiftScheduleSchema,
   type ProjectServiceFormValues,
 } from "@/lib/validations/project-service";
 import { api } from "../../convex/_generated/api";
@@ -32,6 +33,7 @@ export function useProjectServiceWrites() {
   const bulkStatusM = useMutation(api.projectServicesWrites.bulkUpdateServiceStatusNative);
   const generateM = useMutation(api.projectServicesWrites.generateServicesNative);
   const cloneM = useMutation(api.projectServicesWrites.cloneServicesNative);
+  const shiftM = useMutation(api.projectServicesWrites.shiftScheduleNative);
   const convertM = useMutation(api.projectServicesWrites.convertLineItemToServiceNative);
 
   const actor = () => ({
@@ -74,6 +76,9 @@ export function useProjectServiceWrites() {
         taxable: p.taxable,
         vehicleDescription: p.vehicleDescription,
         numberOfTrips: p.numberOfTrips,
+        clientContactName: p.clientContactName,
+        clientContactPhone: p.clientContactPhone,
+        clientVehicle: p.clientVehicle,
         crewCountRequired: p.crewCountRequired,
         crewRoleId: p.crewRoleId,
         xeroAccountCode: p.xeroAccountCode || undefined,
@@ -132,6 +137,16 @@ export function useProjectServiceWrites() {
 
     bulkSetStatus: async (ids: string[], status: ServiceStatus): Promise<{ updated: number; skipped: number }> => {
       return bulkStatusM({ ids, orgId: requireOrg(), status, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    /** Atomic: moves the services AND their crew calls by whole days, or nothing.
+     *  Undo is this same call with the negative offset. */
+    shiftSchedule: async (
+      projectId: string,
+      input: { moves: { offsetDays: number; serviceIds: string[] }[] },
+    ): Promise<{ services: number; crewCalls: number; undated: number; confirmedMoved: number }> => {
+      const p = shiftScheduleSchema.parse(input);
+      return shiftM({ projectId, orgId: requireOrg(), ...p, now: Date.now(), actor: actor(), auditId: createId() });
     },
 
     generate: async (projectId: string): Promise<{ created: number }> => {

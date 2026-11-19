@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import React from 'react';
-import {render,screen,fireEvent,waitFor,act,cleanup} from '@testing-library/react';
+import {render,screen,fireEvent,waitFor,act,cleanup,within} from '@testing-library/react';
 import {it,expect,vi,afterEach,beforeEach} from 'vitest';
 const io=vi.hoisted(()=>({tab:'check-in',user:'u',lookup:vi.fn(),commit:vi.fn(),ordinary:vi.fn(),play:vi.fn(),project:null as Record<string,unknown> | null}));
-vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams('tab='+io.tab)}));
+vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams('tab='+io.tab),useRouter:()=>({push:()=>{}})}));
 vi.mock('@/lib/auth-client',()=>({useActiveOrganization:()=>({data:{id:'o'}}),useSession:()=>({data:{user:{id:io.user}}})}));
 vi.mock('convex/react',()=>({useConvex:()=>({query:async()=>true,mutation:io.commit}),useConvexAuth:()=>({isAuthenticated:true}),useQuery:()=>undefined,useMutation:()=>io.ordinary}));
 vi.mock('@/lib/use-permissions',()=>({useCurrentRole:()=>({role:'owner',permissions:{warehouse:['read','check_in','check_out','update']},isLoading:false}),useCanDo:()=>true}));
 vi.mock('@/hooks/use-native-warehouse',()=>({useNativeWarehouseProject:()=>({data:io.project,isLoading:false})}));
+vi.mock('@/hooks/use-warehouse-overbooked',()=>({useWarehouseOverbooked:()=>({})}));
 vi.mock('@/server/warehouse',()=>({lookupAssetForScan:io.lookup,getAvailableAssetsForModels:async()=>[]}));
 vi.mock('@/server/check-records',()=>({pullItem:vi.fn(),prepItemDirect:vi.fn(),prepItemsBatch:vi.fn(),deprepKit:vi.fn(),deprepItemsBatch:vi.fn(),prepKitChildren:vi.fn(),prepKitsBatch:vi.fn(),unpackItem:vi.fn()}));
 vi.mock('@/hooks/use-warehouse-writes',()=>({useWarehouseWrites:()=>new Proxy({},{get:()=>io.ordinary})}));
@@ -16,6 +17,8 @@ vi.mock('@/hooks/use-project-container-writes',()=>({useProjectContainerWrites:(
 vi.mock('@/hooks/use-scan-feedback',()=>({useScanFeedback:()=>({play:io.play,entries:[],history:[],clearHistory:vi.fn(),enabled:false,setEnabled:vi.fn()})}));
 vi.mock('@/hooks/use-server-query',()=>({useServerQuery:()=>({data:[],isLoading:false})}));
 import Page from '../page';
+import {prepItemsBatch as prepItemsBatchReal} from '@/server/check-records';
+const prepItemsBatch=vi.mocked(prepItemsBatchReal);
 import {ScanIntake} from '@/lib/scan-intake';
 const scope={orgId:'o',userId:'u',projectId:'p',expectedVersionId:'v1'};
 beforeEach(()=>{
@@ -76,7 +79,7 @@ it('mounted manual review context switch cannot complete the old account operati
 it('mounted scan capture persists the displayed version before deferred lookup',async()=>{
  io.lookup.mockImplementation(()=>new Promise(()=>{}));
  await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
- const input=await screen.findByPlaceholderText('Scan or enter asset tag to return...');
+ const input=await screen.findByPlaceholderText('Scan or enter asset tag to receive…');
  fireEvent.change(input,{target:{value:'KIT'}});fireEvent.keyDown(input,{key:'Enter'});
  await waitFor(()=>expect(io.lookup).toHaveBeenCalledTimes(1));
  expect(new ScanIntake(localStorage).list(scope)[0]).toMatchObject({raw:'KIT',expectedVersionId:'v1',state:'pending'});
@@ -87,12 +90,19 @@ function accessoryProject(packed=false) {
  io.project={...io.project,status:'CONFIRMED',lineItems:[{id:'parent',type:'EQUIPMENT',quantity:1,status:'CONFIRMED',checkedOutQuantity:0,prepStatus:'PACKED',assetId:'a',asset:{id:'a',assetTag:'A',status:'AVAILABLE'},modelId:'m',model:{id:'m',name:'Lamp'},childLineItems:[child('acc1'),child('acc2')],units:[]}]};
  io.lookup.mockResolvedValue({found:true,type:'asset',lineItemId:'parent',assetId:'a',assetName:'Lamp'});
 }
+// The deploy gate (DeployGateDialog): mark every unpacked accessory Leave, give each a reason, then Deploy.
+async function leaveAllAndDeploy(){
+ const dialog=await screen.findByRole('dialog');
+ within(dialog).getAllByRole('button',{name:'Leave'}).forEach(b=>fireEvent.click(b));
+ within(dialog).getAllByLabelText(/Reason for leaving/).forEach(i=>fireEvent.change(i,{target:{value:'left on the shelf'}}));
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+}
 it('mounted missing-accessory override retains captured operation, decision and notes through lost acknowledgement',async()=>{
  accessoryProject();
  const q=new ScanIntake(localStorage);const entry=q.capture(scope,'deploy','A','GOOD','captured deploy note');
  io.commit.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValue({confirmed:true});
  await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
- fireEvent.click(await screen.findByRole('button',{name:'Deploy anyway'}));
+ await leaveAllAndDeploy();
  await waitFor(()=>expect(io.commit).toHaveBeenCalledTimes(1));
  expect(io.ordinary).not.toHaveBeenCalled();
  expect(q.list(scope)[0]).toMatchObject({state:'pending'});
@@ -101,24 +111,80 @@ it('mounted missing-accessory override retains captured operation, decision and 
  expect(io.commit.mock.calls[0][1]).toEqual(io.commit.mock.calls[1][1]);
  expect(io.commit.mock.calls[0][1]).toMatchObject({operationId:entry.id,expectedVersionId:'v1',notes:'captured deploy note',effect:{lineItemId:'parent',assetId:'a',accessoryDecision:'override',includeAccessoryIds:[],skippedAccessories:[{accessoryLineItemId:'acc1',tier:'DEFAULT',reason:expect.any(String)},{accessoryLineItemId:'acc2',tier:'DEFAULT',reason:expect.any(String)}]}});
 });
+async function gateRows(){
+ const dialog=await screen.findByRole('dialog');
+ const rows=within(dialog).getAllByRole('listitem');
+ return {dialog,rows};
+}
+it('gate: Pack now packs ONLY the marked accessory, the Leave one is skipped and logged (override, not all)',async()=>{
+ accessoryProject();prepItemsBatch.mockReset().mockResolvedValue({lines:[],packedAccessoryLineIds:['acc1']} as never);
+ new ScanIntake(localStorage).capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ fireEvent.click(within(rows[0]).getByRole('button',{name:'Pack now'}));
+ fireEvent.click(within(rows[1]).getByRole('button',{name:'Leave'}));
+ fireEvent.change(within(dialog).getByLabelText(/Reason for leaving/),{target:{value:'still charging'}});
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+ await waitFor(()=>expect(io.commit).toHaveBeenCalledTimes(1));
+ expect(prepItemsBatch).toHaveBeenCalledTimes(1);
+ expect(prepItemsBatch.mock.calls[0][1]).toEqual([expect.objectContaining({lineItemId:'parent',accessoriesOnly:true,includeAccessoryIds:['acc1']})]);
+ expect(io.commit.mock.calls[0][1].effect).toMatchObject({accessoryDecision:'override',includeAccessoryIds:['acc1'],skippedAccessories:[{accessoryLineItemId:'acc2',tier:'DEFAULT',reason:'still charging'}]});
+});
+it('gate: a SHORT pack (the server packed fewer than marked) keeps the gate open, never deploys and invents no reason',async()=>{
+ accessoryProject();prepItemsBatch.mockReset().mockResolvedValue({lines:[],packedAccessoryLineIds:[]} as never);
+ const q=new ScanIntake(localStorage);q.capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ fireEvent.click(within(rows[0]).getByRole('button',{name:'Pack now'}));
+ fireEvent.click(within(rows[1]).getByRole('button',{name:'Leave'}));
+ fireEvent.change(within(dialog).getByLabelText(/Reason for leaving/),{target:{value:'still charging'}});
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+ await waitFor(()=>expect(prepItemsBatch).toHaveBeenCalled());
+ await act(async()=>{await Promise.resolve();});
+ expect(io.commit).not.toHaveBeenCalled();expect(io.ordinary).not.toHaveBeenCalled();
+ expect(screen.getByText('Accessories not packed')).toBeTruthy();
+ expect(q.list(scope)[0].state).toBe('review');
+});
+it('gate: Deploy stays disabled until EVERY row is decided',async()=>{
+ accessoryProject();
+ new ScanIntake(localStorage).capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ expect((within(dialog).getByRole('button',{name:'Deploy'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(within(rows[0]).getByRole('button',{name:'Pack now'}));
+ expect((within(dialog).getByRole('button',{name:'Deploy'}) as HTMLButtonElement).disabled).toBe(true); // the other row is undecided
+});
+it('gate: a failed pack keeps the gate open and never deploys',async()=>{
+ accessoryProject();prepItemsBatch.mockReset().mockRejectedValue(new Error('pack failed'));
+ const q=new ScanIntake(localStorage);q.capture(scope,'deploy','A','GOOD','n');
+ await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
+ const {dialog,rows}=await gateRows();
+ rows.forEach(r=>fireEvent.click(within(r).getByRole('button',{name:'Pack now'})));
+ fireEvent.click(within(dialog).getByRole('button',{name:'Deploy'}));
+ await waitFor(()=>expect(prepItemsBatch).toHaveBeenCalled());
+ await act(async()=>{await Promise.resolve();});
+ expect(io.commit).not.toHaveBeenCalled();expect(io.ordinary).not.toHaveBeenCalled();
+ expect(screen.getByText('Accessories not packed')).toBeTruthy();
+ expect(q.list(scope)[0].state).toBe('review');
+});
 it.each(['account','version'] as const)('mounted accessory %s switch closes review and retains original intent',async context=>{
  accessoryProject();const q=new ScanIntake(localStorage);q.capture(scope,'deploy','A','GOOD','saved');
  const params=Promise.resolve({projectId:'p'});let view!:ReturnType<typeof render>;
  await act(async()=>{view=render(<Page params={params}/>);});
- await screen.findByRole('button',{name:'Deploy anyway'});
+ await screen.findByText('Accessories not packed');
  if(context==='account') io.user='other';else io.project={...io.project,liveVersionId:'v2'};
  view.rerender(<Page params={params}/>);
- await waitFor(()=>expect(screen.queryByRole('button',{name:'Deploy anyway'})).toBeNull());
+ await waitFor(()=>expect(screen.queryByText('Accessories not packed')).toBeNull());
  expect(q.list(scope)[0].state).toBe('review');expect(io.commit).not.toHaveBeenCalled();expect(io.ordinary).not.toHaveBeenCalled();
 });
 it.each(['verified','all'] as const)('mounted partial accessory verification commits %s decision through saved scan',async decision=>{
  accessoryProject(true);io.tab='check-out';
  await act(async()=>{render(<Page params={Promise.resolve({projectId:'p'})}/>);});
 
- fireEvent.click((await screen.findAllByRole('button',{name:/Lamp.*Accessories/}))[0]);
- const verify=await screen.findAllByRole('button',{name:'Tap to verify present'});fireEvent.click(verify[0]);
+ fireEvent.click((await screen.findAllByRole('button',{name:'Expand'},{timeout:5000}))[0]);
+ const verify=await screen.findAllByRole('button',{name:'Verify'},{timeout:5000});fireEvent.click(verify[0]);
  const q=new ScanIntake(localStorage);
- const input=await screen.findByPlaceholderText('Scan asset tag to deploy...');
+ const input=await screen.findByPlaceholderText('Scan or enter asset tag to deploy…');
  fireEvent.change(input,{target:{value:'A'}});fireEvent.keyDown(input,{key:'Enter'});
  fireEvent.click(await screen.findByRole('button',{name:decision==='verified'?/Deploy Verified Only/:/Deploy All/}));
  await waitFor(()=>expect(q.list(scope)[0].state).toBe('confirmed'));
@@ -132,7 +198,7 @@ it('mounted rejected accessory commit remains failed and cancellation remains re
  fireEvent.click(await screen.findByRole('button',{name:'Cancel'}));
  expect(q.list(scope)[0]).toMatchObject({state:'review',notes:'retained'});expect(io.commit).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button',{name:'Review saved scan'}));
- fireEvent.click(await screen.findByRole('button',{name:'Deploy anyway'}));
+ await leaveAllAndDeploy();
  await waitFor(()=>expect(q.list(scope)[0]).toMatchObject({state:'failed',error:'Project version changed',notes:'retained'}));
  expect(io.ordinary).not.toHaveBeenCalled();
 });

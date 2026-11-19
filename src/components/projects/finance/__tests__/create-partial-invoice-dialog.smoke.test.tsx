@@ -37,7 +37,7 @@ describe("CreatePartialInvoiceDialog smoke", () => {
     render(<CreatePartialInvoiceDialog {...baseProps} />);
     await waitFor(() => expect(screen.getByRole("heading", { name: /create partial invoice/i })).toBeTruthy());
 
-    expect(screen.getByLabelText(/% of project total/i)).toBeTruthy();
+    expect(screen.getByLabelText(/% of job total/i)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /create draft/i }));
 
     await waitFor(() =>

@@ -119,7 +119,7 @@ export function DeleteKitDialog({
                     <div className="font-medium text-ink">Archive (recommended)</div>
                     <p className="text-caption text-muted">
                       Releases all contents, hides the kit from lists. Preserves history on past
-                      projects. Can be recovered later.
+                      jobs. Can be recovered later.
                     </p>
                   </div>
                 </div>

@@ -22,7 +22,7 @@ import { UserFacingError } from "./user-facing-error";
 const FIELD_LABELS: Record<string, string> = {
   assetTag: "asset tag",
   serialNumber: "serial number",
-  projectNumber: "project number",
+  projectNumber: "job number",
   email: "email address",
   slug: "URL slug",
   name: "name",

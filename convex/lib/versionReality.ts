@@ -170,6 +170,16 @@ export async function carryRealityByLineage(
         updatedAt: now,
       });
     }
+    // The custom-unit counter is reality too: it travels with the generic unit rows just
+    // moved onto the target line (a clone deliberately doesn't copy it — see copyPlanGraph).
+    const carriedCustom = line.offInventoryQuantity ?? 0;
+    const targetLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", targetLineId)).first();
+    if (targetLine && targetLine.organizationId === organizationId) {
+      const next = Math.min(carriedCustom, targetLine.quantity ?? 0);
+      if ((targetLine.offInventoryQuantity ?? 0) !== next) {
+        await ctx.db.patch(targetLine._id, { offInventoryQuantity: next === 0 ? undefined : next, updatedAt: now });
+      }
+    }
     for (const c of checks) await ctx.db.patch(c._id, { lineItemId: targetLineId });
     for (const m of maintenance) await ctx.db.patch(m._id, { lineItemId: targetLineId, updatedAt: now });
     for (const th of lineThreads) await ctx.db.patch(th._id, { targetId: targetLineId, updatedAt: now });

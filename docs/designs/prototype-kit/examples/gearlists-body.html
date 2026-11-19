@@ -1,0 +1,44 @@
+<style>
+/* gearlists · surface CSS (kit shell/style untouched) */
+.nav .nh{font-size:11px;font-weight:600;color:var(--faint);padding:14px 10px 4px;letter-spacing:.02em}
+.nav a.sub{height:32px;padding-left:34px;font-size:13px;font-weight:500}
+.nav a.sub .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint);font-weight:500}
+.nav a.sub.on .n{color:var(--info)}
+.crumb a{color:var(--muted)}.crumb a:hover{color:var(--ink)}.crumb .sep{color:var(--faint)}
+.phtitle{display:inline-flex;align-items:center;gap:6px;max-width:100%}
+.phtitle .chev{font-size:11px;color:var(--muted)}
+.mono-r{font-family:var(--mono);font-size:12.5px}
+.lp .tbl td .ttl{font-weight:600}
+.lp .tbl td .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.lp .tbl td.r{font-family:var(--mono);font-size:12.5px}
+.lp .tbl td .dotw{font-size:12.5px}
+.flagrow{display:inline-flex;gap:10px;margin-left:8px;vertical-align:baseline}
+.bar{display:inline-block;width:56px;height:3px;border-radius:2px;background:var(--line);vertical-align:middle;margin-left:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--muted)}
+.bar.hi i{background:var(--warn)}
+.lrow{display:flex;border-top:1px solid var(--line)}
+.lrow .flags{display:flex;gap:10px;margin-top:2px;font-size:12.5px}
+.rowlist{margin:0}
+.dlg .bd .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dlg select,.dlg input{width:100%}
+.rep{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:13.5px}
+.rep:first-child{border-top:0}
+.rep .d{color:var(--muted);font-size:12px}
+.rep button{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--blue)}
+#toast{z-index:60}
+</style>
+<div class="lphead">
+  <div><h1 class="h1"><span id="title"></span><span class="cnt" id="count"></span></h1><div class="sub deskonly" id="headsub"></div></div>
+  <div style="flex:1"></div>
+  <button class="btn btn-primary deskonly" data-act="primary" id="primary"></button>
+  <button class="btn btn-icon deskonly" data-act="pagemenu" aria-label="More">⋯</button>
+</div>
+<div class="segrow" id="strip"></div>
+<div class="ftoolbar">
+  <div class="search"><span class="muted">⌕</span><input id="q" aria-label="Search"></div>
+  <div class="fstrip"><div id="fwords" style="display:contents"></div><div class="spacer"></div><div id="views"></div></div>
+</div>
+<div class="tblwrap" id="tblwrap"></div>
+<div class="list" id="list"></div>
+<div class="lpfoot" id="foot"></div>
+<div class="phoneact" id="phoneact"><button class="btn btn-primary" data-act="primary" id="phoneprimary"></button></div>

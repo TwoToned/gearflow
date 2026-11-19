@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
+import { MODULE_NAMES } from "@/lib/vocabulary";
 
 // A pending Link navigation triggered by a fast second tap on another bottom-nav
 // item can resolve after the second one has already landed, snapping the user
@@ -35,9 +36,10 @@ interface MobileNavItem {
   matchPrefix?: string;
 }
 
+
 const navItems: MobileNavItem[] = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/projects", icon: FolderOpen, label: "Jobs" },
+  { href: "/dashboard", icon: LayoutDashboard, label: MODULE_NAMES.home },
+  { href: "/projects", icon: FolderOpen, label: MODULE_NAMES.jobs },
   { href: "/warehouse", icon: Warehouse, label: "Warehouse" },
   { href: "/crew", icon: HardHat, label: "Crew" },
   { href: "/assets/registry", icon: Package, label: "Assets", matchPrefix: "/assets" },

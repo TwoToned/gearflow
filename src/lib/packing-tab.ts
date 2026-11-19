@@ -6,7 +6,7 @@
  * attachment instead of re-deriving it) down to one list of plannable
  * top-level equipment lines, then buckets them by container the same way
  * `warehouse-types.ts`'s `buildContainerGroups` does for the warehouse tabs —
- * real/planned identity first, a "Not planned" bucket last.
+ * real/planned identity first, a "Loose" bucket last.
  *
  * A line is "planned" once EITHER a PM has set `plannedContainerId` (intent)
  * OR any of its units has actually been packed (`containerId`, reality) —
@@ -124,7 +124,7 @@ export function resolvePackingStatus(item: LineItemData): PackingStatus {
 }
 
 export interface PackingContainerBucket {
-  /** `null` = the "Not planned" bucket, always sorted last. */
+  /** `null` = the "Loose" bucket, always sorted last. */
   containerId: string | null;
   /** Resolved current label, or `null` for the Not-planned bucket. */
   label: string | null;
@@ -133,7 +133,7 @@ export interface PackingContainerBucket {
 
 /**
  * Bucket every plannable line by its resolved packing status, alphabetical
- * by container label with "Not planned" last — same ordering convention
+ * by container label with "Loose" last — same ordering convention
  * `buildContainerGroups` uses for the warehouse tabs.
  */
 export function buildPackingBuckets(

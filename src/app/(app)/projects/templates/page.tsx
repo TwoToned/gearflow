@@ -83,7 +83,7 @@ export default function TemplatesPage() {
     mutationFn: () =>
       projectWrites.duplicate(createFrom.id, projectNumber, projectName),
     onSuccess: (result) => {
-      toast.success("Project created from template");
+      toast.success("Job created from template");
       setCreateFrom(null);
       router.push(`/projects/${result.id}`);
     },
@@ -192,7 +192,7 @@ export default function TemplatesPage() {
       <div className="space-y-4">
         <PageHeader
           title="Templates"
-          description="Reusable project templates with pre-configured line items."
+          description="Reusable job templates with pre-configured line items."
           actions={
             <CanDo resource="project" action="create">
               <Button asChild>
@@ -238,7 +238,7 @@ export default function TemplatesPage() {
                     <TableCell colSpan={6} className="text-center py-10">
                       <BookTemplate className="mx-auto h-8 w-8 mb-2 text-muted" />
                       <p className="text-ui-text font-medium text-ink-2">No templates yet</p>
-                      <p className="mt-1 text-caption text-muted">Save a project as a template, or build one from scratch.</p>
+                      <p className="mt-1 text-caption text-muted">Save a job as a template, or build one from scratch.</p>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -336,7 +336,7 @@ export default function TemplatesPage() {
       <Dialog open={!!createFrom} onOpenChange={(open) => !open && setCreateFrom(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create project from template</DialogTitle>
+            <DialogTitle>Create job from template</DialogTitle>
             <DialogDescription>
               Create a new project using &quot;{createFrom?.name}&quot; as a starting point.
               All line items will be copied. Dates will be cleared.
@@ -350,7 +350,7 @@ export default function TemplatesPage() {
           >
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="tpl-number">Project code *</Label>
+                <Label htmlFor="tpl-number">Job code *</Label>
                 <Input
                   id="tpl-number"
                   value={projectNumber}
@@ -386,7 +386,7 @@ export default function TemplatesPage() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title={`Delete template "${deleteTarget?.name ?? ""}"?`}
-        description="This removes the project template. Projects already created from this template are not affected."
+        description="This removes the job template. Jobs already created from this template are not affected."
         confirmLabel="Delete template"
         onConfirm={() => {
           if (deleteTarget) {

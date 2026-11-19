@@ -117,13 +117,13 @@ describe("ProjectWizard schedule step — project window (WS2 #941)", () => {
 
     // Open the Project window disclosure and set an end date BEFORE the rental end
     // ("1 week" = today..today+6) — today (+0) is always earlier.
-    fireEvent.click(screen.getByRole("button", { name: /Project window/i }));
-    fireEvent.change(screen.getByLabelText("Project ends date"), {
+    fireEvent.click(screen.getByRole("button", { name: /Job window/i }));
+    fireEvent.change(screen.getByLabelText("Job ends date"), {
       target: { value: isoDateOffset(0) },
     });
 
     expect(
-      screen.getByText(/project window ends before the rental window/i),
+      screen.getByText(/job window ends before the rental window/i),
     ).toBeTruthy();
 
     // Non-blocking: Continue still works and advances past this step.
@@ -134,13 +134,13 @@ describe("ProjectWizard schedule step — project window (WS2 #941)", () => {
   it("shows a non-blocking hint when the project window starts after the rental window", async () => {
     await goToScheduleStep();
     fireEvent.click(screen.getByRole("button", { name: "1 week" }));
-    fireEvent.click(screen.getByRole("button", { name: /Project window/i }));
-    fireEvent.change(screen.getByLabelText("Project starts date"), {
+    fireEvent.click(screen.getByRole("button", { name: /Job window/i }));
+    fireEvent.change(screen.getByLabelText("Job starts date"), {
       target: { value: isoDateOffset(10) }, // well after today+6
     });
 
     expect(
-      screen.getByText(/project window starts after the rental window/i),
+      screen.getByText(/job window starts after the rental window/i),
     ).toBeTruthy();
   });
 });

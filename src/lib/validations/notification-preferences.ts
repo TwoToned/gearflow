@@ -57,11 +57,11 @@ export const NOTIFICATION_PREFERENCE_LABELS: Record<keyof NotificationPreference
   },
   overdueReturn: {
     label: "Overdue returns",
-    description: "Email me when a project's rental end date passes with items still deployed.",
+    description: "Email me when a job's rental end date passes with items still deployed.",
   },
   upcomingProject: {
-    label: "Upcoming projects",
-    description: "Email me when a project is starting within 3 days.",
+    label: "Upcoming jobs",
+    description: "Email me when a job is starting within 3 days.",
   },
   pendingInvitation: {
     label: "Invitations",

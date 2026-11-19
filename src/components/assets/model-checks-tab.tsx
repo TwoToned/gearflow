@@ -318,7 +318,7 @@ export function ModelChecksTab({ modelId }: { modelId: string }) {
         open={!!removeTarget}
         onOpenChange={(open) => !open && setRemoveTarget(null)}
         title={`Remove "${removeTarget?.label ?? ""}" from this model?`}
-        description="The check item is removed from this model's checklist template. Past check responses on previous projects are preserved."
+        description="The check item is removed from this model's checklist template. Past check responses on previous jobs are preserved."
         confirmLabel="Remove check"
         onConfirm={() => {
           if (removeTarget) {

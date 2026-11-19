@@ -174,7 +174,7 @@ function AllocationEditor({
       <p className="text-ui-text text-muted">
         When this kit is booked at a fixed price, its revenue is split across the models
         inside it so each one&rsquo;s ROI can be measured. Applies to{" "}
-        <strong className="text-ink-2">future bookings</strong> — projects already
+        <strong className="text-ink-2">future bookings</strong> — jobs already
         priced keep the split they were booked with.
       </p>
 

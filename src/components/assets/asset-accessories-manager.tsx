@@ -145,7 +145,7 @@ export function AssetAccessoriesManager({
         <div className="rounded-[var(--r)] border-2 border-dashed border-line-2 p-4 text-center text-ui-text text-muted">
           <Cable className="mx-auto mb-1 h-5 w-5 opacity-60" />
           No accessories attached. Cables, clamps and adaptors attached here travel
-          with this asset onto projects and through the warehouse.
+          with this asset onto jobs and through the warehouse.
         </div>
       ) : (
         <ul className="space-y-1.5">

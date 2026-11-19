@@ -83,3 +83,26 @@ export const projectSchema = z.object({
 });
 
 export type ProjectFormValues = z.input<typeof projectSchema>;
+
+// ─── Logistics: dates + site contact patch ──────────────────────────────────
+
+const dayString = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date")]);
+const clockString = z.union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a valid time")]);
+
+/**
+ * The Logistics tab's partial project write (dates sheet + site contact sheet).
+ * `undefined` leaves a field alone; `""` clears it. Bounds mirror `projectSchema`
+ * (R-8.6.3); the Convex `updateNative` re-checks the string lengths server-side.
+ */
+export const projectSchedulePatchSchema = z.object({
+  rentalStartDate: dayString.optional(),
+  rentalEndDate: dayString.optional(),
+  projectStartDate: dayString.optional(),
+  projectStartTime: clockString.optional(),
+  projectEndDate: dayString.optional(),
+  projectEndTime: clockString.optional(),
+  siteContactName: z.string().max(200).optional(),
+  siteContactPhone: z.string().max(50).optional(),
+  siteContactEmail: z.string().max(200).optional(),
+});
+export type ProjectSchedulePatch = z.input<typeof projectSchedulePatchSchema>;

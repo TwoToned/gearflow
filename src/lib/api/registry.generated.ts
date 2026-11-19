@@ -8522,7 +8522,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c4e7cd4ad7822730",
+    "argsSha": "fb082419c5e6d951",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -12889,7 +12889,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1ad4ae8aa65101e3",
+    "argsSha": "77d4b0ebda4c78d6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13046,7 +13046,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1ad4ae8aa65101e3",
+    "argsSha": "77d4b0ebda4c78d6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13078,7 +13078,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b8f8c3ecc1c67ce1",
+    "argsSha": "e7152875afffa989",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13195,7 +13195,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "4b383a98c20f386d",
+    "argsSha": "b5203375dffbacd6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13513,7 +13513,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fe051f8c35b7e1e3",
+    "argsSha": "f090faaff6c90707",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13693,7 +13693,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fa9937ab904fcb45",
+    "argsSha": "3a1688c0b065c9e4",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -13946,7 +13946,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "6f51443bf2cc1131",
+    "argsSha": "2f20a2bae9f74dee",
     "returnsSha": "8b114161049d5d20",
     "stability": "stable",
     "summary": null,
@@ -14162,7 +14162,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "066f8ae52bb2f014",
+    "argsSha": "206dc4b98daa8b06",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -25131,6 +25131,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "accessoryPlan",
+        "optional": true,
+        "type": "object"
+      },
+      {
         "name": "actor",
         "optional": false,
         "type": "object"
@@ -25182,7 +25187,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f412b44bb3472da4",
+    "argsSha": "4857b05dd8eeb170",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -25408,7 +25413,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "allowOverbook",
       "forceSeparate"
     ],
-    "argsSha": "b6e5825a34468bba",
+    "argsSha": "4f8a26b9e94530d1",
     "returnsSha": "6f1a1d586199c07b",
     "stability": "tracks-app",
     "summary": null,
@@ -25507,7 +25512,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "allowOverbook",
       "justification"
     ],
-    "argsSha": "b48e37fd6e151b38",
+    "argsSha": "184616ff7a7565e4",
     "returnsSha": "b462b96a443b48b3",
     "stability": "stable",
     "summary": null,
@@ -26152,7 +26157,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "17ee709536d9134f",
+    "argsSha": "dba33caa436d521b",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -30363,6 +30368,254 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelCustomAccessories.listByModelId",
+    "module": "modelCustomAccessories",
+    "fn": "listByModelId",
+    "kind": "query",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "modelId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aed5bc8d82a01cda",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "List a model's free-text (not-in-inventory) accessories, sorted by sortOrder.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelCustomAccessoriesWrites.addNative",
+    "module": "modelCustomAccessoriesWrites",
+    "fn": "addNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "inclusion",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "modelId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "quantity",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7a187ad3fcb14d1a",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelCustomAccessoriesWrites.removeNative",
+    "module": "modelCustomAccessoriesWrites",
+    "fn": "removeNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "accessoryId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "modelId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "2c0f63ffd53e1969",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelCustomAccessoriesWrites.updateNative",
+    "module": "modelCustomAccessoriesWrites",
+    "fn": "updateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "accessoryId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "inclusion",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "modelId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "quantity",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "228ee9651dea44f7",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -36878,6 +37131,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "offInventoryQuantity",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
@@ -37036,7 +37294,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "overrideReason"
     ],
-    "argsSha": "8fd25dae21b03607",
+    "argsSha": "de1f7b9b9c8df623",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -37234,6 +37492,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "offInventoryQuantity",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
@@ -37392,7 +37655,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "overrideReason"
     ],
-    "argsSha": "8fd25dae21b03607",
+    "argsSha": "de1f7b9b9c8df623",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -37521,7 +37784,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "745511fe32dea271",
+    "argsSha": "ff5ef97d4582e9c6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -37553,7 +37816,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "903e6c7d48e32b72",
+    "argsSha": "c01d595e1030c81a",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -38187,7 +38450,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "16177f31093735e8",
+    "argsSha": "22621f0b2030875b",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41300,7 +41563,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "95bc0d9950df5b63",
+    "argsSha": "134f8097e70b01c8",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41507,7 +41770,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "95bc0d9950df5b63",
+    "argsSha": "134f8097e70b01c8",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41650,7 +41913,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "e7edbf6300b3e145",
+    "argsSha": "51c11c78d222ab02",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41709,7 +41972,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "30194c3fab0d5338",
+    "argsSha": "31d574edaa3dcd90",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -41978,6 +42241,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "clientContactName",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientContactPhone",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientVehicle",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "costTotal",
         "optional": true,
         "type": "number"
@@ -42139,7 +42417,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "81064d667a030d96",
+    "argsSha": "6db6e81d2d5296c0",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42241,7 +42519,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "cd0060ab63d2156d",
+    "argsSha": "590ae705e8606f48",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42412,6 +42690,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectServicesWrites.shiftScheduleNative",
+    "module": "projectServicesWrites",
+    "fn": "shiftScheduleNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "moves",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b17ed0e27548ac63",
+    "returnsSha": "aa96fc8a5b8f4095",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectServicesWrites.updateServiceNative",
     "module": "projectServicesWrites",
     "fn": "updateServiceNative",
@@ -42446,6 +42781,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "chargeRateOverride",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "clientContactName",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientContactPhone",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientVehicle",
+        "optional": true,
+        "type": "string"
       },
       {
         "name": "costTotal",
@@ -42599,7 +42949,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "768ec1da1916116c",
+    "argsSha": "67aa945399ca37a6",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -42758,7 +43108,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "cd0060ab63d2156d",
+    "argsSha": "590ae705e8606f48",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -46210,7 +46560,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f290c133ff54ff06",
-    "returnsSha": "6a7b9d249ea542de",
+    "returnsSha": "88a4dad047dca264",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -46801,7 +47151,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "3fc51f5453cbf8d2",
+    "argsSha": "31c70a6da0d23307",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -46898,7 +47248,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "3fc51f5453cbf8d2",
+    "argsSha": "31c70a6da0d23307",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -47081,7 +47431,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "be9fbde9494f8d60",
+    "argsSha": "5bfd7b061cb8c825",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -47113,7 +47463,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f9789df04b0d7148",
+    "argsSha": "9add665b302880ce",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59903,6 +60253,125 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "warehouseWrites.convertUnitBackToInventory",
+    "module": "warehouseWrites",
+    "fn": "convertUnitBackToInventory",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "lineItemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a460919d7c169ee9",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "warehouseWrites.convertUnitToOffInventory",
+    "module": "warehouseWrites",
+    "fn": "convertUnitToOffInventory",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "lineItemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "startPrep",
+        "optional": false,
+        "type": "boolean"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b1a177f56a037027",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "warehouseWrites.ensureContainerOnProject",
     "module": "warehouseWrites",
     "fn": "ensureContainerOnProject",
@@ -63062,10 +63531,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1225,
-  agentReachable: 597,
-  queries: 440,
-  mutations: 785,
-  agentReachableQueries: 305,
-  agentReachableMutations: 292,
+  total: 1232,
+  agentReachable: 604,
+  queries: 441,
+  mutations: 791,
+  agentReachableQueries: 306,
+  agentReachableMutations: 298,
 } as const;

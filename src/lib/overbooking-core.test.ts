@@ -24,6 +24,8 @@ function bundleLineItem(p: {
   subHireId?: string | null;
   isOptional?: boolean;
   type?: string;
+  /** Units sourced outside the fleet — excluded from stock demand. */
+  offInventoryQuantity?: number;
   /** FCFS ordering key — mirrors Convex's own `_creationTime` system field.
    *  Defaults to 0 so fixtures that don't care about order all tie (stable,
    *  sorted by `projectId` as the fallback tiebreak in `allocateFifo`). */
@@ -39,6 +41,7 @@ function bundleLineItem(p: {
     subHireId: p.subHireId ?? null,
     isOptional: p.isOptional ?? false,
     type: p.type ?? "EQUIPMENT",
+    offInventoryQuantity: p.offInventoryQuantity,
     _creationTime: p._creationTime ?? 0,
   };
 }
@@ -151,6 +154,34 @@ describe("reconstructOverbookedStatus", () => {
     });
     const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
     expect(map.get("li1")).toMatchObject({ overBy: 1, totalStock: 2, effectiveStock: 2, totalBooked: 3 });
+  });
+
+  it("off-inventory units are not stock demand: 3 booked on 2 assets, 1 custom → not overbooked", () => {
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 3, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime() })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 3, offInventoryQuantity: 1 })],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.has("li1")).toBe(false);
+  });
+
+  it("a fully off-inventory line (3 of 3 custom) contributes zero demand", () => {
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 3, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime() })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 3, offInventoryQuantity: 3 })],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.has("li1")).toBe(false);
   });
 
   it("does not flag when within stock", () => {

@@ -106,7 +106,12 @@ export async function copyPlanGraph(
       void versionId;
       const newId = createId();
       idMap.set(id, newId);
-      toInsert.push({ table, doc: { ...rest, id: newId, versionId: targetVersionId, lineageId: lineageId ?? id } });
+      const doc: Record<string, unknown> = { ...rest, id: newId, versionId: targetVersionId, lineageId: lineageId ?? id };
+      // `offInventoryQuantity` counts REALITY (the generic units, which a clone never
+      // copies and make-live carries by lineage) — cloning it as plan data would let the
+      // clone and its source drift apart. Make-live re-derives it with the units.
+      if (table === "projectLineItems") delete doc.offInventoryQuantity;
+      toInsert.push({ table, doc });
     }
   }
 

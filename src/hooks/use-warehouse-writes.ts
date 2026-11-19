@@ -6,6 +6,7 @@ import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import { useCanDo } from "@/lib/use-permissions";
 import { announceWarehouseWrite, countLabel, type AnnouncedWrite } from "@/lib/warehouse-undo-toast";
+import { OUT_LABEL } from "@/lib/vocabulary";
 
 type ReturnCondition = "GOOD" | "DAMAGED" | "MISSING";
 
@@ -57,6 +58,8 @@ export function useWarehouseWrites() {
   const syncContainersBatchM = useMutation(api.warehouseWrites.syncContainersBatch);
   const reassignLineItemUnitM = useMutation(api.warehouseWrites.reassignLineItemUnit);
   const reassignKitMemberSerialM = useMutation(api.warehouseWrites.reassignKitMemberSerial);
+  const convertUnitToOffInventoryM = useMutation(api.warehouseWrites.convertUnitToOffInventory);
+  const convertUnitBackToInventoryM = useMutation(api.warehouseWrites.convertUnitBackToInventory);
   const forceReturnAssetM = useMutation(api.warehouseWrites.forceReturnAsset);
   const forceReturnKitM = useMutation(api.warehouseWrites.forceReturnKit);
   const forceReturnKitsM = useMutation(api.warehouseWrites.forceReturnKits);
@@ -90,6 +93,41 @@ export function useWarehouseWrites() {
   };
 
   return {
+    /**
+     * A durable-intake scan (`scanIntake.commit`) already wrote on the server;
+     * this raises the SAME toast + guarded Undo the direct writes do, so the
+     * scan strip can reuse `scanUndo` (CLAUDE.md: one reverse closure). The
+     * reverse mutations are the ones the direct deploy/return paths call.
+     */
+    announceCommitted: (
+      projectId: string,
+      op: "deploy" | "return",
+      effect: { lineItemId?: string; assetId?: string; kitId?: string },
+      ack: { autoStatus?: string | null; autoStatusAuditId?: string | null },
+    ): AnnouncedWrite<{ autoStatus: string | null }> => {
+      const org = requireOrg();
+      const deploy = op === "deploy";
+      const base = { orgId: org, projectId, revertAutoAdvanceAuditId: ack.autoStatusAuditId ?? undefined, now: Date.now(), actor: actor() };
+      const reverse = async () => {
+        if (effect.kitId) {
+          const kitIds = [effect.kitId];
+          if (deploy) await undeployKitsBatchM({ ...base, kitIds, auditId: createId() });
+          else await unreturnKitsBatchM({ ...base, kitIds, auditId: createId() });
+          return;
+        }
+        const items = [{ lineItemId: effect.lineItemId ?? "", assetId: effect.assetId }];
+        if (deploy) await undeployItemsM({ ...base, items, auditIds: [createId()] });
+        else await unreturnItemsM({ ...base, items, auditIds: [createId()] });
+      };
+      const noun = effect.kitId ? "kit" : "item";
+      return announceWarehouseWrite({ autoStatus: ack.autoStatus ?? null }, {
+        doneTitle: `${deploy ? "Deployed" : "Returned"} ${countLabel(1, noun)}`,
+        undoneTitle: `Undone — ${countLabel(1, noun)} back in ${deploy ? "Prepped" : OUT_LABEL}`,
+        canUndo: deploy ? canUndoDeploy : canUndoReturn,
+        performUndo: reverse,
+      });
+    },
+
     /** Stage SPECIFIC accessory units (deploy / return / de-prep, or move back a stage) — a relocated accessory
      *  (packed in a different container than its parent) is actioned from its own
      *  row, never through the parent's cascade. */
@@ -282,7 +320,7 @@ export function useWarehouseWrites() {
       if (n === 0) return res;
       return announceWarehouseWrite(res, {
         doneTitle: `Checked in ${countLabel(n, "item")}`,
-        undoneTitle: `Undone — ${countLabel(n, "item")} back in Deployed`,
+        undoneTitle: `Undone — ${countLabel(n, "item")} back in ${OUT_LABEL}`,
         canUndo: canUndoReturn,
         performUndo: async () => {
           await unreturnItemsM({
@@ -356,7 +394,7 @@ export function useWarehouseWrites() {
       const kitName = await fetchKitName(kitId);
       return announceWarehouseWrite(res, {
         doneTitle: kitName ? `Checked in kit ${kitName}` : "Checked in kit",
-        undoneTitle: "Undone — kit back in Deployed",
+        undoneTitle: `Undone — kit back in ${OUT_LABEL}`,
         canUndo: canUndoReturn,
         performUndo: async () => {
           await unreturnKitsBatchM({
@@ -387,7 +425,7 @@ export function useWarehouseWrites() {
       if (res.succeeded.length === 0) return res;
       return announceWarehouseWrite(res, {
         doneTitle: `Checked in ${countLabel(res.succeeded.length, "kit")}`,
-        undoneTitle: `Undone — ${countLabel(res.succeeded.length, "kit")} back in Deployed`,
+        undoneTitle: `Undone — ${countLabel(res.succeeded.length, "kit")} back in ${OUT_LABEL}`,
         canUndo: canUndoReturn,
         performUndo: async () => {
           await unreturnKitsBatchM({
@@ -448,6 +486,24 @@ export function useWarehouseWrites() {
       | { moved: true; fromAssetTag?: string; toAssetTag?: string; lineItemId: string }
     > => {
       return reassignKitMemberSerialM({ orgId: requireOrg(), projectId, unitId, newAssetId, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    // "Prep as custom item": move one unit of a line between stock-backed and
+    // off-inventory (FEATUREDOCS/12). The unit is born prepped; `startPrep` also counts it as the
+    // job's first prep (status auto-advance) — true at the warehouse bench, false when planning.
+    convertUnitToOffInventory: async (
+      projectId: string,
+      lineItemId: string,
+      startPrep: boolean,
+    ): Promise<{ unitId: string; offInventoryQuantity: number }> => {
+      return convertUnitToOffInventoryM({ orgId: requireOrg(), projectId, lineItemId, startPrep, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+
+    convertUnitBackToInventory: async (
+      projectId: string,
+      lineItemId: string,
+    ): Promise<{ offInventoryQuantity: number }> => {
+      return convertUnitBackToInventoryM({ orgId: requireOrg(), projectId, lineItemId, auditId: createId(), now: Date.now(), actor: actor() });
     },
 
     forceReturnAsset: async (assetId: string): Promise<{ success: true }> => {

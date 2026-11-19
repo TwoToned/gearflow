@@ -59,7 +59,7 @@ export function AcceptQuoteDialog({ open, onOpenChange, quoteId, version, isExpi
         acceptedAt: new Date(acceptedAtStr),
         acceptanceRef: acceptanceRef || undefined,
       });
-      toast.success(`Marked v${version} accepted — this project can now be confirmed`);
+      toast.success(`Marked v${version} accepted — this job can now be confirmed`);
       onAccepted?.(result.offerStatusChange);
       handleOpenChange(false);
     } catch (e) {

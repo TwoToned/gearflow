@@ -34,7 +34,7 @@ const ASSET_WRITE_ERROR_MAP: Record<
 > = {
   ASSET_IN_USE: {
     title: "Cannot delete",
-    message: "This asset is referenced by project line items.",
+    message: "This asset is referenced by job line items.",
     hint: "Archive it instead so the history stays intact.",
   },
   ASSET_IN_KIT: {
@@ -64,7 +64,7 @@ const ASSET_WRITE_ERROR_MAP: Record<
   KIT_CHILD: {
     title: "Cannot remove this item",
     message: "This item is part of a Kit.",
-    hint: "Remove the Kit from the project instead — that will remove all its members at once.",
+    hint: "Remove the Kit from the job instead — that will remove all its members at once.",
   },
   ACCESSORY_CHILD: {
     title: "Cannot remove this item",
@@ -82,7 +82,7 @@ const ASSET_WRITE_ERROR_MAP: Record<
   ASSET_DOUBLE_BOOKED: {
     title: "Asset already booked",
     message: "This asset is already booked during those dates.",
-    hint: "Pick a different asset, adjust the rental dates, or remove it from the other project.",
+    hint: "Pick a different asset, adjust the rental dates, or remove it from the other job.",
   },
   ASSET_UNAVAILABLE: {
     title: "Asset cannot be added",
@@ -97,19 +97,19 @@ const ASSET_WRITE_ERROR_MAP: Record<
   KIT_DOUBLE_BOOKED: {
     title: "Kit already booked",
     message: "This kit is already booked during those dates.",
-    hint: "Pick a different kit, adjust the rental dates, or remove it from the other project.",
+    hint: "Pick a different kit, adjust the rental dates, or remove it from the other job.",
   },
   // #1230 pricing-lock gate (convex/lib/projectLocks.ts) — the ONE code that
   // replaces the deleted FINANCIALS_LOCKED/PROJECT_LOCKED/JUSTIFICATION_REQUIRED
   // trio (the whole 4-tier lock system collapsed to one boolean).
   PRICING_LOCKED: {
     title: "Pricing is locked",
-    message: "This project's pricing is locked. Clear the lock (project header) to edit money fields.",
-    hint: "An admin/owner/manager or this project's assigned PM can clear it — it's logged and auditable.",
+    message: "This job's pricing is locked. Clear the lock (job header) to edit money fields.",
+    hint: "An admin/owner/manager or this job's assigned PM can clear it — it's logged and auditable.",
   },
   FORBIDDEN_UNLOCK_PRICING: {
     title: "Not allowed",
-    message: "Only org admins/owners/managers or this project's assigned PM(s) can clear the pricing lock.",
+    message: "Only org admins/owners/managers or this job's assigned PM(s) can clear the pricing lock.",
   },
 };
 

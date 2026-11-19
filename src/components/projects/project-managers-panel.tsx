@@ -81,12 +81,12 @@ export function ProjectManagersPanel({
   return (
     <div className="border-b border-line pb-4 space-y-2">
       <div className="flex items-center justify-between">
-        <SectionHeader label="Project managers" />
+        <SectionHeader label="Job managers" />
         <Button
           variant="ghost"
           size="icon"
           className="touch-target size-7 text-muted hover:text-ink-2"
-          title="Add project manager"
+          title="Add job manager"
           onClick={() => setShowPicker(!showPicker)}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -99,7 +99,7 @@ export function ProjectManagersPanel({
           onClick={() => setShowPicker(true)}
           className={cn("rounded-sm text-caption text-muted hover:text-muted transition-colors", focusRing)}
         >
-          Add project managers
+          Add job managers
         </button>
       )}
 
@@ -126,7 +126,7 @@ export function ProjectManagersPanel({
                   focusRing,
                   disabledState,
                 )}
-                title="Remove project manager"
+                title="Remove job manager"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -142,7 +142,7 @@ export function ProjectManagersPanel({
             if (userId) addMutation.mutate(userId);
           }}
           options={memberOptions}
-          placeholder="Add a project manager..."
+          placeholder="Add a job manager..."
           searchPlaceholder="Search members..."
           emptyMessage="No available members."
         />

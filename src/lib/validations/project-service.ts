@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { crewRateFieldsSchema } from "./crew";
+import { MAX_SHIFT_DAYS, MAX_SHIFT_GROUPS, MAX_SHIFT_SERVICES } from "../../../convex/lib/serviceSchedule";
+import { SERVICE_TYPES } from "../../../convex/lib/serviceTypes";
+
+/** One enum for the project service and the service template (R-3.1). */
+const serviceTypeSchema = z.enum(SERVICE_TYPES);
 
 /**
  * One row of the per-service crew rate table (services-panel.tsx). Rate fields are
@@ -15,7 +20,7 @@ const serviceCrewMemberSchema = z.object({
 });
 
 export const projectServiceSchema = z.object({
-  type: z.enum(["DELIVERY", "PICKUP", "BUMP_IN", "BUMP_OUT", "LABOUR", "MISC"]),
+  type: serviceTypeSchema,
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
   notes: z.string().optional(),
@@ -52,6 +57,11 @@ export const projectServiceSchema = z.object({
   vehicleDescription: z.string().optional(),
   numberOfTrips: z.coerce.number().optional(),
 
+  // Client pick up / drop off (UX 5b). Caps mirror assertServiceFields server-side.
+  clientContactName: z.string().max(120).optional(),
+  clientContactPhone: z.string().max(40).optional(),
+  clientVehicle: z.string().max(120).optional(),
+
   crewCountRequired: z.coerce.number().optional(),
   crewRoleId: z.string().optional(),
   crew: z.array(serviceCrewMemberSchema).optional(),
@@ -63,7 +73,7 @@ export const projectServiceSchema = z.object({
 export type ProjectServiceFormValues = z.input<typeof projectServiceSchema>;
 
 export const serviceTemplateSchema = z.object({
-  type: z.enum(["DELIVERY", "PICKUP", "BUMP_IN", "BUMP_OUT", "LABOUR", "MISC"]),
+  type: serviceTypeSchema,
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
   defaultCrewCount: z.coerce.number().optional(),
@@ -76,3 +86,19 @@ export const serviceTemplateSchema = z.object({
 });
 
 export type ServiceTemplateFormValues = z.input<typeof serviceTemplateSchema>;
+
+/**
+ * `projectServicesWrites.shiftScheduleNative` input (linked re-timing, UX
+ * Phase 5). The bounds are the Convex mutation's own constants so the two can
+ * never drift (R-3.1); the server re-checks them (the browser parse is bypassable).
+ */
+export const shiftScheduleSchema = z.object({
+  moves: z
+    .array(
+      z.object({
+        offsetDays: z.number().int().min(-MAX_SHIFT_DAYS).max(MAX_SHIFT_DAYS),
+        serviceIds: z.array(z.string().min(1)).max(MAX_SHIFT_SERVICES),
+      }),
+    )
+    .max(MAX_SHIFT_GROUPS),
+});

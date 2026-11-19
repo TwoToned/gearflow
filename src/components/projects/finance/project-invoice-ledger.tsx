@@ -22,7 +22,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
+import { ActionMenu } from "@/components/ui/action-menu";
+import type { ActionItem } from "@/lib/primitives/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { IssueInvoiceDialog } from "@/components/projects/finance/issue-invoice-dialog";
@@ -108,7 +109,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
   const [deleteVoidTarget, setDeleteVoidTarget] = useState<{ id: string; label: string } | null>(null);
 
   if (!clientId) {
-    return <p className="t-micro text-fg-4">Assign a client to this project to generate invoices.</p>;
+    return <p className="t-micro text-fg-4">Assign a client to this job to generate invoices.</p>;
   }
   if (invoices === undefined || client === undefined) {
     return <p className="t-micro text-fg-4">Loading…</p>;
@@ -265,7 +266,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
       <Dialog open={!!advanceOffer} onOpenChange={(open) => !open && setAdvanceOffer(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Move this project to Invoiced?</DialogTitle>
+            <DialogTitle>Move this job to Invoiced?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-fg-4">
             {advanceOffer?.invoiceNumber} has been issued. This project can move to Invoiced whenever you&rsquo;re ready — it&rsquo;s not required.
@@ -364,16 +365,16 @@ export function invoiceRowMenuActions(
   inv: InvoiceRowDoc,
   perms: { canDelete: boolean; canVoid: boolean },
   handlers: { onDeleteDraft: () => void; onVoidRequest: () => void; onDeleteVoidRequest: () => void },
-): RowAction[] {
-  const actions: RowAction[] = [];
+): ActionItem[] {
+  const actions: ActionItem[] = [];
   if (inv.status === "DRAFT" && perms.canDelete) {
-    actions.push({ key: "delete-draft", label: "Delete draft", icon: Trash2, onClick: handlers.onDeleteDraft, destructive: true });
+    actions.push({ key: "delete-draft", label: "Delete draft", group: "danger", icon: Trash2, onSelect: handlers.onDeleteDraft, danger: true });
   }
   if (inv.status === "ISSUED" && perms.canVoid) {
-    actions.push({ key: "void", label: "Void invoice", icon: Ban, onClick: handlers.onVoidRequest, destructive: true });
+    actions.push({ key: "void", label: "Void invoice", group: "danger", icon: Ban, onSelect: handlers.onVoidRequest, danger: true });
   }
   if (inv.status === "VOID" && perms.canDelete) {
-    actions.push({ key: "delete-void", label: "Delete permanently", icon: Trash2, onClick: handlers.onDeleteVoidRequest, destructive: true });
+    actions.push({ key: "delete-void", label: "Delete permanently", group: "danger", icon: Trash2, onSelect: handlers.onDeleteVoidRequest, danger: true });
   }
   return actions;
 }
@@ -443,7 +444,7 @@ function InvoiceRow({
             onIssue={onIssue}
             onRecordPaymentRequest={() => onRecordPaymentRequest(balanceRemaining)}
           />
-          <RowActionsMenu actions={menuActions} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
+          <ActionMenu spec={{ items: menuActions }} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
         </div>
       </div>
 

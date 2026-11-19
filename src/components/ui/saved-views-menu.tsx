@@ -262,7 +262,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
           <div className="space-y-3">
             <Input
               autoFocus
-              placeholder="View name (e.g. Overdue projects)"
+              placeholder="View name (e.g. Overdue jobs)"
               value={newName}
               maxLength={60}
               onChange={(e) => setNewName(e.target.value)}

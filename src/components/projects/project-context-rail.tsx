@@ -35,7 +35,7 @@ function ScheduleSection({ project }: { project: ProjectContextRailProject }) {
           </span>
         </div>
         {scheduleRows.length === 0 ? (
-          <p className="text-caption text-muted">No project window set — same as rental</p>
+          <p className="text-caption text-muted">No job window set — same as rental</p>
         ) : (
           scheduleRows.map((r) => (
             <div key={r.label} className="flex justify-between gap-2">

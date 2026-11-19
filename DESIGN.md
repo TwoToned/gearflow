@@ -445,7 +445,9 @@ Use the registry `SectionHeader` component. Two variants:
   keeps the simpler red-active rule (§16).
 - **Org avatar:** 26px, 6px radius, solid espresso background with red monogram
 - **Section labels:** `t-overline`, `muted` (sentence case, §5.2)
-- **NavLink:** Always use `NavLink` wrapper from `app-sidebar.tsx`. Never plain `<Link>` for sidebar items (DOM crash risk on Next.js navigation). (The mobile bottom nav in `mobile-nav.tsx` is a separate, non-sidebar render path and uses a plain focus-ringed `<Link>`.)
+- **NavLink:** Always use `NavLink` from `src/components/layout/nav-link.tsx`. Never plain `<Link>` for sidebar items (DOM crash risk on Next.js navigation).
+- **One NAV table (6a, §6d):** `src/lib/nav.ts` feeds the 220px sidebar (three hairline groups: Home · Jobs · Finance · Schedule | Crew · Assets · Warehouse · Test & tag · Maintenance | More: Clients · Suppliers · Locations · Activity; Settings, user row and `‹ Collapse ⌘B` in the foot), the 72px rail flyouts, the phone More sheet, the breadcrumb trail and the palette `@` pages. Gates apply once in `useNavItems()`; a gated item is absent. Sub-pages show under the active module and on a hover `›` toggle. The org switcher is the sidebar head (initials on the rail; switching toasts with Undo); the user menu is personal (account, crew profile, admin, Theme `Dark · Light`, Keyboard shortcuts, Sign out last and red).
+- **Top bar (56px):** `Breadcrumbs` (route segments from NAV, each a link, last in ink; a detail page names its record via `PageMeta`/`useBreadcrumbs`, never a raw id), the search field, the `Mira` word, the bell (mono count, no filled badge). Mira's panel is 384px under the bar (hairline left edge, no shadow, Esc closes), a full-height sheet on phone.
 
 ## §3 Status System
 
@@ -590,8 +592,10 @@ Archivo is loaded via `next/font/google` with weights 400–900. Always referenc
 5-item fixed bottom navigation bar for mobile (<= 859px). Desktop uses the sidebar.
 
 ```
-[ Home ] [ Jobs ] [ Warehouse ] [ Crew ] [ Assets ]
+[ Home ] [ Jobs ] [ Scan ] [ Warehouse ] [ More ]
 ```
+
+**6a (D1/D65) supersedes the five-module bar below:** Scan is a raised 50px red circle (a `<button>` that opens the camera from the tap); a role without warehouse loses Scan and Warehouse (absent, not greyed). Crew and Assets moved to the **More sheet** (88%, 48px rows, drill to `Open X` + sub-pages, groups Plan / Crew and gear / People / Account, user head with Organisation ›, Theme, Sign out), which is lit on Crew, Assets and Settings routes. The hamburger drawer is gone on phone. A page may register a scan handler with `useScanTarget`; with none, Scan does the outside-a-job lookup (`Open asset ›`, not found, error/offline, no permission).
 
 **Decision D10A (work-layer phase 0.5, #1242): Today replaces Dashboard.**
 Today (`/today`) became the landing page after login and the app's personal
@@ -632,7 +636,7 @@ are reachable only via "Add widget" on the dashboard board.
 - No badges on nav items (alerts surface on the dashboard's needs-attention chips, and on the Today work-list widget's Triage bucket for anyone who's added it)
 
 ### MobileNav Component
-`src/components/layout/mobile-nav.tsx` — **separate** from `app-sidebar.tsx`. Any IA change (add/remove tabs, reorder, rename) MUST be applied to BOTH files in the same PR.
+`src/components/layout/mobile-nav.tsx` reads the same `NAV` table as `app-sidebar.tsx` (via `useNavItems()`), so an IA change is one edit in `src/lib/nav.ts`; only the bar's three route tabs (`BOTTOM_NAV_KEYS`) are chosen in `nav.ts` too.
 
 ### What Goes in the Bottom Nav vs Sidebar
 - Labels (D7/D66/D90): the module names live in `src/lib/vocabulary.ts` — Jobs (was Projects), Home (was Dashboard), Schedule (was Availability). Routes do not change.

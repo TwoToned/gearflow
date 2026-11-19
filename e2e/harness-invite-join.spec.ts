@@ -83,7 +83,9 @@ test.describe("harness: invite / join path", () => {
         await expect(inviteePage).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
         // The org this member landed in is the one they were invited to, not
         // a bare authenticated shell with no org context.
-        await expect(inviteePage.getByText(orgName)).toBeVisible({ timeout: 20000 });
+        // Named in both the sidebar org switcher and the account row (UX 6a), so
+        // take the first match rather than a strict single.
+        await expect(inviteePage.getByText(orgName).first()).toBeVisible({ timeout: 20000 });
       });
 
       await test.step("the wizard (/setup) was never shown at any point in this member's path", async () => {

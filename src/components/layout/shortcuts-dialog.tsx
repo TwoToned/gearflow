@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,14 +17,26 @@ const shortcuts = [
   { keys: "?", description: "Show this dialog" },
 ] as const;
 
+const OPEN_EVENT = "rvlt:open-shortcuts";
+
+/** Opens the shortcuts overlay from anywhere (the user menu's `Keyboard shortcuts`). */
+export function openShortcutsDialog(): void {
+  window.dispatchEvent(new Event(OPEN_EVENT));
+}
+
 /**
  * Global keyboard shortcuts overlay.
- * Per DESIGN.md: `?` opens shortcuts overlay.
+ * Per DESIGN.md: `?` opens shortcuts overlay; the user menu opens it too.
  */
 export function ShortcutsDialog() {
   const [open, setOpen] = useState(false);
 
   useKeyboardShortcut("?", () => setOpen(true));
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_EVENT, onOpen);
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

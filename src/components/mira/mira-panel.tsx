@@ -14,8 +14,12 @@ import {
   clearMiraConversation,
   type MiraConversationView,
 } from "@/server/mira";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetOverlay, SheetPortal } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useTrail } from "@/components/layout/breadcrumbs";
 
 type MiraMessage = MiraConversationView["messages"][number];
 
@@ -88,6 +92,8 @@ export function MiraPanel() {
     },
   });
 
+  const pageName = useMiraPageName();
+
   if (!mira?.open) return null;
 
   function submit() {
@@ -99,9 +105,12 @@ export function MiraPanel() {
   const busy = ask.isPending || confirm.isPending;
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 flex w-[min(420px,calc(100vw-2rem))] flex-col rounded-[var(--radius)] border-2 border-border bg-card shadow-[var(--sh-card)] md:bottom-4">
+    <MiraFrame onClose={() => mira.setOpen(false)}>
       <div className="flex items-center justify-between border-b border-border p-3">
-        <span className="t-title text-sm text-ink">Ask Mira</span>
+        <span className="grid min-w-0 leading-tight">
+          <span className="t-title text-sm text-ink">Ask Mira</span>
+          <span className="truncate text-[11px] text-muted" data-testid="mira-looking-at">Looking at {pageName}</span>
+        </span>
         <div className="flex items-center gap-1">
           {messages.length > 0 && (
             <Button type="button" variant="ghost" size="icon" aria-label="Clear conversation" disabled={clear.isPending} onClick={() => clear.mutate(undefined)}>
@@ -114,7 +123,7 @@ export function MiraPanel() {
         </div>
       </div>
 
-      <div ref={scrollRef} className="max-h-[28rem] min-h-[10rem] space-y-3 overflow-y-auto p-3">
+      <div ref={scrollRef} className="min-h-[10rem] flex-1 space-y-3 overflow-y-auto p-3">
         <MiraMessageList
           isLoadingConversation={isLoadingConversation}
           messages={messages}
@@ -141,7 +150,60 @@ export function MiraPanel() {
           {ask.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>
-    </div>
+    </MiraFrame>
+  );
+}
+
+/** What the header says Mira is looking at: the trail's current page, led by the entity type when one is published. */
+function useMiraPageName(): string {
+  const mira = useMira();
+  const trail = useTrail();
+  const current = trail[trail.length - 1].label;
+  const type = typeof mira?.pageContext?.entityType === "string" ? mira.pageContext.entityType : null;
+  return type ? `${type} · ${current}` : current;
+}
+
+/**
+ * Where the panel lives (D5, §6d.4): a 384 px panel under the top bar on desktop —
+ * hairline left edge, no shadow, overlays the page, Esc closes — and a full-height
+ * sheet on a phone. The body is identical in both.
+ */
+function MiraFrame({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  const isMobile = useIsMobile();
+
+  useEffect(() => {
+    if (isMobile) return; // the Radix sheet owns Esc
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isMobile, onClose]);
+
+  if (isMobile) {
+    return (
+      <Sheet open onOpenChange={(o) => !o && onClose()}>
+        <SheetPortal>
+          <SheetOverlay />
+          <DialogPrimitive.Content
+            aria-describedby={undefined}
+            className="fixed inset-0 z-50 flex flex-col bg-paper text-ink"
+            style={{ paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+          >
+            <DialogPrimitive.Title className="sr-only">Ask Mira</DialogPrimitive.Title>
+            {children}
+          </DialogPrimitive.Content>
+        </SheetPortal>
+      </Sheet>
+    );
+  }
+  return (
+    <aside
+      aria-label="Mira"
+      className="fixed bottom-0 right-0 top-14 z-40 flex w-96 flex-col border-l border-line bg-paper"
+    >
+      {children}
+    </aside>
   );
 }
 

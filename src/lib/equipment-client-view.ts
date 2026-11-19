@@ -10,6 +10,7 @@
  * without a backend and shared by the server action and the parity test.
  */
 import type { DocumentLineItem } from "@/lib/pdfme/types";
+import { formatCurrency } from "@/lib/pdfme/plugins/helpers";
 import {
   childItemName,
   childQtyText,
@@ -51,8 +52,10 @@ export interface ClientViewSection {
   key: string;
   /** `null` for the ungrouped bucket, which prints no header. */
   title: string | null;
-  /** A rolled-up category's one price; `null` when itemised. */
-  rollupAmount: number | null;
+  /** A rolled-up category's one price, as the PDF's header prints it; `null`
+   *  when itemised. Formatted here because the PDF's money formatter is
+   *  server-side only. */
+  rollupText: string | null;
   rows: ClientViewRow[];
 }
 
@@ -116,7 +119,7 @@ export function toClientViewSections(model: LineItemsTableModel, config: TableMo
   return model.sections.map((section) => ({
     key: section.key,
     title: section.header?.name ?? null,
-    rollupAmount: section.header?.rollupAmount ?? null,
+    rollupText: section.header?.rollupAmount == null ? null : formatCurrency(section.header.rollupAmount),
     rows: section.rows.flatMap((r) => (r.kind === "item" ? [mapRow(r, config)] : [])),
   }));
 }

@@ -36,7 +36,7 @@ describe("toClientViewSections", () => {
       makeItem({ id: "b", description: "Spot", groupName: "Lighting", rollupCategory: true, unitPrice: 85, lineTotal: 85 }),
     ]);
     expect(section.title).toBe("Lighting");
-    expect(section.rollupAmount).toBe(445);
+    expect(section.rollupText).toBe("$445.00");
     expect(section.rows.map((r) => [r.name, r.unitPrice, r.total, r.priceHidden])).toEqual([
       ["Wash", "", "", true],
       ["Spot", "$85.00", "$85.00", false],

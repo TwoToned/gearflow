@@ -153,11 +153,13 @@ export interface LineRowData {
    * opens the row (`onOpen` / the RowEditorSheet) to edit.
    */
   cells?: Record<string, ReactNode>;
-  /** Only read on a CHILD row of kind "accessory": it gets its own checkbox (selected by its id) unless `false`. */
-  selectable?: boolean;
   /** One level: kit members, accessories, group members, bulk units, crew. 44 px, no actions. */
   children?: LineRowData[];
-  /** `false` = no select box (derived rows the bulk verbs must never touch, e.g. a sub-hire order's lines). Default true. */
+  /**
+   * `false` = no select box and never part of `visibleRowIds`: derived rows the bulk verbs must never
+   * touch (e.g. a sub-hire order's lines). On a CHILD row of kind "accessory" it is the opt-out of that
+   * child's own checkbox (selected by its id). Default true.
+   */
   selectable?: boolean;
   /** Whole-row open (desktop: navigate/expand; phone: the RowEditorSheet when editable). */
   href?: string;

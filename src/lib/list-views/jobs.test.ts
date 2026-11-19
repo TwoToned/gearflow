@@ -1,0 +1,140 @@
+import { describe, expect, it } from "vitest";
+
+import { defaultListState, parseListState } from "@/lib/list-url-state";
+import {
+  JOBS_SPEC,
+  jobFlags,
+  jobRowOf,
+  jobSegments,
+  jobsCsv,
+  jobsQueryArgs,
+  jobsStateFromView,
+  jobsViewConfig,
+  resolveDatePreset,
+} from "./jobs";
+
+const NOW = new Date(2026, 10, 19, 10, 0).getTime(); // Thu 19 Nov 2026, local
+const parse = (qs: string) => parseListState(new URLSearchParams(qs), JOBS_SPEC);
+
+describe("jobs segments", () => {
+  it("ships six segments in order; Active and overdue (D86) stay config-only", () => {
+    expect(jobSegments(undefined).map((s) => s.label)).toEqual(["All", "Quoting", "Booked", "Out", "Done", "Needs you"]);
+    expect(JOBS_SPEC.segments).not.toContain("active");
+    expect(JOBS_SPEC.segments).not.toContain("overdue");
+    expect(parse("seg=active").seg).toBe("all");
+  });
+
+  it("carries counts from segmentCounts", () => {
+    const segs = jobSegments({ all: 38, needs: 3 });
+    expect(segs.find((s) => s.key === "all")?.count).toBe(38);
+    expect(segs.find((s) => s.key === "needs")?.count).toBe(3);
+    expect(segs.find((s) => s.key === "out")?.count).toBeUndefined();
+  });
+});
+
+describe("jobsQueryArgs", () => {
+  it("maps the URL to listPage args with page size 25", () => {
+    const state = parse("seg=booked&q=%20hilton&status=CONFIRMED,PREPPING&type=TOUR&client=c1&sort=total:desc&page=2");
+    expect(jobsQueryArgs(state, NOW)).toMatchObject({
+      search: "hilton",
+      segment: "booked",
+      statusIn: ["CONFIRMED", "PREPPING"],
+      typeIn: ["TOUR"],
+      clientIn: ["c1"],
+      sortBy: "total",
+      sortOrder: "desc",
+      page: 2,
+      pageSize: 25,
+      now: NOW,
+    });
+  });
+
+  it("defaults: all segment, start-date ascending, cancelled hidden", () => {
+    const args = jobsQueryArgs(defaultListState(JOBS_SPEC), NOW);
+    expect(args).toMatchObject({ segment: "all", sortBy: "rentalStartDate", sortOrder: "asc", page: 1 });
+    expect(args.includeCancelled).toBeUndefined();
+    expect(args.statusIn).toBeUndefined();
+  });
+
+  it("show=cancelled maps to includeCancelled; a date preset resolves from now", () => {
+    const args = jobsQueryArgs(parse("show=cancelled&date=next-7"), NOW);
+    expect(args.includeCancelled).toBe(true);
+    expect(args.dateTo! - args.dateFrom!).toBe(7 * 86400000 - 1);
+  });
+
+  it("an unknown date preset resolves to no window", () => {
+    expect(resolveDatePreset("bogus", NOW)).toEqual({});
+    expect(resolveDatePreset(undefined, NOW)).toEqual({});
+  });
+
+  it("this-week runs Monday to Sunday around now", () => {
+    const { dateFrom, dateTo } = resolveDatePreset("this-week", NOW);
+    expect(new Date(dateFrom!).getDay()).toBe(1);
+    expect(NOW).toBeGreaterThanOrEqual(dateFrom!);
+    expect(NOW).toBeLessThanOrEqual(dateTo!);
+  });
+});
+
+describe("jobRowOf", () => {
+  const p = {
+    id: "p1",
+    projectNumber: "P-001",
+    name: "Splendour Main Stage",
+    status: "CHECKED_OUT",
+    type: "FESTIVAL",
+    rentalStartDate: new Date(2026, 10, 5).getTime(),
+    rentalEndDate: new Date(2026, 10, 9).getTime(),
+    total: 12500.5,
+    tags: ["festival"],
+    client: { name: "Acme" },
+  };
+
+  it("maps to a job row: title, client line, tags, Out word, money fact, link", () => {
+    const row = jobRowOf(p, {});
+    expect(row).toMatchObject({ id: "p1", kind: "job", title: "Splendour Main Stage", subtitle: "Acme", tags: ["festival"], href: "/projects/p1" });
+    expect(row.status?.label).toBe("Out");
+    expect(row.facts.total).toEqual({ kind: "money", amount: 12500.5 });
+    expect(row.facts.dates.kind).toBe("dateRange");
+    expect(row.facts.type).toEqual({ kind: "text", label: "Festival" });
+  });
+
+  it("a missing total is BLANK money, never $0", () => {
+    expect(jobRowOf({ ...p, total: null }, {}).facts.total).toEqual({ kind: "money", amount: null });
+  });
+
+  it("partial dates read From / Until; none omits the fact", () => {
+    expect(jobRowOf({ ...p, rentalEndDate: null }, {}).facts.dates).toMatchObject({ kind: "text" });
+    expect(jobRowOf({ ...p, rentalStartDate: null, rentalEndDate: null }, {}).facts.dates).toBeUndefined();
+  });
+
+  it("issue and blocking badges become red dot-word flags", () => {
+    expect(jobFlags({ issues: { hasOverbooked: true, hasReducedStock: true }, blocking: 2 })).toEqual([
+      { label: "Overbooked", tone: "error" },
+      { label: "Blocked 2", tone: "error" },
+    ]);
+    expect(jobFlags({ issues: { hasOverbooked: false, hasReducedStock: true } })).toEqual([{ label: "Reduced stock", tone: "warning" }]);
+    expect(jobFlags({})).toEqual([]);
+  });
+});
+
+describe("saved-view adapter and export", () => {
+  it("round-trips the old {filters, sortBy, sortOrder} shape", () => {
+    const state = parse("status=QUOTED&type=TOUR&sort=name:desc");
+    const config = jobsViewConfig(state);
+    expect(config).toEqual({ filters: { status: ["QUOTED"], type: ["TOUR"] }, sortBy: "name", sortOrder: "desc" });
+    const back = jobsStateFromView(config);
+    expect(back.filters).toEqual({ status: ["QUOTED"], type: ["TOUR"] });
+    expect([back.sortBy, back.sortOrder]).toEqual(["name", "desc"]);
+  });
+
+  it("drops unknown sort keys and non-list filter values", () => {
+    const s = jobsStateFromView({ filters: { status: "QUOTED", type: ["TOUR"] }, sortBy: "nope", sortOrder: "desc" });
+    expect(s.filters).toEqual({ type: ["TOUR"] });
+    expect(s.sortBy).toBe("rentalStartDate");
+  });
+
+  it("exports a CSV with quoting and blank money", () => {
+    const csv = jobsCsv([{ id: "a", projectNumber: "P-1", name: 'Say "hi", now', total: null, status: "QUOTED" }]);
+    expect(csv.split("\n")[1]).toBe('P-1,"Say ""hi"", now",,Quoted,,,,,');
+  });
+});

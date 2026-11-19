@@ -102,7 +102,7 @@ function useStoredViews(tableId: string, normalize?: (c: SavedViewConfig) => Sav
 function useAutoApplyDefault(
   views: MenuView[],
   isLoading: boolean,
-  pristine: boolean,
+  isPristine: () => boolean,
   apply: (v: MenuView) => void,
 ) {
   const done = useRef(false);
@@ -110,7 +110,8 @@ function useAutoApplyDefault(
     if (done.current || isLoading) return;
     done.current = true;
     const def = views.find((v) => v.isDefault);
-    if (def && pristine) apply(def);
+    // Evaluated lazily, only once a default exists (the legacy path never read currentConfig on render).
+    if (def && isPristine()) apply(def);
     // Runs once, after views resolve; pristine/apply are read at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, views]);
@@ -286,7 +287,7 @@ export function SavedViewsMenu({ tableId, currentConfig, applyConfig, onResetPre
   }
 
   // Never clobber a filter set the user arrived with (a deep link, an in-progress refinement).
-  const pristine = urlMode ? urlMode.isPristine : Object.keys(currentConfig.filters ?? {}).length === 0;
+  const pristine = () => (urlMode ? urlMode.isPristine : Object.keys(currentConfig.filters ?? {}).length === 0);
   useAutoApplyDefault(views, isLoading, pristine, apply);
 
   const { createMut, updateMut, deleteMut, defaultMut } = useViewMutations(

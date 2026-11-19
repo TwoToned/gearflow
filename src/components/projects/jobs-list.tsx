@@ -164,7 +164,7 @@ function JobsListInner({ orgId }: { orgId: string | undefined }) {
       <ListPage
         spec={JOBS_SPEC}
         title="Jobs"
-        noun="job"
+        noun="jobs"
         bulkNoun="job"
         searchPlaceholder="Search name, job #, client or location"
         segments={board ? [] : jobSegments(counts as Record<string, number> | undefined)}

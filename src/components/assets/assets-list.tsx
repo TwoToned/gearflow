@@ -226,7 +226,7 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
       <ListPage
         spec={ASSETS_SPEC}
         title="Assets"
-        noun="asset"
+        noun="assets"
         bulkNoun="asset"
         searchPlaceholder="Search tag, serial, name or model"
         segments={grid ? [] : assetSegments(kind).map((s) => s)}

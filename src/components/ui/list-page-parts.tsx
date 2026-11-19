@@ -327,12 +327,13 @@ export function ListFooter({
   const isMobile = useIsMobile();
   const { from, to, pages } = pageRange(total, page, pageSize);
   if (total === 0) return null;
+  const word = total === 1 ? noun.replace(/s$/, "") : noun;
   if (isMobile) {
     const more = Math.min(pageSize, total - shown);
     return (
       <div className="flex flex-col items-center gap-1 py-3 text-caption text-muted">
         <span>
-          Showing {shown} of {total} {noun}
+          Showing {shown} of {total} {word}
         </span>
         {more > 0 && (
           <Button variant="line" size="sm" onClick={() => onPage(page + 1)}>
@@ -345,7 +346,7 @@ export function ListFooter({
   return (
     <div className="flex items-center justify-between border-t border-line py-2 text-caption text-muted">
       <span>
-        {total} {noun} · {from}–{to}
+        {total} {word} · {from}–{to}
       </span>
       {pages > 1 && <Pager page={page} pages={pages} onPage={onPage} />}
     </div>

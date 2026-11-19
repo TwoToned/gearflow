@@ -177,8 +177,8 @@ describe("completeCheckAndDeprep", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItemUnits", {
         id: "cu1", organizationId: ORG, lineItemId: "C1", ordinal: 1, assetId: "acc1",
-        // A returned parent's accessory unit is RETURNED too (only units that came back are reset).
-        parentUnitAssetId: "as1", quantity: 1, returnedQuantity: 0, status: "RETURNED", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW,
+        // Packed but never deployed (skipped at deploy): still reset by the return-check de-prep.
+        parentUnitAssetId: "as1", quantity: 1, returnedQuantity: 0, status: "CONFIRMED", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW,
       });
     });
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndDeprep, {

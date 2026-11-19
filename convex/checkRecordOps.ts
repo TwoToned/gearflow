@@ -453,9 +453,9 @@ async function resetReturnedAccessories(ctx: Ctx, line: ReturnedLine, resolvedAs
     }
     const all = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
       .filter((u) => !isRelocatedAccessoryUnit(u, parentContainerOf(u)));
-    // Only units that actually came back: an accessory still CHECKED_OUT (the parent returned without its battery)
-    // is never reset while it is out.
-    const units = all.filter((u) => u.status === "RETURNED" && (!resolvedAssetId || u.parentUnitAssetId === resolvedAssetId));
+    // Never a unit still CHECKED_OUT (the parent returned without its battery) or CANCELLED. An accessory packed but
+    // never deployed (skipped at deploy) stays CONFIRMED+PACKED and must still reset, or it stays packed for good.
+    const units = all.filter((u) => u.status !== "CHECKED_OUT" && u.status !== "CANCELLED" && (!resolvedAssetId || u.parentUnitAssetId === resolvedAssetId));
     for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: now });
     // A shared accessory line (one battery line for every handheld) serves several
     // parent units: it only leaves the Returned tab once none of them still has

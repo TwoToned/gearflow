@@ -1,7 +1,10 @@
 "use client";
 
 import type { MutableRefObject } from "react";
+import { useConvex } from "convex/react";
 import { toast } from "sonner";
+
+import { api } from "../../../convex/_generated/api";
 
 import { useConfirmStatusGate } from "@/hooks/use-confirm-status-gate";
 import { useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
@@ -35,16 +38,33 @@ export function useJobListWrites(orgId: string | undefined, seen: Seen) {
   const projectWrites = useProjectWrites(orgId);
   const pick = (ids: string[]) => ids.map((id) => seen.current.get(id)).filter((r): r is JobSource => !!r);
 
-  /** Restores each row to the status it had before the write. */
-  const restoreStatuses = (rows: JobSource[]) => async () => {
-    for (const r of rows) await statusWrites.updateStatus(r.id, statusOf(r));
+  const convex = useConvex();
+
+  /**
+   * Restores each row to the status it had before the write, but ONLY rows whose live
+   * status (read from the server at undo time, never the snapshot) is still the one the
+   * write set. Rows that moved on since are left alone and named in the toast.
+   */
+  const restoreStatuses = (rows: JobSource[], wrote: string) => async (): Promise<string | void> => {
+    if (!orgId) return;
+    const live = await convex.query(api.projects.listByIds, { orgId, ids: rows.map((r) => r.id) });
+    const current = new Map(live.map((p) => [p.id, p.status ?? "ENQUIRY"]));
+    let movedOn = 0;
+    for (const r of rows) {
+      if (current.get(r.id) !== wrote) {
+        movedOn++;
+        continue;
+      }
+      await statusWrites.updateStatus(r.id, statusOf(r));
+    }
+    return movedOn > 0 ? `${plural(movedOn, "job")} had moved on, left as ${movedOn === 1 ? "it is" : "they are"}` : undefined;
   };
 
-  function summarise(done: string, out: BulkOutcome<JobSource>, undo: (rows: JobSource[]) => () => Promise<void>) {
+  function summarise(done: string, out: BulkOutcome<JobSource>, undo?: () => Promise<string | void>) {
     announceListWrite({
       title: listWriteTitle(done, out.skipped),
       undoneTitle: `Undone · ${plural(out.done.length, "job")} restored`,
-      performUndo: out.done.length > 0 ? undo(out.done) : undefined,
+      performUndo: out.done.length > 0 ? undo : undefined,
     });
   }
 
@@ -55,7 +75,7 @@ export function useJobListWrites(orgId: string | undefined, seen: Seen) {
       announceListWrite({
         title: `${row?.name ?? "Job"} set to ${jobStatusLabel(next)}`,
         undoneTitle: `Undone · back to ${jobStatusLabel(row ? statusOf(row) : "ENQUIRY")}`,
-        performUndo: row ? restoreStatuses([row]) : undefined,
+        performUndo: row ? restoreStatuses([row], next) : undefined,
       });
     } catch (e) {
       showError(e, { fallbackTitle: "Could not update status" });
@@ -73,7 +93,7 @@ export function useJobListWrites(orgId: string | undefined, seen: Seen) {
       announceListWrite({
         title: `${row?.name ?? "Job"} cancelled`,
         undoneTitle: "Undone · job restored",
-        performUndo: row ? restoreStatuses([row]) : undefined,
+        performUndo: row ? restoreStatuses([row], "CANCELLED") : undefined,
       });
     } catch (e) {
       showError(e, { fallbackTitle: "Could not cancel the job" });
@@ -95,19 +115,24 @@ export function useJobListWrites(orgId: string | undefined, seen: Seen) {
       gate: (r) => (statusOf(r) === next ? `already ${jobStatusLabel(next)}` : null),
       apply: (r) => statusWrites.updateStatus(r.id, next),
     });
-    summarise(`Set ${plural(out.done.length, "job")} to ${jobStatusLabel(next)}`, out, restoreStatuses);
+    summarise(`Set ${plural(out.done.length, "job")} to ${jobStatusLabel(next)}`, out, restoreStatuses(out.done, next));
   }
 
+  /** ONE server call; the server reads each job's current tags and returns the ids it newly tagged. */
   async function bulkTag(ids: string[], tag: string) {
-    const out = await runBulk(pick(ids), {
-      name: numberOf,
-      gate: (r) => (r.tags?.includes(tag) ? `already tagged ${tag}` : null),
-      apply: (r) => projectWrites.updateTags(r.id, [...(r.tags ?? []), tag]),
+    const rows = pick(ids);
+    let changed: string[];
+    try {
+      changed = await projectWrites.addTag(rows.map((r) => r.id), tag);
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not tag the jobs" });
+      return;
+    }
+    const done = rows.filter((r) => changed.includes(r.id));
+    const skipped = rows.filter((r) => !changed.includes(r.id)).map((r) => ({ name: numberOf(r), why: `already tagged ${tag}` }));
+    summarise(`Tagged ${plural(done.length, "job")} ${tag}`, { done, skipped }, async () => {
+      await projectWrites.removeTag(changed, tag);
     });
-    const restoreTags = (rows: JobSource[]) => async () => {
-      for (const r of rows) await projectWrites.updateTags(r.id, r.tags ?? []);
-    };
-    summarise(`Tagged ${plural(out.done.length, "job")} ${tag}`, out, restoreTags);
   }
 
   async function bulkCancel(ids: string[]) {
@@ -116,7 +141,7 @@ export function useJobListWrites(orgId: string | undefined, seen: Seen) {
       gate: (r) => (statusOf(r) === "CANCELLED" ? "already cancelled" : null),
       apply: (r) => projectWrites.archive(r.id),
     });
-    summarise(`Cancelled ${plural(out.done.length, "job")}`, out, restoreStatuses);
+    summarise(`Cancelled ${plural(out.done.length, "job")}`, out, restoreStatuses(out.done, "CANCELLED"));
   }
 
   function bulkExport(ids: string[]) {

@@ -17,8 +17,12 @@ export function listWriteTitle(done: string, skipped: { name: string; why: strin
 export interface ListWriteAnnouncement {
   title: string;
   undoneTitle: string;
-  /** The reverse write; absent = no Undo offered. Errors surface as a toast. */
-  performUndo?: () => Promise<void>;
+  /**
+   * The reverse write; absent = no Undo offered. Errors surface as a toast. It may return a
+   * replacement success title (e.g. "2 jobs had moved on, left as they are") when some rows
+   * were deliberately not reverted.
+   */
+  performUndo?: () => Promise<string | void>;
 }
 
 /**
@@ -34,8 +38,8 @@ export function announceListWrite(a: ListWriteAnnouncement): (() => Promise<void
         if (undone) return;
         undone = true;
         try {
-          await undo();
-          toast.success(a.undoneTitle);
+          const title = await undo();
+          toast.success(title || a.undoneTitle);
         } catch (e) {
           showError(e, { fallbackTitle: "Couldn't undo" });
         }

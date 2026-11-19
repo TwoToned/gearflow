@@ -90,10 +90,17 @@ function statusCell(row: LineRowData, p: JobSource) {
   );
 }
 
+/**
+ * Keyed by the active org: switching org remounts the list, so the seen-row cache and
+ * the bulk selection from the previous org can never be acted on in the new one.
+ */
 export function JobsList() {
-  const router = useRouter();
   const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
+  return <JobsListInner key={activeOrg?.id ?? "none"} orgId={activeOrg?.id} />;
+}
+
+function JobsListInner({ orgId }: { orgId: string | undefined }) {
+  const router = useRouter();
   const now = useStableNow();
   const { state, setState } = useListUrlState(JOBS_SPEC);
   const perms: Perms = { update: useCanDo("project", "update"), create: useCanDo("project", "create"), remove: useCanDo("project", "delete") };

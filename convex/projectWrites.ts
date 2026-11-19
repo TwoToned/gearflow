@@ -11,6 +11,8 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
 import { assertStrLen, assertTags } from "./lib/fieldGuards";
+import { MAX_TAGS } from "./lib/tagLimits";
+import { assertBulkSizeOk } from "./lib/rateLimiter";
 import { assertRefInOrg, assertClientContactBelongsToClient } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -572,6 +574,81 @@ export const updateNative = mutation({
 
     return { id };
   },
+});
+
+const tagBatchArgs = {
+  orgId: v.string(),
+  ids: v.array(v.string()),
+  tag: v.string(),
+  actor: actorValidator,
+  auditId: v.string(),
+  now: v.number(),
+};
+
+type TagBatchArgs = {
+  orgId: string; ids: string[]; tag: string;
+  actor: { userId: string; userName: string }; auditId: string; now: number;
+};
+
+/**
+ * Shared body of addTagNative/removeTagNative: the tag is applied to the CURRENT tags
+ * read inside the transaction (never a client-computed array, so a concurrent edit of a
+ * row's other tags is never lost). Every id is org-checked through the global by_cuid
+ * index. Returns the ids whose tags actually changed — Undo of an add calls remove on
+ * exactly those, so a tag a row already had survives the Undo.
+ */
+async function applyTagBatch(
+  ctx: MutationCtx,
+  a: TagBatchArgs,
+  mode: "add" | "remove",
+): Promise<string[]> {
+  const tag = assertTags([a.tag])![0];
+  await assertWritesEnabled(ctx, "project");
+  await enforceBrowserWriteLimit(ctx);
+  await assertBulkSizeOk(ctx, a.ids.length);
+  await requireOrgPermission(ctx, a.orgId, "project", "update");
+  const actor = await resolveActor(ctx, a.actor);
+  const changed: string[] = [];
+  for (const id of new Set(a.ids)) {
+    const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!p) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (p.organizationId !== a.orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    const next = nextTags(p.tags ?? [], tag, mode);
+    if (!next) continue;
+    await ctx.db.patch(p._id, { tags: next, updatedAt: a.now });
+    changed.push(id);
+  }
+  if (changed.length > 0) {
+    await writeActivityLog(ctx, {
+      id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "project",
+      entityId: changed[0], entityName: `${changed.length} job${changed.length === 1 ? "" : "s"}`,
+      userId: actor.userId, userName: actor.userName,
+      summary: `${mode === "add" ? "Tagged" : "Removed tag from"} ${changed.length} job${changed.length === 1 ? "" : "s"}: ${tag}`,
+      createdAt: a.now,
+    });
+  }
+  return changed;
+}
+
+/** The tags after the change, or null when nothing would change (already there / absent / full). */
+function nextTags(current: string[], tag: string, mode: "add" | "remove"): string[] | null {
+  if (mode === "remove") return current.includes(tag) ? current.filter((t) => t !== tag) : null;
+  if (current.includes(tag) || current.length >= MAX_TAGS) return null;
+  return [...current, tag];
+}
+
+/** Add one tag to many jobs; returns the ids it was newly added to. */
+export const addTagNative = mutation({
+  args: tagBatchArgs,
+  returns: v.object({ changed: v.array(v.string()) }),
+  handler: async (ctx, a) => ({ changed: await applyTagBatch(ctx, a, "add") }),
+});
+
+/** Remove one tag from many jobs (Undo of addTagNative, over exactly the ids it changed). */
+export const removeTagNative = mutation({
+  args: tagBatchArgs,
+  returns: v.object({ changed: v.array(v.string()) }),
+  handler: async (ctx, a) => ({ changed: await applyTagBatch(ctx, a, "remove") }),
 });
 
 /**
@@ -1541,6 +1618,8 @@ export const saveAsTemplateNative = mutation({
 
 /** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
 export const agentOps: AgentOpsAnnotations = {
+  addTagNative: { summary: "Add one tag to several jobs, keeping each job's other tags; returns the ids it was newly added to.", danger: "low" },
+  removeTagNative: { summary: "Remove one tag from several jobs; returns the ids it was removed from.", danger: "low" },
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },

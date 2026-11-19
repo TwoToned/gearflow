@@ -23,8 +23,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+const org = vi.hoisted(() => ({ id: "org1" }));
 vi.mock("@/lib/auth-client", () => ({
-  useActiveOrganization: () => ({ data: { id: "org1" } }),
+  useActiveOrganization: () => ({ data: { id: org.id } }),
   useSession: () => ({ data: { user: { id: "user1", name: "Alice" } } }),
 }));
 vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true }));
@@ -37,8 +38,9 @@ vi.mock("@/hooks/use-confirm-status-gate", () => ({
 }));
 vi.mock("@/hooks/use-native-project-writes", () => ({
   useNativeProjectStatus: () => ({ enabled: true, updateStatus: vi.fn(async () => undefined) }),
-  useProjectWrites: () => ({ archive: vi.fn(), remove: vi.fn(), updateTags: vi.fn() }),
+  useProjectWrites: () => ({ archive: vi.fn(), remove: vi.fn(), addTag: vi.fn(async () => []), removeTag: vi.fn(async () => []) }),
 }));
+vi.mock("convex/react", () => ({ useConvex: () => ({ query: vi.fn(async () => []) }) }));
 vi.mock("@/components/projects/project-board", () => ({ ProjectBoard: () => <div>BOARD</div> }));
 vi.mock("@/components/ui/saved-views-menu", () => ({ SavedViewsMenu: () => <button type="button">Views</button> }));
 vi.mock("@/components/projects/duplicate-project-dialog", () => ({
@@ -152,5 +154,16 @@ describe("JobsList (smoke)", () => {
     await user.click(screen.getByRole("button", { name: /Add tag 1/ }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByLabelText("Tag")).toBeTruthy();
+  });
+
+  it("switching org clears the bulk selection", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<JobsList />);
+    await user.click(screen.getByRole("checkbox", { name: "Select Splendour Main Stage" }));
+    expect(await screen.findByText("1 job selected")).toBeTruthy();
+    org.id = "org2";
+    rerender(<JobsList />);
+    expect(screen.queryByText("1 job selected")).toBeNull();
+    org.id = "org1";
   });
 });

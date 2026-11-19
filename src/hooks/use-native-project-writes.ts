@@ -585,5 +585,20 @@ export function useProjectWrites(orgId: string | undefined) {
     }
   };
 
-  return { enabled, archive, deleteTemplate, create, update, updateSchedule, duplicate, saveAsTemplate, remove };
+  /** Replace a job's tags (the general `updateNative` set patch; bulk Add tag and its Undo). */
+  const updateTags = async (id: string, tags: string[]): Promise<void> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      await updateM({
+        id, orgId, set: { tags, updatedAt: Date.now() }, clear: [],
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapProjectWriteError(e, false);
+    }
+  };
+
+  return { enabled, archive, deleteTemplate, create, update, updateSchedule, updateTags, duplicate, saveAsTemplate, remove };
 }

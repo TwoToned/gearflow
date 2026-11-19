@@ -38,6 +38,8 @@ export interface ListFilterDef {
   key: string;
   label: string;
   options: FilterOption[];
+  /** One value at a time (Dates presets): choosing replaces, choosing it again clears. */
+  single?: boolean;
   /** Name search inside the popover for long lists (clients, models). */
   search?: { value: string; onChange: (v: string) => void; placeholder: string };
 }
@@ -138,8 +140,10 @@ function FilterWord({
   onChange: (values: string[]) => void;
 }) {
   const active = chosen.length > 0;
-  const toggle = (value: string) =>
+  const toggle = (value: string) => {
+    if (def.single) return onChange(chosen.includes(value) ? [] : [value]);
     onChange(chosen.includes(value) ? chosen.filter((v) => v !== value) : [...chosen, value]);
+  };
   return (
     <span className="inline-flex shrink-0 items-center">
       <Popover>

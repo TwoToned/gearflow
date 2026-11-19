@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { resetHarnessDb } from "./harness-db-reset";
+import { addModelViaAddBar } from "./harness-helpers";
 
 /**
  * Project Versioning v2, Phase 5 (#1231, parent #1221) — the three E2E specs
@@ -87,16 +88,8 @@ test.describe("harness: project versioning v2", () => {
     });
 
     await test.step("add the model as a line item", async () => {
-      await page.getByRole("tab", { name: "Equipment", exact: true }).click();
-      await page.getByRole("button", { name: "Add", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Add item" }).click();
-      const addDialog = page.getByRole("dialog", { name: "Add equipment" });
-      await page.getByRole("tab", { name: "Own stock" }).click();
-      await page.getByRole("button", { name: "Search models" }).click();
-      await page.getByPlaceholder(/Search by name/).fill(modelName);
-      await page.getByRole("button", { name: modelName, exact: true }).click();
-      await page.getByRole("button", { name: "Add to job" }).click();
-      await expect(addDialog).toBeHidden();
+      // UX 2a: the AddBar replaced "Add ▾ > Add item" + the Add equipment dialog.
+      await addModelViaAddBar(page, modelName);
     });
 
     return { projectUrl };

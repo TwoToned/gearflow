@@ -255,3 +255,74 @@ describe("correctReturnConditionNative", () => {
     ).rejects.toThrow(/has not been returned/i);
   });
 });
+
+// Phase 4: the floor's Undo for a bulk-tag return reverses exactly the
+// allocations this call returned, through the existing `unreturnItems`.
+describe("returnBulkNative allocations + Undo", () => {
+  async function seedBulk(t: T, opts: { qty: number; returned?: number; orgId?: string } = { qty: 10 }) {
+    const orgId = opts.orgId ?? ORG;
+    await member(t, "member", orgId);
+    await seedProject(t, "p1", orgId);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: orgId, name: "Cable", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("bulkAssets", { id: "ba1", organizationId: orgId, modelId: "m1", assetTag: "CAB", totalQuantity: 50, availableQuantity: 40 });
+      await ctx.db.insert("projectLineItems", baseLine("bl", "p1", { modelId: "m1", bulkAssetId: "ba1", quantity: opts.qty, checkedOutQuantity: opts.qty, returnedQuantity: opts.returned ?? 0 }, orgId));
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "bu1", organizationId: orgId, lineItemId: "bl", ordinal: 0, bulkAssetId: "ba1", quantity: opts.qty,
+        returnedQuantity: opts.returned ?? 0, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+  }
+  const returnBulk = (t: T, quantity: number) =>
+    t.withIdentity(asUser(ORG)).mutation(api.returnsWrites.returnBulkNative, {
+      orgId: ORG, bulkAssetId: "ba1", projectId: "p1", quantity, returnCondition: "GOOD", auditId: "log1", now: NOW, actor: SPOOF,
+    });
+
+  test("returns the per-line allocations and the auto-advance audit id", async () => {
+    const t = makeT();
+    await seedBulk(t, { qty: 10 });
+    const res = await returnBulk(t, 10);
+    expect(res.allocations).toEqual([{ lineItemId: "bl", quantity: 10 }]);
+    expect(res.distributed).toBe(10);
+    expect(res.autoStatus).toBe("RETURNED");
+    expect(res.autoStatusAuditId).toEqual(expect.any(String));
+    expect(res.exactUndo).toBe(true);
+  });
+
+  test("Undo through unreturnItems with exactly those allocations puts the line and the job back out", async () => {
+    const t = makeT();
+    await seedBulk(t, { qty: 10 });
+    const res = await returnBulk(t, 10);
+    expect((await projectById(t, "p1"))?.status).toBe("RETURNED");
+    await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.unreturnItems, {
+      orgId: ORG, projectId: "p1", items: res.allocations, auditIds: ["undo1"],
+      revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined, now: NOW + 1, actor: SPOOF,
+    });
+    const unit = await unitById(t, "bu1");
+    expect(unit?.status).toBe("CHECKED_OUT");
+    expect(unit?.returnedQuantity ?? 0).toBe(0);
+    expect((await projectById(t, "p1"))?.status).toBe("CHECKED_OUT");
+  });
+
+  test("a partial return, or one onto a line with an earlier return, is NOT exactly reversible", async () => {
+    const t = makeT();
+    await seedBulk(t, { qty: 10 });
+    expect((await returnBulk(t, 4)).exactUndo).toBe(false);
+
+    const t2 = makeT();
+    await seedBulk(t2, { qty: 10, returned: 4 });
+    const res = await returnBulk(t2, 6);
+    expect(res.allocations).toEqual([{ lineItemId: "bl", quantity: 6 }]);
+    expect(res.exactUndo).toBe(false);
+  });
+
+  test("a foreign org's bulk asset is rejected", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "ba1", organizationId: OTHER, modelId: "m1", assetTag: "CAB" });
+    });
+    await expect(returnBulk(t, 1)).rejects.toThrow(/not found/i);
+  });
+});

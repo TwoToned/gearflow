@@ -89,7 +89,18 @@ async function candidateBulkLines(ctx: MutationCtx, orgId: string, projectId: st
   return rows.filter((r) => r.organizationId === orgId && r.bulkAssetId === bulkAssetId);
 }
 
-async function toBulkCheckInItem(ctx: MutationCtx, line: Doc<"projectLineItems">): Promise<CheckInItem> {
+/**
+ * True when nothing on this line has come back yet: every unit is still fully
+ * CHECKED_OUT (no RETURNED unit, no partial `returnedQuantity`). Only then does
+ * `unreturnItems` (which flips whole RETURNED units) reverse a FULL return of
+ * the line exactly — with an earlier return on the line it would also undo
+ * that one. Read before the write, so it describes the pre-return state.
+ */
+function nothingBackYet(units: Doc<"projectLineItemUnits">[]): boolean {
+  return units.every((u) => u.status === "CHECKED_OUT" && (u.returnedQuantity ?? 0) === 0);
+}
+
+async function toBulkCheckInItem(ctx: MutationCtx, line: Doc<"projectLineItems">): Promise<CheckInItem & { untouched: boolean }> {
   const units = await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", line.id)).collect();
   const outstanding =
     units.length > 0
@@ -108,7 +119,21 @@ async function toBulkCheckInItem(ctx: MutationCtx, line: Doc<"projectLineItems">
     sortOrder: line.sortOrder ?? 0,
     outstanding,
     itemType: "OWNED_BULK",
+    untouched: units.length > 0 && nothingBackYet(units),
   };
+}
+
+/** Undo is EXACT only when each allocated line was untouched and this call
+ *  returned all of it (see `nothingBackYet`). Otherwise the floor omits Undo. */
+function isExactlyReversible(
+  items: Array<CheckInItem & { untouched: boolean }>,
+  allocations: Array<{ lineItemId: string; quantity: number }>,
+): boolean {
+  const byLine = new Map(items.map((i) => [i.lineItemId, i]));
+  return allocations.every((al) => {
+    const it = byLine.get(al.lineItemId);
+    return !!it && it.untouched && al.quantity === it.outstanding;
+  });
 }
 
 type ReturnItemArg = {
@@ -215,8 +240,25 @@ export const returnScanNative = mutation({
 // SAME `distributeReturn` engine `warehouseOps.checkInBulkTotals` uses —
 // scoped to exactly one (projectId, bulkAssetId) pair, which is the
 // project-scoped compound key the multi-project resolver needed revived.
+//
+// Undo (Phase 4, additive return fields): `allocations` is exactly what this
+// call returned per line, and `autoStatusAuditId` is the auto-advance it caused
+// (if any), so the floor's ONE Undo closure reverses precisely this write via
+// `warehouseWrites.unreturnItems({ items: allocations, revertAutoAdvanceAuditId })`.
+// `unreturnItems` flips whole RETURNED units, so that is exact only when each
+// line had nothing back before this call and this call returned all of it;
+// `exactUndo` says so, and the floor offers Undo only then (a partial bulk
+// return, or one onto a line with an earlier return, has no exact reverse yet).
 export const returnBulkNative = mutation({
-  returns: v.object({ distributed: v.number(), updatedLineIds: v.array(v.string()), autoAdvanced: v.boolean() }),
+  returns: v.object({
+    distributed: v.number(),
+    updatedLineIds: v.array(v.string()),
+    autoAdvanced: v.boolean(),
+    allocations: v.array(v.object({ lineItemId: v.string(), quantity: v.number() })),
+    autoStatus: v.union(v.string(), v.null()),
+    autoStatusAuditId: v.union(v.string(), v.null()),
+    exactUndo: v.boolean(),
+  }),
   args: {
     orgId: v.string(),
     bulkAssetId: v.string(),
@@ -267,9 +309,17 @@ export const returnBulkNative = mutation({
       createdAt: a.now,
     });
 
-    const autoAdvanced = await maybeAutoAdvanceProject(ctx, a.orgId, a.projectId, actor, a.now);
+    const advanced = await maybeAutoAdvanceProjectStatus(ctx, { orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now });
 
-    return { distributed, updatedLineIds: res.updatedLineIds, autoAdvanced };
+    return {
+      distributed,
+      updatedLineIds: res.updatedLineIds,
+      autoAdvanced: advanced != null,
+      allocations: allocations.map((al) => ({ lineItemId: al.lineItemId, quantity: al.quantity })),
+      autoStatus: advanced?.status ?? null,
+      autoStatusAuditId: advanced?.auditId ?? null,
+      exactUndo: isExactlyReversible(items, allocations),
+    };
   },
 });
 

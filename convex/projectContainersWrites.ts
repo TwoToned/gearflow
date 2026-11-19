@@ -328,6 +328,18 @@ function describeReparentSummary(label: string, parentContainerId: string | null
     : `Unpacked container "${label}" to the top level`;
 }
 
+/** The audit summary for an `updateNative` call, or `null` when it changes
+ *  neither the label nor the parent. A re-nest (physical) wins over a rename. */
+function describeContainerUpdateSummary(
+  oldLabel: string,
+  label: string | undefined,
+  parentContainerId: string | null | undefined,
+): string | null {
+  if (parentContainerId !== undefined) return describeReparentSummary(label ?? oldLabel, parentContainerId);
+  if (label !== undefined && label !== oldLabel) return `Renamed container "${oldLabel}" to "${label}"`;
+  return null;
+}
+
 export const updateNative = mutation({
   returns: v.object({ ok: v.boolean() }),
   args: {
@@ -357,14 +369,16 @@ export const updateNative = mutation({
 
     if (label !== undefined) await syncContainerLineLabel(ctx, container, label, now, orgId);
 
-    // Label/description edits are metadata, not a physical change — no audit
-    // row (parity with projectCategoriesWrites.ts's rename). A parent change
-    // physically moves the whole box, so it IS audited.
-    if (parentContainerId !== undefined) {
+    // Every write is audited (CLAUDE.md "Server Actions"): a rename and a
+    // re-nest each get a row; a description-only edit has no summary of its
+    // own and rides along unaudited, as before. One `auditId` per call, so a
+    // rename + re-nest in the same call records the re-nest (the physical move).
+    const summary = describeContainerUpdateSummary(container.label, label, parentContainerId);
+    if (summary) {
       await logContainerChange(ctx, {
         orgId, projectId: container.projectId, actor, auditId, now,
-        action: "UPDATE", entityId: id, entityName: container.label,
-        summary: describeReparentSummary(container.label, parentContainerId),
+        action: "UPDATE", entityId: id, entityName: label ?? container.label,
+        summary,
       });
     }
 
@@ -501,9 +515,59 @@ export const unpackNative = mutation({
   },
 });
 
+/** The container behind a set of ids when there is exactly one, in this org. */
+async function soleContainerInOrg(ctx: MutationCtx, ids: Set<string>, orgId: string) {
+  if (ids.size !== 1) return null;
+  const [id] = [...ids];
+  const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  return c && c.organizationId === orgId ? { id: c.id, label: c.label } : null;
+}
+
+/** The one audit row of a `setPlannedContainerNative` call. Planning names
+ *  the case the lines now go in; clearing names the case they were planned
+ *  into when that is one case (a case card's "Unpack"), else the first line. */
+async function logPlanChange(
+  ctx: MutationCtx,
+  args: {
+    orgId: string;
+    actor: Actor;
+    auditId: string;
+    now: number;
+    projectId: string;
+    /** The case the lines now go in (`null` = cleared). */
+    target: { id: string; label: string } | null;
+    /** When clearing: the one case they were all planned into, if any. */
+    from: { id: string; label: string } | null;
+    lineItemIds: string[];
+  },
+) {
+  const count = args.lineItemIds.length;
+  const noun = count === 1 ? "line" : "lines";
+  const caseRef = args.target ?? args.from;
+  const summary = args.target
+    ? `Planned ${count} ${noun} into container "${args.target.label}"`
+    : args.from
+      ? `Unplanned ${count} ${noun} from container "${args.from.label}" (now loose)`
+      : `Cleared the planned container on ${count} ${noun}`;
+  await writeActivityLog(ctx, {
+    id: args.auditId,
+    organizationId: args.orgId,
+    action: "UPDATE",
+    entityType: caseRef ? "projectContainer" : "projectLineItem",
+    entityId: caseRef?.id ?? args.lineItemIds[0],
+    projectId: args.projectId,
+    entityName: caseRef?.label ?? "Planned container",
+    userId: args.actor.userId,
+    userName: args.actor.userName,
+    summary,
+    metadata: { lineItemIds: args.lineItemIds, plannedContainerId: args.target?.id ?? null },
+    createdAt: args.now,
+  });
+}
+
 /** Set (or clear, with `containerId: null`) the PM's planned container for a
- *  batch of whole lines (D9 — Packing tab, phase 4). Metadata only: no audit
- *  (parity with a label edit — nothing physical has moved yet). */
+ *  batch of whole lines (D9 — Packing tab, phase 4). Nothing physical moves,
+ *  but every write is audited (CLAUDE.md): one row per call. */
 export const setPlannedContainerNative = mutation({
   returns: v.object({ updated: v.number() }),
   args: {
@@ -511,23 +575,38 @@ export const setPlannedContainerNative = mutation({
     lineItemIds: v.array(v.string()),
     containerId: v.union(v.string(), v.null()),
     now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
   },
-  handler: async (ctx, { orgId, lineItemIds, containerId, now }) => {
+  handler: async (ctx, { orgId, lineItemIds, containerId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
     assertArrayMax(lineItemIds, "lineItemIds", MAX_UNIT_IDS);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
 
-    if (containerId) await requireContainerInOrg(ctx, containerId, orgId);
+    const target = containerId ? await requireContainerInOrg(ctx, containerId, orgId) : null;
 
-    let updated = 0;
+    const updatedIds: string[] = [];
+    const previous = new Set<string>();
+    let projectId: string | null = null;
     for (const lineItemId of lineItemIds) {
       const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
       if (!line || line.organizationId !== orgId) continue; // missing/cross-org — skipped
+      if (line.plannedContainerId) previous.add(line.plannedContainerId);
+      projectId ??= line.projectId;
       await ctx.db.patch(line._id, { plannedContainerId: containerId ?? undefined, updatedAt: now });
-      updated++;
+      updatedIds.push(lineItemId);
     }
-    return { updated };
+    if (projectId) {
+      await logPlanChange(ctx, {
+        orgId, actor, auditId, now, projectId,
+        target: target ? { id: target.id, label: target.label } : null,
+        from: target ? null : await soleContainerInOrg(ctx, previous, orgId),
+        lineItemIds: updatedIds,
+      });
+    }
+    return { updated: updatedIds.length };
   },
 });
 

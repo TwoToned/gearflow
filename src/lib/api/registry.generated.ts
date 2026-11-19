@@ -35817,6 +35817,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
         "name": "containerId",
         "optional": false,
         "type": "union"
@@ -35838,7 +35848,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "978d0ff21d3b571b",
+    "argsSha": "cba90547a1f914f4",
     "returnsSha": "42d138e1e179a81f",
     "stability": "tracks-app",
     "summary": "Set or clear the planned container for a batch of lines (Packing tab).",

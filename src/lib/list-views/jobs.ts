@@ -43,7 +43,7 @@ export function jobSegments(counts: Record<string, number> | undefined): ListSeg
 export const JOBS_SPEC: ListUrlSpec = {
   segments: SHIPPED_SEGMENTS.map((s) => s.key),
   // `show` carries `cancelled` (the page menu's Show cancelled); it has no filter word.
-  filters: ["status", "type", "client", "date", "show"],
+  filters: ["status", "type", "client", "pm", "date", "show"],
   sorts: ["projectNumber", "name", "status", "rentalStartDate", "type", "total", "client"],
   defaultSort: "rentalStartDate:asc",
   views: ["table", "board"],
@@ -131,6 +131,8 @@ export interface ClientOption {
 export function jobFilters(
   clients: ClientOption[],
   clientSearch: { value: string; onChange: (v: string) => void },
+  /** Org members (user id + name): the PM filter's options. */
+  pms: ClientOption[] = [],
 ): ListFilterDef[] {
   const needle = clientSearch.value.trim().toLowerCase();
   const shown = needle ? clients.filter((c) => c.name.toLowerCase().includes(needle)) : clients;
@@ -143,6 +145,7 @@ export function jobFilters(
       options: shown.slice(0, 100).map((c) => ({ value: c.id, label: c.name })),
       search: { ...clientSearch, placeholder: "Search clients" },
     },
+    { key: "pm", label: "PM", options: pms.map((m) => ({ value: m.id, label: m.name })) },
     { key: "date", label: "Dates", single: true, options: DATE_PRESETS.map((p) => ({ ...p })) },
   ];
 }
@@ -155,6 +158,9 @@ export const JOB_COLUMNS: FactColumn[] = [
   { id: "dates", header: "Dates", sortKey: "rentalStartDate" },
   { id: "type", header: "Type", sortKey: "type" },
   { id: "total", header: "Total", align: "end", sortKey: "total" },
+  // Opt-in from the page ⋯ › Columns.
+  { id: "pm", header: "PM", optional: true },
+  { id: "tags", header: "Tags", optional: true },
 ];
 
 /** The first column's header and the sort key behind it. */
@@ -179,6 +185,7 @@ export function jobsQueryArgs(state: ListUrlState, now: number) {
     statusIn: known(f.status, JOB_STATUS_ORDER),
     typeIn: known(f.type, Object.keys(TYPE_LABELS)),
     clientIn: f.client,
+    pmIn: f.pm,
     includeCancelled: f.show?.includes("cancelled") ? true : undefined,
     ...resolveDatePreset(preset, now),
     page: state.page,
@@ -202,6 +209,7 @@ export interface JobSource {
   rentalEndDate?: number | null;
   total?: number | null;
   tags?: string[] | null;
+  projectManagerId?: string | null;
   client?: { name: string | null } | null;
 }
 
@@ -209,6 +217,8 @@ export interface JobSource {
 export interface JobExtras {
   issues?: { hasOverbooked: boolean; hasReducedStock: boolean } | null;
   blocking?: number;
+  /** The project manager's name, resolved from `projectManagerId` through the org roster. */
+  pmName?: string;
 }
 
 const dayMonth = (ms: number) => new Date(ms).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
@@ -236,6 +246,8 @@ export function jobRowOf(p: JobSource, extras: JobExtras, menu?: ActionMenuSpec)
   const dates = dateFact(p);
   if (dates) facts.dates = dates;
   if (p.type) facts.type = { kind: "text", label: TYPE_LABELS[p.type] ?? p.type };
+  if (extras.pmName) facts.pm = { kind: "text", label: extras.pmName };
+  if (p.tags?.length) facts.tags = { kind: "text", label: p.tags.join(", ") };
   return {
     id: p.id,
     kind: "job",

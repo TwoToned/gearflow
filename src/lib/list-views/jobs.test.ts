@@ -142,6 +142,12 @@ describe("saved-view adapter and export", () => {
     expect(jobsQueryArgs(parse("status=QUOTED,NOPE"), NOW).statusIn).toEqual(["QUOTED"]);
   });
 
+  it("maps the PM filter to pmIn and shows the resolved name as the PM fact", () => {
+    expect(jobsQueryArgs(parse("pm=u1,u2"), NOW).pmIn).toEqual(["u1", "u2"]);
+    const row = jobRowOf({ id: "a", projectNumber: "P-1", name: "J", projectManagerId: "u1" }, { pmName: "Pat PM" });
+    expect(row.facts.pm).toEqual({ kind: "text", label: "Pat PM" });
+  });
+
   it("neutralises a formula-looking job name in the export", () => {
     const csv = jobsCsv([{ id: "a", projectNumber: "P-1", name: "=1+1", total: 5, status: "QUOTED" }]);
     expect(csv.split("\n")[1].startsWith("P-1,'=1+1,")).toBe(true);

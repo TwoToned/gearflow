@@ -41,7 +41,10 @@ vi.mock("@/hooks/use-native-project-writes", () => ({
   useProjectWrites: () => ({ archive: vi.fn(), remove: vi.fn(), addTag: vi.fn(async () => []), removeTag: vi.fn(async () => []) }),
 }));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: vi.fn(async () => []) }) }));
-vi.mock("@/components/projects/project-board", () => ({ ProjectBoard: () => <div>BOARD</div> }));
+vi.mock("@/components/projects/project-board", () => ({ ProjectBoard: ({ search }: { search?: string }) => <div>BOARD {search}</div> }));
+vi.mock("@/hooks/use-org-members", () => ({
+  useOrgMembers: () => ({ data: [{ userId: "u1", user: { name: "Pat PM" } }] }),
+}));
 vi.mock("@/components/ui/saved-views-menu", () => ({ SavedViewsMenu: () => <button type="button">Views</button> }));
 vi.mock("@/components/projects/duplicate-project-dialog", () => ({
   DuplicateProjectDialog: ({ mode }: { mode: string }) => <div>DIALOG {mode}</div>,
@@ -118,10 +121,32 @@ describe("JobsList (smoke)", () => {
     expect(typeof lastListArgs?.now).toBe("number");
   });
 
-  it("?view=board still shows the board", () => {
-    nav.search = "view=board";
+  it("?view=board still shows the board, passes the search through and hides what it ignores", async () => {
+    nav.search = "view=board&q=hilton&status=QUOTED";
+    const user = userEvent.setup();
     render(<JobsList />);
-    expect(screen.getByText("BOARD")).toBeTruthy();
+    expect(screen.getByText("BOARD hilton")).toBeTruthy();
+    expect(screen.queryByRole("tablist", { name: "Segments" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Status/ })).toBeNull();
+    expect(screen.queryByText("Clear filters")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Jobs options" }));
+    expect(await screen.findByText("Templates")).toBeTruthy();
+    expect(screen.queryByText("Show cancelled")).toBeNull();
+  });
+
+  it("⋯ › Columns opts PM in and keeps it in localStorage colVis", async () => {
+    const user = userEvent.setup();
+    localStorage.removeItem("colVis");
+    render(<JobsList />);
+    expect(screen.queryByRole("columnheader", { name: "PM" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Jobs options" }));
+    // Keyboard-open the submenu: pointer grace-area logic is not reliable in jsdom.
+    (await screen.findByRole("menuitem", { name: /Columns/ })).focus();
+    await user.keyboard("{ArrowRight}");
+    (await screen.findByRole("menuitem", { name: "Show PM" })).focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("columnheader", { name: "PM" })).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("colVis") ?? "{}").jobs).toEqual(["pm"]);
   });
 
   it("the row menu opens with its verbs; Cancel job is last", async () => {

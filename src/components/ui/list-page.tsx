@@ -19,6 +19,7 @@ import {
   type ListSegment,
   type ViewWord,
 } from "@/components/ui/list-page-parts";
+import { useColumnVisibility } from "@/hooks/use-column-visibility";
 import { useListUrlState } from "@/hooks/use-list-url-state";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -32,7 +33,7 @@ import {
   type ListUrlSpec,
   type ListUrlState,
 } from "@/lib/list-url-state";
-import type { ActionMenuSpec, BulkAction, FactColumn, LineRowData, ListSort } from "@/lib/primitives/types";
+import type { ActionItem, ActionMenuSpec, BulkAction, FactColumn, LineRowData, ListSort } from "@/lib/primitives/types";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
 
 /**
@@ -60,6 +61,8 @@ export interface ListPageProps {
   /** Defaults to Table only; give 2+ to show view words. */
   views?: ViewWord[];
   columns: FactColumn[];
+  /** Enables ⋯ › Columns for the `optional` columns; the opt-in is kept in localStorage `colVis[columnsKey]`. */
+  columnsKey?: string;
   rows: LineRowData[];
   total: number;
   loading: boolean;
@@ -208,13 +211,20 @@ function ListAction({ props, c }: { props: ListPageProps; c: Controller }) {
   return null;
 }
 
+/** The page ⋯ with ⋯ › Columns merged in (only when the list has optional columns). */
+function withColumnsItem(menu: ActionMenuSpec | undefined, item: ActionItem | undefined): ActionMenuSpec | undefined {
+  if (!item) return menu;
+  return { items: [...(menu?.items ?? []), item] };
+}
+
 export function ListPage(props: ListPageProps) {
-  const c = useListController(props);
+  const cols = useColumnVisibility(props.columnsKey, props.columns);
+  const c = useListController({ ...props, columns: cols.columns });
   const { state, setState } = c;
   const view = props.renderView?.(state.view) ?? null;
   return (
     <div className="flex flex-col gap-3">
-      <ListHead title={props.title} primary={props.primary} pageMenu={props.pageMenu} />
+      <ListHead title={props.title} primary={props.primary} pageMenu={withColumnsItem(props.pageMenu, cols.item)} />
       {props.segments.length > 0 && (
         <ListSegments segments={props.segments} value={state.seg} onChange={(seg) => setState(withPatch(state, { seg }))} />
       )}
@@ -232,7 +242,7 @@ export function ListPage(props: ListPageProps) {
         onView={(v) => setState(withPatch(state, { view: v }))}
         extra={props.toolbarExtra}
       />
-      {view ?? <ListBody props={props} c={c} />}
+      {view ?? <ListBody props={{ ...props, columns: cols.columns }} c={c} />}
       <ListAction props={props} c={c} />
     </div>
   );

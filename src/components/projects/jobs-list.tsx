@@ -18,6 +18,7 @@ import { TagPromptDialog } from "@/components/ui/tag-prompt-dialog";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useClients } from "@/hooks/use-clients";
 import { useListUrlState } from "@/hooks/use-list-url-state";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useStableNow } from "@/hooks/use-stable-now";
@@ -36,7 +37,7 @@ import {
   type JobSource,
 } from "@/lib/list-views/jobs";
 import { setFilter, type ListUrlState } from "@/lib/list-url-state";
-import type { ActionMenuSpec, LineRowData } from "@/lib/primitives/types";
+import type { ActionItem, ActionMenuSpec, LineRowData } from "@/lib/primitives/types";
 import { buildJobActions, buildJobBulkActions, type JobActionCtx } from "@/lib/row-actions/job";
 import { useCanDo } from "@/lib/use-permissions";
 import { getProjectIssueFlags } from "@/server/projects";
@@ -63,6 +64,22 @@ function useJobsPage(orgId: string | undefined, now: number, args: ReturnType<ty
   const counts = useAuthedQuery(api.projects.segmentCounts, orgId ? { orgId, now } : "skip");
   const { data, total, isLoading } = usePaginatedTableResult(page);
   return { items: data as JobSource[], total, isLoading, counts };
+}
+
+interface RosterMember {
+  userId: string;
+  user?: { name?: string | null } | null;
+}
+
+/** Project managers by user id, from the org roster the members page already reads (no new query). */
+function usePmRoster(orgId: string | undefined) {
+  const { data } = useOrgMembers(orgId) as { data: RosterMember[] | undefined };
+  return React.useMemo(() => {
+    const nameOf = new Map<string, string>();
+    for (const m of data ?? []) if (m.user?.name) nameOf.set(m.userId, m.user.name);
+    const options = [...nameOf].map(([id, name]) => ({ id, name }));
+    return { nameOf, options };
+  }, [data]);
 }
 
 interface Perms {
@@ -120,19 +137,24 @@ function JobsListInner({ orgId }: { orgId: string | undefined }) {
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [tagIds, setTagIds] = React.useState<string[] | null>(null);
 
+  const pms = usePmRoster(orgId);
   const rows = items.map((p) => {
     const menu = buildJobActions({ title: p.name, status: p.status }, rowCtxFor(p, perms, w, setDialog));
-    const row = jobRowOf(p, { issues: issues?.[p.id] ?? null, blocking: blocking?.[p.id] ?? 0 }, menu);
+    const pmName = p.projectManagerId ? pms.nameOf.get(p.projectManagerId) : undefined;
+    const row = jobRowOf(p, { issues: issues?.[p.id] ?? null, blocking: blocking?.[p.id] ?? 0, pmName }, menu);
     return { ...row, cells: { status: statusCell(row, p) } };
   });
 
-  const pageMenu = jobsPageMenu(state, setState, router.push);
+  // The board honours search only: in board view every segment, filter word and saved view is hidden.
+  const board = state.view === "board";
+  const pageMenu = jobsPageMenu(state, setState, router.push, board);
 
   const goNew = () => router.push("/projects/new");
   const primary: ListPrimary | undefined = perms.create ? { label: "New job", onSelect: goNew } : undefined;
   const filters: ListFilterDef[] = jobFilters(
     (clients ?? []).map((c) => ({ id: c.id, name: c.name })),
     { value: clientSearch, onChange: setClientSearch },
+    pms.options,
   );
 
   return (
@@ -143,8 +165,9 @@ function JobsListInner({ orgId }: { orgId: string | undefined }) {
         noun="job"
         bulkNoun="job"
         searchPlaceholder="Search name, job #, client or location"
-        segments={jobSegments(counts as Record<string, number> | undefined)}
-        filters={filters}
+        segments={board ? [] : jobSegments(counts as Record<string, number> | undefined)}
+        filters={board ? [] : filters}
+        columnsKey="jobs"
         views={[
           { key: "table", label: "Table" },
           { key: "board", label: "Board" },
@@ -164,14 +187,16 @@ function JobsListInner({ orgId }: { orgId: string | undefined }) {
           action: primary,
         }}
         toolbarExtra={
-          <SavedViewsMenu
-            tableId="projects"
-            currentConfig={jobsViewConfig(state)}
-            applyConfig={(c) => setState(jobsStateFromView(c))}
-            onResetPreferences={() => setState(jobsStateFromView({}))}
-          />
+          board ? undefined : (
+            <SavedViewsMenu
+              tableId="projects"
+              currentConfig={jobsViewConfig(state)}
+              applyConfig={(c) => setState(jobsStateFromView(c))}
+              onResetPreferences={() => setState(jobsStateFromView({}))}
+            />
+          )
         }
-        renderView={(view) => (view === "board" ? <ProjectBoard /> : null)}
+        renderView={(view) => (view === "board" ? <ProjectBoard search={state.q} /> : null)}
       />
       <JobsDialogs w={w} dialog={dialog} setDialog={setDialog} tagIds={tagIds} setTagIds={setTagIds} />
     </>
@@ -221,17 +246,23 @@ function JobsDialogs({
 }
 
 /** The page ⋯: Show/Hide cancelled (the `show=cancelled` URL param), Templates, Overbookings. */
-function jobsPageMenu(state: ListUrlState, setState: (s: ListUrlState) => void, push: (href: string) => void): ActionMenuSpec {
+function jobsPageMenu(
+  state: ListUrlState,
+  setState: (s: ListUrlState) => void,
+  push: (href: string) => void,
+  board: boolean,
+): ActionMenuSpec {
   const showCancelled = !!state.filters.show?.includes("cancelled");
+  const toggleCancelled: ActionItem = {
+    key: "show-cancelled",
+    label: showCancelled ? "Hide cancelled" : "Show cancelled",
+    group: "organise",
+    icon: showCancelled ? EyeOff : Eye,
+    onSelect: () => setState(setFilter(state, "show", showCancelled ? [] : ["cancelled"])),
+  };
   return {
     items: [
-      {
-        key: "show-cancelled",
-        label: showCancelled ? "Hide cancelled" : "Show cancelled",
-        group: "organise",
-        icon: showCancelled ? EyeOff : Eye,
-        onSelect: () => setState(setFilter(state, "show", showCancelled ? [] : ["cancelled"])),
-      },
+      ...(board ? [] : [toggleCancelled]),
       { key: "templates", label: "Templates", group: "organise", icon: FileStack, onSelect: () => push("/projects/templates") },
       { key: "overbookings", label: "Overbookings", group: "reporting", icon: TriangleAlert, onSelect: () => push("/overbookings") },
     ],

@@ -11,7 +11,7 @@ import { isLate } from "../../convex/lib/warehouseStage";
 import { formatWeekdayDayMonth } from "@/lib/formatters";
 import { RETURN_OUTCOME_LABELS } from "@/lib/vocabulary";
 
-export type ReturningBoard = FunctionReturnType<typeof api.warehouseFloor.returning>;
+type ReturningBoard = FunctionReturnType<typeof api.warehouseFloor.returning>;
 export type ReturningGroup = ReturningBoard["groups"][number];
 export type ReturningLine = ReturningGroup["lines"][number];
 

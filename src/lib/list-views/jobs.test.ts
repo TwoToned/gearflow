@@ -8,8 +8,7 @@ import {
   jobSegments,
   jobsCsv,
   jobsQueryArgs,
-  jobsStateFromView,
-  jobsViewConfig,
+  jobsBuiltInViews,
   resolveDatePreset,
 } from "./jobs";
 
@@ -118,23 +117,14 @@ describe("jobRowOf", () => {
 });
 
 describe("saved-view adapter and export", () => {
-  it("round-trips the old {filters, sortBy, sortOrder} shape", () => {
-    const state = parse("status=QUOTED&type=TOUR&sort=name:desc");
-    const config = jobsViewConfig(state);
-    expect(config).toEqual({ filters: { status: ["QUOTED"], type: ["TOUR"] }, sortBy: "name", sortOrder: "desc" });
-    const back = jobsStateFromView(config);
-    expect(back.filters).toEqual({ status: ["QUOTED"], type: ["TOUR"] });
-    expect([back.sortBy, back.sortOrder]).toEqual(["name", "desc"]);
+  it("ships the built-in views as normalised queries; My jobs needs a user", () => {
+    const withUser = jobsBuiltInViews("u1");
+    expect(withUser.map((b) => b.name)).toEqual(["My jobs", "Out this week", "Unquoted enquiries"]);
+    expect(withUser.map((b) => b.query)).toEqual(["pm=u1", "seg=out&date=this-week", "status=ENQUIRY"]);
+    expect(jobsBuiltInViews(undefined).map((b) => b.name)).toEqual(["Out this week", "Unquoted enquiries"]);
   });
 
-  it("drops unknown sort keys and non-list filter values", () => {
-    const s = jobsStateFromView({ filters: { status: "QUOTED", type: ["TOUR"] }, sortBy: "nope", sortOrder: "desc" });
-    expect(s.filters).toEqual({ type: ["TOUR"] });
-    expect(s.sortBy).toBe("rentalStartDate");
-  });
-
-  it("drops unknown status/type values from a saved view and from the URL args", () => {
-    expect(jobsStateFromView({ filters: { status: ["QUOTED", "NOPE"], type: ["X"] } }).filters).toEqual({ status: ["QUOTED"] });
+  it("drops unknown status/type values from the URL args", () => {
     const args = jobsQueryArgs(parse("status=NOPE&type=BOGUS&date=bogus"), NOW);
     expect(args.statusIn).toBeUndefined();
     expect(args.typeIn).toBeUndefined();

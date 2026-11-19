@@ -12,7 +12,7 @@ import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { useJobListWrites } from "@/components/projects/use-job-list-writes";
 import { ListPage } from "@/components/ui/list-page";
 import type { ListFilterDef, ListPrimary } from "@/components/ui/list-page-parts";
-import { SavedViewsMenu } from "@/components/ui/saved-views-menu";
+import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
 import { StatusWord } from "@/components/ui/status-word";
 import { TagPromptDialog } from "@/components/ui/tag-prompt-dialog";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -22,7 +22,7 @@ import { useOrgMembers } from "@/hooks/use-org-members";
 import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useStableNow } from "@/hooks/use-stable-now";
-import { useActiveOrganization } from "@/lib/auth-client";
+import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import {
   JOB_COLUMNS,
   JOB_ITEM_HEADER,
@@ -32,8 +32,7 @@ import {
   jobRowOf,
   jobSegments,
   jobsQueryArgs,
-  jobsStateFromView,
-  jobsViewConfig,
+  jobsBuiltInViews,
   type JobSource,
 } from "@/lib/list-views/jobs";
 import { setFilter, type ListUrlState } from "@/lib/list-url-state";
@@ -138,6 +137,9 @@ function JobsListInner({ orgId }: { orgId: string | undefined }) {
   const [tagIds, setTagIds] = React.useState<string[] | null>(null);
 
   const pms = usePmRoster(orgId);
+  const { data: session } = useSession();
+  const userId = session?.user.id;
+  const builtInViews = React.useMemo(() => jobsBuiltInViews(userId), [userId]);
   const rows = items.map((p) => {
     const menu = buildJobActions({ title: p.name, status: p.status }, rowCtxFor(p, perms, w, setDialog));
     const pmName = p.projectManagerId ? pms.nameOf.get(p.projectManagerId) : undefined;
@@ -188,12 +190,7 @@ function JobsListInner({ orgId }: { orgId: string | undefined }) {
         }}
         toolbarExtra={
           board ? undefined : (
-            <SavedViewsMenu
-              tableId="projects"
-              currentConfig={jobsViewConfig(state)}
-              applyConfig={(c) => setState(jobsStateFromView(c))}
-              onResetPreferences={() => setState(jobsStateFromView({}))}
-            />
+            <UrlSavedViewsMenu tableId="projects" spec={JOBS_SPEC} state={state} setState={setState} builtIns={builtInViews} />
           )
         }
         renderView={(view) => (view === "board" ? <ProjectBoard search={state.q} /> : null)}

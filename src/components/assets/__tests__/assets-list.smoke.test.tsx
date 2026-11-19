@@ -48,7 +48,7 @@ vi.mock("@/components/assets/bulk-asset-dialogs", () => ({
   BulkEditDialog: () => null,
   BulkAddTagsDialog: () => null,
 }));
-vi.mock("@/components/ui/saved-views-menu", () => ({ SavedViewsMenu: () => <button type="button">Views</button> }));
+vi.mock("@/components/ui/url-saved-views", () => ({ UrlSavedViewsMenu: () => <button type="button">Views</button> }));
 
 const ASSET_PAGE = {
   assets: [

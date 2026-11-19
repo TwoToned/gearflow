@@ -14,7 +14,7 @@ import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { ListPage } from "@/components/ui/list-page";
 import type { ListFilterDef, ListPrimary } from "@/components/ui/list-page-parts";
-import { SavedViewsMenu } from "@/components/ui/saved-views-menu";
+import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
 import { StatusWord } from "@/components/ui/status-word";
 import { useAssetWrites } from "@/hooks/use-asset-writes";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -268,15 +268,11 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
   );
 }
 
+/** Filter keys the pre-URL registry stored, renamed for the URL. */
+const LEGACY_ASSET_FILTER_KEYS = { locationId: "loc", categoryId: "cat", tags: "tag" } as const;
+
 function AssetsSavedViews({ state, setState }: { state: ListUrlState; setState: (s: ListUrlState) => void }) {
-  return (
-    <SavedViewsMenu
-      tableId="assets"
-      currentConfig={{ filters: state.filters, sortBy: state.sortBy, sortOrder: state.sortOrder }}
-      applyConfig={(c) => setState(withPatch(state, { sortBy: c.sortBy ?? state.sortBy, sortOrder: c.sortOrder ?? state.sortOrder }))}
-      onResetPreferences={() => setState(withPatch(state, {}))}
-    />
-  );
+  return <UrlSavedViewsMenu tableId="assets" spec={ASSETS_SPEC} state={state} setState={setState} aliases={LEGACY_ASSET_FILTER_KEYS} />;
 }
 
 function useLookups(orgId: string | undefined) {

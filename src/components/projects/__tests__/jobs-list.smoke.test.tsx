@@ -45,7 +45,7 @@ vi.mock("@/components/projects/project-board", () => ({ ProjectBoard: ({ search 
 vi.mock("@/hooks/use-org-members", () => ({
   useOrgMembers: () => ({ data: [{ userId: "u1", user: { name: "Pat PM" } }] }),
 }));
-vi.mock("@/components/ui/saved-views-menu", () => ({ SavedViewsMenu: () => <button type="button">Views</button> }));
+vi.mock("@/components/ui/url-saved-views", () => ({ UrlSavedViewsMenu: () => <button type="button">Views</button> }));
 vi.mock("@/components/projects/duplicate-project-dialog", () => ({
   DuplicateProjectDialog: ({ mode }: { mode: string }) => <div>DIALOG {mode}</div>,
 }));

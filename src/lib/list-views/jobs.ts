@@ -6,8 +6,8 @@
  */
 import type { ListFilterDef, ListSegment } from "@/components/ui/list-page-parts";
 import { toCsv } from "@/lib/csv";
-import { defaultListState, LIST_PAGE_SIZE, type ListUrlSpec, type ListUrlState } from "@/lib/list-url-state";
-import type { SavedViewConfig } from "@/lib/saved-views";
+import { LIST_PAGE_SIZE, type ListUrlSpec, type ListUrlState } from "@/lib/list-url-state";
+import { viewQuery, type UrlBuiltInView } from "@/lib/list-views/saved-view-url";
 import type { ActionMenuSpec, Fact, FactColumn, LineRowData, RowFlag } from "@/lib/primitives/types";
 import { projectStatusLabels } from "@/lib/status-labels";
 import { getStatusIntent } from "@/lib/status-colors";
@@ -262,33 +262,16 @@ export function jobRowOf(p: JobSource, extras: JobExtras, menu?: ActionMenuSpec)
   };
 }
 
-// ─── Saved views (legacy shape, until the URL-mode menu lands) ───────────
+// ─── Saved views (URL mode: a view's config is the query string) ─────────
 
-/** The old `{filters, sortBy, sortOrder}` config for the current URL state. */
-export function jobsViewConfig(state: ListUrlState): SavedViewConfig {
-  const filters: Record<string, string[]> = {};
-  if (state.filters.status) filters.status = state.filters.status;
-  if (state.filters.type) filters.type = state.filters.type;
-  return { filters, sortBy: state.sortBy, sortOrder: state.sortOrder };
-}
-
-/** A saved (or default) view applied to the URL state; unknown sort keys fall back to the default. */
-export function jobsStateFromView(config: SavedViewConfig): ListUrlState {
-  const base = defaultListState(JOBS_SPEC);
-  const list = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-  const filters: Record<string, string[]> = {};
-  const allowed: Record<string, readonly string[]> = { status: JOB_STATUS_ORDER, type: Object.keys(TYPE_LABELS) };
-  for (const key of ["status", "type"]) {
-    const values = known(list(config.filters?.[key]), allowed[key]);
-    if (values) filters[key] = values;
-  }
-  const sortOk = !!config.sortBy && JOBS_SPEC.sorts.includes(config.sortBy);
-  return {
-    ...base,
-    filters,
-    sortBy: sortOk ? config.sortBy! : base.sortBy,
-    sortOrder: sortOk && config.sortOrder ? config.sortOrder : base.sortOrder,
-  };
+/** Shipped views: "My jobs" needs the signed-in user's id, so it is absent without one. */
+export function jobsBuiltInViews(userId: string | undefined): UrlBuiltInView[] {
+  const mine = userId ? [{ id: "builtin:mine", name: "My jobs", query: `pm=${encodeURIComponent(userId)}` }] : [];
+  return [
+    ...mine,
+    { id: "builtin:out-this-week", name: `${OUT_LABEL} this week`, query: "seg=out&date=this-week" },
+    { id: "builtin:unquoted-enquiries", name: "Unquoted enquiries", query: "status=ENQUIRY" },
+  ].map((b) => ({ ...b, query: viewQuery({ query: b.query }, JOBS_SPEC) }));
 }
 
 // ─── Export ──────────────────────────────────────────────────────────────

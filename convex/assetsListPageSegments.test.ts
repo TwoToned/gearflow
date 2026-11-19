@@ -126,6 +126,27 @@ describe("rowExtras per-field permissions and bounded reads", () => {
     expect(r.due).toEqual({});
   });
 
+  test("an agent key without project/test-tag read scope gets no job and no nextDue; with scope it does", async () => {
+    const t = makeT();
+    const now = Date.now();
+    await seed(t, now);
+    const key = (id: string, scopes: string[]) =>
+      t.run(async (ctx) => {
+        await ctx.db.insert("apiKeys", {
+          id, organizationId: ORG, name: id, prefix: "gf_live_aaaaaa", tokenHash: id,
+          scopes: JSON.stringify(scopes), isActive: true, actingUserId: USER, createdById: USER,
+        });
+      });
+    await key("narrow", ["asset:read"]);
+    await key("wide", ["asset:read", "project:read", "testTag:read"]);
+    const narrow = await t.withIdentity({ ...asUser, akid: "narrow" }).query(api.assets.rowExtras, { orgId: ORG, ids: ["out", "due"] });
+    expect(narrow.out).toEqual({});
+    expect(narrow.due).toEqual({});
+    const wide = await t.withIdentity({ ...asUser, akid: "wide" }).query(api.assets.rowExtras, { orgId: ORG, ids: ["out", "due"] });
+    expect(wide.out.job?.id).toBe("p1");
+    expect(wide.due.nextDue).toBe(now + 10 * DAY);
+  });
+
   test("inactive schedules cannot use up the per-asset cap", async () => {
     const t = makeT();
     const now = Date.now();

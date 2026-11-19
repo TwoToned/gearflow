@@ -168,13 +168,20 @@ export const rowExtras = query({
   },
 });
 
-/** Non-throwing read check against the caller's RBAC and (for an agent) key scopes. */
+/**
+ * Non-throwing read check. `requireOrgReadFor` is the agent-aware read guard (an agent's key
+ * must carry `<resource>:read`); `requireOrgPermission` then applies the member's live RBAC.
+ * Only a ConvexError (the auth failure itself) means "cannot read": anything else is a real
+ * fault and propagates.
+ */
 async function canRead(ctx: QueryCtx, orgId: string, resource: "project" | "testTag"): Promise<boolean> {
   try {
+    await requireOrgReadFor(ctx, orgId, resource);
     await requireOrgPermission(ctx, orgId, resource, "read");
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    if (e instanceof ConvexError) return false;
+    throw e;
   }
 }
 

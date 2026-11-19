@@ -19,8 +19,8 @@ import {
 async function loadOrgProjects(ctx: QueryCtx, orgId: string) {
   return await ctx.db
     .query("projects")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-    .collect(); // r9.8-ok: T3-style pagination rework approved but unshipped (no search index on projects yet) — see docs/exceptions.md R-8.3.3
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: T3-style pagination rework approved but unshipped (no search index on projects yet) — see docs/exceptions.md R-8.3.3
+    .collect();
 }
 
 /** An unknown segment key reads as "no segment" (a stale bookmark must still list). */

@@ -83,7 +83,11 @@ model", "Export CSV") went missing until the DataTable toolbar was made to wrap.
   to it and nothing else happens. With none registered, the one-shot
   `convex/scanLookup.resolve` runs (`use-scan-lookup.ts`) with four states: found
   (`Open asset ›` / `Open kit ›` / `Open test record ›`), not found, error/offline,
-  no permission. Phase 3 adopts the registry on the warehouse job page.
+  no permission. Phase 3 adopts the registry on the warehouse job page. Phase 4's
+  floor registers one per mode: on the board the scan goes to `Look up` (rings the
+  card / names the tag's job), in Returning mode to `Receive` (returns it, with the
+  toast's Undo). The floor's mode is the URL (`?mode=`), so the contract is "the
+  open mode", never a second camera.
 - Everything else (Crew, Assets, Finance, Schedule, Test & Tag, Maintenance, the
   People group, Settings, Account, plus Jobs/Warehouse sub-pages) is in the **More
   sheet** (`more-sheet.tsx`), built from `NAV`; More is lit on any non-tab module.

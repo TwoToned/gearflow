@@ -1,6 +1,6 @@
 # Warehouse Operations
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-11-19 (review quarterly — POLICY.md R-5.5)_
 
 > **#1160** — deploying and checking in now advance the PROJECT's status too:
 > the last packed line leaving the dock moves the job to `CHECKED_OUT`, the last
@@ -482,49 +482,109 @@ one.
 
 4. Returning a parent asset cascades the return to its permanent accessories via `checkinAccessoryChildren` (`line-item-fulfillment.ts`) — shared, so both `checkInItems` AND the **check-and-store** flow (`completeCheckAndStore`) release the accessories; de-prep also clears them from the deploy-staging board. On a multi-quantity model line, the cascade is **scoped to the returned unit** (`returnedAssetId`): serialised accessories return only with their own host asset, and the shared bulk accessory clears one unit's share per return, fully releasing once every host unit is back. The cascade only fires when the parent return actually flipped a unit (`unitsFlipped > 0`), so re-scanning an already-returned unit can't double-return the shared accessory. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
-## Returns Station
+## The floor (UX Phase 4) — `/warehouse`
 
-`/warehouse/returns` (issue #944 WS5) — an **org-wide, project-less** returns
-desk: one scan field resolving each tag to its active deployment(s), with no
-project pre-selection. Complements the per-project Return Tab above (which
-still exists and is the right tool when you already know the job) — the
-returns station is for "gear is coming back through the dock, figure out which
-job(s) it belongs to as you go."
+`/warehouse` is **the floor** (spec §9c, `src/components/warehouse/floor/`):
+a head (`The floor · n`, date · next out · overdue), the scope strip
+(`Today · This week · Mine · All` + `Returning n`) with the filter words
+`Client ▾ · Flags ▾ · Packer ▾` (6b's `FilterWord`), the ONE scan dock, and
+five **derived** columns `To pick · Prepping · Ready · Out · Returning`.
 
-### Board query — `convex/warehouseReturns.ts`
-- `bundle(orgId)` range-reads **every CHECKED_OUT `projectLineItems` row across
-  the whole org** via a new `by_organizationId_status` composite index (not
-  `by_projectId_status` — there is no project to scope by), capped at
-  `MAX_ROWS` (registered bounded-read exception, see `docs/exceptions.md`
-  R-9.8 "returns-board-orgwide-checkedout"). Groups the results by project,
-  ordered **overdue-first** (a server-side port of `getProjectUrgency` from
-  `src/app/(app)/warehouse/page.tsx`'s "The floor" landing page — kept in
-  lockstep deliberately, not imported, since that file is a client component).
-  Both copies (and the landing page's own list query, `convex/warehouseList.ts`)
-  read the **gear-committed window** (`getProjectWindow` — `projectStartDate`/
-  `projectEndDate`, falling back to rental when unset), never raw
-  `rentalStartDate`/`rentalEndDate` — "is this gear physically overdue" is
-  exactly what the committed window means (2026-09 fix; see FEATUREDOCS/11
-  invariant #4).
-- **One-shot fetch, not a live subscription.** The `/warehouse/*` route group's
-  LCP budget is already over its registered threshold
-  (`docs/exceptions.md` R-8.9.3) — a whole-org reactive subscription here would
-  make that worse. The client (`useReturnsBoard`, `src/hooks/use-returns.ts`)
-  fetches once, keeps a session-local list, and refetches on a manual refresh
-  button + after every mutation.
-- Top-level rows are standalone/sub-hire/custom/kit-parent lines
-  (`isKitChild` false). ACCESSORY children cascade attached to their parent row
-  (not independent rows — mirrors the PDF pipeline's parent/child convention,
-  see CLAUDE.md's PDF section). Kit MEMBER lines roll up under the kit
-  parent — a kit always returns as a whole via `checkInKit`, never
-  member-by-member. Sub-hire and custom lines are **display-only**
-  (`scannable: false`) — there's no asset/bulk tag to scan for either. Partial
-  returns are included by construction: `returnLineUnits` only flips a line's
-  own `status` to RETURNED once every unit is back, so a partially-returned
-  line is still CHECKED_OUT and lands in the same range-read.
-- `unitsForLine(orgId, lineItemId)` expands one line's CHECKED_OUT units
-  (asset tag chips) **on demand** when a row is opened — the board query
-  deliberately stays line-level to keep the initial payload small.
+- **The column is derived, never stored or dragged (D27).** `warehouseStage()`
+  in `convex/lib/warehouseStage.ts` reads the job's unit counts
+  (`floorCounts`); `warehouseList.bundle` returns `stage` + `counts`. A
+  half-returned job is in Returning (the live page used to read it as Out).
+- **State lives in the URL (D11)**, parsed by one Zod schema
+  (`src/lib/warehouse-floor.ts`): `mode`, `scope`, `stage` (phone only), `q`,
+  `client`, `flags`, `packer`, and Returning's `outcome`, `job`, `show`.
+  Defaults are omitted; switching mode pushes history, a filter replaces it.
+- **Mine = I am the PM or the packer.** `projects.packerUserId` (owner-approved,
+  hand-added to the schema) is server-owned: only
+  `projectWrites.setPackerNative` writes it (org + member checked, one activity
+  row per changed job, bounded by `assertBulkSizeOk`). It returns the previous
+  packers, so `Assign packer…` (card ⋯ and bulk) toasts an Undo that replays
+  them through the same mutation.
+- **Card** (`floor-card.tsx`): the whole card opens the warehouse job; number,
+  client · window, progress line + 4 px bar, dispatch (`Truck Tue 06:30 · Van 2`
+  from `convex/lib/outboundTruck.ts`, else `Out <job start>`), packer (initials
+  + name, or `no packer`), flags (overdue · awaiting payment · damaged ·
+  missing). ⋯ = Open job, Job overview, Assign packer…, Pull sheet, documents,
+  Close out, Admin · ignores item state (`adminOverrides`, shared with the job
+  header, D6). Close out and the overrides confirm and have no Undo (no reverse
+  mutation — a prototype deviation).
+- **Dock** (`Look up` / `Receive`): typing filters by number, name and client;
+  Enter on a job number rings its card; a tag goes through `scanLookup.resolve`
+  once. `Receive` switches to Returning mode.
+- **Phone** (D28): stage strip, sticky dock, 64 px rows, portaled BulkBar. The
+  6a raised Scan delivers its decoded value to whichever mode is open (each
+  mode registers a `useScanTarget` handler).
+
+## Returning mode — `/warehouse?mode=returning`
+
+The returns desk is a **mode of the floor** (D26), replacing the returns
+station page; `/warehouse/returns` is a server redirect that keeps its query
+string, and the sidebar's Returns link points at the mode.
+
+### Board query — `convex/warehouseFloor.ts`
+- `returning(orgId)` is a **live** subscription held only while the mode is
+  open. Every read is capped, and `truncated` says so when a cap bites (no
+  R-9.8 exception): CHECKED_OUT lines org-wide (`by_organizationId_status`,
+  2000) to discover jobs (including COMPLETED/INVOICED ones), RETURNED jobs
+  (100), at most 150 jobs (org-checked, no templates), each job's live-version
+  lines, models/kits org-checked, and units only for lines that can be
+  late-back (300 lines × 500 units).
+- Rows are top-level lines that have been out. ACCESSORY children nest under
+  their parent and cascade with it; kit members roll up under the kit (a kit
+  returns whole). Sub-hire and custom lines are listed, not scannable.
+- **Late (D29)**: late-back is counted on the server; late-still-out needs a
+  clock, so the client derives it with the same `isLate`.
+- `lineUnits(orgId, lineItemId)` (live while a row is expanded) lists every
+  unit with its outcome for the unit chips.
+- `convex/warehouseReturns.ts` (the old one-shot board) is no longer used by
+  the UI; it stays agent-reachable until its removal is decided (removing it
+  lowers the API reachability floor).
+
+### The mode's UI
+- **Outcome strip** `Out · Returned · Damaged · Missing · Late` (counts,
+  clearable, `?outcome=`), then the dock in `Receive` and the one result strip.
+- **Rows grouped by job** (`#n name · due back · n out · nd overdue`, job ⋯ =
+  Return everything still out, Open job). A row reads
+  `item · n out · m of t back · outcome words · ⋯`; `Show units` expands unit
+  chips, each with its own menu (Return / Return as damaged / Mark missing while
+  out; Mark good / damaged / missing and Raise repair once back).
+- **Bulk**: `Return n · Mark damaged n · Raise repair n · Mark missing n`
+  (Missing last, red, confirmed). A selection across jobs is one write per job.
+- **Which job?** — a tag out on several jobs is never auto-picked; a bulk tag
+  gets a quantity per job.
+- **Offline is online-only in v1**: a neutral `offline · not saved, scan again`
+  entry (a deviation; `scanIntake` is project-scoped).
+
+### Undo on every return path (one closure per write)
+| Path | Write | Undo |
+|---|---|---|
+| Asset scan / unit chip / row Return | `warehouseWrites.checkInItems` | `unreturnItems` (+ auto-advance revert) |
+| Kit | `checkInKit` / `checkInKitsBatch` | `unreturnKitsBatch` |
+| Bulk tag | `returnsWrites.returnBulkNative` | `unreturnBulkNative` with the call's `returnedUnitIds` — only exact; absent for a partial bulk return |
+| Outcome correction | `correctReturnConditionNative` | the same mutation, restoring the previous condition |
+| Raise repair | `maintenanceWrites.createNative` | `deleteNative`, absent without `maintenance:delete` |
+
+The strip's Undo IS the toast's closure (`AnnouncedWrite.scanUndo`), and only
+the latest entry keeps it.
+
+## The pull sheet (dialog) — `?doc=pull-sheet`
+
+`/warehouse/[id]/pull-sheet` redirects to `/warehouse/[id]?doc=pull-sheet`,
+which opens `PullSheetDialog` (`src/components/warehouse/pull-sheet-dialog.tsx`).
+It opens from the job's `Documents ▾ › Pull sheet`, the floor card ⋯, and the
+floor's bulk `Print pull sheets n` (sheets stack). `Print` prints the sheets
+only; `Save PDF` opens the pull-slip PDF.
+
+**One list (R-3.1).** The sheet and the PDF read the SAME rows:
+`projectDocumentData(…, "packing-list")` (generatePdf's own builder call),
+grouped by the same `filterAndGroupItems` under `PULL_LIST_TABLE_CONFIG`
+(`src/lib/pdfme/pull-list.ts`), which the pull-slip PDF spreads too. Rows are
+in packer-walk (shelf) order; overbooked lines print `short`; a sign-off line
+closes the sheet. Never give the sheet its own builder again.
 
 ### Scan resolution — `convex/returnsLookup.ts`
 `resolve({orgId, value})` (SAFE_TAG pattern, same shape as `convex/scanLookup.ts`)
@@ -548,10 +608,10 @@ station has no project to wire it to). Guards, matching `lookupAssetForScan`'s:
 | Bulk tag out on >1 project | `bulk_multi` | Per-project quantity prompt |
 | Kit tag, exactly 1 CHECKED_OUT parent line | `kit` | Whole-kit return via `checkInKit` |
 
-**Exceptions never block the dock.** Every non-return outcome above is pushed
-onto a session-local React exceptions list (not a new table — `assetScanLogs`
-remains the durable backstop, written by the normal check-in path when a
-return does succeed) and the operator keeps scanning.
+**Exceptions never block the dock.** Every non-return outcome above becomes a
+strip entry (decided once by `planReceive`, `src/lib/floor-receive.ts`) and the
+operator keeps scanning. `projectLabel`, model names and kit reads are
+org-checked (they were by_cuid reads without one before Phase 4).
 
 ### Mutations — `convex/returnsWrites.ts`
 - **`returnScanNative`** — single scan-and-return for a known `lineItemId`
@@ -563,6 +623,15 @@ return does succeed) and the operator keeps scanning.
   log, accessory cascade, rollup) is identical to the per-project Return Tab.
 - **`returnBulkNative`** — bulk-tag scan resolved to one project. See
   [Bulk Check-In Totals](./52-bulk-checkin.md) for the distribution engine.
+  Additively returns `allocations`, `autoStatus`/`autoStatusAuditId`,
+  `returnedUnitIds` (the exact units it flipped, parent AND accessory cascade,
+  from a before/after snapshot) and `exactUndo` (false for a partial return).
+- **`unreturnBulkNative`** — the exact Undo of one bulk return: moves ONLY those
+  `unitIds` back to Deployed (`warehouseOps.unreturnUnitsCore`), refusing with
+  "changed since" if any is no longer RETURNED, and reverts the auto-advance.
+  Needs `warehouse:check_out` like every reverse of a return. Never widen it to
+  "everything returned on the line": that would also undo another scan's or
+  another packer's returns.
 - **`returnBatchNative`** — multi-select batch return, cap 100 (server-enforced,
   not just a client UI limit), per-item try/catch with labelled
   `{lineItemId, success, error?}` results — one bad item never fails the rest
@@ -588,9 +657,11 @@ return does succeed) and the operator keeps scanning.
   built for). No new webhook event for v1.
 
 ### Raise repair
-A damaged row's session-list entry gets a **"Raise repair"** action (gated on
-`maintenance:create` — the dedicated `warehouse` role does NOT have it, only
-`maintenance:read`, so the button doesn't render for that role) → calls the
+Damaged gear gets a **"Raise repair"** action — the strip's `Outcome ▾`, a
+returned unit chip, a row ⋯ and the bulk bar (one record per line, linking its
+damaged units) — gated on `maintenance:create` (the dedicated `warehouse` role
+does NOT have it, only `maintenance:read`, so it is absent for that role); its
+Undo deletes the record and is absent without `maintenance:delete`. It calls the
 existing `maintenanceWrites.createNative` mutation (extended with an optional
 `projectId` arg for this — org-checked via `assertProjectInOrg`) with
 `{type: REPAIR, status: SCHEDULED, projectId, title: "Damaged on return —
@@ -608,11 +679,10 @@ available again. Explicitly OUT OF SCOPE for issue #944 — filed as a follow-up
 not fixed here.
 
 ### Nav
-Sidebar: a "Returns" sub-item under Warehouse. Warehouse landing page
-(`/warehouse`): a hub card linking to `/warehouse/returns`. **Not** in the
-mobile bottom nav (Warehouse's own bottom-nav entry still points at the
-project-scoped `/warehouse` list — see DESIGN.md §16 for what belongs in the
-bottom nav vs. the sidebar).
+Sidebar: the "Returns" sub-item under Warehouse opens `/warehouse?mode=returning`
+(`src/lib/nav.ts`). On the floor: the strip's `Returning n` word, page ⋯
+`Returning mode`, and the dock's `Receive` word. `/warehouse/returns` is in
+`NOT_IN_NAV` as a redirect.
 
 ### Audio feedback
 `src/lib/scan-feedback.ts` — a minimal local Web Audio API beep helper

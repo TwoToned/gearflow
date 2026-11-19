@@ -688,8 +688,10 @@ kit prep leaves accessory lines to the parent-scoped deploy path (no duplicate u
 undeploy after a partial bulk return releases only the quantity still out; partial
 bulk returns keep the worst condition; `correctReturnCondition` skips an asset that has
 since gone out again. Not done (design decisions): per-accessory return condition at
-the returns station (accessories inherit the parent's), and the returns board still
-only lists CHECKED_OUT parents.
+the returns desk (accessories inherit the parent's). The floor's Returning mode
+(UX Phase 4, FEATUREDOCS/12) lists accessories under their parent and returns them
+with it; a bulk return's Undo (`unreturnBulkNative`) reverses only the accessory
+units that call returned, never one that came back through another path.
 
 ## Warehouse UI: quantity>1 accessory parents, shared gate (follow-up)
 

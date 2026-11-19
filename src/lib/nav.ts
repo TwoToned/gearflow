@@ -96,7 +96,7 @@ export const NAV: readonly NavItem[] = [
   },
   {
     key: "warehouse", label: "Warehouse", url: "/warehouse", icon: "warehouse", hue: "teal", group: 1, moreGroup: "gear", resource: "warehouse",
-    subs: [{ key: "warehouse-returns", label: "Returns", url: "/warehouse/returns", icon: "returns", resource: "warehouse" }],
+    subs: [{ key: "warehouse-returns", label: "Returns", url: "/warehouse?mode=returning", icon: "returns", resource: "warehouse" }],
   },
   {
     key: "test-and-tag", label: "Test & Tag", url: "/test-and-tag", icon: "testTag", hue: "teal", group: 1, moreGroup: "gear", resource: "testTag",
@@ -137,6 +137,7 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/notifications": "reached from the bell's `All notifications`",
   "/changelog": "reached from the user menu / what's-new links",
   "/my-tasks": "removed from the rail (6d.9); still a valid route",
+  "/warehouse/returns": "redirect to the floor's Returning mode (`/warehouse?mode=returning`, Phase 4)",
   "/crew/settings": "Settings sub-page for crew; reached from /settings",
   "/maintenance/due": "a filter view reached from Maintenance",
   "/maintenance/new": "create flow",

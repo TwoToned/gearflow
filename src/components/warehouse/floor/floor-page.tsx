@@ -30,11 +30,11 @@ import { FloorBoard, FloorPhoneList } from "./floor-board";
 import { useFloorScan, type FloorScanEntry } from "./use-floor-scan";
 import { useFloorUrl } from "./use-floor-url";
 import { useFloorWrites } from "./use-floor-writes";
+import { FLOOR_DOCK_MODES, ReturningMode } from "./returning-mode";
+import { useScanTarget } from "@/components/scanner/scan-target";
+import type { FloorUrlState } from "@/lib/warehouse-floor";
 
 const SCOPE_LABELS: Record<FloorScope, string> = { today: "Today", week: "This week", mine: "Mine", all: "All" };
-/** Until Returning mode lands on this page (build step 4) the old station still serves it. */
-const RETURNING_HREF = "/warehouse/returns";
-const LOOK_UP_MODES = [{ value: "lookup", label: "Look up" }];
 
 function stripEntry(e: FloorScanEntry, dismiss: (id: string) => void): ScanStripEntry {
   return {
@@ -83,8 +83,8 @@ function FloorHead({ count, overdue, nextOut, now, onScan, menu, isMobile }: {
   );
 }
 
-function ScopeStrip({ scope, counts, returningCount, onScope }: {
-  scope: FloorScope; counts: Record<FloorScope, number>; returningCount: number; onScope: (s: FloorScope) => void;
+function ScopeStrip({ scope, counts, returningCount, onScope, onReturning }: {
+  scope: FloorScope; counts: Record<FloorScope, number>; returningCount: number; onScope: (s: FloorScope) => void; onReturning: () => void;
 }) {
   return (
     <div className="flex items-center gap-4">
@@ -94,19 +94,34 @@ function ScopeStrip({ scope, counts, returningCount, onScope }: {
         value={scope}
         onChange={(k) => k && onScope(k as FloorScope)}
       />
-      <Link href={RETURNING_HREF} className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-caption font-medium text-ink [@media(pointer:fine)]:min-h-8">
+      <button type="button" onClick={onReturning} className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-caption font-medium text-ink [@media(pointer:fine)]:min-h-8">
         Returning <span className="font-mono text-muted tabular-nums">{returningCount}</span>
-      </Link>
+      </button>
     </div>
   );
 }
 
-/** The floor (spec §9c): `/warehouse`. Head, scope strip, the one dock, five derived columns. */
+/**
+ * The floor (spec §9c): `/warehouse`. Its mode lives in the URL (D11):
+ * the board by default, Returning mode at `?mode=returning` (D26). Each mode
+ * owns its dock and registers its own ScanTarget, so the phone's raised Scan
+ * lands in whichever mode is open.
+ */
 export function FloorPage() {
   const now = useStableNow();
-  const router = useRouter();
   const isMobile = useIsMobile();
   const { state, update } = useFloorUrl();
+  const { data: activeOrg } = useActiveOrganization();
+  if (state.mode === "returning") {
+    return <ReturningMode orgId={activeOrg?.id} now={now} isMobile={isMobile} state={state} update={update} />;
+  }
+  return <FloorBoardMode now={now} isMobile={isMobile} state={state} update={update} />;
+}
+
+function FloorBoardMode({ now, isMobile, state, update }: {
+  now: number; isMobile: boolean; state: FloorUrlState; update: (patch: Partial<FloorUrlState>) => void;
+}) {
+  const router = useRouter();
   const { orgId, userId, jobs, isLoading, scopeCounts } = useFloorData(now);
   const canCheckOut = useCanDo("warehouse", "check_out");
   const canCloseOut = useCanDo("warehouse", "close");
@@ -129,6 +144,9 @@ export function FloorPage() {
     [visibleIds, update],
   );
   const lookup = useFloorScan({ orgId, jobs, onRing });
+  // The phone's raised Scan sends its decoded value to Look up while the board is open (6a ScanTarget).
+  useScanTarget((value) => void lookup.scan(value));
+  const toReturning = () => update({ mode: "returning" });
 
   useEffect(() => {
     if (ringedId) document.getElementById(`floor-card-${ringedId}`)?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
@@ -157,7 +175,7 @@ export function FloorPage() {
   const returningCount = jobs.reduce((n, j) => n + j.counts.out, 0);
   const pageMenu: ActionMenuSpec = {
     items: [
-      { key: "returning", label: "Returning mode", group: "organise", icon: RotateCcw, onSelect: () => router.push(RETURNING_HREF) },
+      { key: "returning", label: "Returning mode", group: "organise", icon: RotateCcw, onSelect: toReturning },
       { key: "all", label: "Show all jobs", group: "organise", icon: ExternalLink, onSelect: () => update({ scope: "all", q: "" }) },
     ],
   };
@@ -181,14 +199,14 @@ export function FloorPage() {
           onChange={(k) => update({ stage: !k || k === "all" ? null : (k as FloorJob["stage"]) })}
         />
       ) : (
-        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} />
+        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} onReturning={toReturning} />
       )}
       <div className={isMobile ? "sticky top-0 z-20 -mx-4 flex flex-col gap-2 bg-paper px-4 py-2" : "flex flex-col gap-2"}>
         <ScanDock
           onScan={(raw) => void lookup.scan(raw)}
-          modes={LOOK_UP_MODES}
+          modes={FLOOR_DOCK_MODES}
           mode="lookup"
-          onModeChange={() => {}}
+          onModeChange={(m) => m === "receive" && toReturning()}
           placeholder="Scan a tag, or type a job, name or client"
           inputRef={inputRef}
           inputId="q"
@@ -197,7 +215,7 @@ export function FloorPage() {
         <ScanStrip entries={lookup.entries.map((e) => stripEntry(e, lookup.dismiss))} />
       </div>
       {isMobile ? (
-        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} />
+        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} onReturning={toReturning} />
       ) : null}
       <FloorBody isLoading={isLoading} total={jobs.length} visible={visible.length} isMobile={isMobile} onShowAll={() => update({ scope: "all", q: "" })}>
         {isMobile ? <FloorPhoneList {...boardProps} stage={state.stage} /> : <FloorBoard {...boardProps} />}

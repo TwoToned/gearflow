@@ -13,7 +13,7 @@ import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
 import { buildWarehouseLineItems } from "@/lib/project-line-item-read";
 import { projectDocumentData } from "@/lib/pdfme/generate-pdf";
 import { PULL_LIST_TABLE_CONFIG, toPullRow } from "@/lib/pdfme/pull-list";
-import { filterAndGroupItems } from "@/lib/react-pdf/components/line-items-table";
+import { filterAndGroupItems } from "@/lib/react-pdf/line-items-table-model";
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByIds, getBulkAssetsByIds, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectById, getProjectByIdMapped, getProjectsByOrg } from "@/lib/projects-read";
@@ -830,7 +830,7 @@ export async function getProjectPullSheet(projectId: string) {
   // `filterAndGroupItems` under the SAME config. The sheet on screen and the
   // PDF can never list different gear. Overbooking comes with those rows.
   const data = await projectDocumentData(projectId, organizationId, "packing-list");
-  const { groups } = filterAndGroupItems(data.line_items, { ...PULL_LIST_TABLE_CONFIG, documentColor: "" });
+  const { groups } = filterAndGroupItems(data.line_items, PULL_LIST_TABLE_CONFIG);
   return serialize({
     project: {
       id: project.id,

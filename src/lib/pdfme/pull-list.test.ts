@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { filterAndGroupItems } from "@/lib/react-pdf/components/line-items-table";
+import { filterAndGroupItems } from "@/lib/react-pdf/line-items-table-model";
 import type { DocumentLineItem } from "./types";
 import { PULL_LIST_TABLE_CONFIG, toPullRow } from "./pull-list";
 
@@ -16,7 +16,7 @@ describe("the pull list (one list for the PDF and the dialog, R-3.1)", () => {
     const kit = item({ id: "k", kitId: "kit1", description: "Rack", kit: { assetTag: "K-1", name: "Rack" }, asset: null,
       childLineItems: [item({ id: "c", isKitChild: true, childKind: "KIT", kitId: "kit1", asset: { assetTag: "SK-2" } })] });
     const child = item({ id: "c", isKitChild: true, kitId: "kit1" });
-    const { groups } = filterAndGroupItems([kit, child, item({ id: "m" })], { ...PULL_LIST_TABLE_CONFIG, documentColor: "" });
+    const { groups } = filterAndGroupItems([kit, child, item({ id: "m" })], PULL_LIST_TABLE_CONFIG);
     const rows = groups.get("Audio")!.map((i) => toPullRow(i));
     expect(rows.map((r) => r.id)).toEqual(["k", "m"]);
     expect(rows[0]).toMatchObject({ kind: "kit", name: "Rack", tag: "K-1" });

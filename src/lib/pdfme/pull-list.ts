@@ -8,7 +8,8 @@
  *
  * Plain module (no `@react-pdf/renderer`), so a client type import is safe.
  */
-import type { DocumentLineItem, TablePluginConfig } from "./types";
+import type { DocumentLineItem } from "./types";
+import type { TableModelConfig } from "@/lib/react-pdf/line-items-table-model";
 import { getAssetTag } from "./line-item-format";
 
 export const PULL_LIST_TABLE_CONFIG = {
@@ -27,7 +28,7 @@ export const PULL_LIST_TABLE_CONFIG = {
   filterOptional: false,
   filterByStatus: null,
   hidePricingPeriodSuffix: false,
-} as const satisfies Omit<TablePluginConfig, "documentColor">;
+} as const satisfies TableModelConfig;
 
 /** One printable pull-sheet row (serialisable, for the dialog). */
 export interface PullRow {

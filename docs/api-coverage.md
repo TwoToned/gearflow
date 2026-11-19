@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 443 | 308 | 132 | 1 | 2 |
+| Queries | 444 | 309 | 132 | 1 | 2 |
 | Mutations | 793 | 300 | 484 | 0 | 9 |
-| **Total** | **1236** | **608** | **616** | **1** | **11** |
+| **Total** | **1237** | **609** | **616** | **1** | **11** |
 
-<!-- reachability-floor: 608 -->
+<!-- reachability-floor: 609 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR

@@ -1,10 +1,12 @@
 import { v, ConvexError } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, type QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { assetInSegment, dueAssetMap, parseAssetSegment } from "./lib/assetAttention";
+import { resolveNow } from "./lib/projectSegments";
 
 /**
  * Thin CRUD for Asset (Convex table "assets"). GENERATED — Phase 2/5.
@@ -56,6 +58,11 @@ export const listPage = query({
     locationIdIn: v.optional(v.array(v.string())),
     categoryIdIn: v.optional(v.array(v.string())),
     tagsHasSome: v.optional(v.array(v.string())),
+    modelIdIn: v.optional(v.array(v.string())),
+    /** Derived segment (assetAttention.ts): available | on-jobs | maintenance | retired | due | attention. */
+    segment: v.optional(v.string()),
+    /** Only read for the `due`/`attention` segments; clamped to the server clock. */
+    now: v.optional(v.number()),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
@@ -63,7 +70,11 @@ export const listPage = query({
   },
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "asset"); // Phase 5 domain slice (#1001)
-    const isActive = a.isActive ?? true;
+    const segment = parseAssetSegment(a.segment);
+    const now = resolveNow(a.now);
+    const due = segment === "due" || segment === "attention" ? await dueAssetMap(ctx, a.orgId, now) : new Map<string, number>();
+    // The Retired segment looks at retired rows, which the default listing hides (isActive).
+    const isActive = segment === "retired" ? false : (a.isActive ?? true);
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
     const sortBy = a.sortBy ?? "assetTag";
@@ -96,6 +107,8 @@ export const listPage = query({
       if (a.locationIdIn && a.locationIdIn.length > 0 && !(r.locationId != null && a.locationIdIn.includes(r.locationId))) return false;
       if (a.categoryIdIn && a.categoryIdIn.length > 0) { const cat = categoryFor(r.modelId); if (!(cat != null && a.categoryIdIn.includes(cat))) return false; }
       if (a.tagsHasSome && a.tagsHasSome.length > 0 && !(r.tags ?? []).some((t) => a.tagsHasSome!.includes(t))) return false;
+      if (a.modelIdIn && a.modelIdIn.length > 0 && !a.modelIdIn.includes(r.modelId)) return false;
+      if (!assetInSegment(r, segment, due, now)) return false;
       if (a.search && !matchesSearch([r.assetTag, r.serialNumber, r.customName, modelNameFor(r.modelId)], a.search)) return false;
       return true;
     });
@@ -120,6 +133,51 @@ export const listPage = query({
     return { assets, total, page, pageSize, totalPages };
   },
 });
+
+const ROW_EXTRAS_MAX_IDS = 100;
+const TT_SCHEDULES_PER_ASSET = 5;
+
+/**
+ * The Assets list's two derived columns for ONE page of rows (UX unification §9b):
+ * `nextDue` (earliest active T&T date) and `job` (the project a CHECKED_OUT unit is on).
+ * Derived on read, never stored. Bounded: at most ROW_EXTRAS_MAX_IDS assets, each a
+ * handful of indexed reads; every by_cuid read is org-checked, so an id from another
+ * org yields no entry.
+ */
+export const rowExtras = query({
+  args: { orgId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { orgId, ids }) => {
+    await requireOrgReadFor(ctx, orgId, "asset");
+    const out: Record<string, { nextDue: number | null; job: { id: string; name: string; number: string } | null }> = {};
+    for (const id of new Set(ids.slice(0, ROW_EXTRAS_MAX_IDS))) {
+      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      if (!asset || asset.organizationId !== orgId) continue;
+      out[id] = { nextDue: await nextDueFor(ctx, orgId, id), job: await jobFor(ctx, orgId, id) };
+    }
+    return out;
+  },
+});
+
+async function nextDueFor(ctx: QueryCtx, orgId: string, assetId: string): Promise<number | null> {
+  const schedules = await ctx.db.query("testTagAssets").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).take(TT_SCHEDULES_PER_ASSET);
+  const dates = schedules
+    .filter((s) => s.organizationId === orgId && s.isActive !== false && s.nextDueDate != null)
+    .map((s) => s.nextDueDate as number);
+  return dates.length > 0 ? Math.min(...dates) : null;
+}
+
+async function jobFor(ctx: QueryCtx, orgId: string, assetId: string) {
+  const unit = await ctx.db
+    .query("projectLineItemUnits")
+    .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", orgId).eq("assetId", assetId).eq("status", "CHECKED_OUT"))
+    .first();
+  if (!unit) return null;
+  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", unit.lineItemId)).first();
+  if (!line || line.organizationId !== orgId) return null;
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", line.projectId)).first();
+  if (!project || project.organizationId !== orgId) return null;
+  return { id: project.id, name: project.name, number: project.projectNumber };
+}
 
 /**
  * ALL of an org's active serialized assets (NOT paginated), sorted by model
@@ -637,6 +695,7 @@ export const listByParentAssetId = query({
 export const agentOps: AgentOpsAnnotations = {
   list: { summary: "List all assets visible to the caller's org.", danger: "low", mcpTier: 1 },
   listPage: { summary: "Filtered, sorted, paginated asset list with model/category/location joins.", danger: "low", mcpTier: 2 },
+  rowExtras: { summary: "For a page of asset ids: each asset's next test-and-tag due date and the job it is currently out on.", danger: "low", mcpTier: 3 },
   listGallery: { summary: "Browse an org's whole active asset catalogue (unpaginated, joined + searchable).", danger: "low", mcpTier: 3 },
   registryPhotos: { summary: "Primary-photo URL maps for assets and models in an org.", danger: "low", mcpTier: 3 },
   getById: { summary: "Get one asset by id.", danger: "low", mcpTier: 1 },

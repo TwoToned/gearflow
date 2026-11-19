@@ -3090,6 +3090,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "modelIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
@@ -3106,6 +3116,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       },
       {
         "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
         "optional": true,
         "type": "string"
       },
@@ -3136,7 +3151,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "9eb9fbed11f72f53",
+    "argsSha": "e9bdc3b7865961e6",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "Filtered, sorted, paginated asset list with model/category/location joins.",
@@ -3238,6 +3253,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "assets.rowExtras",
+    "module": "assets",
+    "fn": "rowExtras",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6f0a0f7e59cef7f7",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "For a page of asset ids: each asset's next test-and-tag due date and the job it is currently out on.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -5720,6 +5772,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "categoryIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "isActive",
         "optional": true,
         "type": "boolean"
@@ -5730,9 +5787,19 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "locationIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "modelId",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "modelIdIn",
+        "optional": true,
+        "type": "array"
       },
       {
         "name": "orgId",
@@ -5768,10 +5835,20 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "status",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "statusIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "tagsHasSome",
+        "optional": true,
+        "type": "array"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "958f04675202f3e0",
+    "argsSha": "115ce39b4f41a86a",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "Filtered, sorted, paginated bulk-asset list with model/category/location joins.",
@@ -63754,10 +63831,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1236,
-  agentReachable: 608,
-  queries: 443,
+  total: 1237,
+  agentReachable: 609,
+  queries: 444,
   mutations: 793,
-  agentReachableQueries: 308,
+  agentReachableQueries: 309,
   agentReachableMutations: 300,
 } as const;

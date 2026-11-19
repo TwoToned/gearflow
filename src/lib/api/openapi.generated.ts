@@ -3042,6 +3042,9 @@ export const OPENAPI_DOCUMENT = {
                       "modelId": {
                         "type": "string"
                       },
+                      "modelIdIn": {
+                        "type": "array"
+                      },
                       "page": {
                         "type": "number"
                       },
@@ -3049,6 +3052,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "number"
                       },
                       "search": {
+                        "type": "string"
+                      },
+                      "segment": {
                         "type": "string"
                       },
                       "sortBy": {
@@ -3128,6 +3134,76 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/assets.rowExtras": {
+      "post": {
+        "operationId": "assets.rowExtras",
+        "summary": "assets.rowExtras (query)",
+        "description": "Requires scope: asset:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "asset"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "ids": {
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "ids"
+                    ],
                     "additionalProperties": false
                   }
                 },
@@ -3985,14 +4061,23 @@ export const OPENAPI_DOCUMENT = {
                       "categoryId": {
                         "type": "string"
                       },
+                      "categoryIdIn": {
+                        "type": "array"
+                      },
                       "isActive": {
                         "type": "boolean"
                       },
                       "locationId": {
                         "type": "string"
                       },
+                      "locationIdIn": {
+                        "type": "array"
+                      },
                       "modelId": {
                         "type": "string"
+                      },
+                      "modelIdIn": {
+                        "type": "array"
                       },
                       "page": {
                         "type": "number"
@@ -4009,6 +4094,12 @@ export const OPENAPI_DOCUMENT = {
                       "sortOrder": {},
                       "status": {
                         "type": "string"
+                      },
+                      "statusIn": {
+                        "type": "array"
+                      },
+                      "tagsHasSome": {
+                        "type": "array"
                       }
                     },
                     "additionalProperties": false

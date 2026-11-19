@@ -470,3 +470,19 @@ of the parent's `childLineItems` into their own row in the receiving case
 manifest / delivery docket / return sheet list them where they physically are,
 with an "accessory of X" note. Unassigned or same-case units stay nested under the
 parent. `container-labels.ts` reads the hoisted rows for the same output as before.
+
+## Batched prep (carried over from the retired FEATUREDOCS/32)
+
+Doc 32 ("Prep containers", the free-text `prepContainer` label with a combobox and `clearPrepContainer`) is
+retired: the label is the legacy widen-step string; cases are `projectContainers` above. What survives of it:
+
+- Bulk prep flows (Prep ▾, finish-check-queue direct prep, asset-picker confirm, the dock's batch) call
+  `prepItemsBatch(projectId, items[])` (`src/server/check-records.ts`): ONE round-trip to the atomic
+  `checkRecordOps.prepItems`, which loops `prepUnit` over the items **in array order** (same-`lineItemId`
+  ordering, as the old per-item loop). Quantity is pre-expanded one entry per unit. The blocking-comment gate
+  is read once for the batch; a blocker fails the whole atomic batch.
+- It returns `{ ids, packedAccessoryUnits, packedAccessoryLineIds }` (see FEATUREDOCS/48): what an
+  accessories-only item actually packed.
+- Permission: `warehouse.check_out`. The job page (FEATUREDOCS/12) chooses the case from the case chips /
+  active case; "Unpack case" returns everything in it to loose without de-prepping.
+- Settings → Assets still holds the case-category setting (`prepKitCategoryId`).

@@ -194,17 +194,25 @@ export function BulkBar({ selection, actions, noun = "item", leading, className 
     </div>
   );
 
-  // env() lives in an inline style, not a Tailwind arbitrary value (project convention).
-  if (isMobile && typeof document !== "undefined") {
-    return createPortal(
-      <div
-        className="fixed inset-x-2 z-40"
-        style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)" }}
-      >
-        {bar}
-      </div>,
-      document.body,
-    );
-  }
+  if (isMobile) return <PinnedAboveBottomNav>{bar}</PinnedAboveBottomNav>;
   return bar;
+}
+
+/**
+ * The phone dock: portaled to `<body>` and pinned above the bottom nav (see the BulkBar note on why the
+ * portal is load-bearing). Shared by `BulkBar` and the warehouse job's sticky action bar so the two can
+ * never disagree about where "above the nav" is.
+ */
+export function PinnedAboveBottomNav({ children }: { children: React.ReactNode }) {
+  if (typeof document === "undefined") return <>{children}</>;
+  // env() lives in an inline style, not a Tailwind arbitrary value (project convention).
+  return createPortal(
+    <div
+      className="fixed inset-x-2 z-40"
+      style={{ bottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem)" }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
 }

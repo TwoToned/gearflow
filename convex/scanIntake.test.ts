@@ -101,6 +101,16 @@ describe("F15 synthetic atomic scan receipts", () => {
     expect(await t.run(ctx=>ctx.db.query('scanReceipts').collect())).toHaveLength(1);
   });
 
+  test("commit reports the status the server advanced on its own; replay omits it", async()=>{
+    const t=makeT();await seed(t);const user=t.withIdentity(asUser(ORG));
+    const args={orgId:ORG,projectId:"p1",expectedUserId:USER,expectedVersionId:versionIdFor("p1",ORG),operationId:"auto-status-op",raw:"A-1",operation:"return" as const,condition:"GOOD" as const,notes:"",effect:{lineItemId:"li1",assetId:"a1"}};
+    await t.run(async ctx=>{const p=await ctx.db.query('projects').first();await ctx.db.patch(p!._id,{status:'CHECKED_OUT'});});
+    const first=await user.mutation(api.scanIntake.commit,args);
+    expect(first.confirmed).toBe(true);
+    expect(first.autoStatus ?? null).toBe("RETURNED");
+    expect(await user.mutation(api.scanIntake.commit,args)).toEqual({confirmed:true});
+  });
+
   test("duplicate replay has one atomic effect; permission revocation still denies receipt", async()=>{
     const t=makeT();await seed(t);
     const args={orgId:ORG,projectId:"p1",expectedUserId:USER,expectedVersionId:versionIdFor("p1",ORG),operationId:"synthetic-operation",raw:"A-1",operation:"return" as const,condition:"GOOD" as const,notes:"",effect:{lineItemId:"li1",assetId:"a1"}};

@@ -282,5 +282,5 @@ which screen the operator happened to use.
   status implies, and what an automatic move therefore locks.
 - [66 — Finance, Quotes & Invoices](./66-finance-quotes-invoices-xero.md) — the
   quote revision model `QUOTE_SENT` hangs off.
-- [32 — Prep Containers](./32-preps.md) / [12 — Warehouse](./12-warehouse.md) —
+- [83 — Packing containers](./83-packing-containers.md) / [12 — Warehouse](./12-warehouse.md) —
   the prep and deploy flows that fire the warehouse triggers.

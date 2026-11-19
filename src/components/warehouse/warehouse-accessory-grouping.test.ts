@@ -84,7 +84,13 @@ describe("accessoryAssetIds", () => {
       acc("a3", { bulkAssetId: "B2", units: [unit("w", { bulkAssetId: "B2" })] }),
       acc("a4"),
     ]);
-    expect(ids.sort()).toEqual(["A1", "A2", "B2"]);
+    // a4 has no asset/bulk id anywhere: a custom (free-text) accessory, named by its child LINE id so a narrowed
+    // `includeAccessoryIds` (the gate's Pack now) still reaches it.
+    expect(ids.sort()).toEqual(["A1", "A2", "B2", "a4"]);
+  });
+
+  test("a custom accessory alone narrows by its line id (Pack now packs it)", () => {
+    expect(accessoryAssetIds([acc("custom1")])).toEqual(["custom1"]);
   });
 });
 

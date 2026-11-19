@@ -3,7 +3,7 @@ import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MoveToContainerDialog } from "./move-to-container-dialog";
-import type { ContainerRailItem } from "./container-rail";
+import type { ContainerRailItem } from "./move-to-container-dialog";
 
 const containers: ContainerRailItem[] = [
   { id: "c1", label: "Case 12", unitCount: 3 },

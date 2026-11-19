@@ -133,6 +133,20 @@ describe("saved-view adapter and export", () => {
     expect(s.sortBy).toBe("rentalStartDate");
   });
 
+  it("drops unknown status/type values from a saved view and from the URL args", () => {
+    expect(jobsStateFromView({ filters: { status: ["QUOTED", "NOPE"], type: ["X"] } }).filters).toEqual({ status: ["QUOTED"] });
+    const args = jobsQueryArgs(parse("status=NOPE&type=BOGUS&date=bogus"), NOW);
+    expect(args.statusIn).toBeUndefined();
+    expect(args.typeIn).toBeUndefined();
+    expect(args.dateFrom).toBeUndefined();
+    expect(jobsQueryArgs(parse("status=QUOTED,NOPE"), NOW).statusIn).toEqual(["QUOTED"]);
+  });
+
+  it("neutralises a formula-looking job name in the export", () => {
+    const csv = jobsCsv([{ id: "a", projectNumber: "P-1", name: "=1+1", total: 5, status: "QUOTED" }]);
+    expect(csv.split("\n")[1].startsWith("P-1,'=1+1,")).toBe(true);
+  });
+
   it("exports a CSV with quoting and blank money", () => {
     const csv = jobsCsv([{ id: "a", projectNumber: "P-1", name: 'Say "hi", now', total: null, status: "QUOTED" }]);
     expect(csv.split("\n")[1]).toBe('P-1,"Say ""hi"", now",,Quoted,,,,,');

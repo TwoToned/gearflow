@@ -5,6 +5,7 @@
  * the list IS, so a test can pin the mapping without rendering anything.
  */
 import type { ListFilterDef, ListSegment } from "@/components/ui/list-page-parts";
+import { toCsv } from "@/lib/csv";
 import { defaultListState, LIST_PAGE_SIZE, type ListUrlSpec, type ListUrlState } from "@/lib/list-url-state";
 import type { SavedViewConfig } from "@/lib/saved-views";
 import type { ActionMenuSpec, Fact, FactColumn, LineRowData, RowFlag } from "@/lib/primitives/types";
@@ -162,17 +163,24 @@ export const JOB_ITEM_SORT_KEY = "name";
 
 // ─── Query ───────────────────────────────────────────────────────────────
 
+/** The URL contract drops unknown values: keep only the ones in `allowed` (none left = no filter). */
+function known(values: string[] | undefined, allowed: readonly string[]): string[] | undefined {
+  const kept = values?.filter((v) => allowed.includes(v));
+  return kept && kept.length > 0 ? kept : undefined;
+}
+
 /** What `projects.listPage` is called with for a URL state. `now` is a mount-time snapshot. */
 export function jobsQueryArgs(state: ListUrlState, now: number) {
   const f = state.filters;
+  const preset = DATE_PRESETS.find((p) => p.value === f.date?.[0])?.value;
   return {
     search: state.q.trim() || undefined,
     segment: state.seg,
-    statusIn: f.status,
-    typeIn: f.type,
+    statusIn: known(f.status, JOB_STATUS_ORDER),
+    typeIn: known(f.type, Object.keys(TYPE_LABELS)),
     clientIn: f.client,
     includeCancelled: f.show?.includes("cancelled") ? true : undefined,
-    ...resolveDatePreset(f.date?.[0], now),
+    ...resolveDatePreset(preset, now),
     page: state.page,
     pageSize: LIST_PAGE_SIZE,
     sortBy: state.sortBy,
@@ -257,9 +265,10 @@ export function jobsStateFromView(config: SavedViewConfig): ListUrlState {
   const base = defaultListState(JOBS_SPEC);
   const list = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   const filters: Record<string, string[]> = {};
+  const allowed: Record<string, readonly string[]> = { status: JOB_STATUS_ORDER, type: Object.keys(TYPE_LABELS) };
   for (const key of ["status", "type"]) {
-    const values = list(config.filters?.[key]);
-    if (values.length > 0) filters[key] = values;
+    const values = known(list(config.filters?.[key]), allowed[key]);
+    if (values) filters[key] = values;
   }
   const sortOk = !!config.sortBy && JOBS_SPEC.sorts.includes(config.sortBy);
   return {
@@ -272,14 +281,13 @@ export function jobsStateFromView(config: SavedViewConfig): ListUrlState {
 
 // ─── Export ──────────────────────────────────────────────────────────────
 
-const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-
 /** CSV of the selected jobs (read-only download; money is whole dollars as stored, blank stays blank). */
 export function jobsCsv(rows: JobSource[]): string {
   const head = ["Job #", "Name", "Client", "Status", "Type", "Start", "End", "Total", "Tags"];
   const iso = (ms?: number | null) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
-  const lines = rows.map((p) =>
-    [
+  return toCsv(
+    head,
+    rows.map((p) => [
       p.projectNumber,
       p.name,
       p.client?.name ?? "",
@@ -289,9 +297,6 @@ export function jobsCsv(rows: JobSource[]): string {
       iso(p.rentalEndDate),
       p.total == null ? "" : String(p.total),
       (p.tags ?? []).join("; "),
-    ]
-      .map(csvCell)
-      .join(","),
+    ]),
   );
-  return [head.join(","), ...lines].join("\n");
 }

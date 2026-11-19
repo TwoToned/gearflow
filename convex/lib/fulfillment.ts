@@ -1308,7 +1308,12 @@ async function resolveContainerForWrite(
   return { containerId: planned, label: await containerLabelById(ctx, args.organizationId, planned) };
 }
 
-/** Mark a unit prepped/packed (pick-and-pack before checkout). Rolls the line up. */
+/** An accessory unit THIS call flipped to PACKED (it was not PACKED before the write). `parentUnitAssetId`
+ *  is the parent unit it belongs to (absent for a parent-less / bulk-parent accessory). */
+export type PackedAccessoryUnit = { lineItemId: string; unitId: string; parentUnitAssetId?: string };
+
+/** Mark a unit prepped/packed (pick-and-pack before checkout). Rolls the line up. Returns the accessory units
+ *  this call newly packed (never ones already PACKED, honouring `includeAccessoryIds`). */
 export async function prepUnit(
   ctx: Ctx,
   args: {
@@ -1329,14 +1334,15 @@ export async function prepUnit(
      *  accessories alone, so they can live in a different box than the parent. */
     accessoriesOnly?: boolean;
   },
-): Promise<void> {
+): Promise<PackedAccessoryUnit[]> {
   const now = Date.now();
+  const packedNow: PackedAccessoryUnit[] = [];
   if (args.accessoriesOnly && !args.assetId) {
     // Bulk / untagged parent: no per-asset accessory units; this just re-runs the
     // whole-parent-packed rollup for its accessory lines.
-    await packParentlessAccessories(ctx, args.organizationId, args.lineItemId);
+    const flipped = await packParentlessAccessories(ctx, args.organizationId, args.lineItemId, args.includeAccessoryIds ?? null);
     await syncLineItemRollup(ctx, args.lineItemId);
-    return;
+    return flipped;
   }
   if (args.assetId) {
     let resolved: Awaited<ReturnType<typeof resolveContainerForWrite>>;
@@ -1378,6 +1384,7 @@ export async function prepUnit(
           (!narrow || narrow.has(un.assetId ?? un.bulkAssetId ?? child.id)),
       );
       for (const un of units) {
+        if (un.prepStatus !== "PACKED") packedNow.push({ lineItemId: child.id, unitId: un.id, parentUnitAssetId: args.assetId });
         await ctx.db.patch(un._id, {
           status: "CONFIRMED",
           prepStatus: "PACKED",
@@ -1477,8 +1484,9 @@ export async function prepUnit(
   }
   // A parent with no serialised asset (bulk / untagged) has no per-asset accessory
   // units, so its accessory child lines would otherwise never read PACKED.
-  if (!args.assetId) await packParentlessAccessories(ctx, args.organizationId, args.lineItemId);
+  if (!args.assetId) packedNow.push(...await packParentlessAccessories(ctx, args.organizationId, args.lineItemId, null));
   await syncLineItemRollup(ctx, args.lineItemId);
+  return packedNow;
 }
 
 /** Qty-1 generic line (custom item, no asset): when it lands in a real container,
@@ -1514,21 +1522,28 @@ async function packSingleGenericIntoContainer(
 /** Pack the accessory child lines of a bulk/untagged parent once the WHOLE parent
  *  line is packed. These children carry no `parentUnitAssetId` (there is no parent
  *  asset), so checkout/return cascade them unscoped — see checkoutAccessoryChildren. */
-async function packParentlessAccessories(ctx: Ctx, organizationId: string, parentLineItemId: string): Promise<void> {
+async function packParentlessAccessories(
+  ctx: Ctx, organizationId: string, parentLineItemId: string, narrow: Set<string> | null = null,
+): Promise<PackedAccessoryUnit[]> {
+  const packedNow: PackedAccessoryUnit[] = [];
   const parent = await lineDocByCuid(ctx, parentLineItemId);
-  if (!parent) return;
+  if (!parent) return packedNow;
   const assigned = (await lineUnits(ctx, parentLineItemId)).reduce((n, u) => n + (u.quantity ?? 0), 0);
-  if (assigned < (parent.quantity ?? 0)) return; // wait for the whole line
+  if (assigned < (parent.quantity ?? 0)) return packedNow; // wait for the whole line
   const now = Date.now();
   for (const child of await accessoryChildrenOf(ctx, organizationId, parentLineItemId)) {
+    // A narrowed call names a child by its line id (custom accessory) or its asset/bulk asset id.
+    if (narrow && !narrow.has(child.id) && !narrow.has(child.assetId ?? child.bulkAssetId ?? child.id)) continue;
     const unitId = await ensureParentlessAccessoryUnit(ctx, organizationId, child);
     if (!unitId) continue;
     const u = await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", unitId)).unique();
     if (u && u.status !== "CHECKED_OUT" && u.status !== "RETURNED") {
+      if (u.prepStatus !== "PACKED") packedNow.push({ lineItemId: child.id, unitId: u.id });
       await ctx.db.patch(u._id, { status: "CONFIRMED", prepStatus: "PACKED", updatedAt: now });
     }
     await syncLineItemRollup(ctx, child.id);
   }
+  return packedNow;
 }
 
 /** The single asset-less unit backing a parent-less free-text accessory line; its

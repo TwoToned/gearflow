@@ -192,6 +192,8 @@ function childRows(item: LineItemData): LineRowData[] | undefined {
     return {
       id: k.id,
       kind: accessory ? "accessory" : "gear",
+      // Equipment bulk verbs act on lines, never on a kit/accessory child (as before the primitive ticked accessories).
+      selectable: false,
       title: m.title,
       subtitle: m.subtitle,
       facts: { qty: m.facts.qty, unit: m.facts.unit, total: m.facts.total },

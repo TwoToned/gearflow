@@ -873,6 +873,24 @@ passed through unchanged: it is the exact guarded closure the toast's Undo calls
 toast and the strip can never disagree about whether an undo fired. The strip calls it
 once per click and adds no guard of its own; never derive a second reverse mutation.
 
+### The warehouse job page — one scan pipeline, one stage row, no pick list, ≤ 800 lines
+`/warehouse/[projectId]` is ONE card (stage row + `ScanDock` + `JobTable`), FEATUREDOCS/12.
+- **`?stage=` is the selector; `?tab=` is an alias** (`stageFromParams` in `job/stage-card.tsx`:
+  `pick-prep`→`pick`, `check-out`→`prepped`, `check-in`→`out`, `deprep`→`returned`). Old emails and
+  bookmarks use `?tab=`: keep the alias; a new stage goes into `STAGE_KEYS` or its deep link falls back.
+- **Every scan goes through `useWarehouseScan`.** Never add a stage-private scan input or a second
+  lookup path. The Returned dock resolves on the SERVER (`lookupDeprepScan`, `warehouse:check_out`) and a
+  scan de-preps ONE unit: a serial tag passes its `assetId` to `deprepItems` (never "one by count"), a bin
+  tag only matches units with `bulkAssetId === bin`.
+- **There is no localStorage pick list** (deleted; "picked" is To pick → Prepped). The scan sheet's
+  "Remember for the next n" is job-scoped **in memory** (`warehouse-scan-memory.ts`), not `localStorage`
+  and not shared across packers (that is a schema follow-up).
+- **`prepItems` reports what THIS call packed** (`packedAccessoryUnits` per parent unit,
+  `packedAccessoryLineIds`), never a re-read of line state; the deploy gate compares marked vs that set.
+- **`page.tsx` must stay ≤ 800 lines** (`page-size.test.ts`, a real assertion, no ratchet): put logic in
+  `components/warehouse/job/use-*` hooks and dialogs.
+- Phone: `StageActionBar` + `JobRowSheet`; the pinned dock is `PinnedAboveBottomNav` (shared with `BulkBar`).
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

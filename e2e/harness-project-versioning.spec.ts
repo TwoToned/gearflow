@@ -164,13 +164,16 @@ test.describe("harness: project versioning v2", () => {
 
     await test.step("check the line item's unit out through the warehouse pipeline", async () => {
       await page.getByRole("link", { name: "Warehouse" }).click();
-      await page.getByRole("tab", { name: /^To pick/ }).click();
-      await page.locator("table thead").getByRole("checkbox").click();
-      await page.getByRole("button", { name: /^Prep( \(\d+\))?$/ }).click();
-      await page.getByRole("tab", { name: /^Prepped/ }).click();
-      await page.locator("table thead").getByRole("checkbox").click();
-      await page.getByRole("button", { name: /^Deploy/ }).click();
-      await expect(page.getByRole("tab", { name: /^Out \(1\)/ })).toBeVisible({ timeout: 20000 });
+      // Stage strip (StageFilter toggles named "<word> <count>") + the section's "Select all in …" box.
+      const stage = (word: RegExp) => page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: word });
+      const tickAll = page.getByRole("checkbox", { name: /^Select all in/ }).first();
+      await stage(/^To pick/).click();
+      await tickAll.click();
+      await page.getByRole("button", { name: /^Prep( \d+)?( \+ accessories)?$/ }).click();
+      await stage(/^Prepped/).click();
+      await tickAll.click();
+      await page.getByRole("button", { name: /^Deploy \(\d+\)$/ }).click();
+      await expect(stage(/^Out 1$/)).toBeVisible({ timeout: 20000 });
     });
 
     await test.step("create a new version that removes the checked-out line", async () => {
@@ -201,7 +204,7 @@ test.describe("harness: project versioning v2", () => {
 
     await test.step("the checked-out gear stays on the job (still shown as deployed in the warehouse)", async () => {
       await page.getByRole("link", { name: "Warehouse" }).click();
-      await expect(page.getByRole("tab", { name: /^Out \(1\)/ })).toBeVisible({ timeout: 20000 });
+      await expect(page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: /^Out 1$/ })).toBeVisible({ timeout: 20000 });
     });
   });
 

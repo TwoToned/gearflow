@@ -177,6 +177,7 @@ describe("completeCheckAndDeprep", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItemUnits", {
         id: "cu1", organizationId: ORG, lineItemId: "C1", ordinal: 1, assetId: "acc1",
+        // Packed but never deployed (skipped at deploy): still reset by the return-check de-prep.
         parentUnitAssetId: "as1", quantity: 1, returnedQuantity: 0, status: "CONFIRMED", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW,
       });
     });

@@ -294,3 +294,182 @@ async function accUnitDoc(ctx: import("./_generated/server").MutationCtx) {
   }
   return null;
 }
+
+describe("a de-prep scan on a multi-serial line de-preps THAT asset's unit", () => {
+  test("two serial units on one line, scan the second tag: exactly the second unit is de-prepped", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW,
+      items: [{ lineItemId: "L1", returnCondition: "GOOD" }],
+    });
+    const prep = () => t.run(async (ctx) => Object.fromEntries(
+      (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => [u.assetId, u.prepStatus])));
+    expect(await prep()).toEqual({ a1: "PACKED", a2: "PACKED" });
+    await svc(t).mutation(api.checkRecordOps.deprepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, assetId: "a2" }],
+    });
+    expect(await prep()).toEqual({ a1: "PACKED", a2: "PENDING" });
+    // The FIRST unit by ordinal: count-based LIFO would have taken a2 again, so this proves the asset is honoured.
+    await svc(t).mutation(api.checkRecordOps.deprepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, assetId: "a1" }],
+    });
+    expect(await prep()).toEqual({ a1: "PENDING", a2: "PENDING" });
+  });
+  test("scanning a1 first de-preps a1, leaving a2", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER, now: NOW,
+      items: [{ lineItemId: "L1", returnCondition: "GOOD" }],
+    });
+    await svc(t).mutation(api.checkRecordOps.deprepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, assetId: "a1" }],
+    });
+    const us = await t.run(async (ctx) => (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()));
+    expect(Object.fromEntries(us.map((u) => [u.assetId, u.prepStatus]))).toEqual({ a1: "PENDING", a2: "PACKED" });
+  });
+});
+
+describe("de-prep by asset is exact, never a LIFO guess", () => {
+  const deprep = (t: T, assetId?: string) =>
+    svc(t).mutation(api.checkRecordOps.deprepItems, { organizationId: ORG, projectId: "p1", now: NOW, ops: [{ lineItemId: "L1", quantity: 1, ...(assetId ? { assetId } : {}) }] });
+  const unitsLeft = (t: T) =>
+    t.run(async (ctx) => (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "L1")).collect()).map((u) => [u.assetId, u.prepStatus, u.status] as const).sort());
+
+  test("a PACKED (never out) two-serial line: de-prep by assetId removes exactly that unit and its accessory", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deprep(t, "a1"); // LIFO would have removed a2
+    expect((await unitsLeft(t)).map((u) => u[0])).toEqual(["a2"]);
+    expect(await accUnit(t, "a1")).toBeNull();
+    expect(await accUnit(t, "a2")).not.toBeNull();
+  });
+
+  test("a named asset that is not a prepped unit on the line is refused, not guessed", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await expect(deprep(t, "a9")).rejects.toThrow(/isn't a prepped unit/);
+    expect((await unitsLeft(t)).length).toBe(2);
+  });
+
+  test("RETURNED line: a named asset that is already de-prepped is refused (no LIFO fallback); no assetId keeps LIFO", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, { organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", returnCondition: "GOOD" }] });
+    await deprep(t, "a1");
+    await expect(deprep(t, "a1")).rejects.toThrow(/already de-prepped/);
+    expect(await unitsLeft(t)).toEqual([["a1", "PENDING", "RETURNED"], ["a2", "PACKED", "RETURNED"]]); // a2 untouched by the refused call
+    await deprep(t); // no asset named: LIFO as before
+    expect((await unitsLeft(t)).every((u) => u[1] === "PENDING")).toBe(true);
+  });
+
+  test("partially returned line: a returned unit de-preps by asset while the sibling is still out; without an asset the guard holds", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, { organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", assetId: "a1", returnCondition: "GOOD" }] });
+    await expect(deprep(t)).rejects.toThrow(/already deployed/);
+    await deprep(t, "a1");
+    expect(await unitsLeft(t)).toEqual([["a1", "PENDING", "RETURNED"], ["a2", "PACKED", "CHECKED_OUT"]]);
+    expect(await asset(t, "a2")).toBe("CHECKED_OUT");
+    await expect(deprep(t, "a2")).rejects.toThrow(/already deployed/); // still out: not de-preppable
+  });
+
+  test("parent A back WITHOUT its accessory: de-prep A by asset leaves the accessory unit out and its line alone", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, { organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", assetId: "a1", returnCondition: "GOOD" }] });
+    // Force the battery of a1 to stay out (parent back without it).
+    const before = await t.run(async (ctx) => {
+      const u = (await ctx.db.query("projectLineItemUnits").collect()).find((x) => x.parentUnitAssetId === "a1")!;
+      await ctx.db.patch(u._id, { status: "CHECKED_OUT", prepStatus: "PACKED" });
+      return u.lineItemId;
+    });
+    await deprep(t, "a1");
+    const acc = await accUnit(t, "a1");
+    expect(acc).toMatchObject({ status: "CHECKED_OUT", prepStatus: "PACKED" }); // untouched
+    const line = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", before)).unique());
+    expect(line?.prepStatus).not.toBe("PENDING"); // the battery line is not reset while a unit is out
+    expect((await unitsLeft(t)).find((u) => u[0] === "a1")).toEqual(["a1", "PENDING", "RETURNED"]);
+  });
+});
+
+describe("prepItems reports what an accessories-only prep actually packed", () => {
+  /** Prep both parents, then put every accessory unit back to "not packed" so an accessories-only call has work. */
+  async function prepThenUnpackAccessories(t: T) {
+    await seed(t);
+    const plain = await prepBoth(t);
+    expect(plain.packedAccessoryLineIds).toEqual([]); // not an accessories-only call
+    await t.run(async (ctx) => {
+      for (const u of await ctx.db.query("projectLineItemUnits").collect()) {
+        if (u.parentUnitAssetId) await ctx.db.patch(u._id, { prepStatus: undefined });
+      }
+    });
+  }
+  const accessoriesOnly = (t: T, items: Array<{ assetId: string; includeAccessoryIds?: string[] }>) =>
+    svc(t).mutation(api.checkRecordOps.prepItems, {
+      organizationId: ORG, projectId: "p1", now: NOW, actor: ACTOR,
+      items: items.map((i) => ({ lineItemId: "L1", accessoriesOnly: true, ...i })),
+    });
+
+  test("reports the accessory units THIS call packed, per parent unit", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    const res = await accessoriesOnly(t, [{ assetId: "a1" }, { assetId: "a2" }]);
+    expect(res.packedAccessoryUnits.map((u) => u.parentUnitAssetId).sort()).toEqual(["a1", "a2"]);
+    expect(res.packedAccessoryLineIds.length).toBeGreaterThan(0);
+  });
+
+  test("an accessory already PACKED before the call is not reported as packed by it", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    await accessoriesOnly(t, [{ assetId: "a1" }]); // a1's accessory is now packed (earlier)
+    const again = await accessoriesOnly(t, [{ assetId: "a1" }, { assetId: "a2" }]);
+    expect(again.packedAccessoryUnits.map((u) => u.parentUnitAssetId)).toEqual(["a2"]); // only a2's is new
+    // ...but the LINES: an already-packed accessory still reads packed for the requested parent units.
+    const l1 = (await accUnit(t, "a1"))!.lineItemId;
+    const l2 = (await accUnit(t, "a2"))!.lineItemId;
+    expect(again.packedAccessoryLineIds).toEqual(expect.arrayContaining([l1, l2]));
+    const justA1 = await accessoriesOnly(t, [{ assetId: "a1" }]); // nothing flipped at all, still packed
+    expect(justA1.packedAccessoryUnits).toEqual([]);
+    expect(justA1.packedAccessoryLineIds).toContain(l1);
+  });
+
+  test("a line with a requested parent unit that is still unpacked is not reported as packed", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    // a2's accessory unit can't be packed any more (already returned), so the line is only partly packed for {a1, a2}.
+    await t.run(async (ctx) => {
+      for (const u of await ctx.db.query("projectLineItemUnits").collect()) if (u.parentUnitAssetId === "a2") await ctx.db.patch(u._id, { status: "RETURNED", prepStatus: undefined });
+    });
+    const l1 = (await accUnit(t, "a1"))!.lineItemId;
+    const l2 = (await accUnit(t, "a2"))!.lineItemId;
+    const res = await accessoriesOnly(t, [{ assetId: "a1" }, { assetId: "a2" }]);
+    expect(res.packedAccessoryUnits.map((u) => u.parentUnitAssetId)).toEqual(["a1"]); // per-unit state is still reported
+    expect(res.packedAccessoryLineIds).not.toContain(l2);
+    // A shared line (both parents' units on one line) is partial; separate lines report a1's as packed.
+    expect(res.packedAccessoryLineIds.includes(l1)).toBe(l1 !== l2);
+  });
+
+  test("a narrowed includeAccessoryIds reports only those accessories", async () => {
+    const t = makeT();
+    await prepThenUnpackAccessories(t);
+    const none = await accessoriesOnly(t, [{ assetId: "a1", includeAccessoryIds: ["not-an-accessory"] }]);
+    expect(none.packedAccessoryUnits).toEqual([]);
+    expect(none.packedAccessoryLineIds).toEqual([]);
+    const some = await accessoriesOnly(t, [{ assetId: "a1", includeAccessoryIds: ["c1"] }]);
+    expect(some.packedAccessoryUnits.map((u) => u.parentUnitAssetId)).toEqual(["a1"]);
+  });
+});

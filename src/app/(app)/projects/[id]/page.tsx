@@ -220,7 +220,6 @@ export default function ProjectDetailPage({
   // Slot on the tab row that the Equipment tab portals its "Add ▾" menu into,
   // so the primary action sits inline with the tab selector. State-backed (not a
   // plain ref) so EquipmentTab re-renders its portal once the node mounts.
-  const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
   // #1230 pricing lock — reactive `pricingLocked` status + lock/unlock actions.
   const pricingLock = useProjectPricingLock(id, orgId);
@@ -694,7 +693,6 @@ export default function ProjectDetailPage({
                     <TabsTrigger value="notes">Notes</TabsTrigger>
                     <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
                   </TabsList>
-                  <div ref={setEquipmentAddSlot} className="flex items-center gap-2" />
                 </div>
 
                 {/* ── Overview Tab (#1061, recomposed in #1063) ───────────
@@ -766,7 +764,6 @@ export default function ProjectDetailPage({
                       projectId={id}
                       rentalStartDate={availabilityWindow.start}
                       rentalEndDate={availabilityWindow.end}
-                      addMenuSlot={equipmentAddSlot}
                       autoOpenAddModelId={autoOpenAddModelId}
                       versionId={versionState.viewingVersion?.id}
                     />

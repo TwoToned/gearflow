@@ -868,6 +868,21 @@ open. `trigger` swaps the default ⋯ for any element (`Documents ▾`, a lock g
 dropdown is `modal={false}` so a confirm Dialog opening as it closes is not click-locked.
 `ConfirmActionMenuItem` is legacy (R-4.4); don't use it in new menus.
 
+### Equipment tab (Phase 2a) — AddBar, one accessories editor, one shortfall mutation
+The Equipment tab is `LineRowList` sections (`equipment-sections.tsx`); `AddBar` under the list **replaces the old
+`Add ▾` menu** (Enter adds a gear/kit line with a blank price, the server auto-prices; sub-hire/custom/sale open the
+existing dialog). **Accessories have ONE editor**, `EditAccessoryPlanDialog`: the row's ⋯ and the Edit Item dialog's
+button both open it; never re-embed a picker in Edit Item. On phone a row tap opens `RowEditorSheet`
+(`equipment-row-editor.tsx`), saved through the shared `computeRowSheetPayload` → ONE `patchNative`; anything
+shown in desktop `cells` (discussion badge, serial indicator) must ALSO live in the sheet's `contextSlot`.
+**Shortfall → sub-hire is ONE mutation**, `subHiresWrites.coverShortfallNative` (nested `ctx.runMutation`
+sub-transactions: order + item + line trim, all-or-nothing); never reassemble it from client-side `create` / `addItem` /
+quantity writes. Its Undo, `undoShortfallNative`, takes only order + item ids and re-derives everything from the
+`subHireItems.coverage` record the cover wrote (refusing if the order is no longer DRAFT, other items joined, or the line
+was edited); never add client-supplied restore quantities. `coverage` describes ONE cover, so no copy/duplicate path may
+carry it. Rate reads (`getSupplierRateHistory`, `getSupplierModelRate`) need `subHire:read`; the row action needs
+`subHire:create`. Both mutations are `danger: "high"`.
+
 ### BulkBar and ScanStrip — two footguns
 `BulkBar` (`src/components/ui/bulk-bar.tsx`, replaced `BulkActionBar`) is the ONE bulk
 surface. On a phone it is **portaled to `<body>`** and pinned above the bottom nav:

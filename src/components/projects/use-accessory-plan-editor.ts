@@ -5,10 +5,8 @@
  * accessory catalog + its stored `accessoryPlan`, seeds the checkbox state from
  * them, and derives the plan to save.
  *
- * Two consumers (R-3.1 — one definition, two entry points):
- *   - `EditAccessoryPlanDialog` — the row kebab's standalone "Edit accessories".
- *   - `EditLineItemDialog` — the Accessories section inside the Edit Item
- *     window, saved alongside the rest of the line.
+ * One consumer: `EditAccessoryPlanDialog`, the ONLY accessory editor (the row's
+ * ⋯ and the Edit Item dialog's "Edit accessories" button both open it).
  *
  * `enabled` mirrors `canEditAccessoryPlan` at the call site so neither query
  * fires for a line that can't have a plan (a service line, a kit child, an

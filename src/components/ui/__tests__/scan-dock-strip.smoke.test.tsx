@@ -73,6 +73,39 @@ describe("ScanDock custom modes", () => {
   });
 });
 
+describe("ScanDock filter props", () => {
+  it("reports every typed change and the clear after submit; exposes the input by ref and id", async () => {
+    const onValueChange = vi.fn();
+    const onScan = vi.fn();
+    const ref = React.createRef<HTMLInputElement>();
+    render(
+      <ScanDock
+        onScan={onScan}
+        mode="prep"
+        onModeChange={() => {}}
+        onValueChange={onValueChange}
+        inputRef={ref}
+        inputId="q"
+      />,
+    );
+    const input = screen.getByLabelText("Scan input");
+    expect(input.id).toBe("q");
+    expect(ref.current).toBe(input);
+    await userEvent.type(input, "23{Enter}");
+    expect(onValueChange.mock.calls.map((c) => c[0])).toEqual(["2", "23", ""]);
+    expect(onScan).toHaveBeenCalledWith("23");
+  });
+
+  it("works unchanged without the new props", async () => {
+    const onScan = vi.fn();
+    render(<ScanDock onScan={onScan} mode="prep" onModeChange={() => {}} />);
+    const input = screen.getByLabelText("Scan input");
+    expect(input.id).toBe("");
+    await userEvent.type(input, "X{Enter}");
+    expect(onScan).toHaveBeenCalledWith("X");
+  });
+});
+
 describe("ScanStrip", () => {
   it("Undo calls the passed closure exactly once", async () => {
     const undo = vi.fn();
@@ -100,5 +133,26 @@ describe("ScanStrip", () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(add).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Saved on device · syncing")).toBeTruthy();
+  });
+
+  it("renders an info entry and its trailing controls after the action", async () => {
+    const open = vi.fn();
+    render(
+      <ScanStrip
+        entries={[
+          {
+            id: "1",
+            tone: "info",
+            text: "SK-0012 · packed for #2341",
+            trailing: <button type="button" onClick={open}>Open</button>,
+          },
+        ]}
+      />,
+    );
+    const row = screen.getByText("SK-0012 · packed for #2341").closest("li");
+    expect(row?.getAttribute("data-tone")).toBe("info");
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

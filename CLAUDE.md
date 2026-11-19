@@ -595,6 +595,28 @@ Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical wor
 is the second way out of the money phase, for orgs that reconcile payments in Xero
 and never write a `payments` row. See FEATUREDOCS/76.
 
+### The floor — the column is DERIVED, Undo is EXACT, the pull sheet is ONE list
+`/warehouse` (the floor, FEATUREDOCS/12) has three rules that look relaxable and aren't:
+
+1. **A job's floor column is derived by `warehouseStage()`** (`convex/lib/warehouseStage.ts`)
+   from its unit counts. Never store it, never let a card be dragged between
+   columns, and never re-derive it client-side — `warehouseList.bundle` returns it.
+2. **A Returning-mode Undo reverses exactly its own write.** Asset/kit returns go
+   through the announced `checkInItems`/`checkInKit`; a bulk-tag return's Undo is
+   `returnsWrites.unreturnBulkNative` with the `returnedUnitIds` that call handed
+   back (parent AND accessory units, from a before/after snapshot). Never "fix" a
+   missing Undo by calling `unreturnItems` on the line: it flips every RETURNED unit
+   on the line and its accessories, including another scan's or packer's. A partial
+   bulk return has no exact reverse, so its Undo is absent (`exactUndo: false`).
+3. **The pull sheet dialog and the pull-slip PDF read ONE list**:
+   `projectDocumentData(…, "packing-list")` grouped by `filterAndGroupItems` under
+   `PULL_LIST_TABLE_CONFIG` (`src/lib/pdfme/pull-list.ts`). Don't give the sheet its
+   own line-item builder again.
+
+`projects.packerUserId` is server-owned (only `setPackerNative` writes it; it is not
+in `projectWriteFields`). The floor's state is its URL (`?mode=`, `scope`, filter
+words), parsed by the one Zod schema in `src/lib/warehouse-floor.ts`.
+
 ### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
 The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
 the client has agreed and/or an invoice is out, but the money hasn't landed.

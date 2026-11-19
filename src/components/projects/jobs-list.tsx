@@ -18,7 +18,7 @@ import { TagPromptDialog } from "@/components/ui/tag-prompt-dialog";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useClients } from "@/hooks/use-clients";
 import { useListUrlState } from "@/hooks/use-list-url-state";
-import { useOrgMembers } from "@/hooks/use-org-members";
+import { useMemberRoster } from "@/hooks/use-member-roster";
 import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useStableNow } from "@/hooks/use-stable-now";
@@ -65,21 +65,8 @@ function useJobsPage(orgId: string | undefined, now: number, args: ReturnType<ty
   return { items: data as JobSource[], total, isLoading, counts };
 }
 
-interface RosterMember {
-  userId: string;
-  user?: { name?: string | null } | null;
-}
-
 /** Project managers by user id, from the org roster the members page already reads (no new query). */
-function usePmRoster(orgId: string | undefined) {
-  const { data } = useOrgMembers(orgId) as { data: RosterMember[] | undefined };
-  return React.useMemo(() => {
-    const nameOf = new Map<string, string>();
-    for (const m of data ?? []) if (m.user?.name) nameOf.set(m.userId, m.user.name);
-    const options = [...nameOf].map(([id, name]) => ({ id, name }));
-    return { nameOf, options };
-  }, [data]);
-}
+const usePmRoster = useMemberRoster;
 
 interface Perms {
   update: boolean;

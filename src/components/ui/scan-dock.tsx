@@ -50,6 +50,15 @@ export interface ScanDockProps {
   cameraTitle?: string;
   disabled?: boolean;
   className?: string;
+  /**
+   * Every change to the typed text (including the clear after a submit), for a
+   * surface that filters as you type (the floor). The dock still owns the value.
+   */
+  onValueChange?: (value: string) => void;
+  /** Lets a surface focus the input from elsewhere (a head `Scan` button). */
+  inputRef?: React.Ref<HTMLInputElement>;
+  /** The input's DOM id, so a label or a skip link can target it. */
+  inputId?: string;
 }
 
 export function ScanDock({
@@ -62,8 +71,15 @@ export function ScanDock({
   cameraTitle = "Scan with camera",
   disabled,
   className,
+  onValueChange,
+  inputRef,
+  inputId,
 }: ScanDockProps) {
-  const [value, setValue] = React.useState("");
+  const [value, setValueState] = React.useState("");
+  const setValue = (next: string) => {
+    setValueState(next);
+    onValueChange?.(next);
+  };
 
   const submit = () => {
     const raw = value.trim();
@@ -95,6 +111,8 @@ export function ScanDock({
           </DropdownMenu>
         ) : null}
         <input
+          ref={inputRef}
+          id={inputId}
           // 16 px so iOS does not zoom on focus.
           className="min-h-11 min-w-0 flex-1 bg-transparent text-reading-body text-ink placeholder:text-muted focus:outline-none"
           value={value}

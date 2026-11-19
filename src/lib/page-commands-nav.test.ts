@@ -22,7 +22,7 @@ describe("palette @ pages come from NAV", () => {
     expect(crew.children!.some((c) => c.label === "Roles & Skills")).toBe(true);
     expect(matchPageCommands("finance").some((m) => m.command.href === "/finance")).toBe(true);
     expect(matchPageCommands("overbookings").some((m) => m.command.href === "/overbookings")).toBe(true);
-    expect(matchPageCommands("returns").some((m) => m.command.href === "/warehouse/returns")).toBe(true);
+    expect(matchPageCommands("returns").some((m) => m.command.href === "/warehouse?mode=returning")).toBe(true);
   });
 
   it("does not offer My tasks as a page", () => {

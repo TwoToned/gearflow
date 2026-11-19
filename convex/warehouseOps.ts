@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
 import { assertTestTagAllowsCheckout } from "./lib/testtag";
@@ -20,6 +21,7 @@ import {
   customUnitScope,
   ensureCustomUnitAccessories,
   removeCustomUnitAccessories,
+  assetStatusFromReturnCondition,
 } from "./lib/fulfillment";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
@@ -1346,6 +1348,121 @@ export const unreturnItems = mutation({
     return unreturnItemsCore(ctx, a);
   },
 });
+
+// ── Unit-exact un-return (Phase 4: the floor's bulk-return Undo) ─────────────
+// `unreturnItemsCore` flips EVERY returned unit on a line and its accessory
+// children, so it can also undo a return that came in through another scan.
+// A write that wants an exact Undo snapshots its lines' units before and after
+// (`snapshotReturnUnits` / `diffReturnedUnits`), hands back the ids it flipped,
+// and its Undo reverses ONLY those (`unreturnUnitsCore`).
+
+type ReturnUnitState = { lineItemId: string; status: string | undefined; returnedQuantity: number };
+
+/** Every unit on these lines and on their ACCESSORY children (the cascade a
+ *  return touches), by unit id. Org-checked: `by_parentLineItemId` is global. */
+export async function snapshotReturnUnits(ctx: Ctx, organizationId: string, lineIds: readonly string[]): Promise<Map<string, ReturnUnitState>> {
+  const snap = new Map<string, ReturnUnitState>();
+  for (const lineId of lineIds) {
+    const accessories = (await childLines(ctx, lineId, organizationId)).filter((c) => c.childKind === "ACCESSORY");
+    for (const id of [lineId, ...accessories.map((c) => c.id)]) {
+      for (const u of await lineUnits(ctx, id)) {
+        if (u.organizationId !== organizationId) continue;
+        snap.set(u.id, { lineItemId: id, status: u.status, returnedQuantity: u.returnedQuantity ?? 0 });
+      }
+    }
+  }
+  return snap;
+}
+
+/** The units that went from fully out (nothing back) to RETURNED between two
+ *  snapshots, and `clean` = every unit that changed at all did exactly that
+ *  (a partial bulk return, which stays CHECKED_OUT, makes it unclean). */
+export function diffReturnedUnits(
+  before: ReadonlyMap<string, ReturnUnitState>,
+  after: ReadonlyMap<string, ReturnUnitState>,
+): { unitIds: string[]; clean: boolean } {
+  const unitIds: string[] = [];
+  let clean = true;
+  for (const [id, now] of after) {
+    const was = before.get(id);
+    if (!was || (was.status === now.status && was.returnedQuantity === now.returnedQuantity)) continue;
+    const fullFlip = was.status === "CHECKED_OUT" && was.returnedQuantity === 0 && now.status === "RETURNED";
+    if (fullFlip) unitIds.push(id);
+    else clean = false;
+  }
+  return { unitIds, clean };
+}
+
+/** The unit's line, after proving the unit is ours, on this job, and still RETURNED. */
+async function returnedUnitLine(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string },
+  unitId: string,
+  cache: ReadonlyMap<string, Doc<"projectLineItems">>,
+): Promise<Doc<"projectLineItems">> {
+  const u = await unitByCuid(ctx, unitId);
+  if (!u || u.organizationId !== a.organizationId) throw new ConvexError("Some of these items are not on this job, so this undo isn't safe");
+  const line = cache.get(u.lineItemId) ?? (await lineByCuid(ctx, u.lineItemId));
+  const onJob = !!line && line.organizationId === a.organizationId && line.projectId === a.projectId;
+  if (!onJob) throw new ConvexError("Some of these items are not on this job, so this undo isn't safe");
+  if (u.status !== "RETURNED") throw new ConvexError(CHANGED_SINCE);
+  if (u.assetId) await assertAssetStillAsReturned(ctx, a.organizationId, u);
+  return line!;
+}
+
+const CHANGED_SINCE = "Some of these items have changed since, so this undo isn't safe";
+
+/**
+ * A serialised unit's ASSET can move on after the return: out on another job,
+ * or into maintenance. Un-returning it then would put one asset out twice (or
+ * pull it off a bench), so refuse unless the asset is still exactly what this
+ * return made it and no other line holds it CHECKED_OUT.
+ */
+async function assertAssetStillAsReturned(
+  ctx: Ctx,
+  organizationId: string,
+  u: { lineItemId: string; assetId?: string; returnCondition?: string | null },
+): Promise<void> {
+  const asset = await assetByCuid(ctx, u.assetId!);
+  const expected = assetStatusFromReturnCondition((u.returnCondition ?? "GOOD") as "GOOD" | "DAMAGED" | "MISSING");
+  if (!asset || asset.organizationId !== organizationId || asset.status !== expected) throw new ConvexError(CHANGED_SINCE);
+  const outElsewhere = await ctx.db
+    .query("projectLineItemUnits")
+    .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", organizationId).eq("assetId", u.assetId!).eq("status", "CHECKED_OUT"))
+    .take(10);
+  if (outElsewhere.some((o) => o.lineItemId !== u.lineItemId)) throw new ConvexError(CHANGED_SINCE);
+}
+
+/** Returned → Deployed for EXACTLY these units. All-or-nothing: every id must
+ *  be in this org, on a line of this project, and still RETURNED, or the call
+ *  refuses (something changed since the forward write; an Undo is not safe). */
+export async function unreturnUnitsCore(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; userId: string; unitIds: readonly string[]; now: number },
+): Promise<{ updatedLineIds: string[] }> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
+  if (!project || project.organizationId !== a.organizationId) throw new ConvexError("Project not found");
+  const byLine = new Map<string, Set<string>>();
+  const lines = new Map<string, Doc<"projectLineItems">>();
+  for (const id of a.unitIds) {
+    const line = await returnedUnitLine(ctx, a, id, lines);
+    lines.set(line.id, line);
+    byLine.set(line.id, (byLine.get(line.id) ?? new Set()).add(id));
+  }
+  for (const [lineId, onlyUnitIds] of byLine) {
+    const line = lines.get(lineId)!;
+    const { bulkFlips } = await flipLineUnits(ctx, {
+      organizationId: a.organizationId, lineItemId: lineId, fromStatus: "RETURNED", toStatus: "CHECKED_OUT",
+      resetReturnedQty: true, assetStatus: "CHECKED_OUT", locationId: project.locationId ?? null, clearLoc: false,
+      onlyUnitIds, now: a.now,
+    });
+    await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, -1);
+    await syncLineItemRollup(ctx, lineId);
+  }
+  await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: `Moved ${a.unitIds.length} unit(s) back to Deployed (undo)` });
+  await syncContainersForLines(ctx, a.organizationId, a.userId, a.now, byLine.keys());
+  return { updatedLineIds: [...byLine.keys()] };
+}
 
 /** De-prepped → Returned: re-pack a returned line (prepStatus back to PACKED).
  *  Status stays RETURNED; this only reverses the de-prep prepStatus reset. */

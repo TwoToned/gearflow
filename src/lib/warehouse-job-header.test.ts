@@ -17,6 +17,14 @@ describe("warehouse header props", () => {
     expect(keys(false)).not.toContain("container-label");
     expect(keys(true)).toContain("container-label");
   });
+  it("Pull sheet leads Documents ▾ when the page can open the dialog", () => {
+    const openPullSheet = vi.fn();
+    const items = warehouseHeaderProps({ ...base(), openPullSheet }).documents!.items;
+    expect(items[0]).toMatchObject({ key: "pull-sheet", label: "Pull sheet" });
+    void items[0].onSelect();
+    expect(openPullSheet).toHaveBeenCalled();
+    expect(warehouseHeaderProps(base()).documents!.items.map((i) => i.key)).not.toContain("pull-sheet");
+  });
   it("admin overrides are danger items that confirm; absent when none", () => {
     const run = vi.fn();
     const p = warehouseHeaderProps({ ...base(), overrides: [{ key: "mark-out", label: "Mark deployed", title: "Mark deployed?", body: "Ignores item state.", run }] });

@@ -97,10 +97,10 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/suppliers/[id]` | Supplier detail (orders, assets, subhires tabs) |
 | `/suppliers/[id]/edit` | Edit supplier |
 | `/suppliers/[id]/orders/new` | Create supplier order |
-| `/warehouse` | Warehouse project list |
-| `/warehouse/returns` | Returns station — org-wide, project-less scan-and-return (issue #944; static route, resolved before the `[projectId]` dynamic sibling — see FEATUREDOCS/12) |
-| `/warehouse/[projectId]` | Check out/in interface |
-| `/warehouse/[projectId]/pull-sheet` | Pull sheet preview + print |
+| `/warehouse` | The floor (five derived stage columns); `?mode=returning` is Returning mode — the org-wide returns desk (FEATUREDOCS/12) |
+| `/warehouse/returns` | Redirect → `/warehouse?mode=returning` (query kept) |
+| `/warehouse/[projectId]` | Check out/in interface; `?doc=pull-sheet` opens the pull-sheet dialog |
+| `/warehouse/[projectId]/pull-sheet` | Redirect → `/warehouse/[projectId]?doc=pull-sheet` |
 | `/locations` | Location hierarchy |
 | `/locations/new` | Create location |
 | `/locations/[id]` | Location detail |

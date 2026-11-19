@@ -13,7 +13,7 @@ import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
 import { assertStrLen, assertTags } from "./lib/fieldGuards";
 import { MAX_TAGS } from "./lib/tagLimits";
 import { assertBulkSizeOk } from "./lib/rateLimiter";
-import { assertRefInOrg, assertClientContactBelongsToClient } from "./lib/orgRef";
+import { assertRefInOrg, assertClientContactBelongsToClient, assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getKitByCuid } from "./lib/kits";
@@ -662,6 +662,58 @@ export const removeTagNative = mutation({
   args: tagBatchArgs,
   returns: v.object({ changed: v.array(v.string()), full: v.array(v.string()) }),
   handler: async (ctx, a) => applyTagBatch(ctx, a, "remove"),
+});
+
+// ─── setPackerNative — the floor's `Assign packer…` (Phase 4) ───────────────
+// One call sets each listed job's packer (a member of this org, or null for
+// "no packer"). Its return is the jobs' PREVIOUS packers in the same shape, so
+// the floor's Undo replays them through this same mutation: one write, one
+// reverse. A floor write, so it needs `warehouse:check_out` (the warehouse role
+// assigns packers without `project:update`). Bounded by assertBulkSizeOk; one
+// activity row per changed job.
+const packerAssignment = v.object({ id: v.string(), packerUserId: v.union(v.string(), v.null()) });
+
+async function loadProjectsInOrg(ctx: MutationCtx, orgId: string, ids: readonly string[]) {
+  const out = [];
+  for (const id of new Set(ids)) {
+    const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!p || p.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (p.isTemplate) throw new ConvexError("Templates have no packer.");
+    out.push(p);
+  }
+  return out;
+}
+
+export const setPackerNative = mutation({
+  args: { orgId: v.string(), assignments: v.array(packerAssignment), actor: actorValidator, auditId: v.string(), now: v.number() },
+  returns: v.object({ previous: v.array(packerAssignment) }),
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await assertBulkSizeOk(ctx, a.assignments.length);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const target = new Map(a.assignments.map((x) => [x.id, x.packerUserId]));
+    for (const userId of new Set([...target.values()].filter((u): u is string => !!u))) {
+      await assertMemberInOrg(ctx, a.orgId, userId);
+    }
+    const projects = await loadProjectsInOrg(ctx, a.orgId, [...target.keys()]);
+    const previous: Array<{ id: string; packerUserId: string | null }> = [];
+    for (const [i, p] of projects.entries()) {
+      const next = target.get(p.id) ?? null;
+      const was = p.packerUserId ?? null;
+      previous.push({ id: p.id, packerUserId: was });
+      if (was === next) continue;
+      await ctx.db.patch(p._id, { packerUserId: next ?? undefined, updatedAt: a.now });
+      await writeActivityLog(ctx, {
+        id: `${a.auditId}:${i}`, organizationId: a.orgId, action: "UPDATE", entityType: "project",
+        entityId: p.id, entityName: p.name, userId: actor.userId, userName: actor.userName,
+        summary: next ? "Assigned a packer" : "Cleared the packer", projectId: p.id, createdAt: a.now,
+      });
+    }
+    return { previous };
+  },
 });
 
 /**
@@ -1641,6 +1693,7 @@ export const agentOps: AgentOpsAnnotations = {
   saveAsTemplateNative: { danger: "medium" },
   updateNative: { danger: "medium" },
   updateNotesNative: { danger: "low" },
+  setPackerNative: { summary: "Set the packer (an org member, or null) on several jobs; returns each job's previous packer in the same shape, for Undo.", danger: "low" },
   // Status transitions gate the project lifecycle tiers (JUSTIFY/FINANCE_LOCKED/
   // HARD_LOCKED) and can revert OUT of HARD_LOCKED via `justification` — the
   // single most lock-sensitive write in this module.

@@ -1,8 +1,52 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { getProjectWindow } from "./lib/projectWindow";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
+import { floorCounts, warehouseStage } from "./lib/warehouseStage";
+import { earliestOutbound, isOutboundService, type OutboundServiceLike } from "./lib/outboundTruck";
+
+export const agentOps: AgentOpsAnnotations = {
+  bundle: {
+    summary:
+      "Org-wide warehouse floor: every pipeline job with its derived floor stage (to pick / prepping / ready / out / returning), unit counts, PM and outbound truck time.",
+    danger: "low",
+    mcpTier: 1,
+  },
+};
+
+/** Services scanned per job before giving up (R-9.8). A job has a handful;
+ *  hitting this sets `outboundTruncated` rather than guessing. */
+const MAX_SERVICES_SCANNED = 200;
+
+/**
+ * The job's earliest outbound truck (`convex/lib/outboundTruck.ts`), from its
+ * LIVE version's services. Streams `by_versionId_date` IN DATE ORDER, so the
+ * earliest dated outbound service is reached first and the scan stops once the
+ * date moves past it — a cap can never drop the earliest one (a cap on an
+ * unordered read could). Undated rows sort first in the index; they are kept
+ * as candidates but `earliestOutbound` ranks them after any dated one. Rows are
+ * filtered BEFORE they can end the scan (org, type, not cancelled), and
+ * `by_versionId_date` is a GLOBAL index — org-check every row (R-8.4.3).
+ */
+async function outboundFor(ctx: QueryCtx, versionId: string, orgId: string) {
+  const candidates: OutboundServiceLike[] = [];
+  let firstDate: number | null = null;
+  let scanned = 0;
+  let truncated = false;
+  for await (const s of ctx.db
+    .query("projectServices")
+    .withIndex("by_versionId_date", (q) => q.eq("versionId", versionId))) {
+    if (++scanned > MAX_SERVICES_SCANNED) { truncated = true; break; }
+    if (firstDate != null && s.date !== firstDate) break;
+    if (s.organizationId !== orgId || !isOutboundService(s)) continue;
+    candidates.push(s);
+    if (s.date != null) firstDate = s.date;
+  }
+  return { outbound: earliestOutbound(candidates), truncated };
+}
 
 /**
  * BROWSER-facing native replacement for the warehouse LANDING list
@@ -48,6 +92,14 @@ type ProjectDoc = {
   projectStartDate?: number;
   projectEndDate?: number;
   clientId?: string;
+  projectManagerId?: string;
+  packerUserId?: string;
+};
+
+type FloorFacts = {
+  lineItems: Array<{ status: string; type: string; isKitChild: boolean }>;
+  counts: ReturnType<typeof floorCounts>;
+  outbound: Awaited<ReturnType<typeof outboundFor>>;
 };
 
 export const bundle = query({
@@ -71,24 +123,29 @@ export const bundle = query({
       .filter((p) => p.isTemplate !== true)
       .sort((a, b) => (getProjectWindow(a).start ?? 0) - (getProjectWindow(b).start ?? 0));
 
-    // Thin line items per project (only the 3 fields the stage counter reads).
-    const lineItemsByProject = new Map<
-      string,
-      Array<{ status: string; type: string; isKitChild: boolean }>
-    >();
-    // LIVE-ONLY (#1228) — the warehouse landing counts the live plan.
+    // Per project, from the LIVE version (#1228 — the floor counts the live
+    // plan): the thin line items (kept for existing consumers), the floor's
+    // derived unit counts (convex/lib/warehouseStage.ts) and the outbound truck.
+    const factsByProject = new Map<string, FloorFacts>();
     await Promise.all(
       pipeline.map(async (p) => {
         const versionId = await resolveLiveVersionIdForProject(ctx, p.id, orgId);
-        const rows = await versionRows(ctx, "projectLineItems", versionId);
-        lineItemsByProject.set(
-          p.id,
-          rows.map((li) => ({
+        const [rows, outbound] = await Promise.all([
+          versionRows(ctx, "projectLineItems", versionId),
+          outboundFor(ctx, versionId, orgId),
+        ]);
+        // `by_versionId` is global; the version came from an org-checked
+        // project, but re-check the rows (R-8.4.3).
+        const own = rows.filter((li) => li.organizationId === orgId);
+        factsByProject.set(p.id, {
+          lineItems: own.map((li) => ({
             status: li.status ?? "",
             type: li.type ?? "EQUIPMENT",
             isKitChild: li.isKitChild === true,
           })),
-        );
+          counts: floorCounts(own),
+          outbound,
+        });
       }),
     );
 
@@ -103,21 +160,51 @@ export const bundle = query({
     );
 
     return {
-      projects: pipeline.map((p) => ({
-        id: p.id,
-        name: p.name,
-        projectNumber: p.projectNumber,
-        status: p.status ?? "",
-        rentalStartDate: p.rentalStartDate ?? null,
-        rentalEndDate: p.rentalEndDate ?? null,
-        // Gear-committed window — falls back to rental when unset (see
-        // project-window.ts). The list's urgency classifier reads THESE, not the
-        // raw rental pair above (kept for reference/other display uses).
-        projectStartDate: p.projectStartDate ?? null,
-        projectEndDate: p.projectEndDate ?? null,
-        client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
-        lineItems: lineItemsByProject.get(p.id) ?? [],
-      })),
+      projects: pipeline.map((p) => projectRow(p, clientMap, factsByProject.get(p.id))),
     };
   },
 });
+
+function projectRow(p: ProjectDoc, clientMap: Map<string, { name: string }>, facts: FloorFacts | undefined) {
+  return { ...identityFields(p, clientMap), ...floorFields(p, facts) };
+}
+
+/** Who the floor's `Mine` and packer line are about (Phase 4, additive). */
+function peopleFields(p: ProjectDoc) {
+  return { projectManagerId: p.projectManagerId ?? null, packerUserId: p.packerUserId ?? null };
+}
+
+/** Phase 4 floor (additive). DERIVED on read, never stored (D27). */
+function floorFields(p: ProjectDoc, facts: FloorFacts | undefined) {
+  const counts = facts?.counts ?? floorCounts([]);
+  return {
+    lineItems: facts?.lineItems ?? [],
+    ...peopleFields(p),
+    counts,
+    stage: warehouseStage(counts),
+    outbound: facts?.outbound.outbound ?? null,
+    // True only if the job had more services than one scan reads: the truck
+    // shown may then not be the earliest.
+    outboundTruncated: facts?.outbound.truncated ?? false,
+  };
+}
+
+function identityFields(p: ProjectDoc, clientMap: Map<string, { name: string }>) {
+  return {
+    id: p.id,
+    name: p.name,
+    projectNumber: p.projectNumber,
+    status: p.status ?? "",
+    rentalStartDate: p.rentalStartDate ?? null,
+    rentalEndDate: p.rentalEndDate ?? null,
+    // Gear-committed window — falls back to rental when unset (see
+    // project-window.ts). The list's urgency classifier reads THESE, not the
+    // raw rental pair above (kept for reference/other display uses).
+    projectStartDate: p.projectStartDate ?? null,
+    projectEndDate: p.projectEndDate ?? null,
+    client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
+    // Phase 4 (additive): the floor's `Client ▾` filters on it. Only an
+    // org-checked client (one in clientMap) is reported.
+    clientId: p.clientId && clientMap.has(p.clientId) ? p.clientId : null,
+  };
+}

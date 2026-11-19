@@ -79,8 +79,23 @@ export async function generatePdf(
   docType: ProjectDocumentType,
   options?: ProjectPdfOptions,
 ): Promise<Uint8Array> {
+  const data = await projectDocumentData(projectId, organizationId, docType, options);
+  return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview, labelId: options?.labelId });
+}
+
+/**
+ * The data a project document renders from, built exactly as `generatePdf`
+ * builds it (the doc type's fixed layout). Exported so a screen view of a
+ * document (the floor's pull sheet) reads the SAME rows as its PDF.
+ */
+export async function projectDocumentData(
+  projectId: string,
+  organizationId: string,
+  docType: ProjectDocumentType,
+  options?: ProjectPdfOptions,
+) {
   const layout = DOCUMENT_LAYOUTS[docType];
-  const data = await buildDocumentData(projectId, organizationId, docType, undefined, {
+  return buildDocumentData(projectId, organizationId, docType, undefined, {
     expandProjectGroups: layout.expandProjectGroups,
     byContainer: layout.byContainer,
     stampedDates: options?.stampedDates,
@@ -90,8 +105,6 @@ export async function generatePdf(
     previewVersionId: options?.previewVersionId,
     combineServices: options?.combineServices,
   });
-
-  return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview, labelId: options?.labelId });
 }
 
 const LABEL_KIND = { "container-label": "container", "kit-label": "kit", "item-label": "item" } as const;

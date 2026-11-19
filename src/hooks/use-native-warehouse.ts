@@ -7,6 +7,7 @@ import {
   reconstructWarehouseProject,
   type NativeWarehouseProject,
 } from "@/lib/warehouse-detail-reconstruct";
+import type { FloorJob } from "@/lib/warehouse-floor";
 
 /**
  * Native warehouse LANDING list (Phase 4 — the last surface off the version-vector
@@ -17,20 +18,9 @@ import {
  * `{ projects, isLoading }`; skips until orgId resolves.
  */
 export function useNativeWarehouseList(orgId: string | undefined): {
-  projects:
-    | Array<{
-        id: string;
-        name: string;
-        projectNumber: string;
-        status: string;
-        rentalStartDate: number | null;
-        rentalEndDate: number | null;
-        projectStartDate: number | null;
-        projectEndDate: number | null;
-        client: { name: string } | null;
-        lineItems: Array<{ status: string; type: string; isKitChild: boolean }>;
-      }>
-    | undefined;
+  /** The query's own return type (no hand-kept copy, R-3.1): identity, window,
+   *  client, thin lines, and the floor's derived `counts` / `stage` / `outbound`. */
+  projects: FloorJob[] | undefined;
   isLoading: boolean;
 } {
   const bundle = useAuthedQuery(api.warehouseList.bundle, orgId ? { orgId } : "skip");

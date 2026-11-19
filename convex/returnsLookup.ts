@@ -46,23 +46,32 @@ const SAFE_TAG = /^[A-Za-z0-9\-_.:/ ]+$/;
 
 type ProjectLabel = { projectId: string; projectName: string; projectNumber: string };
 
-async function projectLabel(ctx: QueryCtx, projectId: string): Promise<ProjectLabel | null> {
+// `by_cuid` is a GLOBAL index: every row it returns is org-checked against the
+// caller's org before any of its fields leave this module (R-8.4.3). A line's
+// `projectId` is data, not proof the project is ours.
+async function projectLabel(ctx: QueryCtx, orgId: string, projectId: string): Promise<ProjectLabel | null> {
   const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
-  return p ? { projectId: p.id, projectName: p.name, projectNumber: p.projectNumber } : null;
+  if (!p || p.organizationId !== orgId) return null;
+  return { projectId: p.id, projectName: p.name, projectNumber: p.projectNumber };
 }
 
-async function modelName(ctx: QueryCtx, modelId: string | null | undefined): Promise<string | null> {
+async function ownKit(ctx: QueryCtx, orgId: string, kitId: string) {
+  const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+  return kit && kit.organizationId === orgId ? kit : null;
+}
+
+async function modelName(ctx: QueryCtx, orgId: string, modelId: string | null | undefined): Promise<string | null> {
   if (!modelId) return null;
   const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
-  return m?.name ?? null;
+  return m && m.organizationId === orgId ? m.name : null;
 }
 
 async function resolveAsset(ctx: QueryCtx, orgId: string, asset: NonNullable<Awaited<ReturnType<typeof loadAssetByTag>>>) {
-  const assetName = (await modelName(ctx, asset.modelId)) ?? "Asset";
+  const assetName = (await modelName(ctx, orgId, asset.modelId)) ?? "Asset";
 
   // Guard: kit member — the kit is the unit of return, not its individual parts.
   if (asset.kitId) {
-    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", asset.kitId!)).first();
+    const kit = await ownKit(ctx, orgId, asset.kitId);
     return {
       kind: "guard_kit_member" as const,
       assetId: asset.id, assetTag: asset.assetTag, assetName,
@@ -94,7 +103,7 @@ async function resolveAsset(ctx: QueryCtx, orgId: string, asset: NonNullable<Awa
   for (const u of units) {
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", u.lineItemId)).first();
     if (!line || line.organizationId !== orgId || line.status !== "CHECKED_OUT") continue;
-    const proj = await projectLabel(ctx, line.projectId);
+    const proj = await projectLabel(ctx, orgId, line.projectId);
     if (proj) deployments.push({ ...proj, lineItemId: line.id, unitId: u.id });
   }
 
@@ -112,7 +121,7 @@ async function resolveAsset(ctx: QueryCtx, orgId: string, asset: NonNullable<Awa
 }
 
 async function resolveBulk(ctx: QueryCtx, orgId: string, bulk: NonNullable<Awaited<ReturnType<typeof loadBulkByTag>>>) {
-  const assetName = (await modelName(ctx, bulk.modelId)) ?? "Bulk item";
+  const assetName = (await modelName(ctx, orgId, bulk.modelId)) ?? "Bulk item";
 
   if (bulk.status === "RETIRED") {
     return { kind: "exception" as const, reason: "retired" as const, bulkAssetId: bulk.id, assetTag: bulk.assetTag, assetName };
@@ -143,7 +152,7 @@ async function resolveBulk(ctx: QueryCtx, orgId: string, bulk: NonNullable<Await
 
   const deployments: Array<ProjectLabel & { outstanding: number }> = [];
   for (const [projectId, outstanding] of outstandingByProject) {
-    const proj = await projectLabel(ctx, projectId);
+    const proj = await projectLabel(ctx, orgId, projectId);
     if (proj) deployments.push({ ...proj, outstanding });
   }
 
@@ -173,7 +182,7 @@ async function resolveKit(ctx: QueryCtx, orgId: string, kit: NonNullable<Awaited
 
   const deployments: Array<ProjectLabel & { lineItemId: string }> = [];
   for (const line of parentLines) {
-    const proj = await projectLabel(ctx, line.projectId);
+    const proj = await projectLabel(ctx, orgId, line.projectId);
     if (proj) deployments.push({ ...proj, lineItemId: line.id });
   }
 

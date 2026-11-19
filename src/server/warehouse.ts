@@ -6,16 +6,17 @@ import { getClientById } from "@/lib/clients-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
 import { getLocationMap } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
-import { computeOverbookedStatus } from "@/lib/availability";
 import { logActivity, logActivityMany } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
-import { buildWarehouseLineItems, buildPullSheetLineItems } from "@/lib/project-line-item-read";
+import { buildWarehouseLineItems } from "@/lib/project-line-item-read";
+import { projectDocumentData } from "@/lib/pdfme/generate-pdf";
+import { PULL_LIST_TABLE_CONFIG, toPullRow } from "@/lib/pdfme/pull-list";
+import { filterAndGroupItems } from "@/lib/react-pdf/line-items-table-model";
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByIds, getBulkAssetsByIds, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectById, getProjectByIdMapped, getProjectsByOrg } from "@/lib/projects-read";
-import { getProjectWindowDates } from "@/lib/project-window";
 
 export async function getProjectForWarehouse(projectId: string) {
   const { organizationId } = await getOrgContext();
@@ -815,79 +816,34 @@ export async function getAvailableAssetsForModels(modelIds: string[]) {
   return serialize(Object.fromEntries(entries) as Record<string, AvailableAssetRow[]>);
 }
 
+/** The pull sheet (spec §9c.5): header facts + the pull list's groups. */
 export async function getProjectPullSheet(projectId: string) {
   const { organizationId } = await getOrgContext();
-
-  // The EQUIPMENT line-item tree (lineItems → childLineItems, model/supplier/kit/
-  // asset/bulkAsset + per-asset location graft, CANCELLED dropped, no units) is
-  // reconstructed from the dual-written Convex tables — see buildPullSheetLineItems
-  // (Phase A keystone consumer 3/4). project is Convex-only — read the scalars.
   const project = await getProjectByIdMapped(projectId, organizationId);
 
   if (!project) {
     throw new Error("Project not found");
   }
 
-  const { lineItems: attachedLineItems, locationMap } = await buildPullSheetLineItems(
-    projectId,
-    organizationId,
-  );
-
-  // Compute overbooked status — gear-committed window, not raw rental dates.
-  const pullSheetWindow = getProjectWindowDates(project);
-  const overbookedMap = await computeOverbookedStatus(
-    organizationId,
-    attachedLineItems,
-    pullSheetWindow.start,
-    pullSheetWindow.end,
-    project.id,
-  );
-
-  const enrichedLineItems = attachedLineItems
-    .filter((li) => {
-      const isSubhireItem = li.subHireId != null;
-      // Kit children render under their parent
-      if (li.isKitChild && !isSubhireItem) return false;
-      // Sub-hire group parents are wrappers — their children show individually
-      if (isSubhireItem && !li.isKitChild && !li.kitId && (li.childLineItems?.length ?? 0) > 0) return false;
-      return true;
-    })
-    .map((li) => {
-      const info = overbookedMap.get(li.id);
-      return {
-        ...li,
-        isOverbooked: !!info,
-        overbookedInfo: info ?? null,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        childLineItems: li.childLineItems?.map((child: any) => {
-          const childInfo = overbookedMap.get(child.id);
-          return { ...child, isOverbooked: !!childInfo, overbookedInfo: childInfo ?? null };
-        }),
-      };
-    });
-
-  // Group line items by groupName
-  const groups: Record<string, typeof enrichedLineItems> = {};
-  for (const item of enrichedLineItems) {
-    const key = item.groupName || "Ungrouped";
-    if (!groups[key]) {
-      groups[key] = [];
-    }
-    groups[key].push(item);
-  }
-
-  // Clients live in Convex — attach instead of a Prisma join. Return the
-  // Convex-attached tree as `project.lineItems` too (not the model/supplier-less
-  // raw Prisma rows) so the payload stays byte-identical to the old include even
-  // though current consumers read `groups`, not `project.lineItems`.
-  const clientRaw = project.clientId ? await getClientById(project.clientId) : null;
-  // getClientById resolves by a GLOBAL by_cuid index — re-check org ownership (see
-  // src/server/projects.ts getProject for the full rationale).
-  const client = clientRaw && clientRaw.organizationId === organizationId ? clientRaw : null;
-  const location = project.locationId ? locationMap.get(project.locationId) ?? null : null;
+  // ONE list (R-3.1, plan Q13): the SAME document data the pull-slip PDF
+  // renders (`projectDocumentData(…, "packing-list")`), grouped by the SAME
+  // `filterAndGroupItems` under the SAME config. The sheet on screen and the
+  // PDF can never list different gear. Overbooking comes with those rows.
+  const data = await projectDocumentData(projectId, organizationId, "packing-list");
+  const { groups } = filterAndGroupItems(data.line_items, PULL_LIST_TABLE_CONFIG);
   return serialize({
-    project: { ...project, lineItems: attachedLineItems, client, location },
-    groups,
+    project: {
+      id: project.id,
+      projectNumber: project.projectNumber,
+      name: project.name,
+      status: project.status,
+      clientName: data.client_name || null,
+      rentalStartDate: project.rentalStartDate ?? null,
+      rentalEndDate: project.rentalEndDate ?? null,
+      // WS2 (#941): projectStartDate is the load-in role; loadInDate is the deprecated fallback.
+      loadInDate: project.projectStartDate ?? project.loadInDate ?? null,
+    },
+    groups: [...groups].map(([name, items]) => ({ name, rows: items.map((i) => toPullRow(i)) })),
   });
 }
 

@@ -5,6 +5,7 @@
  */
 
 import { MODULE_NAMES } from "@/lib/vocabulary";
+import { ALL_NAV } from "@/lib/nav";
 
 export interface PageCommand {
   /** Display label */
@@ -32,7 +33,7 @@ export interface PageCommand {
   children?: PageCommand[];
 }
 
-export const PAGE_COMMANDS: PageCommand[] = [
+const RAW_PAGE_COMMANDS: PageCommand[] = [
   {
     // Dashboard is the landing page again (D10C, reversing work-layer phase
     // 0.5/#1242) — this entry absorbs Today's old aliases (including the
@@ -337,6 +338,50 @@ export const PAGE_COMMANDS: PageCommand[] = [
     description: "Your account, password, and 2FA",
   },
 ];
+
+// ── The shell comes from NAV (§6d.9, R-3.1) ────────────────────────────────────
+// Labels, urls and icons of every NAV row are read from `src/lib/nav.ts`; the
+// hand-written entries above keep only what NAV does not own (aliases, search
+// types, filters, and palette-only extras such as Sub-Hires, Roles & Skills and the
+// Settings sub-pages). A NAV row with no entry above gets a generated one, so the
+// palette can never lack a page the sidebar has.
+
+const NAV_BY_URL = new Map<string, { label: string; icon: string }>();
+for (const item of ALL_NAV) {
+  NAV_BY_URL.set(item.url, { label: item.label, icon: item.icon });
+  for (const s of item.subs ?? []) NAV_BY_URL.set(s.url, { label: s.label, icon: s.icon });
+}
+
+function applyNav(cmd: PageCommand, parentHref?: string): PageCommand {
+  const nav = cmd.href !== parentHref ? NAV_BY_URL.get(cmd.href) : undefined;
+  return {
+    ...cmd,
+    ...(nav ?? {}),
+    children: cmd.children?.map((c) => applyNav(c, cmd.href)),
+  };
+}
+
+function generated(label: string, href: string, icon: string): PageCommand {
+  return { label, href, aliases: [norm(label)], icon, description: `Open ${label}` };
+}
+
+function withMissingNavRows(commands: PageCommand[]): PageCommand[] {
+  const known = new Set(commands.flatMap((c) => [c.href, ...(c.children ?? []).map((k) => k.href)]));
+  const out: PageCommand[] = commands.map((c) => ({ ...c, children: c.children ? [...c.children] : undefined }));
+  for (const item of ALL_NAV) {
+    if (!known.has(item.url)) out.push(generated(item.label, item.url, item.icon));
+    for (const s of item.subs ?? []) {
+      if (known.has(s.url)) continue;
+      const parent = out.find((c) => c.href === item.url);
+      const entry = generated(s.moreLabel ?? s.label, s.url, s.icon);
+      if (parent) parent.children = [...(parent.children ?? []), entry];
+      else out.push(entry);
+    }
+  }
+  return out;
+}
+
+export const PAGE_COMMANDS: PageCommand[] = withMissingNavRows(RAW_PAGE_COMMANDS.map((c) => applyNav(c)));
 
 /** Normalize string for matching */
 function norm(s: string): string {

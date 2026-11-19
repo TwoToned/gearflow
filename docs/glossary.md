@@ -39,7 +39,7 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Loose** (UI) | Gear not in a case (replaces "Not planned" / "No container"). |
 | **Return** | UI label for checking an asset **in** from a project back to the warehouse. |
 | **Docket** | A delivery or return document generated for a project (delivery docket / return docket) — see [13-pdfs.md](../FEATUREDOCS/13-pdfs.md). |
-| **Prep container (prep)** | A visual grouping label applied to assets during the pick/prep phase of warehouse operations. Not backed by a kit — just a string field on the line item. See [32-preps.md](../FEATUREDOCS/32-preps.md). |
+| **Prep container (prep)** | The legacy free-text label for a case during pick/prep (`prepContainer`). Superseded by the first-class packing container (`projectContainers`; membership on the unit): see [83-packing-containers.md](../FEATUREDOCS/83-packing-containers.md). |
 | **Check item** | A pass/fail, measurement, notes, or dropdown quality check performed on an asset during deploy/return. See [37-check-items.md](../FEATUREDOCS/37-check-items.md). |
 | **Test & Tag (T&T)** | AS/NZS 3760:2022 electrical safety compliance testing on assets. See [14-test-and-tag.md](../FEATUREDOCS/14-test-and-tag.md). |
 | **Child asset / accessory** | An asset permanently attached to a parent serialized asset (e.g. a cable to a fixture) so it travels with it through projects and warehouse flows (`isKitChild`, `childKind`). See [48-child-assets-accessories.md](../FEATUREDOCS/48-child-assets-accessories.md). |

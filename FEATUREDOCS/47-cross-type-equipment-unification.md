@@ -686,3 +686,12 @@ SubHireGroup synthetic parents — pre-dates this work, no changes needed.
   warehouse + PDF pipelines still see them.
 - The merge behaviour described in [10-projects.md §Sub-hire merge rules](./10-projects.md) —
   unchanged.
+
+## Warehouse job rows (UX Phase 3)
+
+The warehouse stages render these same lines through `buildJobSections` / `buildJobRow`
+(`src/lib/warehouse-job-rows.ts`) into the shared `LineRowList`: category groups on To pick, case groups
+(Loose last) from Prepped. A kit child never becomes a top-level row (it rides its kit parent); only a
+sub-hire GROUP child (no `kitId`) is its own line, the legacy `equipmentItems` rule. Accessory and kit-member
+rows are children of the parent row, selectable on Prepped/Out (relocated accessory units by unit key). The
+old per-tab renderers (`deploy-tab`, `kit-child-rows`, `return-tab`, `container-rail`) are deleted.

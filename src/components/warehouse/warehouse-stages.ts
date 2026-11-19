@@ -35,15 +35,6 @@ export const WAREHOUSE_STAGES: WarehouseStageMeta[] = [
   { key: "deprepped", label: GEAR_STAGE_LABELS.deprepped, hint: "Checked and back in inventory." },
 ];
 
-export const WAREHOUSE_STAGE_INDEX: Record<WarehouseStageKey, number> =
-  WAREHOUSE_STAGES.reduce(
-    (acc, s, i) => {
-      acc[s.key] = i;
-      return acc;
-    },
-    {} as Record<WarehouseStageKey, number>,
-  );
-
 export type WarehouseStageCounts = Record<WarehouseStageKey, number>;
 
 function emptyCounts(): WarehouseStageCounts {

@@ -123,6 +123,19 @@ describe("custom accessories", () => {
     units = await unitsOf(t, tape.id);
     expect(units.every((u) => u.status === "RETURNED")).toBe(true);
   });
+
+  test("the deploy gate's Pack now (accessories-only, narrowed by the child LINE id) packs a custom accessory", async () => {
+    const t = makeT();
+    const plan: AccessoryPlan = { excluded: [], added: [], custom: [{ key: "k1", name: "Gaffer tape", quantityPerParent: 3 }] };
+    await seed(t, plan);
+    // Parent packed WITHOUT its accessories (empty narrowing), so the tape is still to pack.
+    await t.run((ctx) => prepUnit(ctx, { organizationId: ORG, lineItemId: "L1", assetId: "A0", includeAccessoryIds: new Set() }));
+    const tape = (await children(t)).find((k) => k.customAccessoryKey === "k1")!;
+    expect((await unitsOf(t, tape.id)).some((u) => u.prepStatus === "PACKED")).toBe(false);
+    const packed = await t.run((ctx) => prepUnit(ctx, { organizationId: ORG, lineItemId: "L1", assetId: "A0", accessoriesOnly: true, includeAccessoryIds: new Set([tape.id]) }));
+    expect(packed.map((p) => p.lineItemId)).toEqual([tape.id]);
+    expect((await unitsOf(t, tape.id)).every((u) => u.prepStatus === "PACKED")).toBe(true);
+  });
 });
 
 // ─── Accessories on a custom (free-text) item ───────────────────────────────

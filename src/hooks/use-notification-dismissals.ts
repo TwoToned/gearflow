@@ -44,6 +44,15 @@ export function useNotificationDismissals() {
     [dismissManyM],
   );
 
+  const undismissM = useMutation(api.notificationDismissalsWrites.undismissManyNative);
+  const undismissMany = useCallback(
+    async (notificationKeys: string[]): Promise<void> => {
+      if (notificationKeys.length === 0) return;
+      await undismissM({ notificationKeys });
+    },
+    [undismissM],
+  );
+
   const prune = useCallback(
     async (activeKeys: string[]): Promise<void> => {
       await pruneM({ activeKeys });
@@ -58,6 +67,8 @@ export function useNotificationDismissals() {
     dismiss,
     /** Dismiss many keys in one call (Dismiss All). */
     dismissMany,
+    /** The reverse of `dismissMany` — powers the bell's Undo. */
+    undismissMany,
     /** GC dismissal rows whose key is no longer in the active notification set. */
     prune,
   };

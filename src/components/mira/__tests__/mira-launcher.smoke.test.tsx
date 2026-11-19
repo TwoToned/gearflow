@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+vi.mock("next/navigation", () => ({ usePathname: () => "/projects/cm1abcdefghijklmnopqrstuv", useRouter: () => ({ push: vi.fn() }) }));
 const getMiraConversation = vi.hoisted(() => vi.fn());
 const sendMiraMessage = vi.hoisted(() => vi.fn());
 vi.mock("@/server/mira", () => ({
@@ -18,7 +19,7 @@ const isMiraConfigured = vi.hoisted(() => vi.fn());
 vi.mock("@/server/mira-settings", () => ({ isMiraConfigured: (...args: unknown[]) => isMiraConfigured(...args) }));
 
 import MiraContextProvider from "@/components/providers/mira-context-provider";
-import { MiraLauncher } from "@/components/mira/mira-launcher";
+import { MiraLauncher, MiraPanelHost } from "@/components/mira/mira-launcher";
 
 /**
  * Smoke test for Mira's chat panel (now a real LLM tool-calling loop behind
@@ -48,6 +49,7 @@ describe("MiraLauncher + MiraPanel", () => {
     render(
       <MiraContextProvider>
         <MiraLauncher />
+        <MiraPanelHost />
       </MiraContextProvider>,
     );
 
@@ -60,6 +62,7 @@ describe("MiraLauncher + MiraPanel", () => {
     render(
       <MiraContextProvider>
         <MiraLauncher />
+        <MiraPanelHost />
       </MiraContextProvider>,
     );
 
@@ -73,18 +76,61 @@ describe("MiraLauncher + MiraPanel", () => {
     expect(await screen.findByText("You have 3 assets.")).toBeTruthy();
   });
 
-  it("closes the panel and shows the trigger again", async () => {
-    const user = userEvent.setup();
+  const renderMira = () =>
     render(
       <MiraContextProvider>
         <MiraLauncher />
+        <MiraPanelHost />
       </MiraContextProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: /ask mira/i }));
-    await screen.findByText("Ask Mira");
+  it("the word toggles the panel: the Close button and the word both close it", async () => {
+    const user = userEvent.setup();
+    renderMira();
+
+    const word = await screen.findByRole("button", { name: /ask mira/i });
+    expect(word.getAttribute("aria-pressed")).toBe("false");
+    await user.click(word);
+    await screen.findByText("Looking at Jobs");
+    expect(word.getAttribute("aria-pressed")).toBe("true");
 
     await user.click(screen.getByRole("button", { name: /close mira/i }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /ask mira/i })).toBeTruthy());
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Mira" })).toBeNull());
+
+    await user.click(word);
+    await screen.findByRole("complementary", { name: "Mira" });
+    await user.click(word);
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Mira" })).toBeNull());
+  });
+
+  it("is a 384 px panel under the bar (no floating button) and Esc closes it", async () => {
+    const user = userEvent.setup();
+    renderMira();
+    await user.click(await screen.findByRole("button", { name: /ask mira/i }));
+    const panel = await screen.findByRole("complementary", { name: "Mira" });
+    expect(panel.className).toContain("w-96");
+    expect(panel.className).toContain("top-14");
+    expect(panel.className).not.toContain("shadow");
+    expect(document.querySelector(".fixed.bottom-20")).toBeNull();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Mira" })).toBeNull());
+  });
+
+  it("on a phone it is a full-height sheet that Esc also closes", async () => {
+    const mql = (q: string) => ({ matches: q.includes("859"), media: q, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false });
+    vi.stubGlobal("matchMedia", mql);
+    const prev = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 390, configurable: true, writable: true });
+    const user = userEvent.setup();
+    renderMira();
+    await user.click(await screen.findByRole("button", { name: /ask mira/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.className).toContain("inset-0");
+    expect(screen.queryByRole("complementary", { name: "Mira" })).toBeNull();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    Object.defineProperty(window, "innerWidth", { value: prev, configurable: true, writable: true });
+    vi.unstubAllGlobals();
   });
 });

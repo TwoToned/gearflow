@@ -3,7 +3,8 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { getAuthContext, isMemberAuth, requireSelfScope } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertStrLen } from "./lib/fieldGuards";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -96,10 +97,45 @@ export const archiveNative = mutation({
 });
 
 /**
+ * The reverse of `markAllReadNative` — powers the bell's `Mark all read` Undo
+ * (the shell's ONE reverse trigger, UX unification D70 / 6a). Takes the EXACT ids
+ * the forward call marked (the client holds them) so Undo never un-reads a row
+ * the user had already read before. Same posture as the rest of this module: every
+ * id is re-checked against the verified (organizationId, userId), so an id that
+ * isn't the caller's own in their active org is rejected like a missing row, and
+ * the batch is capped by the identity-derived bulk cap. Idempotent (an already
+ * unread row is left alone).
+ */
+export const markUnreadManyNative = mutation({
+  returns: v.object({ marked: v.number() }),
+  args: { ids: v.array(v.string()) },
+  handler: async (ctx, { ids }) => {
+    await assertWritesEnabled(ctx, "notifications");
+    await enforceBrowserWriteLimit(ctx);
+    const auth = await getAuthContext(ctx);
+    if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: a signed-in user is required.");
+    if (!auth.orgId) throw new ConvexError("Forbidden: no active organization.");
+    await requireSelfScope(ctx, "write");
+    await assertBulkSizeOk(ctx, ids.length);
+    for (const id of ids) assertStrLen(id, "id", { min: 1, max: 128 });
+    let marked = 0;
+    for (const id of new Set(ids)) {
+      const doc = await loadOwnNotification(ctx, id, auth.orgId, auth.userId);
+      if (doc.readAt) {
+        await ctx.db.patch(doc._id, { readAt: undefined });
+        marked++;
+      }
+    }
+    return { marked };
+  },
+});
+
+/**
  * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
  * Personal-scope (self:write) inbox bookkeeping — no domain effect.
  */
 export const agentOps: AgentOpsAnnotations = {
+  markUnreadManyNative: { danger: "low" },
   markReadNative: { danger: "low" },
   markAllReadNative: { danger: "low" },
   archiveNative: { danger: "low" },

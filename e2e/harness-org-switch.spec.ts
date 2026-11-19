@@ -105,8 +105,10 @@ test.describe("harness: org switcher (cross-tenant isolation)", () => {
       await expect(page.getByText(model1, { exact: true }).and(page.locator(":visible"))).toHaveCount(0);
     });
 
-    await test.step("switch back to org 1 via the Account menu -> models list shows ONLY org 1's model", async () => {
-      await page.getByRole("button", { name: "Account menu" }).click();
+    await test.step("switch back to org 1 via the sidebar org switcher -> models list shows ONLY org 1's model", async () => {
+      // The org switcher is its own control at the top of the sidebar (UX 6a);
+      // the Account menu no longer lists organisations.
+      await page.getByRole("button", { name: /^Organisation:/ }).click();
       await page.getByRole("menuitem", { name: org1Name }).click();
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
 

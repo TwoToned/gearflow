@@ -93,6 +93,7 @@ type ProjectDoc = {
   projectEndDate?: number;
   clientId?: string;
   projectManagerId?: string;
+  packerUserId?: string;
 };
 
 type FloorFacts = {
@@ -174,6 +175,7 @@ function floorFields(p: ProjectDoc, facts: FloorFacts | undefined) {
   return {
     lineItems: facts?.lineItems ?? [],
     projectManagerId: p.projectManagerId ?? null,
+    packerUserId: p.packerUserId ?? null,
     counts,
     stage: warehouseStage(counts),
     outbound: facts?.outbound.outbound ?? null,

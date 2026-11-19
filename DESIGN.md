@@ -308,6 +308,14 @@ All live in `src/components/ui/`; types in `src/lib/primitives/types.ts`.
 - **Hover:** Left-edge 2px red bar (opacity 0→1) + subtle `bg-elevated` tint
 - **IDs/tags:** `t-mono` (Geist Mono), `muted`
 - **Values:** Right-aligned, `tabular-nums`, 500 weight
+- **List pages (Jobs, Assets; `ListPage` over `LineRowList`):** head with title, one primary and a
+  ⋯; a calm segment strip with counts (underlined word, no pills); a toolbar of search, filter
+  WORDS (`Status: 2 chosen ✕`, never chips), saved views and the view words (`Table · Board`,
+  `Table · Grid`); sortable header words with `aria-sort`; flags are red dot-words, status is a
+  `StatusWord`; money has no cents. Footer `38 jobs · 1–25 ‹ 1 / 2 ›`. Empty states say
+  "none yet" (with the next action) or "nothing matches" (`Clear filters`). Bulk replaces the
+  sticky primary on phone (`BulkBar`, above the bottom nav). Phone shows cards with a 40px ⋯ and
+  `Show 25 more`. The URL is the state.
 
 > _Corrected 2026-07-28 (#985 design review): this section previously read
 > "`t-overline` (10px/700/uppercase)" and "`t-mono` (JetBrains Mono)" — both stale.

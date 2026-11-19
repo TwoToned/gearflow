@@ -2,9 +2,38 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
-## Projects List Views (`ProjectTable`, `ProjectBoard`)
-`ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
-paginated: `projects.listPage` (filter/sort/client join done in Convex) via
+## Jobs list (`/projects`, #1393, spec 9b)
+The list is `JobsList` (`src/components/projects/jobs-list.tsx`) on the shared `ListPage`
+(`src/components/ui/list-page.tsx`, see FEATUREDOCS/25): rows are `LineRowList` rows, **the URL
+is the state** (`seg`, `q`, `status`/`type`/`client`/`pm`/`date` comma lists, `sort=key:dir`,
+`page`, `view=board`; defaults omitted, junk dropped; codec `src/lib/list-url-state.ts`). Page
+size is fixed at 25. Nothing about filters/sort/view is read from localStorage any more (only
+column visibility, `colVis`, stays local). Config + row mapping live in
+`src/lib/list-views/jobs.ts`, row menu in `src/lib/row-actions/job.ts`.
+
+- **Segments** (counts from `projects.segmentCounts`): All (excludes CANCELLED), Quoting,
+  Booked, Out, Done, **Needs you** (`projects.needsYouIds`, derived on read: an unresolved blocking discussion, an Out job past its end date, a quote untouched for the stale window, or a hard-overbooked job).
+  Active and Overdue (D86) are config entries but NOT shipped; dashboard tile hrefs are unchanged.
+- **Filter words:** Status (multi; cancelled via page ⋯ › Show cancelled), Type, Client (name
+  search + `clientIn`), PM (`pmIn`, names from the org roster), Dates (presets resolved with
+  `useStableNow`, never a fresh `Date.now()` in query args).
+- **Columns:** # · Job (client, tags, red dot-word flags for overbooked / reduced stock /
+  blocking comments) · Status (+ lock glyph) · Dates · Type · Total (whole dollars); PM and Tags
+  are opt-in under ⋯ › Columns. Sortable headers.
+- **Row ⋯ and bulk:** only verbs backed by an existing write. Set status (the server gates
+  CONFIRMED on an accepted quote and unlock rights; the overbooking preview is advisory and
+  fails open; bulk cannot target CONFIRMED), Duplicate, Save as template, Cancel, Delete (cancelled
+  only; server-enforced). Bulk: Set status…, Add tag… (`projectWrites.addTagNative`: one call,
+  reads tags in-transaction, returns `{ changed, full }`; jobs at 25 tags are named in the
+  toast; one activity row per changed job), Export (formula-safe CSV of the visible facts),
+  Cancel jobs. Per-row gates; skipped rows are named; Undo is one closure
+  (`announceListWrite`) and only reverts rows still in the state the write left.
+- **Page ⋯:** Templates, Overbookings, Show cancelled, Columns. Primary: `New job` (`n`).
+- **Saved views:** URL mode (below and FEATUREDOCS/25); built-ins **My jobs**, **Out this week**,
+  **Unquoted enquiries**.
+
+The old `ProjectTable` (a DataTable) is retired; `projects.listPage` (filter/sort/client join
+done in Convex, now with `segment`, `clientIn`, date and PM args) backs the list via
 `useAuthedQuery`. `ProjectBoard` (kanban, `project-board.tsx`) is unpaginated —
 `projects.listBoard` returns every non-template, non-cancelled project in one
 query, grouped by lifecycle stage client-side (a "browse everything" view, not a

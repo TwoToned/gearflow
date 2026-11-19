@@ -46639,9 +46639,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b98fde57c61e7126",
-    "returnsSha": "22c0df0d1cba3d55",
+    "returnsSha": "82ebe5773940055e",
     "stability": "tracks-app",
-    "summary": "Resolve a scanned barcode/tag to its asset/kit/bulk-asset/test-tag navigation target.",
+    "summary": "Resolve a scanned barcode/tag to its asset/kit/bulk-asset/test-tag navigation target, plus which jobs it is on right now (to pick / packed / out) and any kit-member or accessory guard.",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -58521,6 +58521,75 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "warehouseFloor.lineUnits",
+    "module": "warehouseFloor",
+    "fn": "lineUnits",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "lineItemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f6295a515acfa67b",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Every unit of one line with its status, return condition, returned time and whether it came back late.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "warehouseFloor.returning",
+    "module": "warehouseFloor",
+    "fn": "returning",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Returning mode board: every job with gear out or coming back, grouped by job, with per-line out / back / damaged / missing / late-back unit counts.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "warehouseList.bundle",
     "module": "warehouseList",
     "fn": "bundle",
@@ -58546,9 +58615,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
     "stability": "stable",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Org-wide warehouse floor: every pipeline job with its derived floor stage (to pick / prepping / ready / out / returning), unit counts, PM and outbound truck time.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -63531,10 +63600,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1232,
-  agentReachable: 604,
-  queries: 441,
+  total: 1234,
+  agentReachable: 606,
+  queries: 443,
   mutations: 791,
-  agentReachableQueries: 306,
+  agentReachableQueries: 308,
   agentReachableMutations: 298,
 } as const;

@@ -45,11 +45,15 @@ function earlier(a: OutboundServiceLike, b: OutboundServiceLike): boolean {
   return ad !== bd ? ad < bd : at < bt;
 }
 
+/** A live (not cancelled) outbound service. */
+export function isOutboundService(s: OutboundServiceLike): boolean {
+  return (OUTBOUND_SERVICE_TYPES as readonly string[]).includes(s.type) && s.status !== "CANCELLED";
+}
+
 export function earliestOutbound(services: readonly OutboundServiceLike[]): OutboundTruck | null {
   let best: OutboundServiceLike | null = null;
   for (const s of services) {
-    if (!(OUTBOUND_SERVICE_TYPES as readonly string[]).includes(s.type)) continue;
-    if (s.status === "CANCELLED") continue;
+    if (!isOutboundService(s)) continue;
     if (!best || earlier(s, best)) best = s;
   }
   if (!best) return null;

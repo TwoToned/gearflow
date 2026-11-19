@@ -6,7 +6,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { getProjectWindow } from "./lib/projectWindow";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 import { floorCounts, warehouseStage } from "./lib/warehouseStage";
-import { earliestOutbound, OUTBOUND_SERVICE_TYPES, type OutboundServiceLike } from "./lib/outboundTruck";
+import { earliestOutbound, isOutboundService, type OutboundServiceLike } from "./lib/outboundTruck";
 
 export const agentOps: AgentOpsAnnotations = {
   bundle: {
@@ -17,24 +17,35 @@ export const agentOps: AgentOpsAnnotations = {
   },
 };
 
-/** Outbound services read per job and type. A job has a handful; the cap only
- *  bounds a pathological one (R-9.8), and the earliest is what matters. */
-const MAX_OUTBOUND_PER_TYPE = 25;
+/** Services scanned per job before giving up (R-9.8). A job has a handful;
+ *  hitting this sets `outboundTruncated` rather than guessing. */
+const MAX_SERVICES_SCANNED = 200;
 
-/** The job's earliest outbound truck (`convex/lib/outboundTruck.ts`), from its
- *  LIVE version's transport services. `by_versionId_type` is a GLOBAL index —
- *  org-check every row (R-8.4.3). */
+/**
+ * The job's earliest outbound truck (`convex/lib/outboundTruck.ts`), from its
+ * LIVE version's services. Streams `by_versionId_date` IN DATE ORDER, so the
+ * earliest dated outbound service is reached first and the scan stops once the
+ * date moves past it — a cap can never drop the earliest one (a cap on an
+ * unordered read could). Undated rows sort first in the index; they are kept
+ * as candidates but `earliestOutbound` ranks them after any dated one. Rows are
+ * filtered BEFORE they can end the scan (org, type, not cancelled), and
+ * `by_versionId_date` is a GLOBAL index — org-check every row (R-8.4.3).
+ */
 async function outboundFor(ctx: QueryCtx, versionId: string, orgId: string) {
-  const perType = await Promise.all(
-    OUTBOUND_SERVICE_TYPES.map((type) =>
-      ctx.db
-        .query("projectServices")
-        .withIndex("by_versionId_type", (q) => q.eq("versionId", versionId).eq("type", type))
-        .take(MAX_OUTBOUND_PER_TYPE),
-    ),
-  );
-  const services: OutboundServiceLike[] = perType.flat().filter((s) => s.organizationId === orgId);
-  return earliestOutbound(services);
+  const candidates: OutboundServiceLike[] = [];
+  let firstDate: number | null = null;
+  let scanned = 0;
+  let truncated = false;
+  for await (const s of ctx.db
+    .query("projectServices")
+    .withIndex("by_versionId_date", (q) => q.eq("versionId", versionId))) {
+    if (++scanned > MAX_SERVICES_SCANNED) { truncated = true; break; }
+    if (firstDate != null && s.date !== firstDate) break;
+    if (s.organizationId !== orgId || !isOutboundService(s)) continue;
+    candidates.push(s);
+    if (s.date != null) firstDate = s.date;
+  }
+  return { outbound: earliestOutbound(candidates), truncated };
 }
 
 /**
@@ -173,6 +184,9 @@ function projectRow(p: ProjectDoc, clientMap: Map<string, { name: string }>, fac
     projectManagerId: p.projectManagerId ?? null,
     counts,
     stage: warehouseStage(counts),
-    outbound: facts?.outbound ?? null,
+    outbound: facts?.outbound.outbound ?? null,
+    // True only if the job had more services than one scan reads: the truck
+    // shown may then not be the earliest.
+    outboundTruncated: facts?.outbound.truncated ?? false,
   };
 }

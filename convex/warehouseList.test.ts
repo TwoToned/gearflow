@@ -86,6 +86,40 @@ describe("warehouseList.bundle", () => {
     expect(p.lineItems).toHaveLength(2);
   });
 
+  test("the earliest outbound is found among many services; undated and cancelled rows never win or end the scan", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pM", organizationId: ORG, projectNumber: "1", name: "M", status: "CONFIRMED", isTemplate: false, liveVersionId: "v-pM" });
+      await ctx.db.insert("projectVersions", { id: "v-pM", organizationId: ORG, projectId: "pM", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      // 120 later deliveries inserted FIRST (an unordered capped read would see only these).
+      for (let i = 0; i < 120; i++) {
+        await ctx.db.insert("projectServices", { id: `late${i}`, organizationId: ORG, projectId: "pM", type: "DELIVERY", title: "d",
+          date: NOW + (i + 5) * DAY, scheduledTime: "05:00", versionId: "v-pM", lineageId: `late${i}` });
+      }
+      await ctx.db.insert("projectServices", { id: "undated", organizationId: ORG, projectId: "pM", type: "DELIVERY", title: "d", scheduledTime: "01:00", versionId: "v-pM", lineageId: "undated" });
+      await ctx.db.insert("projectServices", { id: "cancel", organizationId: ORG, projectId: "pM", type: "DELIVERY", title: "d", date: NOW, scheduledTime: "04:00", status: "CANCELLED", versionId: "v-pM", lineageId: "cancel" });
+      await ctx.db.insert("projectServices", { id: "labour", organizationId: ORG, projectId: "pM", type: "LABOUR", title: "l", date: NOW, versionId: "v-pM", lineageId: "labour" });
+      await ctx.db.insert("projectServices", { id: "early", organizationId: ORG, projectId: "pM", type: "CLIENT_PICKUP", title: "c", date: NOW + DAY, scheduledTime: "10:00", versionId: "v-pM", lineageId: "early" });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.warehouseList.bundle, { orgId: ORG });
+    expect(res.projects[0].outbound).toEqual({ kind: "client", date: NOW + DAY, time: "10:00", vehicle: null });
+    expect(res.projects[0].outboundTruncated).toBe(false);
+  });
+
+  test("a pathological job past the scan cap flags outboundTruncated rather than guessing silently", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pP", organizationId: ORG, projectNumber: "1", name: "P", status: "CONFIRMED", isTemplate: false, liveVersionId: "v-pP" });
+      await ctx.db.insert("projectVersions", { id: "v-pP", organizationId: ORG, projectId: "pP", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      for (let i = 0; i < 205; i++) {
+        await ctx.db.insert("projectServices", { id: `l${i}`, organizationId: ORG, projectId: "pP", type: "LABOUR", title: "l", date: NOW + i, versionId: "v-pP", lineageId: `l${i}` });
+      }
+      await ctx.db.insert("projectServices", { id: "d", organizationId: ORG, projectId: "pP", type: "DELIVERY", title: "d", date: NOW + 300 * DAY, versionId: "v-pP", lineageId: "d" });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.warehouseList.bundle, { orgId: ORG });
+    expect(res.projects[0].outboundTruncated).toBe(true);
+  });
+
   test("a job with no outbound service has outbound null", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {

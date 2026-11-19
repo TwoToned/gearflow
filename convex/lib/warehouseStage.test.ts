@@ -4,6 +4,7 @@ import {
   floorCounts,
   warehouseStage,
   isLate,
+  returnedLate,
   EMPTY_FLOOR_COUNTS,
   FLOOR_STAGE_KEYS,
   type FloorLine,
@@ -98,5 +99,11 @@ describe("isLate (D29)", () => {
   });
   it("a job with no end is never late", () => {
     expect(isLate({ status: "CHECKED_OUT" }, null, END)).toBe(false);
+    expect(returnedLate({ returnedAt: END }, null)).toBe(false);
+  });
+  it("returnedLate is the clock-free half", () => {
+    expect(returnedLate({ returnedAt: END + 2 * DAY }, END)).toBe(true);
+    expect(returnedLate({ returnedAt: END + 3600_000 }, END)).toBe(false);
+    expect(returnedLate({}, END)).toBe(false);
   });
 });

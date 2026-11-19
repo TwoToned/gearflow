@@ -82,7 +82,7 @@ export function isFloorLeaf(line: FloorLine, wrappers: ReadonlySet<string>): boo
  * straight to a status) falls back to its status, the same way
  * `projectAutoStatus.hasQuantityLeftToDeploy` treats an absent counter.
  */
-function leafCounts(line: FloorLine) {
+export function lineUnitCounts(line: FloorLine) {
   const qty = line.quantity ?? 0;
   const out = line.checkedOutQuantity ?? (line.status === "CHECKED_OUT" ? qty : 0);
   const back = line.returnedQuantity ?? (line.status === "RETURNED" ? qty : 0);
@@ -100,7 +100,7 @@ export function floorCounts(lines: readonly FloorLine[]): FloorCounts {
   const c: FloorCounts = { ...EMPTY_FLOOR_COUNTS };
   for (const line of lines) {
     if (!isFloorLeaf(line, wrappers)) continue;
-    const l = leafCounts(line);
+    const l = lineUnitCounts(line);
     c.lines += 1;
     c.items += l.qty;
     c.packed += l.packed;
@@ -140,7 +140,14 @@ export function isLate(
   now: number,
 ): boolean {
   if (windowEnd == null) return false;
-  const deadline = windowEnd + DAY_MS;
-  if (unit.status === "CHECKED_OUT") return now >= deadline;
-  return unit.returnedAt != null && unit.returnedAt >= deadline;
+  if (unit.status === "CHECKED_OUT") return now >= windowEnd + DAY_MS;
+  return returnedLate(unit, windowEnd);
+}
+
+/** The half of `isLate` that needs no clock: the unit came back after the end
+ *  day. A query can compute this; "still out and late" needs `now`, so the
+ *  client derives that half from the job's end. */
+export function returnedLate(unit: { returnedAt?: number | null }, windowEnd: number | null): boolean {
+  if (windowEnd == null || unit.returnedAt == null) return false;
+  return unit.returnedAt >= windowEnd + DAY_MS;
 }

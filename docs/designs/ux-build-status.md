@@ -40,7 +40,7 @@ Parallel start (2026-11-17, user asked for phases in parallel where possible): 1
 | 1a LineRow, ActionMenu, StatusWord, StageFilter, glyphs | Sonnet | `claude/ux-1a-row-primitives` · #1382 | **merged 2026-11-17** (03dfbe1a) | — |
 | 1b AddBar, FooterTotals, BulkBar, RowEditorSheet, DetailHeader, ScanDock/ScanStrip | Sonnet | `claude/ux-1b-bar-primitives` · #1383 | **merged 2026-11-17** (95d33848), code-reviewed (9 fixes) | — |
 | 1c Row slots: sections, cells, wrapRow, LineRowSection (added for 2a/3) | Sonnet | `claude/ux-1c-row-slots` · #1386 | **merged 2026-11-17** (02711770) | — |
-| 2a → 2b Equipment, then Client view + case cards | Sonnet (2a) · default (2b) | 2a #1388 **merged 2026-11-19** (07cad15c); 2b `claude/ux-2b-client-view` | 2b: plan run | 2b plan review |
+| 2a → 2b Equipment, then Client view + case cards | Sonnet (2a) · default (2b) | 2a #1388 **merged 2026-11-19** (07cad15c); 2b #1395 **merged 2026-11-19** (4180affa) | Phase 2 done | Follow-up: `setPlannedContainerNative` doesn't check the line and the target case are on the same job (pre-existing; same-org only) |
 | 2c Plan-honouring prep (only schema change) | Sonnet | `claude/ux-2c-plan-honouring-prep` · #1380 | **merged 2026-11-17** (a5c18a83); no schema change, code-reviewed | `Planned →` glyph moved to Phase 3 |
 | 3 Warehouse job page (L) | Sonnet | #1385 **merged 2026-11-19** (e78d5c8d) | done; /code-review: 6 findings + 1 security follow-up, all fixed | — |
 | 5 Logistics (L) | Sonnet | 5a #1387 **merged 2026-11-19** (2b2f109c); 5b #1392 **merged 2026-11-19** (6a2ace4d) | Phase 5 done; deployed (prod 307) | — |

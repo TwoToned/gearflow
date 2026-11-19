@@ -372,6 +372,67 @@ describe("returnBulkNative allocations + Undo", () => {
     await expect(undo(t, { returnedUnitIds: ["foreign"], autoStatusAuditId: null })).rejects.toThrow(/not on this job/i);
   });
 
+  /** A bulk line whose accessory child is one serialised asset `a1`, out on p1. */
+  async function seedWithSerialAccessory(t: T) {
+    await seedBulk(t, { qty: 10 });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "CHECKED_OUT", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", baseLine("acc", "p1", {
+        modelId: "m1", assetId: "a1", quantity: 1, checkedOutQuantity: 1, isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "bl",
+      }));
+      await ctx.db.insert("projectLineItemUnits", { id: "ac1", organizationId: ORG, lineItemId: "acc", ordinal: 0, assetId: "a1", quantity: 1, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW });
+    });
+  }
+
+  test("Undo refuses when a returned asset has since gone out on another job (no double deployment)", async () => {
+    const t = makeT();
+    await seedWithSerialAccessory(t);
+    const res = await returnBulk(t, 10);
+    expect(res.returnedUnitIds.sort()).toEqual(["ac1", "bu1"]);
+    expect((await assetById(t, "a1"))?.status).toBe("AVAILABLE");
+    // A1 is deployed on job 2.
+    await seedProject(t, "p2");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("l2", "p2", { modelId: "m1", assetId: "a1" }));
+      await ctx.db.insert("projectLineItemUnits", { id: "u2", organizationId: ORG, lineItemId: "l2", ordinal: 0, assetId: "a1", quantity: 1, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW });
+      const a1 = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).unique();
+      await ctx.db.patch(a1!._id, { status: "CHECKED_OUT" });
+    });
+    await expect(undo(t, res)).rejects.toThrow(/changed since/i);
+    expect((await unitById(t, "ac1"))?.status).toBe("RETURNED");
+    expect((await unitById(t, "bu1"))?.status).toBe("RETURNED");
+  });
+
+  test("Undo refuses when a returned asset has since gone into maintenance", async () => {
+    const t = makeT();
+    await seedWithSerialAccessory(t);
+    const res = await returnBulk(t, 10);
+    await t.run(async (ctx) => {
+      const a1 = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).unique();
+      await ctx.db.patch(a1!._id, { status: "IN_MAINTENANCE" });
+    });
+    await expect(undo(t, res)).rejects.toThrow(/changed since/i);
+  });
+
+  test("a return of more units than the Undo cap offers no Undo", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Cable", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("bulkAssets", { id: "ba1", organizationId: ORG, modelId: "m1", assetTag: "CAB", totalQuantity: 1000, availableQuantity: 0 });
+      await ctx.db.insert("projectLineItems", baseLine("bl", "p1", { modelId: "m1", bulkAssetId: "ba1", quantity: 501, checkedOutQuantity: 501 }));
+      for (let i = 0; i < 501; i++) {
+        await ctx.db.insert("projectLineItemUnits", {
+          id: `bu${i}`, organizationId: ORG, lineItemId: "bl", ordinal: i, bulkAssetId: "ba1", quantity: 1, returnedQuantity: 0, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW,
+        });
+      }
+    });
+    const res = await returnBulk(t, 501);
+    expect(res.returnedUnitIds).toHaveLength(501);
+    expect(res.exactUndo).toBe(false);
+  });
+
   test("a partial bulk return has no exact Undo", async () => {
     const t = makeT();
     await seedBulk(t, { qty: 10 });

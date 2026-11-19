@@ -21,6 +21,7 @@ import {
   customUnitScope,
   ensureCustomUnitAccessories,
   removeCustomUnitAccessories,
+  assetStatusFromReturnCondition,
 } from "./lib/fulfillment";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
@@ -1404,8 +1405,32 @@ async function returnedUnitLine(
   const line = cache.get(u.lineItemId) ?? (await lineByCuid(ctx, u.lineItemId));
   const onJob = !!line && line.organizationId === a.organizationId && line.projectId === a.projectId;
   if (!onJob) throw new ConvexError("Some of these items are not on this job, so this undo isn't safe");
-  if (u.status !== "RETURNED") throw new ConvexError("Some of these items have changed since, so this undo isn't safe");
+  if (u.status !== "RETURNED") throw new ConvexError(CHANGED_SINCE);
+  if (u.assetId) await assertAssetStillAsReturned(ctx, a.organizationId, u);
   return line!;
+}
+
+const CHANGED_SINCE = "Some of these items have changed since, so this undo isn't safe";
+
+/**
+ * A serialised unit's ASSET can move on after the return: out on another job,
+ * or into maintenance. Un-returning it then would put one asset out twice (or
+ * pull it off a bench), so refuse unless the asset is still exactly what this
+ * return made it and no other line holds it CHECKED_OUT.
+ */
+async function assertAssetStillAsReturned(
+  ctx: Ctx,
+  organizationId: string,
+  u: { lineItemId: string; assetId?: string; returnCondition?: string | null },
+): Promise<void> {
+  const asset = await assetByCuid(ctx, u.assetId!);
+  const expected = assetStatusFromReturnCondition((u.returnCondition ?? "GOOD") as "GOOD" | "DAMAGED" | "MISSING");
+  if (!asset || asset.organizationId !== organizationId || asset.status !== expected) throw new ConvexError(CHANGED_SINCE);
+  const outElsewhere = await ctx.db
+    .query("projectLineItemUnits")
+    .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", organizationId).eq("assetId", u.assetId!).eq("status", "CHECKED_OUT"))
+    .take(10);
+  if (outElsewhere.some((o) => o.lineItemId !== u.lineItemId)) throw new ConvexError(CHANGED_SINCE);
 }
 
 /** Returned → Deployed for EXACTLY these units. All-or-nothing: every id must

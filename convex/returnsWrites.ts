@@ -45,6 +45,14 @@ import { resolveLiveVersionIdForProject } from "./lib/versionScope";
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 const returnCond = v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING"));
 const BATCH_CAP = 100;
+/** The most units one `unreturnBulkNative` reverses; a bigger return offers no Undo. */
+const UNDO_UNITS_CAP = 500;
+
+/** Exact only when every changed unit fully returned, and within the Undo cap
+ *  (past it the reverse would be refused, so never promise one). */
+function isExactUndo(f: { unitIds: string[]; clean: boolean }): boolean {
+  return f.clean && f.unitIds.length > 0 && f.unitIds.length <= UNDO_UNITS_CAP;
+}
 const NOTES_MAX = 2000;
 
 function errorMessage(e: unknown): string {
@@ -298,7 +306,7 @@ export const returnBulkNative = mutation({
       autoStatus: advanced?.status ?? null,
       autoStatusAuditId: advanced?.auditId ?? null,
       returnedUnitIds: flipped.unitIds,
-      exactUndo: flipped.clean && flipped.unitIds.length > 0,
+      exactUndo: isExactUndo(flipped),
     };
   },
 });
@@ -307,7 +315,6 @@ export const returnBulkNative = mutation({
 // Takes the `returnedUnitIds` that call handed back and moves ONLY those units
 // Returned → Deployed (`unreturnUnitsCore`), refusing if any has changed since.
 // The reverse of a return needs `check_out`, like `warehouseWrites.unreturnItems`.
-const UNDO_UNITS_CAP = 500;
 
 export const unreturnBulkNative = mutation({
   returns: v.object({ updatedLineIds: v.array(v.string()) }),

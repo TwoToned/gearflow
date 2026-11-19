@@ -19,6 +19,7 @@ import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
 import { Header } from "./components/header";
 import { DetailsRow } from "./components/details-row";
 import { LineItemsTable } from "./components/line-items-table";
+import { QUOTE_TABLE_CONFIG } from "./line-items-table-model";
 import { TotalsBlock } from "./components/totals-block";
 import { DraftWatermark } from "./components/draft-watermark";
 import { Footer } from "./components/footer";
@@ -39,24 +40,12 @@ export function QuoteDocument({ data, draftPreview = false }: { data: DocumentDa
   const docType: ProjectDocumentType = "quote";
   const itemDiscountTotal = data.line_items.reduce((sum, li) => sum + (li.discount ?? 0), 0);
 
+  // What the quote shows is defined once (the Equipment tab's Client view
+  // reads the same constant); only the colour is this render's own.
   const tableConfig = {
-    documentType: docType,
+    ...QUOTE_TABLE_CONFIG,
     documentColor: data.org_document_color || "#0d4f4f",
-    showGroupHeaders: true,
-    showKitChildren: false,
-    showCheckboxes: false,
-    showConditionColumns: false,
-    showPricing: true,
-    showBadges: false,
-    showNotes: true,
-    showPerUnitCheckboxes: false,
-    showAssetTags: false,
-    showCategories: false,
-    showRowNumbers: false,
-    filterOptional: false,
-    filterByStatus: null,
-    hidePricingPeriodSuffix: true,
-  } as const;
+  };
 
   return (
     <Document title={`${data.org_name} — Quote ${data.project_number}`}>

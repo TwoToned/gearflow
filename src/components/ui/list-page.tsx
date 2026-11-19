@@ -74,6 +74,8 @@ export interface ListPageProps {
   /** Built from the selected ids (visible rows only). */
   bulk?: (ids: string[]) => BulkAction[];
   empty: ListEmptyCopy;
+  /** A one-line note under the toolbar (e.g. a truncated derived segment). */
+  notice?: string;
   /** Trailing toolbar slot: the saved-views menu. */
   toolbarExtra?: React.ReactNode;
   /** A non-table view (`board`): rendered instead of the table; chrome stays. */
@@ -242,6 +244,7 @@ export function ListPage(props: ListPageProps) {
         onView={(v) => setState(withPatch(state, { view: v }))}
         extra={props.toolbarExtra}
       />
+      {props.notice && <p className="text-caption text-muted">{props.notice}</p>}
       {view ?? <ListBody props={{ ...props, columns: cols.columns }} c={c} />}
       <ListAction props={props} c={c} />
     </div>

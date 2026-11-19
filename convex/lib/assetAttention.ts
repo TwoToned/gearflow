@@ -13,7 +13,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** An asset is "due" when its next T&T date is within this window (or already past). */
 export const DUE_HORIZON_MS = 30 * DAY_MS;
 /** Upper bound on test-tag schedules read for the due set. */
-const DUE_READ_CAP = 2000;
+export const DUE_READ_CAP = 2000;
 
 const ATTENTION_CONDITIONS: readonly string[] = ["POOR", "DAMAGED"];
 
@@ -26,18 +26,27 @@ export function parseAssetSegment(raw: string | undefined): AssetSegmentKey {
  * horizon (overdue included). One indexed range read on `by_organizationId_nextDueDate`
  * (org-scoped by the index), capped.
  */
-export async function dueAssetMap(ctx: QueryCtx, orgId: string, now: number): Promise<Map<string, number>> {
+export async function dueAssetMap(
+  ctx: QueryCtx,
+  orgId: string,
+  now: number,
+  cap: number = DUE_READ_CAP,
+): Promise<{ due: Map<string, number>; truncated: boolean; cap: number }> {
+  // Inactive schedules are filtered BEFORE the cap, so they cannot use it up.
+  // One extra row is read to know whether the cap was hit.
   const rows = await ctx.db
     .query("testTagAssets")
     .withIndex("by_organizationId_nextDueDate", (q) => q.eq("organizationId", orgId).lte("nextDueDate", now + DUE_HORIZON_MS))
-    .take(DUE_READ_CAP);
+    .filter((q) => q.neq(q.field("isActive"), false))
+    .take(cap + 1);
+  const truncated = rows.length > cap;
   const due = new Map<string, number>();
-  for (const r of rows) {
-    if (!r.assetId || r.nextDueDate == null || r.isActive === false) continue;
+  for (const r of rows.slice(0, cap)) {
+    if (!r.assetId || r.nextDueDate == null) continue;
     const prior = due.get(r.assetId);
     if (prior === undefined || r.nextDueDate < prior) due.set(r.assetId, r.nextDueDate);
   }
-  return due;
+  return { due, truncated, cap };
 }
 
 interface SegmentRow {
@@ -48,7 +57,7 @@ interface SegmentRow {
 
 type SegmentTest = (r: SegmentRow, due: Map<string, number>, now: number) => boolean;
 
-const statusIs = (...s: string[]): SegmentTest => (r) => s.includes(r.status ?? "AVAILABLE");
+const statusIs = (...s: string[]) => (r: SegmentRow): boolean => s.includes(r.status ?? "AVAILABLE");
 
 const SEGMENT_TESTS: Record<AssetSegmentKey, SegmentTest> = {
   all: () => true,
@@ -58,7 +67,7 @@ const SEGMENT_TESTS: Record<AssetSegmentKey, SegmentTest> = {
   retired: statusIs("RETIRED"),
   due: (r, due) => due.has(r.id),
   attention: (r, due, now) =>
-    ATTENTION_CONDITIONS.includes(r.condition ?? "GOOD") || statusIs("IN_MAINTENANCE")(r, due, now) || (due.get(r.id) ?? Infinity) < now,
+    ATTENTION_CONDITIONS.includes(r.condition ?? "GOOD") || statusIs("IN_MAINTENANCE")(r) || (due.get(r.id) ?? Infinity) < now,
 };
 
 /** Pure: does the asset belong in `segment`? `due` is `dueAssetMap`'s result. */

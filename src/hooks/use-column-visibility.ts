@@ -6,7 +6,7 @@ import { Columns3 } from "lucide-react";
 import type { ActionItem, FactColumn } from "@/lib/primitives/types";
 
 /** One localStorage entry for every list: `{ [listKey]: opted-in optional column ids }`. */
-export const COL_VIS_STORAGE_KEY = "colVis";
+const COL_VIS_STORAGE_KEY = "colVis";
 
 function readAll(): Record<string, string[]> {
   try {

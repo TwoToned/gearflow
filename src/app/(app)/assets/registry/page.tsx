@@ -1,10 +1,9 @@
 "use client";
-// use-client: client navigation hooks (useRouter/useSearchParams) (R-8.1.1)
+// use-client: client navigation hooks (useRouter) (R-8.1.1)
 
 import { useRouter } from "next/navigation";
-import { AssetsView } from "@/components/assets/assets-view";
+import { AssetsList } from "@/components/assets/assets-list";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { ListPageLayout } from "@/components/layout/page-layouts";
 import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
 import { FadeIn } from "@/components/ui/motion";
 
@@ -15,12 +14,7 @@ export default function RegistryPage() {
   return (
     <FadeIn>
       <RequirePermission resource="asset" action="read">
-        <ListPageLayout
-          title="Asset registry"
-          description="Every piece of gear your organisation owns, tracked individually."
-        >
-          <AssetsView />
-        </ListPageLayout>
+        <AssetsList />
       </RequirePermission>
     </FadeIn>
   );

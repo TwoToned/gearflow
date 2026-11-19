@@ -8,6 +8,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { dueAssetMap } from "./lib/assetAttention";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -109,6 +110,63 @@ describe("assets.rowExtras", () => {
     const t = makeT();
     await seed(t, Date.now());
     await expect(t.withIdentity({ subject: USER, orgId: OTHER }).query(api.assets.rowExtras, { orgId: ORG, ids: ["due"] })).rejects.toThrow();
+  });
+});
+
+describe("rowExtras per-field permissions and bounded reads", () => {
+  test("a caller without project/test-tag read gets no job and no nextDue, and no error", async () => {
+    const t = makeT();
+    const now = Date.now();
+    await seed(t, now);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m2", organizationId: ORG, userId: "nobody", role: "nobody" });
+    });
+    const r = await t.withIdentity({ subject: "nobody", orgId: ORG }).query(api.assets.rowExtras, { orgId: ORG, ids: ["out", "due"] });
+    expect(r.out).toEqual({});
+    expect(r.due).toEqual({});
+  });
+
+  test("inactive schedules cannot use up the per-asset cap", async () => {
+    const t = makeT();
+    const now = Date.now();
+    await seed(t, now);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 8; i++) {
+        await ctx.db.insert("testTagAssets", { organizationId: ORG, description: "old", isActive: false, id: `old${i}`, testTagId: `O${i}`, assetId: "ok", nextDueDate: now - (i + 1) * DAY });
+      }
+    });
+    const r = await t.withIdentity(asUser).query(api.assets.rowExtras, { orgId: ORG, ids: ["ok"] });
+    expect(r.ok.nextDue).toBe(now + 200 * DAY);
+  });
+});
+
+describe("dueAssetMap truncation", () => {
+  test("reports truncated only when the cap is exceeded by ACTIVE rows", async () => {
+    const t = makeT();
+    const now = Date.now();
+    await seed(t, now);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testTagAssets", { organizationId: ORG, description: "x", isActive: false, id: "inact", testTagId: "I", assetId: "ok", nextDueDate: now - DAY });
+    });
+    const read = (cap: number) =>
+      t.run(async (ctx) => {
+        const r = await dueAssetMap(ctx, ORG, now, cap);
+        return { truncated: r.truncated, ids: [...r.due.keys()].sort() };
+      });
+    const capped = await read(1);
+    expect(capped.truncated).toBe(true);
+    expect(capped.ids).toHaveLength(1);
+    const whole = await read(2);
+    expect(whole.truncated).toBe(false);
+    expect(whole.ids).toEqual(["due", "late"]);
+  });
+
+  test("listPage reports dueCap only when the set was cut short", async () => {
+    const t = makeT();
+    const now = Date.now();
+    await seed(t, now);
+    const r = await t.withIdentity(asUser).query(api.assets.listPage, { orgId: ORG, segment: "due", now });
+    expect(r.dueCap).toBeNull();
   });
 });
 

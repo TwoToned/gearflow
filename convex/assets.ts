@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation, type QueryCtx } from "./_generated/server";
-import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireOrgPermission, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
@@ -72,7 +72,9 @@ export const listPage = query({
     await requireOrgReadFor(ctx, a.orgId, "asset"); // Phase 5 domain slice (#1001)
     const segment = parseAssetSegment(a.segment);
     const now = resolveNow(a.now);
-    const due = segment === "due" || segment === "attention" ? await dueAssetMap(ctx, a.orgId, now) : new Map<string, number>();
+    const needsDue = segment === "due" || segment === "attention";
+    const dueRead = needsDue ? await dueAssetMap(ctx, a.orgId, now) : { due: new Map<string, number>(), truncated: false, cap: 0 };
+    const due = dueRead.due;
     // The Retired segment looks at retired rows, which the default listing hides (isActive).
     const isActive = segment === "retired" ? false : (a.isActive ?? true);
     const page = a.page ?? 1;
@@ -130,7 +132,8 @@ export const listPage = query({
         location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
       };
     });
-    return { assets, total, page, pageSize, totalPages };
+    // `dueCap` is set only when the due set was cut short: the segment is then "the first n", not complete.
+    return { assets, total, page, pageSize, totalPages, dueCap: dueRead.truncated ? dueRead.cap : null };
   },
 });
 
@@ -148,21 +151,41 @@ export const rowExtras = query({
   args: { orgId: v.string(), ids: v.array(v.string()) },
   handler: async (ctx, { orgId, ids }) => {
     await requireOrgReadFor(ctx, orgId, "asset");
-    const out: Record<string, { nextDue: number | null; job: { id: string; name: string; number: string } | null }> = {};
+    // Each sub-field is gated on its OWN resource (RBAC + agent scope): a caller who cannot
+    // read projects / test-and-tag simply gets that field omitted, never an error.
+    const canJob = await canRead(ctx, orgId, "project");
+    const canDue = await canRead(ctx, orgId, "testTag");
+    const out: Record<string, { nextDue?: number | null; job?: { id: string; name: string; number: string } | null }> = {};
     for (const id of new Set(ids.slice(0, ROW_EXTRAS_MAX_IDS))) {
       const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!asset || asset.organizationId !== orgId) continue;
-      out[id] = { nextDue: await nextDueFor(ctx, orgId, id), job: await jobFor(ctx, orgId, id) };
+      out[id] = {
+        ...(canDue ? { nextDue: await nextDueFor(ctx, orgId, id) } : {}),
+        ...(canJob ? { job: await jobFor(ctx, orgId, id) } : {}),
+      };
     }
     return out;
   },
 });
 
+/** Non-throwing read check against the caller's RBAC and (for an agent) key scopes. */
+async function canRead(ctx: QueryCtx, orgId: string, resource: "project" | "testTag"): Promise<boolean> {
+  try {
+    await requireOrgPermission(ctx, orgId, resource, "read");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function nextDueFor(ctx: QueryCtx, orgId: string, assetId: string): Promise<number | null> {
-  const schedules = await ctx.db.query("testTagAssets").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).take(TT_SCHEDULES_PER_ASSET);
-  const dates = schedules
-    .filter((s) => s.organizationId === orgId && s.isActive !== false && s.nextDueDate != null)
-    .map((s) => s.nextDueDate as number);
+  // Org-scoped index; foreign/inactive/undated schedules are filtered BEFORE the cap.
+  const schedules = await ctx.db
+    .query("testTagAssets")
+    .withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", assetId))
+    .filter((q) => q.and(q.neq(q.field("isActive"), false), q.neq(q.field("nextDueDate"), undefined)))
+    .take(TT_SCHEDULES_PER_ASSET);
+  const dates = schedules.map((s) => s.nextDueDate as number);
   return dates.length > 0 ? Math.min(...dates) : null;
 }
 

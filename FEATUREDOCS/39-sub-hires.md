@@ -329,6 +329,26 @@ Data-only linkage — **no supplier-facing documents or emails** change.
   for the order-side lifecycle this link connects to, including the supplier-page
   spend rollups that de-duplicate a linked pair to count once.
 
+## Shortfall cover (atomic)
+
+A short stock line's ⋯ › "Sub-hire shortfall" opens `SubHireShortfallSheet` (prefilled: model, short quantity, hire
+window, supplier chips with the cached last rate, cost, charge, live margin). It writes ONE mutation,
+`subHiresWrites.coverShortfallNative`, which in a single transaction appends to the supplier's DRAFT order on the job (or
+creates one), adds the item, and optionally trims the stock line by the covered units. It composes the existing
+`createSubHireNative` / `addSubHireItemNative` / `lineItemWrites.patchNative` through nested `ctx.runMutation`
+sub-transactions, so a failure at any step rolls everything back (no stray draft order, no untrimmed line) and pricing,
+lock and FK logic has one copy. No money originates from the client beyond what `addSubHireItemNative` already accepts.
+`danger: "high"` (it moves stock and creates an order commitment), so the API requires `confirm: true`.
+
+The cover stores its facts on the item it creates (`subHireItems.coverage` = line id, quantity before/after, whether it
+created the order). `undoShortfallNative` is the toast's ONE Undo and derives everything from that record (it takes only
+order + item ids): it refuses once the order is no longer DRAFT, when other items joined the order since, or when the line
+was edited since (quantity ≠ the stored "after", or a different job/model); otherwise it restores exactly the stored
+"before" quantity (the only `allowOverbook` use), removes the item, and deletes the order only if the cover created it. It
+needs `subHire:update` + `project:manage_line_items` (+ `subHire:delete` for a created order). `coverage` is never copied by
+a duplicate. The sheet and the row action need `subHire:create`; `getSupplierRateHistory` / `getSupplierModelRate` need
+`subHire:read`.
+
 ## Not in Scope (v1)
 
 - Partial returns (per-item return tracking)

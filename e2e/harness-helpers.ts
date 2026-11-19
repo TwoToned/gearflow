@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 /**
  * Shared steps every `harness-*.spec.ts` file otherwise duplicated verbatim
@@ -118,25 +118,27 @@ export async function createProject(page: Page, projectName: string, code: strin
  *  already have at least one asset for the availability check to clear). */
 export async function addModelLineItem(page: Page, projectId: string, modelName: string): Promise<void> {
   await page.goto(`/projects/${projectId}`);
-  await page.getByRole("tab", { name: "Equipment", exact: true }).click();
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Add item" }).click();
-  const addDialog = page.getByRole("dialog", { name: "Add equipment" });
-  await page.getByRole("tab", { name: "Own stock" }).click();
-  await page.getByRole("button", { name: "Search models" }).click();
-  await page.getByPlaceholder(/Search by name/).fill(modelName);
-  await page.getByRole("button", { name: modelName, exact: true }).click();
-  await expectAvailable(addDialog);
-  await page.getByRole("button", { name: "Add to job" }).click();
-  // The dialog closes on a successful add.
-  await expect(page.getByRole("button", { name: "Add to job" })).toBeHidden();
+  await addModelViaAddBar(page, modelName);
 }
 
-async function expectAvailable(addDialog: Locator): Promise<void> {
-  // Availability is an async Convex query — wait for the SPECIFIC "1
-  // available" text (not the generic "available out of" phrase, which also
-  // matches the loading placeholder) before proceeding.
-  await expect(addDialog.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
+/**
+ * Add a model line from the Equipment tab's AddBar (UX 2a: it REPLACED the old "Add ▾" menu +
+ * "Add equipment" dialog for the plain gear add; the dialog now opens only on a second Enter or
+ * for sub-hire/custom/sale). Enter adds the line with a blank price (the server auto-prices) and
+ * the server enforces availability: with exactly one asset and quantity 1 the add must succeed
+ * without an overbook step, and the row must not be flagged short. The dialog's old "1
+ * available" preview assertion became this: the line lands, and nothing says Short.
+ */
+export async function addModelViaAddBar(page: Page, modelName: string): Promise<void> {
+  await page.getByRole("tab", { name: "Equipment", exact: true }).click();
+  const bar = page.getByRole("combobox", { name: "Add to list" });
+  await bar.fill(modelName);
+  await page.getByRole("option", { name: new RegExp(modelName) }).first().waitFor({ timeout: 40000 });
+  await bar.press("Enter");
+  // The line lands in the table (a model row, not an error toast / overbook dialog).
+  await expect(page.getByRole("button", { name: `${modelName} actions` })).toBeVisible({ timeout: 40000 });
+  await expect(page.getByRole("dialog", { name: "Add equipment" })).toHaveCount(0);
+  await expect(page.getByText(/Short \d/)).toHaveCount(0);
 }
 
 /** Send an invitation via Settings > Team, then read the invitation's id

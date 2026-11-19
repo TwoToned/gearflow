@@ -181,7 +181,7 @@ function applyWrap(wrap: WrapRow | undefined, row: LineRowData, el: React.ReactE
 }
 
 function MaybeSelect({ row, selection, size }: { row: LineRowData; selection?: RowSelection; size: "sm" | "lg" }) {
-  return selection ? <SelectBox row={row} selection={selection} size={size} /> : null;
+  return selection && row.selectable !== false ? <SelectBox row={row} selection={selection} size={size} /> : null;
 }
 
 function LeadingSlot({ row, leading }: { row: LineRowData; leading?: (row: LineRowData) => React.ReactNode }) {
@@ -299,6 +299,12 @@ function LineRow(props: RowProps) {
 export interface LineRowListSection {
   section: LineRowSectionData;
   rows: LineRowData[];
+  /**
+   * Rows with NO head: they continue the previous section's block (e.g. loose
+   * lines that sit after a nested group in a user-ordered list). `section`
+   * only supplies the id; collapse is the caller's (omit the rows to hide them).
+   */
+  headless?: boolean;
   /** Controlled collapse; omit for list-owned state (`defaultCollapsed` is false). */
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
@@ -306,12 +312,18 @@ export interface LineRowListSection {
 
 /**
  * Ids of the rows a user can see, in DOM order: pass this to `useRowSelection`
- * so shift-range and select-page skip rows hidden by a collapsed section.
+ * so shift-range and select-page skip rows hidden by a collapsed section and
+ * rows with `selectable: false` (they render no checkbox).
  * `collapsedIds` is only needed for sections whose collapse the list owns
  * (i.e. no `collapsed` given); controlled sections use their own flag.
  */
 export function visibleRowIds(sections: LineRowListSection[], collapsedIds?: ReadonlySet<string>): string[] {
-  return sections.flatMap((s) => ((s.collapsed ?? collapsedIds?.has(s.section.id)) ? [] : s.rows.flatMap((r) => [r.id, ...(r.children?.filter(isSelectableChild).map((c) => c.id) ?? [])])));
+  // A `selectable: false` row (no checkbox) is skipped, along with its children; selectable accessory children follow their parent.
+  return sections.flatMap((s) =>
+    (s.collapsed ?? collapsedIds?.has(s.section.id))
+      ? []
+      : s.rows.filter((r) => r.selectable !== false).flatMap((r) => [r.id, ...(r.children?.filter(isSelectableChild).map((c) => c.id) ?? [])]),
+  );
 }
 
 interface ListShared {
@@ -387,6 +399,7 @@ function ListBody(props: LineRowListProps) {
   return (
     <>
       {props.sections.map((s) => {
+        if (s.headless) return <React.Fragment key={s.section.id}>{s.rows.map(rowEl)}</React.Fragment>;
         const collapsed = s.collapsed ?? owned.has(s.section.id);
         return (
           <React.Fragment key={s.section.id}>
@@ -464,19 +477,61 @@ export function LineRowList(props: LineRowListProps) {
   );
 }
 
-function SectionHead({ section, collapsed, onToggle }: { section: LineRowSectionData; collapsed: boolean; onToggle: () => void }) {
+function SectionHead({
+  section,
+  collapsed,
+  onToggle,
+  withCells,
+}: {
+  section: LineRowSectionData;
+  collapsed: boolean;
+  onToggle: () => void;
+  /** Column mode: the amount and ⋯ live in their own cells, not in the head. */
+  withCells?: boolean;
+}) {
   return (
-    <div className="flex min-h-11 w-full items-center gap-2 px-1">
+    <div className={cn("flex min-h-11 w-full items-center gap-2 px-1", section.depth === 1 && "pl-6")}>
       {section.selectState && <SectionBox section={section} />}
       <ExpandToggle open={!collapsed} onToggle={onToggle} />
       <span className="min-w-0 truncate text-ui-text font-semibold text-ink">{section.title}</span>
       {section.count != null && <span className="t-mono text-muted">{section.count}</span>}
       {section.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
       <span className="flex-1" />
-      {section.amount !== undefined && <FactBody fact={{ kind: "money", amount: section.amount }} />}
-      {section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
+      {!withCells && section.amount !== undefined && <FactBody fact={{ kind: "money", amount: section.amount }} />}
+      {!withCells && section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
     </div>
   );
+}
+
+/** Desktop head in column mode: one `<tr>`, the head across select+item, then a cell per column. */
+function sectionCellsRow({
+  section,
+  columns,
+  head,
+}: {
+  section: LineRowSectionData;
+  columns: FactColumn[];
+  head: React.ReactNode;
+}) {
+  return (
+    <tr data-section-id={section.id} data-depth={section.depth ?? 0} className={sectionBand(section)}>
+      <td colSpan={2} className="p-0">
+        {head}
+      </td>
+      {columns.map((c) => (
+        <td key={c.id} className={cn("px-2", c.align === "end" && "text-right")}>
+          {section.cells?.[c.id]}
+        </td>
+      ))}
+      <td className="w-11 px-1 text-right">
+        {section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
+      </td>
+    </tr>
+  );
+}
+
+function sectionBand(section: LineRowSectionData): string {
+  return cn("border-t border-line", section.depth === 1 ? "bg-paper-2/20" : "bg-paper-2/40");
 }
 
 function SectionBox({ section }: { section: LineRowSectionData }) {
@@ -521,13 +576,16 @@ export function LineRowSection({
     setInner(!isCollapsed);
     onCollapsedChange?.(!isCollapsed);
   };
-  const head = <SectionHead section={section} collapsed={isCollapsed} onToggle={toggle} />;
+  const withCells = !isMobile && !!section.cells && Object.keys(section.cells).length > 0;
+  const head = <SectionHead section={section} collapsed={isCollapsed} onToggle={toggle} withCells={withCells} />;
   if (isMobile) {
-    const el = <div data-section-id={section.id} className="border-t border-line bg-paper-2/40">{head}</div>;
+    const el = <div data-section-id={section.id} className={sectionBand(section)}>{head}</div>;
     return wrapSection ? wrapSection(el) : el;
   }
-  const tr = (
-    <tr data-section-id={section.id} className="border-t border-line bg-paper-2/40">
+  const tr = withCells ? (
+    sectionCellsRow({ section, columns, head })
+  ) : (
+    <tr data-section-id={section.id} data-depth={section.depth ?? 0} className={sectionBand(section)}>
       <td colSpan={columns.length + 3} className="p-0">
         {head}
       </td>

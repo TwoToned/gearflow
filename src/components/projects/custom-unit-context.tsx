@@ -1,14 +1,12 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext } from "react";
 
 /**
  * "Convert to custom item" wiring for the Equipment tab (FEATUREDOCS/12). Provided
- * once at the tab level (which owns `useWarehouseWrites`) and consumed by the line
- * kebab deep inside LineItemRow — same reason as `reassign-context.tsx`: no
- * threading a handler through every LineItemRow call site. Without a provider
- * (read-only consumers like the pull sheet) `useCustomUnitActions()` is null and
- * the row offers nothing.
+ * once at the tab level (which owns `useWarehouseWrites`) and passed into
+ * `buildEquipmentSections`, whose gear-line menu offers the convert actions.
+ * Without it (read-only consumers like the pull sheet) a row offers nothing.
  */
 export interface CustomUnitContextValue {
   /** Move one free unit of the line to a custom (off-inventory) unit. */
@@ -23,6 +21,3 @@ const CustomUnitContext = createContext<CustomUnitContextValue | null>(null);
 
 export const CustomUnitProvider = CustomUnitContext.Provider;
 
-export function useCustomUnitActions(): CustomUnitContextValue | null {
-  return useContext(CustomUnitContext);
-}

@@ -1001,6 +1001,31 @@ also do NOT feed the P&L; see [22-suppliers](./22-suppliers.md#supplier-orders-p
 ## Reservation Conflict Resolution
 When a serialized asset is booked on this project AND on another live project whose PROJECT window overlaps (WS2 #941 — `getProjectWindow`, falls back to rental when unset), an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone. Both reads `.collect()` the org's full line-item/unit/asset/project/model graph (`loadOrgGraph()`) rather than paginating — correctness requires comparing against every booking anywhere in the org, so a bounded read would silently miss conflicts outside the fetched page. This is a registered §15 exception, not an oversight — see `docs/exceptions.md` (R-8.3.3 `reservationConflicts-orgGraph`).
 
+## Equipment tab on the UX primitives (Phase 2a)
+
+The Equipment tab renders `LineRowList` sections (`equipment-sections.tsx`) instead of the old per-kind row
+components (deleted: `GroupRow`, `SubHireGroupRow`, `LineItemRow`, `CategoryRow`, the card helpers). Row actions come from
+`src/lib/row-actions/` (one `ActionMenu` per row, absent-not-disabled); selection is `useRowSelection` + `BulkBar`;
+drag-and-drop wraps rows in sortable shells (`equipment-list-dnd.tsx`, drop resolution still `use-equipment-dnd.ts`).
+
+- **AddBar replaces `Add ▾`.** Under the list: type to find gear/kits (Enter adds with a blank price, the server
+  auto-prices; Undo on a fresh line); Sub-hire / Custom / Sale open the existing add dialog. `?modelId` still preselects
+  once per mount. New group / New category live in the list's ⋯.
+- **Footer.** `FooterTotals` appears once, from the project's STORED `subtotal/discountAmount/taxAmount/total`
+  (`src/lib/equipment-footer-totals.ts`); hidden on a non-live version; blank is `null`, never $0.
+- **Orders section.** The job's sub-hire orders are `selectable: false` rows pinned at the end of the table
+  (`equipment-orders-section.ts`); ⋯ = Edit order, the next lifecycle step and Cancel, from ONE transition table
+  (`src/lib/sub-hire-transitions.ts`, also used by the order dialog).
+- **Desktop cells** (`cells` slot): per-line discussion badge + serial indicator (Stage cell), inline qty / price / discount
+  (`$ / %`; plain % on sub-hire children). E / M / D hotkeys are driven by the row's own menu `kbd`.
+- **Phone.** A row tap opens `RowEditorSheet` (`equipment-row-editor.tsx`), saved through ONE `patchNative` via
+  `computeRowSheetPayload` (the same payload builder as the dialog and the inline cells; the sheet's resolved dollar discount
+  is passed through with `discountMode`, never re-derived). It carries what desktop shows in `cells`: the discussion badge
+  (count, opens the thread), the serial indicator (reassign / swap), the availability notice with the sub-hire shortcut,
+  and the row's own menu (via the sheet's `contextSlot`). The save toasts with an Undo (the same write with the reverse
+  patch); errors, including a refused cleared price that still has a discount, stay in the sheet.
+- **Shortfall → sub-hire** is an atomic server write, see [39-sub-hires](./39-sub-hires.md#shortfall-cover-atomic).
+
 ## Future-Proofing
 - **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income — see [42. Asset Utilization](./42-asset-utilization.md)
 - **Xero Integration**: Groups as line items + ungrouped standalone assets as separate line items

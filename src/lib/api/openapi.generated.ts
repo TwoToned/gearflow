@@ -38833,6 +38833,152 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/subHiresWrites.coverShortfallNative": {
+      "post": {
+        "operationId": "subHiresWrites.coverShortfallNative",
+        "summary": "subHiresWrites.coverShortfallNative (mutation)",
+        "description": "Requires scope: subHire:update or subHire:create or project:manage_line_items. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "description": {
+                        "type": "string"
+                      },
+                      "discount": {
+                        "type": "number"
+                      },
+                      "draftOrderId": {
+                        "type": "string"
+                      },
+                      "duration": {
+                        "type": "number"
+                      },
+                      "groupId": {
+                        "type": "string"
+                      },
+                      "hireEnd": {
+                        "type": "number"
+                      },
+                      "hireStart": {
+                        "type": "number"
+                      },
+                      "itemId": {
+                        "type": "string"
+                      },
+                      "lineItemId": {
+                        "type": "string"
+                      },
+                      "modelId": {
+                        "type": "string"
+                      },
+                      "newOrderId": {
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "pricingType": {},
+                      "quantity": {
+                        "type": "number"
+                      },
+                      "showOnDocs": {
+                        "type": "boolean"
+                      },
+                      "showOnQuote": {
+                        "type": "boolean"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      },
+                      "targetCategoryId": {
+                        "type": "string"
+                      },
+                      "targetGroupId": {
+                        "type": "string"
+                      },
+                      "trimLine": {
+                        "type": "boolean"
+                      },
+                      "unitCharge": {
+                        "type": "number"
+                      },
+                      "unitCost": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "description",
+                      "discount",
+                      "duration",
+                      "itemId",
+                      "lineItemId",
+                      "newOrderId",
+                      "pricingType",
+                      "quantity",
+                      "supplierId",
+                      "trimLine",
+                      "unitCharge",
+                      "unitCost"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/subHiresWrites.createSubHireGroupNative": {
       "post": {
         "operationId": "subHiresWrites.createSubHireGroupNative",
@@ -39536,6 +39682,84 @@ export const OPENAPI_DOCUMENT = {
                     "required": [
                       "groupId",
                       "itemId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/subHiresWrites.undoShortfallNative": {
+      "post": {
+        "operationId": "subHiresWrites.undoShortfallNative",
+        "summary": "subHiresWrites.undoShortfallNative (mutation)",
+        "description": "Requires scope: subHire:update or project:manage_line_items or subHire:delete. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "itemId": {
+                        "type": "string"
+                      },
+                      "orderId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "itemId",
+                      "orderId"
                     ],
                     "additionalProperties": false
                   },

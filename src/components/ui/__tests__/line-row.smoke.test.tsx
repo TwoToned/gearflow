@@ -223,6 +223,42 @@ describe("LineRowSection", () => {
     expect(screen.getByRole("button", { name: "Lighting actions" })).toBeTruthy();
   });
 
+  it("depth 1 indents the title and lightens the band", () => {
+    render(<table><tbody><LineRowSection section={{ ...section, depth: 1 }} columns={columns} /></tbody></table>);
+    const tr = document.querySelector("tr[data-section-id='s']")!;
+    expect(tr.getAttribute("data-depth")).toBe("1");
+    expect(tr.className).toContain("bg-paper-2/20");
+    expect(tr.querySelector("div")!.className).toContain("pl-6");
+  });
+
+  it("desktop cells: aligned column cells, ⋯ in its own cell, amount omitted, wrapSection reaches the <tr>; phone ignores cells", async () => {
+    const user = userEvent.setup();
+    const cells = { price: <button type="button">Edit bundle</button> };
+    const { unmount } = render(
+      <table><tbody>
+        <LineRowSection
+          section={{ ...section, amount: 999, cells }}
+          columns={columns}
+          wrapSection={(el) => React.cloneElement(el as React.ReactElement<{ "data-wrapped": string }>, { "data-wrapped": "y" })}
+        />
+      </tbody></table>,
+    );
+    const tr = document.querySelector("tr[data-section-id='s']")!;
+    expect(tr.getAttribute("data-wrapped")).toBe("y");
+    // select+item span, one td per column, the ⋯ td
+    expect(tr.querySelectorAll("td")).toHaveLength(1 + columns.length + 1);
+    expect(tr.querySelectorAll("td")[0].getAttribute("colspan")).toBe("2");
+    expect(within(tr as HTMLElement).getByRole("button", { name: "Edit bundle" })).toBeTruthy();
+    expect(tr.textContent).not.toContain("$999");
+    await user.click(screen.getByRole("button", { name: "Lighting actions" }));
+    expect(await screen.findByText("Rename")).toBeTruthy();
+    unmount();
+    mobile.value = true;
+    render(<LineRowSection section={{ ...section, amount: 999, cells }} columns={columns} />);
+    expect(screen.queryByRole("button", { name: "Edit bundle" })).toBeNull();
+    expect(document.body.textContent).toContain("$999");
+  });
+
   it("collapsed is controllable", () => {
     render(<table><tbody><LineRowSection section={section} columns={columns} collapsed /></tbody></table>);
     expect(screen.getByRole("button", { name: "Expand" })).toBeTruthy();
@@ -280,6 +316,46 @@ describe("LineRowList sections", () => {
   it("visibleRowIds skips collapsed sections (controlled and list-owned)", () => {
     expect(visibleRowIds([{ ...secs[0], collapsed: true }, secs[1]])).toEqual(["c"]);
     expect(visibleRowIds(secs, new Set(["s2"]))).toEqual(["a", "b"]);
+  });
+
+  it("headless sections render rows with no head; selectable:false rows get no box", () => {
+    const list: LineRowListSection[] = [
+      { section: { id: "s1", title: "Cat" }, rows: [rows[0]] },
+      { section: { id: "s2", title: "Group", depth: 1 }, rows: [rows[1]] },
+      { section: { id: "s3", title: "" }, headless: true, rows: [{ ...rows[2], selectable: false }] },
+    ];
+    function H() {
+      const selection = useRowSelection(visibleRowIds(list));
+      return <LineRowList sections={list} columns={columns} selection={selection} />;
+    }
+    render(<H />);
+    expect(document.querySelectorAll("tr[data-section-id]")).toHaveLength(2);
+    expect(document.querySelector("tr[data-section-id='s3']")).toBeNull();
+    const order = Array.from(document.querySelectorAll("tr[data-row-id], tr[data-section-id]")).map(
+      (e) => e.getAttribute("data-row-id") ?? e.getAttribute("data-section-id"),
+    );
+    expect(order).toEqual(["s1", "a", "s2", "b", "c"]);
+    expect(screen.getByRole("checkbox", { name: "Select Moving head" })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "Select Fresnel" })).toBeNull();
+  });
+
+  it("selectable:false rows are excluded from visibleRowIds, shift-range and select-page", async () => {
+    const list: LineRowListSection[] = [
+      { section: { id: "s1", title: "Cat" }, rows: [rows[0], { ...rows[1], selectable: false }, rows[2]] },
+    ];
+    expect(visibleRowIds(list)).toEqual([rows[0].id, rows[2].id]);
+    function H() {
+      const selection = useRowSelection(visibleRowIds(list));
+      return (
+        <>
+          <LineRowList sections={list} columns={columns} selection={selection} />
+          <output data-testid="sel">{[...selection.selected].join(",")}</output>
+        </>
+      );
+    }
+    render(<H />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select page" }));
+    expect(screen.getByTestId("sel").textContent).toBe([rows[0].id, rows[2].id].join(","));
   });
 
   it("phone: section heads and rows in one list, in order", () => {

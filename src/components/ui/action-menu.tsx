@@ -293,7 +293,8 @@ function PhoneItem({
   );
 }
 
-function ConfirmDialog({ item, onClose }: { item: ActionItem | null; onClose: () => void }) {
+/** The confirm step for a `danger` item; also used by list hotkeys so a key press confirms exactly like the menu. */
+export function ConfirmDialog({ item, onClose }: { item: ActionItem | null; onClose: () => void }) {
   const confirm = item?.confirm;
   return (
     <Dialog open={!!item} onOpenChange={(o) => !o && onClose()}>

@@ -148,8 +148,10 @@ src/lib/react-pdf/components/line-items-table.tsx
 convex/lib/financeSnapshot.ts          — the rollup fold -> one CATEGORY line
 convex/xeroPush.ts                     — resolveCategoryLineCode
 
-src/components/projects/equipment-rows.tsx — the Client documents kebab section on
-                                              category/group/item rows + the pill
+src/components/projects/equipment-sections.tsx — builds the category/group/item rows + their menus
+                                              (Phase 2a; supersedes the deleted equipment-rows.tsx
+                                              row components — the Client documents kebab section
+                                              and the pill now come from src/lib/row-actions/)
 src/components/projects/equipment-tab.tsx  — the four mutations that drive them
 ```
 

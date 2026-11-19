@@ -253,7 +253,7 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
           action: primary,
         }}
         toolbarExtra={grid ? undefined : <AssetsSavedViews state={state} setState={setState} />}
-        renderView={(view) => (view === "grid" ? <AssetGallery /> : null)}
+        renderView={(view) => (view === "grid" ? <AssetGallery hostSearch={state.q} /> : null)}
       />
       <AssetsDialogs
         orgId={orgId}

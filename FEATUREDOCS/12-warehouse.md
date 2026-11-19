@@ -16,6 +16,45 @@
 - `CHECKED_OUT` status displays as **"Out"** (D90, UX Phase 0; the verb **Deploy** stays). Stage words live in `src/lib/vocabulary.ts` (`GEAR_STAGE_LABELS`: To pick · Prepped · Out · Returned · De-prepped · Closed) and their colour intents in the `gearStage` category of `src/lib/status-colors.ts` (D2: neutral · info · primary/solid red · warning · success · neutral outline) — one table, read by the lifecycle stepper, stage chips and landing cards. Gear not in a case reads **Loose**. The Pick/Prep container rail has no active chip until the packer picks one, and prep then follows the PM's planned case; picking Loose packs loose on purpose (omitted `containerId` = plan, `null` = Loose; see FEATUREDOCS/83). The warehouse tab bar reads **To pick / Prepped / Out / Returned / De-prepped** accordingly.
 - Internal code (function names, enum values, API params) still uses `checkOut`/`checkIn`/`CHECKED_OUT`
 
+## The job page (UX Phase 3 — the stage row replaces the tabs)
+
+`/warehouse/[projectId]` is ONE card: a stage row (`To pick · Prepped · Out · Returned · De-prepped ·
+Close-out`, counts on each), one `ScanDock` + result strip, one `JobTable`. The old Pick/Prep, Deploy,
+Return and De-prep **tabs** below are now stages of that card; read the "Tab" headings as the stage of the
+same name. `?stage=` selects a stage; the old `?tab=` links (emails, bookmarks) alias onto it
+(`stageFromParams`: `pick-prep`→`pick`, `check-out`→`prepped`, `check-in`→`out`, `deprep`→`returned`,
+`close-out`→`closeout`). The page (`page.tsx`) stays **≤ 800 lines**, a hard test
+(`page-size.test.ts`); logic lives in `src/components/warehouse/job/use-*` hooks and dialogs.
+
+- **One scan pipeline.** Every stage's scan goes through `useWarehouseScan`: prep scans via `useScanPrep`,
+  Prepped/Out writes via the durable intake (`durableScans.capture`, offline-safe, reviewed in the strip),
+  and the Returned dock resolves on the SERVER (`lookupDeprepScan`, `src/server/warehouse-deprep-scan.ts`,
+  gated by `warehouse:check_out`, refuses anything not RETURNED+PACKED on this job). Each outcome is a
+  strip entry with tone and, where a write is reversible, the SAME Undo closure the toast uses
+  (`announceWarehouseWrite` → `scanUndo`).
+- **A de-prep scan de-preps ONE unit, the scanned one.** A serial tag carries its `assetId` to
+  `checkRecordOps.deprepItems` (`op.assetId`), which de-preps THAT unit (not "one by count"); a bulk bin tag
+  asks for the count (D8) and matches only genuine bulk lines (units with `bulkAssetId === bin`), never a
+  serialised line of the same model; a kit goes whole; an accessory tag goes through the unit-level DEPREP.
+- **Scan sheet (D10).** Scanning a parent with unpacked accessories opens `ScanAccessoryDialog`; "Remember
+  for the next n units on this job" answers the line's next n scans without it. The memory is **job-scoped
+  and in memory** (`src/lib/warehouse-scan-memory.ts`, keyed by `projectId` + line): no `localStorage`, not
+  shared across packers (a shared version needs a schema; follow-up).
+- **Deploy gate.** `DeployGateDialog` (§9.5): one row per unpacked/skipped accessory, `Pack now` / `Leave`;
+  a left DEFAULT asks why (D9 prefill from `accessoryPlan.excludedReasons`). Every row must be decided;
+  `Pack now` packs exactly the marked accessories (`includeAccessoryIds`) and compares them with what the
+  server says THIS call packed (`checkRecordOps.prepItems` → `packedAccessoryUnits` per parent unit and
+  `packedAccessoryLineIds`, never a re-read of line state). A short pack keeps the gate open and deploys
+  nothing.
+- **Return check.** `ReturnCheckDialog` (condition + notes for the selection; "Received scans save as …"
+  for the dock). The old `ReturnConditionBar` is gone.
+- **Phone pack mode (§9.4).** A row tap opens `JobRowSheet` (status + case, tags, count, accessories first
+  with their own action, a tick action, the row's menu under ⋯). The stage verbs sit in `StageActionBar`,
+  pinned above the bottom nav (`PinnedAboveBottomNav`, shared with `BulkBar`). Not yet built: `Pack into`
+  case chips and unit chips in the sheet.
+- **No localStorage pick list.** The online pick list and its tick persistence are deleted; "picked" is the
+  `To pick → Prepped` move (the pull sheet document remains under Documents).
+
 ## Lifecycle Flow
 
 Gear flows **left to right** through five stages. The primary button in each tab advances
@@ -662,7 +701,9 @@ Children of a kit/prep-kit that are themselves kits render with:
 - Auto-generated `PREP-*` tags: hidden (display `—`)
 
 ## Prep Containers
-Container dropdown on Pick/Prep tab for visual asset grouping. See [Preps](./32-preps.md) for full details.
+Superseded: cases are first-class `projectContainers` (membership on the unit) with case chips and case
+section heads on the job page. See [83 — Packing containers](./83-packing-containers.md) (which absorbed the
+retired doc 32).
 
 ## Partial Deploy/Return
 Kits and prep-kits support partial deployment:
@@ -753,7 +794,9 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 - Kit/prep-kit parents are NOT counted as 1 — instead, all individual children and nested kit grandchildren are counted.
 - Delivery docket counts only deployed children (`CHECKED_OUT`). Pull slip counts all children.
 
-## Online Pick List
+## Online Pick List — REMOVED (Phase 3)
+The online pick list dialog and its `localStorage` ticks are deleted (see "The job page" above); the notes below describe the printable pull sheet rows, which still render accessories as before.
+
 Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children. Permanent accessories render indented under their parent asset line, badged "Accessory", and count toward pick progress (`pick-list-progress.ts`) — the same rows appear on the printable pull sheet (`pull-sheet/page.tsx`). (Issue #794 current-state audit found `pickListProgress` counted these rows but neither `online-pick-list.tsx` nor `pull-sheet/page.tsx` actually rendered them, making the progress bar un-completable on any project with accessories — both now render `getAccessoryChildren(item)` as independent, indented, individually-checkable rows.) On mobile the pull sheet uses **`StickyTable`** (frozen checkbox + Item columns, the rest scroll sideways with smart wrapping so nothing overlaps; empty cells render blank, no "—" noise). All sticky/scroll enhancements reset under `@media print`, so the physical printed sheet is unchanged. See `FEATUREDOCS/25-datatable.md` → Mobile data-table primitives. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ## Warehouse Dashboard Display (TV Screen)

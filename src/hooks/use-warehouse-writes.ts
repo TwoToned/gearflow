@@ -93,6 +93,41 @@ export function useWarehouseWrites() {
   };
 
   return {
+    /**
+     * A durable-intake scan (`scanIntake.commit`) already wrote on the server;
+     * this raises the SAME toast + guarded Undo the direct writes do, so the
+     * scan strip can reuse `scanUndo` (CLAUDE.md: one reverse closure). The
+     * reverse mutations are the ones the direct deploy/return paths call.
+     */
+    announceCommitted: (
+      projectId: string,
+      op: "deploy" | "return",
+      effect: { lineItemId?: string; assetId?: string; kitId?: string },
+      ack: { autoStatus?: string | null; autoStatusAuditId?: string | null },
+    ): AnnouncedWrite<{ autoStatus: string | null }> => {
+      const org = requireOrg();
+      const deploy = op === "deploy";
+      const base = { orgId: org, projectId, revertAutoAdvanceAuditId: ack.autoStatusAuditId ?? undefined, now: Date.now(), actor: actor() };
+      const reverse = async () => {
+        if (effect.kitId) {
+          const kitIds = [effect.kitId];
+          if (deploy) await undeployKitsBatchM({ ...base, kitIds, auditId: createId() });
+          else await unreturnKitsBatchM({ ...base, kitIds, auditId: createId() });
+          return;
+        }
+        const items = [{ lineItemId: effect.lineItemId ?? "", assetId: effect.assetId }];
+        if (deploy) await undeployItemsM({ ...base, items, auditIds: [createId()] });
+        else await unreturnItemsM({ ...base, items, auditIds: [createId()] });
+      };
+      const noun = effect.kitId ? "kit" : "item";
+      return announceWarehouseWrite({ autoStatus: ack.autoStatus ?? null }, {
+        doneTitle: `${deploy ? "Deployed" : "Returned"} ${countLabel(1, noun)}`,
+        undoneTitle: `Undone — ${countLabel(1, noun)} back in ${deploy ? "Prepped" : OUT_LABEL}`,
+        canUndo: deploy ? canUndoDeploy : canUndoReturn,
+        performUndo: reverse,
+      });
+    },
+
     /** Stage SPECIFIC accessory units (deploy / return / de-prep, or move back a stage) — a relocated accessory
      *  (packed in a different container than its parent) is actioned from its own
      *  row, never through the parent's cascade. */

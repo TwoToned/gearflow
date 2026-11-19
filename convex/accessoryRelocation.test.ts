@@ -239,6 +239,17 @@ describe("moving a relocated accessory back a stage, and acting before/after the
     expect((await unitsOf(t, id))?.status).toBe("RETURNED");
   });
 
+  test("UNDEPREP rejects a unit that is not de-prepped (packed, out, or never returned) and writes nothing", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    const id = await relocateAntenna1(t);
+    await expect(stage(t, [id], "UNDEPREP", "1")).rejects.toThrow(/isn't de-prepped/); // packed, waiting
+    await stage(t, [id], "DEPLOY", "2");
+    await expect(stage(t, [id], "UNDEPREP", "3")).rejects.toThrow(/isn't de-prepped/); // out
+    expect((await unitsOf(t, id))?.status).toBe("CHECKED_OUT");
+  });
+
   test("a packed-and-waiting accessory can be taken off prep on its own (Move to Pick)", async () => {
     const t = makeT();
     await seed(t);

@@ -336,3 +336,56 @@ describe("LineRowList header, sort and leading props", () => {
     expect(screen.getByTestId("lead-b")).toBeTruthy();
   });
 });
+
+describe("selectable accessory children", () => {
+  const withKids: LineRowListSection[] = [{
+    section: { id: "s", title: "Case", count: 2 },
+    rows: [
+      {
+        id: "p", kind: "gear", title: "Handheld", facts: { qty: { kind: "qty", value: 1 } },
+        children: [
+          { id: "acc1", kind: "accessory", title: "Battery", facts: {} },
+          { id: "acc2", kind: "accessory", title: "Strap", facts: {}, selectable: false },
+          { id: "k1", kind: "gear", title: "Clamp", facts: {} },
+        ],
+      },
+      { id: "q", kind: "gear", title: "Par", facts: { qty: { kind: "qty", value: 1 } } },
+    ],
+  }];
+
+  function Kids() {
+    const selection = useRowSelection(visibleRowIds(withKids));
+    return (
+      <>
+        <span data-testid="sel">{[...selection.selected].join(",")}</span>
+        <LineRowList sections={withKids} columns={columns} selection={selection} />
+      </>
+    );
+  }
+
+  it("visibleRowIds lists selectable accessory children after their parent, and only those", () => {
+    expect(visibleRowIds(withKids)).toEqual(["p", "acc1", "q"]);
+  });
+
+  it.each([false, true])("an expanded accessory child has its own checkbox; others do not (phone=%s)", async (phone) => {
+    mobile.value = phone;
+    render(<Kids />);
+    await userEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.getByRole("checkbox", { name: "Select Battery" })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "Select Strap" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "Select Clamp" })).toBeNull();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select Battery" }));
+    expect(screen.getByTestId("sel").textContent).toBe("acc1");
+  });
+
+  it("a shift-range from the parent to the next row takes the accessory child between them", async () => {
+    mobile.value = false;
+    const user = userEvent.setup();
+    render(<Kids />);
+    await user.click(screen.getByRole("checkbox", { name: "Select Handheld" }));
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("checkbox", { name: "Select Par" }));
+    await user.keyboard("{/Shift}");
+    expect(screen.getByTestId("sel").textContent).toBe("p,acc1,q");
+  });
+});

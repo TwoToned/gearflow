@@ -152,10 +152,13 @@ function ChildActions({ child }: { child: LineRowData }) {
   );
 }
 
-function ChildDesktop({ child, columns, span }: { child: LineRowData; columns: FactColumn[]; span: number }) {
+/** A child row is ticked on its own only when it is an accessory (the one child kind that is actioned). */
+const isSelectableChild = (c: LineRowData) => c.kind === "accessory" && c.selectable !== false;
+
+function ChildDesktop({ child, columns, span, selection }: { child: LineRowData; columns: FactColumn[]; span: number; selection?: RowSelection }) {
   return (
     <tr data-child-row className="h-11 bg-paper-2/40">
-      <td />
+      <td className="pl-2">{selection && isSelectableChild(child) && <SelectBox row={child} selection={selection} size="sm" />}</td>
       <td className="pl-8 text-table-cell text-ink-2">
         <span className="font-medium">{child.title}</span>
         {child.subtitle && <span className="ml-2 text-muted">{child.subtitle}</span>}
@@ -223,14 +226,15 @@ function DesktopRow({ row, columns, selection, wrapRow, dragHandle, leading }: R
   return (
     <>
       {applyWrap(wrapRow, row, tr)}
-      {expanded && row.children?.map((c) => <ChildDesktop key={c.id} child={c} columns={columns} span={columns.length + 3} />)}
+      {expanded && row.children?.map((c) => <ChildDesktop key={c.id} child={c} columns={columns} span={columns.length + 3} selection={selection} />)}
     </>
   );
 }
 
-function PhoneChild({ child }: { child: LineRowData }) {
+function PhoneChild({ child, selection }: { child: LineRowData; selection?: RowSelection }) {
   return (
-    <div data-child-row className="flex min-h-11 items-center gap-2 bg-paper-2/40 py-1 pl-12 pr-3 text-table-cell text-ink-2">
+    <div data-child-row className="flex min-h-11 items-center gap-2 bg-paper-2/40 py-1 pl-4 pr-3 text-table-cell text-ink-2">
+      {selection && isSelectableChild(child) && <SelectBox row={child} selection={selection} size="lg" />}
       <span className="min-w-0 flex-1 truncate">{child.title}</span>
       {Object.values(child.facts)
         .slice(0, 1)
@@ -281,7 +285,7 @@ function PhoneRow({ row, columns, selection, wrapRow, leading }: RowProps) {
         {right && <FactBody fact={right} />}
         {row.menu && <ActionMenu spec={row.menu} label={`${row.title} actions`} />}
       </div>
-      {expanded && row.children?.map((c) => <PhoneChild key={c.id} child={c} />)}
+      {expanded && row.children?.map((c) => <PhoneChild key={c.id} child={c} selection={selection} />)}
     </div>
   );
   return applyWrap(wrapRow, row, card);
@@ -307,7 +311,7 @@ export interface LineRowListSection {
  * (i.e. no `collapsed` given); controlled sections use their own flag.
  */
 export function visibleRowIds(sections: LineRowListSection[], collapsedIds?: ReadonlySet<string>): string[] {
-  return sections.flatMap((s) => ((s.collapsed ?? collapsedIds?.has(s.section.id)) ? [] : s.rows.map((r) => r.id)));
+  return sections.flatMap((s) => ((s.collapsed ?? collapsedIds?.has(s.section.id)) ? [] : s.rows.flatMap((r) => [r.id, ...(r.children?.filter(isSelectableChild).map((c) => c.id) ?? [])])));
 }
 
 interface ListShared {

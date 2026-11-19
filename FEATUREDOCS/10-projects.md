@@ -736,7 +736,7 @@ Line items with `isSubhire: true` and `supplierId` reference third-party equipme
 - Children: `isKitChild: true`, `parentLineItemId` pointing to parent
 - Nested kits (kit inside prep-kit): child has its own `kitId` and `childLineItems`
 - Queries must include 2 levels of `childLineItems` with `kit: true` for nested rendering
-- See [Kits](./09-kits.md) and [Preps](./32-preps.md)
+- See [Kits](./09-kits.md) and [Packing containers](./83-packing-containers.md)
 
 ## Project Services
 Structured operational tasks attached to a project (deliveries, pickups, bump in/out, labour, misc).

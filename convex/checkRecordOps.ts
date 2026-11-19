@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
-import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup, resolveOrCreateContainerByLabel, removeCustomUnitAccessories } from "./lib/fulfillment";
+import { accessoryChildrenOf, ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, type PackedAccessoryUnit, syncLineItemRollup, resolveOrCreateContainerByLabel, removeCustomUnitAccessories } from "./lib/fulfillment";
 import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 
@@ -170,6 +170,9 @@ export const prepItems = mutation({
   handler: async (ctx, a) => {
     await requireService(ctx);
     const touched = new Set<string>();
+    const packedAccessoryUnits: PackedAccessoryUnit[] = [];
+    const fully = new Set<string>();
+    const partly = new Set<string>();
     for (const item of a.items) {
       const line = await lineByCuid(ctx, item.lineItemId);
       if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) {
@@ -179,7 +182,7 @@ export const prepItems = mutation({
         organizationId: a.organizationId, projectId: a.projectId,
         containerId: item.containerId, prepContainer: item.prepContainer,
       });
-      await prepUnit(ctx, {
+      const flipped = await prepUnit(ctx, {
         organizationId: a.organizationId,
         lineItemId: item.lineItemId,
         assetId: item.assetId ?? null,
@@ -192,35 +195,79 @@ export const prepItems = mutation({
         includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
         accessoriesOnly: item.accessoriesOnly,
       });
+      // What THIS call packed, per parent unit — never a re-read of line state (an accessory already packed
+      // for another unit / earlier is not "packed now"). Only accessories-only items report.
+      if (item.accessoriesOnly) {
+        packedAccessoryUnits.push(...flipped);
+        const state = await accessoryPackState(ctx, a.organizationId, item);
+        for (const id of state.full) fully.add(id);
+        for (const id of state.partial) partly.add(id);
+      }
       touched.add(item.lineItemId);
     }
     // Once per batch, after every unit has landed — never inside the loop.
     await autoAdvanceIfPrepped(ctx, a, touched.size);
-    return { ids: [...touched] };
+    return {
+      ids: [...touched],
+      packedAccessoryUnits,
+      // The accessory child LINES that read FULLY packed for the requested parent units after the write (an
+      // already-PACKED unit counts; a line with a requested unit still unpacked does not). The gate marks lines.
+      packedAccessoryLineIds: [...fully].filter((id) => !partly.has(id)),
+    };
   },
 });
+
+/** After the write: which accessory child lines of this accessories-only item are fully packed for ITS parent unit
+ *  (`assetId`, or the parent-less units of a bulk/untagged parent) and honouring `includeAccessoryIds`. A line with
+ *  no requested unit is neither. Read in the same transaction, so it sees this call's writes. */
+async function accessoryPackState(
+  ctx: MutationCtx, organizationId: string,
+  item: { lineItemId: string; assetId?: string; includeAccessoryIds?: string[] },
+): Promise<{ full: string[]; partial: string[] }> {
+  const narrow = item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null;
+  const full: string[] = [];
+  const partial: string[] = [];
+  for (const child of await accessoryChildrenOf(ctx, organizationId, item.lineItemId)) {
+    const units = (await lineUnits(ctx, child.id)).filter((u) => {
+      if (u.status === "CANCELLED") return false;
+      if (item.assetId ? u.parentUnitAssetId !== item.assetId : !!u.parentUnitAssetId) return false;
+      return !narrow || narrow.has(child.id) || narrow.has(u.assetId ?? u.bulkAssetId ?? child.assetId ?? child.bulkAssetId ?? child.id);
+    });
+    if (units.length === 0) continue;
+    (units.every((u) => u.prepStatus === "PACKED") ? full : partial).push(child.id);
+  }
+  return { full, partial };
+}
 
 /** Core deprep of a single line — extracted so both the single `deprepItem`
  *  mutation and the batched `deprepItems` mutation run byte-identical logic. */
 async function deprepItemInner(
   ctx: Ctx,
-  a: { organizationId: string; projectId: string; lineItemId: string; quantity: number; now: number },
+  a: { organizationId: string; projectId: string; lineItemId: string; quantity: number; assetId?: string; now: number },
 ) {
   const line = await lineByCuid(ctx, a.lineItemId);
   if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found in project");
-  if (line.status === "CHECKED_OUT") throw new ConvexError("Item is already deployed — return it first");
+  if (line.status === "CHECKED_OUT") {
+    // A line that rolls up CHECKED_OUT while a sibling unit is still out may still hold ONE returned unit waiting to
+    // be de-prepped; a scan names it by asset. Only that unit moves; units still out are never touched.
+    const returned = a.assetId ? (await lineUnits(ctx, a.lineItemId)).find((u) => u.assetId === a.assetId && u.status === "RETURNED" && u.prepStatus === "PACKED") : undefined;
+    if (!returned) throw new ConvexError("Item is already deployed — return it first");
+    await deprepReturnedUnit(ctx, line, returned, a.now);
+    await syncLineItemRollup(ctx, a.lineItemId);
+    return;
+  }
 
   // A RETURNED line has no prep to remove (its units are job history) — de-prepping
   // it is the return-check reset, accessories included. Resetting only the parent
   // left its RETURNED+PACKED accessories behind, which keeps the parent on the
   // Returned tab (isInReturnedStage) with every retry a no-op.
   if (line.status === "RETURNED") {
-    await deprepReturnedLine(ctx, line, { count: a.quantity, assetId: line.assetId ?? "", now: a.now });
+    await deprepReturnedLine(ctx, line, { count: a.quantity, assetId: a.assetId ?? line.assetId ?? "", explicitAsset: !!a.assetId, now: a.now });
     await syncLineItemRollup(ctx, a.lineItemId);
     return;
   }
 
-  const prepped =(await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect())
+  const allPrepped = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", a.lineItemId)).collect())
     // Only still-prepped units are deprep-removable. RETURNED units are the
     // "what went out on this job" history (a returned line depreps via
     // completeCheckAndDeprepLine, which never deletes) — excluding them here
@@ -228,6 +275,10 @@ async function deprepItemInner(
     // tombstones, likewise never deleted.
     .filter((u) => u.status !== "CHECKED_OUT" && u.status !== "RETURNED" && u.status !== "CANCELLED")
     .sort((x, y) => y.ordinal - x.ordinal); // highest ordinal first (LIFO)
+  // A scan names the asset: remove THAT unit, and refuse when it is not a prepped unit on this line (never LIFO).
+  const named = a.assetId ? allPrepped.find((u) => u.assetId === a.assetId) : undefined;
+  if (a.assetId && !named) throw new ConvexError("That asset isn't a prepped unit on this line");
+  const prepped = named ? [named] : allPrepped;
 
   const isPartialBulk = prepped.length === 1 && prepped[0].bulkAssetId && !prepped[0].assetId && a.quantity < (prepped[0].quantity ?? 0);
   if (isPartialBulk) {
@@ -336,9 +387,16 @@ type ReturnedLine = NonNullable<Awaited<ReturnType<typeof lineByCuid>>>;
 async function deprepReturnedLine(
   ctx: Ctx,
   line: ReturnedLine,
-  a: { count: number; assetId: string; now: number },
+  a: { count: number; assetId: string; explicitAsset?: boolean; now: number },
 ): Promise<void> {
-  const packed = (await lineUnits(ctx, line.id)).filter((u) => u.status === "RETURNED" && u.prepStatus === "PACKED");
+  const units = await lineUnits(ctx, line.id);
+  const packed = units.filter((u) => u.status === "RETURNED" && u.prepStatus === "PACKED");
+  // A scan names its asset: if it is not waiting here (already de-prepped, or never on this line), refuse rather
+  // than quietly de-prepping a different unit. LIFO stays only when no asset was named (a tracked line only: a
+  // legacy line with no unit rows has nothing to match).
+  if (a.explicitAsset && units.length > 0 && !packed.some((u) => u.assetId === a.assetId)) {
+    throw new ConvexError("That asset is already de-prepped (or isn't waiting to be de-prepped on this line)");
+  }
   const splittable = line.prepStatus === "PACKED" && packed.length > a.count && packed.every((u) => (u.quantity ?? 1) === 1);
   if (!splittable) {
     for (const u of packed) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: a.now });
@@ -352,6 +410,14 @@ async function deprepReturnedLine(
     // Accessories follow their own parent unit; an untagged unit has none to scope by.
     if (u.assetId) await resetReturnedAccessories(ctx, line, u.assetId, a.now);
   }
+}
+
+/** De-prep ONE returned unit of a line that still has units out (the line rolls up CHECKED_OUT): only that unit
+ *  and its own accessories move; the line's own status and the units still out are not touched (the rollup
+ *  recomputes the line after). */
+async function deprepReturnedUnit(ctx: Ctx, line: ReturnedLine, unit: Awaited<ReturnType<typeof lineUnits>>[number], now: number): Promise<void> {
+  await ctx.db.patch(unit._id, { prepStatus: "PENDING", updatedAt: now });
+  if (unit.assetId) await resetReturnedAccessories(ctx, line, unit.assetId, now);
 }
 
 /** Reset a RETURNED line's prepStatus to PENDING (+ clear its legacy assetId) and
@@ -387,13 +453,16 @@ async function resetReturnedAccessories(ctx: Ctx, line: ReturnedLine, resolvedAs
     }
     const all = (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", child.id)).collect())
       .filter((u) => !isRelocatedAccessoryUnit(u, parentContainerOf(u)));
-    const units = all.filter((u) => !resolvedAssetId || u.parentUnitAssetId === resolvedAssetId);
+    // Never a unit still CHECKED_OUT (the parent returned without its battery) or CANCELLED. An accessory packed but
+    // never deployed (skipped at deploy) stays CONFIRMED+PACKED and must still reset, or it stays packed for good.
+    const units = all.filter((u) => u.status !== "CHECKED_OUT" && u.status !== "CANCELLED" && (!resolvedAssetId || u.parentUnitAssetId === resolvedAssetId));
     for (const u of units) await ctx.db.patch(u._id, { prepStatus: "PENDING", updatedAt: now });
     // A shared accessory line (one battery line for every handheld) serves several
     // parent units: it only leaves the Returned tab once none of them still has
-    // its accessory packed.
-    const stillPacked = all.some((u) => !units.includes(u) && u.status === "RETURNED" && u.prepStatus === "PACKED");
-    if (include && !stillPacked) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: now });
+    // its accessory packed, and never while any of its units is still out.
+    const blocked = all.some((u) => !units.includes(u) && (u.status === "CHECKED_OUT" || (u.status === "RETURNED" && u.prepStatus === "PACKED")));
+    if (include && !blocked) await ctx.db.patch(child._id, { prepStatus: "PENDING", updatedAt: now });
+    if (units.length > 0) await syncLineItemRollup(ctx, child.id);
   }
 }
 
@@ -519,6 +588,8 @@ export const deprepItems = mutation({
         lineItemId: v.string(),
         quantity: v.optional(v.number()),
         isKit: v.optional(v.boolean()),
+        /** The scanned serialised asset: de-prep THAT unit, not "one by count". */
+        assetId: v.optional(v.string()),
       }),
     ),
     now: v.number(),
@@ -537,6 +608,7 @@ export const deprepItems = mutation({
           projectId: a.projectId,
           lineItemId: op.lineItemId,
           quantity: op.quantity ?? 1,
+          assetId: op.assetId,
           now: a.now,
         });
       }

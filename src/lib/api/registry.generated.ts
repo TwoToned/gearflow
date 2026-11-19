@@ -45639,7 +45639,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f3a8294e61c2e8f2",
-    "returnsSha": "cace592a84649e94",
+    "returnsSha": "0f6b3a8b0553d3c3",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -45717,6 +45717,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b13fa7243cf83cb7",
     "returnsSha": "657cb4dd72533ca5",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "returnsWrites.unreturnBulkNative",
+    "module": "returnsWrites",
+    "fn": "unreturnBulkNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "revertAutoAdvanceAuditId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "unitIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f2ebffb6446ccd12",
+    "returnsSha": "5e800a1c76922b23",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -63894,10 +63956,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1238,
-  agentReachable: 610,
+  total: 1239,
+  agentReachable: 611,
   queries: 443,
-  mutations: 795,
+  mutations: 796,
   agentReachableQueries: 308,
-  agentReachableMutations: 302,
+  agentReachableMutations: 303,
 } as const;

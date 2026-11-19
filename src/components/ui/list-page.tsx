@@ -215,7 +215,9 @@ export function ListPage(props: ListPageProps) {
   return (
     <div className="flex flex-col gap-3">
       <ListHead title={props.title} primary={props.primary} pageMenu={props.pageMenu} />
-      <ListSegments segments={props.segments} value={state.seg} onChange={(seg) => setState(withPatch(state, { seg }))} />
+      {props.segments.length > 0 && (
+        <ListSegments segments={props.segments} value={state.seg} onChange={(seg) => setState(withPatch(state, { seg }))} />
+      )}
       <ListToolbar
         search={c.search}
         onSearch={c.setSearch}
@@ -223,7 +225,7 @@ export function ListPage(props: ListPageProps) {
         filters={props.filters}
         chosen={state.filters}
         onFilter={(k, v) => setState(setFilter(state, k, v))}
-        canClear={hasActiveFilters(state)}
+        canClear={props.filters.length > 0 && hasActiveFilters(state)}
         onClear={c.clear}
         views={props.views}
         view={state.view}

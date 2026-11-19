@@ -215,7 +215,7 @@ function FloorBody({ isLoading, total, visible, isMobile, onShowAll, children }:
 }) {
   if (isLoading) {
     return (
-      <div className={isMobile ? "flex flex-col gap-2" : "grid grid-cols-5 gap-3"}>
+      <div className={isMobile ? "flex flex-col gap-2" : "grid grid-cols-1 gap-3 md:grid-cols-5"}>
         {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-[var(--r)]" />)}
       </div>
     );

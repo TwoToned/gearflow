@@ -30,7 +30,7 @@ function StageHead({ stage, count }: { stage: FloorStage; count: number }) {
 export function FloorBoard({ jobs, now, ringedId, isSelected, onToggle, menuFor }: FloorBoardProps) {
   const cols = byStage(jobs);
   return (
-    <div className="grid grid-cols-5 gap-3" data-testid="floor-board">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-5" data-testid="floor-board">
       {FLOOR_STAGE_KEYS.map((stage) => (
         <section key={stage} aria-label={FLOOR_STAGE_LABELS[stage]} className="flex min-w-0 flex-col gap-2">
           <StageHead stage={stage} count={cols[stage].length} />

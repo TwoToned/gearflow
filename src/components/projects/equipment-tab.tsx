@@ -25,6 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EquipmentAddBar } from "./equipment-add-bar";
+import { EquipmentClientView, EquipmentViewWords } from "./equipment-client-view";
+import { useEquipmentClientView, useEquipmentViewParam } from "@/hooks/use-equipment-client-view";
 import { toast } from "sonner";
 import { ConvexError } from "convex/values";
 
@@ -113,6 +115,9 @@ interface EquipmentTabProps {
    *  Threaded straight to `equipmentTab.bundle`'s own `versionId` arg so
    *  every existing/edited row on screen belongs to the viewed version. */
   versionId?: string;
+  /** The viewed version's number (the live one's when not viewing another),
+   *  named in the Client view's header: `Client view · v3`. */
+  versionNumber?: number;
   /** #1221 follow-up — Phase 5 (D15) greyed the "Add ▾" trigger while
    *  viewing a non-live version, because every create mutation this tab
    *  calls stamped its new row onto the project's LIVE version
@@ -133,7 +138,7 @@ interface EquipmentTabProps {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOpenAddModelId, versionId, addDisabledReason }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOpenAddModelId, versionId, versionNumber, addDisabledReason }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const warehouseWrites = useWarehouseWrites();
@@ -629,6 +634,21 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   const templateWrites = useGroupTemplateWrites();
 
   const { data: servicesData } = useProjectServices(projectId);
+
+  // List · Client view (spec §7). The view lives in the URL (`?view=client`,
+  // D11) so it survives a reload and can be linked. The Client view re-reads
+  // whenever the tab's own reactive trees change identity.
+  const eqView = useEquipmentViewParam();
+  const clientViewSource = useMemo(
+    () => [native.categories, native.uncategorizedItems, native.uncategorizedProjectGroups, native.uncategorizedSubHireGroups, servicesData, projectDoc],
+    [native.categories, native.uncategorizedItems, native.uncategorizedProjectGroups, native.uncategorizedSubHireGroups, servicesData, projectDoc],
+  );
+  const clientView = useEquipmentClientView({
+    projectId,
+    versionId,
+    enabled: eqView.value === "client",
+    source: clientViewSource,
+  });
 
   const templateOptions = templates.map(
     (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })
@@ -1405,10 +1425,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
     <ReassignProvider value={reassignValue}>
     <CustomUnitProvider value={customUnitValue}>
     <div className="space-y-3" data-shortcut-scope="equipment">
-      {/* The list's ⋯: New group / New category, Sync accessories/kits and the
-          margin toggle: secondary, infrequent actions. */}
+      {/* The view words, then the list's ⋯: New group / New category, Sync
+          accessories/kits and the margin toggle: secondary, infrequent
+          actions. The Client view is read-only, so the ⋯ is List only. */}
       <div className="flex items-center gap-2">
+        <EquipmentViewWords value={eqView.value} onChange={eqView.set} />
         <div className="flex-1" />
+        {eqView.value === "list" && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" aria-label="More equipment actions">
@@ -1443,8 +1466,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
 
+      {eqView.value === "client" ? (
+        <EquipmentClientView
+          view={clientView.data}
+          isLoading={clientView.isLoading}
+          error={clientView.error}
+          onRetry={clientView.refetch}
+          versionNumber={versionNumber}
+        />
+      ) : (
+      <>
       {/* Empty state */}
       {!hasCategories && !hasUncategorized && (
         <div className="rounded-[var(--r-lg)] border-2 border-dashed border-line-2 py-12 text-center">
@@ -1543,6 +1577,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
           </div>
         );
       })()}
+      </>
+      )}
 
       {/* ─── Dialogs ────────────────────────────────────────────────────────── */}
 

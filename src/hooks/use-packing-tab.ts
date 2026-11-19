@@ -6,9 +6,10 @@ import { api } from "../../convex/_generated/api";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
 import { collectPlannableLines, buildPackingBuckets, type PackingContainerBucket } from "@/lib/packing-tab";
 
-interface RealContainer {
+export interface RealContainer {
   id: string;
   label: string;
+  kind?: "ASSET" | "BULK_ASSET" | "CUSTOM";
   parentContainerId?: string | null;
   unitCount: number;
 }
@@ -51,7 +52,11 @@ export function usePackingTab(projectId: string | undefined, orgId: string | und
     [equipment.categories, equipment.uncategorizedItems, equipment.uncategorizedProjectGroups, equipment.uncategorizedSubHireGroups],
   );
 
-  const buckets = useMemo(() => buildPackingBuckets(lines, containerLabelById), [lines, containerLabelById]);
+  const containerIds = useMemo(() => containers.map((c) => c.id), [containers]);
+  const buckets = useMemo(
+    () => buildPackingBuckets(lines, containerLabelById, containerIds),
+    [lines, containerLabelById, containerIds],
+  );
   const notPlannedCount = buckets.find((b) => b.containerId === null)?.lines.length ?? 0;
 
   return {

@@ -1004,8 +1004,18 @@ row type, new relationship between parent and children) must be verified
 against ALL of them — fixing one and shipping leaves silent bugs in the
 others:
 
-1. **`src/lib/react-pdf/components/line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), plus the pure formatting helpers it imports from `src/lib/pdfme/line-item-format.ts` (`discountCellText`/`breakdownLabel`/`isSubhireIndicatorVisible`/`getAssetTag`).
-2. **`filterAndGroupItems`'s status filter** (same file) — miss this → items disappear from docket / return-sheet.
+1. **`src/lib/react-pdf/components/line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), from the model `buildLineItemsTableModel` builds in the pure `src/lib/react-pdf/line-items-table-model.ts` (sections, header + rolled-up price, row numbers, which children and grandchildren render, cell text), plus the formatting helpers from `src/lib/pdfme/line-item-format.ts` (`discountCellText`/`breakdownLabel`/`isSubhireIndicatorVisible`/`getAssetTag`).
+2. **`filterAndGroupItems`'s status filter** (`src/lib/react-pdf/line-items-table-model.ts`; `line-items-table.tsx` re-exports it) — miss this → items disappear from docket / return-sheet.
+
+The Equipment tab's **Client view** (UX 2b, `?view=client`) is NOT a third
+consumer: `getEquipmentClientView` (`src/server/equipment-client-view.ts`)
+runs the quote's own chain (`buildDocumentLineItemData` →
+`enrichDocumentLineItems`/`buildBillableServiceRows` from
+`src/lib/pdfme/document-line-items.ts` → `structureLineItems` →
+`buildLineItemsTableModel(items, QUOTE_TABLE_CONFIG)`) and ships the PDF's
+own cell text. Never give it a second derivation of what prints; the parity
+gate (`src/components/projects/__tests__/equipment-client-view.parity*.test.tsx`)
+fails if the view and the quote PDF disagree.
 
 That's down from 4 consumers across 2 files (pre-#1157: `gearflow-table.ts`'s
 render + its own top-level filter, plus `document-composer.ts`'s

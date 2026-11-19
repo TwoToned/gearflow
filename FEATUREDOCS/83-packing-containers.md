@@ -412,6 +412,32 @@ the source of truth from that point on, not this tab) calling
 `useProjectContainerWrites().setPlannedContainer`, and reuses
 `NewContainerSheet` verbatim for "+ New container".
 
+**Case cards (UX 2b, §7b.2/§7b.3).** Every container on the job is a card
+(`packing-case-card.tsx`), empty ones included (`buildPackingBuckets`'s
+`allContainerIds`), with "Loose" last and plain. The header: the name in
+mono, the kind muted (`CONTAINER_KIND_WORDS`), `· in LX-02` when nested,
+`n lines · m packed` (`caseCardFacts`), and the case ⋯ built by
+`buildPackingCaseActions` (`src/lib/row-actions/packing-case.ts`), absent
+without `project:manage_line_items`:
+- **Rename…**: `RenameCaseDialog`, on `renameContainerSchema` (derived from
+  the container schema) → `updateNative({ label })`.
+- **Move into ▸**: every other case except this one's descendants
+  (`caseAndDescendantIds`, a UX filter; `assertParentContainerReparentValid`
+  is the authority) and its current parent → `updateNative({ parentContainerId })`.
+  **Take out of X** is the reverse. Re-nesting is the same field the
+  warehouse uses, so it moves the case there too (intended).
+- **Unpack · lines go loose**: un-PLANS the case's planned-only lines
+  (`setPlannedContainerNative(ids, null)`); packed lines stay, and the toast
+  says so. The physical `unpackNative` is not offered here: packed wins, and
+  the office never moves physical gear (§7b.3). Absent when nothing is
+  planned-only.
+
+Each verb toasts with ONE Undo closure built next to the write
+(`usePackingCaseWrites`). Every one is audited server-side: `updateNative`
+logs a rename as well as a re-nest, and `setPlannedContainerNative` (now
+taking `actor` + `auditId`) writes one activity row per call naming the case
+the lines went into, or the one case they were unplanned from.
+
 **Readiness row** (`convex/lib/projectReadiness.ts`'s
 `computeProjectPackingReadiness`, wired into `projectReadiness.forProject`'s
 `packing` section): "N of M lines not planned yet" — a WARNING, never

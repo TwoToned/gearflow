@@ -3,6 +3,8 @@ import {
   collectPlannableLines,
   resolvePackingStatus,
   buildPackingBuckets,
+  caseCardFacts,
+  caseAndDescendantIds,
   type PlannableLine,
 } from "./packing-tab";
 import type { CategoryData, GroupData, SubHireGroupData, LineItemData } from "@/components/projects/equipment-rows";
@@ -20,6 +22,8 @@ function line(overrides: Partial<LineItemData> & { id: string }): LineItemData {
     ...overrides,
   };
 }
+
+const asLine = (item: LineItemData): PlannableLine => ({ item, categoryName: "Lighting" });
 
 function category(overrides: Partial<CategoryData> & { id: string; name: string }): CategoryData {
   return { sortOrder: 0, groups: [], ...overrides };
@@ -102,7 +106,6 @@ describe("resolvePackingStatus", () => {
 });
 
 describe("buildPackingBuckets", () => {
-  const asLine = (item: LineItemData): PlannableLine => ({ item, categoryName: "Lighting" });
 
   test("groups by resolved container, Not-planned bucket sorts last", () => {
     const buckets = buildPackingBuckets(
@@ -119,5 +122,47 @@ describe("buildPackingBuckets", () => {
     expect(buckets.map((b) => b.label)).toEqual(["A Case", "Z Tub", null]);
     expect(buckets[2].containerId).toBeNull();
     expect(buckets[2].lines.map((l) => l.item.id)).toEqual(["c"]);
+  });
+
+  test("gives every container a bucket, empty ones included", () => {
+    const buckets = buildPackingBuckets(
+      [asLine(line({ id: "a", plannedContainerId: "c-a" }))],
+      new Map([
+        ["c-a", "A Case"],
+        ["c-b", "B Case"],
+      ]),
+      ["c-a", "c-b"],
+    );
+    expect(buckets.map((b) => [b.label, b.lines.length])).toEqual([
+      ["A Case", 1],
+      ["B Case", 0],
+    ]);
+  });
+});
+
+describe("caseCardFacts", () => {
+  test("counts lines and packed lines, and lists only the planned-only ones for Unpack", () => {
+    const facts = caseCardFacts({
+      containerId: "c1",
+      label: "LX-02",
+      lines: [
+        asLine(line({ id: "planned", plannedContainerId: "c1" })),
+        asLine(line({ id: "packed", units: [{ id: "u1", ordinal: 1, containerId: "c1" }] })),
+      ],
+    });
+    expect(facts).toEqual({ lineCount: 2, packedCount: 1, plannedOnlyIds: ["planned"] });
+  });
+});
+
+describe("caseAndDescendantIds", () => {
+  test("includes the case and every case nested inside it, at any depth", () => {
+    const containers = [
+      { id: "a" },
+      { id: "b", parentContainerId: "a" },
+      { id: "c", parentContainerId: "b" },
+      { id: "d" },
+    ];
+    expect([...caseAndDescendantIds(containers, "a")].sort()).toEqual(["a", "b", "c"]);
+    expect([...caseAndDescendantIds(containers, "d")]).toEqual(["d"]);
   });
 });

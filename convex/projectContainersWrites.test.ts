@@ -157,7 +157,7 @@ describe("projectContainersWrites.updateNative — nesting + cycle guard", () =>
     ).rejects.toThrow(/can't be packed inside itself/i);
   });
 
-  test("rename is not audited; re-nesting is", async () => {
+  test("a rename and a re-nest are each audited; a description-only edit is not", async () => {
     const t = makeT();
     await seedProject(t);
     await createContainer(t, "c1", "Case A");
@@ -165,7 +165,14 @@ describe("projectContainersWrites.updateNative — nesting + cycle guard", () =>
       id: "c1", orgId: ORG, label: "Case A (relabelled)", now: NOW, actor: ACTOR, auditId: "audit-rename",
     });
     const renameLog = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "audit-rename")).first());
-    expect(renameLog).toBeNull();
+    expect(renameLog?.summary).toBe('Renamed container "Case A" to "Case A (relabelled)"');
+    expect(renameLog?.entityId).toBe("c1");
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.updateNative, {
+      id: "c1", orgId: ORG, description: "Front of house", now: NOW, actor: ACTOR, auditId: "audit-desc",
+    });
+    const descLog = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "audit-desc")).first());
+    expect(descLog).toBeNull();
 
     await createContainer(t, "c2", "Case B");
     await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.updateNative, {
@@ -308,14 +315,56 @@ describe("projectContainersWrites.setPlannedContainerNative", () => {
     });
 
     const r1 = await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.setPlannedContainerNative, {
-      orgId: ORG, lineItemIds: ["li1"], containerId: "c1", now: NOW,
+      orgId: ORG, lineItemIds: ["li1"], containerId: "c1", now: NOW, actor: ACTOR, auditId: "audit-plan",
     });
     expect(r1.updated).toBe(1);
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
 
     await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.setPlannedContainerNative, {
-      orgId: ORG, lineItemIds: ["li1"], containerId: null, now: NOW,
+      orgId: ORG, lineItemIds: ["li1"], containerId: null, now: NOW, actor: ACTOR, auditId: "audit-unplan",
     });
     expect((await lineById(t, "li1"))?.plannedContainerId).toBeUndefined();
+  });
+
+  test("planning and unplanning each write one activity row naming the case", async () => {
+    const t = makeT();
+    await seedProject(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.createNative, {
+      id: "c1", orgId: ORG, projectId: "p1", kind: "CUSTOM", label: "LX-02", now: NOW, actor: ACTOR, auditId: "a1",
+    });
+    await t.run(async (ctx) => {
+      for (const id of ["li1", "li2"]) {
+        await ctx.db.insert("projectLineItems", {
+          id, organizationId: ORG, projectId: "p1", versionId: V1, lineageId: id,
+          type: "EQUIPMENT", quantity: 1, sortOrder: 5, createdAt: NOW, updatedAt: NOW,
+        });
+      }
+    });
+    const logById = (id: string) => t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first());
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.setPlannedContainerNative, {
+      orgId: ORG, lineItemIds: ["li1", "li2"], containerId: "c1", now: NOW, actor: ACTOR, auditId: "audit-plan",
+    });
+    expect(await logById("audit-plan")).toMatchObject({
+      entityType: "projectContainer", entityId: "c1", projectId: "p1", summary: 'Planned 2 lines into container "LX-02"',
+    });
+
+    // A case card's Unpack: the lines planned into one case go loose.
+    await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.setPlannedContainerNative, {
+      orgId: ORG, lineItemIds: ["li1", "li2"], containerId: null, now: NOW, actor: ACTOR, auditId: "audit-unplan",
+    });
+    expect(await logById("audit-unplan")).toMatchObject({
+      entityType: "projectContainer", entityId: "c1", summary: 'Unplanned 2 lines from container "LX-02" (now loose)',
+    });
+  });
+
+  test("a call that touches no line in the org writes no activity row", async () => {
+    const t = makeT();
+    await seedProject(t);
+    const r = await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.setPlannedContainerNative, {
+      orgId: ORG, lineItemIds: ["nope"], containerId: null, now: NOW, actor: ACTOR, auditId: "audit-none",
+    });
+    expect(r.updated).toBe(0);
+    expect(await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "audit-none")).first())).toBeNull();
   });
 });

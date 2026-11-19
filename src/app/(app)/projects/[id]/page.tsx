@@ -766,6 +766,7 @@ export default function ProjectDetailPage({
                       rentalEndDate={availabilityWindow.end}
                       autoOpenAddModelId={autoOpenAddModelId}
                       versionId={versionState.viewingVersion?.id}
+                      versionNumber={(versionState.viewingVersion ?? versionState.liveVersion)?.number}
                     />
                   </div>
                 </TabsContent>

@@ -139,8 +139,11 @@ export interface PackingContainerBucket {
 export function buildPackingBuckets(
   lines: PlannableLine[],
   containerLabelById: Map<string, string>,
+  /** Every container on the job. Each gets a bucket even with no lines, so an
+   *  empty case is visible (and can be renamed or nested) on the Packing tab. */
+  allContainerIds: readonly string[] = [],
 ): PackingContainerBucket[] {
-  const byContainerId = new Map<string | null, PlannableLine[]>();
+  const byContainerId = new Map<string | null, PlannableLine[]>(allContainerIds.map((id) => [id, []]));
   for (const line of lines) {
     const status = resolvePackingStatus(line.item);
     const key = status.kind === "unplanned" ? null : status.containerId;
@@ -163,4 +166,42 @@ export function buildPackingBuckets(
     label: containerId ? (containerLabelById.get(containerId) ?? null) : null,
     lines: byContainerId.get(containerId)!,
   }));
+}
+
+/** The muted kind word on a case card, by `projectContainers.kind` (the same
+ *  words the New container sheet's tabs use). */
+export const CONTAINER_KIND_WORDS = { ASSET: "Case", BULK_ASSET: "Bulk tub", CUSTOM: "Custom" } as const;
+
+/** A case card's header facts (§7b.2): `n lines · m packed`, and the lines
+ *  that are only PLANNED into it — the ones "Unpack" can send loose. A packed
+ *  line stays: packed wins, and the office never moves physical gear (§7b.3). */
+export function caseCardFacts(bucket: PackingContainerBucket): { lineCount: number; packedCount: number; plannedOnlyIds: string[] } {
+  let packedCount = 0;
+  const plannedOnlyIds: string[] = [];
+  for (const { item } of bucket.lines) {
+    if (resolvePackingStatus(item).kind === "packed") packedCount++;
+    else plannedOnlyIds.push(item.id);
+  }
+  return { lineCount: bucket.lines.length, packedCount, plannedOnlyIds };
+}
+
+/** `id` and every container nested (at any depth) inside it — the cases a
+ *  "Move into" list must not offer, since that would nest a case in itself.
+ *  UX filter only: the server's cycle check is the authority. */
+export function caseAndDescendantIds(
+  containers: ReadonlyArray<{ id: string; parentContainerId?: string | null }>,
+  id: string,
+): Set<string> {
+  const out = new Set([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const c of containers) {
+      if (c.parentContainerId && out.has(c.parentContainerId) && !out.has(c.id)) {
+        out.add(c.id);
+        grew = true;
+      }
+    }
+  }
+  return out;
 }

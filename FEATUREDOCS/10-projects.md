@@ -709,6 +709,33 @@ HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
 - Line item edit dialog; separate "Move to category" and "Move to group" dialogs (split in v0.9.3.0 — see [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md))
 - Category rename (inline) and delete with cascade warning
 
+#### List · Client view (UX 2b)
+Two view words head the tab: **List** (the default, everything above) and
+**Client view**, kept in the URL as `?view=client`
+(`useEquipmentViewParam`, `src/hooks/use-equipment-client-view.ts`). The
+Client view is the quote as it prints, read-only: the quote's sections, a
+rolled-up category's one price on its header, disclosed group members under
+their group, the PDF's own cell text (`×qty · unit · discount`, total), the
+`optional` / `priceHidden` glyphs, and the footer totals, under
+`Client view · vN · as it prints`. No add bar, bulk bar, row menus or list ⋯.
+
+It never decides what prints. `getEquipmentClientView`
+(`src/server/equipment-client-view.ts`, `project:read`, Zod-parsed args,
+org-checked project) runs the quote's own chain — `buildDocumentLineItemData`
+→ `enrichDocumentLineItems` → `structureLineItems` (the quote layout's
+collapse mode) + `buildBillableServiceRows` (itemised) →
+`buildLineItemsTableModel(items, QUOTE_TABLE_CONFIG)` — and maps it with
+`toClientViewSections` (`src/lib/equipment-client-view.ts`) to a slim DTO
+with no cost, margin or asset fields. Totals follow the draft-preview rule:
+on a viewed version, that version's computed money (`versionPreviewContext`,
+the query the `preview=1` quote uses), else the project's stored anchors.
+Overbooking is not computed (the quote prints no badges). The view re-reads
+400 ms after the tab's reactive trees change, keeping the last result on
+screen. Parity with the PDF is a gate:
+`__tests__/equipment-client-view.parity{,-pdf}.test.tsx` on one fixture.
+Deferred: a "Combine services" toggle (a send-time choice; the view prints
+services itemised).
+
 ### Financials Tab
 Moved out of the sidebar into its own non-template main-content tab (after
 "Labour & logistics") to declutter the right rail. Contains `FinancialSummary`

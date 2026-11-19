@@ -384,6 +384,26 @@ describe("de-prep by asset is exact, never a LIFO guess", () => {
     expect(await asset(t, "a2")).toBe("CHECKED_OUT");
     await expect(deprep(t, "a2")).rejects.toThrow(/already deployed/); // still out: not de-preppable
   });
+
+  test("parent A back WITHOUT its accessory: de-prep A by asset leaves the accessory unit out and its line alone", async () => {
+    const t = makeT();
+    await seed(t);
+    await prepBoth(t);
+    await deployBoth(t);
+    await svc(t).mutation(api.warehouseOps.checkinItems, { organizationId: ORG, projectId: "p1", userId: USER, now: NOW, items: [{ lineItemId: "L1", assetId: "a1", returnCondition: "GOOD" }] });
+    // Force the battery of a1 to stay out (parent back without it).
+    const before = await t.run(async (ctx) => {
+      const u = (await ctx.db.query("projectLineItemUnits").collect()).find((x) => x.parentUnitAssetId === "a1")!;
+      await ctx.db.patch(u._id, { status: "CHECKED_OUT", prepStatus: "PACKED" });
+      return u.lineItemId;
+    });
+    await deprep(t, "a1");
+    const acc = await accUnit(t, "a1");
+    expect(acc).toMatchObject({ status: "CHECKED_OUT", prepStatus: "PACKED" }); // untouched
+    const line = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", before)).unique());
+    expect(line?.prepStatus).not.toBe("PENDING"); // the battery line is not reset while a unit is out
+    expect((await unitsLeft(t)).find((u) => u[0] === "a1")).toEqual(["a1", "PENDING", "RETURNED"]);
+  });
 });
 
 describe("prepItems reports what an accessories-only prep actually packed", () => {

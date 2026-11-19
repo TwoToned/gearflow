@@ -95,12 +95,13 @@ function ScopeStrip({ scope, counts, returningCount, onScope, onReturning, filte
     <div className="flex items-center gap-4 overflow-x-auto md:overflow-visible">
       <StageFilter
         label="Scope"
+        className="shrink-0"
         options={FLOOR_SCOPES.map((s) => ({ key: s, label: SCOPE_LABELS[s], count: counts[s] }))}
         value={scope}
         onChange={(k) => k && onScope(k as FloorScope)}
       />
       {filters}
-      <button type="button" onClick={onReturning} className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-caption font-medium text-ink [@media(pointer:fine)]:min-h-8">
+      <button type="button" onClick={onReturning} className="ml-auto inline-flex min-h-11 shrink-0 items-center whitespace-nowrap gap-1.5 text-caption font-medium text-ink [@media(pointer:fine)]:min-h-8">
         Returning <span className="font-mono text-muted tabular-nums">{returningCount}</span>
       </button>
     </div>

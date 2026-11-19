@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-const MAX_TAG_LENGTH = 40;
+import { cleanTag, MAX_TAG_LEN } from "../../../convex/lib/tagLimits";
 
 /** One tag, trimmed and bounded; empty is no tag. */
 function normaliseTag(raw: string): string {
-  return raw.trim().slice(0, MAX_TAG_LENGTH);
+  return cleanTag(raw).slice(0, MAX_TAG_LEN);
 }
 
 /**

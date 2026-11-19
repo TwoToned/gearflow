@@ -10,7 +10,7 @@ import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
-import { assertStrLen } from "./lib/fieldGuards";
+import { assertStrLen, assertTags } from "./lib/fieldGuards";
 import { assertRefInOrg, assertClientContactBelongsToClient } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -83,6 +83,11 @@ const NOTES_FIELD = v.union(
  * `undefined` fields are left untouched by the caller — `assertStrLen` skips them.
  */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** `set` is v.any(): validate + normalise a supplied `tags` in place (R-8.6.2). */
+function guardSetTags(setObj: Record<string, unknown>): void {
+  if ("tags" in setObj) setObj.tags = assertTags(setObj.tags) ?? [];
+}
 function assertProjectFields(f: {
   name?: string | null;
   projectNumber?: string | null;
@@ -462,6 +467,7 @@ export const updateNative = mutation({
     // the server-owned `revision` counter (#986) and isTemplate (no client-forged totals,
     // no client-renumbered revisions, no in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
+    guardSetTags(setObj);
 
     // #1230: setting or clearing a locked project field (taxRate/discountPercent)
     // is a MONEY write, gated by `pricingLocked` — the project row itself is
@@ -731,7 +737,7 @@ export const createNative = mutation({
     // mint a project with forged financials (projectWriteFields exposes them as args).
     // Non-breaking: createProject never sends these. (bumpProjectCounters keys off
     // status/isTemplate, not money, so it's unaffected by the strip.)
-    const insertFields = { ...fields, projectNumber, discountPercent };
+    const insertFields = { ...fields, tags: assertTags(fields.tags), projectNumber, discountPercent };
     for (const k of PROJECT_MONEY_ANCHORS) delete (insertFields as Record<string, unknown>)[k];
     for (const k of PROJECT_SERVER_OWNED) delete (insertFields as Record<string, unknown>)[k];
     // #986 — every real project starts at revision 1 (its first quote is v1).

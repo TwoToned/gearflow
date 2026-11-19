@@ -59,3 +59,16 @@ export const FLOOR_STAGE_LABELS = {
   out: OUT_LABEL,
   returning: "Returning",
 } as const;
+
+/**
+ * Returning mode's outcome words (spec §9c.4): what happened to a unit on its
+ * way back. `late` is derived (D29: came back, or is still out, after the end
+ * day), never stored.
+ */
+export const RETURN_OUTCOME_LABELS = {
+  out: OUT_LABEL,
+  returned: GEAR_STAGE_LABELS.returned,
+  damaged: "Damaged",
+  missing: "Missing",
+  late: "Late",
+} as const;

@@ -1,22 +1,32 @@
 import { describe, it, expect } from "vitest";
 import {
   parseFloorUrl, serializeFloorUrl, inScope, matchesQuery, floorFlags, progressOf, dispatchText, windowText,
-  byStage, nextOutText, overdueDays, isCloseable,
+  byStage, nextOutText, overdueDays, isCloseable, returnsRedirectHref,
 } from "@/lib/warehouse-floor";
 import { floorJob, DAY, NOW, TODAY } from "./floor-fixtures";
 
 const params = (qs: string) => new URLSearchParams(qs);
+const DEFAULTS = { mode: "floor", scope: "week", stage: null, q: "", outcome: null, job: null, show: 25 };
 
 describe("floor URL (D11)", () => {
   it("defaults are omitted and round-trip", () => {
     const s = parseFloorUrl(params(""));
-    expect(s).toEqual({ mode: "floor", scope: "week", stage: null, q: "" });
+    expect(s).toEqual(DEFAULTS);
     expect(serializeFloorUrl(s)).toBe("");
-    const t = parseFloorUrl(params("mode=returning&scope=all&stage=out&q=2341"));
+    const t = parseFloorUrl(params("mode=returning&scope=all&stage=out&q=2341&outcome=damaged&job=p1&show=50"));
+    expect(t).toMatchObject({ outcome: "damaged", job: "p1", show: 50 });
     expect(parseFloorUrl(params(serializeFloorUrl(t).slice(1)))).toEqual(t);
   });
   it("invalid values fall back to the default instead of throwing", () => {
-    expect(parseFloorUrl(params("mode=x&scope=forever&stage=lost"))).toEqual({ mode: "floor", scope: "week", stage: null, q: "" });
+    expect(parseFloorUrl(params("mode=x&scope=forever&stage=lost&outcome=gone&job=a%20b&show=-4"))).toEqual(DEFAULTS);
+  });
+  it("Returning-only keys never leak onto the board's URL", () => {
+    const s = parseFloorUrl(params("outcome=late&job=p1&show=50"));
+    expect(serializeFloorUrl(s)).toBe("");
+  });
+  it("/warehouse/returns redirects to Returning mode, keeping its query", () => {
+    expect(returnsRedirectHref({})).toBe("/warehouse?mode=returning");
+    expect(returnsRedirectHref({ mode: "floor", outcome: "late", job: ["p1", "p2"] })).toBe("/warehouse?mode=returning&outcome=late&job=p1&job=p2");
   });
 });
 

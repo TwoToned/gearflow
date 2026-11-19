@@ -9,6 +9,10 @@ import { formatDateDayMonth, formatWeekday, formatWeekdayDayMonth } from "@/lib/
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "../../convex/_generated/api";
 import { FLOOR_STAGE_KEYS, type FloorStage } from "../../convex/lib/warehouseStage";
+import { RETURN_OUTCOMES } from "@/lib/returning";
+
+/** Returning mode's phone page size (`Show 25 more · n left`). */
+export const DEFAULT_SHOW = 25;
 
 export type FloorJob = FunctionReturnType<typeof api.warehouseList.bundle>["projects"][number];
 
@@ -26,10 +30,14 @@ const floorUrlSchema = z.object({
   /** Phone only: desktop shows all five columns and ignores it (plan Q16). */
   stage: z.enum(FLOOR_STAGE_KEYS).nullable().catch(null),
   q: z.string().max(128).catch(""),
+  /** Returning mode only: one outcome word, one job, and the phone's row page. */
+  outcome: z.enum(RETURN_OUTCOMES).nullable().catch(null),
+  job: z.string().max(64).regex(/^[A-Za-z0-9_-]+$/).nullable().catch(null),
+  show: z.coerce.number().int().min(DEFAULT_SHOW).max(2000).catch(DEFAULT_SHOW),
 });
 export type FloorUrlState = z.output<typeof floorUrlSchema>;
 
-const FLOOR_URL_DEFAULTS: FloorUrlState = { mode: "floor", scope: "week", stage: null, q: "" };
+const FLOOR_URL_DEFAULTS: FloorUrlState = { mode: "floor", scope: "week", stage: null, q: "", outcome: null, job: null, show: DEFAULT_SHOW };
 
 export function parseFloorUrl(params: { get: (k: string) => string | null }): FloorUrlState {
   return floorUrlSchema.parse({
@@ -37,18 +45,36 @@ export function parseFloorUrl(params: { get: (k: string) => string | null }): Fl
     scope: params.get("scope") ?? undefined,
     stage: params.get("stage") ?? null,
     q: params.get("q") ?? "",
+    outcome: params.get("outcome") ?? null,
+    job: params.get("job") ?? null,
+    show: params.get("show") ?? undefined,
   });
 }
 
 /** Defaults are omitted, so the bare `/warehouse` stays the canonical link. */
 export function serializeFloorUrl(s: FloorUrlState): string {
   const out = new URLSearchParams();
-  if (s.mode !== FLOOR_URL_DEFAULTS.mode) out.set("mode", s.mode);
-  if (s.scope !== FLOOR_URL_DEFAULTS.scope) out.set("scope", s.scope);
-  if (s.stage) out.set("stage", s.stage);
-  if (s.q) out.set("q", s.q);
+  // Returning-only keys never leak onto the board.
+  const keys = s.mode === "returning" ? URL_KEYS : BOARD_URL_KEYS;
+  for (const k of keys) {
+    const v = s[k];
+    if (v != null && v !== "" && v !== FLOOR_URL_DEFAULTS[k]) out.set(k, String(v));
+  }
   const qs = out.toString();
   return qs ? `?${qs}` : "";
+}
+
+const URL_KEYS = ["mode", "scope", "stage", "q", "outcome", "job", "show"] as const satisfies ReadonlyArray<keyof FloorUrlState>;
+const BOARD_URL_KEYS = URL_KEYS.filter((k) => k !== "outcome" && k !== "job" && k !== "show");
+
+/** `/warehouse/returns[?…]` → `/warehouse?mode=returning[&…]` (any `mode` is replaced). */
+export function returnsRedirectHref(params: Record<string, string | string[] | undefined>): string {
+  const out = new URLSearchParams({ mode: "returning" });
+  for (const [k, v] of Object.entries(params)) {
+    if (k === "mode" || v == null) continue;
+    for (const one of Array.isArray(v) ? v : [v]) out.append(k, one);
+  }
+  return `/warehouse?${out.toString()}`;
 }
 
 // ─── Dates ─────────────────────────────────────────────────────────────────

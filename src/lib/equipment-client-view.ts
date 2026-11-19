@@ -60,7 +60,7 @@ export interface ClientViewSection {
 }
 
 /** The quote's money, from the same source the quote prints its totals from. */
-export interface ClientViewTotals {
+interface ClientViewTotals {
   subtotal: number | null;
   discountAmount: number | null;
   taxAmount: number | null;

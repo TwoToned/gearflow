@@ -376,12 +376,12 @@ export function childQtyText(child: TableModelChild): string {
 }
 
 /** A `byContainer` container band (`isContainerRow`). */
-export interface TableModelContainerRow {
+interface TableModelContainerRow {
   kind: "container";
   item: DocumentLineItem;
 }
 
-export interface TableModelSection {
+interface TableModelSection {
   key: string;
   /** The section's plain header band, or `null` when it prints none. */
   header: { name: string; rollupAmount: number | null } | null;

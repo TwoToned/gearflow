@@ -64,6 +64,16 @@ describe("projectWrites.addTagNative / removeTagNative", () => {
     expect(await tagsOf(t, "p2")).toEqual([]);
   });
 
+  test("a job already at MAX_TAGS is reported in `full`, not silently dropped", async () => {
+    const t = makeT();
+    const maxed = Array.from({ length: 25 }, (_, i) => `t${i}`);
+    await seed(t, [{ id: "p1", tags: maxed }, { id: "p2", tags: maxed }, { id: "p3" }, { id: "p4", tags: [...maxed.slice(1), "vip"] }]);
+    const r = await user(t).mutation(api.projectWrites.addTagNative, a(["p1", "p2", "p3", "p4"]));
+    expect(r.changed).toEqual(["p3"]);
+    expect(r.full.sort()).toEqual(["p1", "p2"]); // p4 is full but already HAS the tag: not "full"
+    expect(await tagsOf(t, "p1")).toEqual(maxed);
+  });
+
   test("a foreign-org id is rejected and nothing is written", async () => {
     const t = makeT();
     await seed(t, [{ id: "p1" }, { id: "px", org: OTHER }]);

@@ -601,7 +601,7 @@ async function applyTagBatch(
   ctx: MutationCtx,
   a: TagBatchArgs,
   mode: "add" | "remove",
-): Promise<string[]> {
+): Promise<{ changed: string[]; full: string[] }> {
   const tag = assertTags([a.tag])![0];
   await assertWritesEnabled(ctx, "project");
   await enforceBrowserWriteLimit(ctx);
@@ -609,12 +609,16 @@ async function applyTagBatch(
   await requireOrgPermission(ctx, a.orgId, "project", "update");
   const actor = await resolveActor(ctx, a.actor);
   const changed: string[] = [];
+  const full: string[] = [];
   for (const id of new Set(a.ids)) {
     const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!p) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (p.organizationId !== a.orgId) throw new ConvexError("Forbidden: organization mismatch.");
     const next = nextTags(p.tags ?? [], tag, mode);
-    if (!next) continue;
+    if (!next) {
+      if (mode === "add" && isTagListFull(p.tags ?? [], tag)) full.push(id);
+      continue;
+    }
     await ctx.db.patch(p._id, { tags: next, updatedAt: a.now });
     changed.push(id);
   }
@@ -627,28 +631,33 @@ async function applyTagBatch(
       createdAt: a.now,
     });
   }
-  return changed;
+  return { changed, full };
+}
+
+/** True when `tag` cannot be added because the list is at MAX_TAGS (and doesn't already hold it). */
+function isTagListFull(current: string[], tag: string): boolean {
+  return !current.includes(tag) && current.length >= MAX_TAGS;
 }
 
 /** The tags after the change, or null when nothing would change (already there / absent / full). */
 function nextTags(current: string[], tag: string, mode: "add" | "remove"): string[] | null {
   if (mode === "remove") return current.includes(tag) ? current.filter((t) => t !== tag) : null;
-  if (current.includes(tag) || current.length >= MAX_TAGS) return null;
+  if (current.includes(tag) || isTagListFull(current, tag)) return null;
   return [...current, tag];
 }
 
-/** Add one tag to many jobs; returns the ids it was newly added to. */
+/** Add one tag to many jobs; returns the ids it was newly added to and the ids skipped because their tag list is full. */
 export const addTagNative = mutation({
   args: tagBatchArgs,
-  returns: v.object({ changed: v.array(v.string()) }),
-  handler: async (ctx, a) => ({ changed: await applyTagBatch(ctx, a, "add") }),
+  returns: v.object({ changed: v.array(v.string()), full: v.array(v.string()) }),
+  handler: async (ctx, a) => applyTagBatch(ctx, a, "add"),
 });
 
 /** Remove one tag from many jobs (Undo of addTagNative, over exactly the ids it changed). */
 export const removeTagNative = mutation({
   args: tagBatchArgs,
-  returns: v.object({ changed: v.array(v.string()) }),
-  handler: async (ctx, a) => ({ changed: await applyTagBatch(ctx, a, "remove") }),
+  returns: v.object({ changed: v.array(v.string()), full: v.array(v.string()) }),
+  handler: async (ctx, a) => applyTagBatch(ctx, a, "remove"),
 });
 
 /**
@@ -1618,7 +1627,7 @@ export const saveAsTemplateNative = mutation({
 
 /** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
 export const agentOps: AgentOpsAnnotations = {
-  addTagNative: { summary: "Add one tag to several jobs, keeping each job's other tags; returns the ids it was newly added to.", danger: "medium" },
+  addTagNative: { summary: "Add one tag to several jobs, keeping each job's other tags; returns the ids it was newly added to (changed) and the ids skipped because their tag list is full (full).", danger: "medium" },
   removeTagNative: { summary: "Remove one tag from several jobs; returns the ids it was removed from.", danger: "medium" },
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },

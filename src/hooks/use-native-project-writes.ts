@@ -589,10 +589,11 @@ export function useProjectWrites(orgId: string | undefined) {
 
   /**
    * Add (or remove) one tag on many jobs. The server reads each job's CURRENT tags, so
-   * another edit's tags are never overwritten. Resolves to the ids that actually changed:
-   * Undo of an add is `removeTag` over exactly those.
+   * another edit's tags are never overwritten. Resolves to the ids that actually changed
+   * (Undo of an add is `removeTag` over exactly those) and the ids skipped because their
+   * tag list was already full.
    */
-  const tagBatch = (m: typeof addTagM) => async (ids: string[], tag: string): Promise<string[]> => {
+  const tagBatch = (m: typeof addTagM) => async (ids: string[], tag: string): Promise<{ changed: string[]; full: string[] }> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     try {
       const r = await m({
@@ -601,7 +602,7 @@ export function useProjectWrites(orgId: string | undefined) {
         auditId: createId(),
         now: Date.now(),
       });
-      return r.changed;
+      return { changed: r.changed, full: r.full };
     } catch (e) {
       throw mapProjectWriteError(e, false);
     }

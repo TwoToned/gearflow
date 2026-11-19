@@ -5,6 +5,7 @@ import { useConvex } from "convex/react";
 import { toast } from "sonner";
 
 import { api } from "../../../convex/_generated/api";
+import { MAX_TAGS } from "../../../convex/lib/tagLimits";
 
 import { useConfirmStatusGate } from "@/hooks/use-confirm-status-gate";
 import { useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
@@ -17,6 +18,14 @@ type Seen = MutableRefObject<Map<string, JobSource>>;
 
 const statusOf = (r: JobSource) => r.status ?? "ENQUIRY";
 const numberOf = (r: JobSource) => r.projectNumber;
+
+/** ` · 2 jobs already have 25 tags (P-1, P-2)`: jobs a tag could not be added to are NAMED, never silent. */
+function fullTagsNote(rows: JobSource[], full: string[]): string {
+  if (full.length === 0) return "";
+  const names = rows.filter((r) => full.includes(r.id)).slice(0, 4).map(numberOf).join(", ");
+  const more = full.length > 4 ? ` +${full.length - 4} more` : "";
+  return ` · ${plural(full.length, "job")} already ${full.length === 1 ? "has" : "have"} ${MAX_TAGS} tags (${names}${more})`;
+}
 
 function downloadCsv(csv: string, filename: string) {
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -121,16 +130,17 @@ export function useJobListWrites(orgId: string | undefined, seen: Seen) {
   /** ONE server call; the server reads each job's current tags and returns the ids it newly tagged. */
   async function bulkTag(ids: string[], tag: string) {
     const rows = pick(ids);
-    let changed: string[];
+    let result: { changed: string[]; full: string[] };
     try {
-      changed = await projectWrites.addTag(rows.map((r) => r.id), tag);
+      result = await projectWrites.addTag(rows.map((r) => r.id), tag);
     } catch (e) {
       showError(e, { fallbackTitle: "Could not tag the jobs" });
       return;
     }
+    const { changed, full } = result;
     const done = rows.filter((r) => changed.includes(r.id));
-    const skipped = rows.filter((r) => !changed.includes(r.id)).map((r) => ({ name: numberOf(r), why: `already tagged ${tag}` }));
-    summarise(`Tagged ${plural(done.length, "job")} ${tag}`, { done, skipped }, async () => {
+    const skipped = rows.filter((r) => !changed.includes(r.id) && !full.includes(r.id)).map((r) => ({ name: numberOf(r), why: `already tagged ${tag}` }));
+    summarise(`Tagged ${plural(done.length, "job")} ${tag}${fullTagsNote(rows, full)}`, { done, skipped }, async () => {
       await projectWrites.removeTag(changed, tag);
     });
   }

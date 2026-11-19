@@ -38,7 +38,7 @@ vi.mock("@/hooks/use-confirm-status-gate", () => ({
 }));
 vi.mock("@/hooks/use-native-project-writes", () => ({
   useNativeProjectStatus: () => ({ enabled: true, updateStatus: vi.fn(async () => undefined) }),
-  useProjectWrites: () => ({ archive: vi.fn(), remove: vi.fn(), addTag: vi.fn(async () => []), removeTag: vi.fn(async () => []) }),
+  useProjectWrites: () => ({ archive: vi.fn(), remove: vi.fn(), addTag: vi.fn(async () => ({ changed: [], full: [] })), removeTag: vi.fn(async () => ({ changed: [], full: [] })) }),
 }));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: vi.fn(async () => []) }) }));
 vi.mock("@/components/projects/project-board", () => ({ ProjectBoard: ({ search }: { search?: string }) => <div>BOARD {search}</div> }));

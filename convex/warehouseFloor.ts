@@ -148,10 +148,23 @@ function isListed(line: Line): boolean {
 
 type Names = { models: Map<string, Doc<"models">>; kits: Map<string, Doc<"kits">> };
 
+function modelNameOf(line: Line, names: Names): string | null {
+  return (line.modelId && names.models.get(line.modelId)?.name) || null;
+}
+
+function kitTagOf(line: Line, names: Names): string | null {
+  return (line.kitId && names.kits.get(line.kitId)?.assetTag) || null;
+}
+
+function accessoryRow(k: Line, names: Names) {
+  const c = lineUnitCounts(k);
+  return { lineItemId: k.id, description: k.description ?? modelNameOf(k, names) ?? "Accessory", quantity: c.qty, out: c.out, back: c.back };
+}
+
 function lineRow(line: Line, kids: Line[], names: Names, late: Map<string, number>) {
   const c = lineUnitCounts(line);
   const kind = classifyLine(line);
-  const modelName = line.modelId ? names.models.get(line.modelId)?.name ?? null : null;
+  const modelName = modelNameOf(line, names);
   return {
     lineItemId: line.id,
     description: line.description ?? modelName ?? "Item",
@@ -165,12 +178,8 @@ function lineRow(line: Line, kids: Line[], names: Names, late: Map<string, numbe
     lateBack: late.get(line.id) ?? 0,
     scannable: kind !== "subhire" && kind !== "custom",
     kitId: line.kitId ?? null,
-    kitAssetTag: line.kitId ? names.kits.get(line.kitId)?.assetTag ?? null : null,
-    accessories: kids.map((k) => {
-      const kc = lineUnitCounts(k);
-      const name = k.modelId ? names.models.get(k.modelId)?.name : undefined;
-      return { lineItemId: k.id, description: k.description ?? name ?? "Accessory", quantity: kc.qty, out: kc.out, back: kc.back };
-    }),
+    kitAssetTag: kitTagOf(line, names),
+    accessories: kids.map((k) => accessoryRow(k, names)),
   };
 }
 
@@ -278,18 +287,22 @@ export const lineUnits = query({
       truncated: read.length >= MAX_UNITS_PER_LINE,
       units: units
         .sort((a, b) => a.ordinal - b.ordinal)
-        .map((u) => ({
-          unitId: u.id,
-          assetId: u.assetId ?? null,
-          assetTag: u.assetId ? assets.get(u.assetId)?.assetTag ?? null : null,
-          quantity: u.quantity ?? 1,
-          returnedQuantity: u.returnedQuantity ?? 0,
-          status: u.status ?? null,
-          returnCondition: u.returnCondition ?? null,
-          returnStatus: u.returnStatus ?? null,
-          returnedAt: u.returnedAt ?? null,
-          lateBack: returnedLate(u, windowEnd),
-        })),
+        .map((u) => unitRow(u, (u.assetId && assets.get(u.assetId)?.assetTag) || null, windowEnd)),
     };
   },
 });
+
+function unitRow(u: Doc<"projectLineItemUnits">, assetTag: string | null, windowEnd: number | null) {
+  return {
+    unitId: u.id,
+    assetId: u.assetId ?? null,
+    assetTag,
+    quantity: u.quantity ?? 1,
+    returnedQuantity: u.returnedQuantity ?? 0,
+    status: u.status ?? null,
+    returnCondition: u.returnCondition ?? null,
+    returnStatus: u.returnStatus ?? null,
+    returnedAt: u.returnedAt ?? null,
+    lateBack: returnedLate(u, windowEnd),
+  };
+}

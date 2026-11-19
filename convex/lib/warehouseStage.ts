@@ -82,11 +82,16 @@ export function isFloorLeaf(line: FloorLine, wrappers: ReadonlySet<string>): boo
  * straight to a status) falls back to its status, the same way
  * `projectAutoStatus.hasQuantityLeftToDeploy` treats an absent counter.
  */
+/** A counter, or — when the row never kept one — all of it if `whenStatus` holds. */
+function counterOr(counter: number | null | undefined, qty: number, whenStatus: boolean): number {
+  return counter ?? (whenStatus ? qty : 0);
+}
+
 export function lineUnitCounts(line: FloorLine) {
   const qty = line.quantity ?? 0;
-  const out = line.checkedOutQuantity ?? (line.status === "CHECKED_OUT" ? qty : 0);
-  const back = line.returnedQuantity ?? (line.status === "RETURNED" ? qty : 0);
-  const packedRaw = line.packedQuantity ?? (line.status === "PREPPED" || line.prepStatus === "PACKED" ? qty : 0);
+  const out = counterOr(line.checkedOutQuantity, qty, line.status === "CHECKED_OUT");
+  const back = counterOr(line.returnedQuantity, qty, line.status === "RETURNED");
+  const packedRaw = counterOr(line.packedQuantity, qty, line.status === "PREPPED" || line.prepStatus === "PACKED");
   // `packedQuantity` keeps counting a unit after it leaves (prepStatus stays
   // PACKED), so subtract what is out or back; floored, since a de-prepped unit
   // that came back is in `back` but no longer in `packed`.

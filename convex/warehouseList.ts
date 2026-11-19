@@ -165,7 +165,25 @@ export const bundle = query({
 });
 
 function projectRow(p: ProjectDoc, clientMap: Map<string, { name: string }>, facts: FloorFacts | undefined) {
+  return { ...identityFields(p, clientMap), ...floorFields(p, facts) };
+}
+
+/** Phase 4 floor (additive). DERIVED on read, never stored (D27). */
+function floorFields(p: ProjectDoc, facts: FloorFacts | undefined) {
   const counts = facts?.counts ?? floorCounts([]);
+  return {
+    lineItems: facts?.lineItems ?? [],
+    projectManagerId: p.projectManagerId ?? null,
+    counts,
+    stage: warehouseStage(counts),
+    outbound: facts?.outbound.outbound ?? null,
+    // True only if the job had more services than one scan reads: the truck
+    // shown may then not be the earliest.
+    outboundTruncated: facts?.outbound.truncated ?? false,
+  };
+}
+
+function identityFields(p: ProjectDoc, clientMap: Map<string, { name: string }>) {
   return {
     id: p.id,
     name: p.name,
@@ -179,14 +197,5 @@ function projectRow(p: ProjectDoc, clientMap: Map<string, { name: string }>, fac
     projectStartDate: p.projectStartDate ?? null,
     projectEndDate: p.projectEndDate ?? null,
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
-    lineItems: facts?.lineItems ?? [],
-    // Phase 4 floor (additive). DERIVED on read, never stored (D27).
-    projectManagerId: p.projectManagerId ?? null,
-    counts,
-    stage: warehouseStage(counts),
-    outbound: facts?.outbound.outbound ?? null,
-    // True only if the job had more services than one scan reads: the truck
-    // shown may then not be the earliest.
-    outboundTruncated: facts?.outbound.truncated ?? false,
   };
 }

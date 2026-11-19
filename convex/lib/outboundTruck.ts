@@ -34,9 +34,23 @@ export interface OutboundTruck {
 
 const TIME = /^\d{2}:\d{2}$/;
 
+/** The truck time if it is a real `HH:MM`, else null. */
+function truckTime(s: OutboundServiceLike): string | null {
+  return s.scheduledTime && TIME.test(s.scheduledTime) ? s.scheduledTime : null;
+}
+
 function sortKey(s: OutboundServiceLike): [number, string] {
-  const time = s.scheduledTime && TIME.test(s.scheduledTime) ? s.scheduledTime : "99:99";
-  return [s.date ?? Number.MAX_SAFE_INTEGER, time];
+  return [s.date ?? Number.MAX_SAFE_INTEGER, truckTime(s) ?? "99:99"];
+}
+
+function toTruck(s: OutboundServiceLike): OutboundTruck {
+  const client = s.type === "CLIENT_PICKUP";
+  return {
+    kind: client ? "client" : "truck",
+    date: s.date ?? null,
+    time: truckTime(s),
+    vehicle: client ? null : s.vehicleDescription?.trim() || null,
+  };
 }
 
 function earlier(a: OutboundServiceLike, b: OutboundServiceLike): boolean {
@@ -56,13 +70,5 @@ export function earliestOutbound(services: readonly OutboundServiceLike[]): Outb
     if (!isOutboundService(s)) continue;
     if (!best || earlier(s, best)) best = s;
   }
-  if (!best) return null;
-  const client = best.type === "CLIENT_PICKUP";
-  const time = best.scheduledTime && TIME.test(best.scheduledTime) ? best.scheduledTime : null;
-  return {
-    kind: client ? "client" : "truck",
-    date: best.date ?? null,
-    time,
-    vehicle: client ? null : best.vehicleDescription?.trim() || null,
-  };
+  return best ? toTruck(best) : null;
 }

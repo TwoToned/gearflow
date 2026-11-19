@@ -55,6 +55,11 @@ async function projectLabel(ctx: QueryCtx, orgId: string, projectId: string): Pr
   return { projectId: p.id, projectName: p.name, projectNumber: p.projectNumber };
 }
 
+async function ownKit(ctx: QueryCtx, orgId: string, kitId: string) {
+  const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+  return kit && kit.organizationId === orgId ? kit : null;
+}
+
 async function modelName(ctx: QueryCtx, orgId: string, modelId: string | null | undefined): Promise<string | null> {
   if (!modelId) return null;
   const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
@@ -66,8 +71,7 @@ async function resolveAsset(ctx: QueryCtx, orgId: string, asset: NonNullable<Awa
 
   // Guard: kit member — the kit is the unit of return, not its individual parts.
   if (asset.kitId) {
-    const kitRow = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", asset.kitId!)).first();
-    const kit = kitRow && kitRow.organizationId === orgId ? kitRow : null;
+    const kit = await ownKit(ctx, orgId, asset.kitId);
     return {
       kind: "guard_kit_member" as const,
       assetId: asset.id, assetTag: asset.assetTag, assetName,

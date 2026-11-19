@@ -201,4 +201,33 @@ describe("returnsLookup.resolve", () => {
     const res = await t.withIdentity(asUser(ORG)).query(api.returnsLookup.resolve, { orgId: ORG, value: "A-1" });
     expect(res).toEqual({ kind: "not_found" });
   });
+
+  test("cross-tenant: a line pointing at a FOREIGN project never leaks that project's name or number", async () => {
+    // projectLabel reads projects by the GLOBAL by_cuid index; a line's projectId
+    // is data, not proof of ownership (R-8.4.3).
+    const t = makeT();
+    await member(t);
+    await seedModel(t);
+    await seedProject(t, "pForeign", OTHER, "Their secret gig");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "CHECKED_OUT", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", baseLine("li1", "pForeign", { modelId: "m1", assetId: "a1" }));
+      await ctx.db.insert("projectLineItemUnits", { id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 0, assetId: "a1", quantity: 1, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.returnsLookup.resolve, { orgId: ORG, value: "A-1" });
+    expect(res).toMatchObject({ kind: "exception", reason: "no_active_deployment" });
+    expect(JSON.stringify(res)).not.toContain("Their secret gig");
+  });
+
+  test("cross-tenant: a kit member's FOREIGN kit and model are not disclosed", async () => {
+    const t = makeT();
+    await member(t);
+    await seedModel(t, "mX", OTHER, "Their model");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "kX", organizationId: OTHER, assetTag: "K-X", name: "Their kit", status: "CHECKED_OUT", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "mX", assetTag: "A-1", status: "CHECKED_OUT", kitId: "kX", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.returnsLookup.resolve, { orgId: ORG, value: "A-1" });
+    expect(res).toMatchObject({ kind: "guard_kit_member", kitId: null, kitAssetTag: null, kitName: null, assetName: "Asset" });
+  });
 });

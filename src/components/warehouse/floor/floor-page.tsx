@@ -23,7 +23,7 @@ import { buildFloorBulkActions, buildFloorJobActions, type FloorDocType } from "
 import { useCanDo } from "@/lib/use-permissions";
 import { FLOOR_STAGE_LABELS, MODULE_NAMES } from "@/lib/vocabulary";
 import {
-  FLOOR_SCOPES, inScope, matchesQuery, nextOutText, overdueDays, type FloorJob, type FloorScope,
+  FLOOR_SCOPES, inScope, matchesFilters, matchesQuery, nextOutText, overdueDays, type FloorJob, type FloorScope,
 } from "@/lib/warehouse-floor";
 import { FLOOR_STAGE_KEYS } from "../../../../convex/lib/warehouseStage";
 import { FloorBoard, FloorPhoneList } from "./floor-board";
@@ -31,6 +31,9 @@ import { useFloorScan, type FloorScanEntry } from "./use-floor-scan";
 import { useFloorUrl } from "./use-floor-url";
 import { useFloorWrites } from "./use-floor-writes";
 import { FLOOR_DOCK_MODES, ReturningMode } from "./returning-mode";
+import { FloorFilters } from "./floor-filters";
+import { PackerDialog } from "./packer-dialog";
+import { useMemberRoster } from "@/hooks/use-member-roster";
 import { useScanTarget } from "@/components/scanner/scan-target";
 import type { FloorUrlState } from "@/lib/warehouse-floor";
 
@@ -83,17 +86,19 @@ function FloorHead({ count, overdue, nextOut, now, onScan, menu, isMobile }: {
   );
 }
 
-function ScopeStrip({ scope, counts, returningCount, onScope, onReturning }: {
+function ScopeStrip({ scope, counts, returningCount, onScope, onReturning, filters }: {
   scope: FloorScope; counts: Record<FloorScope, number>; returningCount: number; onScope: (s: FloorScope) => void; onReturning: () => void;
+  filters: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-4 overflow-x-auto md:overflow-visible">
       <StageFilter
         label="Scope"
         options={FLOOR_SCOPES.map((s) => ({ key: s, label: SCOPE_LABELS[s], count: counts[s] }))}
         value={scope}
         onChange={(k) => k && onScope(k as FloorScope)}
       />
+      {filters}
       <button type="button" onClick={onReturning} className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-caption font-medium text-ink [@media(pointer:fine)]:min-h-8">
         Returning <span className="font-mono text-muted tabular-nums">{returningCount}</span>
       </button>
@@ -126,12 +131,14 @@ function FloorBoardMode({ now, isMobile, state, update }: {
   const canCheckOut = useCanDo("warehouse", "check_out");
   const canCloseOut = useCanDo("warehouse", "close");
   const writes = useFloorWrites(orgId);
+  const roster = useMemberRoster(orgId);
   const inputRef = useRef<HTMLInputElement>(null);
   const [ringedId, setRingedId] = useState<string | null>(null);
+  const [packerFor, setPackerFor] = useState<string[] | null>(null);
 
   const visible = useMemo(
-    () => jobs.filter((j) => inScope(j, state.scope, { now, userId }) && matchesQuery(j, state.q)),
-    [jobs, state.scope, state.q, now, userId],
+    () => jobs.filter((j) => inScope(j, state.scope, { now, userId }) && matchesQuery(j, state.q) && matchesFilters(j, state, now)),
+    [jobs, state, now, userId],
   );
   const visibleIds = useMemo(() => visible.map((j) => j.id), [visible]);
   const selection = useRowSelection(visibleIds);
@@ -161,6 +168,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
         openDocument: (type: FloorDocType) => window.open(`/api/documents/${job.id}?type=${type}`, "_blank"),
         setStatus: (target) => writes.setStatus(job.id, target),
         closeOut: () => writes.closeOut([job.id]),
+        assignPacker: canCheckOut ? () => setPackerFor([job.id]) : undefined,
       }),
     [canCheckOut, canCloseOut, router, writes],
   );
@@ -169,7 +177,9 @@ function FloorBoardMode({ now, isMobile, state, update }: {
   const bulk = buildFloorBulkActions(selectedJobs, {
     canCloseOut,
     closeOut: async (ids) => { await writes.closeOut(ids); selection.clear(); },
+    assignPacker: canCheckOut ? setPackerFor : undefined,
   });
+  const filters = <FloorFilters jobs={jobs} members={roster.options} state={state} update={update} />;
 
   const overdue = jobs.filter((j) => overdueDays(j, now) > 0).length;
   const returningCount = jobs.reduce((n, j) => n + j.counts.out, 0);
@@ -185,6 +195,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
     isSelected: selection.isSelected,
     onToggle: (id: string, shift: boolean) => selection.toggle(id, { shift }),
     menuFor,
+    packerNames: roster.nameOf,
   };
 
   return (
@@ -199,7 +210,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
           onChange={(k) => update({ stage: !k || k === "all" ? null : (k as FloorJob["stage"]) })}
         />
       ) : (
-        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} onReturning={toReturning} />
+        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} onReturning={toReturning} filters={filters} />
       )}
       <div className={isMobile ? "sticky top-0 z-20 -mx-4 flex flex-col gap-2 bg-paper px-4 py-2" : "flex flex-col gap-2"}>
         <ScanDock
@@ -215,7 +226,7 @@ function FloorBoardMode({ now, isMobile, state, update }: {
         <ScanStrip entries={lookup.entries.map((e) => stripEntry(e, lookup.dismiss))} />
       </div>
       {isMobile ? (
-        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} onReturning={toReturning} />
+        <ScopeStrip scope={state.scope} counts={scopeCounts} returningCount={returningCount} onScope={(scope) => update({ scope })} onReturning={toReturning} filters={filters} />
       ) : null}
       <FloorBody isLoading={isLoading} total={jobs.length} visible={visible.length} isMobile={isMobile} onShowAll={() => update({ scope: "all", q: "" })}>
         {isMobile ? <FloorPhoneList {...boardProps} stage={state.stage} /> : <FloorBoard {...boardProps} />}
@@ -224,8 +235,25 @@ function FloorBoardMode({ now, isMobile, state, update }: {
         <p className="text-caption text-muted">{`${visible.length} of ${jobs.length} jobs · ${SCOPE_LABELS[state.scope]}`}</p>
       ) : null}
       <BulkBar selection={selection} actions={bulk} noun="job" />
+      <PackerDialog
+        jobIds={packerFor}
+        members={roster.options}
+        current={sharedPacker(jobs, packerFor)}
+        onClose={() => setPackerFor(null)}
+        onPick={(userId) => {
+          if (packerFor) void writes.setPacker(packerFor, userId);
+          selection.clear();
+        }}
+      />
     </div>
   );
+}
+
+/** The packer every chosen job shares, else null (the picker highlights it). */
+function sharedPacker(jobs: readonly FloorJob[], ids: string[] | null): string | null {
+  const chosen = jobs.filter((j) => ids?.includes(j.id));
+  const packers = new Set(chosen.map((j) => j.packerUserId ?? null));
+  return packers.size === 1 ? [...packers][0] : null;
 }
 
 function FloorBody({ isLoading, total, visible, isMobile, onShowAll, children }: {

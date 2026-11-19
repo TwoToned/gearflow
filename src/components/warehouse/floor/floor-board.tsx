@@ -15,6 +15,8 @@ export interface FloorBoardProps {
   isSelected: (id: string) => boolean;
   onToggle: (id: string, shift: boolean) => void;
   menuFor: (job: FloorJob) => ActionMenuSpec;
+  /** Packer names by user id (the org roster). */
+  packerNames?: ReadonlyMap<string, string>;
 }
 
 function StageHead({ stage, count }: { stage: FloorStage; count: number }) {
@@ -27,7 +29,7 @@ function StageHead({ stage, count }: { stage: FloorStage; count: number }) {
 }
 
 /** Desktop (spec §9c.2): five derived columns, never dragged (D27). */
-export function FloorBoard({ jobs, now, ringedId, isSelected, onToggle, menuFor }: FloorBoardProps) {
+export function FloorBoard({ jobs, now, ringedId, isSelected, onToggle, menuFor, packerNames }: FloorBoardProps) {
   const cols = byStage(jobs);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-5" data-testid="floor-board">
@@ -43,6 +45,7 @@ export function FloorBoard({ jobs, now, ringedId, isSelected, onToggle, menuFor 
               selected={isSelected(job.id)}
               onToggle={(shift) => onToggle(job.id, shift)}
               menu={menuFor(job)}
+              packerName={job.packerUserId ? packerNames?.get(job.packerUserId) ?? null : null}
             />
           ))}
         </section>

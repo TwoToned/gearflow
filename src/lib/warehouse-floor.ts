@@ -14,6 +14,12 @@ import { RETURN_OUTCOMES } from "@/lib/returning";
 /** Returning mode's phone page size (`Show 25 more · n left`). */
 export const DEFAULT_SHOW = 25;
 
+/** The v1 flags (plan Q3), in the order the `Flags ▾` word lists them. */
+export const FLOOR_FLAG_KEYS = ["overdue", "pay", "damaged", "missing"] as const;
+/** `Packer ▾`'s "no packer" value. */
+export const NO_PACKER = "none";
+const idList = z.array(z.string().max(64).regex(/^[A-Za-z0-9_-]+$/)).max(50).catch([]);
+
 export type FloorJob = FunctionReturnType<typeof api.warehouseList.bundle>["projects"][number];
 
 // ─── URL (D11) ─────────────────────────────────────────────────────────────
@@ -34,10 +40,18 @@ const floorUrlSchema = z.object({
   outcome: z.enum(RETURN_OUTCOMES).nullable().catch(null),
   job: z.string().max(64).regex(/^[A-Za-z0-9_-]+$/).nullable().catch(null),
   show: z.coerce.number().int().min(DEFAULT_SHOW).max(2000).catch(DEFAULT_SHOW),
+  /** The board's filter words (`Client ▾ · Flags ▾ · Packer ▾`), comma lists. */
+  client: idList,
+  flags: z.array(z.enum(FLOOR_FLAG_KEYS)).max(FLOOR_FLAG_KEYS.length).catch([]),
+  packer: idList,
 });
 export type FloorUrlState = z.output<typeof floorUrlSchema>;
 
-const FLOOR_URL_DEFAULTS: FloorUrlState = { mode: "floor", scope: "week", stage: null, q: "", outcome: null, job: null, show: DEFAULT_SHOW };
+const FLOOR_URL_DEFAULTS: FloorUrlState = {
+  mode: "floor", scope: "week", stage: null, q: "", outcome: null, job: null, show: DEFAULT_SHOW, client: [], flags: [], packer: [],
+};
+
+const listParam = (params: { get: (k: string) => string | null }, k: string) => (params.get(k) ?? "").split(",").filter(Boolean);
 
 export function parseFloorUrl(params: { get: (k: string) => string | null }): FloorUrlState {
   return floorUrlSchema.parse({
@@ -48,24 +62,34 @@ export function parseFloorUrl(params: { get: (k: string) => string | null }): Fl
     outcome: params.get("outcome") ?? null,
     job: params.get("job") ?? null,
     show: params.get("show") ?? undefined,
+    client: listParam(params, "client"),
+    flags: listParam(params, "flags"),
+    packer: listParam(params, "packer"),
   });
+}
+
+/** One URL value, or null when it is the default (so it is omitted). */
+function urlValue(v: FloorUrlState[keyof FloorUrlState], dflt: unknown): string | null {
+  if (Array.isArray(v)) return v.length ? v.join(",") : null;
+  return v == null || v === "" || v === dflt ? null : String(v);
 }
 
 /** Defaults are omitted, so the bare `/warehouse` stays the canonical link. */
 export function serializeFloorUrl(s: FloorUrlState): string {
   const out = new URLSearchParams();
-  // Returning-only keys never leak onto the board.
-  const keys = s.mode === "returning" ? URL_KEYS : BOARD_URL_KEYS;
+  // Returning-only keys never leak onto the board, nor board filter words into
+  // Returning (scope and stage ride along, so going back keeps them).
+  const keys = s.mode === "returning" ? RETURNING_URL_KEYS : BOARD_URL_KEYS;
   for (const k of keys) {
-    const v = s[k];
-    if (v != null && v !== "" && v !== FLOOR_URL_DEFAULTS[k]) out.set(k, String(v));
+    const v = urlValue(s[k], FLOOR_URL_DEFAULTS[k]);
+    if (v != null) out.set(k, v);
   }
   const qs = out.toString();
   return qs ? `?${qs}` : "";
 }
 
-const URL_KEYS = ["mode", "scope", "stage", "q", "outcome", "job", "show"] as const satisfies ReadonlyArray<keyof FloorUrlState>;
-const BOARD_URL_KEYS = URL_KEYS.filter((k) => k !== "outcome" && k !== "job" && k !== "show");
+const BOARD_URL_KEYS = ["mode", "scope", "stage", "q", "client", "flags", "packer"] as const satisfies ReadonlyArray<keyof FloorUrlState>;
+const RETURNING_URL_KEYS = ["mode", "scope", "stage", "q", "outcome", "job", "show"] as const satisfies ReadonlyArray<keyof FloorUrlState>;
 
 /** `/warehouse/returns[?…]` → `/warehouse?mode=returning[&…]` (any `mode` is replaced). */
 export function returnsRedirectHref(params: Record<string, string | string[] | undefined>): string {
@@ -110,11 +134,11 @@ const PRE_OUT: readonly FloorStage[] = ["topick", "prepping", "ready"];
  * Today = leaves within today + tomorrow (live's window), plus gear due back by
  * then and everything returning. This week = the same over 7 days. A job that
  * should already have left stays in view (its dispatch date is in the past).
- * Mine = I am the PM (no packer field yet). All = everything.
+ * Mine = I am the PM or the packer. All = everything.
  */
 export function inScope(j: FloorJob, scope: FloorScope, ctx: { now: number; userId?: string }): boolean {
   if (scope === "all") return true;
-  if (scope === "mine") return !!ctx.userId && j.projectManagerId === ctx.userId;
+  if (scope === "mine") return !!ctx.userId && (j.projectManagerId === ctx.userId || j.packerUserId === ctx.userId);
   const horizon = startOfDay(ctx.now) + (scope === "today" ? 2 : 7) * DAY;
   if (j.stage === "returning") return true;
   if (j.stage === "out") return (windowEnd(j) ?? Infinity) < horizon;
@@ -131,7 +155,25 @@ export function matchesQuery(j: FloorJob, q: string): boolean {
 
 // ─── Card text ─────────────────────────────────────────────────────────────
 
-export type FloorFlag = { key: "overdue" | "pay" | "damaged" | "missing"; label: string; tone: "error" | "warning" };
+export type FloorFlagKey = (typeof FLOOR_FLAG_KEYS)[number];
+export type FloorFlag = { key: FloorFlagKey; label: string; tone: "error" | "warning" };
+
+/** `Flags ▾`'s option words. */
+export const FLOOR_FLAG_LABELS: Record<FloorFlagKey, string> = {
+  overdue: "Overdue", pay: "Awaiting payment", damaged: "Damaged", missing: "Missing",
+};
+
+/**
+ * The filter words: a job passes when it matches ANY chosen value of each
+ * word, and every word that has a choice (AND across words, OR within one).
+ */
+export function matchesFilters(j: FloorJob, f: Pick<FloorUrlState, "client" | "flags" | "packer">, now: number): boolean {
+  if (f.client.length && !f.client.includes(j.clientId ?? "")) return false;
+  if (f.packer.length && !f.packer.includes(j.packerUserId ?? NO_PACKER)) return false;
+  if (!f.flags.length) return true;
+  const mine = floorFlags(j, now).map((x) => x.key);
+  return f.flags.some((k) => mine.includes(k));
+}
 
 /** v1 flags (plan Q3): overdue · awaiting payment · damaged · missing. */
 export function floorFlags(j: FloorJob, now: number): FloorFlag[] {

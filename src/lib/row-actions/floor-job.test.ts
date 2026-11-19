@@ -56,4 +56,14 @@ describe("floor bulk verbs", () => {
     expect(buildFloorBulkActions([floorJob({ id: "a" })], { canCloseOut: true, closeOut: vi.fn() })).toEqual([]);
     expect(buildFloorBulkActions([floorJob({ id: "a", status: "RETURNED" })], { canCloseOut: false, closeOut: vi.fn() })).toEqual([]);
   });
+
+  it("Assign packer… n is present only when the caller can assign, and passes every ticked job", () => {
+    const assignPacker = vi.fn();
+    const jobs = [floorJob({ id: "a" }), floorJob({ id: "b" })];
+    const [verb] = buildFloorBulkActions(jobs, { canCloseOut: false, closeOut: vi.fn(), assignPacker });
+    expect(verb.label(2)).toBe("Assign packer… 2");
+    void verb.onSelect();
+    expect(assignPacker).toHaveBeenCalledWith(["a", "b"]);
+    expect(buildFloorBulkActions(jobs, { canCloseOut: false, closeOut: vi.fn() })).toEqual([]);
+  });
 });

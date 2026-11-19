@@ -14,6 +14,8 @@ export interface FloorCardProps {
   onToggle: (shift: boolean) => void;
   ringed: boolean;
   menu: ActionMenuSpec;
+  /** The packer's name (resolved from the roster), or null for `no packer`. */
+  packerName?: string | null;
 }
 
 const FLAG_TONE = { error: "text-t-out", warning: "text-warn" } as const;
@@ -44,11 +46,10 @@ function Bar({ ratio }: { ratio: number }) {
 /**
  * One job on the board (spec §9c.2). The WHOLE card opens the warehouse job
  * (a stretched link on the name); the checkbox and ⋯ sit above it. No status
- * pill, no stepper, no per-card buttons: the column is the stage. The packer
- * line is not built yet (no packer field); `dispatch` keeps its own line so it
- * can join later without restructuring.
+ * pill, no stepper, no per-card buttons: the column is the stage. Dispatch and
+ * the packer each keep their own line.
  */
-export function FloorCard({ job, now, selected, onToggle, ringed, menu }: FloorCardProps) {
+export function FloorCard({ job, now, selected, onToggle, ringed, menu, packerName }: FloorCardProps) {
   const progress = progressOf(job);
   const dispatch = dispatchText(job);
   return (
@@ -85,8 +86,23 @@ export function FloorCard({ job, now, selected, onToggle, ringed, menu }: FloorC
         <Bar ratio={progress.ratio} />
       </span>
       {dispatch ? <span className="truncate text-caption text-muted">{dispatch}</span> : null}
+      <Packer name={packerName} />
       <Flags job={job} now={now} />
     </article>
+  );
+}
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+
+/** The packer line: a 20 px initials avatar + name, or a muted `no packer`. */
+function Packer({ name }: { name: string | null | undefined }) {
+  if (!name) return <span className="text-caption text-muted">no packer</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-caption text-ink-2">
+      <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded-full bg-paper-2 font-mono text-[10px] text-ink">{initials(name)}</span>
+      <span className="truncate">{name}</span>
+    </span>
   );
 }
 

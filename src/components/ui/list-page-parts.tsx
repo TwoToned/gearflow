@@ -130,7 +130,7 @@ function FilterSearch({ search }: { search: NonNullable<ListFilterDef["search"]>
  * popup). Chosen values print in the word with a ✕ beside it that clears just
  * this filter.
  */
-function FilterWord({
+export function FilterWord({
   def,
   chosen,
   onChange,

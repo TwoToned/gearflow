@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, LayoutDashboard, PackageCheck, ShieldAlert } from "lucide-react";
+import { ExternalLink, FileText, LayoutDashboard, PackageCheck, ShieldAlert, UserRound } from "lucide-react";
 
 import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
 import { isCloseable, type FloorJob } from "@/lib/warehouse-floor";
@@ -78,6 +78,8 @@ export interface FloorJobCtx {
   openDocument: (type: FloorDocType) => void;
   setStatus: (target: OverrideTarget) => void | Promise<void>;
   closeOut: () => void | Promise<void>;
+  /** Opens the packer picker for this job; absent without `warehouse:check_out`. */
+  assignPacker?: () => void;
 }
 
 const doc = (key: FloorDocType, label: string, ctx: FloorJobCtx): ActionItem => ({
@@ -89,6 +91,7 @@ export function buildFloorJobActions(job: FloorJob, ctx: FloorJobCtx): ActionMen
   const items: ActionItem[] = [
     { key: "open", label: "Open job", group: "organise", icon: ExternalLink, onSelect: () => ctx.open(`/warehouse/${job.id}`) },
     { key: "overview", label: "Job overview", group: "organise", icon: LayoutDashboard, onSelect: () => ctx.open(`/projects/${job.id}`) },
+    ...(ctx.assignPacker ? [{ key: "packer", label: "Assign packer…", group: "organise" as const, icon: UserRound, onSelect: ctx.assignPacker }] : []),
     doc("pull-slip", "Pull slip", ctx),
     doc("delivery-docket", "Delivery docket", ctx),
     doc("return-sheet", "Return sheet", ctx),
@@ -117,12 +120,15 @@ const CLOSE_OUT_CAP = 25;
 /** Bulk verbs over the ticked cards. `Close out n` counts only closeable jobs. */
 export function buildFloorBulkActions(
   jobs: readonly FloorJob[],
-  ctx: { canCloseOut: boolean; closeOut: (ids: string[]) => void | Promise<void> },
+  ctx: { canCloseOut: boolean; closeOut: (ids: string[]) => void | Promise<void>; assignPacker?: (ids: string[]) => void },
 ): BulkAction[] {
+  const packer: BulkAction[] = ctx.assignPacker && jobs.length > 0
+    ? [{ key: "packer", label: (n) => `Assign packer… ${n}`, group: "organise", icon: UserRound, onSelect: () => ctx.assignPacker!(jobs.map((j) => j.id)) }]
+    : [];
   const closeable = jobs.filter(isCloseable).slice(0, CLOSE_OUT_CAP);
-  if (!ctx.canCloseOut || closeable.length === 0) return [];
+  if (!ctx.canCloseOut || closeable.length === 0) return packer;
   const n = closeable.length;
-  return [{
+  return [...packer, {
     key: "close-out", label: () => `Close out ${n}`, group: "danger", danger: true, icon: PackageCheck,
     onSelect: () => ctx.closeOut(closeable.map((j) => j.id)),
     confirm: {

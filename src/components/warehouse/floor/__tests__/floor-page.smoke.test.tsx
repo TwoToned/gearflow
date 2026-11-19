@@ -20,7 +20,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push }),
   usePathname: () => "/warehouse",
 }));
-vi.mock("convex/react", () => ({ useConvex: () => ({ query }) }));
+const setPackerM = vi.fn(async () => ({ previous: [{ id: "p1", packerUserId: null }] }));
+vi.mock("convex/react", () => ({ useConvex: () => ({ query }), useMutation: () => setPackerM }));
+vi.mock("@/hooks/use-member-roster", () => ({
+  useMemberRoster: () => ({ nameOf: new Map([["u2", "Kim Packer"]]), options: [{ id: "u2", name: "Kim Packer" }] }),
+}));
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org_1" } }),
   useSession: () => ({ data: { user: { id: "u1", name: "Sam" } } }),
@@ -35,7 +39,8 @@ const jobs = [
   floorJob({ id: "p1", projectNumber: "2341", name: "Gala", status: "CONFIRMED", stage: "topick" }),
   floorJob({ id: "p2", projectNumber: "2342", name: "Tour", status: "CHECKED_OUT", stage: "out", projectEndDate: TODAY + DAY,
     counts: { lines: 1, linesToPick: 0, items: 3, packed: 0, out: 3, back: 0, damaged: 0, missing: 0 } }),
-  floorJob({ id: "p3", projectNumber: "2343", name: "Expo", status: "RETURNED", stage: "returning",
+  floorJob({ id: "p3", projectNumber: "2343", name: "Expo", status: "RETURNED", stage: "returning", packerUserId: "u2",
+    clientId: "c2", client: { name: "Beta" },
     counts: { lines: 1, linesToPick: 0, items: 2, packed: 0, out: 0, back: 2, damaged: 0, missing: 0 } }),
 ];
 vi.mock("@/hooks/use-native-warehouse", () => ({ useNativeWarehouseList: () => ({ projects: jobs, isLoading: false }) }));
@@ -86,6 +91,33 @@ describe("FloorPage (desktop)", () => {
     await userEvent.type(screen.getByLabelText("Scan input"), "SK-1{Enter}");
     expect(await screen.findByText("Asset SK-1 · packed for #2341")).toBeTruthy();
     expect(query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("FloorPage packer + filter words", () => {
+  it("the card shows its packer (or no packer); ⋯ › Assign packer… writes once for that job", async () => {
+    render(<FloorPage />);
+    expect(screen.getByText("Kim Packer")).toBeTruthy();
+    expect(screen.getAllByText("no packer").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Actions for #2341" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Assign packer…" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Kim Packer" }));
+    expect(setPackerM).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1", assignments: [{ id: "p1", packerUserId: "u2" }] }));
+  });
+
+  it("Client ▾ opens, and choosing one goes through the URL", async () => {
+    render(<FloorPage />);
+    await userEvent.click(screen.getByRole("button", { name: /^Client/ }));
+    await userEvent.click(await screen.findByText("Beta"));
+    expect(replace).toHaveBeenLastCalledWith("/warehouse?client=c2", { scroll: false });
+  });
+
+  it("a packer filter in the URL narrows the board", () => {
+    search.value = "scope=all&packer=u2";
+    render(<FloorPage />);
+    expect(screen.getByText("Expo")).toBeTruthy();
+    expect(screen.queryByText("Gala")).toBeNull();
   });
 });
 

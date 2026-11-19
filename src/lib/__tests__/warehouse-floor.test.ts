@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   parseFloorUrl, serializeFloorUrl, inScope, matchesQuery, floorFlags, progressOf, dispatchText, windowText,
-  byStage, nextOutText, overdueDays, isCloseable, returnsRedirectHref,
+  byStage, nextOutText, overdueDays, isCloseable, returnsRedirectHref, matchesFilters,
 } from "@/lib/warehouse-floor";
 import { floorJob, DAY, NOW, TODAY } from "./floor-fixtures";
 
 const params = (qs: string) => new URLSearchParams(qs);
-const DEFAULTS = { mode: "floor", scope: "week", stage: null, q: "", outcome: null, job: null, show: 25 };
+const DEFAULTS = { mode: "floor", scope: "week", stage: null, q: "", outcome: null, job: null, show: 25, client: [], flags: [], packer: [] };
 
 describe("floor URL (D11)", () => {
   it("defaults are omitted and round-trip", () => {
@@ -23,6 +23,12 @@ describe("floor URL (D11)", () => {
   it("Returning-only keys never leak onto the board's URL", () => {
     const s = parseFloorUrl(params("outcome=late&job=p1&show=50"));
     expect(serializeFloorUrl(s)).toBe("");
+  });
+  it("filter words are comma lists that round-trip; bad entries drop the whole word", () => {
+    const s = parseFloorUrl(params("client=c1,c2&flags=overdue,pay&packer=u2,none"));
+    expect(s).toMatchObject({ client: ["c1", "c2"], flags: ["overdue", "pay"], packer: ["u2", "none"] });
+    expect(serializeFloorUrl(s)).toBe("?client=c1%2Cc2&flags=overdue%2Cpay&packer=u2%2Cnone");
+    expect(parseFloorUrl(params("flags=overdue,sideways")).flags).toEqual([]);
   });
   it("/warehouse/returns redirects to Returning mode, keeping its query", () => {
     expect(returnsRedirectHref({})).toBe("/warehouse?mode=returning");
@@ -51,6 +57,18 @@ describe("scope (§9c.2)", () => {
     expect([outDue, outLater, back].map((j) => inScope(j, "today", ctx))).toEqual([true, false, true]);
     expect(inScope(floorJob({ id: "d", projectManagerId: "u1" }), "mine", ctx)).toBe(true);
     expect(inScope(floorJob({ id: "e", projectManagerId: "u2" }), "mine", ctx)).toBe(false);
+    // Mine = PM OR packer.
+    expect(inScope(floorJob({ id: "g", projectManagerId: "u2", packerUserId: "u1" }), "mine", ctx)).toBe(true);
+  });
+  it("filter words: OR within a word, AND across words; `none` is no packer", () => {
+    const none = { client: [], flags: [], packer: [] };
+    const a = floorJob({ id: "a", clientId: "c1", packerUserId: "u2" });
+    const b = floorJob({ id: "b", clientId: "c2", packerUserId: null, status: "AWAITING_PAYMENT" });
+    expect([a, b].map((j) => matchesFilters(j, none, NOW))).toEqual([true, true]);
+    expect([a, b].map((j) => matchesFilters(j, { ...none, client: ["c1", "c2"] }, NOW))).toEqual([true, true]);
+    expect([a, b].map((j) => matchesFilters(j, { ...none, packer: ["none"] }, NOW))).toEqual([false, true]);
+    expect([a, b].map((j) => matchesFilters(j, { ...none, flags: ["pay"], client: ["c1"] }, NOW))).toEqual([false, false]);
+    expect(matchesFilters(b, { ...none, flags: ["pay", "overdue"] }, NOW)).toBe(true);
     expect(inScope(floorJob({ id: "f", projectStartDate: TODAY + 90 * DAY }), "all", ctx)).toBe(true);
   });
   it("the dock filters by number, name and client", () => {

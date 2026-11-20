@@ -14,7 +14,7 @@ bottom, then `docs/designs/ux-build-status.md` (the tracker) and spec
 | 1 Primitives (1a, 1b, 1c) | merged |
 | 2 Equipment (2a), Client view + case cards (2b), Plan-honouring prep (2c) | merged |
 | 3 Warehouse job page | merged |
-| 4 Floor + Returning mode | see the tracker. If not merged: PR #1394, branch `claude/ux-4-floor` |
+| 4 Floor + Returning mode | merged (#1394, 9d3ab254). Deviation: Returning rows show no tag ranges or shelf |
 | 5 Logistics (5a, 5b) | merged |
 | 6 Shell (6a), List pages (6b) | merged |
 | 7–18 Wave D | **not started.** The plan is agreed (§4 below); each phase still needs its own Gate 0 |

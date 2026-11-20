@@ -40,12 +40,12 @@ Parallel start (2026-11-17, user asked for phases in parallel where possible): 1
 | 1a LineRow, ActionMenu, StatusWord, StageFilter, glyphs | Sonnet | `claude/ux-1a-row-primitives` · #1382 | **merged 2026-11-17** (03dfbe1a) | — |
 | 1b AddBar, FooterTotals, BulkBar, RowEditorSheet, DetailHeader, ScanDock/ScanStrip | Sonnet | `claude/ux-1b-bar-primitives` · #1383 | **merged 2026-11-17** (95d33848), code-reviewed (9 fixes) | — |
 | 1c Row slots: sections, cells, wrapRow, LineRowSection (added for 2a/3) | Sonnet | `claude/ux-1c-row-slots` · #1386 | **merged 2026-11-17** (02711770) | — |
-| 2a → 2b Equipment, then Client view + case cards | Sonnet | `claude/ux-2a-equipment` · #1388 (draft) | final slice: coverage-field undo, phone row editor, gate, docs, screenshots | 2b after 2a |
+| 2a → 2b Equipment, then Client view + case cards | Sonnet (2a) · default (2b) | 2a #1388 **merged 2026-11-19** (07cad15c); 2b #1395 **merged 2026-11-19** (4180affa) | Phase 2 done | Follow-up: `setPlannedContainerNative` doesn't check the line and the target case are on the same job (pre-existing; same-org only) |
 | 2c Plan-honouring prep (only schema change) | Sonnet | `claude/ux-2c-plan-honouring-prep` · #1380 | **merged 2026-11-17** (a5c18a83); no schema change, code-reviewed | `Planned →` glyph moved to Phase 3 |
-| 3 Warehouse job page (L) | Sonnet | `claude/ux-3-warehouse-job` · #1385 (draft) | building in slices: To pick, Prepped, Out done; Returned/De-prepped + deletion next | `scanIntake.commit` return change needs /code-review |
+| 3 Warehouse job page (L) | Sonnet | #1385 **merged 2026-11-19** (e78d5c8d) | done; /code-review: 6 findings + 1 security follow-up, all fixed | — |
 | 5 Logistics (L) | Sonnet | 5a #1387 **merged 2026-11-19** (2b2f109c); 5b #1392 **merged 2026-11-19** (6a2ace4d) | Phase 5 done; deployed (prod 307) | — |
-| 6 Shell: 6a chrome, 6b list pages | Sonnet | 6a `claude/ux-6a-shell` · #1391; 6b `claude/ux-6b-list-pages` · #1393 | 6a: gate + screenshots; 6b: slice 1 (LineRowList props, ListPage, read queries, Jobs) building | — |
-| 4 Floor + Returning mode | — | — | waiting on 3 | Gate 0 |
+| 6 Shell: 6a chrome, 6b list pages | Sonnet | 6a #1391 **merged 2026-11-19** (4c922ecd); 6b #1393 **merged 2026-11-19** (3f0f8ed5) | Phase 6 done. Open: desktop BulkBar is inline at the list footer (needs a shell-level sticky to pin) | Follow-up: Logistics "+ Add service" sticky bar sits ~80 px above the new phone nav (5a offset stacked on the 6a shell) |
+| 4 Floor + Returning mode | default | #1394 **merged 2026-11-19** (9d3ab254) | done, incl. §9c.5 pull sheet, §9c.8 shared `warehouseStage`, packer field. Deviation: Returning rows show no tag ranges or shelf (the board read doesn't carry them) | — |
 
 ## Schema changes beyond 2c (user approved 2026-11-17, end of Wave A)
 
@@ -54,6 +54,7 @@ Each is built in its own PR with a /code-review; until then it stays listed as d
 | Item | From | Needs | Where it lands |
 |---|---|---|---|
 | Client pick-up / drop-off service types | §8, Phase 5 | new enum values + fields on `projectServices` | 5b |
+| Job packer (approved 2026-11-19) | §9c.2, Phase 4 | optional `projects.packerUserId` + `setPackerNative` | 4 |
 | Durable prep / de-prep scans | §5.7, Phase 3 | the scan-intake ops union / validators | Phase 3 follow-up PR |
 | D10 "remember for the next n" shared across packers | Phase 3 | a stored field; per-device in memory for now | Phase 3 follow-up PR |
 | `subHireItems.coverage` (what a shortfall cover changed, so Undo restores exactly that) | Phase 2a | one optional object field | 2a (#1388) |

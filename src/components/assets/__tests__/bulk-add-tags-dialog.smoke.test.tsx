@@ -16,7 +16,7 @@ vi.mock("@/hooks/use-org-tags", () => ({ useOrgTags: vi.fn(() => ["blue", "green
 // a ConvexProvider for useMutation).
 vi.mock("@/hooks/use-asset-writes", () => ({ useAssetWrites: () => ({ bulkTag: vi.fn() }) }));
 
-import { BulkAddTagsDialog } from "@/components/assets/asset-table";
+import { BulkAddTagsDialog } from "@/components/assets/bulk-asset-dialogs";
 
 /**
  * The bulk "Add tags" dialog nests a TagInput (Radix Popover) inside a Radix

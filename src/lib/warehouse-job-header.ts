@@ -13,6 +13,8 @@ export interface WarehouseHeaderInput {
   truck?: string;
   packing?: string[];
   openDocument: (type: "pull-slip" | "delivery-docket" | "return-sheet" | "container-label") => void;
+  /** Opens the pull-sheet dialog (spec §9c.5); omitted = absent. */
+  openPullSheet?: () => void;
   hasContainers: boolean;
   onViewProject: () => void;
   feedback: { enabled: boolean; toggle: () => void };
@@ -30,6 +32,7 @@ const doc = (key: string, label: string, run: () => void): ActionItem => ({ key,
 export function warehouseHeaderProps(i: WarehouseHeaderInput): DetailHeaderProps {
   const documents: ActionMenuSpec = {
     items: [
+      ...(i.openPullSheet ? [doc("pull-sheet", "Pull sheet", i.openPullSheet)] : []),
       doc("pull-slip", "Pull slip", () => i.openDocument("pull-slip")),
       doc("delivery-docket", "Delivery docket", () => i.openDocument("delivery-docket")),
       doc("return-sheet", "Return sheet", () => i.openDocument("return-sheet")),

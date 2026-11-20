@@ -10,15 +10,10 @@
  * isOptional editing at all, and silently reset isOptional to false on
  * every save since it was never included in the submitted payload).
  *
- * Accessories (issue #794) ride this dialog too: a line whose model/asset has
- * configured accessories gets the SAME `AccessorySelectionFields` checkbox list
- * the add form and the row kebab's `EditAccessoryPlanDialog` use, seeded from
- * the line's stored `accessoryPlan` by the shared `useAccessoryPlanEditor`
- * hook. It saves through its own mutation (`updateAccessoryPlanNative`
- * reconciles child lines — a different write from the line patch), fired via
- * `onAccessoryPlanChange` only when the selection actually moved, and only
- * AFTER the line patch resolves so a quantity change in the same save is the
- * quantity the child rescale reads.
+ * Accessories have ONE editor, `EditAccessoryPlanDialog` (spec §7.2): this
+ * dialog only offers an "Edit accessories" button that hands the line to it via
+ * `onEditAccessories` (the row's ⋯ opens the same dialog). There is no second
+ * picker here and no plan save riding the line patch.
  *
  * State + the availability query live inside the body keyed by
  * item.id so re-opening for a different row remounts the body and
@@ -54,10 +49,7 @@ import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xe
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { PlacementFields } from "./placement-fields";
-import { AccessoryPlanSection } from "./accessory-plan-section";
-import { useAccessoryPlanEditor } from "./use-accessory-plan-editor";
 import { canEditAccessoryPlan } from "@/lib/accessory-plan-eligibility";
-import type { AccessoryPlanInput } from "@/hooks/use-line-item-writes";
 import {
   SectionTitle,
   Field,
@@ -98,20 +90,16 @@ interface EditLineItemDialogProps {
   initialGroupId?: string;
   isPending: boolean;
   onClose: () => void;
-  /** May return the in-flight write so the accessory-plan save below can be
-   *  sequenced after it (a quantity change must land before the child rescale
-   *  reads it). A `void` return just fires the two independently. */
+  /** May return the in-flight write; a `void` return is fine too. */
   onSubmit: (
     id: string,
     data: EditLineItemPayload,
     allowOverbook: boolean,
     baseUpdatedAt?: string | number | null,
   ) => void | Promise<unknown>;
-  /** Fired separately from `onSubmit` — and only when the accessory checkboxes
-   *  describe a different set of children than the line's stored plan — because
-   *  `updateAccessoryPlanNative` is its own mutation (it reconciles child line
-   *  items, not fields on this row). Omitted hides the Accessories section. */
-  onAccessoryPlanChange?: (id: string, plan: AccessoryPlanInput) => void;
+  /** Opens `EditAccessoryPlanDialog` for this line (the ONE accessory editor).
+   *  Omitted hides the Accessories row. */
+  onEditAccessories?: (item: LineItemData) => void;
   /** Fired separately from onSubmit only when the placement picker's value
    *  differs from initialCategoryId/initialGroupId — a no-op move is never
    *  sent. Omitted (or the Placement section hidden) when the item is a kit
@@ -149,7 +137,7 @@ function EditLineItemDialogBody({
   onClose,
   onSubmit,
   onMove,
-  onAccessoryPlanChange,
+  onEditAccessories,
   locked,
   lockReason,
   onUnlockExit,
@@ -170,12 +158,9 @@ function EditLineItemDialogBody({
   const [categoryId, setCategoryId] = useState(initialCategoryId ?? "");
   const [groupId, setGroupId] = useState(initialGroupId ?? "");
 
-  // Accessories — same eligibility the row kebab's entry point uses; the server's
-  // `assertLineOwnsAccessoryPlan` re-checks on save regardless (UX only).
-  const canEditAccessories = !!onAccessoryPlanChange && canEditAccessoryPlan(item);
-  const accessoryEditor = useAccessoryPlanEditor(item, canEditAccessories);
-  // Always offered on an eligible line — custom (free-text) accessories need no catalog entry.
-  const showAccessories = canEditAccessories;
+  // Accessories — same eligibility the row ⋯ uses; the server's
+  // `assertLineOwnsAccessoryPlan` re-checks regardless (UX only).
+  const showAccessories = !!onEditAccessories && canEditAccessoryPlan(item);
 
   // Optimistic-concurrency baseline — captured once when the editor opens
   // (the body remounts per item.id, so the initializer runs fresh each open).
@@ -226,19 +211,10 @@ function EditLineItemDialogBody({
       baseUpdatedAt,
     );
 
-    // Sequenced after the line patch: `reconcileLineAccessoryChildren` rescales
-    // bulk children from the line's CURRENT quantity, so it has to see the new
-    // one. A rejected line write skips the plan write entirely — and the catch
-    // is unconditional because `onSubmit` may hand back a rejecting promise
-    // (the parent's `mutateAsync` rethrows after its own error toast), which
-    // would otherwise surface as an unhandled rejection on a plain edit.
-    const plan = accessoryEditor.planToSave;
-    const savePlan = showAccessories && accessoryEditor.isDirty;
-    void Promise.resolve(written)
-      .then(() => {
-        if (savePlan) onAccessoryPlanChange!(item.id, plan);
-      })
-      .catch(() => {});
+    // `onSubmit` may hand back a rejecting promise (the parent's `mutateAsync`
+    // rethrows after its own error toast); swallow it so a plain edit doesn't
+    // surface an unhandled rejection.
+    void Promise.resolve(written).catch(() => {});
 
     if (canEditPlacement) {
       const nextCategoryId = categoryId || null;
@@ -404,7 +380,12 @@ function EditLineItemDialogBody({
             for a kit/accessory child or one already out the door
             (`canEditAccessoryPlan`). */}
         {showAccessories && (
-          <AccessoryPlanSection editor={accessoryEditor} quantity={requestedQty} />
+          <section className="space-y-3 border-t border-line pt-5">
+            <SectionTitle title="Accessories" hint="What ships with this item on this job." />
+            <Button type="button" variant="line" onClick={() => onEditAccessories!(item)}>
+              Edit accessories…
+            </Button>
+          </section>
         )}
 
         {/* Placement & options */}

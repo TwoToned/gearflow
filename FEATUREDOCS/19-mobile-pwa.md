@@ -74,15 +74,27 @@ model", "Export CSV") went missing until the DataTable toolbar was made to wrap.
 
 ## Mobile Bottom Nav (`src/components/layout/mobile-nav.tsx`)
 - Flow element (NOT position: fixed) — sits at bottom of flex column
-- 5 items, matching DESIGN.md §16: **Dashboard, Jobs, Warehouse, Crew, Assets**
-- Tag entry and lookup live on the Warehouse screen (`warehouse/page.tsx`), not
-  in the nav.
-- Any IA change (add/remove/reorder/rename) must be applied to BOTH
-  `mobile-nav.tsx` and `app-sidebar.tsx` in the same PR.
-- The full nav (everything beyond these 5 tabs + user/logout) lives in the
-  off-canvas sidebar `Sheet`, opened by the `SidebarTrigger` hamburger in the
-  TopBar. That `Sheet` **is** `AppSidebar`'s mobile rendering — it must stay
-  mounted on mobile, so the sidebar is not stripped on small screens.
+- 5 slots (6a, D1/D65): **Home, Jobs, Scan, Warehouse, More**. Scan is a raised
+  50 px red `<button>` (opens the camera from the tap, mounted only while open, so
+  the five iOS rules in CLAUDE.md hold via the dialog's own teardown). A role
+  without warehouse loses Scan and Warehouse.
+- **Scan entry** (`src/components/scanner/shell-scan.tsx`): a page may register a
+  handler with `useScanTarget(handler)` (`scan-target.tsx`); the decoded value goes
+  to it and nothing else happens. With none registered, the one-shot
+  `convex/scanLookup.resolve` runs (`use-scan-lookup.ts`) with four states: found
+  (`Open asset ›` / `Open kit ›` / `Open test record ›`), not found, error/offline,
+  no permission. Phase 3 adopts the registry on the warehouse job page. Phase 4's
+  floor registers one per mode: on the board the scan goes to `Look up` (rings the
+  card / names the tag's job), in Returning mode to `Receive` (returns it, with the
+  toast's Undo). The floor's mode is the URL (`?mode=`), so the contract is "the
+  open mode", never a second camera.
+- Everything else (Crew, Assets, Finance, Schedule, Test & Tag, Maintenance, the
+  People group, Settings, Account, plus Jobs/Warehouse sub-pages) is in the **More
+  sheet** (`more-sheet.tsx`), built from `NAV`; More is lit on any non-tab module.
+  The hamburger drawer is gone on phone (`AppSidebar` renders nothing there).
+- IA changes are one edit in `src/lib/nav.ts` (see FEATUREDOCS/29).
+- Counts on More rows (Finance overdue, Overbookings...) are a follow-up: no cheap
+  query exists in the shell, so rows render without counts.
 
 ## Card lists, not data tables (§15)
 

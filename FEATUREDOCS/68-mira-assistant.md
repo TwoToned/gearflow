@@ -21,7 +21,7 @@ platform never sees or pays for a shared LLM credential.
 
 **Mira is disabled for an org until an admin connects a key.** `MiraLauncher`
 (`src/components/mira/mira-launcher.tsx`) calls `isMiraConfigured()`
-(`src/server/mira-settings.ts`) and renders NOTHING — no button, no panel — until it
+(`src/server/mira-settings.ts`) and renders NOTHING — no top-bar word, no panel — until it
 returns `configured: true`. That check deliberately carries no permission gate (unlike
 `getMiraSettings`, which needs `orgSettings:update` — most non-admin roles get
 `orgSettings: []`, no read at all): every member has to be able to ask "is Mira even
@@ -38,7 +38,9 @@ is what a real user actually sees.
 MiraContextProvider (open, pageContext)
         │
         ▼
-MiraLauncher (trigger button, next/dynamic-loads the panel)
+MiraLauncher (the `Mira` word in the top bar, a toggle) + MiraPanelHost (layout; next/dynamic-loads the panel)
+        │   panel = 384 px under the bar, hairline left edge, Esc closes; full-height sheet on phone
+        │   header names the current page (trail + published page context)
         │
         ▼
 MiraPanel ("use client" — persisted multi-turn thread, markdown rendering)

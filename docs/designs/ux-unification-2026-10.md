@@ -1329,6 +1329,11 @@ existing `DataTable`, reusing `BulkActionBar` and `RowActionsMenu`
 segments, filters, bulk verbs and the row menu — nothing else. The per-row buttons,
 the per-page toggle components and the `localStorage` filter keys go.
 
+_Amended 2026-11-19 (Phase 6b, citing §13): `ListPage` owns the chrome (head, strip, toolbar,
+footer, URL state, bulk) and renders its rows through `LineRowList`, not `DataTable`'s body —
+§13 requires every DataTable-list row to be a `LineRow`, and that outranks "over the existing
+`DataTable`" above. `DataTable` stays for the lists not yet migrated and is deleted with the last._
+
 ---
 
 ## 9c. Warehouse › Floor, Returning and the pull sheet — v1 proposal (prototype 2026-11-04, awaiting a yes)

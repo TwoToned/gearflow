@@ -10,8 +10,10 @@ import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
-import { assertStrLen } from "./lib/fieldGuards";
-import { assertRefInOrg, assertClientContactBelongsToClient } from "./lib/orgRef";
+import { assertStrLen, assertTags } from "./lib/fieldGuards";
+import { MAX_TAGS } from "./lib/tagLimits";
+import { assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertRefInOrg, assertClientContactBelongsToClient, assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getKitByCuid } from "./lib/kits";
@@ -83,6 +85,11 @@ const NOTES_FIELD = v.union(
  * `undefined` fields are left untouched by the caller — `assertStrLen` skips them.
  */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** `set` is v.any(): validate + normalise a supplied `tags` in place (R-8.6.2). */
+function guardSetTags(setObj: Record<string, unknown>): void {
+  if ("tags" in setObj) setObj.tags = assertTags(setObj.tags) ?? [];
+}
 function assertProjectFields(f: {
   name?: string | null;
   projectNumber?: string | null;
@@ -462,6 +469,7 @@ export const updateNative = mutation({
     // the server-owned `revision` counter (#986) and isTemplate (no client-forged totals,
     // no client-renumbered revisions, no in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
+    guardSetTags(setObj);
 
     // #1230: setting or clearing a locked project field (taxRate/discountPercent)
     // is a MONEY write, gated by `pricingLocked` — the project row itself is
@@ -565,6 +573,146 @@ export const updateNative = mutation({
     });
 
     return { id };
+  },
+});
+
+const tagBatchArgs = {
+  orgId: v.string(),
+  ids: v.array(v.string()),
+  tag: v.string(),
+  actor: actorValidator,
+  auditId: v.string(),
+  now: v.number(),
+};
+
+type TagBatchArgs = {
+  orgId: string; ids: string[]; tag: string;
+  actor: { userId: string; userName: string }; auditId: string; now: number;
+};
+
+/**
+ * Shared body of addTagNative/removeTagNative: the tag is applied to the CURRENT tags
+ * read inside the transaction (never a client-computed array, so a concurrent edit of a
+ * row's other tags is never lost). Every id is org-checked through the global by_cuid
+ * index. Returns the ids whose tags actually changed — Undo of an add calls remove on
+ * exactly those, so a tag a row already had survives the Undo.
+ */
+async function applyTagBatch(
+  ctx: MutationCtx,
+  a: TagBatchArgs,
+  mode: "add" | "remove",
+): Promise<{ changed: string[]; full: string[] }> {
+  const tag = assertTags([a.tag])![0];
+  await assertWritesEnabled(ctx, "project");
+  await enforceBrowserWriteLimit(ctx);
+  await assertBulkSizeOk(ctx, a.ids.length);
+  await requireOrgPermission(ctx, a.orgId, "project", "update");
+  const actor = await resolveActor(ctx, a.actor);
+  const changed: { id: string; name: string }[] = [];
+  const full: string[] = [];
+  for (const id of new Set(a.ids)) {
+    const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!p) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (p.organizationId !== a.orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    const next = nextTags(p.tags ?? [], tag, mode);
+    if (!next) {
+      if (mode === "add" && isTagListFull(p.tags ?? [], tag)) full.push(id);
+      continue;
+    }
+    await ctx.db.patch(p._id, { tags: next, updatedAt: a.now });
+    changed.push({ id, name: p.name });
+  }
+  // One activity row PER changed job (each job's own Activity must show it), sharing one
+  // summary. Bounded by assertBulkSizeOk above; `${auditId}:${i}` keeps each row idempotent
+  // (the scanIntake pattern).
+  const summary = `${mode === "add" ? "Tagged" : "Removed tag from"} ${changed.length} job${changed.length === 1 ? "" : "s"}: ${tag}`;
+  for (const [i, c] of changed.entries()) {
+    await writeActivityLog(ctx, {
+      id: `${a.auditId}:${i}`, organizationId: a.orgId, action: "UPDATE", entityType: "project",
+      entityId: c.id, entityName: c.name,
+      userId: actor.userId, userName: actor.userName,
+      summary,
+      createdAt: a.now,
+    });
+  }
+  return { changed: changed.map((c) => c.id), full };
+}
+
+/** True when `tag` cannot be added because the list is at MAX_TAGS (and doesn't already hold it). */
+function isTagListFull(current: string[], tag: string): boolean {
+  return !current.includes(tag) && current.length >= MAX_TAGS;
+}
+
+/** The tags after the change, or null when nothing would change (already there / absent / full). */
+function nextTags(current: string[], tag: string, mode: "add" | "remove"): string[] | null {
+  if (mode === "remove") return current.includes(tag) ? current.filter((t) => t !== tag) : null;
+  if (current.includes(tag) || isTagListFull(current, tag)) return null;
+  return [...current, tag];
+}
+
+/** Add one tag to many jobs; returns the ids it was newly added to and the ids skipped because their tag list is full. */
+export const addTagNative = mutation({
+  args: tagBatchArgs,
+  returns: v.object({ changed: v.array(v.string()), full: v.array(v.string()) }),
+  handler: async (ctx, a) => applyTagBatch(ctx, a, "add"),
+});
+
+/** Remove one tag from many jobs (Undo of addTagNative, over exactly the ids it changed). */
+export const removeTagNative = mutation({
+  args: tagBatchArgs,
+  returns: v.object({ changed: v.array(v.string()), full: v.array(v.string()) }),
+  handler: async (ctx, a) => applyTagBatch(ctx, a, "remove"),
+});
+
+// ─── setPackerNative — the floor's `Assign packer…` (Phase 4) ───────────────
+// One call sets each listed job's packer (a member of this org, or null for
+// "no packer"). Its return is the jobs' PREVIOUS packers in the same shape, so
+// the floor's Undo replays them through this same mutation: one write, one
+// reverse. A floor write, so it needs `warehouse:check_out` (the warehouse role
+// assigns packers without `project:update`). Bounded by assertBulkSizeOk; one
+// activity row per changed job.
+const packerAssignment = v.object({ id: v.string(), packerUserId: v.union(v.string(), v.null()) });
+
+async function loadProjectsInOrg(ctx: MutationCtx, orgId: string, ids: readonly string[]) {
+  const out = [];
+  for (const id of new Set(ids)) {
+    const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!p || p.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (p.isTemplate) throw new ConvexError("Templates have no packer.");
+    out.push(p);
+  }
+  return out;
+}
+
+export const setPackerNative = mutation({
+  args: { orgId: v.string(), assignments: v.array(packerAssignment), actor: actorValidator, auditId: v.string(), now: v.number() },
+  returns: v.object({ previous: v.array(packerAssignment) }),
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await assertBulkSizeOk(ctx, a.assignments.length);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const target = new Map(a.assignments.map((x) => [x.id, x.packerUserId]));
+    for (const userId of new Set([...target.values()].filter((u): u is string => !!u))) {
+      await assertMemberInOrg(ctx, a.orgId, userId);
+    }
+    const projects = await loadProjectsInOrg(ctx, a.orgId, [...target.keys()]);
+    const previous: Array<{ id: string; packerUserId: string | null }> = [];
+    for (const [i, p] of projects.entries()) {
+      const next = target.get(p.id) ?? null;
+      const was = p.packerUserId ?? null;
+      previous.push({ id: p.id, packerUserId: was });
+      if (was === next) continue;
+      await ctx.db.patch(p._id, { packerUserId: next ?? undefined, updatedAt: a.now });
+      await writeActivityLog(ctx, {
+        id: `${a.auditId}:${i}`, organizationId: a.orgId, action: "UPDATE", entityType: "project",
+        entityId: p.id, entityName: p.name, userId: actor.userId, userName: actor.userName,
+        summary: next ? "Assigned a packer" : "Cleared the packer", projectId: p.id, createdAt: a.now,
+      });
+    }
+    return { previous };
   },
 });
 
@@ -731,7 +879,7 @@ export const createNative = mutation({
     // mint a project with forged financials (projectWriteFields exposes them as args).
     // Non-breaking: createProject never sends these. (bumpProjectCounters keys off
     // status/isTemplate, not money, so it's unaffected by the strip.)
-    const insertFields = { ...fields, projectNumber, discountPercent };
+    const insertFields = { ...fields, tags: assertTags(fields.tags), projectNumber, discountPercent };
     for (const k of PROJECT_MONEY_ANCHORS) delete (insertFields as Record<string, unknown>)[k];
     for (const k of PROJECT_SERVER_OWNED) delete (insertFields as Record<string, unknown>)[k];
     // #986 — every real project starts at revision 1 (its first quote is v1).
@@ -1535,6 +1683,8 @@ export const saveAsTemplateNative = mutation({
 
 /** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
 export const agentOps: AgentOpsAnnotations = {
+  addTagNative: { summary: "Add one tag to several jobs, keeping each job's other tags; returns the ids it was newly added to (changed) and the ids skipped because their tag list is full (full).", danger: "medium" },
+  removeTagNative: { summary: "Remove one tag from several jobs; returns the ids it was removed from.", danger: "medium" },
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },
@@ -1543,6 +1693,7 @@ export const agentOps: AgentOpsAnnotations = {
   saveAsTemplateNative: { danger: "medium" },
   updateNative: { danger: "medium" },
   updateNotesNative: { danger: "low" },
+  setPackerNative: { summary: "Set the packer (an org member, or null) on several jobs; returns each job's previous packer in the same shape, for Undo.", danger: "low" },
   // Status transitions gate the project lifecycle tiers (JUSTIFY/FINANCE_LOCKED/
   // HARD_LOCKED) and can revert OUT of HARD_LOCKED via `justification` — the
   // single most lock-sensitive write in this module.

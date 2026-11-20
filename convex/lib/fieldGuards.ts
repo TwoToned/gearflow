@@ -1,4 +1,5 @@
 import { ConvexError } from "convex/values";
+import { MAX_TAG_LEN, MAX_TAGS, cleanTag } from "./tagLimits";
 
 /**
  * Generic string/number bound guards for the PUBLIC browser-callable write mutations
@@ -45,6 +46,36 @@ export function assertNumRange(
   if (bounds.max != null && value > bounds.max) {
     throw new ConvexError({ code: "INVALID_FIELD", message: `${field} must be at most ${bounds.max}.` });
   }
+}
+
+/**
+ * Validate and normalise a free-form tag list: at most MAX_TAGS entries, each a trimmed
+ * non-empty string of at most MAX_TAG_LEN characters; duplicates are collapsed (first
+ * wins). Returns the cleaned array. `null`/`undefined` skip (returns undefined).
+ */
+export function assertTags(value: unknown, field = "tags"): string[] | undefined {
+  if (value == null) return undefined;
+  if (!Array.isArray(value)) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: `${field} must be a list of tags.` });
+  }
+  const out: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "string") {
+      throw new ConvexError({ code: "INVALID_FIELD", message: `${field} must only contain text.` });
+    }
+    const tag = cleanTag(raw);
+    if (tag.length === 0) {
+      throw new ConvexError({ code: "INVALID_FIELD", message: `${field} cannot contain an empty tag.` });
+    }
+    if (tag.length > MAX_TAG_LEN) {
+      throw new ConvexError({ code: "INVALID_FIELD", message: `A tag must be at most ${MAX_TAG_LEN} characters.` });
+    }
+    if (!out.includes(tag)) out.push(tag);
+  }
+  if (out.length > MAX_TAGS) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: `${field} must have at most ${MAX_TAGS} entries.` });
+  }
+  return out;
 }
 
 /** Reject an array with more than `max` entries. `null`/`undefined` skip. */

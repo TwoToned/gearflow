@@ -117,6 +117,14 @@ Every job sits at one status. Statuses are ordered and mostly move forward.
 | `INVOICED` | Closed out financially. | Released |
 | `CANCELLED` | Dead. Releases stock. | Released |
 
+**What the Jobs list calls them.** The Jobs page groups statuses into segments, and
+operators use these words: **Quoting** (`ENQUIRY`, `QUOTING`, `QUOTED`), **Booked**
+(`AWAITING_PAYMENT`, `CONFIRMED`, `PREPPING`), **Out** (`CHECKED_OUT`, `ON_SITE`),
+**Done** (`RETURNED`, `COMPLETED`, `INVOICED`), and **Needs you**, a derived set (an
+unresolved blocking discussion, an Out job past its end date, a quote untouched for 12
+days, or a hard-overbooked job). **All** is every job except `CANCELLED`. Saved views
+`My jobs`, `Out this week` and `Unquoted enquiries` are built in.
+
 **Pencilled vs hard is the single most important distinction in availability.**
 A pencilled job's gear is a soft hold — it shows in conflict views but does not
 stop anyone booking the same stock. A hard job's gear is genuinely committed.
@@ -199,16 +207,25 @@ more than 48 hours is a de facto no — chase it. `DECLINED` needs a replacement
 now, not on the day.
 
 **The day before — pick and pack.**
-Gear moves through five warehouse stages: **Pick/Prep** → **Deploy** (packed and
-waiting) → deployed/on site → **Returned** (back but still packed) →
-**De-prepped** (checked back into stock). A line only leaves Pick/Prep once it is
-actually `PACKED`.
+Gear moves through the warehouse stages the UI calls **To pick → Prepped →
+Out → Returned → De-prepped → Closed** (the verb for sending it is still
+**Deploy**). A line only leaves To pick once it is actually `PACKED`.
+
+On **the floor** (`/warehouse`) each job sits in one derived column —
+**To pick · Prepping · Ready · Out · Returning** — worked out from its unit
+counts (anything back → Returning, anything out → Out, nothing left to pick →
+Ready, some packed → Prepping). It is never set by hand, so "move this job to
+Ready" means "finish picking it". Returns are worked in the floor's
+**Returning mode** (`/warehouse?mode=returning`; the old "returns station" link
+redirects there), whose outcome words are **Out · Returned · Damaged · Missing
+· Late** — late means it came back, or is still out, after the job's end day.
+A job can have a **packer**; "my jobs" on the floor means the PM or the packer.
 
 Generate the paperwork:
 
 | Document | Who it's for | Note |
 |---|---|---|
-| `packing-list` (pick slip / pull slip) | Warehouse | Rendered fresh from today's state |
+| `packing-list` (pick slip / pull slip) | Warehouse | Rendered fresh from today's state; the on-screen pull sheet is the same list |
 | `delivery-docket` | Client, on delivery | Rendered fresh |
 | `return-sheet` | Warehouse, on return | Rendered fresh |
 | `quote` | Client | The **frozen** sent document, never re-rendered |

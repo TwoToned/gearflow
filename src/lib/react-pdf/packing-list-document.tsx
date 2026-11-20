@@ -19,6 +19,7 @@
 import { Document, Page, View, Text } from "@react-pdf/renderer";
 import type { DocumentData } from "@/lib/pdfme/types";
 import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
+import { PULL_LIST_TABLE_CONFIG } from "@/lib/pdfme/pull-list";
 import { Header } from "./components/header";
 import { DetailsRow } from "./components/details-row";
 import { LineItemsTable } from "./components/line-items-table";
@@ -31,24 +32,8 @@ const PAGE_PADDING_BOTTOM = `${MARGIN + FOOTER_HEIGHT + 8}mm`;
 export function PackingListDocument({ data }: { data: DocumentData }) {
   const docType: ProjectDocumentType = "packing-list";
 
-  const tableConfig = {
-    documentType: docType,
-    documentColor: data.org_document_color || "#0d4f4f",
-    showGroupHeaders: true,
-    showKitChildren: true,
-    showCheckboxes: true,
-    showConditionColumns: false,
-    showPricing: false,
-    showBadges: false,
-    showNotes: false,
-    showPerUnitCheckboxes: true,
-    showAssetTags: true,
-    showCategories: true,
-    showRowNumbers: false,
-    filterOptional: false,
-    filterByStatus: null,
-    hidePricingPeriodSuffix: false,
-  } as const;
+  // The ONE pull-list config, shared with the floor's pull-sheet dialog (R-3.1).
+  const tableConfig = { ...PULL_LIST_TABLE_CONFIG, documentColor: data.org_document_color || "#0d4f4f" };
 
   return (
     <Document title={`${data.org_name} — Pull Slip ${data.project_number}`}>

@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Package, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { usePackingTab } from "@/hooks/use-packing-tab";
+import { usePackingTab, type RealContainer } from "@/hooks/use-packing-tab";
 import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
+import { usePackingCaseWrites } from "@/hooks/use-packing-case-writes";
+import { useCanDo } from "@/lib/use-permissions";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
 import type { PackingContainerBucket } from "@/lib/packing-tab";
-import { resolvePackingStatus } from "@/lib/packing-tab";
+import { resolvePackingStatus, caseCardFacts, caseAndDescendantIds } from "@/lib/packing-tab";
+import { buildPackingCaseActions } from "@/lib/row-actions/packing-case";
+import { PackingCaseCard } from "./packing-case-card";
+import { RenameCaseDialog } from "./rename-case-dialog";
 import type { LineItemData } from "@/components/projects/equipment-rows";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -105,7 +110,7 @@ function PackingToolbar({
   );
 }
 
-function BucketSection({
+function BucketLines({
   bucket,
   containers,
   onSetContainer,
@@ -115,15 +120,147 @@ function BucketSection({
   onSetContainer: (lineItemId: string, containerId: string | null) => void;
 }) {
   return (
-    <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
-      <div className="flex items-center gap-1.5 bg-paper-2/60 px-3 py-2 text-caption font-semibold text-ink-2">
-        <Package className="h-3.5 w-3.5" />
-        {bucket.label ?? LOOSE_LABEL}
-        <Badge status="neutral" className="ml-auto tabular-nums">{bucket.lines.length}</Badge>
-      </div>
+    <>
       {bucket.lines.map(({ item, categoryName }) => (
         <PlanLineRow key={item.id} item={item} categoryName={categoryName} containers={containers} onSetContainer={onSetContainer} />
       ))}
+    </>
+  );
+}
+
+/** The Loose bucket: lines with no case planned. Not a case, so no ⋯. */
+function LooseSection({ children, count }: { children: React.ReactNode; count: number }) {
+  return (
+    <div className="rounded-[var(--r-lg)] border border-line overflow-hidden">
+      <div className="flex items-center gap-1.5 bg-paper-2/60 px-3 py-2 text-caption font-semibold text-ink-2">
+        <Package className="h-3.5 w-3.5" />
+        {LOOSE_LABEL}
+        <Badge status="neutral" className="ml-auto tabular-nums">{count}</Badge>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+type CaseWrites = ReturnType<typeof usePackingCaseWrites>;
+type CaseRef = { id: string; label: string };
+
+/** This case's container row, its display ref, and the case it sits inside. */
+function caseRelations(bucket: PackingContainerBucket & { containerId: string }, containers: RealContainer[]) {
+  const me = containers.find((c) => c.id === bucket.containerId);
+  const self: CaseRef = { id: bucket.containerId, label: bucket.label ?? me?.label ?? "Case" };
+  const parentDoc = me?.parentContainerId ? containers.find((c) => c.id === me.parentContainerId) : undefined;
+  const parent: CaseRef | null = parentDoc ? { id: parentDoc.id, label: parentDoc.label } : null;
+  return { me, self, parent };
+}
+
+/** The case ⋯: "Move into" lists every other case except this one's own
+ *  descendants and its current parent (the server's cycle check is the authority). */
+function caseMenu({
+  self,
+  parent,
+  facts,
+  containers,
+  caseWrites,
+  onRename,
+}: {
+  self: CaseRef;
+  parent: CaseRef | null;
+  facts: ReturnType<typeof caseCardFacts>;
+  containers: RealContainer[];
+  caseWrites: CaseWrites;
+  onRename: (c: CaseRef) => void;
+}) {
+  const excluded = caseAndDescendantIds(containers, self.id);
+  const moveTargets = containers.filter((c) => !excluded.has(c.id) && c.id !== parent?.id).map((c) => ({ id: c.id, label: c.label }));
+  return buildPackingCaseActions(
+    { id: self.id, label: self.label, parent, plannedOnlyCount: facts.plannedOnlyIds.length },
+    {
+      moveTargets,
+      onRename: () => onRename(self),
+      onMoveInto: (targetId) => {
+        const target = moveTargets.find((c) => c.id === targetId);
+        if (target) void caseWrites.moveInto(self, target, parent);
+      },
+      onTakeOut: parent ? () => void caseWrites.takeOut(self, parent) : undefined,
+      onUnpack: () => void caseWrites.unpack(self, facts.plannedOnlyIds, facts.packedCount),
+    },
+  );
+}
+
+/** One case's card: header facts, the ⋯ built by `buildPackingCaseActions`. */
+function CaseSection({
+  bucket,
+  containers,
+  canManage,
+  caseWrites,
+  onRename,
+  onSetContainer,
+}: {
+  bucket: PackingContainerBucket & { containerId: string };
+  containers: RealContainer[];
+  canManage: boolean;
+  caseWrites: CaseWrites;
+  onRename: (c: { id: string; label: string }) => void;
+  onSetContainer: (lineItemId: string, containerId: string | null) => void;
+}) {
+  const { me, self, parent } = caseRelations(bucket, containers);
+  const facts = caseCardFacts(bucket);
+  const menu = canManage ? caseMenu({ self, parent, facts, containers, caseWrites, onRename }) : undefined;
+  return (
+    <PackingCaseCard
+      label={self.label}
+      kind={me?.kind}
+      parentLabel={parent?.label}
+      lineCount={facts.lineCount}
+      packedCount={facts.packedCount}
+      menu={menu}
+    >
+      <BucketLines bucket={bucket} containers={containers} onSetContainer={onSetContainer} />
+    </PackingCaseCard>
+  );
+}
+
+/** Every case card (empty cases included), then Loose; owns the case verbs
+ *  and the rename dialog. */
+function PackingBuckets({
+  buckets,
+  containers,
+  onSetContainer,
+}: {
+  buckets: PackingContainerBucket[];
+  containers: RealContainer[];
+  onSetContainer: (lineItemId: string, containerId: string | null) => void;
+}) {
+  const caseWrites = usePackingCaseWrites();
+  const canManage = useCanDo("project", "manage_line_items");
+  const [renaming, setRenaming] = useState<CaseRef | null>(null);
+  return (
+    <div className="space-y-3">
+      {buckets.map((bucket) =>
+        bucket.containerId === null ? (
+          <LooseSection key="__not_planned" count={bucket.lines.length}>
+            <BucketLines bucket={bucket} containers={containers} onSetContainer={onSetContainer} />
+          </LooseSection>
+        ) : (
+          <CaseSection
+            key={bucket.containerId}
+            bucket={{ ...bucket, containerId: bucket.containerId }}
+            containers={containers}
+            canManage={canManage}
+            caseWrites={caseWrites}
+            onRename={setRenaming}
+            onSetContainer={onSetContainer}
+          />
+        ),
+      )}
+      <RenameCaseDialog
+        target={renaming}
+        onClose={() => setRenaming(null)}
+        onSubmit={(id, label) => {
+          if (renaming && renaming.id === id) void caseWrites.rename(renaming, label);
+        }}
+      />
     </div>
   );
 }
@@ -172,16 +309,7 @@ export function PackingTab({ projectId, orgId, versionId }: PackingTabProps) {
     <div className="space-y-4">
       <PackingToolbar notPlannedCount={notPlannedCount} totalCount={totalCount} onNewContainer={() => setNewContainerSheetOpen(true)} />
 
-      <div className="space-y-3">
-        {buckets.map((bucket) => (
-          <BucketSection
-            key={bucket.containerId ?? "__not_planned"}
-            bucket={bucket}
-            containers={containers}
-            onSetContainer={handleSetContainer}
-          />
-        ))}
-      </div>
+      <PackingBuckets buckets={buckets} containers={containers} onSetContainer={handleSetContainer} />
 
       <NewContainerSheet
         open={newContainerSheetOpen}

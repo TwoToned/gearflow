@@ -11,7 +11,7 @@
  *   4. reconstructUncategorizedProjectGroups ← getUncategorizedProjectGroups
  *   5. reconstructOverbookedRecord     ← getProjectOverbookedStatus
  *   6. reconstructProjectSubHires      ← getSubHires({ projectId }) — equipment-tab
- *      slice only (summary + draft detection; SubHireExpandedItems fetches its own).
+ *      slice only (summary + draft detection and the Orders section rows).
  *
  * Reuses the pure line-item attach/tree helpers from project-equipment-reconstruct
  * and project-line-item-tree-read. The sub-hire mappers are COPIES of the pure ones

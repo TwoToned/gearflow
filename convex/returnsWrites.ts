@@ -7,11 +7,11 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import type { Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
-import { assertStrLen } from "./lib/fieldGuards";
+import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { bumpAssetCounters } from "./lib/counters";
-import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
-import { checkinItemsCore } from "./warehouseOps";
+import { maybeAutoAdvanceProjectStatus, revertAutoAdvanceByAuditId } from "./lib/projectAutoStatus";
+import { checkinItemsCore, diffReturnedUnits, snapshotReturnUnits, unreturnUnitsCore } from "./warehouseOps";
 import { syncLineItemRollup, assetStatusFromReturnCondition } from "./lib/fulfillment";
 import { distributeReturn, type CheckInItem } from "./lib/bulkCheckin";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -45,6 +45,14 @@ import { resolveLiveVersionIdForProject } from "./lib/versionScope";
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 const returnCond = v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING"));
 const BATCH_CAP = 100;
+/** The most units one `unreturnBulkNative` reverses; a bigger return offers no Undo. */
+const UNDO_UNITS_CAP = 500;
+
+/** Exact only when every changed unit fully returned, and within the Undo cap
+ *  (past it the reverse would be refused, so never promise one). */
+function isExactUndo(f: { unitIds: string[]; clean: boolean }): boolean {
+  return f.clean && f.unitIds.length > 0 && f.unitIds.length <= UNDO_UNITS_CAP;
+}
 const NOTES_MAX = 2000;
 
 function errorMessage(e: unknown): string {
@@ -215,8 +223,26 @@ export const returnScanNative = mutation({
 // SAME `distributeReturn` engine `warehouseOps.checkInBulkTotals` uses —
 // scoped to exactly one (projectId, bulkAssetId) pair, which is the
 // project-scoped compound key the multi-project resolver needed revived.
+//
+// Undo (Phase 4, additive return fields): `allocations` is what this call
+// returned per line, `returnedUnitIds` the EXACT units it flipped to RETURNED
+// (the allocated lines' units AND their accessory cascade, found by diffing a
+// before/after snapshot), and `autoStatusAuditId` the auto-advance it caused.
+// The floor's ONE Undo closure passes those ids to `unreturnBulkNative`, which
+// reverses only them — never another scan's or another packer's returns.
+// `exactUndo` is false when the call changed a unit without fully returning it
+// (a partial bulk return): there is no exact reverse, so the floor omits Undo.
 export const returnBulkNative = mutation({
-  returns: v.object({ distributed: v.number(), updatedLineIds: v.array(v.string()), autoAdvanced: v.boolean() }),
+  returns: v.object({
+    distributed: v.number(),
+    updatedLineIds: v.array(v.string()),
+    autoAdvanced: v.boolean(),
+    allocations: v.array(v.object({ lineItemId: v.string(), quantity: v.number() })),
+    autoStatus: v.union(v.string(), v.null()),
+    autoStatusAuditId: v.union(v.string(), v.null()),
+    returnedUnitIds: v.array(v.string()),
+    exactUndo: v.boolean(),
+  }),
   args: {
     orgId: v.string(),
     bulkAssetId: v.string(),
@@ -245,6 +271,8 @@ export const returnBulkNative = mutation({
       throw new ConvexError("Nothing outstanding to return for this item on this project");
     }
 
+    const allocatedLineIds = allocations.map((al) => al.lineItemId);
+    const before = await snapshotReturnUnits(ctx, a.orgId, allocatedLineIds);
     const res = await checkinItemsCore(ctx, {
       organizationId: a.orgId,
       projectId: a.projectId, // ★ SERVER-DERIVED — the client only supplies bulkAssetId + a project it was told about by the resolver, never a raw line.
@@ -252,6 +280,7 @@ export const returnBulkNative = mutation({
       items: allocations.map((al) => ({ lineItemId: al.lineItemId, returnCondition: a.returnCondition, quantity: al.quantity, notes: a.notes })),
       now: a.now,
     });
+    const flipped = diffReturnedUnits(before, await snapshotReturnUnits(ctx, a.orgId, allocatedLineIds));
 
     await writeActivityLog(ctx, {
       id: a.auditId,
@@ -267,9 +296,65 @@ export const returnBulkNative = mutation({
       createdAt: a.now,
     });
 
-    const autoAdvanced = await maybeAutoAdvanceProject(ctx, a.orgId, a.projectId, actor, a.now);
+    const advanced = await maybeAutoAdvanceProjectStatus(ctx, { orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now });
 
-    return { distributed, updatedLineIds: res.updatedLineIds, autoAdvanced };
+    return {
+      distributed,
+      updatedLineIds: res.updatedLineIds,
+      autoAdvanced: advanced != null,
+      allocations: allocations.map((al) => ({ lineItemId: al.lineItemId, quantity: al.quantity })),
+      autoStatus: advanced?.status ?? null,
+      autoStatusAuditId: advanced?.auditId ?? null,
+      returnedUnitIds: flipped.unitIds,
+      exactUndo: isExactUndo(flipped),
+    };
+  },
+});
+
+// ─── unreturnBulkNative — the exact Undo of one returnBulkNative ───────────
+// Takes the `returnedUnitIds` that call handed back and moves ONLY those units
+// Returned → Deployed (`unreturnUnitsCore`), refusing if any has changed since.
+// The reverse of a return needs `check_out`, like `warehouseWrites.unreturnItems`.
+
+export const unreturnBulkNative = mutation({
+  returns: v.object({ updatedLineIds: v.array(v.string()) }),
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    unitIds: v.array(v.string()),
+    revertAutoAdvanceAuditId: v.optional(v.string()),
+    auditId: v.string(),
+    now: v.number(),
+    actor: actorValidator,
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+    assertArrayMax(a.unitIds, "unitIds", UNDO_UNITS_CAP);
+    if (a.unitIds.length === 0) throw new ConvexError("Nothing to undo");
+    await loadProjectInOrg(ctx, a.orgId, a.projectId);
+
+    const res = await unreturnUnitsCore(ctx, { organizationId: a.orgId, projectId: a.projectId, userId: actor.userId, unitIds: a.unitIds, now: a.now });
+
+    await writeActivityLog(ctx, {
+      id: a.auditId,
+      organizationId: a.orgId,
+      action: "UPDATE",
+      entityType: "asset",
+      entityId: res.updatedLineIds[0] ?? a.projectId,
+      entityName: `${a.unitIds.length} unit(s)`,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Undid a bulk return: ${a.unitIds.length} unit(s) back to Deployed`,
+      projectId: a.projectId,
+      createdAt: a.now,
+    });
+    if (a.revertAutoAdvanceAuditId) {
+      await revertAutoAdvanceByAuditId(ctx, { orgId: a.orgId, projectId: a.projectId, auditId: a.revertAutoAdvanceAuditId, actor, now: a.now });
+    }
+    return res;
   },
 });
 
@@ -430,5 +515,6 @@ export const agentOps: AgentOpsAnnotations = {
   correctReturnConditionNative: { danger: "high" },
   returnBatchNative: { danger: "high" },
   returnBulkNative: { danger: "high" },
+  unreturnBulkNative: { danger: "high" },
   returnScanNative: { danger: "high" },
 };

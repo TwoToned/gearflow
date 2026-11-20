@@ -2,9 +2,38 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
-## Projects List Views (`ProjectTable`, `ProjectBoard`)
-`ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
-paginated: `projects.listPage` (filter/sort/client join done in Convex) via
+## Jobs list (`/projects`, #1393, spec 9b)
+The list is `JobsList` (`src/components/projects/jobs-list.tsx`) on the shared `ListPage`
+(`src/components/ui/list-page.tsx`, see FEATUREDOCS/25): rows are `LineRowList` rows, **the URL
+is the state** (`seg`, `q`, `status`/`type`/`client`/`pm`/`date` comma lists, `sort=key:dir`,
+`page`, `view=board`; defaults omitted, junk dropped; codec `src/lib/list-url-state.ts`). Page
+size is fixed at 25. Nothing about filters/sort/view is read from localStorage any more (only
+column visibility, `colVis`, stays local). Config + row mapping live in
+`src/lib/list-views/jobs.ts`, row menu in `src/lib/row-actions/job.ts`.
+
+- **Segments** (counts from `projects.segmentCounts`): All (excludes CANCELLED), Quoting,
+  Booked, Out, Done, **Needs you** (`projects.needsYouIds`, derived on read: an unresolved blocking discussion, an Out job past its end date, a quote untouched for the stale window, or a hard-overbooked job).
+  Active and Overdue (D86) are config entries but NOT shipped; dashboard tile hrefs are unchanged.
+- **Filter words:** Status (multi; cancelled via page ⋯ › Show cancelled), Type, Client (name
+  search + `clientIn`), PM (`pmIn`, names from the org roster), Dates (presets resolved with
+  `useStableNow`, never a fresh `Date.now()` in query args).
+- **Columns:** # · Job (client, tags, red dot-word flags for overbooked / reduced stock /
+  blocking comments) · Status (+ lock glyph) · Dates · Type · Total (whole dollars); PM and Tags
+  are opt-in under ⋯ › Columns. Sortable headers.
+- **Row ⋯ and bulk:** only verbs backed by an existing write. Set status (the server gates
+  CONFIRMED on an accepted quote and unlock rights; the overbooking preview is advisory and
+  fails open; bulk cannot target CONFIRMED), Duplicate, Save as template, Cancel, Delete (cancelled
+  only; server-enforced). Bulk: Set status…, Add tag… (`projectWrites.addTagNative`: one call,
+  reads tags in-transaction, returns `{ changed, full }`; jobs at 25 tags are named in the
+  toast; one activity row per changed job), Export (formula-safe CSV of the visible facts),
+  Cancel jobs. Per-row gates; skipped rows are named; Undo is one closure
+  (`announceListWrite`) and only reverts rows still in the state the write left.
+- **Page ⋯:** Templates, Overbookings, Show cancelled, Columns. Primary: `New job` (`n`).
+- **Saved views:** URL mode (below and FEATUREDOCS/25); built-ins **My jobs**, **Out this week**,
+  **Unquoted enquiries**.
+
+The old `ProjectTable` (a DataTable) is retired; `projects.listPage` (filter/sort/client join
+done in Convex, now with `segment`, `clientIn`, date and PM args) backs the list via
 `useAuthedQuery`. `ProjectBoard` (kanban, `project-board.tsx`) is unpaginated —
 `projects.listBoard` returns every non-template, non-cancelled project in one
 query, grouped by lifecycle stage client-side (a "browse everything" view, not a
@@ -680,6 +709,33 @@ HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
 - Line item edit dialog; separate "Move to category" and "Move to group" dialogs (split in v0.9.3.0 — see [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md))
 - Category rename (inline) and delete with cascade warning
 
+#### List · Client view (UX 2b)
+Two view words head the tab: **List** (the default, everything above) and
+**Client view**, kept in the URL as `?view=client`
+(`useEquipmentViewParam`, `src/hooks/use-equipment-client-view.ts`). The
+Client view is the quote as it prints, read-only: the quote's sections, a
+rolled-up category's one price on its header, disclosed group members under
+their group, the PDF's own cell text (`×qty · unit · discount`, total), the
+`optional` / `priceHidden` glyphs, and the footer totals, under
+`Client view · vN · as it prints`. No add bar, bulk bar, row menus or list ⋯.
+
+It never decides what prints. `getEquipmentClientView`
+(`src/server/equipment-client-view.ts`, `project:read`, Zod-parsed args,
+org-checked project) runs the quote's own chain — `buildDocumentLineItemData`
+→ `enrichDocumentLineItems` → `structureLineItems` (the quote layout's
+collapse mode) + `buildBillableServiceRows` (itemised) →
+`buildLineItemsTableModel(items, QUOTE_TABLE_CONFIG)` — and maps it with
+`toClientViewSections` (`src/lib/equipment-client-view.ts`) to a slim DTO
+with no cost, margin or asset fields. Totals follow the draft-preview rule:
+on a viewed version, that version's computed money (`versionPreviewContext`,
+the query the `preview=1` quote uses), else the project's stored anchors.
+Overbooking is not computed (the quote prints no badges). The view re-reads
+400 ms after the tab's reactive trees change, keeping the last result on
+screen. Parity with the PDF is a gate:
+`__tests__/equipment-client-view.parity{,-pdf}.test.tsx` on one fixture.
+Deferred: a "Combine services" toggle (a send-time choice; the view prints
+services itemised).
+
 ### Financials Tab
 Moved out of the sidebar into its own non-template main-content tab (after
 "Labour & logistics") to declutter the right rail. Contains `FinancialSummary`
@@ -971,6 +1027,31 @@ also do NOT feed the P&L; see [22-suppliers](./22-suppliers.md#supplier-orders-p
 
 ## Reservation Conflict Resolution
 When a serialized asset is booked on this project AND on another live project whose PROJECT window overlaps (WS2 #941 — `getProjectWindow`, falls back to rental when unset), an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone. Both reads `.collect()` the org's full line-item/unit/asset/project/model graph (`loadOrgGraph()`) rather than paginating — correctness requires comparing against every booking anywhere in the org, so a bounded read would silently miss conflicts outside the fetched page. This is a registered §15 exception, not an oversight — see `docs/exceptions.md` (R-8.3.3 `reservationConflicts-orgGraph`).
+
+## Equipment tab on the UX primitives (Phase 2a)
+
+The Equipment tab renders `LineRowList` sections (`equipment-sections.tsx`) instead of the old per-kind row
+components (deleted: `GroupRow`, `SubHireGroupRow`, `LineItemRow`, `CategoryRow`, the card helpers). Row actions come from
+`src/lib/row-actions/` (one `ActionMenu` per row, absent-not-disabled); selection is `useRowSelection` + `BulkBar`;
+drag-and-drop wraps rows in sortable shells (`equipment-list-dnd.tsx`, drop resolution still `use-equipment-dnd.ts`).
+
+- **AddBar replaces `Add ▾`.** Under the list: type to find gear/kits (Enter adds with a blank price, the server
+  auto-prices; Undo on a fresh line); Sub-hire / Custom / Sale open the existing add dialog. `?modelId` still preselects
+  once per mount. New group / New category live in the list's ⋯.
+- **Footer.** `FooterTotals` appears once, from the project's STORED `subtotal/discountAmount/taxAmount/total`
+  (`src/lib/equipment-footer-totals.ts`); hidden on a non-live version; blank is `null`, never $0.
+- **Orders section.** The job's sub-hire orders are `selectable: false` rows pinned at the end of the table
+  (`equipment-orders-section.ts`); ⋯ = Edit order, the next lifecycle step and Cancel, from ONE transition table
+  (`src/lib/sub-hire-transitions.ts`, also used by the order dialog).
+- **Desktop cells** (`cells` slot): per-line discussion badge + serial indicator (Stage cell), inline qty / price / discount
+  (`$ / %`; plain % on sub-hire children). E / M / D hotkeys are driven by the row's own menu `kbd`.
+- **Phone.** A row tap opens `RowEditorSheet` (`equipment-row-editor.tsx`), saved through ONE `patchNative` via
+  `computeRowSheetPayload` (the same payload builder as the dialog and the inline cells; the sheet's resolved dollar discount
+  is passed through with `discountMode`, never re-derived). It carries what desktop shows in `cells`: the discussion badge
+  (count, opens the thread), the serial indicator (reassign / swap), the availability notice with the sub-hire shortcut,
+  and the row's own menu (via the sheet's `contextSlot`). The save toasts with an Undo (the same write with the reverse
+  patch); errors, including a refused cleared price that still has a discount, stay in the sheet.
+- **Shortfall → sub-hire** is an atomic server write, see [39-sub-hires](./39-sub-hires.md#shortfall-cover-atomic).
 
 ## Future-Proofing
 - **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income — see [42. Asset Utilization](./42-asset-utilization.md)

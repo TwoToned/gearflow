@@ -24,246 +24,46 @@
  * atomic row is `wrap={false}` so Yoga never splits a row's own content
  * across a page boundary.
  *
- * Pure decision logic (filtering/grouping/badges/column layout/cell text) is
- * factored into exported functions below, independent of any JSX — this is
- * what lets #1152's tests assert on structured data the same way
- * `gearflow-table.test.ts` does on captured draw calls, rather than needing
- * to parse rendered PDF bytes.
+ * The decision logic (filtering/grouping, column layout, row display, cell
+ * text, section headers, which children render) lives in the pure
+ * `../line-items-table-model.ts`; this file renders the model it builds. The
+ * names this file's tests and callers already import are re-exported below.
+ * Badges, per-unit labels and the checkbox decision stay here: only the
+ * renderer reads them.
  */
 import type { ReactNode } from "react";
 import { Text, View } from "@react-pdf/renderer";
 import type { DocumentLineItem, TablePluginConfig, DocumentType } from "@/lib/pdfme/types";
 import { formatCurrency } from "@/lib/pdfme/plugins/helpers";
-import { discountCellText, breakdownLabel, isSubhireIndicatorVisible, getAssetTag } from "@/lib/pdfme/line-item-format";
+import { discountCellText, isSubhireIndicatorVisible, getAssetTag } from "@/lib/pdfme/line-item-format";
 import { COLORS, FONT_SIZE, CATEGORY_MUTED, BADGE_STYLES, lightenHex, type BadgeStyle } from "../styles";
-import { ROLLUP_SUBTOTAL_LABEL, rollupSubtotal } from "@/lib/category-pricing-display";
+import { ROLLUP_SUBTOTAL_LABEL } from "@/lib/category-pricing-display";
+import {
+  PRICING_COLUMN_KEYS,
+  buildLineItemsTableModel,
+  childItemName,
+  childQtyText,
+  priceGatedCellText,
+  qtyCellText,
+  type ColumnDef,
+  type RowDisplay,
+  type TableModelChild,
+} from "../line-items-table-model";
 import { RichText } from "./rich-text";
 import { Checkbox } from "./checkbox";
 
-const PRICING_LABELS: Record<string, string> = {
-  PER_DAY: "/day",
-  PER_WEEK: "/week",
-  PER_HOUR: "/hr",
-  FLAT: "flat",
-  OPTIMIZED: "",
-};
+export {
+  filterAndGroupItems,
+  deriveRowDisplay,
+  qtyCellText,
+  getColumnsForDocType,
+  isKitParent,
+  isGroupParentRow,
+  isAccessoryParentRow,
+  rollupAmountForBucket,
+} from "../line-items-table-model";
 
-const PRICING_COLUMN_KEYS = new Set(["unitPrice", "discount", "total"]);
 const CONDITION_LABELS = ["Good", "Dmg", "Missing"] as const;
-
-// ─── Column layout ──────────────────────────────────────────────────────────
-
-type ColumnKey =
-  | "checkbox"
-  | "rowNum"
-  | "description"
-  | "qty"
-  | "unitPrice"
-  | "discount"
-  | "total"
-  | "assetTag"
-  | "category"
-  | "condition"
-  | "notes";
-
-export interface ColumnDef {
-  key: ColumnKey;
-  label: string;
-  width: `${number}%`;
-  align: "left" | "center" | "right";
-}
-
-/** Column set per doc type — mirrors gearflow-table.ts's `getColumnsForDocType`.
- *  Widths are `%` of the table's own width (react-pdf supports percentage
- *  widths on flex children natively), chosen to preserve the same relative
- *  proportions as the original's pt-based fixed/flex widths against a
- *  ~516pt (182mm) reference content width — no hand-rolled `resolveFlexWidths`
- *  needed the way pdf-lib's pt-only schema forced. */
-export function getColumnsForDocType(config: TablePluginConfig): ColumnDef[] {
-  switch (config.documentType) {
-    case "quote":
-    case "invoice":
-      return [
-        { key: "description", label: "Description", width: "46%", align: "left" },
-        { key: "qty", label: "Qty", width: "10%", align: "center" },
-        { key: "unitPrice", label: config.documentType === "invoice" ? "Rate" : "Unit Price", width: "16%", align: "right" },
-        { key: "discount", label: "Discount", width: "14%", align: "right" },
-        { key: "total", label: config.documentType === "invoice" ? "Amount" : "Total", width: "14%", align: "right" },
-      ];
-
-    case "packing-list":
-      return [
-        { key: "checkbox", label: "", width: "4%", align: "center" },
-        { key: "description", label: "Item", width: "61%", align: "left" },
-        { key: "qty", label: "Qty", width: "6%", align: "center" },
-        { key: "assetTag", label: "Asset Tag", width: "15%", align: "left" },
-        { key: "category", label: "Category", width: "14%", align: "left" },
-      ];
-
-    case "return-sheet":
-      return [
-        { key: "checkbox", label: "Ret", width: "4%", align: "center" },
-        { key: "description", label: "Item", width: "40%", align: "left" },
-        { key: "qty", label: "Qty", width: "6%", align: "center" },
-        { key: "assetTag", label: "Asset Tag", width: "15%", align: "left" },
-        { key: "condition", label: "Condition", width: "16%", align: "center" },
-        { key: "notes", label: "Notes", width: "19%", align: "left" },
-      ];
-
-    case "delivery-docket":
-      // #1296 phase 3c (D7) — itemised, container order, no per-row Received
-      // checkbox (one signature covers the whole delivery).
-      return [
-        { key: "rowNum", label: "#", width: "6%", align: "center" },
-        { key: "description", label: "Item", width: "58%", align: "left" },
-        { key: "qty", label: "Qty", width: "10%", align: "center" },
-        { key: "assetTag", label: "Asset Tag", width: "26%", align: "left" },
-      ];
-
-    case "manifest":
-      // Reference only (Q10 — no ticks): description, qty, asset tags inline.
-      // No checkbox column — the docket is the sign-off, not this document.
-      return [
-        { key: "description", label: "Item", width: "50%", align: "left" },
-        { key: "qty", label: "Qty", width: "10%", align: "center" },
-        { key: "assetTag", label: "Asset Tags", width: "25%", align: "left" },
-        { key: "category", label: "Category", width: "15%", align: "left" },
-      ];
-
-    default:
-      return [
-        { key: "description", label: "Description", width: "76%", align: "left" },
-        { key: "qty", label: "Qty", width: "24%", align: "center" },
-      ];
-  }
-}
-
-// ─── Filtering + grouping (pure — no JSX) ──────────────────────────────────
-
-function isBulk(item: DocumentLineItem): boolean {
-  return !!item.bulkAssetId || (!item.assetId && item.quantity > 1);
-}
-
-export function isKitParent(item: DocumentLineItem): boolean {
-  return !!item.kitId && !item.isKitChild;
-}
-
-export function isGroupParentRow(item: DocumentLineItem): boolean {
-  return !!item.isGroupRow && (item.childLineItems?.length ?? 0) > 0;
-}
-
-export function isAccessoryParentRow(item: DocumentLineItem): boolean {
-  if (item.isKitChild || item.kitId || item.isGroupRow) return false;
-  return item.childLineItems?.some((c) => c.childKind === "ACCESSORY") ?? false;
-}
-
-export interface GroupedTable {
-  ungroupedKey: string;
-  groups: Map<string, DocumentLineItem[]>;
-}
-
-/** Filter + group the raw line-item list exactly as gearflow-table.ts's
- *  `pdfRender` does before drawing — the SALE-line/bulk/status filtering and
- *  the doc-type-specific "ungrouped" bucket name. A kit parent is grouped
- *  like any other row (by `groupName`/container bucket); it keeps its own
- *  row and its CHECKED_OUT children render indented below it via
- *  `ChildrenBlock` (D7 — delivery-docket used to promote a kit's children
- *  into their own section and drop the kit row; #1296 phase 3c dropped that
- *  special case so the docket agrees with the manifest/return-sheet, which
- *  never did this). Pure so it's independently testable without rendering
- *  anything. */
-export function filterAndGroupItems(items: DocumentLineItem[], config: TablePluginConfig): GroupedTable {
-  let filtered = items.filter((i) => !i.isKitChild && !i.isContainerLineItem);
-
-  if (config.filterOptional) {
-    filtered = filtered.filter((i) => !i.isOptional);
-  }
-
-  if (config.filterByStatus) {
-    const statuses = config.filterByStatus;
-    // WS11 (#950) — SALE lines are goods handed over, never expected back:
-    // excluded entirely from the return sheet (regardless of status), and
-    // bypass the status filter everywhere else `filterByStatus` applies.
-    const isReturnSheet = config.documentType === "return-sheet";
-    const passesStatus = (i: DocumentLineItem): boolean => {
-      if (i.type === "SALE") return !isReturnSheet;
-      if (isBulk(i)) return i.checkedOutQuantity > 0;
-      return statuses.includes(i.status);
-    };
-    // #1296 — a container header row's own `status` is a best-effort derived
-    // summary (structure-line-items-by-container.ts), not authoritative for
-    // filtering — same "meaningless own status" shape isGroupRow gets below.
-    // It passes iff ANY real row sharing its section (groupName) passes.
-    const passingContainerSections = new Set(
-      items
-        .filter((i) => !i.isContainerRow && !i.isKitChild && !i.isContainerLineItem && i.groupName && passesStatus(i))
-        .map((i) => i.groupName as string),
-    );
-    filtered = filtered.filter((i) => {
-      if (i.isContainerRow) return !!i.groupName && passingContainerSections.has(i.groupName);
-      // Synthetic Project Group row: its own status is meaningless (a
-      // label, not a real line item) — pass through if ANY attached child
-      // passes the filter, or the parent + all members silently drop.
-      if (i.isGroupRow && (i.childLineItems?.length ?? 0) > 0) {
-        return i.childLineItems!.some((c) => {
-          if (c.type === "SALE") return !isReturnSheet;
-          if (isBulk(c)) return c.checkedOutQuantity > 0;
-          return statuses.includes(c.status);
-        });
-      }
-      return passesStatus(i);
-    });
-  }
-
-  const ungroupedKey =
-    config.documentType === "packing-list" ? "Ungrouped" : config.documentType === "delivery-docket" ? "General" : "_ungrouped";
-
-  const groups = new Map<string, DocumentLineItem[]>();
-
-  for (const item of filtered) {
-    const key = item.groupName || item.prepContainer || ungroupedKey;
-    const arr = groups.get(key) || [];
-    arr.push(item);
-    groups.set(key, arr);
-  }
-
-  return { ungroupedKey, groups };
-}
-
-// ─── Row-kind / display derivation (pure) ──────────────────────────────────
-
-function getItemName(item: DocumentLineItem, isKit: boolean): string {
-  if (isKit) return item.description || item.kit?.name || "Kit";
-  if (item.model) return item.model.modelNumber ? `${item.model.name} (${item.model.modelNumber})` : item.model.name;
-  return item.description || "-";
-}
-
-export interface RowDisplay {
-  isKit: boolean;
-  isParentWithChildren: boolean;
-  isItemized: boolean;
-  bold: boolean;
-  itemName: string;
-  showSubhire: boolean;
-  breakdown: string;
-}
-
-export function deriveRowDisplay(item: DocumentLineItem, config: TablePluginConfig): RowDisplay {
-  const isKit = isKitParent(item);
-  const isParentWithChildren = isKit || isGroupParentRow(item) || isAccessoryParentRow(item);
-  return {
-    isKit,
-    isParentWithChildren,
-    isItemized: isKit && item.pricingMode === "ITEMIZED",
-    // Bold only when children will actually render below — otherwise
-    // (showKitChildren off, e.g. quote/invoice) a bold row with nothing
-    // under it just reads as unexplained emphasis (2026-07-28 fix).
-    bold: isParentWithChildren && config.showKitChildren,
-    itemName: getItemName(item, isKit),
-    showSubhire: !!item.supplierName && isSubhireIndicatorVisible(item, config.documentType),
-    breakdown: breakdownLabel(item, config),
-  };
-}
 
 /** Badges for a top-level row — port of gearflow-table.ts's `getBadges`. */
 export function getBadgesForItem(item: DocumentLineItem, documentType?: DocumentType): BadgeStyle[] {
@@ -292,71 +92,6 @@ export function getBadgesForItem(item: DocumentLineItem, documentType?: Document
 export function getChildBadge(child: DocumentLineItem): BadgeStyle | null {
   if (!child.isOverbooked) return null;
   return child.overbookedReducedOnly ? BADGE_STYLES.reducedStock : BADGE_STYLES.overbooked;
-}
-
-/** Qty cell text — port of gearflow-table.ts's inline qty-column switch,
- *  including the delivery-docket-specific kit/bulk branching. */
-export function qtyCellText(item: DocumentLineItem, isKit: boolean, config: TablePluginConfig): string {
-  if (isKit && config.showKitChildren) return String((item.childLineItems || []).length);
-  if (config.documentType === "delivery-docket") {
-    if (isKit) {
-      const deployed = (item.childLineItems || []).filter((c) => c.status === "CHECKED_OUT");
-      return String(deployed.length);
-    }
-    if (isBulk(item)) return String(item.checkedOutQuantity);
-    return "1";
-  }
-  return String(item.quantity);
-}
-
-function priceCellText(item: DocumentLineItem, isItemized: boolean, hideSuffix: boolean | undefined): string {
-  if (isItemized) return "-";
-  if (item.unitPrice == null) return "-";
-  const suffix = hideSuffix ? "" : PRICING_LABELS[item.pricingType] || "";
-  return `${formatCurrency(item.unitPrice)}${suffix}`;
-}
-
-/** Text for the 3 pricing-gated columns, or null when `showPricing` is off
- *  (caller renders a blank cell). Shared by the parent-row switch so the
- *  pricing gate is checked once, not three times inline. */
-function priceGatedCellText(col: ColumnDef, item: DocumentLineItem, config: TablePluginConfig, display: RowDisplay): string | null {
-  if (!config.showPricing) return null;
-  // Category price rollup: this row's money lives in its section header's one
-  // subtotal instead (src/lib/category-pricing-display.ts). Blank, deliberately
-  // NOT the "-" a missing value prints — an empty cell reads as "not shown
-  // here", a dash reads as "nothing to charge".
-  if (item.priceHidden && PRICING_COLUMN_KEYS.has(col.key)) return "";
-  switch (col.key) {
-    case "unitPrice":
-      return priceCellText(item, display.isItemized, config.hidePricingPeriodSuffix);
-    case "discount":
-      return display.isItemized ? "-" : discountCellText(item);
-    case "total":
-      return display.isItemized ? "-" : formatCurrency(item.lineTotal);
-    default:
-      return null;
-  }
-}
-
-/**
- * Category price rollup — the amount a section header prints, or `null` when
- * this bucket isn't a rolled-up category (or the document prints no money at
- * all, like every warehouse doc).
- *
- * Pure, and exported, so the arithmetic is testable without rendering a PDF.
- * The sum covers EVERY row the section displays, revealed rows included: the
- * header is the category's total, not the hidden remainder — which is exactly
- * why it prints with a label (see `GroupHeaderRow`).
- *
- * Reads the rollup marker off the rows rather than taking it as a separate
- * argument because `filterAndGroupItems` buckets by the section's display name
- * and keeps no category metadata of its own; `structureLineItems` stamps every
- * row in a rolled-up section, so any one of them answers the question.
- */
-export function rollupAmountForBucket(items: DocumentLineItem[], config: TablePluginConfig): number | null {
-  if (!config.showPricing) return null;
-  if (!items.some((i) => i.rollupCategory)) return null;
-  return rollupSubtotal(items);
 }
 
 export function isCheckedForDocType(item: DocumentLineItem, documentType?: DocumentType): boolean {
@@ -667,19 +402,19 @@ function renderParentCell(col: ColumnDef, item: DocumentLineItem, config: TableP
 
 function ItemRow({
   item,
+  display,
   columns,
   config,
   altBg,
   rowNum,
 }: {
   item: DocumentLineItem;
+  display: RowDisplay;
   columns: ColumnDef[];
   config: TablePluginConfig;
   altBg: boolean;
   rowNum: number;
 }) {
-  const display = deriveRowDisplay(item, config);
-
   return (
     <View
       wrap={false}
@@ -708,7 +443,7 @@ function ItemRow({
 // ─── Kit / Group / Accessory children (level 2) ────────────────────────────
 
 function ChildDescriptionCell({ col, child, isNestedKit }: { col: ColumnDef; child: DocumentLineItem; isNestedKit: boolean }) {
-  const childName = child.model?.name || child.description || "-";
+  const childName = childItemName(child);
   const displayName = isNestedKit ? `[Kit] ${childName}` : childName;
   const badge = getChildBadge(child);
 
@@ -762,7 +497,8 @@ function renderTierPricingCell(col: ColumnDef, config: TablePluginConfig, fontSi
   );
 }
 
-function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TablePluginConfig, isNestedKit: boolean) {
+function renderChildCell(col: ColumnDef, entry: TableModelChild, config: TablePluginConfig) {
+  const { item: child, isNestedKit } = entry;
   if (PRICING_COLUMN_KEYS.has(col.key)) {
     return renderTierPricingCell(col, config, FONT_SIZE.child, COLORS.childText, child);
   }
@@ -777,7 +513,7 @@ function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TableP
     case "qty":
       return (
         <Cell key={col.key} col={col} fontSize={FONT_SIZE.child} color={COLORS.childText}>
-          {isNestedKit ? String((child.childLineItems || []).length) : String(child.quantity)}
+          {childQtyText(entry)}
         </Cell>
       );
     case "assetTag": {
@@ -802,14 +538,13 @@ function renderChildCell(col: ColumnDef, child: DocumentLineItem, config: TableP
   }
 }
 
-function ChildRow({ child, columns, config }: { child: DocumentLineItem; columns: ColumnDef[]; config: TablePluginConfig }) {
-  const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
+function ChildRow({ entry, columns, config }: { entry: TableModelChild; columns: ColumnDef[]; config: TablePluginConfig }) {
   return (
     <View
       wrap={false}
       style={{ flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: COLORS.border, borderBottomStyle: "solid", paddingVertical: "1.5mm" }}
     >
-      {columns.map((col) => renderChildCell(col, child, config, isNestedKit))}
+      {columns.map((col) => renderChildCell(col, entry, config))}
     </View>
   );
 }
@@ -826,7 +561,7 @@ function renderGrandchildCell(col: ColumnDef, nested: DocumentLineItem, config: 
     case "description":
       return (
         <View key={col.key} style={{ width: col.width, paddingHorizontal: "1.5mm", paddingLeft: "27mm" }}>
-          <Text style={{ fontSize: FONT_SIZE.grandchild, color: COLORS.grandchildText }}>{nested.model?.name || nested.description || "-"}</Text>
+          <Text style={{ fontSize: FONT_SIZE.grandchild, color: COLORS.grandchildText }}>{childItemName(nested)}</Text>
         </View>
       );
     case "qty":
@@ -870,27 +605,18 @@ function GrandchildRow({ nested, columns, config }: { nested: DocumentLineItem; 
 
 // ─── Children block (level 2 + their per-unit rows + level 3) ─────────────
 
-function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; columns: ColumnDef[]; config: TablePluginConfig }) {
-  let children = item.childLineItems || [];
-  if (config.filterByStatus) {
-    children = children.filter((c) => config.filterByStatus!.includes(c.status));
-  }
-
+/** `levelTwo` is the model's status-filtered level-2 rows and the level-3
+ *  rows under each (`TableModelItemRow.children`). */
+function ChildrenBlock({ levelTwo, columns, config }: { levelTwo: TableModelChild[]; columns: ColumnDef[]; config: TablePluginConfig }) {
   return (
     <>
-      {children.map((child) => {
-        const isNestedKit = !!child.kitId && (child.childLineItems?.length ?? 0) > 0;
-        const childHasAccessories = !child.kitId && (child.childLineItems?.some((gc) => gc.childKind === "ACCESSORY") ?? false);
-        const childName = child.model?.name || child.description || "-";
-
-        let grandchildren = child.childLineItems || [];
-        if (config.filterByStatus) {
-          grandchildren = grandchildren.filter((gc) => config.filterByStatus!.includes(gc.status));
-        }
+      {levelTwo.map((entry) => {
+        const { item: child, isNestedKit, grandchildren } = entry;
+        const childName = childItemName(child);
 
         return (
           <View key={child.id}>
-            <ChildRow child={child} columns={columns} config={config} />
+            <ChildRow entry={entry} columns={columns} config={config} />
 
             {listsUnits(config) && !isNestedKit && child.quantity > 1 && (
               <>
@@ -909,8 +635,7 @@ function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; colu
               </>
             )}
 
-            {(isNestedKit || childHasAccessories) &&
-              grandchildren.map((nested) => (
+            {grandchildren.map((nested) => (
                 <View key={nested.id}>
                   <GrandchildRow nested={nested} columns={columns} config={config} />
                   {listsUnits(config) && nested.childKind === "ACCESSORY" && nested.quantity > 1 && (
@@ -920,7 +645,7 @@ function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; colu
                           key={i}
                           unit={(nested.units ?? [])[i]}
                           index={i}
-                          fallbackName={nested.model?.name || nested.description || "-"}
+                          fallbackName={childItemName(nested)}
                           indent="25mm"
                           size={6}
                           checked={i < (nested.checkedOutQuantity || 0)}
@@ -941,35 +666,25 @@ function ChildrenBlock({ item, columns, config }: { item: DocumentLineItem; colu
 // ─── Top-level export ───────────────────────────────────────────────────────
 
 export function LineItemsTable({ items, config, docColor }: { items: DocumentLineItem[]; config: TablePluginConfig; docColor: string }) {
-  const columns = getColumnsForDocType(config);
-  const { ungroupedKey, groups } = filterAndGroupItems(items, config);
-
-  let globalIdx = 0;
+  // Every decision (sections, headers, rollup price, row numbers, which
+  // children render) comes from the pure model; this only draws it.
+  const { columns, sections } = buildLineItemsTableModel(items, config);
 
   return (
     <View>
       <TableHeader columns={columns} />
-      {Array.from(groups.entries()).map(([groupName, groupItems]) => (
-        <View key={groupName}>
-          {/* A top-level (depth 0) container row already carries this
-              section's title (label/tag/count) via ContainerHeaderRow below —
-              printing the generic GroupHeaderRow too would repeat it. A
-              section with no such row (a flat category/kit bucket, or the
-              "Loose" bucket) still gets the plain header as normal. */}
-          {groupName !== ungroupedKey &&
-            config.showGroupHeaders &&
-            !groupItems.some((item) => item.isContainerRow && (item.containerDepth ?? 0) === 0) && (
-              <GroupHeaderRow
-                name={groupName}
-                docColor={docColor}
-                rollupAmount={(() => {
-                  const amount = rollupAmountForBucket(groupItems, config);
-                  return amount == null ? null : formatCurrency(amount);
-                })()}
-              />
-            )}
-          {groupItems.map((item) => {
-            if (item.isContainerRow) {
+      {sections.map((section) => (
+        <View key={section.key}>
+          {section.header && (
+            <GroupHeaderRow
+              name={section.header.name}
+              docColor={docColor}
+              rollupAmount={section.header.rollupAmount == null ? null : formatCurrency(section.header.rollupAmount)}
+            />
+          )}
+          {section.rows.map((row) => {
+            const item = row.item;
+            if (row.kind === "container") {
               return (
                 <ContainerHeaderRow
                   key={item.id}
@@ -979,23 +694,11 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
                 />
               );
             }
-            globalIdx++;
-            const idx = globalIdx;
-            const display = deriveRowDisplay(item, config);
-            // `showKitChildren` exists to stop a CLIENT-facing doc exploding
-            // kits and accessories into sub-rows the client didn't ask for. A
-            // Project Group row is different: in collapse mode
-            // `structureLineItems` attaches ONLY the members the operator
-            // deliberately disclosed (src/lib/group-child-disclosure.ts), so
-            // the presence of children IS the intent — gating them behind
-            // `showKitChildren` would make the toggle silently do nothing on
-            // exactly the documents it exists for.
-            const shouldRenderChildren =
-              display.isParentWithChildren && (config.showKitChildren || item.isGroupRow === true);
+            const { display, rowNum: idx } = row;
 
             return (
               <View key={item.id}>
-                <ItemRow item={item} columns={columns} config={config} altBg={idx % 2 === 0} rowNum={idx} />
+                <ItemRow item={item} display={display} columns={columns} config={config} altBg={idx % 2 === 0} rowNum={idx} />
 
                 {listsUnits(config) && !display.isKit && item.quantity > 1 && (
                   <>
@@ -1014,7 +717,7 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
                   </>
                 )}
 
-                {shouldRenderChildren && <ChildrenBlock item={item} columns={columns} config={config} />}
+                {row.children && <ChildrenBlock levelTwo={row.children} columns={columns} config={config} />}
               </View>
             );
           })}

@@ -1,16 +1,10 @@
 "use client";
 
 /**
- * "Edit accessories" — the row kebab's standalone accessory picker for a line
- * ALREADY on the project (issue #794's originally-planned post-add entry
- * point). The SAME picker now also renders as an Accessories section inside
- * `EditLineItemDialog` (the Edit Item window), which is where most PMs will
- * meet it; this dialog stays as the direct one-click route from the row menu.
- *
- * Both entry points share `useAccessoryPlanEditor` (catalog + stored plan +
- * seeding + derive) and `AccessorySelectionFields` (the checkbox UI), so the
- * two can't drift (R-3.1). Only the save differs: here it's the dialog's own
- * button; there it rides the Edit Item save.
+ * "Edit accessories" — the ONE accessory editor for a line ALREADY on the
+ * project (spec §7.2). The row's ⋯ and the Edit Item dialog's "Edit
+ * accessories…" button both open it; there is no second picker. State comes
+ * from `useAccessoryPlanEditor`, the checkbox UI from `AccessorySelectionFields`.
  *
  * Eligibility (top-level line, has a model/asset, not deployed) is enforced
  * both here (menu visibility, `canEditAccessoryPlan`) and server-side

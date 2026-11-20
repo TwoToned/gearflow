@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, AlertTriangle, XCircle, CloudOff } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, CloudOff, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -12,8 +12,12 @@ import { cn } from "@/lib/utils";
  */
 export interface ScanStripEntry {
   id: string;
-  /** success · warning (needs a check) · error (not on this job) · neutral (saved on device · syncing). */
-  tone: "success" | "warning" | "error" | "neutral";
+  /**
+   * success · warning (needs a check) · error (not on this job) · neutral
+   * (saved on device · syncing) · info (a look-up result: nothing was written,
+   * nothing is wrong, e.g. `SK-0012 · packed for #2341`).
+   */
+  tone: "success" | "warning" | "error" | "neutral" | "info";
   text: string;
   /** Muted secondary text, e.g. a relative time or serial. */
   detail?: string;
@@ -27,6 +31,11 @@ export interface ScanStripEntry {
   undo?: () => void | Promise<void>;
   /** Warning → `Run check`; error → `Add & prep`. */
   action?: { label: string; onSelect: () => void | Promise<void> };
+  /**
+   * Extra controls at the row's end, after Undo / action: an `Open` link, or an
+   * `Outcome ▾` built with ActionMenu's `trigger`. The surface owns them.
+   */
+  trailing?: React.ReactNode;
 }
 
 const TONE: Record<ScanStripEntry["tone"], { Icon: typeof CheckCircle2; className: string }> = {
@@ -34,6 +43,7 @@ const TONE: Record<ScanStripEntry["tone"], { Icon: typeof CheckCircle2; classNam
   warning: { Icon: AlertTriangle, className: "text-warn" },
   error: { Icon: XCircle, className: "text-t-out" },
   neutral: { Icon: CloudOff, className: "text-muted" },
+  info: { Icon: Info, className: "text-info" },
 };
 
 /** The last scans, newest first. Collapses to nothing when empty. */
@@ -72,6 +82,7 @@ export function ScanStrip({
                 {e.action.label}
               </Button>
             ) : null}
+            {e.trailing}
           </li>
         );
       })}

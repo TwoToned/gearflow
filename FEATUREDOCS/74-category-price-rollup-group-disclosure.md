@@ -141,15 +141,25 @@ src/lib/equipment-tab-reconstruct.ts   — CategoryData.pricingDisplay
 src/lib/pdfme/structure-line-items.ts  — resolves the two stored fields into the
                                           DERIVED priceHidden / rollupCategory
 src/lib/pdfme/types.ts                 — those two DocumentLineItem fields
+src/lib/react-pdf/line-items-table-model.ts
+                                       — rollupAmountForBucket + the blank money cell
+                                          text (pure); buildLineItemsTableModel puts the
+                                          rolled-up price on the section header and the
+                                          disclosed members under their group row
 src/lib/react-pdf/components/line-items-table.tsx
-                                       — blank money cells; GroupHeaderRow's labelled
-                                          amount; rollupAmountForBucket (pure, exported)
+                                       — draws that model: GroupHeaderRow's labelled amount
+src/lib/equipment-client-view.ts       — the Equipment tab's Client view reads the SAME
+                                          model for the quote config, so a rolled-up
+                                          category and a disclosed member show there
+                                          exactly as they print (UX 2b, parity-tested)
 
 convex/lib/financeSnapshot.ts          — the rollup fold -> one CATEGORY line
 convex/xeroPush.ts                     — resolveCategoryLineCode
 
-src/components/projects/equipment-rows.tsx — the Client documents kebab section on
-                                              category/group/item rows + the pill
+src/components/projects/equipment-sections.tsx — builds the category/group/item rows + their menus
+                                              (Phase 2a; supersedes the deleted equipment-rows.tsx
+                                              row components — the Client documents kebab section
+                                              and the pill now come from src/lib/row-actions/)
 src/components/projects/equipment-tab.tsx  — the four mutations that drive them
 ```
 

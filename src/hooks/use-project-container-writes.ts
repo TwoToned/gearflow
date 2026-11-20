@@ -77,7 +77,14 @@ export function useProjectContainerWrites() {
     },
 
     setPlannedContainer: async (lineItemIds: string[], containerId: string | null): Promise<{ updated: number }> => {
-      return setPlannedContainerM({ orgId: requireOrg(), lineItemIds, containerId, now: Date.now() });
+      return setPlannedContainerM({
+        orgId: requireOrg(),
+        lineItemIds,
+        containerId,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
     },
   };
 }

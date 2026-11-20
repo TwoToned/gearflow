@@ -782,6 +782,12 @@ export default defineSchema({
     targetCategoryId: v.optional(v.string()),
     targetGroupId: v.optional(v.string()),
     notes: v.optional(v.string()),
+    // Set ONLY by subHiresWrites.coverShortfallNative: the facts of the one "cover this shortfall"
+    // that created this item, so undoShortfallNative derives everything from server records
+    // (never from client args). Describes one cover: never copied to a duplicated item.
+    coverage: v.optional(
+      v.object({ lineItemId: v.string(), quantityBefore: v.number(), quantityAfter: v.number(), createdOrder: v.boolean() }),
+    ),
   })
     .index("by_cuid", ["id"])
     .index("by_subHireId", ["subHireId"])
@@ -1309,6 +1315,10 @@ export default defineSchema({
     rentalStartDate: v.optional(v.number()),
     rentalEndDate: v.optional(v.number()),
     projectManagerId: v.optional(v.string()),
+    // The job's packer on the floor (Phase 4, owner-approved 2026-11-19): a
+    // member user id, or absent for "no packer". Server-owned: written ONLY by
+    // `projectWrites.setPackerNative` (org + member checked, audited).
+    packerUserId: v.optional(v.string()),
     // Derived billing weeks/days (#943) — the project-level "billed as N wk M d"
     // summary is DERIVED from rentalStartDate/rentalEndDate via
     // convex/lib/billingDerivation.ts `deriveBillingSummary`, never persisted.

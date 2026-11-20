@@ -228,7 +228,7 @@ Two that come up constantly:
 
 A dedicated `warehouse` role does **not** have `project:update`. This is why
 status automation patches the project directly rather than routing through the
-normal status-change path — otherwise the returns station would silently fail
+normal status-change path — otherwise the returns desk (the floor's Returning mode) would silently fail
 for exactly the role it was built for.
 
 ## Status tables

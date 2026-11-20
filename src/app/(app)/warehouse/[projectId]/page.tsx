@@ -56,6 +56,8 @@ import { usePickExtras } from "@/components/warehouse/job/use-pick-extras";
 import { modelDisplayName, type LineItem } from "@/components/warehouse/warehouse-types";
 import { relocateAccessories } from "@/components/warehouse/relocate-accessories";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
+import { PullSheetDialog } from "@/components/warehouse/pull-sheet-dialog";
+import { useJobDocs } from "@/components/warehouse/job/use-job-docs";
 import { ScanAccessoryDialog, ScanCheckModeDialog } from "@/components/warehouse/scan-prep-dialogs";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { NewContainerSheet } from "@/components/warehouse/new-container-sheet";
@@ -177,7 +179,10 @@ function WarehouseProjectPage({ params }: { params: Promise<{ projectId: string 
   // --- Header (spec §5.9): the page computes the strings, warehouseHeaderProps shapes them ---
   // Only the job's start is fed (when gear leaves): there is no truck or packer source on the project summary.
   const jobStart = project ? projectScheduleRows(project)[0] : undefined;
+  const jobDocs = useJobDocs({ orgId, projectId, status: project?.status, lineItems, initialDoc: searchParams.get("doc") });
   const baseHeader = warehouseHeaderProps({
+    openPullSheet: jobDocs.openPullSheet,
+    overrides: jobDocs.overrides,
     loadsOut: jobStart?.date ? `${formatDateDayMonth(jobStart.date)}${jobStart.time ? ` ${jobStart.time}` : ""}` : undefined,
     name: project?.name ?? "",
     status: project?.status ?? "",
@@ -380,6 +385,7 @@ function WarehouseProjectPage({ params }: { params: Promise<{ projectId: string 
         lineItemId={reportIssueTarget?.id}
         assetId={reportIssueTarget?.assetId ?? undefined}
       />
+      <PullSheetDialog projectIds={jobDocs.pullSheetIds} onClose={jobDocs.closePullSheet} />
     </div>
     </FadeIn>
     </RequirePermission>

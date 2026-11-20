@@ -127,8 +127,32 @@ The old native status `<select>` is now a shadcn `Select` with explicit
 - `SmartFormField` — `Label` + control + hint/error (`text-t-out`, no personality
   copy per §9).
 
-## Asset Registry List (`/assets/registry`)
-The list page (`page.tsx`) is a thin auth-gated wrapper that renders `<AssetsView />`.
+## Asset Registry List (`/assets/registry`) — ListPage (#1393, spec 9b)
+`AssetsList` (`src/components/assets/assets-list.tsx`) is the registry on the shared `ListPage`
+(FEATUREDOCS/25); `AssetsView`/`AssetTable` below are RETIRED (their dialogs live in
+`bulk-asset-dialogs.tsx`). **Table is the default (D12)**; `Table · Grid` words, the choice kept
+in localStorage `assets-view-mode`. The URL is the state: `seg`, `q`, `kind=bulk`, `status`,
+`condition`, `loc`, `cat`, `tag`, `model`, `sort`, `page`, `view=grid`. Config in
+`src/lib/list-views/assets.ts`, row menu in `src/lib/row-actions/asset.ts`.
+
+- **Kind** filter word switches `assets.listPage` (serialized) and `bulkAssets.listPage` (bulk).
+  Segments: All, Available, On jobs, In maintenance, Retired, **Due for T&T**, **Needs attention**
+  (serialized only; bulk has All + Retired). Derived on read in `convex/lib/assetAttention.ts`.
+- **Columns:** Tag (thumbnail via `LineRowList`'s `leading` slot) · Model (category, tags) ·
+  Serial · Status · Condition · Location · Next due · On job (from `assets.rowExtras`, gated per
+  field on `testTag`/`project` read; `requireOrgReadFor` + RBAC); Tags opt-in.
+- **Bulk:** Edit…, Add tag…, Force return (only when a selected asset is deployed), Retire
+  (existing `archiveNative`, no Undo). Page ⋯: Export / Import CSV (formula-safe). Primary
+  `New asset` (`?type=` follows the kind), `n` kept.
+- **Saved views:** URL mode; old rows' `locationId/categoryId/tags` keys map to `loc/cat/tag`.
+- **Deferred:** Group control, mixed serialized/bulk list, dashboard tiles, Value/Owner columns
+  (no gate / no stored field), bulk Assign PM / bulk Print labels / Schedule service (no
+  mutation), bulk-kind bulk verbs.
+
+The sections below describe the pre-6b implementation and its data sources (still accurate for
+`assets.listPage`, `bulkAssets.listPage`, `assets.listGallery`).
+
+The old list page (`page.tsx`) was a thin auth-gated wrapper that rendered `<AssetsView />`.
 
 - **`AssetsView`** (`src/components/assets/assets-view.tsx`) — a Grid⇄Table
   segmented toggle (`aria-pressed` + `focusRing`), persisted to localStorage key

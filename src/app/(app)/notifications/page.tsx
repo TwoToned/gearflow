@@ -24,6 +24,7 @@ import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useNotificationDismissals } from "@/hooks/use-notification-dismissals";
 import { type AppNotification } from "@/server/notifications";
+import { DERIVED_TYPE_LABELS, selectVisibleNotifications } from "@/lib/notification-feed";
 import { getStatusColor } from "@/lib/status-colors";
 import { formatDistanceToNow, isToday, isYesterday, isThisWeek } from "date-fns";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -54,15 +55,6 @@ const typeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   pending_invitation: Mail,
   pending_offers: Users,
   pending_timesheets: Clock,
-};
-
-const typeLabels: Record<string, string> = {
-  overdue_maintenance: "Maintenance",
-  overdue_return: "Overdue Return",
-  upcoming_project: "Upcoming",
-  pending_invitation: "Invitation",
-  pending_offers: "Crew",
-  pending_timesheets: "Timesheets",
 };
 
 const severityBorderColor: Record<string, string> = {
@@ -206,7 +198,7 @@ export default function NotificationsPage() {
   }, [notifications, dismissAllMutation]);
 
   const visible = useMemo(
-    () => (notifications || []).filter((n) => !dismissed.has(n.id)),
+    () => selectVisibleNotifications(notifications, dismissed),
     [notifications, dismissed],
   );
 
@@ -307,7 +299,7 @@ export default function NotificationsPage() {
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{n.title}</p>
                         <Badge status="neutral" className="shrink-0 text-[10px] px-1.5 py-0">
-                          {typeLabels[n.type] || n.type}
+                          {DERIVED_TYPE_LABELS[n.type] || n.type}
                         </Badge>
                       </div>
                       <p className="text-xs text-fg-3 mt-0.5 truncate">{n.description}</p>

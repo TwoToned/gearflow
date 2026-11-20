@@ -151,6 +151,23 @@ async function computeBoardBundle(ctx: QueryCtx, orgId: string, rangeStart: numb
   return { range, gear, saleStockToProcure, servicesMissingCrew, unconfirmedCrew, crewDoubleBookings };
 }
 
+/** The board's default horizon (dashboard chips, the Jobs "needs you" segment). */
+export const BOARD_DEFAULT_HORIZON_DAYS = 30;
+
+/**
+ * Ids of the org's jobs that are hard-overbooked over the board's default
+ * horizon (`now` → `now + 30 days`): every project named in a `gear.hard` row.
+ * The ONE answer to "is this job overbooked" for Convex callers (the Jobs
+ * "needs you" segment) so the overbooking math is never duplicated (R-3.1).
+ * No auth here: the caller has already authorised `orgId`.
+ */
+export async function hardOverbookedProjectIds(ctx: QueryCtx, orgId: string, now: number): Promise<Set<string>> {
+  const rangeEnd = now + BOARD_DEFAULT_HORIZON_DAYS * 86_400_000;
+  validateRange(now, rangeEnd);
+  const { gear } = await computeBoardBundle(ctx, orgId, now, rangeEnd);
+  return new Set(gear.hard.flatMap((row) => row.projects.map((p) => p.id)));
+}
+
 /**
  * The Overbookings & Gaps board (WS3 #942) — one org-wide, date-ranged read
  * aggregating six sections: overbooked gear (hard), pencilled collisions, sale

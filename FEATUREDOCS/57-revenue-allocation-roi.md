@@ -362,5 +362,10 @@ half-worked must not be mistaken for one that worked.
 - **Allocation is recomputed per project, not frozen.** Any edit to an old project restages its
   whole split using today's model rates and kit percentages. Only lines with no `lineTotal` of their
   own (KIT_PRICE kit children, accessories) can actually move.
+- A sub-hire **shortfall cover** (`subHiresWrites.coverShortfallNative`, FEATUREDOCS/39) trims the stock line's
+  `quantity` and adds a sub-hire item in one transaction; the added line is a sub-hire line (excluded from ROI weight as
+  above) and the trim goes through `patchNative`, so allocation re-derives as for any quantity edit. Nothing about
+  `excludeFromRoi` changes. The phone `RowEditorSheet` save sends the resolved dollar discount + `discountMode` (a blank
+  price is cleared, never `0`), preserving the "$0 is a price, not a flag" rule.
 - Adding a new line-item *kind* means deciding its `allocationBasis`. If it has a `modelId` and
   isn't ours, it must consume weight and be excluded — see the sub-hire case.

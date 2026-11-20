@@ -94,7 +94,8 @@ project doc types use are now ported to react-pdf components under
 | `gearflowPageFooter` | `footer.tsx` |
 
 `line-items-table.tsx`'s filtering/grouping/badge/column-layout decisions are
-factored into plain, exported functions independent of any JSX (mirrors
+factored into plain, exported functions independent of any JSX (since UX 2b
+the non-badge ones live in `line-items-table-model.ts`, see the file table) (mirrors
 `gearflow-table.ts`'s exported `discountCellText`/`breakdownLabel`/
 `isSubhireIndicatorVisible`/`getAssetTag`, which the react-pdf version
 imports and reuses rather than re-deriving) — this is what lets its test
@@ -396,6 +397,8 @@ Two vendor boundaries, one per pipeline (POLICY.md R-8.10.1):
 | `src/lib/react-pdf/container-label-document.tsx` | Container / kit labels (`container-label`, `kit-label`) — small tape-on labels, not a paginated table, so they sit outside the 5-type regression suite. See FEATUREDOCS/83 |
 | `src/lib/react-pdf/item-label-document.tsx` | Item labels (`item-label`) — one per loose item, with a vector QR of the asset tag (`components/qr-code.tsx`). Same label family, same exemption from the regression suite. See FEATUREDOCS/83 |
 | `src/lib/react-pdf/components/` | Shared react-pdf pieces (`line-items-table.tsx`, `header.tsx`, `totals-block.tsx`, `details-row.tsx`, `signature-line.tsx`, `draft-watermark.tsx`, `footer.tsx`, `rich-text.tsx`, `checkbox.tsx`) |
+| `src/lib/react-pdf/line-items-table-model.ts` | The table's pure decision layer (UX 2b): `filterAndGroupItems`, `deriveRowDisplay`, the cell-text and rollup rules, the column layout, and `buildLineItemsTableModel` (sections, header + rolled-up price, row numbers, rendered children and grandchildren). `LineItemsTable` only draws the model; `QUOTE_TABLE_CONFIG` is the one definition of what the quote shows, also read by the Equipment tab's Client view |
+| `src/lib/pdfme/document-line-items.ts` | `enrichDocumentLineItems` (overbooking flags + category/group/location/supplier names) and `buildBillableServiceRows`, moved out of `buildDocumentData` so the Client view's server action (`src/server/equipment-client-view.ts`) runs the quote's own chain |
 | `src/lib/react-pdf/regression.test.tsx` | The standing regression harness for the react-pdf pipeline (#1155) — pagination invariants across all 5 doc types |
 | `src/lib/react-pdf/pdf-test-utils.ts` | `renderPdfPages()` — render+extract test helper (`pdf-parse` page-wise text), shared by the regression suite and the full-pipeline integration tests below |
 | `src/lib/pdfme/document-layouts.ts` | `ProjectDocumentType` + `DOCUMENT_LAYOUTS[docType].expandProjectGroups` — the one layout flag still shared across doc types (#1157: shrunk from a full block-schema layout registry once `document-composer.ts` was deleted) |
@@ -1407,8 +1410,15 @@ type, new relationship) must be verified against all consumers below —
 fixing one and shipping leaves silent bugs in the others (see CLAUDE.md's
 PDF footgun section for the pre-#790 history of exactly this):
 
-1. **`line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), including the pure formatting helpers it imports from `line-item-format.ts`.
-2. **`filterAndGroupItems`'s status filter** (same file) — miss this → items disappear from docket / return-sheet.
+1. **`line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), from the model `buildLineItemsTableModel` (`src/lib/react-pdf/line-items-table-model.ts`) builds, plus the pure formatting helpers it imports from `line-item-format.ts`.
+2. **`filterAndGroupItems`'s status filter** (`line-items-table-model.ts`, re-exported from `line-items-table.tsx`) — miss this → items disappear from docket / return-sheet.
+
+The Equipment tab's **Client view** is not a third consumer: it reads the
+SAME model (`buildLineItemsTableModel(items, QUOTE_TABLE_CONFIG)`, mapped by
+`src/lib/equipment-client-view.ts`), so a change that reaches the quote PDF
+reaches it too. The parity gate
+(`src/components/projects/__tests__/equipment-client-view.parity*.test.tsx`)
+fails if the two ever disagree.
 
 That's it — react-pdf's automatic layout removed the height-reservation
 consumer entirely (there is no `calculateItemHeight` equivalent; nothing

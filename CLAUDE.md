@@ -595,6 +595,28 @@ Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical wor
 is the second way out of the money phase, for orgs that reconcile payments in Xero
 and never write a `payments` row. See FEATUREDOCS/76.
 
+### The floor — the column is DERIVED, Undo is EXACT, the pull sheet is ONE list
+`/warehouse` (the floor, FEATUREDOCS/12) has three rules that look relaxable and aren't:
+
+1. **A job's floor column is derived by `warehouseStage()`** (`convex/lib/warehouseStage.ts`)
+   from its unit counts. Never store it, never let a card be dragged between
+   columns, and never re-derive it client-side — `warehouseList.bundle` returns it.
+2. **A Returning-mode Undo reverses exactly its own write.** Asset/kit returns go
+   through the announced `checkInItems`/`checkInKit`; a bulk-tag return's Undo is
+   `returnsWrites.unreturnBulkNative` with the `returnedUnitIds` that call handed
+   back (parent AND accessory units, from a before/after snapshot). Never "fix" a
+   missing Undo by calling `unreturnItems` on the line: it flips every RETURNED unit
+   on the line and its accessories, including another scan's or packer's. A partial
+   bulk return has no exact reverse, so its Undo is absent (`exactUndo: false`).
+3. **The pull sheet dialog and the pull-slip PDF read ONE list**:
+   `projectDocumentData(…, "packing-list")` grouped by `filterAndGroupItems` under
+   `PULL_LIST_TABLE_CONFIG` (`src/lib/pdfme/pull-list.ts`). Don't give the sheet its
+   own line-item builder again.
+
+`projects.packerUserId` is server-owned (only `setPackerNative` writes it; it is not
+in `projectWriteFields`). The floor's state is its URL (`?mode=`, `scope`, filter
+words), parsed by the one Zod schema in `src/lib/warehouse-floor.ts`.
+
 ### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
 The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
 the client has agreed and/or an invoice is out, but the money hasn't landed.
@@ -664,6 +686,29 @@ client a different document under the same name (#987). Three rules follow:
 3. **A finance render takes its dates from the row**, never `now`
    (`buildDocumentData`'s `stampedDates`). Recomputing `quote_valid_until` at render time
    is what used to silently extend how long a quote was valid every time it was re-opened.
+
+### The shell reads ONE table — `src/lib/nav.ts` (`NAV`)
+The sidebar, the rail flyouts, the phone More sheet, the breadcrumb trail and the
+palette `@` pages all read `NAV` (pure data; icons by key in `nav-icons.ts`). Add a
+page = one row there (and `NOT_IN_NAV` for a deliberately unlisted route: the drift
+test `nav.test.ts` fails on any static `(app)` route that is neither). Gating is
+applied ONCE in `useNavItems()`; a gated item is absent, never greyed — don't re-check
+a permission in a surface. The bottom bar is Home · Jobs · Scan · Warehouse · More
+(`BOTTOM_NAV_KEYS`); everything else reaches a phone through More. The org switcher
+is the sidebar head (`useOrgSwitch` — ONE `setActive` closure, the Undo toast reuses
+it); the user menu is personal. Top-bar titles come from `buildTrail`: a detail page
+names its record via `<PageMeta title>`/`useBreadcrumbs`, never a raw id.
+
+**ScanTarget registry:** the bottom-nav Scan is global chrome; what a scan MEANS is the
+page's call. A page registers `useScanTarget(handler)` (`components/scanner/scan-target.tsx`)
+and receives the decoded value; with none registered the shell does the one-shot
+`scanLookup.resolve` lookup. Never mount a second camera or decoder for this — the shell
+uses `CameraScannerDialog`, mounted only while open.
+
+**The bell reads ONE feed (`useShellFeed`):** the derived scan (minus dismissals, via
+`selectVisibleNotifications` in `src/lib/notification-feed.ts`, shared with
+`/notifications`) merged with stored mentions. Mark all read's Undo calls the exact
+reverse writes for the exact ids it touched (`markUnreadManyNative`, `undismissManyNative`).
 
 ### Off-inventory units — the counter is the truth, demand goes through `stockBackedQty`
 "Prep as custom item" (FEATUREDOCS/12) lets a leftover unit of an overbooked serialised line stay on the line (price/docs unchanged) with no serial and no stock held. Three rules:
@@ -845,6 +890,33 @@ open. `trigger` swaps the default ⋯ for any element (`Documents ▾`, a lock g
 dropdown is `modal={false}` so a confirm Dialog opening as it closes is not click-locked.
 `ConfirmActionMenuItem` is legacy (R-4.4); don't use it in new menus.
 
+### ListPage over LineRowList — the URL is the state
+A list page (Jobs `src/components/projects/jobs-list.tsx`, Assets `src/components/assets/assets-list.tsx`)
+is a config handed to `ListPage` (`src/components/ui/list-page.tsx`), which renders rows through
+`LineRowList`, NOT `DataTable` (that stays for lists not yet migrated). Segment, filters, sort,
+page, search and view are query params (`src/lib/list-url-state.ts`: defaults omitted, junk
+dropped), so never mirror them into localStorage or component state; only `colVis` and the
+Assets grid/table choice stay local. Never put `Date.now()` in the query args (date filters
+resolve through `useStableNow`). A saved view on such a list stores `{ query }` (the query
+string); `UrlSavedViewsMenu` converts old `{filters, sortBy}` rows on read, don't backfill them.
+A row/bulk verb exists only if an existing mutation backs it; bulk writes are per-row gated, name
+what they skipped and share ONE Undo closure (`announceListWrite`).
+
+### Equipment tab (Phase 2a) — AddBar, one accessories editor, one shortfall mutation
+The Equipment tab is `LineRowList` sections (`equipment-sections.tsx`); `AddBar` under the list **replaces the old
+`Add ▾` menu** (Enter adds a gear/kit line with a blank price, the server auto-prices; sub-hire/custom/sale open the
+existing dialog). **Accessories have ONE editor**, `EditAccessoryPlanDialog`: the row's ⋯ and the Edit Item dialog's
+button both open it; never re-embed a picker in Edit Item. On phone a row tap opens `RowEditorSheet`
+(`equipment-row-editor.tsx`), saved through the shared `computeRowSheetPayload` → ONE `patchNative`; anything
+shown in desktop `cells` (discussion badge, serial indicator) must ALSO live in the sheet's `contextSlot`.
+**Shortfall → sub-hire is ONE mutation**, `subHiresWrites.coverShortfallNative` (nested `ctx.runMutation`
+sub-transactions: order + item + line trim, all-or-nothing); never reassemble it from client-side `create` / `addItem` /
+quantity writes. Its Undo, `undoShortfallNative`, takes only order + item ids and re-derives everything from the
+`subHireItems.coverage` record the cover wrote (refusing if the order is no longer DRAFT, other items joined, or the line
+was edited); never add client-supplied restore quantities. `coverage` describes ONE cover, so no copy/duplicate path may
+carry it. Rate reads (`getSupplierRateHistory`, `getSupplierModelRate`) need `subHire:read`; the row action needs
+`subHire:create`. Both mutations are `danger: "high"`.
+
 ### BulkBar and ScanStrip — two footguns
 `BulkBar` (`src/components/ui/bulk-bar.tsx`, replaced `BulkActionBar`) is the ONE bulk
 surface. On a phone it is **portaled to `<body>`** and pinned above the bottom nav:
@@ -954,8 +1026,18 @@ row type, new relationship between parent and children) must be verified
 against ALL of them — fixing one and shipping leaves silent bugs in the
 others:
 
-1. **`src/lib/react-pdf/components/line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), plus the pure formatting helpers it imports from `src/lib/pdfme/line-item-format.ts` (`discountCellText`/`breakdownLabel`/`isSubhireIndicatorVisible`/`getAssetTag`).
-2. **`filterAndGroupItems`'s status filter** (same file) — miss this → items disappear from docket / return-sheet.
+1. **`src/lib/react-pdf/components/line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), from the model `buildLineItemsTableModel` builds in the pure `src/lib/react-pdf/line-items-table-model.ts` (sections, header + rolled-up price, row numbers, which children and grandchildren render, cell text), plus the formatting helpers from `src/lib/pdfme/line-item-format.ts` (`discountCellText`/`breakdownLabel`/`isSubhireIndicatorVisible`/`getAssetTag`).
+2. **`filterAndGroupItems`'s status filter** (`src/lib/react-pdf/line-items-table-model.ts`; `line-items-table.tsx` re-exports it) — miss this → items disappear from docket / return-sheet.
+
+The Equipment tab's **Client view** (UX 2b, `?view=client`) is NOT a third
+consumer: `getEquipmentClientView` (`src/server/equipment-client-view.ts`)
+runs the quote's own chain (`buildDocumentLineItemData` →
+`enrichDocumentLineItems`/`buildBillableServiceRows` from
+`src/lib/pdfme/document-line-items.ts` → `structureLineItems` →
+`buildLineItemsTableModel(items, QUOTE_TABLE_CONFIG)`) and ships the PDF's
+own cell text. Never give it a second derivation of what prints; the parity
+gate (`src/components/projects/__tests__/equipment-client-view.parity*.test.tsx`)
+fails if the view and the quote PDF disagree.
 
 That's down from 4 consumers across 2 files (pre-#1157: `gearflow-table.ts`'s
 render + its own top-level filter, plus `document-composer.ts`'s

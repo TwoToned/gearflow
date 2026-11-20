@@ -94,6 +94,8 @@ export function useSubHireWrites() {
   const duplicateM = useMutation(api.subHiresWrites.duplicateSubHireNative);
   const linkOrderM = useMutation(api.subHiresWrites.linkSubHireToSupplierOrderNative);
   const unlinkOrderM = useMutation(api.subHiresWrites.unlinkSubHireFromSupplierOrderNative);
+  const coverShortfallM = useMutation(api.subHiresWrites.coverShortfallNative);
+  const undoShortfallM = useMutation(api.subHiresWrites.undoShortfallNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -202,6 +204,59 @@ export function useSubHireWrites() {
         actor: actor(),
         auditId: createId(),
       });
+    },
+
+    /**
+     * Cover a stock line's shortfall in ONE transaction (spec §7.5): append to `draftOrderId`
+     * or create the supplier's order, add the item, optionally trim the line. Returns the ONE
+     * undo closure the toast's Undo calls (a guarded server-side reverse: it refuses once the
+     * order has moved on or other items joined it).
+     */
+    coverShortfall: async (input: {
+      lineItemId: string;
+      supplierId: string;
+      draftOrderId?: string;
+      hireStart?: string | Date;
+      hireEnd?: string | Date;
+      item: SubHireItemInput;
+      trimLine: boolean;
+    }): Promise<{ orderId: string; itemId: string; createdOrder: boolean; undo: () => Promise<void> }> => {
+      const org = requireOrg();
+      const { item } = input;
+      const r = await coverShortfallM({
+        orgId: org,
+        lineItemId: input.lineItemId,
+        supplierId: input.supplierId,
+        draftOrderId: input.draftOrderId,
+        newOrderId: createId(),
+        itemId: createId(),
+        hireStart: toMs(input.hireStart),
+        hireEnd: toMs(input.hireEnd),
+        modelId: item.modelId || undefined,
+        description: item.description,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        unitCharge: item.unitCharge,
+        pricingType: item.pricingType,
+        duration: item.duration,
+        discount: item.discount,
+        trimLine: input.trimLine,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+      // The server stored what the cover did on the item; the undo names only the order + item.
+      const undo = async () => {
+        await undoShortfallM({
+          orgId: org,
+          orderId: r.orderId,
+          itemId: r.itemId,
+          now: Date.now(),
+          actor: actor(),
+          auditId: createId(),
+        });
+      };
+      return { orderId: r.orderId, itemId: r.itemId, createdOrder: r.createdOrder, undo };
     },
 
     removeItem: async (itemId: string): Promise<void> => {

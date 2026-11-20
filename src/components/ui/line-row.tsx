@@ -10,7 +10,7 @@ import { StateGlyphs } from "@/components/ui/state-glyph";
 import { StatusWord } from "@/components/ui/status-word";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { factText, splitPhoneFacts } from "@/lib/primitives/facts";
-import type { Fact, FactColumn, LineRowData, LineRowSectionData, RowFlag, RowSelection } from "@/lib/primitives/types";
+import type { Fact, FactColumn, LineRowData, LineRowSectionData, ListSort, RowFlag, RowSelection } from "@/lib/primitives/types";
 import { intentStyles } from "@/lib/status-colors";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +37,7 @@ interface RowProps {
   wrapRow?: WrapRow;
   /** Desktop only: rendered in the select cell, before the checkbox. */
   dragHandle?: (row: LineRowData) => React.ReactNode;
+  leading?: (row: LineRowData) => React.ReactNode;
 }
 
 function FlagWord({ flag }: { flag: RowFlag }) {
@@ -180,10 +181,14 @@ function applyWrap(wrap: WrapRow | undefined, row: LineRowData, el: React.ReactE
 }
 
 function MaybeSelect({ row, selection, size }: { row: LineRowData; selection?: RowSelection; size: "sm" | "lg" }) {
-  return selection ? <SelectBox row={row} selection={selection} size={size} /> : null;
+  return selection && row.selectable !== false ? <SelectBox row={row} selection={selection} size={size} /> : null;
 }
 
-function DesktopRow({ row, columns, selection, wrapRow, dragHandle }: RowProps) {
+function LeadingSlot({ row, leading }: { row: LineRowData; leading?: (row: LineRowData) => React.ReactNode }) {
+  return leading ? <>{leading(row)}</> : null;
+}
+
+function DesktopRow({ row, columns, selection, wrapRow, dragHandle, leading }: RowProps) {
   const [expanded, setExpanded] = React.useState(false);
   const { linkRef, open, openable } = useWholeRowOpen(row);
   const hasChildren = !!row.children?.length;
@@ -202,6 +207,7 @@ function DesktopRow({ row, columns, selection, wrapRow, dragHandle }: RowProps) 
         <td className="min-w-0 py-1.5 pr-3">
           <div className="flex min-w-0 items-center gap-2">
             {hasChildren && <ExpandToggle open={expanded} onToggle={() => setExpanded((v) => !v)} />}
+            <LeadingSlot row={row} leading={leading} />
             <Title row={row} linkRef={linkRef} />
             {row.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
             <StateGlyphs glyphs={row.glyphs} />
@@ -255,7 +261,7 @@ function phoneSubtitle(subtitle: string | undefined, folded: Fact[]): string {
   return [subtitle, ...folded.map(factText)].filter(Boolean).join(" · ");
 }
 
-function PhoneRow({ row, columns, selection, wrapRow }: RowProps) {
+function PhoneRow({ row, columns, selection, wrapRow, leading }: RowProps) {
   const [expanded, setExpanded] = React.useState(false);
   const { linkRef, open, openable } = useWholeRowOpen(row);
   const { right, folded } = splitPhoneFacts(columns.map((c) => c.id), row.facts);
@@ -269,6 +275,7 @@ function PhoneRow({ row, columns, selection, wrapRow }: RowProps) {
       >
         <MaybeSelect row={row} selection={selection} size="lg" />
         {hasChildren && <ExpandToggle open={expanded} onToggle={() => setExpanded((v) => !v)} />}
+        <LeadingSlot row={row} leading={leading} />
         <div className="min-w-0 flex-1 py-2">
           <div className="flex min-w-0 items-center gap-1.5">
             <TitleLine row={row} linkRef={linkRef} />
@@ -292,6 +299,12 @@ function LineRow(props: RowProps) {
 export interface LineRowListSection {
   section: LineRowSectionData;
   rows: LineRowData[];
+  /**
+   * Rows with NO head: they continue the previous section's block (e.g. loose
+   * lines that sit after a nested group in a user-ordered list). `section`
+   * only supplies the id; collapse is the caller's (omit the rows to hide them).
+   */
+  headless?: boolean;
   /** Controlled collapse; omit for list-owned state (`defaultCollapsed` is false). */
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
@@ -299,12 +312,18 @@ export interface LineRowListSection {
 
 /**
  * Ids of the rows a user can see, in DOM order: pass this to `useRowSelection`
- * so shift-range and select-page skip rows hidden by a collapsed section.
+ * so shift-range and select-page skip rows hidden by a collapsed section and
+ * rows with `selectable: false` (they render no checkbox).
  * `collapsedIds` is only needed for sections whose collapse the list owns
  * (i.e. no `collapsed` given); controlled sections use their own flag.
  */
 export function visibleRowIds(sections: LineRowListSection[], collapsedIds?: ReadonlySet<string>): string[] {
-  return sections.flatMap((s) => ((s.collapsed ?? collapsedIds?.has(s.section.id)) ? [] : s.rows.flatMap((r) => [r.id, ...(r.children?.filter(isSelectableChild).map((c) => c.id) ?? [])])));
+  // A `selectable: false` row (no checkbox) is skipped, along with its children; selectable accessory children follow their parent.
+  return sections.flatMap((s) =>
+    (s.collapsed ?? collapsedIds?.has(s.section.id))
+      ? []
+      : s.rows.filter((r) => r.selectable !== false).flatMap((r) => [r.id, ...(r.children?.filter(isSelectableChild).map((c) => c.id) ?? [])]),
+  );
 }
 
 interface ListShared {
@@ -314,6 +333,56 @@ interface ListShared {
   wrapRow?: WrapRow;
   dragHandle?: (row: LineRowData) => React.ReactNode;
   wrapSection?: (el: React.ReactElement) => React.ReactElement;
+  /** Desktop header over the title column (default "Item"; a jobs list says "Job"). */
+  itemHeader?: string;
+  /** Sort key for the title column header; with `onSort` it becomes a sort button. */
+  itemSortKey?: string;
+  /** Current sort; headers whose `sortKey` matches get `aria-sort`. */
+  sort?: ListSort;
+  /** Called with the clicked header's `sortKey`; the caller owns the direction. Headers are plain text without it. */
+  onSort?: (sortKey: string) => void;
+  /** Desktop + phone: a slot before the title (an asset thumbnail). */
+  leading?: (row: LineRowData) => React.ReactNode;
+}
+
+function ariaSortOf(sort: ListSort | undefined, key: string | undefined): React.AriaAttributes["aria-sort"] {
+  if (!key || sort?.key !== key) return key ? "none" : undefined;
+  return sort.dir === "asc" ? "ascending" : "descending";
+}
+
+function HeaderCell({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey?: string;
+  sort?: ListSort;
+  onSort?: (sortKey: string) => void;
+  className?: string;
+}) {
+  const sortable = !!(sortKey && onSort);
+  const active = sortable && sort?.key === sortKey;
+  return (
+    <th className={cn("font-semibold", className)} aria-sort={sortable ? ariaSortOf(sort, sortKey) : undefined}>
+      {sortable ? (
+        <button
+          type="button"
+          onClick={() => onSort(sortKey)}
+          className={cn("inline-flex min-h-9 items-center gap-1 font-semibold hover:text-ink", active && "text-ink")}
+        >
+          {label}
+          <span aria-hidden="true" className="text-badge">
+            {active ? (sort.dir === "asc" ? "↑" : "↓") : ""}
+          </span>
+        </button>
+      ) : (
+        label
+      )}
+    </th>
+  );
 }
 
 /** Flat `rows` XOR grouped `sections` (mutually exclusive). */
@@ -321,15 +390,16 @@ export type LineRowListProps = ListShared &
   ({ rows: LineRowData[]; sections?: never } | { sections: LineRowListSection[]; rows?: never });
 
 function ListBody(props: LineRowListProps) {
-  const { columns, selection, wrapRow, dragHandle, wrapSection } = props;
+  const { columns, selection, wrapRow, dragHandle, wrapSection, leading } = props;
   const [owned, setOwned] = React.useState<ReadonlySet<string>>(() => new Set());
   const rowEl = (r: LineRowData) => (
-    <LineRow key={r.id} row={r} columns={columns} selection={selection} wrapRow={wrapRow} dragHandle={dragHandle} />
+    <LineRow key={r.id} row={r} columns={columns} selection={selection} wrapRow={wrapRow} dragHandle={dragHandle} leading={leading} />
   );
   if (!props.sections) return <>{props.rows.map(rowEl)}</>;
   return (
     <>
       {props.sections.map((s) => {
+        if (s.headless) return <React.Fragment key={s.section.id}>{s.rows.map(rowEl)}</React.Fragment>;
         const collapsed = s.collapsed ?? owned.has(s.section.id);
         return (
           <React.Fragment key={s.section.id}>
@@ -364,7 +434,7 @@ function ListBody(props: LineRowListProps) {
  * give `useRowSelection` with `visibleRowIds`.
  */
 export function LineRowList(props: LineRowListProps) {
-  const { columns, selection, className } = props;
+  const { columns, selection, className, itemHeader = "Item", itemSortKey, sort, onSort } = props;
   const isMobile = useIsMobile();
   if (isMobile) {
     return (
@@ -386,11 +456,16 @@ export function LineRowList(props: LineRowListProps) {
               />
             )}
           </th>
-          <th className="font-semibold">Item</th>
+          <HeaderCell label={itemHeader} sortKey={itemSortKey} sort={sort} onSort={onSort} />
           {columns.map((c) => (
-            <th key={c.id} className={cn("px-2 font-semibold", c.align === "end" && "text-right")}>
-              {c.header}
-            </th>
+            <HeaderCell
+              key={c.id}
+              label={c.header}
+              sortKey={c.sortKey}
+              sort={sort}
+              onSort={onSort}
+              className={cn("px-2", c.align === "end" && "text-right")}
+            />
           ))}
           <th className="w-11" />
         </tr>
@@ -402,19 +477,61 @@ export function LineRowList(props: LineRowListProps) {
   );
 }
 
-function SectionHead({ section, collapsed, onToggle }: { section: LineRowSectionData; collapsed: boolean; onToggle: () => void }) {
+function SectionHead({
+  section,
+  collapsed,
+  onToggle,
+  withCells,
+}: {
+  section: LineRowSectionData;
+  collapsed: boolean;
+  onToggle: () => void;
+  /** Column mode: the amount and ⋯ live in their own cells, not in the head. */
+  withCells?: boolean;
+}) {
   return (
-    <div className="flex min-h-11 w-full items-center gap-2 px-1">
+    <div className={cn("flex min-h-11 w-full items-center gap-2 px-1", section.depth === 1 && "pl-6")}>
       {section.selectState && <SectionBox section={section} />}
       <ExpandToggle open={!collapsed} onToggle={onToggle} />
       <span className="min-w-0 truncate text-ui-text font-semibold text-ink">{section.title}</span>
       {section.count != null && <span className="t-mono text-muted">{section.count}</span>}
       {section.flags?.map((f) => <FlagWord key={f.label} flag={f} />)}
       <span className="flex-1" />
-      {section.amount !== undefined && <FactBody fact={{ kind: "money", amount: section.amount }} />}
-      {section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
+      {!withCells && section.amount !== undefined && <FactBody fact={{ kind: "money", amount: section.amount }} />}
+      {!withCells && section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
     </div>
   );
+}
+
+/** Desktop head in column mode: one `<tr>`, the head across select+item, then a cell per column. */
+function sectionCellsRow({
+  section,
+  columns,
+  head,
+}: {
+  section: LineRowSectionData;
+  columns: FactColumn[];
+  head: React.ReactNode;
+}) {
+  return (
+    <tr data-section-id={section.id} data-depth={section.depth ?? 0} className={sectionBand(section)}>
+      <td colSpan={2} className="p-0">
+        {head}
+      </td>
+      {columns.map((c) => (
+        <td key={c.id} className={cn("px-2", c.align === "end" && "text-right")}>
+          {section.cells?.[c.id]}
+        </td>
+      ))}
+      <td className="w-11 px-1 text-right">
+        {section.menu && <ActionMenu spec={section.menu} label={`${section.title} actions`} />}
+      </td>
+    </tr>
+  );
+}
+
+function sectionBand(section: LineRowSectionData): string {
+  return cn("border-t border-line", section.depth === 1 ? "bg-paper-2/20" : "bg-paper-2/40");
 }
 
 function SectionBox({ section }: { section: LineRowSectionData }) {
@@ -459,13 +576,16 @@ export function LineRowSection({
     setInner(!isCollapsed);
     onCollapsedChange?.(!isCollapsed);
   };
-  const head = <SectionHead section={section} collapsed={isCollapsed} onToggle={toggle} />;
+  const withCells = !isMobile && !!section.cells && Object.keys(section.cells).length > 0;
+  const head = <SectionHead section={section} collapsed={isCollapsed} onToggle={toggle} withCells={withCells} />;
   if (isMobile) {
-    const el = <div data-section-id={section.id} className="border-t border-line bg-paper-2/40">{head}</div>;
+    const el = <div data-section-id={section.id} className={sectionBand(section)}>{head}</div>;
     return wrapSection ? wrapSection(el) : el;
   }
-  const tr = (
-    <tr data-section-id={section.id} className="border-t border-line bg-paper-2/40">
+  const tr = withCells ? (
+    sectionCellsRow({ section, columns, head })
+  ) : (
+    <tr data-section-id={section.id} data-depth={section.depth ?? 0} className={sectionBand(section)}>
       <td colSpan={columns.length + 3} className="p-0">
         {head}
       </td>

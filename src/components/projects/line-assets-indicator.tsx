@@ -57,7 +57,10 @@ export function LineAssetsIndicator({
   modelId,
   disableReassign = false,
   kitMember = false,
+  touch = false,
 }: {
+  /** Phone sheet: 44 px targets for the trigger and the reassign control. */
+  touch?: boolean;
   units?: IndicatorUnit[];
   /** Fallback for single-asset legacy lines that carry the tag on the line itself. */
   lineAssetTag?: string | null;
@@ -110,6 +113,7 @@ export function LineAssetsIndicator({
                 aria-label={`${entries.length} asset${entries.length !== 1 ? "s" : ""} assigned`}
                 className={cn(
                   "shrink-0 inline-flex items-center gap-0.5 rounded-sm text-muted transition-colors hover:text-ink",
+                  touch && "min-h-11 min-w-11 justify-center text-ink-2",
                   focusRing,
                 )}
               >
@@ -181,7 +185,7 @@ export function LineAssetsIndicator({
                           variant="ghost"
                           size="sm"
                           disabled={reassignCtx!.pendingUnitId === e.unitId}
-                          className="h-7 px-2 text-caption text-muted hover:text-ink"
+                          className={cn("h-7 px-2 text-caption text-muted hover:text-ink", touch && "h-11 px-3")}
                         >
                           {reassignCtx!.pendingUnitId === e.unitId ? "Moving…" : "Move"}
                         </Button>
@@ -210,7 +214,7 @@ export function LineAssetsIndicator({
                           variant="ghost"
                           size="sm"
                           disabled={reassignCtx!.pendingUnitId === e.unitId}
-                          className="h-7 px-2 text-caption text-muted hover:text-ink"
+                          className={cn("h-7 px-2 text-caption text-muted hover:text-ink", touch && "h-11 px-3")}
                         >
                           {reassignCtx!.pendingUnitId === e.unitId ? "Swapping…" : "Swap"}
                         </Button>

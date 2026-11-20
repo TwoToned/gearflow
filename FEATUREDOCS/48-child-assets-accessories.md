@@ -143,17 +143,13 @@ stale tier on an already-expanded child.
   `selection`/`excludeReasons` (add defaults every DEFAULT row to included;
   edit seeds from the stored plan).
 
-  **Edit Item entry point (second pass):** the row's **Edit Item** dialog
-  (`edit-line-item-dialog.tsx`) now carries an **Accessories** section too — the
-  PM edits what ships with a line in the same window they edit its quantity,
-  price and placement, rather than having to know a second menu item exists.
-  It renders `AccessoryPlanSection` (`accessory-plan-section.tsx` — a
-  `SectionTitle` around the same `AccessorySelectionFields`, with the card's own
-  overline off so one card doesn't get two headings), shown only when
-  `canEditAccessoryPlan(item)` passes AND the model/asset actually has
-  accessories configured. The picker scales its per-parent counts by the
-  quantity CURRENTLY TYPED in the dialog, so "3× XLR Cable" tracks the quantity
-  field live.
+  **ONE accessories editor (Phase 2a):** the earlier second pass embedded an
+  `AccessoryPlanSection` picker in the Edit Item dialog. That inline picker, the
+  section and the plan-save sequencing are deleted: `EditAccessoryPlanDialog` is
+  the only editor. The row's ⋯ › "Edit accessories…" and the Edit Item dialog's
+  "Edit accessories…" button both open it (shown only when
+  `canEditAccessoryPlan(item)` passes). Accessory children render as the row's
+  children; custom accessories keep the `child.id` fallback.
 
   The two post-add entry points share `useAccessoryPlanEditor`
   (`src/components/projects/use-accessory-plan-editor.ts` — the catalog query,
@@ -692,8 +688,10 @@ kit prep leaves accessory lines to the parent-scoped deploy path (no duplicate u
 undeploy after a partial bulk return releases only the quantity still out; partial
 bulk returns keep the worst condition; `correctReturnCondition` skips an asset that has
 since gone out again. Not done (design decisions): per-accessory return condition at
-the returns station (accessories inherit the parent's), and the returns board still
-only lists CHECKED_OUT parents.
+the returns desk (accessories inherit the parent's). The floor's Returning mode
+(UX Phase 4, FEATUREDOCS/12) lists accessories under their parent and returns them
+with it; a bulk return's Undo (`unreturnBulkNative`) reverses only the accessory
+units that call returned, never one that came back through another path.
 
 ## Warehouse UI: quantity>1 accessory parents, shared gate (follow-up)
 

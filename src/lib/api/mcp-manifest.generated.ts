@@ -88,13 +88,31 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
     "inputSchema": {
       "type": "object",
       "properties": {
+        "clientIn": {
+          "type": "array"
+        },
+        "dateFrom": {
+          "type": "number"
+        },
+        "dateTo": {
+          "type": "number"
+        },
+        "includeCancelled": {
+          "type": "boolean"
+        },
         "page": {
           "type": "number"
         },
         "pageSize": {
           "type": "number"
         },
+        "pmIn": {
+          "type": "array"
+        },
         "search": {
+          "type": "string"
+        },
+        "segment": {
           "type": "string"
         },
         "sortBy": {

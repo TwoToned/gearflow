@@ -35,7 +35,10 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Deploy** | UI verb for checking an asset **out** of the warehouse onto a job. The resulting `CHECKED_OUT` status displays as **Out** (D90; formerly "Deployed"). See [12-warehouse.md](../FEATUREDOCS/12-warehouse.md). |
 | **Home** (UI) | The landing page and module name for `/dashboard` (D66); formerly "Dashboard". The customizable widget board is still the dashboard feature (FEATUREDOCS/81). |
 | **Schedule** (UI) | The gear availability calendar at `/availability` (D7); formerly "Availability". The crew *Availability* tab (blocks) is a different thing and keeps its name. |
-| **The floor** (UI) | The warehouse landing page (`/warehouse`). |
+| **The floor** (UI) | The warehouse landing page (`/warehouse`): five DERIVED stage columns `To pick · Prepping · Ready · Out · Returning` (`warehouseStage()`, never stored). See [12-warehouse.md](../FEATUREDOCS/12-warehouse.md). |
+| **Returning mode** (UI) | The floor's returns desk (`/warehouse?mode=returning`), formerly the "returns station" page (`/warehouse/returns`, now a redirect). Outcome words: `Out · Returned · Damaged · Missing · Late`. |
+| **Packer** | The member who packs a job (`projects.packerUserId`, set by `setPackerNative`). The floor's `Mine` = PM or packer. |
+| **Pull sheet** | The printable pick list for a job, a dialog on the warehouse job (`?doc=pull-sheet`). The same list as the pull-slip PDF. |
 | **Loose** (UI) | Gear not in a case (replaces "Not planned" / "No container"). |
 | **Return** | UI label for checking an asset **in** from a project back to the warehouse. |
 | **Docket** | A delivery or return document generated for a project (delivery docket / return docket) — see [13-pdfs.md](../FEATUREDOCS/13-pdfs.md). |

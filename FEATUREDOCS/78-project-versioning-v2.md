@@ -1229,7 +1229,7 @@ instead of calling `useProjectVersion()` itself. `ProjectFinancePanel` (the
 Finance tab's own wrapper, always rendered under `ProjectVersionProvider`) is
 the ONE caller that builds one, from the exact same `versions`/
 `isViewingVersion`/`viewingVersion` fields `VersionStrip`/the header pill
-already subscribe to (R-3.1 — no new query). The Overview tab's `QuoteCard`/
+already subscribe to (R-3.1 — no new query). The Overview tab's `QuoteMoneyLine`/
 `QuoteManagerDialog` (`overview/quote-card.tsx`, `finance/quote-manager-dialog.tsx`)
 deliberately do NOT pass it — Overview stays live-only (this doc's Phase 5
 section), so `versionContext` omitted is byte-identical to every pre-follow-up

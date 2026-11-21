@@ -790,8 +790,22 @@ computed in the page. The tab strip is controlled (`TabStrip` `value`/
 `onValueChange`) because the Overview readiness checklist navigates you to the
 tab that fixes a failing check — don't make it uncontrolled.
 
-Overview owns the project's **at-a-glance** state: the readiness checklist, the
-current quote + invoicing cards, and the money strip. The job header
+Overview owns the project's **at-a-glance** state, as one calm column (§6b, UX
+Phase 7, `overview/overview-tab.tsx`): readiness first (a verdict, the first
+blocker in words with its one link, the rest as text rows that each link to the
+tab that owns the fix; from Out onward a one-line state sentence with only
+failing incidents and blocking discussions under it), then two quiet money
+lines (quote · invoicing, rendering exactly what `deriveInvoicingState` and the
+quote reads say), then When · Where · Who and Recent. **There is no tile strip
+and no margin on Overview**: Equipment / Services / Crew / Total and margin live
+on the tab that owns each (Equipment's footer + `Show margin`, Logistics'
+footer + show cost, Finance's summary) — don't add tiles back. The readiness
+rules are `src/lib/project-readiness-checks.ts` (every row carries its `fix`
+target), their words `src/lib/job-readiness-verdict.ts`; double-booking is the
+ONE-SHOT `reservationConflicts.projectConflicts` (never a subscription, R-8.3.3
+exception), incidents are the bounded count on `projectReadiness.forProject`
+(never the org-wide `maintenanceRecords.list`), and blocking discussions are
+the header's own `getProjectBlockingSummary` subscription. The job header
 (`src/components/projects/job-header.tsx` on `DetailHeader`, UX Phase 7) stays
 ABOVE the tabs: its progress line and lock glyph change what you can do in every
 tab. The header's version lives in ⋯ (`Version ▸`) and under `V`, never as a chip
@@ -800,8 +814,8 @@ server's own permission (`src/lib/job-header.ts`).
 
 **The context sidebar (Schedule/Location/Team/Activity) renders on every tab
 EXCEPT Overview** (#1063). Overview composes the same content into its own
-Panel-with-header cards (`overview/context-cards.tsx`) — rendering both would
-show the same facts twice on one tab. The facts are shaped once in
+When · Where · Who columns and Recent (`overview/context-cards.tsx`) — rendering
+both would show the same facts twice on one tab. The facts are shaped once in
 `src/lib/project-context.ts` and shared by both renderings; if you add a field,
 add it there, not in one renderer.
 

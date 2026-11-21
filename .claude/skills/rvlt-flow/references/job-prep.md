@@ -28,18 +28,26 @@ If the gear window is blank, say so. It means availability is being computed
 against the chargeable window, which understates the commitment for any job with
 a bump-in the day before.
 
-### Step 1 — the five readiness checks
+### Step 1 — the readiness checks
 
-These are the checks Flow's own readiness checklist runs. Each returns
-**blocking**, **warning**, **pass** or **unknown**.
+These are the checks Flow's own readiness section (the job's Overview) runs.
+Each returns **blocking**, **warning**, **pass** or **unknown**. The first five
+are the core; the last three were added with the calm Overview.
 
 | Check | Fails when | Typical fix |
 |---|---|---|
 | **Gear** | Not enough effective stock for the window | Swap model, move a pencilled hold, sub-hire |
-| **Conflicts** | Specific assets double-booked | Swap to a free unit, or reschedule |
+| **Conflicts** | Specific assets double-booked (`reservationConflicts.projectConflicts`, a heavy org-wide read: call it once, not in a loop) | Swap to a free unit, or reschedule |
 | **Crew** | Assignments still awaiting a yes | Chase, or reassign |
 | **Services** | Work still `PLANNED`, or staffed below required count | Confirm the service, assign more crew |
 | **Pricing** | Lines with no price | Price them, or confirm they are deliberately $0 |
+| **Blocking discussions** | An open blocking comment thread (`collaboration.getProjectBlockingSummary`); it is **blocking**, and Flow refuses prep/dispatch moves while it is open | Resolve the discussion — a human's call, never close it yourself |
+| **Packing** | Equipment lines with no planned or actual case | Plan cases on the Packing tab (a warning, never a stop) |
+| **Incidents** | Open incident reports on this job's gear (`projectReadiness.forProject` → `incidents`; `truncated` means "at least") | Sort them on the job's warehouse page |
+
+From **Out** onward Flow stops showing the checklist (the job says "Out — the
+gear has left the warehouse."); only open incidents and blocking discussions
+still matter then.
 
 The services and crew work lives on the job's **Logistics** tab (formerly "Labour & logistics"; the
 old `/runsheet` page is its phone day view). A linked sub-hire order also appears there as two

@@ -48,12 +48,13 @@ separate follow-up — not yet converted.
 ## Project detail IA (#1061 — see FEATUREDOCS/69)
 
 `/projects/[id]` opens on an **Overview** tab (the project's home), not
-Equipment. The summary strip moved into Overview, and the reservation-conflicts
-banner became a row in Overview's Readiness checklist.
+Equipment. The reservation-conflicts banner became a row in Overview's readiness
+section. UX Phase 7 (§6b) removed the four-tile summary strip: each figure lives
+on the tab that owns it (FEATUREDOCS/69's keep · move · remove table).
 
 The context sidebar (Schedule · Location · Team · Activity, `<ProjectContextRail>`)
 still renders on every tab EXCEPT Overview (#1063). Overview composes the same
-content into its own cards, so the one tab where that context IS the page reads
+content into its own When · Where · Who columns and Recent, so the one tab where that context IS the page reads
 as a single composition rather than page-plus-rail. Both renderings read
 `src/lib/project-context.ts`, so they can't disagree about the facts.
 

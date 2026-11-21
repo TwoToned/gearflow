@@ -40,6 +40,8 @@ export function useProjectContainerWrites() {
 
   return {
     create: async (args: {
+      /** Re-create under a specific id: only the Undo of a case delete (so lines planned into it can be restored). */
+      id?: string;
       projectId: string;
       kind: ContainerKind;
       label: string;
@@ -51,12 +53,12 @@ export function useProjectContainerWrites() {
       versionId?: string;
     }): Promise<{ id: string; lineItemId: string }> => {
       return createM({
-        id: createId(),
         orgId: requireOrg(),
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
         ...args,
+        id: args.id ?? createId(),
       });
     },
 
@@ -67,8 +69,12 @@ export function useProjectContainerWrites() {
       return updateM({ id, orgId: requireOrg(), ...patch, auditId: createId(), now: Date.now(), actor: actor() });
     },
 
-    remove: async (id: string): Promise<{ ok: boolean }> => {
-      return deleteM({ id, orgId: requireOrg(), auditId: createId(), now: Date.now(), actor: actor() });
+    /** Delete an (empty) case. `batchAuditId` is the handle `restorePlannedContainers`
+     *  uses, after re-creating the case, to put its planned lines back. */
+    remove: async (id: string): Promise<{ ok: boolean; batchAuditId: string }> => {
+      const batchAuditId = createId();
+      const res = await deleteM({ id, orgId: requireOrg(), auditId: batchAuditId, now: Date.now(), actor: actor() });
+      return { ...res, batchAuditId };
     },
 
     moveUnits: async (unitIds: string[], toContainerId: string | null): Promise<{ moved: number }> => {

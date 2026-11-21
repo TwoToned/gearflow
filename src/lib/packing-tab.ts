@@ -123,6 +123,113 @@ export function resolvePackingStatus(item: LineItemData): PackingStatus {
   return { kind: "unplanned" };
 }
 
+/** A plannable line's display name (kit, model, then free text). */
+export function lineDisplayName(item: LineItemData): string {
+  if (item.kitId) return item.kit?.name ?? item.description ?? "Kit";
+  return item.model?.name ?? item.description ?? "—";
+}
+
+/** A line can be dragged / bulk-planned only while nothing of it is physically
+ *  packed: packed wins over the plan and the office never moves physical gear
+ *  (§7b.3). The server enforces the same rule (`skipped: PACKED`). */
+export function canDragLine(item: LineItemData): boolean {
+  return resolvePackingStatus(item).kind !== "packed";
+}
+
+/**
+ * The glyph rule (§7b.3, fixes finding 2): `packed` is true when a unit is
+ * physically in a case; `plannedElsewhere` is `Planned → LX-04` and appears
+ * ONLY when the plan disagrees with reality (a plan exists and names a
+ * different case than the one the gear is in). A line whose plan and reality
+ * agree, or that is planned but not yet packed, carries no glyph: its card is
+ * the statement.
+ */
+export function planGlyph(
+  item: LineItemData,
+  containerLabelById: ReadonlyMap<string, string>,
+): { packed: boolean; plannedElsewhere: string | null } {
+  const status = resolvePackingStatus(item);
+  if (status.kind !== "packed") return { packed: false, plannedElsewhere: null };
+  const planned = item.plannedContainerId;
+  if (!planned || planned === status.containerId) return { packed: true, plannedElsewhere: null };
+  return { packed: true, plannedElsewhere: `Planned → ${containerLabelById.get(planned) ?? "another case"}` };
+}
+
+/** The tab's `Packing n/m` count: planned-or-packed over plannable lines.
+ *  The ONE derivation (Phase 7's tab slot calls this, R-3.1). */
+export function packingCounts(lines: readonly PlannableLine[]): { planned: number; total: number } {
+  let planned = 0;
+  for (const { item } of lines) if (resolvePackingStatus(item).kind !== "unplanned") planned++;
+  return { planned, total: lines.length };
+}
+
+export type PackingStatusFilter = "all" | "planned" | "packed" | "unplanned";
+
+export interface PackingFilters {
+  search: string;
+  category: string | null;
+  status: PackingStatusFilter;
+}
+
+export const NO_PACKING_FILTERS: PackingFilters = { search: "", category: null, status: "all" };
+
+export const packingFiltersActive = (f: PackingFilters): boolean => f.search.trim() !== "" || f.category !== null || f.status !== "all";
+
+/** Narrow the plannable lines for the toolbar's search / Category / Status. */
+export function filterPlannableLines(lines: readonly PlannableLine[], f: PackingFilters): PlannableLine[] {
+  const needle = f.search.trim().toLowerCase();
+  return lines.filter(({ item, categoryName }) => {
+    if (f.category && categoryName !== f.category) return false;
+    if (needle && !`${lineDisplayName(item)} ${categoryName}`.toLowerCase().includes(needle)) return false;
+    if (f.status === "all") return true;
+    const kind = resolvePackingStatus(item).kind;
+    return kind === f.status;
+  });
+}
+
+/** What a drop does: which lines go, or why nothing does. A ticked row drags the
+ *  whole selection; an unticked one drags only itself. Pure so the rule is tested. */
+export type DropPlan =
+  | { kind: "plan"; ids: string[]; target: { id: string; label: string } | null }
+  | { kind: "refused"; message: string };
+
+export function resolveDrop(args: {
+  activeId: string;
+  selected: ReadonlySet<string>;
+  /** The card dropped on: `null` target = Unplanned. */
+  target: { id: string; label: string; sealed: boolean } | null;
+  /** Lines the user may drag (not packed, not in a sealed case). */
+  canDrag: (id: string) => boolean;
+}): DropPlan {
+  if (args.target?.sealed) {
+    return { kind: "refused", message: `${args.target.label} is sealed. Unseal it to plan lines into it.` };
+  }
+  const wanted = args.selected.has(args.activeId) ? [...args.selected] : [args.activeId];
+  const ids = wanted.filter(args.canDrag);
+  if (ids.length === 0) return { kind: "refused", message: "Packed lines stay where the warehouse put them." };
+  return { kind: "plan", ids, target: args.target ? { id: args.target.id, label: args.target.label } : null };
+}
+
+/** Footer facts (§7b.2): `44 lines · 249 units · 3 packed in the warehouse`. */
+export function packingFooterFacts(lines: readonly PlannableLine[]): { lines: number; units: number; packed: number } {
+  let units = 0;
+  let packed = 0;
+  for (const { item } of lines) {
+    units += item.quantity ?? 0;
+    if (resolvePackingStatus(item).kind === "packed") packed++;
+  }
+  return { lines: lines.length, units, packed };
+}
+
+/** Row subtitle (§7b.2): `Category · Kit moves whole · Sub-hire · Custom`. */
+export function lineSubtitle(item: LineItemData, categoryName: string): string {
+  const parts = [categoryName];
+  if (item.kitId) parts.push("Kit · moves whole");
+  if (item.subHireId || item.subHireGroupId) parts.push("Sub-hire");
+  if (item.isCustomItem) parts.push("Custom");
+  return parts.join(" · ");
+}
+
 export interface PackingContainerBucket {
   /** `null` = the "Loose" bucket, always sorted last. */
   containerId: string | null;

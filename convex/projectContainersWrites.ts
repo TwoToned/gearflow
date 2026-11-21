@@ -397,6 +397,43 @@ export const updateNative = mutation({
   },
 });
 
+/** Clear `plannedContainerId` on every line of the case's version still planned
+ *  into it; one PLAN_LINE audit row each. Streams the version's lines (no
+ *  `.collect()`); returns the cleared line ids. */
+async function unplanLinesFromCase(
+  ctx: MutationCtx,
+  container: Doc<"projectContainers">,
+  orgId: string,
+  now: number,
+  actor: Actor,
+  batchAuditId: string,
+): Promise<string[]> {
+  const versionId = container.versionId;
+  if (!versionId) return [];
+  const cleared: string[] = [];
+  const lines = ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", versionId));
+  for await (const line of lines) {
+    if (line.organizationId !== orgId || line.plannedContainerId !== container.id) continue;
+    await ctx.db.patch(line._id, { plannedContainerId: undefined, updatedAt: now });
+    await writeActivityLog(ctx, {
+      id: planLineAuditId(batchAuditId, line.id),
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "projectLineItem",
+      entityId: line.id,
+      projectId: container.projectId,
+      entityName: "Planned container",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Unplanned: case "${container.label}" was deleted`,
+      metadata: { kind: PLAN_LINE_KIND, batchId: batchAuditId, from: container.id, to: null },
+      createdAt: now,
+    });
+    cleared.push(line.id);
+  }
+  return cleared;
+}
+
 export const deleteNative = mutation({
   returns: v.object({ ok: v.boolean() }),
   args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -409,7 +446,7 @@ export const deleteNative = mutation({
     const container = await requireContainerInOrg(ctx, id, orgId);
     assertContainerNotSealed(container, "delete it"); // Q3
 
-    const memberUnit =(await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", id)).collect())
+    const memberUnit = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", id)).collect())
       .find((u) => u.organizationId === orgId && u.status !== "CANCELLED");
     if (memberUnit) {
       throw new ConvexError({ code: "NOT_EMPTY", message: "This container still has items packed inside it — move or unpack them first." });
@@ -420,6 +457,13 @@ export const deleteNative = mutation({
       throw new ConvexError({ code: "NOT_EMPTY", message: "This container still has another container packed inside it — move it out first." });
     }
 
+    // Lines that were only PLANNED into this case go back to Unplanned (a
+    // dangling `plannedContainerId` would put them in a case that no longer
+    // exists). Audited as a plan batch on this call's `auditId`, so the Undo
+    // (re-create the case, then `restorePlannedContainersNative(auditId)`) reads
+    // each line's previous case from the server's own rows.
+    const unplanned = await unplanLinesFromCase(ctx, container, orgId, now, actor, auditId);
+
     await deleteContainerLineWithUnits(ctx, container.lineItemId, orgId);
     await ctx.db.delete(container._id);
 
@@ -427,6 +471,7 @@ export const deleteNative = mutation({
       orgId, projectId: container.projectId, actor, auditId, now,
       action: "DELETE", entityId: id, entityName: container.label,
       summary: `Deleted container "${container.label}"`,
+      metadata: { kind: PLAN_BATCH_KIND, lineItemIds: unplanned, plannedContainerId: null },
     });
 
     return { ok: true };

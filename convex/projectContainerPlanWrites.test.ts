@@ -175,6 +175,37 @@ describe("seal guard on case structure writes (Q3)", () => {
   });
 });
 
+describe("delete case returns planned lines to Unplanned, and is exactly undoable", () => {
+  test("planned lines are cleared (not left dangling) with per-line audit rows", async () => {
+    const t = makeT();
+    await seed(t);
+    await plan(t, ["li1", "li2"], "c1", "p1");
+    await plan(t, ["li3"], "c2", "p2");
+    await remove(t, "c1", "x1");
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBeUndefined();
+    expect((await lineById(t, "li2"))?.plannedContainerId).toBeUndefined();
+    expect((await lineById(t, "li3"))?.plannedContainerId).toBe("c2"); // another case: untouched
+    const row = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "x1:li1")).first());
+    expect(row?.metadata).toMatchObject({ kind: "PLAN_LINE", from: "c1", to: null });
+  });
+
+  test("Undo = re-create the case under the same id, then restore by the delete's audit id", async () => {
+    const t = makeT();
+    await seed(t);
+    await plan(t, ["li1", "li2"], "c1", "p1");
+    await remove(t, "c1", "x1");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.createNative, {
+      id: "c1", orgId: ORG, projectId: "p1", kind: "CUSTOM", label: "Case 1", now: NOW, actor: ACTOR, auditId: "re1",
+    });
+    const r = await t.withIdentity(asUser(ORG)).mutation(api.projectContainerPlanWrites.restorePlannedContainersNative, {
+      orgId: ORG, batchAuditId: "x1", now: NOW, actor: ACTOR, auditId: "r1",
+    });
+    expect(r).toEqual({ restored: 2, skipped: 0 });
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
+    expect((await lineById(t, "li2"))?.plannedContainerId).toBe("c1");
+  });
+});
+
 describe("plan write: changes, skips", () => {
   test("returns each line's previous case, treats a re-plan into the same case as a no-op", async () => {
     const t = makeT();

@@ -122,6 +122,46 @@ async function loadPlanBatch(ctx: MutationCtx, batchAuditId: string, orgId: stri
   return { projectId: header.projectId, expectedContainerId: meta.plannedContainerId ?? null, lines };
 }
 
+/** Restore ONE line if (and only if) it is still as the forward write left it,
+ *  on the batch's job, and the case it returns to exists, is open and on that
+ *  job. Writes its audit row. Returns whether it restored. */
+async function restoreOneLine(
+  ctx: MutationCtx,
+  a: {
+    entry: PlanBatch["lines"][number];
+    batch: PlanBatch;
+    orgId: string;
+    now: number;
+    actor: { userId: string; userName: string };
+    auditId: string;
+    batchAuditId: string;
+    cache: CaseLookup;
+  },
+): Promise<boolean> {
+  const { entry, batch, orgId, now, actor, auditId, batchAuditId, cache } = a;
+  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", entry.lineItemId)).first();
+  if (!line || line.organizationId !== orgId || line.projectId !== batch.projectId) return false;
+  if ((line.plannedContainerId ?? null) !== batch.expectedContainerId) return false; // edited since: leave it
+  const back = await caseOrNull(ctx, entry.from, orgId, cache);
+  if (entry.from && (!back || isContainerSealed(back) || back.projectId !== line.projectId)) return false;
+  await ctx.db.patch(line._id, { plannedContainerId: entry.from ?? undefined, updatedAt: now });
+  await writeActivityLog(ctx, {
+    id: planLineAuditId(auditId, entry.lineItemId),
+    organizationId: orgId,
+    action: "UPDATE",
+    entityType: "projectLineItem",
+    entityId: entry.lineItemId,
+    projectId: batch.projectId,
+    entityName: "Planned container",
+    userId: actor.userId,
+    userName: actor.userName,
+    summary: "Undid a planned container change",
+    metadata: { kind: PLAN_LINE_KIND, batchId: auditId, undoOf: batchAuditId, from: batch.expectedContainerId, to: entry.from },
+    createdAt: now,
+  });
+  return true;
+}
+
 /**
  * The exact reverse of one `setPlannedContainerNative` call, addressed by that
  * call's `auditId` (the batch id). The CLIENT SUPPLIES NO PRIOR VALUES: each
@@ -157,29 +197,10 @@ export const restorePlannedContainersNative = mutation({
     const leaving = await caseOrNull(ctx, batch.expectedContainerId, orgId, cache);
     const leavingSealed = leaving != null && isContainerSealed(leaving);
     const restoredIds: string[] = [];
-    for (const { lineItemId, from } of batch.lines) {
-      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
-      if (!line || line.organizationId !== orgId || line.projectId !== batch.projectId) continue;
-      if ((line.plannedContainerId ?? null) !== batch.expectedContainerId) continue; // edited since: leave it
-      if (leavingSealed) continue;
-      const back = await caseOrNull(ctx, from, orgId, cache);
-      if (from && (!back || isContainerSealed(back) || back.projectId !== line.projectId)) continue;
-      await ctx.db.patch(line._id, { plannedContainerId: from ?? undefined, updatedAt: now });
-      await writeActivityLog(ctx, {
-        id: planLineAuditId(auditId, lineItemId),
-        organizationId: orgId,
-        action: "UPDATE",
-        entityType: "projectLineItem",
-        entityId: lineItemId,
-        projectId: batch.projectId,
-        entityName: "Planned container",
-        userId: actor.userId,
-        userName: actor.userName,
-        summary: "Undid a planned container change",
-        metadata: { kind: PLAN_LINE_KIND, batchId: auditId, undoOf: batchAuditId, from: batch.expectedContainerId, to: from },
-        createdAt: now,
-      });
-      restoredIds.push(lineItemId);
+    for (const entry of batch.lines) {
+      if (leavingSealed) break;
+      const done = await restoreOneLine(ctx, { entry, batch, orgId, now, actor, auditId, batchAuditId, cache });
+      if (done) restoredIds.push(entry.lineItemId);
     }
     if (restoredIds.length > 0) {
       await writeActivityLog(ctx, {

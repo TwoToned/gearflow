@@ -437,15 +437,13 @@ bucket last).
 `use-packing-tab.ts` wires `useNativeEquipmentTab` (reused verbatim — no new
 model/kit/group attachment logic, no risk to the Equipment tab it already
 serves) + `projectContainers.listForProject` into that pure module.
-`packing-tab.tsx` renders one section per container plus "Not planned", a
-native `<select>` per line (disabled once actually packed — the warehouse is
-the source of truth from that point on, not this tab) calling
-`useProjectContainerWrites().setPlannedContainer`, and reuses
-`NewContainerSheet` verbatim for "+ New container".
+`packing-tab.tsx` renders the Unplanned card and one card per container (see
+"Packing tab body" below; phase 4's per-row `<select>` is gone) and reuses
+`NewContainerSheet` verbatim for "+ Add case".
 
 **Case cards (UX 2b, §7b.2/§7b.3).** Every container on the job is a card
-(`packing-case-card.tsx`), empty ones included (`buildPackingBuckets`'s
-`allContainerIds`), with "Loose" last and plain. The header: the name in
+(`packing/case-card.tsx`), empty ones included (`buildPackingBuckets`'s
+`allContainerIds`), with Unplanned first and plain. The header: the name in
 mono, the kind muted (`CONTAINER_KIND_WORDS`), `· in LX-02` when nested,
 `n lines · m packed` (`caseCardFacts`), and the case ⋯ built by
 `buildPackingCaseActions` (`src/lib/row-actions/packing-case.ts`), absent
@@ -478,15 +476,51 @@ violation), dropped entirely when the project has no plannable equipment
 checks). `work-card.tsx`'s `resolveRowAction` sends its action to the new
 `packing` tab.
 
-**Deliberately deferred**: the design doc's preferred interaction is
-DRAG (reusing the Equipment tab's `use-equipment-dnd.ts` `buildContainerMap`
-pattern, containers as a new drop-target kind). That hook is a 1200+ line,
-deeply specialized system the ENTIRE Equipment tab depends on in
-production — extending it carries real regression risk to a working, heavily
-used surface, for an interaction-only difference (the underlying effect,
-`plannedContainerId`, is identical whether set by drag or by the picker
-shipped here). Left for its own dedicated pass; the plain `<select>` ships
-the feature's full underlying value now.
+### Packing tab body (UX Phase 8, §7b.2/§7b.3 — replaces the per-row `<select>`)
+
+The tab is `src/components/projects/packing-tab.tsx` (wiring) over
+`src/components/projects/packing/`: `PackingBoard` (layout), `UnplannedCard`,
+`CaseCard`, `PackingLineRow`, `PackingToolbar`, `case-menu.ts`, `packing-dnd.tsx`.
+The Equipment tab's drag system is NOT extended: this is a small local dnd-kit
+core layer (`PointerSensor`, 6 px activation; grips are desktop-only).
+
+- **One planning write.** `usePackingPlan().planInto(ids, case | null)` is the only
+  caller of `setPlannedContainer`. Drag (a ticked row drags the whole selection),
+  the bulk bar's `Plan n into…` and the row ⋯ `Plan into…` / `Unplan` all call it.
+  It skips packed lines up front, toasts `3 lines → LX-04` (with a quiet line for
+  what it left alone: `1 packed line stays (move in the warehouse)`), and hands the
+  toast ONE Undo: `restorePlannedContainers(batchAuditId)`.
+- **The glyph rule** (`planGlyph`): `● Packed` on a packed line; `Planned → LX-04`
+  ONLY when the plan names a different case than the one the gear is in. A line
+  whose plan and reality agree, or that is planned but not packed, carries no
+  glyph. This fixes the old "disabled select reads Not planned" contradiction.
+- **Unplanned, not Loose.** The dashed sticky left card is titled `Unplanned`
+  (`UNPLANNED_LABEL`): a PLAN state. Loose stays the physical word (gear not in a
+  case). Empty copy: `Every line has a case` (nothing unplanned) vs
+  `No lines match that` (filters).
+- **Seal (D21).** Case ⋯ `Seal · lock the plan, print label` / `Unseal`. Sealing
+  opens the existing container-label document for that case. A sealed card shows a
+  `Sealed` word, offers only Print / Unseal / Show every line (Rename, Move into,
+  Take out, Unpack, Delete are absent; the server refuses them with `CASE_SEALED`),
+  refuses drops with a toast naming Unseal (`resolveDrop`, before the server), and
+  its lines have no grip and no ⋯. Seal/Unseal Undo is the opposite write.
+- **Delete case…** (red, last, confirm names the effect). The server returns lines
+  only PLANNED into the case to Unplanned (`unplanLinesFromCase`, audited as a plan
+  batch on the delete's `auditId`) and refuses while anything is packed in it
+  (`NOT_EMPTY`; the toast shows the server's sentence). Undo re-creates a CUSTOM
+  case under the same id and restores those lines by `restorePlannedContainers`;
+  an asset-backed case offers no Undo (the container's model is not on the
+  container row, so it cannot be re-created exactly).
+- **Toolbar / tab ⋯.** Bare search, `Category ▾`, `Status ▾`, `Clear`; tab ⋯ = Print
+  all case labels, Manifest, Select the unplanned, Show every / fewer lines, Open
+  the warehouse page (desktop only). `+ Add case` is an outline button on desktop
+  and the red pinned bar on a phone, replaced by the bulk bar while anything is
+  ticked. The tab-row primary slot belongs to Phase 7 (`useJobTabPrimary`); until
+  it merges the button sits in the toolbar.
+- **Counts.** `packingCounts(lines)` (planned-or-packed over plannable lines) is the
+  ONE derivation for the tab's `Packing n/m`; the footer is `packingFooterFacts`.
+- **Phone.** Unplanned first, cases as sections, 64 px rows, whole row toggles
+  selection, ⋯ always visible, `Show 5 more · n left`, 48 px bottom sheets.
 
 ## Plan-honouring prep: omitted vs null (UX Phase 2c)
 

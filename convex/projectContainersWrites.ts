@@ -632,8 +632,18 @@ async function applyPlannedContainer(
   return { changes, skipped, projectId };
 }
 
-/** The one audit row of a `setPlannedContainerNative` call. Planning names
- *  the case the lines now go in; clearing names the case they were planned
+/** Audit vocabulary shared with `restorePlannedContainersNative`, which reads
+ *  these rows back (the Undo takes NO client-supplied prior values; the server's
+ *  own audit trail is the source of each line's previous case). */
+export const PLAN_BATCH_KIND = "PLAN_BATCH";
+export const PLAN_LINE_KIND = "PLAN_LINE";
+/** Deterministic id of one line's row inside a batch (batch id = the call's `auditId`). */
+export const planLineAuditId = (batchAuditId: string, lineItemId: string) => `${batchAuditId}:${lineItemId}`;
+
+/** The audit rows of a `setPlannedContainerNative` call: ONE BATCH row (the
+ *  header: names the case, lists the changed lines, records where they went) and
+ *  ONE ROW PER CHANGED LINE recording that line's previous and new case. Planning
+ *  names the case the lines now go in; clearing names the case they were planned
  *  into when that is one case (a case card's "Unpack"), else the first line. */
 async function logPlanChange(
   ctx: MutationCtx,
@@ -647,23 +657,40 @@ async function logPlanChange(
     target: { id: string; label: string } | null;
     /** When clearing: the one case they were all planned into, if any. */
     from: { id: string; label: string } | null;
-    lineItemIds: string[];
+    changes: { lineItemId: string; from: string | null }[];
   },
 ) {
+  const lineItemIds = args.changes.map((c) => c.lineItemId);
   const caseRef = args.target ?? args.from;
-  const summary = planChangeSummary(args.lineItemIds.length, args.target, args.from);
+  const summary = planChangeSummary(lineItemIds.length, args.target, args.from);
+  for (const { lineItemId, from } of args.changes) {
+    await writeActivityLog(ctx, {
+      id: planLineAuditId(args.auditId, lineItemId),
+      organizationId: args.orgId,
+      action: "UPDATE",
+      entityType: "projectLineItem",
+      entityId: lineItemId,
+      projectId: args.projectId,
+      entityName: "Planned container",
+      userId: args.actor.userId,
+      userName: args.actor.userName,
+      summary: args.target ? `Planned into container "${args.target.label}"` : "Cleared the planned container",
+      metadata: { kind: PLAN_LINE_KIND, batchId: args.auditId, from, to: args.target?.id ?? null },
+      createdAt: args.now,
+    });
+  }
   await writeActivityLog(ctx, {
     id: args.auditId,
     organizationId: args.orgId,
     action: "UPDATE",
     entityType: caseRef ? "projectContainer" : "projectLineItem",
-    entityId: caseRef?.id ?? args.lineItemIds[0],
+    entityId: caseRef?.id ?? lineItemIds[0],
     projectId: args.projectId,
     entityName: caseRef?.label ?? "Planned container",
     userId: args.actor.userId,
     userName: args.actor.userName,
     summary,
-    metadata: { lineItemIds: args.lineItemIds, plannedContainerId: args.target?.id ?? null },
+    metadata: { kind: PLAN_BATCH_KIND, lineItemIds, plannedContainerId: args.target?.id ?? null },
     createdAt: args.now,
   });
 }
@@ -706,7 +733,7 @@ export const setPlannedContainerNative = mutation({
         orgId, actor, auditId, now, projectId,
         target: target ? { id: target.id, label: target.label } : null,
         from: target ? null : await soleContainerInOrg(ctx, new Set(changes.flatMap((c) => (c.from ? [c.from] : []))), orgId),
-        lineItemIds: changes.map((c) => c.lineItemId),
+        changes,
       });
     }
     return { updated: changes.length, changes, skipped };

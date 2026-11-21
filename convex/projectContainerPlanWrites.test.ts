@@ -229,19 +229,35 @@ describe("plan write: changes, skips", () => {
 });
 
 describe("restorePlannedContainersNative", () => {
-  const restore = (t: T, expectedContainerId: string | null, entries: { lineItemId: string; from: string | null }[], auditId: string) =>
-    t.withIdentity(asUser(ORG)).mutation(api.projectContainerPlanWrites.restorePlannedContainersNative, {
-      orgId: ORG, expectedContainerId, entries, now: NOW, actor: ACTOR, auditId,
+  /** Undo takes ONLY the forward call's batch id (its `auditId`): no prior values from the client. */
+  const restore = (t: T, batchAuditId: string, auditId: string, orgId = ORG) =>
+    t.withIdentity(asUser(orgId)).mutation(api.projectContainerPlanWrites.restorePlannedContainersNative, {
+      orgId, batchAuditId, now: NOW, actor: ACTOR, auditId,
     });
+  const auditRow = (t: T, id: string) =>
+    t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 
-  test("undoes a mixed-source bulk move line by line", async () => {
+  test("the forward write records one audit row per changed line (previous + new case) plus a batch row", async () => {
+    const t = makeT();
+    await seed(t);
+    await plan(t, ["li1"], "c1", "p1");
+    await plan(t, ["li1", "li2"], "c2", "p2");
+    expect((await auditRow(t, "p2:li1"))?.metadata).toMatchObject({ kind: "PLAN_LINE", batchId: "p2", from: "c1", to: "c2" });
+    expect((await auditRow(t, "p2:li2"))?.metadata).toMatchObject({ kind: "PLAN_LINE", batchId: "p2", from: null, to: "c2" });
+    expect((await auditRow(t, "p2"))?.metadata).toMatchObject({ kind: "PLAN_BATCH", lineItemIds: ["li1", "li2"], plannedContainerId: "c2" });
+  });
+
+  test("undoes a mixed-source bulk move line by line, with one audit row per restored line", async () => {
     const t = makeT();
     await seed(t);
     await plan(t, ["li1"], "c1", "p1");
     await plan(t, ["li2"], "c2", "p2");
-    const fwd = await plan(t, ["li1", "li2", "li3"], "c3", "p3");
-    const r = await restore(t, "c3", fwd.changes, "r1");
+    await plan(t, ["li1", "li2", "li3"], "c3", "p3");
+    const r = await restore(t, "p3", "r1");
     expect(r).toEqual({ restored: 3, skipped: 0 });
+    expect(await auditRow(t, "r1:li1")).toMatchObject({ metadata: { undoOf: "p3", from: "c3", to: "c1" } });
+    expect(await auditRow(t, "r1:li3")).toMatchObject({ metadata: { undoOf: "p3", from: "c3", to: null } });
+    expect(await restore(t, "p3", "r2")).toEqual({ restored: 0, skipped: 3 }); // replay is a no-op
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
     expect((await lineById(t, "li2"))?.plannedContainerId).toBe("c2");
     expect((await lineById(t, "li3"))?.plannedContainerId).toBeUndefined();
@@ -250,9 +266,9 @@ describe("restorePlannedContainersNative", () => {
   test("leaves a line alone that someone changed since (exact, never clobbers)", async () => {
     const t = makeT();
     await seed(t);
-    const fwd = await plan(t, ["li1", "li2"], "c1", "p1");
+    await plan(t, ["li1", "li2"], "c1", "p1");
     await plan(t, ["li2"], "c2", "p2"); // a later edit
-    const r = await restore(t, "c1", fwd.changes, "r1");
+    const r = await restore(t, "p1", "r1");
     expect(r).toEqual({ restored: 1, skipped: 1 });
     expect((await lineById(t, "li2"))?.plannedContainerId).toBe("c2");
   });
@@ -261,26 +277,31 @@ describe("restorePlannedContainersNative", () => {
     const t = makeT();
     await seed(t);
     await plan(t, ["li1"], "c1", "p1");
-    const fwd = await plan(t, ["li1"], "c2", "p2");
+    await plan(t, ["li1"], "c2", "p2");
     await seal(t, "c1", "s1"); // the case it would return to
-    expect(await restore(t, "c2", fwd.changes, "r1")).toEqual({ restored: 0, skipped: 1 });
+    expect(await restore(t, "p2", "r1")).toEqual({ restored: 0, skipped: 1 });
     await unseal(t, "c1", "u1");
     await seal(t, "c2", "s2"); // the case it would leave
-    expect(await restore(t, "c2", fwd.changes, "r2")).toEqual({ restored: 0, skipped: 1 });
+    expect(await restore(t, "p2", "r2")).toEqual({ restored: 0, skipped: 1 });
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c2");
   });
 
-  test("a foreign org's lines are never restored", async () => {
+  test("another org cannot undo this org's batch (NOT_FOUND, nothing changes)", async () => {
     const t = makeT();
     await seed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", {
-        id: "alien", organizationId: OTHER, projectId: "px", versionId: "vx", lineageId: "alien", plannedContainerId: "c1",
-        type: "EQUIPMENT", quantity: 1, sortOrder: 5, createdAt: NOW, updatedAt: NOW,
-      });
+      await ctx.db.insert("members", { id: "m-other", organizationId: OTHER, userId: USER, role: "member" });
     });
-    const r = await restore(t, "c1", [{ lineItemId: "alien", from: null }], "r1");
-    expect(r.restored).toBe(0);
-    expect((await lineById(t, "alien"))?.plannedContainerId).toBe("c1");
+    await plan(t, ["li1"], "c1", "p1");
+    await expect(restore(t, "p1", "r1", OTHER)).rejects.toThrow(/not found/i);
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
+  });
+
+  test("a made-up batch id, or an audit row that is not a plan batch, is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    await seal(t, "c1", "s1"); // writes an audit row that is NOT a plan batch
+    await expect(restore(t, "nope", "r1")).rejects.toThrow(/not found/i);
+    await expect(restore(t, "s1", "r2")).rejects.toThrow(/not found/i);
   });
 });

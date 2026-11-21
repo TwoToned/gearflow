@@ -35656,14 +35656,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "entries",
+        "name": "batchAuditId",
         "optional": false,
-        "type": "array"
-      },
-      {
-        "name": "expectedContainerId",
-        "optional": false,
-        "type": "union"
+        "type": "string"
       },
       {
         "name": "now",
@@ -35677,10 +35672,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "534fe30ee81e516c",
+    "argsSha": "a248087362c6fa2f",
     "returnsSha": "42f28e263a2d90a0",
     "stability": "tracks-app",
-    "summary": "Undo a bulk plan change: put lines back to the case they were planned into, only where they are still as that change left them.",
+    "summary": "Undo a bulk plan change by its batch audit id: put lines back to the case the server recorded, only where they are still as that change left them.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,

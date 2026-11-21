@@ -27805,14 +27805,12 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
-                      "entries": {
-                        "type": "array"
-                      },
-                      "expectedContainerId": {}
+                      "batchAuditId": {
+                        "type": "string"
+                      }
                     },
                     "required": [
-                      "entries",
-                      "expectedContainerId"
+                      "batchAuditId"
                     ],
                     "additionalProperties": false
                   },

@@ -79,23 +79,26 @@ export function useProjectContainerWrites() {
       return unpackM({ id, orgId: requireOrg(), auditId: createId(), now: Date.now(), actor: actor() });
     },
 
-    /** Plan lines into a case (or `null` = unplanned). Returns each changed
-     *  line's previous case (`changes`, what Undo restores) and what was left
-     *  alone (`skipped`: packed, or on another job). */
+    /** Plan lines into a case (or `null` = unplanned). Returns the changed
+     *  lines (`changes`), what was left alone (`skipped`: packed, or on another
+     *  job) and `batchAuditId`, the handle `restorePlannedContainers` undoes. */
     setPlannedContainer: async (lineItemIds: string[], containerId: string | null) => {
-      return setPlannedContainerM({
+      const batchAuditId = createId();
+      const result = await setPlannedContainerM({
         orgId: requireOrg(),
         lineItemIds,
         containerId,
         now: Date.now(),
         actor: actor(),
-        auditId: createId(),
+        auditId: batchAuditId,
       });
+      return { ...result, batchAuditId };
     },
 
-    /** The exact Undo of `setPlannedContainer`: pass its `changes` and the case it planned into. */
-    restorePlannedContainers: async (expectedContainerId: string | null, entries: { lineItemId: string; from: string | null }[]) => {
-      return restorePlannedM({ orgId: requireOrg(), expectedContainerId, entries, now: Date.now(), actor: actor(), auditId: createId() });
+    /** The exact Undo of `setPlannedContainer`: only the batch id; the server
+     *  reads each line's previous case from its own audit rows. */
+    restorePlannedContainers: async (batchAuditId: string) => {
+      return restorePlannedM({ orgId: requireOrg(), batchAuditId, now: Date.now(), actor: actor(), auditId: createId() });
     },
 
     seal: async (id: string) => sealM({ id, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),

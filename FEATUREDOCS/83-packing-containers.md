@@ -69,9 +69,14 @@ missing operation behind defect 1), `unpackNative` (empty to Loose),
   only in the UI) and lines on another job or version (closes the same-job gap), (b) ignores a re-plan
   into the same case, and (c) returns `{ updated, changes: [{ lineItemId, from }], skipped }`.
   Capped at 200 lines per call.
-- `restorePlannedContainersNative` is the exact reverse: pass the forward call's `changes` and the case
-  it planned into; a line is restored only while its plan still equals that case (a later edit is never
-  clobbered) and neither case is sealed. Anything else is counted in `skipped`.
+- The forward plan write writes ONE audit row PER changed line (kind `PLAN_LINE`: previous case, new
+  case, batch id) plus one batch header (kind `PLAN_BATCH`: the changed lines and where they went),
+  ids `<auditId>` / `<auditId>:<lineItemId>`.
+- `restorePlannedContainersNative` is the exact reverse and takes ONLY the forward call's batch id
+  (`auditId`): the client supplies no prior values, each line's previous case is read from the
+  server's own org-checked audit rows. A line is restored only while its plan still equals the case the
+  forward write left it in (a later edit is never clobbered), it is on the batch's job, and neither
+  case is sealed. Anything else is counted in `skipped`. One audit row per restored line.
 - `versions.makeLiveNative` takes an optional `expectLiveVersionId` (used only by Undo of a make-live):
   it refuses with `VERSION_LIVE_MOVED` if the live pointer is no longer that version.
 - `versionsPreview.makeLivePreview` (counts only: lines, packed units carried, models whose demand

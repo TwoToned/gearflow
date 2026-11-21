@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -6,10 +6,16 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
-import { assertArrayMax } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { isContainerSealed } from "./lib/containerSeal";
-import { actorValidator, logContainerChange, requireContainerInOrg, MAX_PLAN_LINES } from "./projectContainersWrites";
+import {
+  actorValidator,
+  logContainerChange,
+  requireContainerInOrg,
+  PLAN_BATCH_KIND,
+  PLAN_LINE_KIND,
+  planLineAuditId,
+} from "./projectContainersWrites";
 
 /**
  * UX Phase 8 (§7b, D21) — the case-seal verbs and the exact Undo of a bulk plan
@@ -82,71 +88,121 @@ async function caseOrNull(ctx: MutationCtx, id: string | null, orgId: string, ca
   return cache.get(id) ?? null;
 }
 
+/** An org-checked activity row by cuid (`by_cuid` is global). */
+async function auditRowOrNull(ctx: MutationCtx, id: string, orgId: string) {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  return row && row.organizationId === orgId ? row : null;
+}
+
+type PlanBatch = {
+  projectId: string;
+  /** The case the forward write left the lines in (`null` = it cleared them). */
+  expectedContainerId: string | null;
+  /** Each changed line and where it was before, read from the server's own rows. */
+  lines: { lineItemId: string; from: string | null }[];
+};
+
+/** Rebuild a forward plan write from the audit rows IT wrote: the batch header
+ *  (kind `PLAN_BATCH`) lists the changed lines and where they went; each line's
+ *  own row (kind `PLAN_LINE`) holds its previous case. Nothing here comes from
+ *  the caller except the batch id, and every row is org-checked. */
+async function loadPlanBatch(ctx: MutationCtx, batchAuditId: string, orgId: string): Promise<PlanBatch> {
+  const notFound = () => new ConvexError({ code: "NOT_FOUND", message: "That plan change was not found, so it can't be undone." });
+  const header = await auditRowOrNull(ctx, batchAuditId, orgId);
+  const meta = header?.metadata as { kind?: string; lineItemIds?: string[]; plannedContainerId?: string | null } | undefined;
+  if (!header || !header.projectId || meta?.kind !== PLAN_BATCH_KIND || !Array.isArray(meta.lineItemIds)) throw notFound();
+
+  const lines: PlanBatch["lines"] = [];
+  for (const lineItemId of meta.lineItemIds) {
+    const row = await auditRowOrNull(ctx, planLineAuditId(batchAuditId, lineItemId), orgId);
+    const rowMeta = row?.metadata as { kind?: string; batchId?: string; from?: string | null } | undefined;
+    if (!row || rowMeta?.kind !== PLAN_LINE_KIND || rowMeta.batchId !== batchAuditId) continue;
+    lines.push({ lineItemId, from: rowMeta.from ?? null });
+  }
+  return { projectId: header.projectId, expectedContainerId: meta.plannedContainerId ?? null, lines };
+}
+
 /**
- * The exact reverse of a `setPlannedContainerNative` call. The caller passes
- * what that call RETURNED (`changes`) plus the case it planned INTO
- * (`expectedContainerId`, `null` when it cleared). A line is restored only when
- * its plan STILL equals `expectedContainerId` (so a later edit by someone else
- * is never clobbered), the case it returns to still exists and is open, and the
- * case it leaves is open. Anything else is counted in `skipped`, never forced.
- * Undo is not a way around a seal.
+ * The exact reverse of one `setPlannedContainerNative` call, addressed by that
+ * call's `auditId` (the batch id). The CLIENT SUPPLIES NO PRIOR VALUES: each
+ * line's previous case is read from the audit rows the forward write wrote
+ * (`loadPlanBatch`), so a caller cannot forge a "restore" to an arbitrary case.
+ *
+ * A line is restored only while its plan STILL equals the case the forward
+ * write left it in (a later edit by someone else is never clobbered), it is on
+ * the batch's job, and neither the case it leaves nor the case it returns to is
+ * sealed (Undo is not a way around a seal; the return case must also still
+ * exist). Anything else is counted in `skipped`, never forced. One audit row per
+ * restored line, plus one summary row.
  */
 export const restorePlannedContainersNative = mutation({
   returns: v.object({ restored: v.number(), skipped: v.number() }),
   args: {
     orgId: v.string(),
-    expectedContainerId: v.union(v.string(), v.null()),
-    entries: v.array(v.object({ lineItemId: v.string(), from: v.union(v.string(), v.null()) })),
+    batchAuditId: v.string(),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
   },
-  handler: async (ctx, { orgId, expectedContainerId, entries, now, actor: suppliedActor, auditId }) => {
+  handler: async (ctx, { orgId, batchAuditId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
-    await assertBulkSizeOk(ctx, entries.length);
-    assertArrayMax(entries, "entries", MAX_PLAN_LINES);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
+    const batch = await loadPlanBatch(ctx, batchAuditId, orgId);
+    await assertBulkSizeOk(ctx, batch.lines.length);
+
     const cache: CaseLookup = new Map();
-    const leaving = await caseOrNull(ctx, expectedContainerId, orgId, cache);
+    const leaving = await caseOrNull(ctx, batch.expectedContainerId, orgId, cache);
     const leavingSealed = leaving != null && isContainerSealed(leaving);
-    let restored = 0;
-    let projectId: string | null = null;
-    for (const { lineItemId, from } of entries) {
+    const restoredIds: string[] = [];
+    for (const { lineItemId, from } of batch.lines) {
       const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
-      if (!line || line.organizationId !== orgId) continue;
-      if ((line.plannedContainerId ?? null) !== expectedContainerId) continue; // edited since: leave it
+      if (!line || line.organizationId !== orgId || line.projectId !== batch.projectId) continue;
+      if ((line.plannedContainerId ?? null) !== batch.expectedContainerId) continue; // edited since: leave it
       if (leavingSealed) continue;
       const back = await caseOrNull(ctx, from, orgId, cache);
       if (from && (!back || isContainerSealed(back) || back.projectId !== line.projectId)) continue;
       await ctx.db.patch(line._id, { plannedContainerId: from ?? undefined, updatedAt: now });
-      projectId ??= line.projectId;
-      restored++;
+      await writeActivityLog(ctx, {
+        id: planLineAuditId(auditId, lineItemId),
+        organizationId: orgId,
+        action: "UPDATE",
+        entityType: "projectLineItem",
+        entityId: lineItemId,
+        projectId: batch.projectId,
+        entityName: "Planned container",
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: "Undid a planned container change",
+        metadata: { kind: PLAN_LINE_KIND, batchId: auditId, undoOf: batchAuditId, from: batch.expectedContainerId, to: from },
+        createdAt: now,
+      });
+      restoredIds.push(lineItemId);
     }
-    if (projectId && restored > 0) {
+    if (restoredIds.length > 0) {
       await writeActivityLog(ctx, {
         id: auditId,
         organizationId: orgId,
         action: "UPDATE",
         entityType: "projectLineItem",
-        entityId: entries[0].lineItemId,
-        projectId,
+        entityId: restoredIds[0],
+        projectId: batch.projectId,
         entityName: "Planned container",
         userId: actor.userId,
         userName: actor.userName,
-        summary: `Undid a packing plan change on ${restored} ${restored === 1 ? "line" : "lines"}`,
-        metadata: { expectedContainerId, lineItemIds: entries.map((e) => e.lineItemId) },
+        summary: `Undid a packing plan change on ${restoredIds.length} ${restoredIds.length === 1 ? "line" : "lines"}`,
+        metadata: { kind: "PLAN_UNDO", undoOf: batchAuditId, lineItemIds: restoredIds },
         createdAt: now,
       });
     }
-    return { restored, skipped: entries.length - restored };
+    return { restored: restoredIds.length, skipped: batch.lines.length - restoredIds.length };
   },
 });
 
 export const agentOps: AgentOpsAnnotations = {
   sealNative: { summary: "Seal a packing case: its plan is locked (no lines planned in or out) until unsealed.", danger: "low", mcpTier: 3 },
   unsealNative: { summary: "Unseal a packing case so its plan can change again.", danger: "low", mcpTier: 3 },
-  restorePlannedContainersNative: { summary: "Undo a bulk plan change: put lines back to the case they were planned into, only where they are still as that change left them.", danger: "low", mcpTier: 3 },
+  restorePlannedContainersNative: { summary: "Undo a bulk plan change by its batch audit id: put lines back to the case the server recorded, only where they are still as that change left them.", danger: "low", mcpTier: 3 },
 };

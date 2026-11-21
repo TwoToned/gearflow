@@ -436,6 +436,29 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 - Navigation: back/forward by week, "Today" button
 - Sidebar: "Planner" link under Crew
 
+### UX Phase 15 reads and writes (spec §9h; the page itself is rebuilt in later slices)
+- **`crewPlanner.openCalls({ orgId, startMs, endMs })`** — the `Needs crew` list:
+  services short of people (filled crew, DECLINED/CANCELLED excluded, below
+  `crewCountRequired`) via the Overbookings board's own `computeServicesMissingCrew`.
+  Only each job's **live-version** service rows count (`isLiveVersionRow` — every
+  version keeps its own copy of a service), on in-org, non-template, non-cancelled
+  jobs. Range ≤ 14 days, bounded both ends on `by_organizationId_date`, capped with
+  a `truncated` flag.
+- **`crewAssignmentsWrites.confirmManyNative`** (`Confirm n`): ACCEPTED → CONFIRMED
+  only, the rest is `skipped`; one activity row per call recording the prior state.
+  **`unconfirmManyNative({ ids, stamp })`** is its exact Undo, reading the prior
+  state from those rows and refusing if any call changed since (same rule as the
+  timesheet `revertNative`).
+- **`crewAssignmentsWrites.cancelManyNative`** (`Cancel n`, `danger: "high"`):
+  PENDING/OFFERED/ACCEPTED/CONFIRMED → CANCELLED, one activity row per call, time
+  entries untouched; returns `toTell` (the calls whose crew member already had the
+  offer) for the caller to send cancellation mail. No Undo — the mail is sent.
+- **`crewRolesWrites.moveNative({ id, direction })`**: Move up / Move down as ONE
+  atomic renumber (replaces the two non-atomic `updateNative` calls; ties become
+  movable). Its Undo is the opposite move.
+- `plannerData` also returns each member's `skillIds` (for `Skill ▾`) and redacts
+  assignment pay below manager (see Time Tracking › pay).
+
 ## Crew Planner — confirmation layer, availability requests, planned vs actual (Work-layer Phase 4, #1246)
 
 > Design: `docs/designs/work-layer.md` §8.5/§9/§10, build plan phase 4.
@@ -730,6 +753,56 @@ DRAFT → SUBMITTED → APPROVED → EXPORTED
 - **Crew detail page**: "Time" tab with table of all entries, add/edit dialog, bulk submit/approve buttons, CSV export
 - **Log Time dialog**: Toggle between "Project" (linked to assignment) and "General" (standalone shift with description)
 - **Actions per entry**: Edit (DRAFT/DISPUTED), Submit (DRAFT), Approve (SUBMITTED), Dispute (SUBMITTED), Delete (DRAFT)
+
+### Query…, exact Undo, and pay (UX Phase 15 — D47, D49)
+
+**Query (D47).** The UI word for `DISPUTED` is **Queried** (status) / **Query…**
+(verb); the enum and API values are unchanged (`docs/glossary.md`). A query
+carries its reason on **`crewTimeEntries.queryReason`** — never on `notes`, which
+is the crew member's own text. `crewTimeEntriesWrites.queryNative({ ids, reason })`
+moves SUBMITTED/APPROVED entries to DISPUTED; the reason is required and bounded
+(`QUERY_REASON_MAX` = 500, `convex/lib/timeEntryQuery.ts`, shared with
+`timeEntryQuerySchema`). `submitNative` and `approveNative` clear `queryReason`.
+The legacy single-entry `disputeNative` (crew dashboard, crew record) is
+unchanged until Phase 13 moves those surfaces to Query….
+
+**One activity row per entry, one exact Undo.** Submit, Approve and Query write
+an activity row PER changed entry (`${auditId}:${entryId}`) whose `metadata`
+records the entry's prior state (`kind: "time_entry_transition"`, `transition`,
+`prevStatus`, and any prior `queryReason` / approver stamp). Each returns
+`{ count, changed }`; the hook adds the call's `stamp` (its `now`).
+`revertNative({ transition, ids, stamp })` is the ONE Undo for all three: it
+takes only the ids and the stamp, reads each entry's prior state back from the
+forward write's own row (same entry, same stamp, same user), and refuses the
+whole Undo (`ConvexError`) if any entry's `updatedAt` no longer equals the stamp.
+Never pass prior state from the client.
+
+**Pay (D49).** `crewTimeEntries.allEntries` adds, per row, `rate` / `rateType` /
+`total` / `rateIncluded`, plus `totals.pay` over the filtered set — **only when
+`canSeeCrewPay`** (`convex/lib/crewPayVisibility.ts`: manager+ and not a
+`noFinancials` key); otherwise those keys are absent and `payVisible: false`.
+Everyone gets `counts` (per status, for the strip), `totals.hours`,
+`queryReason` and `updatedAtMs` (the next Undo's stamp). The money is DERIVED
+in `convex/lib/timeEntryMoney.ts`, never stored:
+- **Rate** = the PAY (cost) cascade `resolveRate` — assignment override →
+  member day → member hourly → role default (a general entry uses the member's
+  own role). Nothing resolved ⇒ blank, never `$0`. The UI labels it "Rate (pay)".
+- **Total** = `HOURLY` rate × hours; `DAILY` the day rate **once per person per
+  calendar day**, however many entries that day has (the earliest carries it,
+  the rest are `rateIncluded`); `FLAT` once per person per assignment.
+- The carrier is computed over every org entry, so paging and filters never
+  move it.
+
+The same gate redacts pay elsewhere: `crewAvailability.plannerData` drops
+`rateOverride` / `estimatedCost` below manager, and
+`crewAssignments.membersForAssignment` returns `defaultDayRate` /
+`defaultHourlyRate` as `null` below manager.
+
+**CSV.** `exportTimesheetCSV` builds through `src/lib/timesheet-csv.ts` →
+`toCsv` (`src/lib/csv.ts`, formula-injection guard). The twelve original
+columns keep their order and the raw status enum; `Query reason` is appended,
+and `Rate (pay)` / `Total` only for a signed-in manager+ (never an API-key
+actor), from the same `deriveEntryMoney`.
 
 ## Future Phases (not yet implemented)
 - Phase 7: Crew portal

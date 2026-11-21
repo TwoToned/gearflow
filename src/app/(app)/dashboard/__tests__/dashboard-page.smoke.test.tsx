@@ -37,7 +37,7 @@ vi.mock("@/lib/use-permissions", () => ({
 vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: () => null }));
 vi.mock("convex/react", () => ({ useMutation: () => m.save }));
 vi.mock("@/hooks/use-project-tasks-writes", () => ({ useProjectTaskWrites: () => ({ update: m.updateTask }) }));
-vi.mock("@/components/dashboard/setup-panel", () => ({ SetupPanel: () => null, useSetupPanelVisible: () => false }));
+vi.mock("@/components/dashboard/setup-panel", () => ({ SetupPanel: () => null, useSetupPanelState: () => ({ visible: false, title: "Finish setup" }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(m.toast, { success: m.toast, error: vi.fn() }) }));
 
 const STATS = {

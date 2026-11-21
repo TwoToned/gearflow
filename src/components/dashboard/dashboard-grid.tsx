@@ -7,7 +7,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useCurrentRole } from "@/lib/use-permissions";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DashboardBoardContext } from "@/components/dashboard/widget-chrome";
-import { useSetupPanelVisible } from "@/components/dashboard/setup-panel";
+import { useSetupPanelState } from "@/components/dashboard/setup-panel";
 import { canOpenLink } from "@/lib/dashboard-links";
 import {
   DASHBOARD_WIDGET_REGISTRY,
@@ -35,8 +35,8 @@ export interface LayoutChange {
  * so the slot is dropped here, before RGL.
  */
 function useBoardModel(widgets: DashboardLayoutWidget[], orgId: string | undefined) {
-  const setupVisible = useSetupPanelVisible(orgId);
-  const visibleWidgets = useMemo(() => renderedWidgets(widgets, setupVisible), [widgets, setupVisible]);
+  const setup = useSetupPanelState(orgId);
+  const visibleWidgets = useMemo(() => renderedWidgets(widgets, setup.visible), [widgets, setup.visible]);
   const kinds = useMemo(() => new Set(visibleWidgets.map((w) => w.kind)), [visibleWidgets]);
   const rglLayout: Layout = useMemo(
     () =>
@@ -46,7 +46,9 @@ function useBoardModel(widgets: DashboardLayoutWidget[], orgId: string | undefin
       }),
     [visibleWidgets],
   );
-  return { visibleWidgets, kinds, rglLayout };
+  /** The setup slot is titled by what the panel shows, not by which kind hosts it. */
+  const titleOf = (w: DashboardLayoutWidget) => (DASHBOARD_WIDGET_REGISTRY[w.kind].setupSlot ? setup.title : DASHBOARD_WIDGET_REGISTRY[w.kind].title);
+  return { visibleWidgets, kinds, rglLayout, titleOf };
 }
 
 /**
@@ -73,7 +75,7 @@ export function DashboardGrid({
   const { width, containerRef, mounted } = useContainerWidth();
   const { permissions } = useCurrentRole();
   const editing = editMode && !isMobile;
-  const { visibleWidgets, kinds, rglLayout } = useBoardModel(widgets, orgId);
+  const { visibleWidgets, kinds, rglLayout, titleOf } = useBoardModel(widgets, orgId);
 
   const commitFromRglLayout = useCallback(
     (layout: Layout, item: LayoutItem | null, verb: LayoutChange["verb"]) => {
@@ -97,7 +99,7 @@ export function DashboardGrid({
     return (
       <DashboardCard
         key={w.id}
-        title={def.title}
+        title={titleOf(w)}
         bare={def.stat}
         viewAll={viewAll}
         editMode={editing}

@@ -12,11 +12,14 @@ import { capture, AnalyticsEvent } from "@/lib/analytics";
 import { showError } from "@/lib/show-error";
 import { cn, focusRing } from "@/lib/utils";
 
-/** Either half still has something to do: the panel's slot renders. */
-export function useSetupPanelVisible(orgId: string | undefined): boolean {
+/**
+ * Whether the panel's slot renders (either half still has something to do), and
+ * its title: "Finish setup" while the setup half shows, else "Get started".
+ */
+export function useSetupPanelState(orgId: string | undefined): { visible: boolean; title: string } {
   const setup = useFinishSetupState(orgId);
   const activation = useActivationState(orgId);
-  return setup.visible || activation.visible;
+  return { visible: setup.visible || activation.visible, title: setup.visible ? "Finish setup" : "Get started" };
 }
 
 /**

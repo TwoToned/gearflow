@@ -89,6 +89,8 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
   - **One slot.** Both kinds stay registered. `renderedWidgets()` renders the panel in the
     first of the two slots in reading order and drops the other, and drops both once
     neither half has anything to show. This fixes the old "empty shell" limitation.
+  - **Title.** The slot's title follows what the panel shows, not which kind hosts it:
+    "Finish setup" while the setup half shows, else "Get started" (`useSetupPanelState`).
 - **My tasks.** A tick completes with the same `projectTasksWrites.updateNative` write
   `/my-tasks` uses. The toast's Undo restores the exact prior status. Due reads `2d
   overdue` / `Today` / the date (`src/lib/home-rows.ts`). High priority is a dot-word. The

@@ -12,7 +12,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 const state = vi.hoisted(() => ({ isMobile: false, permissions: { project: ["read"] } as Record<string, string[]> | null }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => state.isMobile }));
 vi.mock("@/lib/use-permissions", () => ({ useCurrentRole: () => ({ permissions: state.permissions, isLoading: false }) }));
-vi.mock("@/components/dashboard/setup-panel", () => ({ useSetupPanelVisible: () => true }));
+vi.mock("@/components/dashboard/setup-panel", () => ({ useSetupPanelState: () => ({ visible: true, title: "Get started" }) }));
 
 function FixtureWidgetA() {
   return <p>Fixture A content</p>;
@@ -41,6 +41,15 @@ vi.mock("@/lib/dashboard-widgets", () => {
       minSize: { w: 2, h: 2 },
       viewAll: { href: "/activity", tip: "Activity", resource: "reports" },
     },
+    fixtureSetup: {
+      kind: "fixtureSetup",
+      title: "Finish setup",
+      description: "A setup slot.",
+      component: FixtureWidgetA,
+      defaultSize: { w: 12, h: 5 },
+      minSize: { w: 3, h: 4 },
+      setupSlot: true,
+    },
     fixtureStat: {
       kind: "fixtureStat",
       title: "Fixture stat",
@@ -67,6 +76,7 @@ const WIDGETS = [
   { id: "fixtureA", kind: "fixtureA", x: 0, y: 0, w: 4, h: 2 },
   { id: "fixtureB", kind: "fixtureB", x: 4, y: 0, w: 4, h: 2 },
   { id: "fixtureStat", kind: "fixtureStat", x: 8, y: 0, w: 3, h: 4 },
+  { id: "fixtureSetup", kind: "fixtureSetup", x: 0, y: 4, w: 12, h: 5 },
   { id: "gone", kind: "removedKind", x: 0, y: 9, w: 4, h: 2 },
 ] as unknown as DashboardLayoutWidget[];
 
@@ -83,8 +93,14 @@ describe("DashboardGrid (smoke)", () => {
   it("renders every known widget's title and content; an unknown saved kind is dropped", () => {
     render(grid(false));
     expect(screen.getByText("Fixture A")).toBeDefined();
-    expect(screen.getAllByText("Fixture A content")).toHaveLength(2);
+    expect(screen.getAllByText("Fixture A content")).toHaveLength(3);
     expect(screen.queryByText("removedKind")).toBeNull();
+  });
+
+  it("the setup slot is titled by what the panel shows, not by the kind hosting it", () => {
+    render(grid(false));
+    expect(screen.getByRole("heading", { name: "Get started" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Finish setup" })).toBeNull();
   });
 
   it("a stat tile has no header outside Customise, and one inside it", () => {

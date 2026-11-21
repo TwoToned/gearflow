@@ -10,6 +10,7 @@ import { calculateTotalHours } from "./lib/crewTimeHours";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
 import { QUERY_REASON_MAX } from "./lib/timeEntryQuery";
+import { TIME_ENTRY_TRANSITION_FROM, TIME_ENTRY_TRANSITION_TO, type TimeEntryTransition } from "./lib/timeEntryTransitions";
 
 /**
  * Native CREW-TIME-ENTRY write mutations (Phase 3 browser-direct — replaces
@@ -252,17 +253,14 @@ export const deleteNative = mutation({
 // those server-written rows, never from the caller, so an Undo can only restore
 // what the forward write actually replaced.
 
-type Transition = "submit" | "approve" | "query";
+type Transition = TimeEntryTransition;
 
 /** Marks an activity row as a transition record `revertNative` may read back. */
 export const TIME_ENTRY_TRANSITION_KIND = "time_entry_transition";
 
-const TRANSITION_FROM: Record<Transition, readonly string[]> = {
-  submit: ["DRAFT", "DISPUTED"],
-  approve: ["SUBMITTED", "DISPUTED"],
-  query: ["SUBMITTED", "APPROVED"],
-};
-const TRANSITION_TO: Record<Transition, string> = { submit: "SUBMITTED", approve: "APPROVED", query: "DISPUTED" };
+// The one from/to table (convex/lib/timeEntryTransitions.ts), shared with the timesheet row menu.
+const TRANSITION_FROM = TIME_ENTRY_TRANSITION_FROM;
+const TRANSITION_TO = TIME_ENTRY_TRANSITION_TO;
 const TRANSITION_VERB: Record<Transition, string> = { submit: "Submitted", approve: "Approved", query: "Queried" };
 const TRANSITION_NOUN: Record<Transition, string> = { submit: "submission", approve: "approval", query: "query" };
 

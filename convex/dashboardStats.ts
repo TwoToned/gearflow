@@ -3,7 +3,7 @@ import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { requireLiveVersionId } from "./lib/versionScope";
+import { overdueReturnsForOrg } from "./lib/overdueReturns";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -20,7 +20,6 @@ import { requireLiveVersionId } from "./lib/versionScope";
  * Phase 5 domain slice, #1001).
  */
 
-const RETURN_TERMINAL = new Set(["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]);
 const OPEN_MAINTENANCE_STATUSES = ["SCHEDULED", "IN_PROGRESS"] as const;
 // A range `.lte`/`.lt(now)` sweeps in rows whose date field is undefined (undefined
 // sorts before all numbers in a Convex index). Pin the lower bound at the minimum
@@ -77,44 +76,13 @@ export const bundle = query({
     }
     const modelsDueForService = dueForServiceModelIds.size;
 
-    // ── Date-derived: overdueReturns (CHECKED_OUT line items in overdue projects) ──
-    // Overdue = non-template project past its rentalEndDate, not in a terminal
-    // status. Range-scan by (org, MIN_TS < rentalEndDate < now) so the reactive
-    // read-set is only past-end-date projects, not the whole org's projects table
-    // (Appendix B); the lower bound keeps date-less draft/quote projects out. Then
-    // read CHECKED_OUT line items per overdue project via by_projectId_status
-    // (bounded), NOT the whole org's line items.
-    const overdueProjects = await ctx.db
-      .query("projects")
-      .withIndex("by_organizationId_rentalEndDate", (q) =>
-        q.eq("organizationId", orgId).gt("rentalEndDate", MIN_TS).lt("rentalEndDate", now),
-      )
-      .collect();
-    const overdueProjectIds = overdueProjects
-      .filter(
-        (p) =>
-          p.isTemplate !== true &&
-          !RETURN_TERMINAL.has(p.status ?? ""),
-      )
-      .map((p) => p.id);
-
-    // LIVE-ONLY (#1228): CHECKED_OUT status only ever applies to the live plan.
-    let overdueReturns = 0;
-    if (overdueProjectIds.length > 0) {
-      const overdueProjectById = new Map(overdueProjects.map((p) => [p.id, p]));
-      const perProject = await Promise.all(
-        overdueProjectIds.map(async (pid) => {
-          const project = overdueProjectById.get(pid);
-          if (!project) return [];
-          const versionId = requireLiveVersionId(project);
-          return ctx.db
-            .query("projectLineItems")
-            .withIndex("by_versionId_status", (q) => q.eq("versionId", versionId).eq("status", "CHECKED_OUT"))
-            .collect();
-        }),
-      );
-      overdueReturns = perProject.reduce((sum, rows) => sum + rows.length, 0);
-    }
+    // ── Date-derived: overdue returns (D85) ──
+    // The ONE definition lives in `lib/overdueReturns.ts` (shared with the Jobs
+    // list's `overdue=1` filter and its Needs-you set, so the tile's number is
+    // the list it opens). It reads the org's OPEN jobs by (org, status), then
+    // probes each past-end job's LIVE version for CHECKED_OUT lines, bounded,
+    // with a `truncated` flag.
+    const overdue = await overdueReturnsForOrg(ctx, orgId, now);
 
     return {
       totalAssets: counter.activeAssets + counter.bulkQuantity,
@@ -127,7 +95,11 @@ export const bundle = query({
       // PM cycle. Separate from `maintenanceDue` by design (see the exclusion
       // note above) so the two chips never double-count the same work.
       modelsDueForService,
-      overdueReturns,
+      // D85: the tile counts JOBS; `overdueReturns` (CHECKED_OUT lines on those
+      // jobs) is kept, unchanged in name, as the tile's sub-line ("67 items to chase").
+      overdueReturns: overdue.lineCount,
+      overdueReturnJobs: overdue.projectIds.size,
+      overdueTruncated: overdue.truncated,
       // False until the sharded counters are seeded, so the client shows a loading
       // state instead of wrong-zeros mid-migration (see useNativeDashboardStats).
       countersReady: ready,
@@ -137,5 +109,5 @@ export const bundle = query({
 
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
-  bundle: { summary: "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns).", danger: "low", mcpTier: 2 },
+  bundle: { summary: "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns as jobs and lines).", danger: "low", mcpTier: 2 },
 };

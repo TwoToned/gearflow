@@ -149,6 +149,25 @@ export const timeEntryQuerySchema = z.object({
 
 export type TimeEntryQueryFormValues = z.input<typeof timeEntryQuerySchema>;
 
+/** Most entries one bulk Export may name (the list's bulk cap for a human caller). */
+const MAX_EXPORT_IDS = 500;
+
+/**
+ * `exportTimesheetCSV` filters (the `/api/crew/timesheet` query and the list's
+ * bulk Export). Every field optional; `ids` narrows the export to the ticked
+ * rows (UX Phase 15). A trust boundary, so parsed before use (R-8.2.3).
+ */
+export const timesheetExportFiltersSchema = z.object({
+  dateFrom: z.string().max(40).optional(),
+  dateTo: z.string().max(40).optional(),
+  crewMemberId: z.string().max(100).optional(),
+  projectId: z.string().max(100).optional(),
+  status: z.string().max(20).optional(),
+  ids: z.array(z.string().min(1).max(100)).min(1).max(MAX_EXPORT_IDS).optional(),
+});
+
+export type TimesheetExportFilters = z.input<typeof timesheetExportFiltersSchema>;
+
 /** Most offers one "Send N offers" click may fan out (each is an email). */
 const MAX_OFFER_BATCH = 100;
 

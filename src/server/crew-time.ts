@@ -11,6 +11,8 @@ import {
   type MappedCrewTimeEntry,
 } from "@/lib/crew-scheduling-read";
 import { timesheetCsv, type TimesheetCsvRow } from "@/lib/timesheet-csv";
+import { timesheetExportFiltersSchema, type TimesheetExportFilters } from "@/lib/validations/crew";
+import type { z } from "zod";
 import { deriveEntryMoney, type EntryMoney } from "../../convex/lib/timeEntryMoney";
 
 // The time-entry reads + CRUD + status machine are browser-direct (Phase 3):
@@ -19,13 +21,7 @@ import { deriveEntryMoney, type EntryMoney } from "../../convex/lib/timeEntryMon
 
 // ─── CSV Export ──────────────────────────────────────────────────────────────
 
-interface ExportFilters {
-  dateFrom?: string;
-  dateTo?: string;
-  crewMemberId?: string;
-  projectId?: string;
-  status?: string;
-}
+type ExportFilters = z.output<typeof timesheetExportFiltersSchema>;
 
 /**
  * D49: pay columns only for a signed-in manager+ (the same `isManagerPlusRole`
@@ -40,7 +36,8 @@ async function callerSeesPay(): Promise<boolean> {
 /** One predicate per export filter; an unset filter passes. */
 function matches(e: MappedCrewTimeEntry, f: ExportFilters, projectOf: (e: MappedCrewTimeEntry) => string | null): boolean {
   const t = e.date.getTime();
-  const checks: [string | undefined, () => boolean][] = [
+  const checks: [unknown, () => boolean][] = [
+    [f.ids, () => f.ids!.includes(e.id)],
     [f.crewMemberId, () => e.crewMemberId === f.crewMemberId],
     [f.status, () => e.status === f.status],
     [f.projectId, () => projectOf(e) === f.projectId],
@@ -76,8 +73,9 @@ function csvRow(
 
 const str = (s: string | null | undefined): string => s || "";
 
-export async function exportTimesheetCSV(filters?: ExportFilters) {
+export async function exportTimesheetCSV(input?: TimesheetExportFilters) {
   const { organizationId } = await requirePermission("crew", "read");
+  const filters = timesheetExportFiltersSchema.parse(input ?? {});
   const withPay = await callerSeesPay();
 
   // All reads come from Convex (timeEntry/assignment dual-written; crewMember,
@@ -104,7 +102,7 @@ export async function exportTimesheetCSV(filters?: ExportFilters) {
     : null;
 
   const rows: TimesheetCsvRow[] = allEntries
-    .filter((e) => matches(e, filters ?? {}, projectOf))
+    .filter((e) => matches(e, filters, projectOf))
     // orderBy [{ date: "asc" }, { crewMemberId: "asc" }]
     .sort((a, b) => a.date.getTime() - b.date.getTime() || a.crewMemberId.localeCompare(b.crewMemberId))
     .map((e) => {

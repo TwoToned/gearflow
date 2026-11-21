@@ -57,4 +57,15 @@ describe("exportTimesheetCSV — pay columns are server-gated", () => {
     ambient.value = { organizationId: "org1", userId: "u1", userName: "Alice", actorType: "apiKey" };
     expect(await exportTimesheetCSV()).not.toContain("Rate (pay)");
   });
+
+  it("bulk Export: ids narrow to the ticked rows, and the carried day rate still reads incl.", async () => {
+    const lines = (await exportTimesheetCSV({ ids: ["t2"] })).trim().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[1].endsWith(",SUBMITTED,,650,incl.")).toBe(true);
+  });
+
+  it("the filters are a validated trust boundary", async () => {
+    await expect(exportTimesheetCSV({ ids: [] })).rejects.toThrow();
+    await expect(exportTimesheetCSV({ ids: Array.from({ length: 501 }, (_, i) => `t${i}`) })).rejects.toThrow();
+  });
 });

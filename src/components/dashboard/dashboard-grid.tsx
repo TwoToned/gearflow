@@ -2,31 +2,59 @@
 
 import { useCallback, useMemo } from "react";
 import { Responsive, useContainerWidth } from "react-grid-layout";
-import type { Layout } from "react-grid-layout";
+import type { Layout, LayoutItem } from "react-grid-layout";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useCurrentRole } from "@/lib/use-permissions";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
-import { useActivationChecklistVisible } from "@/components/dashboard/activation-checklist";
-import { useFinishSetupChecklistVisible } from "@/components/dashboard/finish-setup-checklist";
+import { DashboardBoardContext } from "@/components/dashboard/widget-chrome";
+import { useSetupPanelVisible } from "@/components/dashboard/setup-panel";
+import { canOpenLink } from "@/lib/dashboard-links";
 import {
   DASHBOARD_WIDGET_REGISTRY,
   GRID_COLS,
+  readingOrder,
+  renderedWidgets,
   type DashboardLayoutWidget,
+  type DashboardWidgetKind,
 } from "@/lib/dashboard-widgets";
+import { cn } from "@/lib/utils";
 import "./dashboard-grid.module.css";
 
 const ROW_HEIGHT = 32;
-const MARGIN: readonly [number, number] = [16, 16];
+const MARGIN: readonly [number, number] = [32, 16];
+
+/** What a drag or resize did, so the page can name it in the Undo toast. */
+export interface LayoutChange {
+  verb: "Moved" | "Resized";
+  kind: DashboardWidgetKind;
+}
 
 /**
- * The customizable dashboard's grid engine — `react-grid-layout` v2's
- * hooks-based API (`Responsive` + `useContainerWidth`, replacing v1's
- * `WidthProvider(Responsive)` HOC; see the PR's dependency-justification
- * note). Below the mobile breakpoint, drag/resize are unreliable on touch —
- * matching the "sidebar stacks on mobile" convention, `<DashboardGrid>`
- * doesn't even mount react-grid-layout there; `useIsMobile()` (already used
- * for the sidebar) switches to a plain stacked column in the saved
- * (y, then x) order instead, so mobile Customize can still add/remove
- * widgets without needing touch drag-and-drop to work at all.
+ * What actually renders, and RGL's view of it. The setup panel renders nothing
+ * once dismissed or complete, but a card can't know its child rendered nothing,
+ * so the slot is dropped here, before RGL.
+ */
+function useBoardModel(widgets: DashboardLayoutWidget[], orgId: string | undefined) {
+  const setupVisible = useSetupPanelVisible(orgId);
+  const visibleWidgets = useMemo(() => renderedWidgets(widgets, setupVisible), [widgets, setupVisible]);
+  const kinds = useMemo(() => new Set(visibleWidgets.map((w) => w.kind)), [visibleWidgets]);
+  const rglLayout: Layout = useMemo(
+    () =>
+      visibleWidgets.map((w) => {
+        const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
+        return { i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: def.minSize.w, minH: def.minSize.h, maxW: def.maxSize?.w, maxH: def.maxSize?.h };
+      }),
+    [visibleWidgets],
+  );
+  return { visibleWidgets, kinds, rglLayout };
+}
+
+/**
+ * Home's grid engine: `react-grid-layout` v2 (`Responsive` + `useContainerWidth`).
+ * Customise (drag, resize, hide) is DESKTOP ONLY (D89): on a phone the board is a
+ * read-only column in the saved (y, x) order, with the stat tiles two to a row.
+ * Touch reordering was already judged unreliable, so the phone shows the
+ * arrangement made on a desktop rather than offering a weaker editor.
  */
 export function DashboardGrid({
   widgets,
@@ -38,122 +66,78 @@ export function DashboardGrid({
   widgets: DashboardLayoutWidget[];
   editMode: boolean;
   orgId: string | undefined;
-  onLayoutChange: (next: DashboardLayoutWidget[]) => void;
+  onLayoutChange: (next: DashboardLayoutWidget[], change: LayoutChange) => void;
   onRemove: (id: string) => void;
 }) {
   const isMobile = useIsMobile();
   const { width, containerRef, mounted } = useContainerWidth();
-
-  // The setup/activation checklists disappear once dismissed or complete —
-  // their `bare` render already returns null for that, but `<DashboardCard>`
-  // doesn't know a null `widget` means "skip my own title bar too" (it can't:
-  // React gives a parent no signal that a child rendered nothing). Compute
-  // the two conditionally-empty widgets' visibility HERE, once, and filter
-  // them out of what actually renders — never their own generic content
-  // check, since every other widget kind always has something to show.
-  const activationVisible = useActivationChecklistVisible(orgId);
-  const finishSetupVisible = useFinishSetupChecklistVisible(orgId);
-  const visibleWidgets = useMemo(
-    () =>
-      widgets.filter((w) => {
-        // A saved board can still hold a widget kind that no longer exists
-        // (e.g. the removed Today widgets) — drop it rather than crash.
-        if (!DASHBOARD_WIDGET_REGISTRY[w.kind]) return false;
-        if (w.kind === "activationChecklist") return activationVisible;
-        if (w.kind === "finishSetupChecklist") return finishSetupVisible;
-        return true;
-      }),
-    [widgets, activationVisible, finishSetupVisible],
-  );
-
-  const rglLayout: Layout = useMemo(
-    () =>
-      visibleWidgets.map((w) => {
-        const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
-        return {
-          i: w.id,
-          x: w.x,
-          y: w.y,
-          w: w.w,
-          h: w.h,
-          minW: def.minSize.w,
-          minH: def.minSize.h,
-          maxW: def.maxSize?.w,
-          maxH: def.maxSize?.h,
-        };
-      }),
-    [visibleWidgets],
-  );
+  const { permissions } = useCurrentRole();
+  const editing = editMode && !isMobile;
+  const { visibleWidgets, kinds, rglLayout } = useBoardModel(widgets, orgId);
 
   const commitFromRglLayout = useCallback(
-    (layout: Layout) => {
-      // Start from the FULL (unfiltered) widget list so a hidden checklist's
-      // saved position/size survives an unrelated drag/resize untouched —
-      // `layout` here only ever contains the currently-visible widgets RGL
-      // knows about, never the ones this component chose not to render.
-      const moved = new Map(layout.map((item) => [item.i, item]));
+    (layout: Layout, item: LayoutItem | null, verb: LayoutChange["verb"]) => {
+      // Start from the FULL widget list so a hidden slot's saved position survives
+      // an unrelated drag untouched (`layout` only holds what RGL rendered).
+      const moved = new Map(layout.map((it) => [it.i, it]));
       const next = widgets.map((w) => {
-        const item = moved.get(w.id);
-        return item ? { ...w, x: item.x, y: item.y, w: item.w, h: item.h } : w;
+        const it = moved.get(w.id);
+        return it ? { ...w, x: it.x, y: it.y, w: it.w, h: it.h } : w;
       });
-      onLayoutChange(next);
+      const kind = widgets.find((w) => w.id === item?.i)?.kind;
+      if (kind) onLayoutChange(next, { verb, kind });
     },
     [widgets, onLayoutChange],
   );
 
-  if (isMobile) {
-    const stacked = [...visibleWidgets].sort((a, b) => a.y - b.y || a.x - b.x);
+  const card = (w: DashboardLayoutWidget) => {
+    const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
+    const Component = def.component;
+    const viewAll = def.viewAll && canOpenLink(def.viewAll, permissions) ? def.viewAll : undefined;
     return (
-      <div className="flex flex-col gap-4">
-        {stacked.map((w) => {
-          const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
-          const Component = def.component;
-          return (
-            <DashboardCard
-              key={w.id}
-              title={def.title}
-              editMode={editMode}
-              onRemove={editMode ? () => onRemove(w.id) : undefined}
-              widget={<Component orgId={orgId} />}
-            />
-          );
-        })}
-      </div>
+      <DashboardCard
+        key={w.id}
+        title={def.title}
+        bare={def.stat}
+        viewAll={viewAll}
+        editMode={editing}
+        onRemove={editing ? () => onRemove(w.id) : undefined}
+        widget={<Component orgId={orgId} />}
+        className={isMobile ? cn(def.stat ? "col-span-1" : "col-span-2") : undefined}
+      />
+    );
+  };
+
+  if (isMobile) {
+    return (
+      <DashboardBoardContext.Provider value={kinds}>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-6">{readingOrder(visibleWidgets).map(card)}</div>
+      </DashboardBoardContext.Provider>
     );
   }
 
   return (
-    <div ref={containerRef} className="w-full">
-      {mounted && (
-        <Responsive
-          className="dashboard-grid"
-          width={width}
-          layouts={{ lg: rglLayout }}
-          breakpoints={{ lg: 0 }}
-          cols={{ lg: GRID_COLS }}
-          rowHeight={ROW_HEIGHT}
-          margin={MARGIN}
-          containerPadding={[0, 0]}
-          dragConfig={{ enabled: editMode, handle: ".dashboard-drag-handle", threshold: 3 }}
-          resizeConfig={{ enabled: editMode, handles: ["se"] }}
-          onDragStop={(layout) => commitFromRglLayout(layout)}
-          onResizeStop={(layout) => commitFromRglLayout(layout)}
-        >
-          {visibleWidgets.map((w) => {
-            const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
-            const Component = def.component;
-            return (
-              <DashboardCard
-                key={w.id}
-                title={def.title}
-                editMode={editMode}
-                onRemove={editMode ? () => onRemove(w.id) : undefined}
-                widget={<Component orgId={orgId} />}
-              />
-            );
-          })}
-        </Responsive>
-      )}
-    </div>
+    <DashboardBoardContext.Provider value={kinds}>
+      <div ref={containerRef} className="w-full">
+        {mounted && (
+          <Responsive
+            className="dashboard-grid"
+            width={width}
+            layouts={{ lg: rglLayout }}
+            breakpoints={{ lg: 0 }}
+            cols={{ lg: GRID_COLS }}
+            rowHeight={ROW_HEIGHT}
+            margin={MARGIN}
+            containerPadding={[0, 0]}
+            dragConfig={{ enabled: editing, handle: ".dashboard-drag-handle", threshold: 3 }}
+            resizeConfig={{ enabled: editing, handles: ["se"] }}
+            onDragStop={(layout, _old, item) => commitFromRglLayout(layout, item, "Moved")}
+            onResizeStop={(layout, _old, item) => commitFromRglLayout(layout, item, "Resized")}
+          >
+            {visibleWidgets.map(card)}
+          </Responsive>
+        )}
+      </div>
+    </DashboardBoardContext.Provider>
   );
 }

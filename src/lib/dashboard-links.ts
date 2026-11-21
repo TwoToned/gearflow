@@ -41,8 +41,6 @@ export const DASHBOARD_LINKS = {
   activity: { href: "/activity", tip: "Activity", resource: "reports" },
 } as const satisfies Record<string, DashboardLink>;
 
-export type DashboardLinkKey = keyof typeof DASHBOARD_LINKS;
-
 /** A blocker line opens its job (the first one, when there are several). */
 export function blockerLink(projectId: string): DashboardLink {
   return { href: `${JOBS}/${projectId}`, tip: "Job · Overview", resource: "project" };

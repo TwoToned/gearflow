@@ -1,47 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import { LayoutGrid, Check, Plus, RotateCcw } from "lucide-react";
+import { Check, Plus, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DASHBOARD_WIDGET_REGISTRY, type DashboardWidgetKind } from "@/lib/dashboard-widgets";
 import { cn, focusRing } from "@/lib/utils";
 
 /**
- * The dashboard's Customize-mode controls — a page-header action
- * alongside "New job"/"Warehouse"/"Add gear". Default view has no drag
- * handles, resize corners or remove buttons (`editMode=false` everywhere in
- * `<DashboardGrid>`); entering Customize reveals them plus this bar's "Add
- * widget" popover and "Reset to default".
+ * Home's Customise-mode controls (UX Phase 11, §6c.3). Customise is entered from
+ * the page ⋯ (`Customise…`, desktop only), so outside it this renders nothing.
+ * While customising, the red primary becomes `Done` (`+ New job` steps aside, so
+ * there is still one primary), with `Add widget` and `Reset layout` beside it.
  */
 export function DashboardCustomizeBar({
-  editMode,
-  onToggleEditMode,
   availableToAdd,
   onAddWidget,
   onReset,
+  onDone,
 }: {
-  editMode: boolean;
-  onToggleEditMode: () => void;
   availableToAdd: DashboardWidgetKind[];
   onAddWidget: (kind: DashboardWidgetKind) => void;
   onReset: () => void;
+  onDone: () => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
-
-  if (!editMode) {
-    return (
-      <Button variant="line" onClick={onToggleEditMode}>
-        <LayoutGrid className="h-4 w-4" /> Customize
-      </Button>
-    );
-  }
 
   return (
     <>
       <Popover open={addOpen} onOpenChange={setAddOpen}>
         <PopoverTrigger asChild>
-          <Button variant="line" disabled={availableToAdd.length === 0}>
+          <Button variant="line">
             <Plus className="h-4 w-4" /> Add widget
           </Button>
         </PopoverTrigger>
@@ -61,10 +50,7 @@ export function DashboardCustomizeBar({
                         onAddWidget(kind);
                         setAddOpen(false);
                       }}
-                      className={cn(
-                        "w-full rounded-[var(--r)] px-2.5 py-2 text-left transition-colors hover:bg-elev",
-                        focusRing,
-                      )}
+                      className={cn("w-full rounded-[var(--r)] px-2.5 py-2 text-left transition-colors hover:bg-elev", focusRing)}
                     >
                       <p className="text-[13.5px] font-medium text-ink">{def.title}</p>
                       <p className="text-caption text-muted">{def.description}</p>
@@ -77,9 +63,9 @@ export function DashboardCustomizeBar({
         </PopoverContent>
       </Popover>
       <Button variant="line" onClick={onReset}>
-        <RotateCcw className="h-4 w-4" /> Reset to default
+        <RotateCcw className="h-4 w-4" /> Reset layout
       </Button>
-      <Button variant="halo" onClick={onToggleEditMode}>
+      <Button variant="halo" onClick={onDone}>
         <Check className="h-4 w-4" /> Done
       </Button>
     </>

@@ -4,7 +4,7 @@ import { getAuthContext, isMemberAuth, requireSelfScope } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { undismissOwnRow } from "./lib/personalDismissal";
+import { deleteOwnDismissal } from "./lib/personalDismissal";
 
 /**
  * Browser-direct USER-scoped dismissal for the dashboard's "Get started"
@@ -85,7 +85,19 @@ export const dismissNative = mutation({
 export const undismissNative = mutation({
   returns: v.object({ removed: v.boolean() }),
   args: { id: v.string() },
-  handler: async (ctx, { id }) => undismissOwnRow(ctx, "orgActivationDismissals", "org-activation", id),
+  handler: async (ctx, { id }) => {
+    await assertWritesEnabled(ctx, "org-activation");
+    await enforceBrowserWriteLimit(ctx);
+    const auth = await getAuthContext(ctx);
+    if (!isMemberAuth(auth)) {
+      throw new ConvexError("Unauthorized: a signed-in user is required.");
+    }
+    if (!auth.orgId) {
+      throw new ConvexError("Forbidden: no active organization.");
+    }
+    await requireSelfScope(ctx, "write");
+    return deleteOwnDismissal(ctx, "orgActivationDismissals", id, { organizationId: auth.orgId, userId: auth.userId });
+  },
 });
 
 /**

@@ -494,8 +494,8 @@ price-looking $0 plus a `priceBreakdown` that makes it look auto-priced. See
 Timesheet rate/total (D49) are derived in `convex/lib/timeEntryMoney.ts` from the
 pay cascade `resolveRate` — a day rate once per person per day, a flat rate once per
 person per assignment, nothing resolved = blank — and never stored. Every read that
-returns crew pay (`allEntries`, `plannerData`, `membersForAssignment`, the timesheet
-CSV) gates it on `canSeeCrewPay` (`convex/lib/crewPayVisibility.ts`: manager+ and not a
+returns crew pay (`allEntries`, `plannerData`, `membersForAssignment`,
+`crewDashboard.pickerList`, the timesheet CSV) gates it on `canSeeCrewPay` (`convex/lib/crewPayVisibility.ts`: manager+ and not a
 `noFinancials` key); add a new pay-bearing read to that list, don't hide a column
 client-side. Query… (D47, enum stays `DISPUTED`) stores its reason on
 `crewTimeEntries.queryReason`, never `notes` (the crew member's own text). Submit /

@@ -227,9 +227,9 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
 | `/crew/new` | CrewMemberForm | Create crew member |
 | `/crew/[id]` | Detail page | Profile picture (upload/remove), contact, rates, skills, assignments (with status management), availability, certifications, time entries, calendar, linked user display |
 | `/crew/[id]/edit` | CrewMemberForm | Edit crew member (includes user account linking) |
-| `/crew/planner` | CrewPlannerPage | 14-day Gantt-style timeline of all crew |
-| `/crew/timesheets` | TimesheetsPage | All time entries with DataTable, filtering, search, edit/delete, export |
-| `/crew/settings` | `src/app/(app)/crew/settings/page.tsx` | Roles admin (WS10 #949) — name/department/colour/cost rate/charge rate/active, reorder, archive-with-usage-guard. Was a documented-but-nonexistent route until WS10 (`crewRoles.ts`'s mutations previously had zero callers) — see `crewRolesWrites.ts` + `use-crew-role-writes.ts`. Skills management is NOT on this page (out of scope for WS10 — the "& Skills" framing in nav labels is aspirational, not yet built) |
+| `/crew/planner` | CrewPlannerPage | The Crew workspace's **Planner** word: the shared Crew head (see "Crew workspace" below) over the 14-day timeline (the one-week grid replaces it in UX Phase 15 slice 3) |
+| `/crew/timesheets` | `TimesheetsList` (`src/components/crew/workspace/timesheets/`) | The Crew workspace's **Timesheets** word on `ListPage` (UX Phase 15, spec §9h.4) — see "Crew workspace" below |
+| `/crew/settings` | redirect | Server redirect to `/crew/planner?sheet=roles`: the roles admin is now the **Crew roles & rates** sheet (`src/components/crew/workspace/roles/`). Old links and bookmarks keep working |
 
 **CrewTable data source (2026-07, perf fix):** server-side paginated —
 `crewMembers.listPage` (filter/sort/crewRole join done in Convex) via
@@ -240,6 +240,57 @@ user (Better Auth, cross-domain) stays a separate merge applied after the pagina
 fetch — search no longer matches the linked user's display name, only this table's
 own fields (a narrow, disclosed tradeoff since Convex can't join Better Auth data).
 `icalToken` redaction for non-service callers carries over unchanged.
+
+## Crew workspace (UX Phase 15, spec §9h, D48)
+
+One page, **Crew**, with two views as head words, `Planner  Timesheets`
+(`ListHead`'s additive `headWords` prop; each word is its own route, so both
+stay deep links). `src/components/crew/workspace/crew-workspace.tsx` owns the
+words, the page ⋯ items both views share (**Crew list**, **Crew roles &
+rates…**) and the roles sheet, which is URL state: `?sheet=roles` (where
+`/crew/settings` redirects). Each view keys its list by the active org, so an
+org switch drops the selection and the seen rows.
+
+### Timesheets (`timesheets/timesheets-list.tsx`, spec §9h.4)
+- `ListPage` over `crewTimeEntries.allEntries`; the URL is the state
+  (`src/lib/list-views/timesheets.ts`): strip **Submitted · Approved · Queried ·
+  All** (Submitted is the default), `Person` and `Status ▾` filters (the strip
+  and Status intersect), sort by person / date / hours / status, the pager, and
+  saved views (old `crewMemberId` filters convert to `person` on read).
+- Columns: person (role) · job (number + name, description, query reason in
+  amber) · date (times and break under it) · hours · **Rate (pay)** · **Total**
+  · status; Approved by and Notes are opt-in under ⋯ › Columns. Rate (pay) and
+  Total are columns ONLY when the server returned them (`payVisible`) — the
+  client never decides who sees pay. A carried day rate prints `incl.`, an
+  unresolved rate is blank, never $0. Footer line: `Totals · 361h · $16,962`
+  (the money only for a pay-visible caller).
+- Row ⋯ (`src/lib/row-actions/time-entry.ts`): Edit entry, Submit, Approve,
+  Query…, Open crew member, Delete entry (confirmed). Which verb a row offers
+  comes from the ONE transition table the server gates on
+  (`convex/lib/timeEntryTransitions.ts`). Exported rows have no ⋯.
+- Bulk: `Approve n · Submit n · Query… · Export` (each count is the rows it
+  would change). Submit / Approve / Query… toast with Undo from ONE closure:
+  `revert(result)` — the forward result's own `changed` + `stamp`. Skipped rows
+  are named. Export calls the same server CSV as Export all…, narrowed to the
+  ticked ids (`exportTimesheetCSV({ ids })`, Zod-validated), so pay columns are
+  still decided server-side.
+- Edit entry and Log time (two steps: tick people, then one set of hours) are
+  sheets (bottom on a phone); an edit's Undo replays its snapshot, Log time's
+  Undo deletes the created entries (offered only to a caller with
+  `crew:delete`). Query… is a dialog whose Save stays disabled until a reason
+  is typed.
+- Phone: cards `name` / `#2336 · Sat 7 Nov · 8.5h · Submitted` with the total
+  on the right, the sticky Log time, `Show 25 more`; Export all… is desktop-only.
+
+### Crew roles & rates (`roles/crew-roles-sheet.tsx`, spec §9h.5)
+The old `/crew/settings` page as a sheet: active roles in display order,
+archived ones under a muted head, cost / charge for managers only (the server
+strips them below manager in `crewRoles.listForSettings`). Row ⋯
+(`src/lib/row-actions/crew-role.ts`): Edit… · Move up / Move down (active roles
+only, absent at the ends) · Archive… (usage dialog) · Restore. A move is ONE
+atomic `moveNative`, its Undo the opposite move; archive ↔ restore and an
+edit's snapshot are the other Undos. New role has no Undo (there is no role
+delete).
 
 ## Profile Pictures
 - Upload/remove via hover overlay on avatar in crew detail page header (only for unlinked crew members)
@@ -662,9 +713,9 @@ Resource `crew` with actions: `read, create, update, delete`
 - manager: create, read, update
 - member/staff/warehouse/viewer: read
 
-Since `crew:create`/`crew:update` are manager+-only, the `/crew/settings` roles
-admin write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
-every role can VIEW the page (`crew:read`), but the cost (`defaultRate`) and
+Since `crew:create`/`crew:update` are manager+-only, the Crew roles & rates
+sheet's write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
+every role can VIEW the sheet (`crew:read`), but the cost (`defaultRate`) and
 charge (`chargeRate`) rate columns render only for manager+
 (`useIsManagerPlus()`), server-enforced via `crewRoles.ts`'s `listForSettings`
 query (field-stripped for non-manager+ callers — the plain `list` query, used by
@@ -693,9 +744,9 @@ read permission.
 - **Crew List**: embedded crew table at the bottom
 
 ## Integration Points
-- **Sidebar**: "Crew" with HardHat icon, sub-items: Planner, Timesheets, Roles & Skills. Gated by `crew` resource
+- **Sidebar**: "Crew" with HardHat icon and ONE sub-item, Planner (`moreLabel` "Planner & timesheets"); Timesheets is the Crew page's head word and `/crew/timesheets` a `NOT_IN_NAV` deep link (D48). Gated by `crew` resource
 - **Top bar**: `crew`, `timesheets`, `planner` segment labels
-- **Page commands**: searchable crew page with children (Planner, Timesheets, Roles & Skills)
+- **Page commands**: searchable crew page with children (Planner, Timesheets, Crew roles & rates → `/crew/planner?sheet=roles`)
 - **Global search**: searches first/last name, email, phone, department, role name, tags
 - **Slash commands**:
   - `/crew` list page: `/new`, `/planner`, `/timesheets`, `/roles`, `/log-time`, `/export`
@@ -800,7 +851,10 @@ in `convex/lib/timeEntryMoney.ts`, never stored:
 The same gate redacts pay elsewhere: `crewAvailability.plannerData` drops
 `rateOverride` / `estimatedCost` below manager, and
 `crewAssignments.membersForAssignment` returns `defaultDayRate` /
-`defaultHourlyRate` as `null` below manager.
+`defaultHourlyRate` as `null` below manager, and `crewDashboard.pickerList` (the
+Log time picker) drops each call's `rateOverride` / `estimatedCost` below manager.
+Every `crewDashboard` read also strips the single-use offer `responseToken` (a
+bearer credential) in its one `isoAssignment` helper.
 
 **CSV.** `exportTimesheetCSV` builds through `src/lib/timesheet-csv.ts` →
 `toCsv` (`src/lib/csv.ts`, formula-injection guard). The twelve original

@@ -108,7 +108,7 @@ export async function exportModelsCSV() {
     m.tags?.join(";") || "",
   ]);
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 export async function exportAssetsCSV() {
@@ -170,7 +170,7 @@ export async function exportAssetsCSV() {
     a.tags?.join(";") || "",
   ]);
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 export async function exportBulkAssetsCSV() {
@@ -220,7 +220,7 @@ export async function exportBulkAssetsCSV() {
     ba.tags?.join(";") || "",
   ]);
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── IMPORT ─────────────────────────────────────────────────────────────────
@@ -648,11 +648,6 @@ export async function importModelRatesCSV(csvContent: string): Promise<ImportRes
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
-
-/** Formula-safe cell escaping lives in one place: `@/lib/csv` (R-3.1). */
-function escapeCSV(headers: string[], rows: string[][]): string {
-  return toCsv(headers, rows);
-}
 
 function parseCSV(csv: string): string[][] {
   const rows: string[][] = [];

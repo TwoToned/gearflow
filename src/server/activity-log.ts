@@ -2,6 +2,7 @@
 
 import { getOrgContext } from "@/lib/org-context";
 import { getConvexClient } from "@/lib/convex-client";
+import { toCsv } from "@/lib/csv";
 import { api } from "../../convex/_generated/api";
 import { type ActivityLogFilters, startMs, endMs } from "@/lib/activity-log-filters";
 
@@ -36,23 +37,16 @@ export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
     agentAuthored,
   });
 
-  const escape = (s: string) => {
-    if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-      return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
-  };
-
   const headers = ["Timestamp", "User", "Action", "Entity Type", "Entity Name", "Summary", "Details"];
   const rows = items.map((item) => [
     new Date(item.createdAt).toISOString(),
-    escape(item.userName),
+    item.userName,
     item.action,
     item.entityType,
-    escape(item.entityName),
-    escape(item.summary),
-    item.details ? escape(JSON.stringify(item.details)) : "",
+    item.entityName,
+    item.summary,
+    item.details ? JSON.stringify(item.details) : "",
   ]);
 
-  return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  return toCsv(headers, rows);
 }

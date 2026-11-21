@@ -198,8 +198,11 @@ export function QuoteMoneyLine({
         <OverviewLine muted>Loading quote…</OverviewLine>
       ) : (
         <>
+          {/* Cents and "inc GST", as the card printed: a sent quote's figure must
+              match its stored PDF to the cent. A null amount is "—", never $0. */}
           <OverviewLine>
-            <b className="font-mono font-semibold tabular-nums">{formatCurrency(view.amount, undefined, { cents: false })}</b>{" "}
+            <b className="font-mono font-semibold tabular-nums">{formatCurrency(view.amount)}</b>
+            {view.amount != null ? <span className="text-muted"> inc GST</span> : null}{" "}
             <span className="text-muted">· {quoteStateWords(view)}</span>
           </OverviewLine>
           {view.live?.snapshotId ? (

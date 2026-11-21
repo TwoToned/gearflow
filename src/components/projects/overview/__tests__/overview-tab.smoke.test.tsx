@@ -44,10 +44,9 @@ vi.mock("convex/react", async () => {
   const actual = await vi.importActual<typeof import("convex/react")>("convex/react");
   return { ...actual, useConvex: () => ({ query: conflictsQuery }), useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }) };
 });
-vi.mock("@/hooks/use-activity-log", () => ({
-  useEntityActivityLog: () => ({
-    data: { items: [{ id: "a1", userName: "Mel", summary: "recorded a payment", createdAt: NOW - 3_600_000 }] },
-  }),
+let canSeeActivity = true;
+vi.mock("@/hooks/use-nav-items", () => ({
+  useNavItems: () => ({ byKey: (k: string) => (k === "activity" && canSeeActivity ? { key: "activity" } : undefined) }),
 }));
 vi.mock("@/hooks/use-stable-now", () => ({ useStableNow: () => NOW }));
 vi.mock("@/hooks/use-invoice-writes", () => ({ useInvoiceWrites: () => ({ create: vi.fn(async () => {}) }) }));
@@ -97,6 +96,7 @@ function setReads(over: Record<string, unknown> = {}) {
     "quotes:listForProject": [{ id: "q3", snapshot: { total: 23880 }, pdfFileId: "f1" }],
     "invoices:listForProject": [ISSUED],
     "clients:getById": { name: "Hilton", profileDepositPercent: 25 },
+    "activityLog:recentForProject": { items: [{ id: "a1", userName: "Mel", summary: "recorded a payment", createdAt: NOW - 3_600_000 }] },
     ...over,
   };
 }
@@ -114,6 +114,7 @@ const PROJECT: OverviewTabProject = {
   location: { name: "Hilton Sydney · Grand Ballroom", address: "488 George St", latitude: -33.8, longitude: 151.2 },
   siteContactName: "Priya Shah",
   siteContactPhone: "0412 555 019",
+  siteContactEmail: "priya@hilton.example",
   projectManagers: [{ userId: "u1", user: { id: "u1", name: "Jayden Cole", email: "j@x", image: null } }],
 };
 
@@ -131,6 +132,7 @@ beforeEach(() => {
   push.mockReset();
   queryCalls.length = 0;
   conflictsQuery.mockClear();
+  canSeeActivity = true;
   setReads();
 });
 
@@ -187,7 +189,9 @@ describe("Overview › readiness", () => {
     const section = screen.getByRole("region", { name: "Readiness" });
     expect(within(section).getByRole("heading").textContent).toBe("Out — the gear has left the warehouse.");
     const rows = within(section).getAllByRole("button").map((b) => b.textContent);
-    expect(rows).toEqual([expect.stringContaining("1 blocking discussion holds prep"), expect.stringContaining("1 open incident")]);
+    // Past prep the discussion row no longer claims to hold prep.
+    expect(rows).toEqual([expect.stringContaining("1 blocking discussion open"), expect.stringContaining("1 open incident")]);
+    expect(section.textContent).not.toContain("holds prep");
     expect(section.textContent).not.toContain("crew unconfirmed");
   });
 
@@ -205,7 +209,7 @@ describe("Overview › money lines", () => {
     const user = userEvent.setup();
     const { onOpenTab } = setup();
     const money = screen.getByRole("region", { name: "Money" });
-    expect(money.textContent).toContain("$23,880");
+    expect(money.textContent).toContain("$23,880.00 inc GST");
     expect(money.textContent).toMatch(/v3 sent .* · valid until /);
     expect(within(money).getByRole("link", { name: "PDF" }).getAttribute("href")).toBe("/api/finance/quote/q3/pdf");
     await user.click(within(money).getByRole("button", { name: "Record accept" }));
@@ -214,6 +218,32 @@ describe("Overview › money lines", () => {
     expect(screen.getByTestId("quote-manager")).toBeTruthy();
     await user.click(within(money).getAllByRole("button", { name: "Finance ›" })[0]);
     expect(onOpenTab).toHaveBeenCalledWith("finance");
+  });
+
+  it("prints to the cent, as the stored PDF does: a sent $1,240.50 never rounds", () => {
+    setReads({ "quotes:listForProject": [{ id: "q3", snapshot: { total: 1240.5 }, pdfFileId: "f1" }] });
+    setup();
+    expect(screen.getByRole("region", { name: "Money" }).textContent).toContain("$1,240.50 inc GST");
+  });
+
+  it("a sub-dollar outstanding prints $0.40; a fully paid job prints $0.00 outstanding and why nothing more can be raised", () => {
+    setReads({ "invoices:listForProject": [{ ...ISSUED, total: 23880, amountPaid: 23879.6 }] });
+    setup();
+    expect(screen.getByRole("region", { name: "Money" }).textContent).toContain("$0.40 outstanding");
+    cleanup();
+    setReads({ "invoices:listForProject": [{ ...ISSUED, total: 23880, amountPaid: 23880 }] });
+    setup();
+    const money = screen.getByRole("region", { name: "Money" }).textContent;
+    expect(money).toContain("Paid in full · $0.00 outstanding");
+    expect(money).toContain("Fully invoiced");
+  });
+
+  it("nothing raised says so with the client's partial default, as the card did", () => {
+    setReads({ "invoices:listForProject": [] });
+    setup();
+    expect(screen.getByRole("region", { name: "Money" }).textContent).toContain(
+      "Not started · Hilton's partial invoices default to 25%. Nothing raised yet.",
+    );
   });
 
   it("a never-sent quote offers Send quote", async () => {
@@ -230,8 +260,10 @@ describe("Overview › money lines", () => {
     const user = userEvent.setup();
     setup();
     const money = screen.getByRole("region", { name: "Money" });
-    expect(money.textContent).toContain("Awaiting payment · $5,000 outstanding · $5,000 invoiced");
-    expect(money.textContent).toContain("$18,880 not yet raised · Last: INV-0041 deposit issued");
+    expect(money.textContent).toContain(
+      "Awaiting payment · $5,000.00 outstanding · $5,000.00 invoiced to date · $18,880.00 not yet raised",
+    );
+    expect(money.textContent).toContain("Last: INV-0041 deposit issued");
 
     await user.click(within(money).getByRole("button", { name: "+ Invoice ▾" }));
     await user.click(await screen.findByRole("menuitem", { name: "Partial balance…" }));
@@ -262,6 +294,7 @@ describe("Overview › When · Where · Who · Recent", () => {
     expect(within(facts).getByRole("link", { name: "Edit dates" }).getAttribute("href")).toBe("/projects/p1/edit");
     expect(within(facts).getByRole("link", { name: "Edit" }).getAttribute("href")).toBe("/projects/p1/edit");
     expect(within(facts).getByRole("link", { name: "directions" }).getAttribute("href")).toContain("google.com/maps");
+    expect(within(facts).getByRole("link", { name: "priya@hilton.example" }).getAttribute("href")).toBe("mailto:priya@hilton.example");
 
     await user.click(within(facts).getByRole("button", { name: "Edit job managers" }));
     expect(screen.getByTestId("pm-panel")).toBeTruthy();
@@ -273,6 +306,16 @@ describe("Overview › When · Where · Who · Recent", () => {
     expect(within(recent).getByRole("link", { name: "All activity ›" }).getAttribute("href")).toBe("/activity?entityType=project&entityId=p1");
     await user.click(within(recent).getByRole("button", { name: "Discussion ›" }));
     expect(onOpenDiscussion).toHaveBeenCalled();
+  });
+
+  it("Recent reads the BOUNDED audit-log query; All activity › is absent when the user can't open /activity", () => {
+    canSeeActivity = false;
+    setup();
+    expect(queryCalls).toContain("activityLog:recentForProject");
+    expect(queryCalls).not.toContain("activityLog:listByEntity");
+    const recent = screen.getByRole("region", { name: "Recent activity" });
+    expect(within(recent).queryByRole("link", { name: "All activity ›" })).toBeNull();
+    expect(within(recent).getByRole("button", { name: "Discussion ›" })).toBeTruthy();
   });
 
   it("the old tiles are gone", () => {

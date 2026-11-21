@@ -31,7 +31,8 @@ interface InvoicingLineProps {
   onOpenFinance: () => void;
 }
 
-const money = (n: number) => formatCurrency(n, undefined, { cents: false });
+// Cents, as the card printed and as the invoice PDFs do: $1,240.50 never rounds to $1,241.
+const money = (n: number) => formatCurrency(n);
 
 interface InvoicingView {
   state: InvoicingState;
@@ -61,30 +62,35 @@ function deriveInvoicingView(
 /**
  * The derivation's own words (UX Phase 7 renders EXACTLY what
  * `deriveInvoicingState` says; merging it with `computePaymentProgress` and
- * adding `Deposit paid` is Phase 10's): the headline label, then the figures
- * that mean something — outstanding, invoiced, paid.
+ * adding `Deposit paid` is Phase 10's), and exactly what the #1061 card
+ * printed: the headline label, the OUTSTANDING figure (whatever its sign —
+ * `0.00` included, as before), invoiced to date, paid only when non-zero, not
+ * yet raised only past half a cent.
  */
 function invoicingStateWords(view: InvoicingView): { line: string; detail: string | null } {
   const { state, clientName, depositPercent } = view;
   const headline = INVOICING_HEADLINE_LABEL[state.headline];
   if (state.liveInvoices.length === 0) {
-    return { line: "Nothing invoiced yet", detail: `${clientName ?? "This client"}'s partial invoices default to ${depositPercent}%` };
+    return { line: headline, detail: `${clientName ?? "This client"}'s partial invoices default to ${depositPercent}%. Nothing raised yet.` };
   }
-  const figures = [`${money(state.invoicedTotal)} invoiced`, state.paidTotal > 0 ? `${money(state.paidTotal)} paid` : null];
-  const outstanding = state.outstanding > 0.005 ? `${money(state.outstanding)} outstanding` : null;
-  return { line: [headline, outstanding].filter(Boolean).join(" · "), detail: figures.filter(Boolean).join(" · ") };
+  const figures = [
+    `${money(state.invoicedTotal)} invoiced to date`,
+    state.paidTotal > 0 ? `${money(state.paidTotal)} paid` : null,
+    state.notYetInvoiced != null && state.notYetInvoiced > 0.005 ? `${money(state.notYetInvoiced)} not yet raised` : null,
+  ];
+  return { line: `${headline} · ${money(state.outstanding)} outstanding`, detail: figures.filter(Boolean).join(" · ") };
 }
 
-/** The next step under the state: what is left to raise, or the last invoice out. */
+/** Under the state: the last invoice out, and why nothing more can be raised when that's the case. */
 function invoicingNextWords(state: InvoicingState): string | null {
   const parts: string[] = [];
-  if (state.notYetInvoiced != null && state.notYetInvoiced > 0.005 && state.liveInvoices.length > 0) {
-    parts.push(`${money(state.notYetInvoiced)} not yet raised`);
-  }
   const last = state.latestIssued;
   if (last) {
     const issued = last.issuedAt ? ` issued ${formatDate(new Date(last.issuedAt))}` : "";
     parts.push(`Last: ${last.invoiceNumber ?? "—"} ${last.kind.toLowerCase()}${issued}`);
+  }
+  if (state.partialStep.kind === "NONE" && state.remainingStep.kind === "NONE" && state.liveInvoices.length > 0) {
+    parts.push(state.partialStep.reason);
   }
   return parts.length ? parts.join(" · ") : null;
 }

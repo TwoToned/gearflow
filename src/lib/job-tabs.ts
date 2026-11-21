@@ -18,7 +18,7 @@ export const JOB_TAB_KEYS = [
 export type JobTabKey = (typeof JOB_TAB_KEYS)[number];
 
 /** Old `?tab=` values that still land: the Work-layer rename and the Logistics word. */
-export const JOB_TAB_ALIASES: Readonly<Record<string, JobTabKey>> = { work: "tasks", logistics: "labour" };
+const JOB_TAB_ALIASES: Readonly<Record<string, JobTabKey>> = { work: "tasks", logistics: "labour" };
 
 /** Tabs a template never has (it has no pipeline, no finance and no versions). */
 const NOT_ON_TEMPLATES: ReadonlySet<JobTabKey> = new Set(["packing", "finance", "versions"]);

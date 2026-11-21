@@ -31,7 +31,7 @@ export interface JobTabPrimaryProps {
 export const JOB_TAB_PRIMARY: Partial<Record<JobTabKey, React.ComponentType<JobTabPrimaryProps>>> = {};
 
 /** `Packing n/m`. Phase 8 owns this derivation; `undefined` shows the bare word. */
-export function usePackingTabCount(): JobTabCounts["packing"] {
+function usePackingTabCount(): JobTabCounts["packing"] {
   return undefined;
 }
 

@@ -43,7 +43,7 @@ export interface JobHeaderProject {
 }
 
 /** The id the page's lock "exits" scroll to (`scrollToLockStrip`, `lock-copy.ts`). */
-export const JOB_HEADER_ID = "job-header";
+const JOB_HEADER_ID = "job-header";
 
 const linkClass = cn("rounded-sm text-table-cell text-muted underline-offset-2 hover:text-ink hover:underline", focusRing);
 

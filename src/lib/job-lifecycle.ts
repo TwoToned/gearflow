@@ -13,7 +13,7 @@
  */
 import { projectStatusLabels } from "@/lib/status-labels";
 
-export type LifecycleStageKey =
+type LifecycleStageKey =
   | "enquiry" | "quote" | "payment" | "confirmed" | "prep" | "onsite" | "return" | "completed";
 
 interface LifecycleStage {
@@ -24,7 +24,7 @@ interface LifecycleStage {
   entry: string;
 }
 
-export const LIFECYCLE_STAGES: readonly LifecycleStage[] = [
+const LIFECYCLE_STAGES: readonly LifecycleStage[] = [
   { key: "enquiry", label: "Enquiry", statuses: ["ENQUIRY"], entry: "ENQUIRY" },
   { key: "quote", label: "Quote", statuses: ["QUOTING", "QUOTED"], entry: "QUOTING" },
   { key: "payment", label: "Awaiting payment", statuses: ["AWAITING_PAYMENT"], entry: "AWAITING_PAYMENT" },

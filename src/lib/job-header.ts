@@ -23,7 +23,7 @@ import { nextStage, progressFor, projectStatusLabel } from "@/lib/job-lifecycle"
  * `canUnlockPricing` audience (`unlockPricingNative`).
  */
 
-export type WarehouseDocType = "manifest" | "pull-slip" | "delivery-docket" | "return-sheet";
+type WarehouseDocType ="manifest" | "pull-slip" | "delivery-docket" | "return-sheet";
 export type LabelDocType = "container-label" | "kit-label" | "item-label";
 
 export interface JobHeaderInput {
@@ -74,7 +74,7 @@ const WAREHOUSE_DOCS: ReadonlyArray<{ type: WarehouseDocType; label: string }> =
  * Finance. A sent quote or an issued invoice is STORED bytes and is opened
  * from Finance; this menu never renders either (#987, CLAUDE.md).
  */
-export function jobDocumentsSpec(i: Pick<JobHeaderInput, "labels" | "on">): ActionMenuSpec {
+function jobDocumentsSpec(i: Pick<JobHeaderInput, "labels" | "on">): ActionMenuSpec {
   const { on, labels } = i;
   return {
     items: [
@@ -115,7 +115,7 @@ function dangerItems(i: JobHeaderInput): ActionItem[] {
  * last and red. All but the danger verb are `organise`, because the renderer
  * sorts by the fixed group order. A template has no ⋯.
  */
-export function jobMenuSpec(i: JobHeaderInput): ActionMenuSpec {
+function jobMenuSpec(i: JobHeaderInput): ActionMenuSpec {
   if (i.isTemplate) return { items: [] };
   const comments = i.blockingCount > 0 ? `Comments & discussion · ${i.blockingCount} blocking` : "Comments & discussion";
   const items: ActionItem[] = [
@@ -145,7 +145,7 @@ const UNLOCK_CONFIRM = {
  * always carries the Finance link, so the glyph never disappears for someone
  * who can't unlock (an empty `ActionMenu` renders nothing).
  */
-export function jobLockProps(i: JobHeaderInput): DetailHeaderProps["lock"] {
+function jobLockProps(i: JobHeaderInput): DetailHeaderProps["lock"] {
   if (!i.lock || i.isTemplate) return undefined;
   const items: ActionItem[] = [
     { key: "lock-finance", label: "Quotes and invoices", group: "organise", icon: Lock, onSelect: i.on.openFinance },

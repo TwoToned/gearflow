@@ -3,11 +3,11 @@
 // #990 (Phase E) "legible lock" smoke tests, shrunk for #1230's single
 // pricingLocked boolean — renders the actual overlay components OPEN (not
 // just a closed trigger) per CLAUDE.md's overlay-test rule, and for the
-// tooltip-driven surfaces (`LockedField`, `GatedButton`, `ProjectLockChip`,
-// `ProjectLockGlyph`) actually opens the tooltip via focus rather than
+// tooltip-driven surfaces (`LockedField`, `GatedButton`, `ProjectLockGlyph`)
+// actually opens the tooltip via focus rather than
 // asserting on the closed DOM. `LockedField`/`GatedButton` are unchanged by
 // #1230 (still a plain `locked`/`gated` boolean + `reason` string) —
-// `ProjectLockChip`/`ProjectLockGlyph`/`resolveLockCopy`/`formatLockElapsed`
+// `ProjectLockGlyph`/`resolveLockCopy`/`formatLockElapsed`
 // are the SHRUNKEN successors of #990's tier-based versions.
 import React from "react";
 import { describe, it, expect, beforeAll, vi, afterEach } from "vitest";
@@ -23,7 +23,6 @@ beforeAll(() => {
 import { LockedField } from "@/components/ui/locked-field";
 import { GatedButton } from "@/components/ui/gated-button";
 import { Input } from "@/components/ui/input";
-import { ProjectLockChip } from "@/components/projects/project-lock-chip";
 import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { resolveLockCopy, formatLockElapsed, type LockCopyStatus } from "@/lib/lock-copy";
 
@@ -115,25 +114,8 @@ describe("GatedButton smoke", () => {
   });
 });
 
-describe("ProjectLockChip smoke", () => {
-  it("renders nothing while loading", () => {
-    const { container } = render(<ProjectLockChip status={{ pricingLocked: false, loading: true }} />);
-    expect(container.textContent).toBe("");
-  });
-
-  it("renders nothing when pricing is open — absence is the state", () => {
-    const { container } = render(<ProjectLockChip status={{ pricingLocked: false, loading: false }} />);
-    expect(container.textContent).toBe("");
-  });
-
-  it("renders 'Pricing locked' and opens its tooltip", async () => {
-    render(<ProjectLockChip status={{ pricingLocked: true, pricingLockedByName: "Bob", loading: false }} />);
-    const chip = screen.getByRole("button", { name: /Pricing locked/i });
-    expect(chip).toBeTruthy();
-    await openByFocus(chip);
-    expect(screen.getByRole("tooltip").textContent).toMatch(/Pricing locked/);
-  });
-});
+// The header chip (`ProjectLockChip`) became the job header's lock glyph (UX
+// Phase 7, §6b); its menu is opened in `job-header.smoke.test.tsx`.
 
 describe("ProjectLockGlyph smoke", () => {
   it("renders nothing for a pre-CONFIRMED status", () => {

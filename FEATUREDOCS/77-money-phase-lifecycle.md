@@ -42,7 +42,8 @@ percentage and the category rollup subtotal (CLAUDE.md, R-3.1).
 
 So there is **one status**, and `src/lib/project-payment-progress.ts` computes
 the three sub-steps on read. `<PaymentProgressStrip>` renders them directly
-under the lifecycle stepper — and **only** while the project is at
+under the job header's progress line (UX Phase 7; it was the stepper) — and
+**only** while the project is at
 `AWAITING_PAYMENT`. On any other status it is premature or history, and the
 Finance tab already owns the full ledger. It answers one question — "what are
 we waiting for?" — and disappears once it has been answered.

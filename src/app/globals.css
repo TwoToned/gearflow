@@ -386,6 +386,22 @@
   .touch-target { min-height: 44px; min-width: 44px; }
 }
 
+/* A text link inside a sentence can't grow to 44px without breaking the line,
+   so on a phone its HIT AREA grows instead: an invisible box at least 44×44px
+   centred on the link (DESIGN.md §15). Layout is unchanged. */
+@media (width < theme(--breakpoint-md)) {
+  .tap-area { position: relative; }
+  .tap-area::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
 /* iOS PWA viewport fix — see DESIGN.md §15 */
 html {
   min-height: calc(100% + env(safe-area-inset-top));

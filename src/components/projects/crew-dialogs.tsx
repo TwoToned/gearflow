@@ -23,7 +23,7 @@ import {
 } from "@/server/crew-communication";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useProjectServices, refreshProjectServices } from "@/hooks/use-project-services";
-import { refreshProjectCrew, refreshProjectLabourCost, } from "@/hooks/use-project-crew";
+import { refreshProjectCrew } from "@/hooks/use-project-crew";
 import {
   crewAssignmentSchema,
   type CrewAssignmentFormValues,
@@ -214,7 +214,6 @@ export function AssignmentDialog({
     onSuccess: () => {
       toast.success("Assignment updated");
       refreshProjectCrew(projectId);
-      refreshProjectLabourCost(projectId);
       refreshProjectServices(projectId);
       onOpenChange(false);
     },

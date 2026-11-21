@@ -113,10 +113,13 @@ matching the existing `photosUploading` pattern in `maintenance-form.tsx`.
   record with `incidentType` set, alongside the existing check-record timeline
   (`asset-checks-tab.tsx`). No new tab — the Maintenance tab already IS the incident
   history, since incident reports are `MaintenanceRecord`s.
-- **Project detail page** — `<OpenIssuesBadge>` (`src/components/projects/open-issues-badge.tsx`)
-  next to the project title: counts open (`status` not `COMPLETED`/`CANCELLED`)
-  incident-flagged maintenance records for the project, links to the warehouse page.
-  Hidden entirely at zero.
+- **Job Overview** (UX Phase 7, FEATUREDOCS/69) — the readiness section's incidents
+  row: open (`status` not `COMPLETED`/`CANCELLED`) incident-flagged maintenance
+  records for the job, counted server-side by `projectReadiness.forProject` through
+  `maintenanceRecords.by_projectId`, foreign-org rows dropped (capped at 200, `200+` when
+  truncated), linking to the job's warehouse page. It passes at zero and stays listed
+  from Out onward while failing. (It replaced the `OpenIssuesBadge`, which subscribed
+  to the org's whole `maintenanceRecords.list`.)
 
 ## Notifications
 

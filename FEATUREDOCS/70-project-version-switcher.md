@@ -38,6 +38,13 @@ existing quote-derived lock until that phase lands.
 > doc stays accurate until a later phase of #1221 actually migrates the read
 > path, at which point this doc gets rewritten, not just appended to.
 >
+> **Update (2026-11, UX Phase 7):** the `version-switcher.tsx` header pill and
+> `version-strip.tsx` are gone from the job page. The version menu is the
+> header ⋯'s `Version ▸` submenu plus `V`, and the viewing-version strip is the
+> header's quiet strip. See FEATUREDOCS/78's VersionStrip section and
+> FEATUREDOCS/10 "Project Detail Page Layout". The separate Comments button
+> (`ProjectCommentsButton`) is now ⋯ › Comments & discussion.
+>
 > **Update (2026-09-16, Phase 5 of #1221, #1231):** that later phase landed —
 > partially. The header dropdown described below, the read-only bar, "Make vN
 > live" (the promote dialog) and the version-projected Equipment/Labour/

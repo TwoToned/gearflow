@@ -9,12 +9,13 @@ import {
 } from "./use-crew-scheduling";
 
 /**
- * Browser-direct shared stores for a project's crew + labour cost (Phase 3 — replaces
- * the getProjectCrew/getProjectLabourCost server actions). Read by the crew panel +
- * call-sheet dialog + page financial summary; refreshed by the crew panel + services
- * panel after a crew/service change. One-shot (NOT reactive — the crew composite scans
- * the org's members/roles/services; Appendix B). Cross-component refresh via the
- * module-level refreshProjectCrew/…LabourCost the writers call.
+ * Browser-direct shared store for a project's crew (Phase 3 — replaces the
+ * getProjectCrew server action). Read by the crew views + call-sheet dialog;
+ * refreshed by the writers after a crew/service change. One-shot (NOT reactive — the
+ * crew composite scans the org's members/roles/services; Appendix B). Cross-component
+ * refresh via the module-level refreshProjectCrew the writers call. (The labour-cost
+ * store that sat beside it lost its last reader with the Overview tiles in UX Phase 7
+ * and was removed.)
  *
  * The app's authenticated Convex client + the active orgId are component-local, so
  * they're stamped into a module holder from inside each reader's effect (a mutable
@@ -27,7 +28,6 @@ interface Store<T> { data: T | undefined; subs: Set<() => void>; seq: number; }
 // The crew composite is a wide, loosely-typed row (consumers use Record<string, any>).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const crewStores = new Map<string, Store<any[]>>();
-const labourStores = new Map<string, Store<{ totalLabourCost: number; assignmentCount: number }>>();
 
 function storeFor<T>(map: Map<string, Store<T>>, key: string): Store<T> {
   let s = map.get(key);
@@ -50,19 +50,7 @@ function fetchCrew(projectId: string): void {
     .catch(() => { if (mySeq === s.seq) s.data = []; })
     .finally(() => { s.subs.forEach((fn) => fn()); });
 }
-function fetchLabour(projectId: string): void {
-  const h = holder.current;
-  if (!h) return;
-  const s = storeFor(labourStores, keyOf(h.orgId, projectId));
-  const mySeq = ++s.seq;
-  void h.convex.query(api.crewAssignments.projectLabourCost, { projectId, orgId: h.orgId })
-    .then((r) => { if (mySeq === s.seq) s.data = r; })
-    .catch(() => { if (mySeq === s.seq) s.data = { totalLabourCost: 0, assignmentCount: 0 }; })
-    .finally(() => { s.subs.forEach((fn) => fn()); });
-}
-
 export function refreshProjectCrew(projectId: string | undefined) { if (projectId) fetchCrew(projectId); }
-export function refreshProjectLabourCost(projectId: string | undefined) { if (projectId) fetchLabour(projectId); }
 
 function useSharedResource<T>(
   map: Map<string, Store<T>>,
@@ -94,13 +82,10 @@ function useSharedResource<T>(
 export function useProjectCrew(projectId: string | undefined, orgId: string | undefined) {
   return useSharedResource(crewStores, fetchCrew, projectId, orgId);
 }
-export function useProjectLabourCost(projectId: string | undefined, orgId: string | undefined) {
-  return useSharedResource(labourStores, fetchLabour, projectId, orgId);
-}
 
 /**
  * Cross-tab live sync: subscribe to the dual-written Convex crewAssignments table (by
- * project); when another tab changes crew, re-fetch the crew + labour-cost composites.
+ * project); when another tab changes crew, re-fetch the crew composite.
  * Mount once in the crew panel.
  */
 export function useProjectCrewLiveSync(projectId: string | undefined, orgId: string | undefined) {
@@ -111,7 +96,6 @@ export function useProjectCrewLiveSync(projectId: string | undefined, orgId: str
     if (!projectId) return;
     if (fp !== undefined && prev.current !== undefined && fp !== prev.current) {
       fetchCrew(projectId);
-      fetchLabour(projectId);
     }
     if (fp !== undefined) prev.current = fp;
   }, [projectId, fp]);

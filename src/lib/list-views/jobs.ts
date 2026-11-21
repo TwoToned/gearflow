@@ -12,6 +12,7 @@ import type { ActionMenuSpec, Fact, FactColumn, LineRowData, RowFlag } from "@/l
 import { projectStatusLabels } from "@/lib/status-labels";
 import { getStatusIntent } from "@/lib/status-colors";
 import { OUT_LABEL } from "@/lib/vocabulary";
+import { PROJECT_TYPE_LABELS } from "@/lib/project-type-labels";
 
 // ─── Segments ────────────────────────────────────────────────────────────
 
@@ -51,17 +52,7 @@ export const JOBS_SPEC: ListUrlSpec = {
 
 // ─── Filter words ────────────────────────────────────────────────────────
 
-const TYPE_LABELS: Record<string, string> = {
-  DRY_HIRE: "Dry hire",
-  WET_HIRE: "Wet hire",
-  INSTALLATION: "Installation",
-  TOUR: "Tour",
-  CORPORATE: "Corporate",
-  THEATRE: "Theatre",
-  FESTIVAL: "Festival",
-  CONFERENCE: "Conference",
-  OTHER: "Other",
-};
+const TYPE_LABELS = PROJECT_TYPE_LABELS;
 
 export const JOB_STATUS_ORDER = [
   "ENQUIRY",

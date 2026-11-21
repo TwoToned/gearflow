@@ -1,9 +1,11 @@
 /**
  * Shared pass/fail calculation for test & tag records.
- * Used by both client (instant UI feedback) and server (authoritative result).
+ * The browser uses these for instant feedback; the AUTHORITATIVE verdicts and overall
+ * result are re-derived server-side in `convex/lib/testTagReadings.ts` (Phase 16).
  */
 
 import type { ProfileThresholds, ElectricalTest } from "@/lib/test-profiles/seed-data";
+import { evaluateReading } from "../../../convex/lib/testTagReadings";
 
 export type TestReading = {
   key: string;
@@ -25,24 +27,11 @@ export type VisualCheckInput = {
 };
 
 /**
- * Evaluate a single electrical reading against its threshold.
+ * Evaluate a single electrical reading against its threshold. ONE definition, shared
+ * with the server's check in `testTagRecordsWrites.createNative` (Phase 16, Q11) — the
+ * browser's dot is a preview of the verdict the server will insist on.
  */
-export function evaluateReading(
-  value: number | null,
-  threshold: number | null,
-  operator: "lt" | "lte" | "gt" | "gte" | null,
-): "PASS" | "FAIL" | "NOT_APPLICABLE" {
-  if (value === null || value === undefined || threshold === null || operator === null) {
-    return "NOT_APPLICABLE";
-  }
-  switch (operator) {
-    case "lt": return value < threshold ? "PASS" : "FAIL";
-    case "lte": return value <= threshold ? "PASS" : "FAIL";
-    case "gt": return value > threshold ? "PASS" : "FAIL";
-    case "gte": return value >= threshold ? "PASS" : "FAIL";
-    default: return "NOT_APPLICABLE";
-  }
-}
+export { evaluateReading };
 
 /**
  * Calculate the visual inspection result from a list of checks.

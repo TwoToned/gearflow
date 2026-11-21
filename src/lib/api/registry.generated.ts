@@ -40274,6 +40274,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectPricingLockWrites.undoUnlockPricingNative",
+    "module": "projectPricingLockWrites",
+    "fn": "undoUnlockPricingNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "unlockAuditId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4bd2a8daec1e7469",
+    "returnsSha": "3db258de17c847d6",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectPricingLockWrites.unlockPricingNative",
     "module": "projectPricingLockWrites",
     "fn": "unlockPricingNative",
@@ -40317,7 +40374,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "3db258de17c847d6",
+    "returnsSha": "c846585326a13a17",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -64318,10 +64375,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1245,
-  agentReachable: 617,
+  total: 1246,
+  agentReachable: 618,
   queries: 446,
-  mutations: 799,
+  mutations: 800,
   agentReachableQueries: 311,
-  agentReachableMutations: 306,
+  agentReachableMutations: 307,
 } as const;

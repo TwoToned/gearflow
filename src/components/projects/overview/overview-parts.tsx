@@ -33,7 +33,8 @@ export function OverviewLinks({ children }: { children: React.ReactNode }) {
   return <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1 max-md:[&>*]:min-h-11">{children}</div>;
 }
 
-const LINK = "inline-flex items-center gap-1 rounded-sm text-caption font-semibold text-link hover:underline";
+// `tap-area` (globals.css): a 44px hit box on a phone without changing the line.
+const LINK = "tap-area inline-flex items-center gap-1 rounded-sm text-caption font-semibold text-link hover:underline";
 
 /** A text link that does something on this page (opens a dialog, a tab). */
 export const OverviewTextButton = React.forwardRef<HTMLButtonElement, React.ComponentProps<"button">>(

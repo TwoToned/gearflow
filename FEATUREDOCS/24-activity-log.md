@@ -30,7 +30,10 @@ FEATUREDOCS/54.
 CSV generation is Node string-building, kept server-side per FEATUREDOCS/54's
 "CSV/Node" carve-out category. It reads Convex via the service token
 (`getConvexClient()` → `api.activityLog.exportRows`), not Postgres.
-- **`exportActivityLogCSV(filters)`**: CSV export respecting current filters.
+- **`exportActivityLogCSV(filters)`**: CSV export respecting current filters. Every
+  cell goes through `toCsv` (`src/lib/csv.ts`, the formula-injection guard —
+  FEATUREDOCS/20), so a user name, entity name or summary starting with `= + - @`,
+  tab or CR opens as text (`src/server/activity-log.csv.test.ts`).
 
 The reads that used to be `getActivityLogs`/`getEntityActivityLog` server
 actions are now browser-direct Convex queries — there's no server-action

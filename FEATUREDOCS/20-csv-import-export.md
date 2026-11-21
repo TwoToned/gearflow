@@ -11,6 +11,18 @@
 - `exportAssetsCSV()` — all active serialized assets
 - `exportBulkAssetsCSV()` — all active bulk assets
 
+**Every CSV export in the app builds its cells through `src/lib/csv.ts`** (`toCsv` /
+`csvCell`), the one formula-injection guard (R-3.1): a cell starting with `= + - @`,
+tab, CR (or a full-width look-alike) is prefixed with `'` so a spreadsheet opens it as
+text, then quoted when it holds `,` `"` CR or LF. That covers these three, the
+activity log (FEATUREDOCS/24), the T&T reports (FEATUREDOCS/14) and the Jobs list
+(`jobsCsv`, FEATUREDOCS/10). Never hand-roll another escape helper for a new export.
+The one export not yet on it is the crew timesheet (`exportTimesheetCSV`,
+`src/server/crew-time.ts`), which moves in the crew-planner work. Tests:
+`src/lib/csv.test.ts` (the rule) and `src/server/{csv.export,activity-log.csv,test-tag-reports.csv}.test.ts`
+(each export). The importers do not strip the `'`, so re-importing an exported cell
+that was guarded keeps the apostrophe.
+
 ## Import
 - `importModelsCSV(csvContent)` — upsert by name + manufacturer + modelNumber.
   Round-trips `sku` and `dailyRate`/`weeklyRate`/`monthlyRate`; `defaultRentalPrice`

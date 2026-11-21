@@ -124,3 +124,118 @@ describe("scanLookup.resolve", () => {
     ).rejects.toThrow();
   });
 });
+
+// ─── Phase 16: the Scan page's result card (checkCard / testCard) ────────────────
+describe("scanLookup.checkCard / testCard", () => {
+  async function seedCard(t: T) {
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("users", { id: USER, name: "Alice", email: "a@x.com" });
+      await ctx.db.insert("locations", { id: "loc1", organizationId: ORG, name: "Warehouse A" });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "AURA-01", serialNumber: "SN1", locationId: "loc1", condition: "FAIR", status: "CHECKED_OUT", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", line("l2", "p2", { assetId: "a1", status: "CHECKED_OUT" }));
+      await ctx.db.insert("projectLineItemUnits", { id: "u2", organizationId: ORG, lineItemId: "l2", ordinal: 0, assetId: "a1", quantity: 1, status: "CHECKED_OUT" });
+      const p2 = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p2")).first();
+      await ctx.db.patch(p2!._id, { projectEndDate: NOW + 3 * 86_400_000 });
+      await ctx.db.insert("modelCheckItems", { id: "mci1", organizationId: ORG, modelId: "m1", checkItemId: "ci1" });
+      await ctx.db.insert("modelCheckItems", { id: "mci2", organizationId: ORG, modelId: "m1", checkItemId: "ci2" });
+      // Last check: two items saved together (one failed), an older one before.
+      for (const [id, at, result] of [["c0", NOW - 9000, "PASS"], ["c1", NOW, "PASS"], ["c2", NOW, "FAIL"]] as const) {
+        await ctx.db.insert("checkRecords", { id, organizationId: ORG, context: "AD_HOC", assetId: "a1", checkItemId: "ci1", checkItemLabelSnapshot: "V", checkItemTypeSnapshot: "PASS_FAIL", result, performedById: USER, performedAt: at });
+      }
+      await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, testTagId: "TT-0412", description: "Aura", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", assetId: "a1", status: "OVERDUE", nextDueDate: NOW - 86_400_000, testIntervalMonths: 3, isActive: true });
+      await ctx.db.insert("testProfiles", { id: "prof1", organizationId: ORG, name: "Class I appliance", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", isDefault: true, isActive: true, visualChecks: [], electricalTests: [{ key: "earthContinuity", enabled: true }], thresholds: {} });
+    });
+  }
+  const card = (t: T, value: string, orgId = ORG) => t.withIdentity(asUser(orgId)).query(api.scanLookup.checkCard, { orgId, value });
+
+  test("an asset tag returns the identity and the four facts", async () => {
+    const t = makeT(); await seedCard(t);
+    const c = await card(t, "AURA-01");
+    expect(c.kind).toBe("asset");
+    expect(c.asset).toMatchObject({ id: "a1", assetTag: "AURA-01", serialNumber: "SN1", modelName: "PAR Can", status: "CHECKED_OUT", condition: "FAIR" });
+    expect(c.location).toEqual({ id: "loc1", name: "Warehouse A" });
+    expect(c.job).toEqual({ projectId: "p2", projectNumber: "2342", projectName: "Tour", lineItemId: "l2", state: "out", backAt: NOW + 3 * 86_400_000 });
+    expect(c.lastCheck).toEqual({ at: NOW, byName: "Alice", total: 2, failed: 1, truncated: false });
+    expect(c.checkItemCount).toBe(2);
+    expect(c.tt).toMatchObject({ id: "tt1", testTagId: "TT-0412", status: "OVERDUE", testIntervalMonths: 3 });
+  });
+
+  test("a test tag reaches the same asset card", async () => {
+    const t = makeT(); await seedCard(t);
+    const byTag = await card(t, "AURA-01");
+    const byTt = await card(t, "TT-0412");
+    expect({ ...byTt, tag: "x" }).toEqual({ ...byTag, tag: "x" });
+  });
+
+  test("kit, bulk, T&T-only and unknown tags each report their kind", async () => {
+    const t = makeT(); await seedCard(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "K-1", name: "Truss kit", status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "BIN-1", status: "ACTIVE", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("testTagAssets", { id: "tt2", organizationId: ORG, testTagId: "TT-9", description: "Kettle", status: "CURRENT", isActive: true });
+    });
+    expect((await card(t, "K-1"))).toMatchObject({ kind: "kit", kit: { id: "k1", name: "Truss kit" }, asset: null });
+    expect((await card(t, "BIN-1"))).toMatchObject({ kind: "bulk", bulk: { id: "b1", modelName: "PAR Can" } });
+    expect((await card(t, "TT-9"))).toMatchObject({ kind: "ttOnly", asset: null, tt: { id: "tt2", description: "Kettle" } });
+    expect((await card(t, "nope"))).toMatchObject({ kind: "unknown", tag: "nope", asset: null, tt: null });
+    expect((await card(t, "<script>"))).toMatchObject({ kind: "unknown" });
+  });
+
+  test("org mismatch: foreign location, project, line, model and T&T row are never returned", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("locations", { id: "locX", organizationId: OTHER, name: "Their shed" });
+      await ctx.db.insert("models", { id: "mX", organizationId: OTHER, name: "Their model", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "mX", assetTag: "A-1", locationId: "locX", status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW });
+      // Our unit, but its line points at a foreign job; and a foreign line under our unit.
+      await ctx.db.insert("projectLineItems", line("l1", "pX", { assetId: "a1", status: "CHECKED_OUT" }));
+      await ctx.db.insert("projectLineItemUnits", { id: "u1", organizationId: ORG, lineItemId: "l1", ordinal: 0, assetId: "a1", quantity: 1, status: "CHECKED_OUT" });
+      // A foreign T&T row that names our asset, and our test tag linked to a foreign asset.
+      await ctx.db.insert("testTagAssets", { id: "ttX", organizationId: OTHER, testTagId: "TT-X", description: "Theirs", assetId: "a1", isActive: true });
+      await ctx.db.insert("assets", { id: "aX", organizationId: OTHER, modelId: "mX", assetTag: "THEIRS", status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("testTagAssets", { id: "tt9", organizationId: ORG, testTagId: "TT-9", description: "Ours", assetId: "aX", isActive: true });
+    });
+    const c = await card(t, "A-1");
+    expect(c.location).toBeNull();
+    expect(c.job).toBeNull();
+    expect(c.asset?.modelName).toBeNull();
+    expect(c.tt).toBeNull();
+    expect(JSON.stringify(c)).not.toMatch(/Their|TT-X/);
+    // Our test tag linked to a foreign asset never discloses it.
+    const tt = await card(t, "TT-9");
+    expect(tt.kind).toBe("ttOnly");
+    expect(JSON.stringify(tt)).not.toContain("THEIRS");
+    // A caller from another org is rejected outright; another org's tag is unknown here.
+    await expect(t.withIdentity(asUser(OTHER)).query(api.scanLookup.checkCard, { orgId: ORG, value: "A-1" })).rejects.toThrow();
+    expect((await card(t, "THEIRS")).kind).toBe("unknown");
+  });
+
+  test("bounded last check: a group that fills the read window is flagged truncated", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW });
+      for (let i = 0; i < 60; i++) {
+        await ctx.db.insert("checkRecords", { id: `c${i}`, organizationId: ORG, context: "AD_HOC", assetId: "a1", checkItemId: `ci${i}`, checkItemLabelSnapshot: "V", checkItemTypeSnapshot: "PASS_FAIL", result: "PASS", performedById: USER, performedAt: NOW });
+      }
+    });
+    expect((await card(t, "A-1")).lastCheck).toMatchObject({ total: 50, truncated: true });
+  });
+
+  // The two reads differ only in their resource (`warehouse` vs `testTag`), which is what
+  // an API key's scopes are intersected against — so a testTag-only key reaches testCard
+  // (Q12). For a member the resource-scoped read is the same org check.
+  test("testCard adds the resolved profile; a viewer (testTag:read, no warehouse) can use it", async () => {
+    const t = makeT(); await seedCard(t);
+    const asViewer = { subject: "user_v", orgId: ORG };
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m-v", organizationId: ORG, userId: "user_v", role: "viewer" }); });
+    const c = await t.withIdentity(asViewer).query(api.scanLookup.testCard, { orgId: ORG, value: "TT-0412" });
+    expect(c.kind).toBe("asset");
+    expect(c.profile).toMatchObject({ id: "prof1", name: "Class I appliance", requiresSubTests: false });
+    // No T&T row → no profile.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "NOTT", status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    expect((await t.withIdentity(asViewer).query(api.scanLookup.testCard, { orgId: ORG, value: "NOTT" })).profile).toBeNull();
+  });
+});

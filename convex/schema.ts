@@ -1127,6 +1127,10 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_kitId", ["kitId"])
     .index("by_projectId", ["projectId"])
+    // UX Phase 7: the job Overview's incidents row (`projectReadiness.forProject`)
+    // counts ONE project's records, scoped by org IN the index and capped, instead
+    // of the page subscribing to the whole org's maintenance table.
+    .index("by_organizationId_projectId", ["organizationId", "projectId"])
     .index("by_reportedById", ["reportedById"])
     .index("by_assignedToId", ["assignedToId"])
     .index("by_status", ["status"])

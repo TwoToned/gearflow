@@ -241,6 +241,43 @@ export function computeProjectPackingReadiness(
   return { totalCount: plannable.length, notPlannedCount: notPlanned.length };
 }
 
+/**
+ * UX Phase 7 — the Overview's incidents row. How many maintenance records on
+ * this job's gear are still-open INCIDENTS (Report Issue, or an immediate
+ * check-item FAIL: `incidentType` set, status neither COMPLETED nor CANCELLED —
+ * the same rule the deleted `OpenIssuesBadge` applied client-side over the
+ * whole org's table).
+ *
+ * The read is bounded: the caller takes at most `INCIDENT_SCAN_CAP + 1` of the
+ * project's records, so `truncated` says "at least this many" honestly rather
+ * than pretending the count is exact.
+ */
+export const INCIDENT_SCAN_CAP = 200;
+
+export interface IncidentRecordInput {
+  incidentType?: string | null;
+  status?: string | null;
+}
+
+export interface ReadinessIncidentSection {
+  openCount: number;
+  /** More records exist than were scanned; `openCount` is a floor. */
+  truncated: boolean;
+}
+
+const CLOSED_MAINTENANCE_STATUSES: ReadonlySet<string> = new Set(["COMPLETED", "CANCELLED"]);
+
+export function computeProjectIncidentReadiness(
+  records: IncidentRecordInput[],
+  cap: number = INCIDENT_SCAN_CAP,
+): ReadinessIncidentSection {
+  const scanned = records.slice(0, cap);
+  const openCount = scanned.filter(
+    (r) => r.incidentType != null && !CLOSED_MAINTENANCE_STATUSES.has(r.status ?? ""),
+  ).length;
+  return { openCount, truncated: records.length > cap };
+}
+
 export interface PricingLineInput {
   id: string;
   projectId: string;

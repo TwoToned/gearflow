@@ -40413,7 +40413,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f75cf9c7cfef7f2e",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines.",
+    "summary": "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines, unplanned packing, open incidents.",
     "danger": "low",
     "mcpTier": 1,
     "agentAccess": null,

@@ -10,6 +10,8 @@ import {
   computeProjectCrewReadiness,
   computeProjectPricingReadiness,
   computeProjectPackingReadiness,
+  computeProjectIncidentReadiness,
+  INCIDENT_SCAN_CAP,
   type ReadinessGearSection,
 } from "./lib/projectReadiness";
 import { liveRows } from "./lib/versionScope";
@@ -103,14 +105,31 @@ async function readPackingReadiness(ctx: QueryCtx, orgId: string, projectId: str
 }
 
 /**
+ * UX Phase 7 — open incidents on this job's gear for the Overview's incidents
+ * row. Org AND project are both in the index (never the org-wide table the old
+ * `OpenIssuesBadge` subscribed to), and the scan is capped: one row past the
+ * cap is read only to know whether to report `truncated`.
+ */
+async function readIncidentReadiness(ctx: QueryCtx, orgId: string, projectId: string) {
+  const records = await ctx.db
+    .query("maintenanceRecords")
+    .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+    .take(INCIDENT_SCAN_CAP + 1);
+  return computeProjectIncidentReadiness(
+    records.map((r) => ({ incidentType: r.incidentType ?? null, status: r.status ?? null })),
+  );
+}
+
+/**
  * "Is this project ready to go out the door?" — the read behind the project
  * Overview tab's Readiness checklist (#1061).
  *
  * Four sections in one round trip, so the checklist is one subscription
  * rather than five: gear shortage on the models THIS project books, crew that
  * hasn't confirmed plus services still under-staffed, lines/groups a
- * lifecycle lock forced to $0 and nobody has priced since, and (#1296 build
- * plan phase 4) equipment lines with no planned or actual container.
+ * lifecycle lock forced to $0 and nobody has priced since, (#1296 build
+ * plan phase 4) equipment lines with no planned or actual container, and (UX
+ * Phase 7) a bounded count of open incidents on the job's gear.
  *
  * Two further checks the panel renders are deliberately NOT computed here —
  * they already have exactly one home each and duplicating either would be an
@@ -176,6 +195,7 @@ export const forProject = query({
 
     const pricing = await readPricingReadiness(ctx, orgId, projectId);
     const packing = await readPackingReadiness(ctx, orgId, projectId);
+    const incidents = await readIncidentReadiness(ctx, orgId, projectId);
 
     return {
       hasWindow: start != null && end != null,
@@ -184,13 +204,15 @@ export const forProject = query({
       crew,
       pricing,
       packing,
+      incidents,
     };
   },
 });
 
 export const agentOps: AgentOpsAnnotations = {
   forProject: {
-    summary: "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines.",
+    summary:
+      "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines, unplanned packing, open incidents.",
     danger: "low",
     mcpTier: 1,
   },

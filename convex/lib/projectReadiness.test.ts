@@ -6,6 +6,7 @@ import {
   computeProjectCrewReadiness,
   computeProjectPricingReadiness,
   computeProjectPackingReadiness,
+  computeProjectIncidentReadiness,
   type PricingLineInput,
   type PricingGroupInput,
   type PackingLineInput,
@@ -214,6 +215,25 @@ describe("computeProjectPricingReadiness", () => {
       [pgroup({ id: "g1", projectId: "p2", title: "Elsewhere" })],
     );
     expect(r.unpricedCount).toBe(0);
+  });
+});
+
+describe("computeProjectIncidentReadiness (UX Phase 7)", () => {
+  test("counts only open incidents: incidentType set, not COMPLETED or CANCELLED", () => {
+    const r = computeProjectIncidentReadiness([
+      { incidentType: "BROKEN_DAMAGED", status: "SCHEDULED" },
+      { incidentType: "NEEDS_SERVICE", status: "IN_PROGRESS" },
+      { incidentType: "BROKEN_DAMAGED", status: "COMPLETED" },
+      { incidentType: "LOST_MISSING", status: "CANCELLED" },
+      { incidentType: null, status: "SCHEDULED" }, // planned maintenance, not an incident
+    ]);
+    expect(r).toEqual({ openCount: 2, truncated: false });
+  });
+
+  test("past the cap it counts the first `cap` rows and says the count is a floor", () => {
+    const rows = Array.from({ length: 4 }, () => ({ incidentType: "BROKEN_DAMAGED", status: "SCHEDULED" }));
+    expect(computeProjectIncidentReadiness(rows, 3)).toEqual({ openCount: 3, truncated: true });
+    expect(computeProjectIncidentReadiness(rows.slice(0, 3), 3)).toEqual({ openCount: 3, truncated: false });
   });
 });
 

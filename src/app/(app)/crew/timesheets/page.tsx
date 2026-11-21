@@ -308,7 +308,7 @@ export default function TimesheetsPage() {
         { value: "DRAFT", label: "Draft", color: getStatusColor("timeEntry", "DRAFT").dot },
         { value: "SUBMITTED", label: "Submitted", color: getStatusColor("timeEntry", "SUBMITTED").dot },
         { value: "APPROVED", label: "Approved", color: getStatusColor("timeEntry", "APPROVED").dot },
-        { value: "DISPUTED", label: "Disputed", color: getStatusColor("timeEntry", "DISPUTED").dot },
+        { value: "DISPUTED", label: timeEntryStatusLabels.DISPUTED, color: getStatusColor("timeEntry", "DISPUTED").dot },
         { value: "EXPORTED", label: "Exported", color: getStatusColor("timeEntry", "EXPORTED").dot },
       ],
       mobile: "badge",

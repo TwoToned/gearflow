@@ -13,6 +13,9 @@ import type { DatabaseReader } from "../_generated/server";
 
 type Ctx = { db: DatabaseReader };
 
+/** Profiles scanned for the class + type fallback (orgs have a handful). */
+const MAX_ORG_PROFILES = 200;
+
 /** A profile by id, only if it belongs to `orgId` (`by_cuid` is global). */
 export async function orgTestProfile(ctx: Ctx, orgId: string, id: string): Promise<Doc<"testProfiles"> | null> {
   const p = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -41,7 +44,9 @@ export async function resolveTestProfileForAsset(
     const fromModel = await modelDefaultProfile(ctx, orgId, asset.assetId);
     if (fromModel) return fromModel;
   }
-  const orgProfiles = await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
+  // A small admin-configured catalog (12 seeded AS/NZS 3760 profiles); bounded rather
+  // than collected, so this shared cascade needs no R-8.3.3 exception.
+  const orgProfiles = await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).take(MAX_ORG_PROFILES);
   const matches = (p: Doc<"testProfiles">) => p.equipmentClass === asset.equipmentClass && p.applianceType === asset.applianceType;
   return (
     orgProfiles.find((p) => matches(p) && p.isDefault === true && p.isActive === true) ??

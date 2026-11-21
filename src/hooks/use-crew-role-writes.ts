@@ -22,6 +22,7 @@ export function useCrewRoleWrites() {
   const createM = useMutation(api.crewRolesWrites.createNative);
   const updateM = useMutation(api.crewRolesWrites.updateNative);
   const archiveM = useMutation(api.crewRolesWrites.archiveNative);
+  const moveM = useMutation(api.crewRolesWrites.moveNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -58,6 +59,10 @@ export function useCrewRoleWrites() {
     },
     archive: async (id: string, isActive: boolean): Promise<{ id: string; isActive: boolean; usage: { crewMembers: number; crewAssignments: number; projectServices: number } }> => {
       return await archiveM({ id, orgId: requireOrg(), isActive, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** One atomic Move up / Move down (UX Phase 15). Its Undo is the opposite move. */
+    move: async (id: string, direction: "up" | "down"): Promise<{ id: string; moved: boolean }> => {
+      return await moveM({ id, orgId: requireOrg(), direction, now: Date.now(), actor: actor(), auditId: createId() });
     },
   };
 }

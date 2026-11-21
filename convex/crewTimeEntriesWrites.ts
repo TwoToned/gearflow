@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { calculateTotalHours } from "./lib/crewTimeHours";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
+import { QUERY_REASON_MAX } from "./lib/timeEntryQuery";
 
 /**
  * Native CREW-TIME-ENTRY write mutations (Phase 3 browser-direct — replaces
@@ -352,9 +353,6 @@ export const approveNative = mutation({
     return { count: changed.length, changed };
   },
 });
-
-/** The Query… reason bound — mirrors `timeEntryQuerySchema` (src/lib/validations/crew.ts). */
-export const QUERY_REASON_MAX = 500;
 
 /**
  * Query… (D47; enum stays `DISPUTED`): SUBMITTED/APPROVED → DISPUTED, storing

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { QUERY_REASON_MAX } from "../../../convex/lib/timeEntryQuery";
 
 export const crewMemberSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(200),
@@ -136,6 +137,17 @@ export const crewTimeEntrySchema = z.object({
 });
 
 export type CrewTimeEntryFormValues = z.input<typeof crewTimeEntrySchema>;
+
+/**
+ * Query… on timesheet entries (UX Phase 15, D47): what the crew member should
+ * check. Required; the bound is shared with `crewTimeEntriesWrites.queryNative`
+ * (convex/lib/timeEntryQuery.ts) so client and server can't disagree.
+ */
+export const timeEntryQuerySchema = z.object({
+  reason: z.string().trim().min(1, "Say what needs checking").max(QUERY_REASON_MAX),
+});
+
+export type TimeEntryQueryFormValues = z.input<typeof timeEntryQuerySchema>;
 
 /** Most offers one "Send N offers" click may fan out (each is an email). */
 const MAX_OFFER_BATCH = 100;

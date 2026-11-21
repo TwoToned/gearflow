@@ -54,6 +54,9 @@ function fetchLabour(projectId: string): void {
   const h = holder.current;
   if (!h) return;
   const s = storeFor(labourStores, keyOf(h.orgId, projectId));
+  // UX Phase 7 removed the Overview tile strip, this store's last reader. With
+  // nobody subscribed, a writer's refresh has no one to tell: skip the query.
+  if (s.subs.size === 0) return;
   const mySeq = ++s.seq;
   void h.convex.query(api.crewAssignments.projectLabourCost, { projectId, orgId: h.orgId })
     .then((r) => { if (mySeq === s.seq) s.data = r; })
@@ -93,9 +96,6 @@ function useSharedResource<T>(
 
 export function useProjectCrew(projectId: string | undefined, orgId: string | undefined) {
   return useSharedResource(crewStores, fetchCrew, projectId, orgId);
-}
-export function useProjectLabourCost(projectId: string | undefined, orgId: string | undefined) {
-  return useSharedResource(labourStores, fetchLabour, projectId, orgId);
 }
 
 /**

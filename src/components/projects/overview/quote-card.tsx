@@ -2,24 +2,20 @@
 // use-client: interactive — dialog state + Convex subscriptions (R-8.1.1)
 
 import { useState } from "react";
-import { Download, Send, CheckCircle2 } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { api } from "../../../../convex/_generated/api";
-import { formatDate } from "@/lib/formatters";
-import { quoteStatusIntent, intentToBadgeStatus } from "@/lib/status-colors";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Panel } from "@/components/ui/card";
+import { formatCurrency, formatDate } from "@/lib/formatters";
 import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
 import { QuoteManagerDialog } from "@/components/projects/finance/quote-manager-dialog";
 import { diffSnapshotEntries, type SnapshotEntryLike } from "@/lib/project-snapshot-diff";
 import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
-import { OverviewCardHeader, OverviewAmount, OverviewMetaList, OverviewActions } from "./card-parts";
+import { OverviewLabel, OverviewLine, OverviewLinks, OverviewTextButton, OverviewTextLink } from "./overview-parts";
 
-interface QuoteCardProps {
+interface QuoteLineProps {
   projectId: string;
   orgId: string | undefined;
   projectNumber: string;
@@ -28,10 +24,8 @@ interface QuoteCardProps {
   subtotal: number | null;
   taxAmount: number | null;
   total: number | null;
-  /** Switches the project to the Finance tab — used only by the drift
-   *  indicator's "see what changed" affordance. "All revisions" opens the
-   *  `QuoteManagerDialog` instead (self-contained state below). */
-  onOpenLedger: () => void;
+  /** Switches the job to the Finance tab (`Finance ›`, `see what changed ›`). */
+  onOpenFinance: () => void;
 }
 
 /** The live (SENT/ACCEPTED/…) revision, as `revisionStateForProject` returns it. */
@@ -48,13 +42,13 @@ interface QuoteView {
   live: LiveQuote;
   status: string;
   amount: number | null;
-  /** Set only when a STORED artifact exists — see `QuoteActions`. */
+  /** Set only when a STORED artifact exists — see the PDF link. */
   pdfQuoteId: string | null;
   revision: number;
 }
 
 /**
- * What the card displays, derived from the two reads. `null` while either is
+ * What the line displays, derived from the two reads. `null` while either is
  * still loading.
  *
  * The amount rule is the load-bearing one: a live quote shows its FROZEN
@@ -89,18 +83,33 @@ function deriveQuoteView(
   };
 }
 
+/** `EXPIRED` is derived, never stored — always word it from `effectiveStatus`. */
+const STATUS_WORD: Record<string, string> = {
+  SENT: "sent",
+  ACCEPTED: "accepted",
+  DECLINED: "declined",
+  EXPIRED: "expired",
+  RECALLED: "recalled",
+  SUPERSEDED: "superseded",
+};
+
+/** `v3 sent 4 Nov · valid until 4 Dec`, `v3 accepted`, `v2 · not sent yet`. */
+export function quoteStateWords(view: Pick<QuoteView, "live" | "status" | "revision">): string {
+  const { live, status, revision } = view;
+  if (!live) return `v${revision} · not sent yet`;
+  const word = STATUS_WORD[status] ?? status.toLowerCase();
+  if (status !== "SENT") return `v${live.version} ${word}`;
+  const sent = live.sentAt ? ` ${formatDate(new Date(live.sentAt))}` : "";
+  const valid = live.validUntil ? ` · valid until ${formatDate(new Date(live.validUntil))}` : "";
+  return `v${live.version} sent${sent}${valid}`;
+}
+
 /**
- * "This job no longer matches v<N>" — inlined from the deleted shared
- * `QuoteDriftIndicator` component (Project Versioning v2 Phase 5, #1231:
- * that shared component is one of the surfaces `VersionStrip` absorbs, but
- * its drift STATE isn't rebuilt into the strip this phase — see
- * FEATUREDOCS/78's Phase 5 section). Same underlying logic as
- * `project-quote-rail.tsx`'s own inline copy (R-3.1: one diff/summarize/
- * describe pipeline, two thin renderers — the render shape differs enough
- * between the rail's banner and this card that a shared component wasn't
- * worth reintroducing).
+ * "This job no longer matches v<N>" as one quiet line. Same pipeline as
+ * `project-quote-rail.tsx`'s inline copy (R-3.1: one diff/summarize/describe
+ * pipeline, two thin renderers).
  */
-function InlineQuoteDrift({
+function QuoteDriftLine({
   projectId,
   orgId,
   snapshotId,
@@ -111,7 +120,7 @@ function InlineQuoteDrift({
   orgId: string;
   snapshotId: string;
   version: number;
-  onSeeWhatChanged?: () => void;
+  onSeeWhatChanged: () => void;
 }) {
   const snapshotEntries = useAuthedQuery(api.projectLocksRead.snapshotEntries, { snapshotId, orgId });
   const currentEntries = useAuthedQuery(api.projectLocksRead.currentEntries, { projectId, orgId });
@@ -122,152 +131,44 @@ function InlineQuoteDrift({
   if (!summary.hasDrift) return null;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius)] border-l-[3px] border-l-warn bg-warn-soft px-3 py-2 text-caption text-warn">
-      <span>
-        This job no longer matches v{version} — {describeDrift(summary)}.
-      </span>
-      {onSeeWhatChanged && (
-        <button type="button" className="shrink-0 font-semibold underline underline-offset-2" onClick={onSeeWhatChanged}>
-          See what changed
-        </button>
-      )}
-    </div>
-  );
-}
-
-function QuoteCardBody({
-  amount,
-  revision,
-  live,
-  projectId,
-  orgId,
-  onOpenLedger,
-}: {
-  amount: number | null;
-  revision: number;
-  live: LiveQuote;
-  projectId: string;
-  orgId: string;
-  onOpenLedger: () => void;
-}) {
-  return (
-    <div className="flex-1 px-4 py-3.5">
-      <OverviewAmount value={amount} suffix="inc GST" />
-      <OverviewMetaList
-        rows={[
-          { label: "Revision", value: `v${live?.version ?? revision}` },
-          live?.sentAt
-            ? { label: "Sent", value: formatDate(new Date(live.sentAt)) }
-            : { label: "Status", value: "Never sent" },
-          live?.validUntil ? { label: "Valid until", value: formatDate(new Date(live.validUntil)) } : null,
-        ]}
-      />
-
-      {live?.snapshotId && (
-        <div className="mt-3">
-          <InlineQuoteDrift
-            projectId={projectId}
-            orgId={orgId}
-            snapshotId={live.snapshotId}
-            version={live.version}
-            onSeeWhatChanged={onOpenLedger}
-          />
-        </div>
-      )}
-
-      {!live && (
-        <p className="mt-3 text-caption text-muted">
-          Sending freezes these numbers and captures a snapshot. It doesn&rsquo;t email the client.
-        </p>
-      )}
-    </div>
+    <OverviewLine muted>
+      <span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-warn align-middle" />
+      No longer matches v{version} · {describeDrift(summary)} ·{" "}
+      <OverviewTextButton onClick={onSeeWhatChanged}>see what changed ›</OverviewTextButton>
+    </OverviewLine>
   );
 }
 
 /**
- * An open draft's one action is to send it; a sent one's is to record the
+ * An open draft's one move is to send it; a sent one's is to record the
  * client's answer. Never both — offering "send" on a live quote is how you end
  * up with two documents under the same name.
  */
-function QuotePrimaryAction({
-  live,
-  status,
-  onSend,
-  onAccept,
-}: {
-  live: LiveQuote;
-  status: string;
-  onSend: () => void;
-  onAccept: () => void;
-}) {
+function QuoteNextMove({ live, status, onSend, onAccept }: { live: LiveQuote; status: string; onSend: () => void; onAccept: () => void }) {
   if (!live) {
     return (
       <CanDo resource="invoice" action="create">
-        <Button size="sm" className="h-7" onClick={onSend}>
-          <Send className="mr-1 size-3" />
-          Send quote
-        </Button>
+        <OverviewTextButton onClick={onSend}>Send quote</OverviewTextButton>
       </CanDo>
     );
   }
   if (status !== "SENT") return null;
   return (
     <CanDo resource="invoice" action="update">
-      <Button size="sm" className="h-7" onClick={onAccept}>
-        <CheckCircle2 className="mr-1 size-3" />
-        Record accept
-      </Button>
+      <OverviewTextButton onClick={onAccept}>Record accept</OverviewTextButton>
     </CanDo>
   );
 }
 
-function QuoteActions({
-  live,
-  status,
-  pdfQuoteId,
-  onSend,
-  onAccept,
-  onManage,
-}: {
-  live: LiveQuote;
-  status: string;
-  /** Set only when a STORED artifact exists — there is deliberately no
-   *  regeneration fallback, so a revision whose render failed offers no link. */
-  pdfQuoteId: string | null;
-  onSend: () => void;
-  onAccept: () => void;
-  onManage: () => void;
-}) {
-  return (
-    <OverviewActions>
-      <QuotePrimaryAction live={live} status={status} onSend={onSend} onAccept={onAccept} />
-      {pdfQuoteId && (
-        <Button variant="line" size="sm" className="h-7" asChild>
-          <a href={`/api/finance/quote/${pdfQuoteId}/pdf`} target="_blank" rel="noopener noreferrer">
-            <Download className="mr-1 size-3" />
-            View PDF
-          </a>
-        </Button>
-      )}
-      <Button variant="line" size="sm" className="h-7" onClick={onManage}>
-        All revisions
-      </Button>
-    </OverviewActions>
-  );
-}
-
 /**
- * The project's CURRENT quote, on the Overview tab (#1061).
- *
- * Deliberately not a second quote rail. This card answers "what did we tell
- * the client, and what's the one thing I'd do next" — send the open draft, or
- * record the client's answer on a sent one. Every other verb (recall,
- * correction, delete, reprice, the revision viewer and diff) stays in the
- * Finance tab's `ProjectQuoteRail`, which remains the single owner of the
- * revision workflow. The two dialogs used here are the SAME components that
- * rail uses, not reimplementations.
+ * The Overview's quote line (spec §6b, UX Phase 7; was the #1061 Quote card):
+ * the amount and where the quote stands in words, the drift note under it,
+ * and text links — the next move (send / record accept), the stored PDF,
+ * every revision, Finance. Every other verb stays in the Finance tab's
+ * `ProjectQuoteRail`, the single owner of the revision workflow; the dialogs
+ * here are the SAME components that rail uses.
  */
-export function QuoteCard({
+export function QuoteMoneyLine({
   projectId,
   orgId,
   projectNumber,
@@ -276,11 +177,10 @@ export function QuoteCard({
   subtotal,
   taxAmount,
   total,
-  onOpenLedger,
-}: QuoteCardProps) {
-  // Frozen at mount, like the rail's own `now`: it only drives the DERIVED
-  // expiry read, and a value that changed every render would re-subscribe.
-  const [now] = useState(() => Date.now());
+  onOpenFinance,
+}: QuoteLineProps) {
+  // Frozen at mount: it only drives the DERIVED expiry read (never a ticking query arg).
+  const now = useStableNow();
   const [sendOpen, setSendOpen] = useState(false);
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -290,90 +190,73 @@ export function QuoteCard({
   const quotes = useAuthedQuery(api.quotes.listForProject, args);
 
   const view = deriveQuoteView(revisionState, quotes, total);
-  if (!orgId || !view) {
-    return (
-      <Panel className="p-4">
-        <p className="text-caption text-muted">Loading quote…</p>
-      </Panel>
-    );
-  }
-
-  const { live, status, amount, pdfQuoteId, revision } = view;
-  const intent = quoteStatusIntent(status);
 
   return (
-    <Panel className="flex flex-col p-0">
-      <OverviewCardHeader
-        title="Quote"
-        badge={<Badge status={intentToBadgeStatus(intent)}>{quoteStatusLabel(status)}</Badge>}
-      />
+    <div className="min-w-0">
+      <OverviewLabel>Quote</OverviewLabel>
+      {!orgId || !view ? (
+        <OverviewLine muted>Loading quote…</OverviewLine>
+      ) : (
+        <>
+          <OverviewLine>
+            <b className="font-mono font-semibold tabular-nums">{formatCurrency(view.amount, undefined, { cents: false })}</b>{" "}
+            <span className="text-muted">· {quoteStateWords(view)}</span>
+          </OverviewLine>
+          {view.live?.snapshotId ? (
+            <QuoteDriftLine
+              projectId={projectId}
+              orgId={orgId}
+              snapshotId={view.live.snapshotId}
+              version={view.live.version}
+              onSeeWhatChanged={onOpenFinance}
+            />
+          ) : null}
+          <OverviewLinks>
+            <QuoteNextMove live={view.live} status={view.status} onSend={() => setSendOpen(true)} onAccept={() => setAcceptOpen(true)} />
+            {view.pdfQuoteId ? (
+              <OverviewTextLink href={`/api/finance/quote/${view.pdfQuoteId}/pdf`} target="_blank" rel="noopener noreferrer">
+                PDF
+              </OverviewTextLink>
+            ) : null}
+            <OverviewTextButton onClick={() => setManageOpen(true)}>All revisions</OverviewTextButton>
+            <OverviewTextButton onClick={onOpenFinance}>Finance ›</OverviewTextButton>
+          </OverviewLinks>
 
-      <QuoteCardBody
-        amount={amount}
-        revision={revision}
-        live={live}
-        projectId={projectId}
-        orgId={orgId}
-        onOpenLedger={onOpenLedger}
-      />
-
-      <QuoteActions
-        live={live}
-        status={status}
-        pdfQuoteId={pdfQuoteId}
-        onSend={() => setSendOpen(true)}
-        onAccept={() => setAcceptOpen(true)}
-        onManage={() => setManageOpen(true)}
-      />
-
-      <QuoteCardDialogs
-        sendOpen={sendOpen}
-        onSendOpenChange={setSendOpen}
-        acceptOpen={acceptOpen}
-        onAcceptOpenChange={setAcceptOpen}
-        live={live}
-        projectId={projectId}
-        projectNumber={projectNumber}
-        orgId={orgId}
-        clientId={clientId}
-        revision={revision}
-        subtotal={subtotal}
-        taxAmount={taxAmount}
-        total={total}
-        projectStatus={projectStatus}
-      />
-
-      <QuoteManagerDialog
-        open={manageOpen}
-        onOpenChange={setManageOpen}
-        projectId={projectId}
-        orgId={orgId}
-        projectNumber={projectNumber}
-        clientId={clientId}
-        projectStatus={projectStatus}
-        subtotal={subtotal}
-        taxAmount={taxAmount}
-        total={total}
-      />
-    </Panel>
+          <QuoteLineDialogs
+            sendOpen={sendOpen}
+            onSendOpenChange={setSendOpen}
+            acceptOpen={acceptOpen}
+            onAcceptOpenChange={setAcceptOpen}
+            live={view.live}
+            projectId={projectId}
+            projectNumber={projectNumber}
+            orgId={orgId}
+            clientId={clientId}
+            revision={view.revision}
+            subtotal={subtotal}
+            taxAmount={taxAmount}
+            total={total}
+            projectStatus={projectStatus}
+          />
+          <QuoteManagerDialog
+            open={manageOpen}
+            onOpenChange={setManageOpen}
+            projectId={projectId}
+            orgId={orgId}
+            projectNumber={projectNumber}
+            clientId={clientId}
+            projectStatus={projectStatus}
+            subtotal={subtotal}
+            taxAmount={taxAmount}
+            total={total}
+          />
+        </>
+      )}
+    </div>
   );
 }
 
-/** `EXPIRED` is derived, never stored — always label from `effectiveStatus`. */
-function quoteStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    DRAFT: "Draft",
-    SENT: "Sent",
-    ACCEPTED: "Accepted",
-    DECLINED: "Declined",
-    EXPIRED: "Expired",
-    RECALLED: "Recalled",
-    SUPERSEDED: "Superseded",
-  };
-  return labels[status] ?? status;
-}
-
-function QuoteCardDialogs({
+function QuoteLineDialogs({
   sendOpen,
   onSendOpenChange,
   acceptOpen,
@@ -422,12 +305,7 @@ function QuoteCardDialogs({
         />
       )}
       {acceptOpen && live && (
-        <AcceptQuoteDialog
-          open={acceptOpen}
-          onOpenChange={onAcceptOpenChange}
-          quoteId={live.id}
-          version={live.version}
-        />
+        <AcceptQuoteDialog open={acceptOpen} onOpenChange={onAcceptOpenChange} quoteId={live.id} version={live.version} />
       )}
     </>
   );

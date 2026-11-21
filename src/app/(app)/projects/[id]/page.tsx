@@ -15,19 +15,10 @@ import {
   ProjectContextRail,
   type ProjectContextRailProject,
 } from "@/components/projects/project-context-rail";
-import {
-  OverviewScheduleCard,
-  OverviewLocationCard,
-  OverviewTeamCard,
-  OverviewActivityCard,
-} from "@/components/projects/overview/context-cards";
-import type { ProjectContextProject } from "@/lib/project-context";
+import { OverviewTab, type OverviewTabProject } from "@/components/projects/overview/overview-tab";
 import { DetailLayout, DetailMain, DetailSidebar } from "@/components/layout/page-layouts";
 import { CoachingTip } from "@/components/onboarding/coaching-tip";
 import { useActivationMilestones } from "@/hooks/use-activation-milestones";
-import { QuoteCard } from "@/components/projects/overview/quote-card";
-import { InvoicingCard } from "@/components/projects/overview/invoicing-card";
-import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -46,7 +37,7 @@ import { composeProjectWithVersion } from "@/lib/project-version-compose";
 import { JobHeader, type JobHeaderProject } from "@/components/projects/job-header";
 import { JobTabRow } from "@/components/projects/job-tab-row";
 import { VersionsTabPlaceholder } from "@/components/projects/versions-tab-placeholder";
-import { FinanceTabSlot, NotesTabSlot, ProjectSummaryStrip } from "@/components/projects/job-tab-slots";
+import { FinanceTabSlot, NotesTabSlot } from "@/components/projects/job-tab-slots";
 import { JOB_TAB_KEYS, availableJobTabs, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
 
 export default function ProjectDetailPage({
@@ -110,6 +101,9 @@ export default function ProjectDetailPage({
   // Versions tab placeholder open it. Phase 8 points `openVersions` at the tab.
   const [versionsOpen, setVersionsOpen] = useState(false);
   const openVersions = () => setVersionsOpen(true);
+  // The comments panel: the header ⋯ and Overview's blocking-discussion row
+  // and `Discussion ›` all open the ONE panel the header mounts.
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
@@ -192,52 +186,17 @@ export default function ProjectDetailPage({
   // a template never shows Packing, Finance or Versions — `job-tabs.ts`).
   // Only the active panel is mounted, as with the old Radix `TabsContent`.
   const panels: Partial<Record<JobTabKey, React.ReactNode>> = {
-    // ── Overview (#1061, recomposed in #1063). The project's home: read the
-    // state, then pick a tab to work in. Slice B of UX Phase 7 rebuilds it to
-    // §6b (readiness, two money lines, When/Where/Who, Recent). Until then the
-    // open-issues indicator sits here, since it has left the header.
+    // ── Overview (#1061; UX Phase 7, §6b). The job's home: readiness, two
+    // money lines, When · Where · Who, Recent — `overview/overview-tab.tsx`.
     overview: (
-      <div className="flex min-w-0 flex-col gap-4">
-        {!isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
-        {!isTemplate && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <QuoteCard
-              projectId={id}
-              orgId={orgId}
-              projectNumber={project.projectNumber}
-              clientId={project.clientId as string | null | undefined}
-              projectStatus={project.status as string | null | undefined}
-              subtotal={project.subtotal as number | null}
-              taxAmount={project.taxAmount as number | null}
-              total={project.total as number | null}
-              onOpenLedger={() => setRequestedTab("finance")}
-            />
-            <InvoicingCard
-              projectId={id}
-              orgId={orgId}
-              projectNumber={project.projectNumber}
-              projectStatus={project.status as string | null | undefined}
-              clientId={project.clientId as string | null | undefined}
-              total={project.total as number | null}
-            />
-          </div>
-        )}
-        {!isTemplate && (
-          <ProjectSummaryStrip
-            projectId={id}
-            equipmentRevenue={project.equipmentRevenue as number | null}
-            total={project.total as number | null}
-          />
-        )}
-        {/* Standing context, as peer cards — the same facts the sidebar shows
-            on every other tab, shaped once in `@/lib/project-context`. */}
-        <div className="grid gap-4 md:grid-cols-2">
-          {!isTemplate && <OverviewScheduleCard project={project as ProjectContextProject} />}
-          <OverviewLocationCard project={project as ProjectContextProject} />
-          <OverviewTeamCard projectId={id} project={project as ProjectContextProject} />
-          {orgId && !isTemplate && <OverviewActivityCard projectId={id} orgId={orgId} />}
-        </div>
-      </div>
+      <OverviewTab
+        projectId={id}
+        orgId={orgId}
+        project={project as OverviewTabProject}
+        isTemplate={isTemplate}
+        onOpenTab={setRequestedTab}
+        onOpenDiscussion={() => setCommentsOpen(true)}
+      />
     ),
     equipment: (
       <EquipmentTab
@@ -352,6 +311,8 @@ export default function ProjectDetailPage({
             onOpenTab={setRequestedTab}
             onOpenVersions={openVersions}
             onMakeLive={setMakeLiveTarget}
+            commentsOpen={commentsOpen}
+            onCommentsOpenChange={setCommentsOpen}
           />
 
           {/* Project Versioning v2, Phase 5b (#1232, design §5.1 D46/D47) —

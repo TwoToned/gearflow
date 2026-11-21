@@ -1,9 +1,5 @@
 "use client";
 
-import { useActiveOrganization } from "@/lib/auth-client";
-import { useProjectServicesSummary } from "@/hooks/use-project-services";
-import { useProjectLabourCost } from "@/hooks/use-project-crew";
-import { formatCurrency } from "@/lib/formatters";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
@@ -16,90 +12,10 @@ import { useProjectVersion } from "@/components/projects/project-version-context
 /**
  * The job page's tab bodies that used to live at the bottom of
  * `src/app/(app)/projects/[id]/page.tsx`, moved out unchanged (UX Phase 7) so
- * the page stays small enough for Phases 9 and 10 to merge into.
+ * the page stays small enough for Phases 9 and 10 to merge into. (The
+ * Overview's four-tile strip that also lived here was removed in slice B:
+ * each figure is on the tab that owns it, see FEATUREDOCS/69.)
  */
-
-export function ProjectSummaryStrip({
-  projectId,
-  equipmentRevenue,
-  total,
-}: {
-  projectId: string;
-  equipmentRevenue: number | null;
-  total: number | null;
-}) {
-  const { data: summaryOrg } = useActiveOrganization();
-  const { data: labourData } = useProjectLabourCost(projectId, summaryOrg?.id);
-
-  const { data: serviceData } = useProjectServicesSummary(projectId);
-
-  // A faint em-dash for an empty/placeholder metric — calm, not loud.
-  const emptyValue = <span className="text-muted">{"—"}</span>;
-
-  const metrics: {
-    label: string;
-    value: React.ReactNode;
-    bold?: boolean;
-  }[] = [
-    {
-      label: "Equipment",
-      value: equipmentRevenue != null ? formatCurrency(equipmentRevenue) : emptyValue,
-    },
-    {
-      // Lead with the charge; the cost rides along as a quiet muted sub-part.
-      label: "Services",
-      value: serviceData ? (
-        <span>
-          {formatCurrency(serviceData.chargeTotal)}
-          <span className="font-normal text-muted"> · {formatCurrency(serviceData.costTotal)} cost</span>
-        </span>
-      ) : (
-        emptyValue
-      ),
-    },
-    {
-      label: "Crew",
-      value: labourData ? (
-        <span>
-          {formatCurrency(Number(labourData.totalLabourCost))}
-          <span className="font-normal text-muted"> · {labourData.assignmentCount}</span>
-        </span>
-      ) : (
-        emptyValue
-      ),
-    },
-    {
-      label: "Total",
-      value: total != null ? formatCurrency(total) : emptyValue,
-      bold: true,
-    },
-  ];
-
-  // Inline metrics strip (single surface, vertical dividers) per DESIGN dashboard rule.
-  return (
-    <div className="grid grid-cols-2 gap-px rounded-[var(--r)] border border-line bg-line shadow-[var(--sh-card)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line sm:bg-card">
-      {metrics.map((m) => (
-        <div
-          key={m.label}
-          className="bg-card px-4 py-3 sm:first:rounded-l-[var(--r)] sm:last:rounded-r-[var(--r)]"
-        >
-          <div className="t-overline text-muted">
-            {m.label}
-          </div>
-          <div
-            className={
-              m.bold
-                ? "text-card-title font-bold tabular-nums tracking-tight text-ink"
-                : "text-ui-text font-semibold tabular-nums text-ink-2"
-            }
-          >
-            {m.value}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 interface FinanceTabSlotProps {
   projectId: string;

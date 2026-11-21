@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from "react";
 import { createPortal } from "react-dom";
-import type { DashboardWidgetKind } from "@/lib/dashboard-widgets";
+import type { DashboardWidgetKind } from "@/lib/dashboard-widget-kind";
 
 /**
  * The two places a widget writes into its card's header (UX Phase 11, §6c.2):

@@ -12,6 +12,7 @@ import { RecentActivityWidget } from "@/components/dashboard/widgets/recent-acti
 import { SetupPanel } from "@/components/dashboard/setup-panel";
 import { MyTasksWidget } from "@/components/dashboard/widgets/my-tasks-widget";
 import { DASHBOARD_LINKS, type DashboardLink } from "@/lib/dashboard-links";
+import type { DashboardWidgetKind } from "@/lib/dashboard-widget-kind";
 
 /**
  * The customizable dashboard's widget catalog (FEATUREDOCS/81, DESIGN.md
@@ -23,18 +24,7 @@ import { DASHBOARD_LINKS, type DashboardLink } from "@/lib/dashboard-links";
  * (`finishSetupChecklist` + `activationChecklist` are ONE setup panel since UX
  * Phase 11), so a saved board always loads.
  */
-export type DashboardWidgetKind =
-  | "onTheFloorNow"
-  | "needsAttention"
-  | "statActiveJobs"
-  | "statOverdueReturns"
-  | "statGearDeployed"
-  | "statCrewBooked"
-  | "upcomingProjects"
-  | "recentActivity"
-  | "finishSetupChecklist"
-  | "activationChecklist"
-  | "myTasks";
+export type { DashboardWidgetKind } from "@/lib/dashboard-widget-kind";
 
 interface DashboardWidgetGeometry {
   w: number;

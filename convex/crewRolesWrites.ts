@@ -205,10 +205,49 @@ export const archiveNative = mutation({
   },
 });
 
+/** The org's roles in display order (sortOrder, then name), as the roles admin lists them. */
+function displayOrder<T extends { sortOrder?: number; name: string }>(roles: T[]): T[] {
+  return [...roles].sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0) || x.name.localeCompare(y.name));
+}
+
+/**
+ * Move one role up or down the list (UX Phase 15, the roles sheet's Move up /
+ * Move down). ONE atomic write: the roles are renumbered 0..n-1 in display
+ * order with the role swapped with its neighbour — replacing the old pair of
+ * full-patch `updateNative` calls, which could interleave and which left ties
+ * (two roles at the same `sortOrder`) unmovable. Its Undo is the opposite move.
+ * At either end it is a no-op (`moved: false`).
+ */
+export const moveNative = mutation({
+  returns: v.object({ id: v.string(), moved: v.boolean() }),
+  args: { id: v.string(), orgId: v.string(), direction: v.union(v.literal("up"), v.literal("down")), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "crewRole");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "crew", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const roles = displayOrder(await ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()); // r9.8-ok: bounded per-org config set — see docs/exceptions.md R-8.3.3
+    const from = roles.findIndex((r) => r.id === a.id);
+    if (from < 0) throw new ConvexError("Crew role not found");
+    const to = a.direction === "up" ? from - 1 : from + 1;
+    if (to < 0 || to >= roles.length) return { id: a.id, moved: false };
+
+    [roles[from], roles[to]] = [roles[to], roles[from]];
+    for (const [i, r] of roles.entries()) if (r.sortOrder !== i) await ctx.db.patch(r._id, { sortOrder: i });
+
+    const moved = roles[to];
+    await logCrewRole(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: moved.name, summary: `Moved crew role ${moved.name} ${a.direction}` });
+    return { id: a.id, moved: true };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
   // Toggles isActive (archive/restore) — archive/lifecycle category is high
   // by rule regardless of this particular toggle's non-destructiveness.
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
+  // Reorders the roles list (display only); its Undo is the opposite move.
+  moveNative: { danger: "low" },
   updateNative: { danger: "medium" },
 };

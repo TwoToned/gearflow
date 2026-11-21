@@ -5,7 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { assertBulkSizeOk, enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
@@ -417,6 +417,145 @@ export const bulkStatusNative = mutation({
   },
 });
 
+// ─── Planner bulk verbs (UX Phase 15, spec §9h.3) ──────────────────────────────
+//
+// `Confirm n` and `Cancel n` on the crew planner. Each runs its own from-status
+// gate per row, writes one activity row per changed assignment, and reports
+// what it skipped. Confirm's Undo (`unconfirmManyNative`) takes only the ids
+// and the forward write's stamp and reads the prior state back from the
+// forward write's own activity rows — never from the caller. Cancel has no
+// Undo: the people it was offered to are told (Logistics' rule for sent mail).
+
+/** Marks an activity row as a confirm record `unconfirmManyNative` may read back. */
+const CONFIRM_RECORD_KIND = "crew_assignment_confirm";
+const CANCELLABLE: ReadonlySet<string> = new Set(["PENDING", "OFFERED", "ACCEPTED", "CONFIRMED"]);
+/** Cancelling these tells the crew member (the offer reached them). */
+const TOLD_ON_CANCEL: ReadonlySet<string> = new Set(["OFFERED", "ACCEPTED", "CONFIRMED"]);
+
+type AssignmentDoc = import("./_generated/dataModel").Doc<"crewAssignments">;
+
+async function findAssignment(ctx: MutationCtx, id: string): Promise<AssignmentDoc | null> {
+  return await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+}
+
+async function assignmentLabel(ctx: MutationCtx, orgId: string, doc: AssignmentDoc): Promise<{ name: string; pn: string }> {
+  const m = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", doc.crewMemberId)).first();
+  const name = m && m.organizationId === orgId ? `${m.firstName} ${m.lastName}` : "crew member";
+  return { name, pn: await projectNumber(ctx, orgId, doc.projectId) };
+}
+
+/** Replace the assignment with `patch` applied (absent keys in `clear` removed) + counter bump. */
+async function replaceAssignment(ctx: MutationCtx, doc: AssignmentDoc, patch: Record<string, unknown>, clear: readonly string[] = []): Promise<void> {
+  const { _id, _creationTime, ...rest } = doc;
+  void _creationTime;
+  const merged: Record<string, unknown> = { ...rest, ...patch };
+  for (const k of clear) delete merged[k];
+  await ctx.db.replace(_id, merged as typeof rest);
+  await bumpCountersForTable(ctx, "crewAssignments", doc, merged);
+}
+
+async function guardAssignmentBulk(ctx: MutationCtx, orgId: string, supplied: Actor, count: number): Promise<Actor> {
+  await assertWritesEnabled(ctx, "crew");
+  await enforceBrowserWriteLimit(ctx);
+  await requireOrgPermission(ctx, orgId, "crew", "update");
+  await assertBulkSizeOk(ctx, count);
+  return await resolveActor(ctx, supplied);
+}
+
+const bulkArgs = { orgId: v.string(), ids: v.array(v.string()), now: v.number(), actor: actorValidator, auditId: v.string() };
+
+/** `Confirm n`: ACCEPTED → CONFIRMED with the confirmer stamp. Anything else is skipped. */
+export const confirmManyNative = mutation({
+  returns: v.object({ confirmed: v.array(v.string()), skipped: v.array(v.string()) }),
+  args: bulkArgs,
+  handler: async (ctx, a) => {
+    const actor = await guardAssignmentBulk(ctx, a.orgId, a.actor, a.ids.length);
+    const confirmed: string[] = [], skipped: string[] = [];
+    for (const id of new Set(a.ids)) {
+      const doc = await findAssignment(ctx, id);
+      if (!doc || doc.organizationId !== a.orgId || doc.status !== "ACCEPTED") { skipped.push(id); continue; }
+      await replaceAssignment(ctx, doc, { status: "CONFIRMED", confirmedAt: a.now, confirmedById: actor.userId, updatedAt: a.now });
+      const { name, pn } = await assignmentLabel(ctx, a.orgId, doc);
+      await logAssignment(ctx, {
+        orgId: a.orgId, actor, auditId: `${a.auditId}:${id}`, now: a.now, action: "STATUS_CHANGE", id, name, projectId: doc.projectId,
+        summary: `Confirmed ${name} on ${pn}`,
+        metadata: { kind: CONFIRM_RECORD_KIND, prevStatus: doc.status, prevConfirmedAt: doc.confirmedAt ?? null, prevConfirmedById: doc.confirmedById ?? null },
+      });
+      confirmed.push(id);
+    }
+    return { confirmed, skipped };
+  },
+});
+
+/** The confirm write's own activity row for `id` at `stamp` by `userId`. */
+async function confirmRecord(ctx: MutationCtx, orgId: string, id: string, stamp: number, userId: string) {
+  const rows = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "crew_assignment").eq("entityId", id))
+    .order("desc")
+    .take(50);
+  const row = rows.find((r) => r.createdAt === stamp && r.userId === userId && (r.metadata as { kind?: string } | undefined)?.kind === CONFIRM_RECORD_KIND);
+  return (row?.metadata ?? null) as { prevStatus?: string; prevConfirmedAt?: number | null; prevConfirmedById?: string | null } | null;
+}
+
+function unconfirmRefusal(doc: AssignmentDoc | null, orgId: string, stamp: number): string | null {
+  if (!doc || doc.organizationId !== orgId) return "Assignment not found";
+  if (doc.status !== "CONFIRMED" || doc.updatedAt !== stamp) return "This call changed after it was confirmed, so it can't be undone";
+  return null;
+}
+
+/**
+ * The exact Undo of `confirmManyNative`: ids + the forward stamp only. Restores
+ * each assignment's prior status and confirm stamp from the forward write's own
+ * activity row, and refuses the whole Undo if any call changed since.
+ */
+export const unconfirmManyNative = mutation({
+  returns: v.object({ count: v.number() }),
+  args: { ...bulkArgs, stamp: v.number() },
+  handler: async (ctx, a) => {
+    const actor = await guardAssignmentBulk(ctx, a.orgId, a.actor, a.ids.length);
+    const ids = [...new Set(a.ids)];
+    for (const id of ids) {
+      const doc = await findAssignment(ctx, id);
+      const refusal = unconfirmRefusal(doc, a.orgId, a.stamp);
+      if (refusal) throw new ConvexError(refusal);
+      const prior = await confirmRecord(ctx, a.orgId, id, a.stamp, actor.userId);
+      if (prior?.prevStatus !== "ACCEPTED") throw new ConvexError("Nothing to undo for this call");
+      const clear = [prior.prevConfirmedAt == null ? "confirmedAt" : "", prior.prevConfirmedById == null ? "confirmedById" : ""].filter(Boolean);
+      await replaceAssignment(ctx, doc!, { status: "ACCEPTED", updatedAt: a.now, confirmedAt: prior.prevConfirmedAt ?? undefined, confirmedById: prior.prevConfirmedById ?? undefined }, clear);
+      const { name, pn } = await assignmentLabel(ctx, a.orgId, doc!);
+      await logAssignment(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}:${id}`, now: a.now, action: "STATUS_CHANGE", id, name, projectId: doc!.projectId, summary: `Undid confirming ${name} on ${pn}` });
+    }
+    return { count: ids.length };
+  },
+});
+
+/**
+ * `Cancel n` (spec §9h.3): PENDING/OFFERED/ACCEPTED/CONFIRMED → CANCELLED. The
+ * slot reopens (a CANCELLED call no longer fills `crewCountRequired`), time
+ * entries stay. A status change is structural — no recalc, as `bulkStatusNative`.
+ * Returns `toTell` — the calls whose crew member already had the offer — for
+ * the caller to send cancellation mail. No Undo (the mail is sent).
+ */
+export const cancelManyNative = mutation({
+  returns: v.object({ cancelled: v.array(v.string()), toTell: v.array(v.string()), skipped: v.array(v.string()) }),
+  args: bulkArgs,
+  handler: async (ctx, a) => {
+    const actor = await guardAssignmentBulk(ctx, a.orgId, a.actor, a.ids.length);
+    const cancelled: string[] = [], toTell: string[] = [], skipped: string[] = [];
+    for (const id of new Set(a.ids)) {
+      const doc = await findAssignment(ctx, id);
+      if (!doc || doc.organizationId !== a.orgId || !CANCELLABLE.has(doc.status ?? "PENDING")) { skipped.push(id); continue; }
+      await replaceAssignment(ctx, doc, { status: "CANCELLED", updatedAt: a.now });
+      if (TOLD_ON_CANCEL.has(doc.status ?? "PENDING")) toTell.push(id);
+      const { name, pn } = await assignmentLabel(ctx, a.orgId, doc);
+      await logAssignment(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}:${id}`, now: a.now, action: "STATUS_CHANGE", id, name, projectId: doc.projectId, summary: `Cancelled ${name}'s call on ${pn}`, metadata: { prevStatus: doc.status ?? "PENDING" } });
+      cancelled.push(id);
+    }
+    return { cancelled, toTell, skipped };
+  },
+});
+
 // generateShifts is no-audit (parity — the old action logged none), so resolveActor omitted.
 export const generateShiftsNative = mutation({
   returns: v.object({ count: v.number() }),
@@ -452,7 +591,13 @@ export const generateShiftsNative = mutation({
 export const agentOps: AgentOpsAnnotations = {
   bulkDeleteNative: { danger: "high" },
   bulkStatusNative: { danger: "medium" },
+  // Withdraws calls (crew are told by the caller); reopens the slot; no Undo.
+  cancelManyNative: { danger: "high" },
+  // ACCEPTED → CONFIRMED only; exactly reversible by unconfirmManyNative.
+  confirmManyNative: { danger: "medium" },
   createNative: { danger: "medium" },
+  // The exact Undo of confirmManyNative (same user, same stamp, unchanged since).
+  unconfirmManyNative: { danger: "medium" },
   deleteNative: { danger: "high" },
   // Deletes existing SCHEDULED shifts and regenerates from the assignment's
   // start/end dates — a derived-data regen, not a delete/archive of the

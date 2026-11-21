@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import { getMembers } from "@/server/settings";
+import { evaluateReading } from "@/lib/test-tag/calculate-result";
 
 import { wizardReducer, initialWizardState, type WizardStep, type WizardState, type ProfileInfo } from "./components/wizard-reducer";
 import { ScanStep } from "./components/scan-step";
@@ -141,15 +142,29 @@ function QuickTestContent() {
     mutationFn: async () => {
       if (!state.asset) throw new Error("No asset loaded");
 
+      // Phase 16 (F5): every reading carries ITS OWN verdict; a blank sends neither
+      // field (the server rejects an enabled blank, D51). Interim mapping — the Scan
+      // page's T&T draft replaces this wizard in slice 3.
+      const tests = new Map((state.profile?.electricalTests ?? []).map(t => [t.key, t]));
+      const own = (key: string, value: number | null) => {
+        if (value === null) return undefined;
+        const t = tests.get(key);
+        return evaluateReading(value, t?.threshold, t?.operator) === "FAIL" ? ("FAIL" as const) : ("PASS" as const);
+      };
+      const limits = state.profile?.thresholds ?? {};
+      const outlet = (value: number | null, limit: number | undefined, op: "lt" | "gte" | "lte") => {
+        if (value === null) return undefined;
+        return evaluateReading(value, limit || null, op) === "FAIL" ? ("FAIL" as const) : ("PASS" as const);
+      };
       const subTests = state.subTests.map(st => ({
         label: st.label,
         sortOrder: st.sortOrder,
         result: st.result,
-        earthContinuityResult: st.earthContinuityReading !== null ? (st.result as "PASS" | "FAIL") : ("NOT_APPLICABLE" as const),
+        earthContinuityResult: outlet(st.earthContinuityReading, limits.earthMax, "lt"),
         earthContinuityReading: st.earthContinuityReading,
-        insulationResult: st.insulationReading !== null ? (st.result as "PASS" | "FAIL") : ("NOT_APPLICABLE" as const),
+        insulationResult: outlet(st.insulationReading, limits.insulationMin, "gte"),
         insulationReading: st.insulationReading,
-        leakageCurrentResult: st.leakageCurrentReading !== null ? (st.result as "PASS" | "FAIL") : ("NOT_APPLICABLE" as const),
+        leakageCurrentResult: outlet(st.leakageCurrentReading, limits.leakageMax, "lte"),
         leakageCurrentReading: st.leakageCurrentReading,
         polarityResult: st.polarityResult,
         notes: st.notes || undefined,
@@ -161,7 +176,6 @@ function QuickTestContent() {
         testDate: new Date(),
         testedById: state.sessionTesterId || undefined,
         testerName: state.sessionTesterName,
-        result: state.overallResult,
         visualInspectionResult: state.visualResult,
         visualCordCondition: state.visualChecks.cordCondition ?? undefined,
         visualPlugCondition: state.visualChecks.plugCondition ?? undefined,
@@ -175,19 +189,23 @@ function QuickTestContent() {
         visualNotes: state.visualNotes || undefined,
         equipmentClassTested: (state.profile?.equipmentClass as "CLASS_I") || "CLASS_I",
         testMethod: state.testMethod,
-        earthContinuityResult: state.earthContinuityReading !== null ? (state.electricalResult as "PASS" | "FAIL") : "NOT_APPLICABLE",
+        earthContinuityResult: own("earthContinuity", state.earthContinuityReading),
         earthContinuityReading: state.earthContinuityReading ?? undefined,
-        insulationResult: state.insulationReading !== null ? (state.electricalResult as "PASS" | "FAIL") : "NOT_APPLICABLE",
+        insulationResult: own("insulationResistance", state.insulationReading),
         insulationReading: state.insulationReading ?? undefined,
         insulationTestVoltage: state.insulationTestVoltage ?? undefined,
-        leakageCurrentResult: state.leakageCurrentReading !== null ? (state.electricalResult as "PASS" | "FAIL") : "NOT_APPLICABLE",
+        leakageCurrentResult: own("leakageCurrent", state.leakageCurrentReading),
         leakageCurrentReading: state.leakageCurrentReading ?? undefined,
         polarityResult: state.polarityResult,
-        rcdTripTimeResult: state.rcdTripTimeReading !== null ? "PASS" : "NOT_APPLICABLE",
+        rcdTripTimeResult: own("rcdTripTime", state.rcdTripTimeReading),
         rcdTripTimeReading: state.rcdTripTimeReading ?? undefined,
+        rcdTripCurrentResult: own("rcdTripCurrent", state.rcdTripCurrentReading),
+        rcdTripCurrentReading: state.rcdTripCurrentReading ?? undefined,
+        rcdPushButtonResult: state.rcdPushButtonResult,
+        microwaveLeakageResult: own("microwaveLeakage", state.microwaveLeakageReading),
+        microwaveLeakageReading: state.microwaveLeakageReading ?? undefined,
         failureAction: state.failureAction as "NONE" | "REPAIRED" | "REMOVED_FROM_SERVICE" | "DISPOSED" | "REFERRED_TO_ELECTRICIAN",
         failureNotes: state.failureNotes || undefined,
-        nextDueDate: new Date(state.nextDueDate),
         subTests: subTests.length > 0 ? subTests : undefined,
         outletCount: state.outletCount > 1 ? state.outletCount : undefined,
       });

@@ -16,6 +16,13 @@ import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { assertStrLen } from "./lib/fieldGuards";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import {
+  applyCheckCondition,
+  loadUndoableAdHocCheck,
+  requireUntouchedCheckRecords,
+  type AdHocCheckDetails,
+} from "./lib/adHocCheck";
+import { deleteMaintenanceWithLinks, existingMaintenanceIds, requireUntouchedMaintenance } from "./lib/undoMaintenance";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — the densest warehouse-check state
@@ -53,6 +60,8 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 const returnCond = v.union(v.literal("GOOD"), v.literal("DAMAGED"), v.literal("MISSING"));
 const flagType = v.union(v.literal("FLAGGED_FAULTY"), v.literal("FLAGGED_TT_OVERDUE"));
 const checkContextPrepReturn = v.union(v.literal("PREP"), v.literal("RETURN"));
+/** The ad-hoc check's three condition words' values (D50; `convex/lib/assetCondition.ts`). */
+const checkCondition = v.union(v.literal("GOOD"), v.literal("FAIR"), v.literal("DAMAGED"));
 
 /** One submitted check + its client-minted record id. */
 const checkArg = v.object({
@@ -113,9 +122,14 @@ async function requireLineInOrg(ctx: MutationCtx, lineItemId: string, orgId: str
   return l;
 }
 
-async function assertAssetInOrg(ctx: MutationCtx, assetId: string, orgId: string): Promise<void> {
+async function requireAssetDoc(ctx: MutationCtx, assetId: string, orgId: string): Promise<Doc<"assets">> {
   const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", assetId)).unique();
   if (!a || a.organizationId !== orgId) throw new ConvexError("Asset not found");
+  return a;
+}
+
+async function assertAssetInOrg(ctx: MutationCtx, assetId: string, orgId: string): Promise<void> {
+  await requireAssetDoc(ctx, assetId, orgId);
 }
 
 async function assertBulkAssetInOrg(ctx: MutationCtx, bulkAssetId: string, orgId: string): Promise<void> {
@@ -165,9 +179,10 @@ async function insertCheckRecords(
     performedById: string;
     now: number;
   },
-): Promise<void> {
-  if (a.checks.length === 0) return;
+): Promise<string[]> {
+  if (a.checks.length === 0) return [];
   assertCheckRecordsFields(a.checks);
+  const inserted: string[] = [];
   const wanted = new Set(a.checks.map((c) => c.checkItemId));
   const orgCheckItems = await ctx.db
     .query("checkItems")
@@ -203,7 +218,11 @@ async function insertCheckRecords(
       performedById: a.performedById,
       performedAt: a.now,
     });
+    inserted.push(check.recordId);
   }
+  // Only the rows THIS call inserted (a same-org idempotent retry is skipped above) —
+  // the ad-hoc check's Undo deletes exactly these.
+  return inserted;
 }
 
 // ─── completeCheckAndDeprep (parity: completeCheckAndDeprep) ─── warehouse:check_out
@@ -475,6 +494,13 @@ export const completeCheckAndStore = mutation({
 });
 
 // ─── saveAdHocCheck (parity: saveAdHocCheck) ─── warehouse:scan
+//
+// Phase 16 (D50): an ad-hoc check also records the asset's CONDITION (Good / Worn /
+// Damaged — `convex/lib/assetCondition.ts`), forced to Damaged by any FAIL whatever
+// the caller sent, and written only when the word changes. Its own audit row's
+// `details` (server-written, same transaction) is the "before" snapshot the exact Undo
+// below reads (overseer Q2): the condition before/after and exactly the check records
+// and maintenance records THIS call created.
 export const saveAdHocCheck = mutation({
   args: {
     orgId: v.string(),
@@ -483,6 +509,10 @@ export const saveAdHocCheck = mutation({
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
     incidentPlan: v.array(incidentEntryArg),
+    /** D50: the condition word's value. Omitted = record no condition (unless a FAIL forces Damaged). */
+    condition: v.optional(checkCondition),
+    /** Check-level notes (Q8) — kept on this check's audit row, shown in the asset's activity. */
+    notes: v.optional(v.string()),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -492,12 +522,18 @@ export const saveAdHocCheck = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "warehouse", "scan");
     const actor = await resolveActor(ctx, a.actor);
+    assertStrLen(a.notes, "notes", { max: 2000 });
 
-    await assertAssetInOrg(ctx, a.assetId, a.orgId);
+    const asset = await requireAssetDoc(ctx, a.assetId, a.orgId);
     if (a.bulkAssetId) await assertBulkAssetInOrg(ctx, a.bulkAssetId, a.orgId);
 
+    // Which plan ids already name a row BEFORE the cores run — anything that exists
+    // afterwards and didn't before is a record this save created (PM can dedup-skip).
+    const planIds = [...a.maintenancePlan, ...a.incidentPlan].map((e) => e.maintenanceId);
+    const preExisting = await existingMaintenanceIds(ctx, planIds);
+
     // 1. AD_HOC check records (no line item, no state transition).
-    await insertCheckRecords(ctx, {
+    const recordIds = await insertCheckRecords(ctx, {
       orgId: a.orgId, context: "AD_HOC", assetId: a.assetId,
       ...(a.bulkAssetId ? { bulkAssetId: a.bulkAssetId } : {}),
       checks: a.checks, performedById: actor.userId, now: a.now,
@@ -509,15 +545,76 @@ export const saveAdHocCheck = mutation({
     // 3. Immediate incident report on FAIL (no project/line item — ad-hoc check).
     await runFailIncidentReportForChecks(ctx, a.orgId, actor, a.assetId, undefined, undefined, a.checks, a.incidentPlan, a.now);
 
+    const createdMaintenanceIds = (await existingMaintenanceIds(ctx, planIds, a.orgId)).filter((id) => !preExisting.includes(id));
+
+    // 4. Condition (D50) — server authority: any FAIL forces DAMAGED.
+    const condition = await applyCheckCondition(ctx, {
+      asset, chosen: a.condition, anyFail: a.checks.some((c) => c.result === "FAIL"),
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+    });
+
+    const details: AdHocCheckDetails = {
+      kind: "adHocCheck", assetId: a.assetId, ...condition, recordIds, createdMaintenanceIds,
+      ...(a.notes ? { notes: a.notes } : {}),
+    };
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "CREATE", entityType: "checkRecord",
       entityId: a.checks[0]?.recordId || a.assetId, entityName: "Ad-hoc check on asset",
       userId: actor.userId, userName: actor.userName,
       summary: `Performed ad-hoc check (${a.checks.length} items)`,
-      assetId: a.assetId, createdAt: a.now,
+      details, assetId: a.assetId, createdAt: a.now,
     });
 
-    return { success: true as const };
+    return { success: true as const, recordIds, auditId: a.auditId, condition: condition.conditionAfter };
+  },
+});
+
+// ─── undoAdHocCheckNative ─── warehouse:scan (Phase 16, overseer Q2/Q9/Q13)
+//
+// The EXACT reverse of one `saveAdHocCheck`, for the Scan page's single Undo closure
+// (toast + Last scans row). Takes only ids: everything it restores comes from the
+// forward save's own server-written audit row, never from the caller. Refuses as a
+// whole — changing nothing — when the asset's condition moved since, any check record
+// is gone, any maintenance record it opened has been touched, it was already undone,
+// or a different user saved it. Otherwise deletes exactly that save's check records
+// and the maintenance records (+ asset links) it created, restores the condition
+// exactly (unsetting it when it was absent) and appends an UNDO activity row; audit
+// rows themselves are append-only (R-8.11.4).
+export const undoAdHocCheckNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: {
+    orgId: v.string(),
+    forwardAuditId: v.string(),
+    auditId: v.string(),
+    now: v.number(),
+    actor: actorValidator,
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "scan");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const { forward, details } = await loadUndoableAdHocCheck(ctx, a.orgId, a.forwardAuditId, actor.userId);
+    const asset = await requireAssetDoc(ctx, details.assetId, a.orgId);
+    if ((asset.condition ?? null) !== details.conditionAfter) throw new ConvexError("The asset's condition changed since: this check can't be undone");
+    if (details.conditionChanged && asset.updatedAt !== forward.createdAt) throw new ConvexError("The asset was edited since: this check can't be undone");
+    const records = await requireUntouchedCheckRecords(ctx, a.orgId, details);
+    const maintenance = await requireUntouchedMaintenance(ctx, a.orgId, details.createdMaintenanceIds, forward.createdAt);
+
+    for (const r of records) await ctx.db.delete(r._id);
+    for (const m of maintenance) await deleteMaintenanceWithLinks(ctx, m);
+    if (details.conditionChanged) {
+      await ctx.db.patch(asset._id, { condition: details.conditionBefore ?? undefined, updatedAt: details.updatedAtBefore ?? undefined });
+    }
+
+    await writeActivityLog(ctx, {
+      id: a.auditId, organizationId: a.orgId, action: "UNDO", entityType: "checkRecord",
+      entityId: forward.entityId, entityName: forward.entityName, userId: actor.userId, userName: actor.userName,
+      summary: `Undid ad-hoc check (${records.length} items)`,
+      details: { undoOf: forward.id }, assetId: details.assetId, createdAt: a.now,
+    });
+    return { ok: true };
   },
 });
 
@@ -686,4 +783,7 @@ export const agentOps: AgentOpsAnnotations = {
   completeCheckAndFlag: { danger: "high" }, // quarantines the asset (faulty / T&T overdue)
   completeCheckAndStore: { danger: "high" }, // check-in: physical stock re-enters the warehouse
   saveAdHocCheck: { danger: "medium" },
+  // Deletes check records and the maintenance records the save opened, and rewrites the
+  // asset's condition: a delete, so "high" (overseer Q13).
+  undoAdHocCheckNative: { danger: "high" },
 };

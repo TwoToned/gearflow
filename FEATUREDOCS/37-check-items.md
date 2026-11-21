@@ -75,10 +75,34 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
 | `checkRecordWrites.completeCheckAndFlag` | warehouse.scan | Save records + flag (FAULTY/TT_OVERDUE) |
 | `checkRecordWrites.completeCheckAndStore` | warehouse.scan | Save records + checkin + condition |
 | `checkRecordWrites.completeCheckAndDeprep` | warehouse.check_out | Save RETURN records + reset prepStatus (deprep-gate check) |
-| `checkRecordWrites.saveAdHocCheck` | warehouse.scan | Standalone check (AD_HOC context) |
-| `lookupAssetForAdHocCheck(tag)` | read | Asset lookup for ad-hoc page |
+| `checkRecordWrites.saveAdHocCheck` | warehouse.scan | Standalone check (AD_HOC context) + condition (D50) + check-level `notes` |
+| `checkRecordWrites.undoAdHocCheckNative` | warehouse.scan | Exact reverse of one ad-hoc check (`danger: "high"`) |
+| `scanLookup.checkCard({ orgId, value })` | warehouse read | The Scan page's card: asset/kit/bulk/T&T-only/unknown + Where, On job, Last check, check-item count, Last T&T |
+| `lookupAssetForAdHocCheck(tag)` | read | Asset lookup for ad-hoc page (superseded by `checkCard`; deleted with the `/check` page in Phase 16 slice 2) |
 | `getCheckHistory(assetId, context?)` | read | All records for an asset |
 | `getModelFailureAnalytics(modelId)` | read | Per-check-item failure rates |
+
+### Ad-hoc check condition and Undo (Phase 16)
+
+- **Condition (D50).** `saveAdHocCheck` takes an optional `condition` — the value of the
+  word the tester chose: Good = `GOOD`, Worn = `FAIR`, Damaged = `DAMAGED`
+  (`convex/lib/assetCondition.ts`, the one mapping; `FAIR` reads "Worn" app-wide, see
+  `docs/glossary.md`). Any FAIL forces `DAMAGED` whatever was sent. `assets.condition` is
+  written **only when the word changes** (`NEW`/`GOOD`/absent read Good, `FAIR`/`POOR` read
+  Worn), so checking a NEW asset "Good" leaves it NEW. A change also writes an `asset`
+  UPDATE activity row (`Condition Good → Worn (ad-hoc check)`). Bulk stock has no
+  condition, so this applies to serialised assets only.
+- **The save's audit row is the Undo's snapshot (Q2).** Its `details` (server-written,
+  same transaction) hold `conditionBefore`/`conditionAfter` (`null` = absent),
+  `updatedAtBefore`, exactly the check-record ids this call inserted, and exactly the
+  maintenance records it opened (incident report / predictive record — re-read after the
+  cores, since PM can dedup-skip). Check-level `notes` go there too (Q8).
+- **`undoAdHocCheckNative({ orgId, forwardAuditId, … })`** takes ids only. It refuses as a
+  whole when the condition moved since, a check record is gone, a maintenance record it
+  opened is no longer `SCHEDULED` at the save's stamp (Q9), it was undone already, or a
+  different user saved it. Otherwise it deletes exactly that save's records and
+  maintenance (+ links), restores the condition exactly (unset when it was absent) and
+  appends an `UNDO` row; audit rows stay append-only.
 
 ### Warehouse Close (`convex/warehouseCloses.ts` reads + `convex/warehouseCloseWrites.ts` browser-direct mutations)
 

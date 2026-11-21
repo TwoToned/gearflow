@@ -43,6 +43,8 @@ Test profiles define which visual checks and electrical tests apply for a given 
 12 AS/NZS 3760 default profiles in `src/lib/test-profiles/seed-data.ts`. Seeded via Settings UI button or `seedDefaultProfiles()` server action.
 
 ### Profile Resolution (cascade)
+One implementation, `convex/lib/testProfileResolve.ts`, shared by `testProfiles.resolveForAsset`,
+`scanLookup.testCard` and `testTagRecordsWrites.createNative` (which holds the test to it):
 1. Asset's `testProfileId` (if explicitly set)
 2. Asset's model `defaultTestProfileId` (inherited)
 3. First default profile matching equipment class + appliance type
@@ -73,7 +75,7 @@ Multi-outlet/phase devices (power boards, RCD power boards, three-phase) require
 2. **Visual** — Profile-driven checkbox grid of visual inspection items. "Pass All" button (Ctrl+Shift+P). Auto-calculates visual result.
 3. **Electrical** — Profile-driven test inputs (only enabled tests shown). Numeric inputs with unit labels and threshold hints. Auto-evaluates readings.
 4. **Sub-Tests** — Only shown if profile `requiresSubTests`. Per-outlet rows with electrical inputs. Add/remove outlets.
-5. **Result** — Overall result pill. Breakdown dots. Failure workflow dialog (create maintenance record / mark out of service / retire). Next due date picker. Save & Next / Save & Print Label.
+5. **Result** — Overall result pill. Breakdown dots. Failure workflow dialog (create maintenance record / mark out of service / retire). Next due date picker (no longer sent since Phase 16 — the server derives the date, see "Next due is derived"; the Scan page replaces this wizard). Save & Next / Save & Print Label.
 
 ### Session Features
 - **Session tester**: Defaults to logged-in user, selectable from org members. Persists across tests in session.
@@ -123,11 +125,56 @@ When overall result is FAIL, a dialog prompts with options:
 - Save Without Action → sets `failureAction: NONE`
 
 ### Pass/Fail Calculation
-Shared utility in `src/lib/test-tag/calculate-result.ts` used by both client (real-time UI) and server (authoritative on save):
+`src/lib/test-tag/calculate-result.ts` gives the browser instant feedback:
 - `calculateVisualResult` — all enabled checks must pass
 - `calculateElectricalResult` — evaluates readings against thresholds
 - `calculateSubTestResult` — per-outlet evaluation
 - `calculateOverallResult` — any FAIL → overall FAIL
+
+**The server is the authority (Phase 16, D51 + Q11).** `testTagRecordsWrites.createNative`
+re-derives everything in `convex/lib/testTagReadings.ts` before it writes, and
+`evaluateReading` is ONE function (calculate-result.ts re-exports it from there):
+1. **Each reading carries its OWN verdict.** A numeric reading needs `PASS`/`FAIL`; a
+   `PASS`/`FAIL` needs its reading; `NOT_APPLICABLE` carries none. (Live bug F5: every
+   reading used to be stored with the *overall* electrical result, and RCD trip time was
+   always `PASS`.)
+2. **A blank enabled reading is rejected, an explicit N/A is not (D51).** Every test the
+   profile enables must be answered. The profile is the one the caller names (org-checked)
+   or else the asset's cascade (`convex/lib/testProfileResolve.ts`), so leaving out
+   `testProfileId` can't skip the check. Sub-test profiles apply the same rule per outlet.
+3. **A stated threshold decides the verdict.** A reading that fails the profile's limit
+   can't be sent as a pass (outlets use `thresholds.earthMax`/`insulationMin`/`leakageMax`,
+   as the outlet UI does).
+4. **The overall `result` is derived** (visual — a false tick fails it — any reading,
+   functional test, any outlet). There is no `result` argument any more (live bug F9:
+   the server stored whatever result it was sent). A failure action only applies to a
+   derived FAIL.
+
+RCD trip current, the RCD push-button test and microwave leakage are now stored, each
+with its own verdict (`rcdTripCurrentResult`/`Reading`, `rcdPushButtonResult`,
+`microwaveLeakageResult`/`Reading`; owner-approved schema change, 2026-11-21). Absent on
+older rows = "not recorded".
+
+### Next due is derived (D52)
+`nextDueDate` is never typed and is not a `createNative` argument: the server stores
+`deriveNextDueDate(testDate, asset.testIntervalMonths)` (`convex/lib/testTagNextDue.ts` —
+UTC calendar months, clamped at month end, 3 months when the asset has no interval) and
+returns it. To change a date, change the interval on the register. A **failed** test
+stores the same derived date — the UI reads it as "Next due after repair" — and the asset
+stays `FAILED` until a passing test.
+
+### Undo a saved test (Phase 16, Q2/Q10)
+`testTagRecordsWrites.undoCreateNative({ orgId, recordId, … })` (`testTag:create`,
+`danger: "high"`) is the exact reverse of one save. The save's own audit row carries a
+server-written before/after snapshot of the T&T asset (`lastTestDate`, `nextDueDate`,
+`outletCount`, `testProfileId`, `status`, `isActive`, `updatedAt`), the inventory asset a
+referral flagged, and the referral it opened (`convex/lib/testTagUndo.ts`). The Undo takes
+only ids and refuses (changing nothing) unless it is **within 10 minutes on the server
+clock**, by the tester who saved it, the first undo, the record is still the item's
+newest, and the item / flagged asset / referral are exactly as the save left them. It
+deletes the record, its sub-tests and an untouched referral, restores every field exactly
+(absent ones unset), and appends an `UNDO` activity row as the compliance trace. (Nothing
+else references a record today — labels print client-side and are not recorded.)
 
 ## Auto-Incrementing IDs
 Same pattern as asset tags. Stored in `Organization.metadata.testTag`:
@@ -164,7 +211,8 @@ test-first to avoid confusing "new test" with "register equipment":
 
 ## Convex Functions (formerly server actions, all deleted from `src/server/`)
 - `convex/testTagAssets.ts` (reads) + `convex/testTagAssetsWrites.ts` (browser-direct mutations) — CRUD, batch create, sync, reactivate
-- `convex/testTagRecords.ts` + `convex/testTagRecordsWrites.ts` — Test records with sub-tests, session tester, fail workflow, status recalculation
+- `convex/testTagRecords.ts` + `convex/testTagRecordsWrites.ts` — Test records with sub-tests, session tester, fail workflow, status recalculation; derived next-due + result and the reading guards (above); `undoCreateNative`
+- `convex/scanLookup.ts` `testCard` — the Scan page's T&T card: an asset tag or a test tag → the item, its four facts and its resolved profile (FEATUREDOCS/19)
 - `convex/testProfiles.ts` + `convex/testProfilesWrites.ts` — Profile CRUD, seed defaults, resolve profile cascade, duplicate
 
 ## Server Action (genuine carve-out — CSV/Node)

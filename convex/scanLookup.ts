@@ -3,11 +3,27 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { ACTIVE_UNIT_STATUSES, activityFromUnits, projectFor, stateOf, unitsFor, type Activity } from "./lib/scanActivity";
+import { loadScanCard, orNull, scanCardFields, unknownCard, type ScanCard } from "./lib/scanCard";
+import type { Doc } from "./_generated/dataModel";
+import { resolveTestProfileForAsset } from "./lib/testProfileResolve";
 
 export const agentOps: AgentOpsAnnotations = {
   resolve: {
     summary:
       "Resolve a scanned barcode/tag to its asset/kit/bulk-asset/test-tag navigation target, plus which jobs it is on right now (to pick / packed / out) and any kit-member or accessory guard.",
+    danger: "low",
+    mcpTier: 2,
+  },
+  checkCard: {
+    summary:
+      "Scan page, Check mode: what a scanned tag (asset tag or test tag) is — asset/kit/bulk/T&T-only/unknown — with where it lives, the job it is on, its last check, its check-item count and its last test & tag.",
+    danger: "low",
+    mcpTier: 2,
+  },
+  testCard: {
+    summary:
+      "Scan page, Test & tag mode: the same card as checkCard (asset tag or test tag) plus the test profile the item is tested against (visual checks, electrical tests, thresholds, outlets).",
     danger: "low",
     mcpTier: 2,
   },
@@ -30,9 +46,13 @@ export const agentOps: AgentOpsAnnotations = {
  */
 const SAFE_TAG = /^[A-Za-z0-9\-_.:/ ]+$/;
 
-const MAX_UNITS_PER_STATUS = 10;
+/** The scanned value, trimmed, or `null` when it isn't one of our tags. */
+function safeTag(value: string): string | null {
+  const tag = value.trim();
+  return !tag || tag.length > 128 || !SAFE_TAG.test(tag) ? null : tag;
+}
+
 const MAX_KIT_LINES = 20;
-const ACTIVE_UNIT_STATUSES = ["CONFIRMED", "PREPPED", "CHECKED_OUT"] as const;
 
 const activityValidator = v.object({
   projectId: v.string(),
@@ -48,76 +68,10 @@ const guardValidator = v.union(
   v.object({ kind: v.literal("accessory_child"), parentTag: v.union(v.string(), v.null()) }),
 );
 
-type Activity = {
-  projectId: string;
-  projectNumber: string;
-  projectName: string;
-  lineItemId: string;
-  state: "to_pick" | "packed" | "out";
-  quantity: number;
-};
 type Guard = { kind: "kit_member"; kitTag: string | null } | { kind: "accessory_child"; parentTag: string | null } | null;
 type Result = { url: string | null; label: string | null; activity: Activity[]; guard: Guard };
 
 const NONE: Result = { url: null, label: null, activity: [], guard: null };
-
-function stateOf(status: string | undefined, prepStatus: string | undefined): Activity["state"] {
-  if (status === "CHECKED_OUT") return "out";
-  if (status === "PREPPED" || prepStatus === "PACKED") return "packed";
-  return "to_pick";
-}
-
-/** The project, if it is ours and not a template (`by_cuid` is global). */
-async function projectFor(ctx: QueryCtx, orgId: string, projectId: string) {
-  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
-  return project && project.organizationId === orgId && !project.isTemplate ? project : null;
-}
-
-/** The unit's line and job, if both are ours and the line is live work. */
-async function jobOf(ctx: QueryCtx, orgId: string, lineItemId: string) {
-  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
-  if (!line || line.organizationId !== orgId || line.status === "CANCELLED") return null;
-  const project = await projectFor(ctx, orgId, line.projectId);
-  return project ? { line, project } : null;
-}
-
-type UnitRow = { lineItemId: string; status?: string; prepStatus?: string; quantity?: number; returnedQuantity?: number };
-
-async function activityFromUnits(ctx: QueryCtx, orgId: string, units: UnitRow[]): Promise<Activity[]> {
-  const out: Activity[] = [];
-  for (const u of units) {
-    const quantity = Math.max(0, (u.quantity ?? 1) - (u.returnedQuantity ?? 0));
-    if (quantity === 0) continue;
-    const job = await jobOf(ctx, orgId, u.lineItemId);
-    if (!job) continue;
-    out.push({
-      projectId: job.project.id,
-      projectNumber: job.project.projectNumber,
-      projectName: job.project.name,
-      lineItemId: job.line.id,
-      state: stateOf(u.status, u.prepStatus),
-      quantity,
-    });
-  }
-  return out;
-}
-
-async function unitsFor(ctx: QueryCtx, orgId: string, field: "assetId" | "bulkAssetId", id: string): Promise<UnitRow[]> {
-  const perStatus = await Promise.all(
-    ACTIVE_UNIT_STATUSES.map((status) =>
-      field === "assetId"
-        ? ctx.db
-            .query("projectLineItemUnits")
-            .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", orgId).eq("assetId", id).eq("status", status))
-            .take(MAX_UNITS_PER_STATUS)
-        : ctx.db
-            .query("projectLineItemUnits")
-            .withIndex("by_organizationId_bulkAssetId_status", (q) => q.eq("organizationId", orgId).eq("bulkAssetId", id).eq("status", status))
-            .take(MAX_UNITS_PER_STATUS),
-    ),
-  );
-  return perStatus.flat();
-}
 
 async function assetGuard(ctx: QueryCtx, orgId: string, asset: { kitId?: string; parentAssetId?: string }): Promise<Guard> {
   if (asset.kitId) {
@@ -163,8 +117,8 @@ export const resolve = query({
   handler: async (ctx, { orgId, value }): Promise<Result> => {
     await requireOrgReadFor(ctx, orgId, "warehouse");
 
-    const tag = value.trim();
-    if (!tag || tag.length > 128 || !SAFE_TAG.test(tag)) return NONE;
+    const tag = safeTag(value);
+    if (!tag) return NONE;
 
     const asset = await ctx.db
       .query("assets")
@@ -202,3 +156,69 @@ export const resolve = query({
     return NONE;
   },
 });
+
+/**
+ * The Scan page's result card in Check mode (Phase 16, spec §9i.2) —
+ * `convex/lib/scanCard.ts`. A `warehouse` read; `testCard` is the `testTag` twin.
+ * Args are stable (no clock), so the subscription settles.
+ */
+export const checkCard = query({
+  args: { orgId: v.string(), value: v.string() },
+  returns: v.object(scanCardFields),
+  handler: async (ctx, { orgId, value }): Promise<ScanCard> => {
+    await requireOrgReadFor(ctx, orgId, "warehouse");
+    const tag = safeTag(value);
+    return tag ? await loadScanCard(ctx, orgId, tag) : unknownCard(value.trim().slice(0, 128));
+  },
+});
+
+const profileValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  equipmentClass: v.union(v.string(), v.null()),
+  applianceType: v.union(v.string(), v.null()),
+  visualChecks: v.any(),
+  electricalTests: v.any(),
+  thresholds: v.any(),
+  requiresSubTests: v.boolean(),
+  defaultSubTestCount: v.union(v.number(), v.null()),
+  subTestLabel: v.union(v.string(), v.null()),
+});
+
+/**
+ * Test & tag mode's card: the same card plus the profile the item is held to (the
+ * cascade `createNative` enforces D51 against), so the draft needs one read, not two.
+ */
+export const testCard = query({
+  args: { orgId: v.string(), value: v.string() },
+  returns: v.object({ ...scanCardFields, profile: v.union(v.null(), profileValidator) }),
+  handler: async (ctx, { orgId, value }) => {
+    await requireOrgReadFor(ctx, orgId, "testTag");
+    const tag = safeTag(value);
+    const card = tag ? await loadScanCard(ctx, orgId, tag) : unknownCard(value.trim().slice(0, 128));
+    return { ...card, profile: await profileFor(ctx, orgId, card) };
+  },
+});
+
+async function profileFor(ctx: QueryCtx, orgId: string, card: ScanCard) {
+  if (!card.tt) return null;
+  const tt = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", card.tt!.id)).first();
+  if (!tt || tt.organizationId !== orgId) return null;
+  const p = await resolveTestProfileForAsset(ctx, orgId, tt);
+  return p ? profileFacts(p) : null;
+}
+
+function profileFacts(p: Doc<"testProfiles">) {
+  return {
+    id: p.id,
+    name: p.name,
+    equipmentClass: orNull(p.equipmentClass),
+    applianceType: orNull(p.applianceType),
+    visualChecks: orNull(p.visualChecks) ?? [],
+    electricalTests: orNull(p.electricalTests) ?? [],
+    thresholds: orNull(p.thresholds) ?? {},
+    requiresSubTests: p.requiresSubTests === true,
+    defaultSubTestCount: orNull(p.defaultSubTestCount),
+    subTestLabel: orNull(p.subTestLabel),
+  };
+}

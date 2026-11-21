@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { resolveTestProfileForAsset } from "./lib/testProfileResolve";
 
 export const agentOps: AgentOpsAnnotations = {
   list: { summary: "List test profiles (visual/electrical test templates) for the org.", danger: "low", mcpTier: 2 },
@@ -51,38 +52,11 @@ export const resolveForAsset = query({
   args: { orgId: v.string(), testTagAssetId: v.string() },
   handler: async (ctx, { orgId, testTagAssetId }) => {
     await requireOrgReadFor(ctx, orgId, "testTag");
-    const orgProfile = async (id: string) => {
-      const p = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-      return p && p.organizationId === orgId ? p : null;
-    };
-
     const asset = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", testTagAssetId)).first();
     if (!asset || asset.organizationId !== orgId) return null;
-
-    // 1. Asset-level profile.
-    if (asset.testProfileId) {
-      const own = await orgProfile(asset.testProfileId);
-      if (own) return own;
-    }
-    // 2. Model default (testTagAsset.assetId → asset.modelId → model.defaultTestProfileId).
-    if (asset.assetId) {
-      const linked = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", asset.assetId!)).first();
-      if (linked && linked.organizationId === orgId && linked.modelId) {
-        const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", linked.modelId!)).first();
-        if (model && model.organizationId === orgId && model.defaultTestProfileId) {
-          const modelProfile = await orgProfile(model.defaultTestProfileId);
-          if (modelProfile) return modelProfile;
-        }
-      }
-    }
-    // 3/4. Org default, then any active, for the asset's class+type.
-    const orgProfiles = (await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
-    const matches = (p: (typeof orgProfiles)[number]) => p.equipmentClass === asset.equipmentClass && p.applianceType === asset.applianceType;
-    return (
-      orgProfiles.find((p) => matches(p) && p.isDefault === true && p.isActive === true) ??
-      orgProfiles.find((p) => matches(p) && p.isActive === true) ??
-      null
-    );
+    // The cascade itself lives in convex/lib/testProfileResolve.ts (shared with
+    // scanLookup.testCard and testTagRecordsWrites.createNative's D51 check).
+    return await resolveTestProfileForAsset(ctx, orgId, asset);
   },
 });
 

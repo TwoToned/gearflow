@@ -216,7 +216,11 @@ test-first to avoid confusing "new test" with "register equipment":
 - `convex/testProfiles.ts` + `convex/testProfilesWrites.ts` — Profile CRUD, seed defaults, resolve profile cascade, duplicate
 
 ## Server Action (genuine carve-out — CSV/Node)
-- `src/server/test-tag-reports.ts` — Report data + CSV exports (includes sub-test data)
+- `src/server/test-tag-reports.ts` — Report data + CSV exports (includes sub-test data).
+  All eight CSV exports build their cells through `toCsv` (`src/lib/csv.ts`, the
+  formula-injection guard — FEATUREDOCS/20), covered by
+  `src/server/test-tag-reports.csv.test.ts`. A missing date is a blank cell (it used to
+  be a `-` placeholder, which the guard would print as `'-`).
 
 ## Auto-Registration
 When creating an asset with a model that has `requiresTestAndTag: true`, a `TestTagAsset` record is automatically created. If the model has `defaultTestProfileId`, the asset inherits it.

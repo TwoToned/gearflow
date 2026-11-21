@@ -917,6 +917,24 @@ was edited); never add client-supplied restore quantities. `coverage` describes 
 carry it. Rate reads (`getSupplierRateHistory`, `getSupplierModelRate`) need `subHire:read`; the row action needs
 `subHire:create`. Both mutations are `danger: "high"`.
 
+### Packing tab (Phase 8) — one `planInto`, a server-sourced Undo, a seal that locks the PLAN
+`src/components/projects/packing-tab.tsx` plans which case each line travels in (FEATUREDOCS/83).
+- **`usePackingPlan().planInto(ids, case | null)` is the ONLY caller of `setPlannedContainer`**: drag,
+  bulk `Plan n into…` and the row ⋯ all use it, so they share what it skips and its single Undo. Never add
+  a second plan write site.
+- **A plan Undo takes no client-supplied prior values.** The forward `setPlannedContainerNative` writes one
+  audit row per changed line (`PLAN_LINE`: previous + new case) and a batch header (`PLAN_BATCH`, id =
+  the call's `auditId`); `restorePlannedContainersNative({ batchAuditId })` reads each line's previous case
+  from those org-checked rows and restores only lines still as that write left them. Case delete uses the
+  same shape (`unplanLinesFromCase`), so its Undo is "re-create the case, then restore by the delete's id".
+- **A seal (`projectContainers.sealedAt`) locks the PLAN only**: `assertContainerNotSealed`
+  (`convex/lib/containerSeal.ts`, `CASE_SEALED`) guards plan-in, plan-out, rename, re-nest and delete of the
+  case. It never blocks warehouse prep or unit moves (owner-decided). Show the server's own message (it
+  names Unseal); don't hand-write a second copy.
+- **Unplanned (plan state) is not Loose (physical state)**: the dashed card is titled `UNPLANNED_LABEL`.
+  The glyph rule (`planGlyph`) prints `Planned → LX-04` only when a packed line's plan disagrees with reality.
+- `packingCounts(lines)` is the one derivation of the tab's `Packing n/m`.
+
 ### BulkBar and ScanStrip — two footguns
 `BulkBar` (`src/components/ui/bulk-bar.tsx`, replaced `BulkActionBar`) is the ONE bulk
 surface. On a phone it is **portaled to `<body>`** and pinned above the bottom nav:

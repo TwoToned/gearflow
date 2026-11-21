@@ -221,11 +221,16 @@ export const makeLiveNative = mutation({
     organizationId: v.string(),
     projectId: v.string(),
     versionId: v.string(),
+    // UX Phase 8 — set ONLY by the Undo of a make-live: the version the caller
+    // expects to be live right now (the one it just made live). The server
+    // refuses if the pointer has moved since, so an Undo can never flip over
+    // someone else's later make-live.
+    expectLiveVersionId: v.optional(v.string()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { organizationId, projectId, versionId, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { organizationId, projectId, versionId, expectLiveVersionId, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     // Step 1 — permission only. Deliberately no `assertLifecycleGuard` call
@@ -237,6 +242,12 @@ export const makeLiveNative = mutation({
     const project = await requireProjectInOrg(ctx, projectId, organizationId);
     if (project.isTemplate) {
       throw new ConvexError({ code: "TEMPLATE_NO_VERSIONS", message: "Templates don't have versions to make live." });
+    }
+    if (expectLiveVersionId !== undefined && project.liveVersionId !== expectLiveVersionId) {
+      throw new ConvexError({
+        code: "VERSION_LIVE_MOVED",
+        message: "The live version changed since that action, so it can't be undone automatically.",
+      });
     }
 
     const result = await performMakeLive(ctx, { organizationId, projectId, project, versionId, actor, auditId, now });

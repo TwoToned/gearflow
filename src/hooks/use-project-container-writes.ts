@@ -25,6 +25,9 @@ export function useProjectContainerWrites() {
   const moveUnitsM = useMutation(api.projectContainersWrites.moveUnitsNative);
   const unpackM = useMutation(api.projectContainersWrites.unpackNative);
   const setPlannedContainerM = useMutation(api.projectContainersWrites.setPlannedContainerNative);
+  const restorePlannedM = useMutation(api.projectContainerPlanWrites.restorePlannedContainersNative);
+  const sealM = useMutation(api.projectContainerPlanWrites.sealNative);
+  const unsealM = useMutation(api.projectContainerPlanWrites.unsealNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -37,6 +40,8 @@ export function useProjectContainerWrites() {
 
   return {
     create: async (args: {
+      /** Re-create under a specific id: only the Undo of a case delete (so lines planned into it can be restored). */
+      id?: string;
       projectId: string;
       kind: ContainerKind;
       label: string;
@@ -48,12 +53,12 @@ export function useProjectContainerWrites() {
       versionId?: string;
     }): Promise<{ id: string; lineItemId: string }> => {
       return createM({
-        id: createId(),
         orgId: requireOrg(),
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
         ...args,
+        id: args.id ?? createId(),
       });
     },
 
@@ -64,8 +69,12 @@ export function useProjectContainerWrites() {
       return updateM({ id, orgId: requireOrg(), ...patch, auditId: createId(), now: Date.now(), actor: actor() });
     },
 
-    remove: async (id: string): Promise<{ ok: boolean }> => {
-      return deleteM({ id, orgId: requireOrg(), auditId: createId(), now: Date.now(), actor: actor() });
+    /** Delete an (empty) case. `batchAuditId` is the handle `restorePlannedContainers`
+     *  uses, after re-creating the case, to put its planned lines back. */
+    remove: async (id: string): Promise<{ ok: boolean; batchAuditId: string }> => {
+      const batchAuditId = createId();
+      const res = await deleteM({ id, orgId: requireOrg(), auditId: batchAuditId, now: Date.now(), actor: actor() });
+      return { ...res, batchAuditId };
     },
 
     moveUnits: async (unitIds: string[], toContainerId: string | null): Promise<{ moved: number }> => {
@@ -76,15 +85,29 @@ export function useProjectContainerWrites() {
       return unpackM({ id, orgId: requireOrg(), auditId: createId(), now: Date.now(), actor: actor() });
     },
 
-    setPlannedContainer: async (lineItemIds: string[], containerId: string | null): Promise<{ updated: number }> => {
-      return setPlannedContainerM({
+    /** Plan lines into a case (or `null` = unplanned). Returns the changed
+     *  lines (`changes`), what was left alone (`skipped`: packed, or on another
+     *  job) and `batchAuditId`, the handle `restorePlannedContainers` undoes. */
+    setPlannedContainer: async (lineItemIds: string[], containerId: string | null) => {
+      const batchAuditId = createId();
+      const result = await setPlannedContainerM({
         orgId: requireOrg(),
         lineItemIds,
         containerId,
         now: Date.now(),
         actor: actor(),
-        auditId: createId(),
+        auditId: batchAuditId,
       });
+      return { ...result, batchAuditId };
     },
+
+    /** The exact Undo of `setPlannedContainer`: only the batch id; the server
+     *  reads each line's previous case from its own audit rows. */
+    restorePlannedContainers: async (batchAuditId: string) => {
+      return restorePlannedM({ orgId: requireOrg(), batchAuditId, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    seal: async (id: string) => sealM({ id, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),
+    unseal: async (id: string) => unsealM({ id, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),
   };
 }

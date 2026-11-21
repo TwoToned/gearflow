@@ -364,6 +364,15 @@ export const updateNative = mutation({
     if (label !== undefined) assertStrLen(label, "label", { min: 1, max: LABEL_MAX });
     if (description) assertStrLen(description, "description", { max: DESCRIPTION_MAX });
 
+    // Q3 (owner-decided): a seal vouches for the printed label, so a rename or a
+    // re-nest of a sealed case is refused. A description-only edit is not.
+    if (container.sealedAt != null) {
+      if (label !== undefined && label !== container.label) assertContainerNotSealed(container, "rename it");
+      if (parentContainerId !== undefined && (parentContainerId ?? null) !== (container.parentContainerId ?? null)) {
+        assertContainerNotSealed(container, "move it");
+      }
+    }
+
     await assertParentContainerReparentValid(ctx, id, parentContainerId, container.projectId, orgId);
 
     const patch = buildContainerUpdatePatch(label, description, parentContainerId, now);
@@ -398,8 +407,9 @@ export const deleteNative = mutation({
     const actor = await resolveActor(ctx, suppliedActor);
 
     const container = await requireContainerInOrg(ctx, id, orgId);
+    assertContainerNotSealed(container, "delete it"); // Q3
 
-    const memberUnit = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", id)).collect())
+    const memberUnit =(await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", id)).collect())
       .find((u) => u.organizationId === orgId && u.status !== "CANCELLED");
     if (memberUnit) {
       throw new ConvexError({ code: "NOT_EMPTY", message: "This container still has items packed inside it — move or unpack them first." });

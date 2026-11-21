@@ -59,10 +59,11 @@ missing operation behind defect 1), `unpackNative` (empty to Loose),
 - `projectContainers.sealedAt` (optional timestamp; D21) is a **plan lock only**:
   `projectContainerPlanWrites.sealNative` / `unsealNative` (each its own audited write,
   idempotent, returning `changed`). `lib/containerSeal.ts` (`assertContainerNotSealed`) is the
-  ONE check; today only the plan writes call it. A sealed case rejects planning a line **into**
-  it and planning a line **out** of it (including a clear / Unpack) with `CASE_SEALED`, atomically
-  for the whole batch. It never touches a unit, so the warehouse is not blocked by a seal. Whether
-  rename / re-nest / delete honour a seal is an open owner decision (one-line change per write).
+  ONE check. A sealed case rejects planning a line **into** it and planning a line **out** of it
+  (including a clear / Unpack) with `CASE_SEALED`, atomically for the whole batch; and (owner-decided,
+  2026-11-21) it also rejects **rename**, **re-nest** and **delete** of the case itself
+  (`updateNative` / `deleteNative`; a description-only edit still goes through). A seal never touches
+  a unit and does NOT block warehouse prep or unit moves (owner-decided): packers are the physical truth.
   A version copy keeps `sealedAt` (`copyPlanGraph` clones the row).
 - `setPlannedContainerNative` now (a) skips lines with a packed unit (packed wins, server-side, not
   only in the UI) and lines on another job or version (closes the same-job gap), (b) ignores a re-plan

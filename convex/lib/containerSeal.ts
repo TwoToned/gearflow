@@ -6,9 +6,10 @@ import type { Doc } from "../_generated/dataModel";
  * planning lock: nothing may be planned into it, and nothing planned in it may
  * be planned out, until it is unsealed. Every write that must respect a seal
  * calls this helper so the rule (and the error code the UI maps) lives in one
- * place. Today only the plan writes call it; whether rename / re-nest / delete
- * also honour a seal is an open owner decision (Q3) — when it is a yes, each is
- * a one-line call here.
+ * place. Callers: the plan writes (`setPlannedContainerNative`) and, per the
+ * owner's Q3 decision, rename / re-nest (`updateNative`) and delete
+ * (`deleteNative`) of the case itself. A seal does NOT block warehouse prep or
+ * unit moves (Q7, owner-decided): packers are the physical truth.
  */
 export function isContainerSealed(container: Pick<Doc<"projectContainers">, "sealedAt">): boolean {
   return container.sealedAt != null;

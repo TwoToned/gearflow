@@ -124,6 +124,57 @@ describe("seal guard on plan writes", () => {
   });
 });
 
+const update = (t: T, id: string, patch: Record<string, unknown>, auditId: string) =>
+  t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.updateNative, {
+    id, orgId: ORG, now: NOW, actor: ACTOR, auditId, ...patch,
+  } as never);
+const remove = (t: T, id: string, auditId: string) =>
+  t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.deleteNative, { id, orgId: ORG, now: NOW, actor: ACTOR, auditId });
+
+describe("seal guard on case structure writes (Q3)", () => {
+  test("rename of a sealed case is rejected; allowed after unseal", async () => {
+    const t = makeT();
+    await seed(t);
+    await seal(t, "c1", "s1");
+    await expect(update(t, "c1", { label: "Renamed" }, "r1")).rejects.toThrow(/sealed/i);
+    expect((await containerById(t, "c1"))?.label).toBe("Case 1");
+    await unseal(t, "c1", "u1");
+    await expect(update(t, "c1", { label: "Renamed" }, "r2")).resolves.toEqual({ ok: true });
+  });
+
+  test("re-nesting a sealed case (into a parent, or out to the top level) is rejected", async () => {
+    const t = makeT();
+    await seed(t);
+    await seal(t, "c1", "s1");
+    await expect(update(t, "c1", { parentContainerId: "c2" }, "n1")).rejects.toThrow(/sealed/i);
+    expect((await containerById(t, "c1"))?.parentContainerId).toBeUndefined();
+    await unseal(t, "c1", "u1");
+    await update(t, "c1", { parentContainerId: "c2" }, "n2");
+    await seal(t, "c1", "s2");
+    await expect(update(t, "c1", { parentContainerId: null }, "n3")).rejects.toThrow(/sealed/i);
+    expect((await containerById(t, "c1"))?.parentContainerId).toBe("c2");
+  });
+
+  test("a description-only edit and an unchanged label still go through on a sealed case", async () => {
+    const t = makeT();
+    await seed(t);
+    await seal(t, "c1", "s1");
+    await expect(update(t, "c1", { description: "Fragile" }, "d1")).resolves.toEqual({ ok: true });
+    await expect(update(t, "c1", { label: "Case 1" }, "d2")).resolves.toEqual({ ok: true });
+  });
+
+  test("deleting a sealed case is rejected; allowed after unseal", async () => {
+    const t = makeT();
+    await seed(t);
+    await seal(t, "c1", "s1");
+    await expect(remove(t, "c1", "x1")).rejects.toThrow(/sealed/i);
+    expect(await containerById(t, "c1")).not.toBeNull();
+    await unseal(t, "c1", "u1");
+    await expect(remove(t, "c1", "x2")).resolves.toEqual({ ok: true });
+    expect(await containerById(t, "c1")).toBeNull();
+  });
+});
+
 describe("plan write: changes, skips", () => {
   test("returns each line's previous case, treats a re-plan into the same case as a no-op", async () => {
     const t = makeT();

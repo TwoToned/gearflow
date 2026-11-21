@@ -54,6 +54,31 @@ missing operation behind defect 1), `unpackNative` (empty to Loose),
 `setPlannedContainerNative` (Packing tab, phase 4). Reads: `projectContainers.ts`'s
 `listForProject`.
 
+### Seal case, plan-write rules and the exact Undo (UX Phase 8, slice 1)
+
+- `projectContainers.sealedAt` (optional timestamp; D21) is a **plan lock only**:
+  `projectContainerPlanWrites.sealNative` / `unsealNative` (each its own audited write,
+  idempotent, returning `changed`). `lib/containerSeal.ts` (`assertContainerNotSealed`) is the
+  ONE check; today only the plan writes call it. A sealed case rejects planning a line **into**
+  it and planning a line **out** of it (including a clear / Unpack) with `CASE_SEALED`, atomically
+  for the whole batch. It never touches a unit, so the warehouse is not blocked by a seal. Whether
+  rename / re-nest / delete honour a seal is an open owner decision (one-line change per write).
+  A version copy keeps `sealedAt` (`copyPlanGraph` clones the row).
+- `setPlannedContainerNative` now (a) skips lines with a packed unit (packed wins, server-side, not
+  only in the UI) and lines on another job or version (closes the same-job gap), (b) ignores a re-plan
+  into the same case, and (c) returns `{ updated, changes: [{ lineItemId, from }], skipped }`.
+  Capped at 200 lines per call.
+- `restorePlannedContainersNative` is the exact reverse: pass the forward call's `changes` and the case
+  it planned into; a line is restored only while its plan still equals that case (a later edit is never
+  clobbered) and neither case is sealed. Anything else is counted in `skipped`.
+- `versions.makeLiveNative` takes an optional `expectLiveVersionId` (used only by Undo of a make-live):
+  it refuses with `VERSION_LIVE_MOVED` if the live pointer is no longer that version.
+- `versionsPreview.makeLivePreview` (counts only: lines, packed units carried, models whose demand
+  changes, invoices, quote total and balance before/after; the client fails open) and
+  `versionsPreview.versionRowFacts` (Versions tab: line / planned counts, total, quote state, diff vs
+  the previous version; newest 12 versions, `truncated` says older ones have no facts).
+- Vocabulary: **Unplanned** (a plan state, `UNPLANNED_LABEL`) is not **Loose** (a physical state).
+
 ### Checkout/return rewire (phase 1c)
 
 `convex/lib/fulfillment.ts`'s `prepUnit` stamps `containerId` instead of a

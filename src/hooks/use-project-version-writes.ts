@@ -70,10 +70,18 @@ export function useProjectVersionWrites(projectId: string) {
 
     /** "Make vN live" — a pointer flip (design §4.4/§4.8). Returns the
      *  warehouse conflicts the Make-live dialog lists, never blocks on them. */
-    makeLive: async (versionId: string): Promise<MakeLiveResult> => {
+    makeLive: async (versionId: string, opts: { expectLiveVersionId?: string } = {}): Promise<MakeLiveResult> => {
       const organizationId = requireOrg();
       try {
-        return await makeLiveM({ organizationId, projectId, versionId, actor: actor(), auditId: createId(), now: Date.now() });
+        return await makeLiveM({
+          organizationId,
+          projectId,
+          versionId,
+          expectLiveVersionId: opts.expectLiveVersionId,
+          actor: actor(),
+          auditId: createId(),
+          now: Date.now(),
+        });
       } catch (e) {
         throw mapNativeWriteError(e);
       }

@@ -12,6 +12,8 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { assertProjectInOrg } from "./projectLineItems";
 import * as enums from "./lib/validators";
 import { resolveWriteVersionId, versionRows } from "./lib/versionScope";
+import { assertContainerNotSealed } from "./lib/containerSeal";
+import type { Doc } from "./_generated/dataModel";
 
 /**
  * Native ProjectContainer write mutations (#1296 packing containers, build
@@ -20,7 +22,7 @@ import { resolveWriteVersionId, versionRows } from "./lib/versionScope";
  * same allowance an unpriced line-item add gets (Q16).
  */
 
-const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+export const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
 const LABEL_MAX = 120; // src/lib/validations/project-container.ts
 const DESCRIPTION_MAX = 500;
@@ -35,13 +37,13 @@ async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId
 }
 
 /** Fetch a container by cuid and confirm it belongs to the caller's org (by_cuid is global). */
-async function requireContainerInOrg(ctx: MutationCtx, containerId: string, orgId: string) {
+export async function requireContainerInOrg(ctx: MutationCtx, containerId: string, orgId: string) {
   const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
   if (!c || c.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Container not found." });
   return c;
 }
 
-async function logContainerChange(
+export async function logContainerChange(
   ctx: MutationCtx,
   args: {
     orgId: string;
@@ -530,23 +532,94 @@ function planChangeSummary(count: number, target: { label: string } | null, from
   return `Cleared the planned container on ${lines}`;
 }
 
-/** Patch `plannedContainerId` on each in-org line; report what changed. */
+/** Cap on lines per plan call: each line is checked for a packed unit, so the
+ *  read volume is bounded by this, not by the caller. */
+export const MAX_PLAN_LINES = 200;
+
+export type PlanSkipReason = "PACKED" | "OTHER_JOB";
+
+/** True when any live unit of the line is physically in a case (packed wins over
+ *  the plan; the office never moves physical gear — §7b.3). Streams the line's
+ *  units and stops at the first packed one. */
+async function lineHasPackedUnit(ctx: MutationCtx, lineItemId: string, orgId: string): Promise<boolean> {
+  const units = ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId));
+  for await (const u of units) {
+    if (u.organizationId === orgId && u.status !== "CANCELLED" && u.containerId) return true;
+  }
+  return false;
+}
+
+/** A line belongs with a target case only on the same job AND the same version
+ *  (container ids are per-version; closes the same-job gap in handoff §5). */
+function sameJobAndVersion(line: Doc<"projectLineItems">, target: Doc<"projectContainers">): boolean {
+  return line.projectId === target.projectId && (line.versionId ?? null) === (target.versionId ?? null);
+}
+
+/** Planning a line OUT of a sealed case is refused (`CASE_SEALED`). The case is
+ *  org-checked; a missing/foreign one is treated as not sealed. */
+async function assertNotPlannedOutOfSealed(
+  ctx: MutationCtx,
+  line: Doc<"projectLineItems">,
+  orgId: string,
+  cache: Map<string, Doc<"projectContainers"> | null>,
+): Promise<void> {
+  const fromId = line.plannedContainerId;
+  if (!fromId) return;
+  if (!cache.has(fromId)) {
+    const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", fromId)).first();
+    cache.set(fromId, c && c.organizationId === orgId ? c : null);
+  }
+  const from = cache.get(fromId);
+  if (from) assertContainerNotSealed(from, "plan lines out of it");
+}
+
+/** Why a line is skipped rather than planned, or `null` when it can be. */
+async function planSkipReason(
+  ctx: MutationCtx,
+  line: Doc<"projectLineItems">,
+  target: Doc<"projectContainers"> | null,
+  orgId: string,
+): Promise<PlanSkipReason | null> {
+  if (target && !sameJobAndVersion(line, target)) return "OTHER_JOB";
+  if (await lineHasPackedUnit(ctx, line.id, orgId)) return "PACKED";
+  return null;
+}
+
+/**
+ * Patch `plannedContainerId` on each plannable line and report exactly what
+ * changed (`changes[].from` is each line's previous case, which is what the
+ * Undo restores) and what was skipped (packed, or on another job). Missing or
+ * cross-org ids are ignored. A line already planned into the target is a no-op,
+ * not a change. Throws `CASE_SEALED` (before any write) when the target or any
+ * source case is sealed.
+ */
 async function applyPlannedContainer(
   ctx: MutationCtx,
-  { orgId, lineItemIds, containerId, now }: { orgId: string; lineItemIds: string[]; containerId: string | null; now: number },
+  { orgId, lineItemIds, containerId, now, target }: { orgId: string; lineItemIds: string[]; containerId: string | null; now: number; target: Doc<"projectContainers"> | null },
 ) {
-  const updatedIds: string[] = [];
-  const previous = new Set<string>();
+  const changes: { lineItemId: string; from: string | null }[] = [];
+  const skipped: { lineItemId: string; reason: PlanSkipReason }[] = [];
+  const sourceCache = new Map<string, Doc<"projectContainers"> | null>();
+  const toPatch: Doc<"projectLineItems">[] = [];
   let projectId: string | null = null;
   for (const lineItemId of lineItemIds) {
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
     if (!line || line.organizationId !== orgId) continue; // missing/cross-org — skipped
-    if (line.plannedContainerId) previous.add(line.plannedContainerId);
+    const reason = await planSkipReason(ctx, line, target, orgId);
+    if (reason) {
+      skipped.push({ lineItemId, reason });
+      continue;
+    }
+    if ((line.plannedContainerId ?? null) === containerId) continue; // already there
+    await assertNotPlannedOutOfSealed(ctx, line, orgId, sourceCache);
     projectId ??= line.projectId;
-    await ctx.db.patch(line._id, { plannedContainerId: containerId ?? undefined, updatedAt: now });
-    updatedIds.push(lineItemId);
+    changes.push({ lineItemId, from: line.plannedContainerId ?? null });
+    toPatch.push(line);
   }
-  return { updatedIds, previous, projectId };
+  // Validate every line first so a sealed source rejects the whole call
+  // atomically; the writes only start once nothing can throw.
+  for (const line of toPatch) await ctx.db.patch(line._id, { plannedContainerId: containerId ?? undefined, updatedAt: now });
+  return { changes, skipped, projectId };
 }
 
 /** The one audit row of a `setPlannedContainerNative` call. Planning names
@@ -589,7 +662,15 @@ async function logPlanChange(
  *  batch of whole lines (D9 — Packing tab, phase 4). Nothing physical moves,
  *  but every write is audited (CLAUDE.md): one row per call. */
 export const setPlannedContainerNative = mutation({
-  returns: v.object({ updated: v.number() }),
+  // `changes` carries each line's previous case (the exact data an Undo needs,
+  // see `projectContainerPlanWrites.restorePlannedContainersNative`); `skipped`
+  // names lines left alone (packed, or on another job). Additive over the old
+  // `{ updated }` shape.
+  returns: v.object({
+    updated: v.number(),
+    changes: v.array(v.object({ lineItemId: v.string(), from: v.union(v.string(), v.null()) })),
+    skipped: v.array(v.object({ lineItemId: v.string(), reason: v.union(v.literal("PACKED"), v.literal("OTHER_JOB")) })),
+  }),
   args: {
     orgId: v.string(),
     lineItemIds: v.array(v.string()),
@@ -601,22 +682,24 @@ export const setPlannedContainerNative = mutation({
   handler: async (ctx, { orgId, lineItemIds, containerId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
-    assertArrayMax(lineItemIds, "lineItemIds", MAX_UNIT_IDS);
+    await assertBulkSizeOk(ctx, lineItemIds.length);
+    assertArrayMax(lineItemIds, "lineItemIds", MAX_PLAN_LINES);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const target = containerId ? await requireContainerInOrg(ctx, containerId, orgId) : null;
+    if (target) assertContainerNotSealed(target, "plan lines into it");
 
-    const { updatedIds, previous, projectId } = await applyPlannedContainer(ctx, { orgId, lineItemIds, containerId, now });
-    if (projectId) {
+    const { changes, skipped, projectId } = await applyPlannedContainer(ctx, { orgId, lineItemIds, containerId, now, target });
+    if (projectId && changes.length > 0) {
       await logPlanChange(ctx, {
         orgId, actor, auditId, now, projectId,
         target: target ? { id: target.id, label: target.label } : null,
-        from: target ? null : await soleContainerInOrg(ctx, previous, orgId),
-        lineItemIds: updatedIds,
+        from: target ? null : await soleContainerInOrg(ctx, new Set(changes.flatMap((c) => (c.from ? [c.from] : []))), orgId),
+        lineItemIds: changes.map((c) => c.lineItemId),
       });
     }
-    return { updated: updatedIds.length };
+    return { updated: changes.length, changes, skipped };
   },
 });
 

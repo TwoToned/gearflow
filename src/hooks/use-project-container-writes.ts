@@ -25,6 +25,9 @@ export function useProjectContainerWrites() {
   const moveUnitsM = useMutation(api.projectContainersWrites.moveUnitsNative);
   const unpackM = useMutation(api.projectContainersWrites.unpackNative);
   const setPlannedContainerM = useMutation(api.projectContainersWrites.setPlannedContainerNative);
+  const restorePlannedM = useMutation(api.projectContainerPlanWrites.restorePlannedContainersNative);
+  const sealM = useMutation(api.projectContainerPlanWrites.sealNative);
+  const unsealM = useMutation(api.projectContainerPlanWrites.unsealNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -76,7 +79,10 @@ export function useProjectContainerWrites() {
       return unpackM({ id, orgId: requireOrg(), auditId: createId(), now: Date.now(), actor: actor() });
     },
 
-    setPlannedContainer: async (lineItemIds: string[], containerId: string | null): Promise<{ updated: number }> => {
+    /** Plan lines into a case (or `null` = unplanned). Returns each changed
+     *  line's previous case (`changes`, what Undo restores) and what was left
+     *  alone (`skipped`: packed, or on another job). */
+    setPlannedContainer: async (lineItemIds: string[], containerId: string | null) => {
       return setPlannedContainerM({
         orgId: requireOrg(),
         lineItemIds,
@@ -86,5 +92,13 @@ export function useProjectContainerWrites() {
         auditId: createId(),
       });
     },
+
+    /** The exact Undo of `setPlannedContainer`: pass its `changes` and the case it planned into. */
+    restorePlannedContainers: async (expectedContainerId: string | null, entries: { lineItemId: string; from: string | null }[]) => {
+      return restorePlannedM({ orgId: requireOrg(), expectedContainerId, entries, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    seal: async (id: string) => sealM({ id, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),
+    unseal: async (id: string) => unsealM({ id, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),
   };
 }

@@ -187,6 +187,12 @@ function useBlockingCount(orgId: string | undefined, projectId: string, isTempla
 
 const openTab = (path: string) => window.open(path, "_blank");
 
+/** Controlled when the caller passes `open` + `onOpenChange`; local state otherwise. */
+function useControllableOpen(open: boolean | undefined, onOpenChange: ((o: boolean) => void) | undefined) {
+  const [local, setLocal] = React.useState(false);
+  return [open ?? local, onOpenChange ?? setLocal] as const;
+}
+
 /** The dialogs and sheets the header opens. Each is the component the old hero used. */
 function JobHeaderDialogs({ project, orgId, writes, state }: {
   project: JobHeaderProject;
@@ -243,12 +249,17 @@ export function JobHeader({
   onOpenTab,
   onOpenVersions,
   onMakeLive,
+  commentsOpen: commentsOpenProp,
+  onCommentsOpenChange,
 }: {
   project: JobHeaderProject;
   orgId: string | undefined;
   onOpenTab: (tab: JobTabKey) => void;
   onOpenVersions: () => void;
   onMakeLive: (target: ProjectVersionSummary) => void;
+  /** Controlled comments panel, so the Overview's discussion links open the SAME one. */
+  commentsOpen?: boolean;
+  onCommentsOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -257,7 +268,7 @@ export function JobHeader({
 
   const [dupMode, setDupMode] = React.useState<DupMode>(null);
   const [callSheetOpen, setCallSheetOpen] = React.useState(false);
-  const [commentsOpen, setCommentsOpen] = React.useState(false);
+  const [commentsOpen, setCommentsOpen] = useControllableOpen(commentsOpenProp, onCommentsOpenChange);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [docsOpened, setDocsOpened] = React.useState(false);
   // Frozen at mount: it only feeds the payment strip's derived EXPIRED read (never query args that tick).

@@ -396,6 +396,20 @@ Resolves barcode value to entity URL:
 3. Check `BulkAsset` by `assetTag` → `/assets/registry/{id}`
 4. Check `TestTagAsset` by `testTagId` → `/test-and-tag/{id}`
 
+**Scan page cards (Phase 16, spec §9i).** The same module serves the Scan page's result
+card: `checkCard` (warehouse read) and `testCard` (testTag read, + the resolved test
+profile), both `{ orgId, value }` with no clock in the args, built by `convex/lib/scanCard.ts`.
+The same order resolves the tag, but a test tag linked to a serialised asset reaches THAT
+asset, so `AURA-01` and `TT-0412` open the same card. `kind` is
+`asset | kit | bulk | ttOnly | unknown`; an asset carries Where (location), On job (the
+most committed active unit — out > packed > to pick — with `backAt` = the job's end),
+Last check (the newest group sharing a `performedAt`, from a bounded 50-row read, with
+`truncated`), the model's check-item count and its Last T&T row. Every read on a global
+index is org re-checked (a foreign location / project / line / model / T&T row is never
+returned). The job lookup (`unitsFor` / `activityFromUnits`) moved to
+`convex/lib/scanActivity.ts`, shared with `resolve`. Both card reads are SAFE_TAG-gated
+the same way as `resolve` (one `safeTag` helper).
+
 ### QR Code Generation
 `src/components/assets/asset-qr-code.tsx` — generates and prints QR codes encoding asset tag value.
 

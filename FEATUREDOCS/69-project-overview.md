@@ -76,7 +76,7 @@ sentence (`Out — the gear has left the warehouse.`), with only a failing
 |---|---|---|---|---|
 | Gear short / would be short | `projectReadiness.forProject` | `blocking` (hard) / `warning` (pencilled) / `unknown` (no dates) | Equipment; no dates → edit page | never |
 | Assets double-booked | `reservationConflicts.projectConflicts` (ONE-SHOT) | `blocking`; `unknown` until it answers, on failure, or with no dates | Equipment (the swap); no dates → edit page | never |
-| Blocking discussions hold prep | `collaboration.getProjectBlockingSummary` (the header's subscription) | `blocking` | the comments panel | count still loading |
+| Blocking discussions hold prep (from Out onward: "n blocking discussions open", holds further send-out) | `collaboration.getProjectBlockingSummary` (the header's subscription) | `blocking`; `unknown` while the count loads (never dropped, so it can't read "Ready" early) | the comments panel | never |
 | Services not confirmed / short of crew | `forProject` | `warning` | Logistics | no active services |
 | Crew unconfirmed | `forProject` | `warning` | Logistics | no crew assigned |
 | Lines unpriced | `forProject` | `warning` | Equipment | never |
@@ -107,8 +107,11 @@ Phase 7 (overseer ruling Q4).
   referenced-only reads, R-9.8). Its `incidents` section (UX Phase 7) reads
   `maintenanceRecords` through the existing `by_projectId` index (the project is
   already org-checked; the index is global, so any row whose `organizationId`
-  isn't the caller's org is dropped), takes at most 201 rows and returns
-  `{ openCount, truncated }`; a truncated count prints as `200+`. No schema change. Open = `incidentType` set, status neither
+  isn't the caller's org is dropped), NEWEST first (`.order("desc")`), takes at
+  most 201 rows and returns `{ openCount, truncated }`. A truncated scan with
+  open incidents prints `n+` (e.g. `3+`, `200+`); a truncated scan with NONE
+  open in the newest 200 is `unknown` ("Open incidents not fully checked"),
+  never `0+` and never a pass. No schema change. Open = `incidentType` set, status neither
   `COMPLETED` nor `CANCELLED`. This replaced the `OpenIssuesBadge`, which
   subscribed to the org's whole `maintenanceRecords.list`.
 - `reservationConflicts.projectConflicts` is **one-shot** (a `convex.query` in
@@ -129,7 +132,12 @@ read the same aggregation core.
 `overview/quote-card.tsx` (`QuoteMoneyLine`) and `overview/invoicing-card.tsx`
 (`InvoicingMoneyLine`), side by side on desktop, stacked on phone.
 
-- **Quote** — `$23,880 · v3 sent 4 Nov · valid until 4 Dec` (or `v3 accepted`,
+Both lines print **exactly what the #1061 cards printed**, to the cent (a sent
+$1,240.50 matches its stored PDF), with "inc GST" on the quote, the outstanding
+figure whatever it is (`$0.00` and `$0.40` included), and the derivation's own
+"Fully invoiced" / "Job total not set" reason when nothing can be raised.
+
+- **Quote** — `$23,880.00 inc GST · v3 sent 4 Nov · valid until 4 Dec` (or `v3 accepted`,
   `v2 · not sent yet`, …), a drift line when the job no longer matches the sent
   version (`see what changed ›` → Finance), then text links: the next move
   (`Send quote` for a never-sent draft, `Record accept` for a sent one, never
@@ -138,9 +146,11 @@ read the same aggregation core.
   snapshot total**, never live pricing; only a never-sent draft shows the live
   total.
 - **Invoicing** — exactly what `deriveInvoicingState` says: its headline label
-  and the figures that mean something (`Awaiting payment · $5,000 outstanding ·
-  $5,000 invoiced`), the next step under it (`$18,880 not yet raised · Last:
-  INV-0041 deposit issued 8 Nov`), then `+ Invoice ▾` (partial / remaining
+  and outstanding (`Awaiting payment · $5,000.00 outstanding`), then invoiced to
+  date, paid (when non-zero) and not yet raised (past half a cent), then the last
+  invoice out (`Last: INV-0041 deposit issued 8 Nov`); nothing raised reads
+  `Not started · Hilton's partial invoices default to 25%. Nothing raised yet.`
+  Then `+ Invoice ▾` (partial / remaining
   balance, only while something is left to raise), `Record payment`,
   `All invoices` (`InvoiceManagerDialog`), `Finance ›`. No client → "Assign a
   client to this job to raise quotes and invoices."
@@ -160,13 +170,20 @@ read the same aggregation core.
   Phase 9's dates sheet), `Logistics ›`.
 - **Where** — venue, address · `directions`, `Edit` (→ the edit page until
   Phase 9).
-- **Who** — site contact · phone, the client, `PM …` with `+` (opens the
-  existing `ProjectManagersPanel` inline), crew count with unconfirmed in amber
-  (from `forProject`, same subscription) · `Logistics ›`.
-- **Recent** — four lines of the job's activity log (`activityLog.listByEntity`),
-  `All activity ›` (→ `/activity?entityType=project&entityId=…`),
-  `Discussion ›` (the header's comments panel, lifted to the page so both open
-  the ONE panel).
+- **Who** — site contact · phone, the site contact's email, the client, `PM …`
+  with `+` (opens the existing `ProjectManagersPanel` inline), crew count with
+  unconfirmed in amber (from `forProject`, same subscription) · `Logistics ›`.
+- **Recent** — the AUDIT LOG, not the sidebar's Activity (that is the
+  collaboration feed): the four newest rows touching the job, from
+  `activityLog.recentForProject` (bounded: `by_organizationId_projectId`,
+  newest first, `take(limit ≤ 20)` — never `listByEntity`, which collects a
+  project's whole history). `All activity ›` (→
+  `/activity?entityType=project&entityId=…`) shows only when the NAV would show
+  `/activity` (the `reports` gate, `useNavItems`), so it is never a dead link.
+  `Discussion ›` opens the header's comments panel, lifted to the page so both
+  open the ONE panel.
+- **Phone:** every text link carries `.tap-area` (globals.css), a ≥ 44×44px hit
+  box that doesn't change the line (`mobile-compliance.test.ts` pins it).
 
 ## Keep · move · remove (UX Phase 7)
 

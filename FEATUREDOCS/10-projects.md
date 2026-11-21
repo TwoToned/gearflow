@@ -671,8 +671,8 @@ Overview  Equipment  Packing 36/44  Logistics  Finance  Tasks 9/14  Notes  Files
   - Unlock's toast **Undo reverses exactly that unlock**: `undoUnlockPricingNative`
     restores the original who/when from the unlock's own audit row and refuses
     (`UNDO_STALE`) once anything re-locked or cleared the lock since;
-  - meta line: number · client link · rental dates and days (type is on the edit
-    page; PMs are in Team / Who).
+  - meta line: number · type (`Dry hire`, … from `src/lib/project-type-labels.ts`,
+    the Jobs list's map) · client link · rental dates and days (PMs are in Team / Who).
 - **Actions:** one primary `Advance to {next}` (`project:update`, through the same
   `useConfirmStatusGate` → `updateStatusNative` path; on a phone it sits
   full-width under the progress line).

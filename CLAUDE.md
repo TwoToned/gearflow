@@ -803,9 +803,13 @@ footer + show cost, Finance's summary) — don't add tiles back. The readiness
 rules are `src/lib/project-readiness-checks.ts` (every row carries its `fix`
 target), their words `src/lib/job-readiness-verdict.ts`; double-booking is the
 ONE-SHOT `reservationConflicts.projectConflicts` (never a subscription, R-8.3.3
-exception), incidents are the bounded count on `projectReadiness.forProject`
-(never the org-wide `maintenanceRecords.list`), and blocking discussions are
-the header's own `getProjectBlockingSummary` subscription. The job header
+exception), incidents are the bounded, newest-first count on
+`projectReadiness.forProject` (never the org-wide `maintenanceRecords.list`), and
+blocking discussions are the header's own `getProjectBlockingSummary`
+subscription. A check whose input hasn't arrived (the blocking count loading,
+the conflicts read not answered, a truncated incidents scan with none open) is
+`unknown`, never dropped and never a pass — so the section can't read "Ready"
+early. The money lines print to the cent, as the stored PDFs do. The job header
 (`src/components/projects/job-header.tsx` on `DetailHeader`, UX Phase 7) stays
 ABOVE the tabs: its progress line and lock glyph change what you can do in every
 tab. The header's version lives in ⋯ (`Version ▸`) and under `V`, never as a chip
@@ -813,11 +817,15 @@ tab. The header's version lives in ⋯ (`Version ▸`) and under `V`, never as a
 server's own permission (`src/lib/job-header.ts`).
 
 **The context sidebar (Schedule/Location/Team/Activity) renders on every tab
-EXCEPT Overview** (#1063). Overview composes the same content into its own
-When · Where · Who columns and Recent (`overview/context-cards.tsx`) — rendering
-both would show the same facts twice on one tab. The facts are shaped once in
-`src/lib/project-context.ts` and shared by both renderings; if you add a field,
-add it there, not in one renderer.
+EXCEPT Overview** (#1063). Overview composes the schedule, location and team
+facts into its own When · Where · Who columns (`overview/context-cards.tsx`) —
+rendering both would show those facts twice on one tab. Those facts are shaped
+once in `src/lib/project-context.ts` and shared by both renderings; if you add a
+field, add it there, not in one renderer. **Recent is NOT the sidebar's
+Activity**: Recent is the AUDIT LOG (`activityLog.recentForProject`, bounded,
+newest four), while the sidebar's Activity is the collaboration feed
+(`collaboration.listActivityEvents`). Don't describe them as the same content,
+and never point Recent back at an unbounded read (`listByEntity` collects).
 
 A readiness check covering the WORK (services: still `PLANNED`, or below
 `crewCountRequired`) is separate from one covering the PEOPLE (crew assignments

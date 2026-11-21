@@ -1,4 +1,4 @@
-/// <reference types="vite/client" />
+// @vitest-environment node
 import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";

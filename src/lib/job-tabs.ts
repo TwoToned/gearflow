@@ -63,22 +63,17 @@ export function resolveJobTab(param: string | null | undefined, available: reado
   return isJobTabKey(raw) && available.includes(raw) ? raw : "overview";
 }
 
-function countFor(key: JobTabKey, counts: JobTabCounts): string | number | undefined {
-  switch (key) {
-    case "tasks":
-      return counts.tasks && counts.tasks.total > 0 ? `${counts.tasks.done}/${counts.tasks.total}` : undefined;
-    case "files":
-      return counts.files || undefined;
-    case "packing":
-      return counts.packing && counts.packing.total > 0 ? `${counts.packing.planned}/${counts.packing.total}` : undefined;
-    case "versions":
-      return counts.versions || undefined;
-    default:
-      return undefined;
-  }
-}
+/** `9/14`, or nothing when there is nothing to count. */
+const fraction = (done: number, total: number) => (total > 0 ? `${done}/${total}` : undefined);
+
+const COUNT: Partial<Record<JobTabKey, (c: JobTabCounts) => string | number | undefined>> = {
+  tasks: (c) => (c.tasks ? fraction(c.tasks.done, c.tasks.total) : undefined),
+  files: (c) => c.files || undefined,
+  packing: (c) => (c.packing ? fraction(c.packing.planned, c.packing.total) : undefined),
+  versions: (c) => c.versions || undefined,
+};
 
 /** The `TabStrip` items: underlined words with muted counts (`Tasks 9/14`). */
 export function jobTabItems(available: readonly JobTabKey[], counts: JobTabCounts): TabStripItem[] {
-  return available.map((value) => ({ value, label: LABELS[value], count: countFor(value, counts) }));
+  return available.map((value) => ({ value, label: LABELS[value], count: COUNT[value]?.(counts) }));
 }

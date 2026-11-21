@@ -52,30 +52,33 @@ function versionLabel(v: VersionMenuVersion, onScreen: boolean): string {
   return [`v${v.number}`, stateWord(v), v.label, onScreen ? "viewing" : null].filter(Boolean).join(" · ");
 }
 
+function versionVerbs(state: VersionMenuState, onScreen: VersionMenuVersion | null, h: VersionMenuHandlers): ActionItem[] {
+  const verbs: ActionItem[] = [];
+  if (state.canPublish && onScreen) {
+    verbs.push({ key: "version-new", label: `New version from v${onScreen.number}`, group: "organise", onSelect: () => h.createFrom(onScreen.id) });
+  }
+  if (state.versions.length > 1) {
+    const b = state.viewingNumber ?? state.versions.find((v) => !v.isLive)?.number ?? null;
+    verbs.push({ key: "version-compare", label: "Compare", group: "organise", onSelect: () => h.compare(b) });
+  }
+  verbs.push({ key: "version-manage", label: "Manage versions…", kbd: "V", group: "organise", onSelect: h.manage });
+  return verbs;
+}
+
 export function buildVersionMenuItem(state: VersionMenuState, h: VersionMenuHandlers): ActionItem | null {
-  const { versions, liveVersion, viewingNumber, canPublish } = state;
+  const { versions, liveVersion, viewingNumber } = state;
   if (versions.length === 0) return null;
   const onScreen = (viewingNumber != null ? versions.find((v) => v.number === viewingNumber) : null) ?? liveVersion;
 
-  const children: ActionItem[] = versions.map((v) => ({
-    key: `version-${v.id}`,
-    label: versionLabel(v, v.id === onScreen?.id),
-    group: "organise",
-    onSelect: () => h.view(v.isLive ? null : v.number),
-  }));
-  if (canPublish && onScreen) {
-    children.push({
-      key: "version-new",
-      label: `New version from v${onScreen.number}`,
+  const children: ActionItem[] = [
+    ...versions.map((v): ActionItem => ({
+      key: `version-${v.id}`,
+      label: versionLabel(v, v.id === onScreen?.id),
       group: "organise",
-      onSelect: () => h.createFrom(onScreen.id),
-    });
-  }
-  if (versions.length > 1) {
-    const b = viewingNumber ?? versions.find((v) => !v.isLive)?.number ?? null;
-    children.push({ key: "version-compare", label: "Compare", group: "organise", onSelect: () => h.compare(b) });
-  }
-  children.push({ key: "version-manage", label: "Manage versions…", kbd: "V", group: "organise", onSelect: h.manage });
+      onSelect: () => h.view(v.isLive ? null : v.number),
+    })),
+    ...versionVerbs(state, onScreen, h),
+  ];
 
   return {
     key: "versions",

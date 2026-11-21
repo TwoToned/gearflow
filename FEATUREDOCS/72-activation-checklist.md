@@ -58,9 +58,12 @@ one satisfies the milestone.
 ## The card
 
 `src/components/dashboard/activation-checklist.tsx`'s `ActivationChecklist` — four rows, an
-honest "About 5 minutes. Pick up wherever you left off." label, and a permanent dismiss. Renders
+honest "About 5 minutes. Pick up wherever you left off." label, and a dismiss. Renders
 nothing while loading, once dismissed, or once all four milestones are complete (same
-disappears-for-good rule as C6's card).
+disappears-for-good rule as C6's card). The dismiss is reversible by exactly one Undo (UX Phase
+11): `orgActivationDismissalsWrites.undismissNative` deletes only the row that dismiss created,
+only if it is the caller's own; `useActivationDismissal().dismiss()` resolves to that row's id and
+`undismiss(id)` reverses it (same shape as FEATUREDOCS/71's setup card).
 
 **The active row (the first not-yet-done milestone) carries the next action inline** — a button
 like "Add an asset" — rather than a separate CTA block, per #1105's explicit UI requirement. Rows

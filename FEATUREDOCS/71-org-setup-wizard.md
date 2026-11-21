@@ -197,6 +197,11 @@ for a user whose key isn't in the CALLER's own `activeKeys` list — and its onl
 screen's key. A `"setup-checklist"` row parked there would be silently deleted the next time
 either one fires, since neither knows this feature exists — breaking "disappears for good."
 Instead, `dismissedAt` lives in its own table, `orgSetupDismissals` (`convex/schema.ts`), with
-its own tiny mutations module (`convex/orgSetupDismissalsWrites.ts`, `mine`/`dismissNative`)
-and hook (`src/hooks/use-setup-dismissal.ts`, `useSetupDismissal`) — at most one row per
-`(organizationId, userId)`, no prune mechanism, because there's nothing to prune against.
+its own tiny mutations module (`convex/orgSetupDismissalsWrites.ts`, `mine`/`dismissNative`/
+`undismissNative`) and hook (`src/hooks/use-setup-dismissal.ts`, `useSetupDismissal`) — at most
+one row per `(organizationId, userId)`, no prune mechanism, because there's nothing to prune
+against. **Dismiss has an exact Undo** (UX Phase 11, §6c.2): the hook's `dismiss()` resolves to
+the row id it created (`null` if the card was already dismissed), and `undismiss(id)` calls
+`undismissNative`, which deletes only that row and only when it is the caller's own (org + user
+checked on the global `by_cuid` read; `convex/lib/personalDismissal.ts`). The Undo toast that
+uses it ships with the merged setup panel (Phase 11 slice 2).

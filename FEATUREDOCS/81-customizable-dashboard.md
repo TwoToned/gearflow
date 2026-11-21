@@ -35,7 +35,7 @@ Every v1 widget is a thin extraction of JSX/logic that already rendered on
 |---|---|---|
 | `onTheFloorNow` | `use-native-dashboard.ts`'s `useNativeHome` | dashboard Zone 1 |
 | `needsAttention` | several `useNative*` hooks | dashboard Zone 2 chip tray |
-| `statActiveJobs` / `statOverdueReturns` / `statGearDeployed` / `statCrewBooked` | `useNativeDashboardStats` | dashboard Zone 3 (4 separate widgets, not one — each independently sizeable/removable) |
+| `statActiveJobs` / `statOverdueReturns` / `statGearDeployed` / `statCrewBooked` | `useNativeDashboardStats` | dashboard Zone 3 (4 separate widgets, not one — each independently sizeable/removable). UX Phase 11 (D85): `dashboardStats.bundle` also returns `overdueReturnJobs` (overdue-return JOBS, the shared rule in `convex/lib/overdueReturns.ts`, the same set the Jobs `overdue=1` filter lists) and `overdueTruncated`; `overdueReturns` stays the line count (the tile's sub-line). The tile switches to jobs in slice 2 |
 | `upcomingProjects` | `useNativeUpcoming` | dashboard Zone 3 |
 | `recentActivity` | `useNativeActivity` | dashboard Zone 3 |
 | `finishSetupChecklist` | `<FinishSetupChecklist bare>` | dashboard (C6, #1104) |

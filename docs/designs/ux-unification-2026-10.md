@@ -1943,9 +1943,9 @@ the recommended option.
 | D16 | ~~Notifications vocabulary: "Mark read" replaces "Dismiss" (same stored dismissal); `Unread · All` strip~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
 | D17 | ~~On now becomes org-wide (floor, out today, due back); the widget hook must stop reading `myProjects` only~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
 | D18 | ~~My tasks gains `+ New task` (personal or job)~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
-| D19 | Versions becomes a job-page tab (chip menu + `V` stay); the Sheet goes | Tab | Keep the Sheet and add a phone entry that opens it |
-| D20 | Compare as a read-only sheet from the row ⋯; the page-level mode goes | Sheet | Keep Compare mode and link it from the row ⋯ |
-| D21 | `Seal case` stores `projectContainers.sealedAt` (blocks plan changes; print label on seal) | Add the field | Ship Print label only, no seal in v1 |
+| D19 | Versions becomes a job-page tab (chip menu + `V` stay); the Sheet goes | **Accepted 2026-11-21.** Tab | Keep the Sheet and add a phone entry that opens it |
+| D20 | Compare as a read-only sheet from the row ⋯; the page-level mode goes | **Accepted 2026-11-21.** Sheet | Keep Compare mode and link it from the row ⋯ |
+| D21 | `Seal case` stores `projectContainers.sealedAt` (blocks plan changes; print label on seal) | **Accepted 2026-11-21**, incl. the schema change (optional `projectContainers.sealedAt`). Scope (owner, 2026-11-21): a seal also blocks rename, re-nest and delete of the case, because the printed label would go stale. Warehouse prep and moves are NOT blocked. Add the field | Ship Print label only, no seal in v1 |
 | D22 | `/projects/[id]/edit` becomes a sheet (`?edit=1`) opened from the Overview `Edit`; status leaves the form | Yes — one edit surface, status keeps its gates | Keep the page |
 | D23 | Templates become `Start from template ▾` on wizard step one + a `Manage templates…` dialog; `/projects/templates` redirects | Yes — one way to start a job | Keep the list page |
 | D24 | The wizard writes an Enquiry draft at step one (number allocated then) and `Create job` finishes it | Yes — nothing is lost on a dropped connection | Create only on the last step |
@@ -1970,14 +1970,14 @@ the recommended option.
 | D43 | Cost/margin columns (Value, ROI, Cost) are opt-in from ⋯ › Columns on every list | Yes | Show Value by default on Models |
 | D44 | `/maintenance/due`, `/test-and-tag/registry` and `/reports` become segment / dialog; old URLs redirect | Yes | Keep as pages |
 | D45 | Overbookings crew and sale-stock tiles become Kind-filtered rows of the same list | Yes | Separate Crew gaps list |
-| D46 | Planner shows one week (‹ ›), not a fortnight | Yes — blocks need room for number, role, times, status | Keep 14 days with compact chips |
-| D47 | `Dispute` is relabelled `Query` in the UI (enum unchanged); Query… stores a reason on the entry | Yes — it asks the crew member to check, and the reason was missing | Keep "Dispute", no reason |
-| D48 | Planner and Timesheets are one sidebar item `Crew` with two words; `/crew/settings` becomes ⋯ › Crew roles & rates… (route kept as a deep link) | Yes | Keep three routes in the sidebar |
-| D49 | Timesheets show rate and total (manager-only) so approval is a money decision | Yes — hours × the role rate already on the assignment | Hours only |
-| D50 | Ad-hoc check records a condition (Good/Worn/Damaged, damaged forced by any fail), as returns already do | Yes | Keep condition return-only |
-| D51 | A blank enabled T&T reading blocks save (explicit N/A to skip) instead of passing | Yes | Keep live skip-as-pass |
-| D52 | Next-due is derived from the asset interval; to change a date change the interval on the register | Yes | Keep the typed override |
-| D53 | A T&T fail defaults the action to Removed from service (Undo available), replacing the blocking fail dialog | Yes | Default No action + dialog |
+| D46 | Planner shows one week (‹ ›), not a fortnight | **Accepted 2026-11-21.** Yes — blocks need room for number, role, times, status | Keep 14 days with compact chips |
+| D47 | `Dispute` is relabelled `Query` in the UI (enum unchanged); Query… stores a reason on the entry | **Accepted 2026-11-21**, incl. the schema change: the reason goes in a new optional `crewTimeEntries.queryReason` (not `notes`, which is the crew member's own text), cleared on resubmit or approve. Yes — it asks the crew member to check, and the reason was missing | Keep "Dispute", no reason |
+| D48 | Planner and Timesheets are one sidebar item `Crew` with two words; `/crew/settings` becomes ⋯ › Crew roles & rates… (route kept as a deep link) | **Accepted 2026-11-21.** Yes | Keep three routes in the sidebar |
+| D49 | Timesheets show rate and total (manager-only) so approval is a money decision | **Accepted 2026-11-21.** Yes — hours × the role rate already on the assignment | Hours only |
+| D50 | Ad-hoc check records a condition (Good/Worn/Damaged, damaged forced by any fail), as returns already do | **Accepted 2026-11-21.** No schema change: the check writes the existing `assets.condition` (Good = `GOOD`, Worn = `FAIR`, Damaged = `DAMAGED`; the alias goes in `docs/glossary.md`) and logs an activity row. Yes | Keep condition return-only |
+| D51 | A blank enabled T&T reading blocks save (explicit N/A to skip) instead of passing | **Accepted 2026-11-21.** Yes | Keep live skip-as-pass |
+| D52 | Next-due is derived from the asset interval; to change a date change the interval on the register | **Accepted 2026-11-21.** A failed test stores the same derived date, shown as "Next due after repair" (owner, 2026-11-21). Yes | Keep the typed override |
+| D53 | A T&T fail defaults the action to Removed from service (Undo available), replacing the blocking fail dialog | **Accepted 2026-11-21.** Yes | Default No action + dialog |
 | D54 | The hub's `Send reminder` is `Chase` (copy text), because Flow never emails clients | Chase = copy follow-up, no sending | Add an email-sending reminder (reverses #934 decision 7) |
 | D55 | Quotes / Invoices as a words-switch with their own strips instead of stacked sections | Words-switch | Stack both lists |
 | D56 | Overdue outranks Part paid when past due | Overdue wins | Keep the job tab's Part-paid-first order |
@@ -2009,11 +2009,11 @@ the recommended option.
 | D82 | Agenda is removed on desktop; phone day mode is the agenda | Yes — the day sheet and day chips cover it | Keep Agenda as a third word |
 | D83 | Month is a real calendar month (30 slim columns), not six weeks | Yes — bars stay one row each | Keep the six-week grid |
 | D84 | Pencilled jobs show `would clash` (amber) and Confirm runs the heads-up gate from the Schedule | Yes — same gate as the job page | Gate only on the job page |
-| D85 | Overdue returns tile counts jobs (what the list shows); the line count moves to its sub-line | Jobs, with lines as sub | Keep counting line items |
-| D86 | Jobs list gains an `Active` segment (Booked + Out) and an `overdue=1` filter so tiles can deep-link | Add both | Link to Booked / Out only |
-| D87 | `DEFAULT_DASHBOARD_LAYOUT` becomes setup → stats → My tasks + Needs attention (6 + 6) → On the floor → Upcoming → Activity | Yes — the user's "quick stats, then any tasks"; fills the empty half beside My tasks | Keep the live order (stats 5th) |
-| D88 | Overdue-invoices line in Needs attention | Add (data already read) | Leave out |
-| D89 | Customise on phone | Hidden | Keep live add/remove-only |
+| D85 | Overdue returns tile counts jobs (what the list shows); the line count moves to its sub-line | **Accepted 2026-11-21.** Jobs, with lines as sub | Keep counting line items |
+| D86 | Jobs list gains an `Active` segment (Booked + Out) and an `overdue=1` filter so tiles can deep-link | **Accepted 2026-11-21.** Add both | Link to Booked / Out only |
+| D87 | `DEFAULT_DASHBOARD_LAYOUT` becomes setup → stats → My tasks + Needs attention (6 + 6) → On the floor → Upcoming → Activity | **Accepted 2026-11-21.** Yes — the user's "quick stats, then any tasks"; fills the empty half beside My tasks | Keep the live order (stats 5th) |
+| D88 | Overdue-invoices line in Needs attention | **Accepted 2026-11-21.** Add (data already read) | Leave out |
+| D89 | Customise on phone | **Accepted 2026-11-21.** Hidden | Keep live add/remove-only |
 | D90 | §4 vocabulary as UI labels (routes and enums unchanged): CHECKED_OUT reads **Out** (the verb **Deploy** stays), the warehouse landing page is **The floor**, gear not in a case is **Loose**, Availability is **Schedule**; each alias recorded in `docs/glossary.md` | **Accepted 2026-11-17.** Yes — `vocabulary.ts` is the one source | Keep "Deployed" for the CHECKED_OUT stage |
 | D91 | The status primitive renders **dot + word** (playbook §3.3), named `StatusWord`; Out is a red dot. DESIGN.md "Status Indicators" is rewritten to match; filled pills and `status-indicator.tsx` consumers migrate surface by surface | **Accepted 2026-11-17.** Dot + word | Keep DESIGN.md's filled pills |
 | D92 | `DetailHeader` is built to §6b (title · status word · lock glyph with its menu; meta line; one primary `Advance to …`, `Documents ▾`, `Edit`, ⋯; version in ⋯ and `V`; thin progress line), not §5.9's pill/lock chip/version chip. One underlined-word tab style for job and record pages (§10) | **Accepted 2026-11-17.** §6b | §5.9 as written |

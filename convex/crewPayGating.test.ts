@@ -112,4 +112,22 @@ describe("planner reads redact pay below manager", () => {
     expect(mem[0].defaultDayRate).toBeNull();
     expect(mem[0].firstName).toBe("Bob");
   });
+
+  test("crewDashboard.pickerList (the Log time picker): pay below manager redacted, the offer token never ships", async () => {
+    const withToken = async (t: T) => t.run(async (ctx) => {
+      const a = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      await ctx.db.patch(a!._id, { responseToken: "secret-token" });
+    });
+    const tm = makeT(); await seed(tm, "manager"); await withToken(tm);
+    const mgr = (await tm.withIdentity(asUser).query(api.crewDashboard.pickerList, { orgId: ORG }))[0].assignments[0] as Record<string, unknown>;
+    expect(mgr).toMatchObject({ rateOverride: 650, estimatedCost: 650 });
+    expect(mgr.responseToken).toBeUndefined();
+
+    const tb = makeT(); await seed(tb, "member"); await withToken(tb);
+    const mem = (await tb.withIdentity(asUser).query(api.crewDashboard.pickerList, { orgId: ORG }))[0].assignments[0] as Record<string, unknown>;
+    expect(mem.rateOverride).toBeUndefined();
+    expect(mem.estimatedCost).toBeUndefined();
+    expect(mem.responseToken).toBeUndefined();
+    expect(mem.status).toBe("CONFIRMED");
+  });
 });

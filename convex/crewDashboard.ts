@@ -2,8 +2,9 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgReadFor } from "./lib/auth";
+import { redactFields, requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { ASSIGNMENT_PAY_FIELDS, canSeeCrewPay } from "./lib/crewPayVisibility";
 
 /**
  * Browser-direct crew-dashboard reads (Phase 3 — replace getCrewPickerList /
@@ -78,7 +79,14 @@ async function crewLookups(ctx: QueryCtx, orgId: string) {
 }
 // Spread an assignment with its date fields as ISO strings (generic → preserves the
 // doc's own keys like `id`/`status` for the caller).
-const isoAssignment = <A extends Record<string, unknown>>(a: A) => ({ ...a, startDate: iso(a.startDate as number | null), endDate: iso(a.endDate as number | null), offeredAt: iso(a.offeredAt as number | null), respondedAt: iso(a.respondedAt as number | null), confirmedAt: iso(a.confirmedAt as number | null), createdAt: iso(a.createdAt as number | null), updatedAt: iso(a.updatedAt as number | null) });
+// The single-use offer `responseToken` is a bearer credential (it accepts or
+// declines the call as the crew member): it NEVER reaches a crew:read caller
+// (parity with `crewAvailability.plannerData` / `crewAssignments.projectCrew`).
+const isoAssignment = <A extends Record<string, unknown>>(a: A) => {
+  const { responseToken, ...rest } = a;
+  void responseToken;
+  return { ...rest, startDate: iso(a.startDate as number | null), endDate: iso(a.endDate as number | null), offeredAt: iso(a.offeredAt as number | null), respondedAt: iso(a.respondedAt as number | null), confirmedAt: iso(a.confirmedAt as number | null), createdAt: iso(a.createdAt as number | null), updatedAt: iso(a.updatedAt as number | null) };
+};
 
 export const pickerList = query({
   args: { orgId: v.string() },
@@ -88,12 +96,15 @@ export const pickerList = query({
     const active = g.members.filter((m) => (m.isActive ?? true) && (m.status ?? "ACTIVE") === "ACTIVE").sort((a, b) => cmpStr(a.firstName, b.firstName) || cmpStr(a.lastName, b.lastName));
     const byMember = new Map<string, typeof assignments>();
     for (const a of assignments) { const l = byMember.get(a.crewMemberId) ?? []; l.push(a); byMember.set(a.crewMemberId, l); }
+    // UX Phase 15 (D49): an assignment's pay is manager-only, server-side (the
+    // Log time picker reads this list for every crew:read caller).
+    const payVisible = await canSeeCrewPay(ctx, orgId);
     return active.map((m) => {
       const role = m.crewRoleId ? g.roleById.get(m.crewRoleId) ?? null : null;
       const memberAssignments = (byMember.get(m.id) ?? [])
         .filter((a) => !EXCLUDED.has(a.status ?? ""))
         .sort((a, b) => cmpDescNulls(a.startDate, b.startDate))
-        .map((a) => { const p = g.projById.get(a.projectId); const aRole = a.crewRoleId ? g.roleById.get(a.crewRoleId) : null; return { ...isoAssignment(a), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null, crewRole: aRole ? { id: aRole.id, name: aRole.name } : null }; });
+        .map((a) => { const p = g.projById.get(a.projectId); const aRole = a.crewRoleId ? g.roleById.get(a.crewRoleId) : null; const shown = payVisible ? a : redactFields(a, ASSIGNMENT_PAY_FIELDS); return { ...isoAssignment(shown), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null, crewRole: aRole ? { id: aRole.id, name: aRole.name } : null }; });
       return { id: m.id, firstName: m.firstName, lastName: m.lastName, department: m.department ?? null, crewRole: role ? { name: role.name } : null, assignments: memberAssignments };
     });
   },

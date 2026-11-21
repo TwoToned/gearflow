@@ -1945,7 +1945,7 @@ the recommended option.
 | D18 | ~~My tasks gains `+ New task` (personal or job)~~ | **Withdrawn 2026-11-05** — the v1 Home was rejected; §6c v2 keeps the live dashboard | — |
 | D19 | Versions becomes a job-page tab (chip menu + `V` stay); the Sheet goes | **Accepted 2026-11-21.** Tab | Keep the Sheet and add a phone entry that opens it |
 | D20 | Compare as a read-only sheet from the row ⋯; the page-level mode goes | **Accepted 2026-11-21.** Sheet | Keep Compare mode and link it from the row ⋯ |
-| D21 | `Seal case` stores `projectContainers.sealedAt` (blocks plan changes; print label on seal) | **Accepted 2026-11-21**, incl. the schema change (optional `projectContainers.sealedAt`). Add the field | Ship Print label only, no seal in v1 |
+| D21 | `Seal case` stores `projectContainers.sealedAt` (blocks plan changes; print label on seal) | **Accepted 2026-11-21**, incl. the schema change (optional `projectContainers.sealedAt`). Scope (owner, 2026-11-21): a seal also blocks rename, re-nest and delete of the case, because the printed label would go stale. Warehouse prep and moves are NOT blocked. Add the field | Ship Print label only, no seal in v1 |
 | D22 | `/projects/[id]/edit` becomes a sheet (`?edit=1`) opened from the Overview `Edit`; status leaves the form | Yes — one edit surface, status keeps its gates | Keep the page |
 | D23 | Templates become `Start from template ▾` on wizard step one + a `Manage templates…` dialog; `/projects/templates` redirects | Yes — one way to start a job | Keep the list page |
 | D24 | The wizard writes an Enquiry draft at step one (number allocated then) and `Create job` finishes it | Yes — nothing is lost on a dropped connection | Create only on the last step |
@@ -1976,7 +1976,7 @@ the recommended option.
 | D49 | Timesheets show rate and total (manager-only) so approval is a money decision | **Accepted 2026-11-21.** Yes — hours × the role rate already on the assignment | Hours only |
 | D50 | Ad-hoc check records a condition (Good/Worn/Damaged, damaged forced by any fail), as returns already do | **Accepted 2026-11-21.** No schema change: the check writes the existing `assets.condition` (Good = `GOOD`, Worn = `FAIR`, Damaged = `DAMAGED`; the alias goes in `docs/glossary.md`) and logs an activity row. Yes | Keep condition return-only |
 | D51 | A blank enabled T&T reading blocks save (explicit N/A to skip) instead of passing | **Accepted 2026-11-21.** Yes | Keep live skip-as-pass |
-| D52 | Next-due is derived from the asset interval; to change a date change the interval on the register | **Accepted 2026-11-21.** Yes | Keep the typed override |
+| D52 | Next-due is derived from the asset interval; to change a date change the interval on the register | **Accepted 2026-11-21.** A failed test stores the same derived date, shown as "Next due after repair" (owner, 2026-11-21). Yes | Keep the typed override |
 | D53 | A T&T fail defaults the action to Removed from service (Undo available), replacing the blocking fail dialog | **Accepted 2026-11-21.** Yes | Default No action + dialog |
 | D54 | The hub's `Send reminder` is `Chase` (copy text), because Flow never emails clients | Chase = copy follow-up, no sending | Add an email-sending reminder (reverses #934 decision 7) |
 | D55 | Quotes / Invoices as a words-switch with their own strips instead of stacked sections | Words-switch | Stack both lists |

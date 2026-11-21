@@ -455,7 +455,9 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
   offer) for the caller to send cancellation mail. No Undo — the mail is sent.
 - **`crewRolesWrites.moveNative({ id, direction })`**: Move up / Move down as ONE
   atomic renumber (replaces the two non-atomic `updateNative` calls; ties become
-  movable). Its Undo is the opposite move.
+  movable). It swaps with the nearest role in the SAME list — active roles past
+  archived ones and vice versa, since the roles sheet lists archived roles under
+  their own head — so a move is always visible. Its Undo is the opposite move.
 - `plannerData` also returns each member's `skillIds` (for `Skill ▾`) and redacts
   assignment pay below manager (see Time Tracking › pay).
 
@@ -771,11 +773,13 @@ an activity row PER changed entry (`${auditId}:${entryId}`) whose `metadata`
 records the entry's prior state (`kind: "time_entry_transition"`, `transition`,
 `prevStatus`, and any prior `queryReason` / approver stamp). Each returns
 `{ count, changed }`; the hook adds the call's `stamp` (its `now`).
-`revertNative({ transition, ids, stamp })` is the ONE Undo for all three: it
-takes only the ids and the stamp, reads each entry's prior state back from the
-forward write's own row (same entry, same stamp, same user), and refuses the
-whole Undo (`ConvexError`) if any entry's `updatedAt` no longer equals the stamp.
-Never pass prior state from the client.
+`revertNative({ ids, stamp })` is the ONE Undo for all three: it takes ONLY
+the ids and the stamp — no transition, no prior status. For each entry it reads
+which transition ran and the prior state back from the forward write's own row
+(same entry, same stamp, same user, the row whose transition produced the
+entry's current status), and refuses the whole Undo (`ConvexError`) if any
+entry's `updatedAt` no longer equals the stamp, so a second Undo of the same
+write refuses too. Never pass prior state from the client.
 
 **Pay (D49).** `crewTimeEntries.allEntries` adds, per row, `rate` / `rateType` /
 `total` / `rateIncluded`, plus `totals.pay` over the filtered set — **only when

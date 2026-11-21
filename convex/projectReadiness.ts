@@ -106,17 +106,20 @@ async function readPackingReadiness(ctx: QueryCtx, orgId: string, projectId: str
 
 /**
  * UX Phase 7 — open incidents on this job's gear for the Overview's incidents
- * row. Org AND project are both in the index (never the org-wide table the old
- * `OpenIssuesBadge` subscribed to), and the scan is capped: one row past the
- * cap is read only to know whether to report `truncated`.
+ * row: ONE project's records (never the org-wide table the old
+ * `OpenIssuesBadge` subscribed to), capped — one row past the cap is read only
+ * to know whether to report `truncated`. The caller has already org-checked
+ * the project; `by_projectId` is a GLOBAL index, so a row from another org is
+ * still dropped here (R-8.4.3, defensive).
  */
 async function readIncidentReadiness(ctx: QueryCtx, orgId: string, projectId: string) {
   const records = await ctx.db
     .query("maintenanceRecords")
-    .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
     .take(INCIDENT_SCAN_CAP + 1);
   return computeProjectIncidentReadiness(
-    records.map((r) => ({ incidentType: r.incidentType ?? null, status: r.status ?? null })),
+    records.map((r) => ({ organizationId: r.organizationId, incidentType: r.incidentType ?? null, status: r.status ?? null })),
+    orgId,
   );
 }
 

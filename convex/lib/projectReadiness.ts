@@ -249,12 +249,14 @@ export function computeProjectPackingReadiness(
  * whole org's table).
  *
  * The read is bounded: the caller takes at most `INCIDENT_SCAN_CAP + 1` of the
- * project's records, so `truncated` says "at least this many" honestly rather
- * than pretending the count is exact.
+ * project's records through the GLOBAL `by_projectId` index, so `truncated`
+ * says "at least this many" honestly, and a row from another org is dropped
+ * here rather than trusted (R-8.4.3).
  */
 export const INCIDENT_SCAN_CAP = 200;
 
 export interface IncidentRecordInput {
+  organizationId: string;
   incidentType?: string | null;
   status?: string | null;
 }
@@ -269,11 +271,12 @@ const CLOSED_MAINTENANCE_STATUSES: ReadonlySet<string> = new Set(["COMPLETED", "
 
 export function computeProjectIncidentReadiness(
   records: IncidentRecordInput[],
+  orgId: string,
   cap: number = INCIDENT_SCAN_CAP,
 ): ReadinessIncidentSection {
   const scanned = records.slice(0, cap);
   const openCount = scanned.filter(
-    (r) => r.incidentType != null && !CLOSED_MAINTENANCE_STATUSES.has(r.status ?? ""),
+    (r) => r.organizationId === orgId && r.incidentType != null && !CLOSED_MAINTENANCE_STATUSES.has(r.status ?? ""),
   ).length;
   return { openCount, truncated: records.length > cap };
 }

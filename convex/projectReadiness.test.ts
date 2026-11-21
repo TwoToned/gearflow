@@ -8,9 +8,9 @@ import { register as registerShardedCounter } from "@convex-dev/sharded-counter/
 
 /**
  * UX Phase 7: `projectReadiness.forProject` carries the Overview's incidents
- * count, read through `by_organizationId_projectId` (org + project in the
- * index, capped) instead of the page subscribing to the org's whole
- * maintenance table.
+ * count, read through the existing `by_projectId` index (capped, foreign-org
+ * rows dropped because the index is global) instead of the page subscribing
+ * to the org's whole maintenance table.
  */
 const modules = import.meta.glob("./**/*.ts");
 function makeT() {
@@ -66,14 +66,22 @@ describe("projectReadiness.forProject — incidents", () => {
     expect((await read(t)).incidents).toEqual({ openCount: 2, truncated: false });
   });
 
-  test("a same-project-id record in another org is not counted (org is in the index)", async () => {
+  test("an org-mismatch row on the same project id is dropped (by_projectId is global)", async () => {
     const t = makeT();
     await seed(t);
     await addRecords(t, [
       { id: "i1", incidentType: "BROKEN_DAMAGED" },
       { id: "x1", org: OTHER, incidentType: "BROKEN_DAMAGED" },
+      { id: "x2", org: OTHER, incidentType: "NEEDS_SERVICE" },
     ]);
     expect((await read(t)).incidents).toEqual({ openCount: 1, truncated: false });
+  });
+
+  test("only foreign-org rows on the project id count as zero", async () => {
+    const t = makeT();
+    await seed(t);
+    await addRecords(t, [{ id: "x1", org: OTHER, incidentType: "BROKEN_DAMAGED" }]);
+    expect((await read(t)).incidents).toEqual({ openCount: 0, truncated: false });
   });
 
   test("no records reads as zero, not truncated", async () => {

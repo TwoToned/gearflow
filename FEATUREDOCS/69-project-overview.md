@@ -105,9 +105,10 @@ Phase 7 (overseer ruling Q4).
 
 - `projectReadiness.forProject` is a **live subscription** (bounded,
   referenced-only reads, R-9.8). Its `incidents` section (UX Phase 7) reads
-  `maintenanceRecords` through `by_organizationId_projectId` (org AND project in
-  the index), takes at most 201 rows and returns `{ openCount, truncated }`;
-  a truncated count prints as `200+`. Open = `incidentType` set, status neither
+  `maintenanceRecords` through the existing `by_projectId` index (the project is
+  already org-checked; the index is global, so any row whose `organizationId`
+  isn't the caller's org is dropped), takes at most 201 rows and returns
+  `{ openCount, truncated }`; a truncated count prints as `200+`. No schema change. Open = `incidentType` set, status neither
   `COMPLETED` nor `CANCELLED`. This replaced the `OpenIssuesBadge`, which
   subscribed to the org's whole `maintenanceRecords.list`.
 - `reservationConflicts.projectConflicts` is **one-shot** (a `convex.query` in
@@ -196,8 +197,8 @@ src/components/projects/project-context-rail.tsx — the sidebar (every tab but 
 src/components/projects/overview/{overview-tab,readiness-section,quote-card,invoicing-card,context-cards,overview-parts}.tsx
 ```
 
-Tests: `convex/projectReadiness.test.ts` (incidents through the index, org
-isolation), `convex/lib/projectReadiness.test.ts`,
+Tests: `convex/projectReadiness.test.ts` (incidents through `by_projectId`,
+org-mismatch rows dropped), `convex/lib/projectReadiness.test.ts`,
 `src/lib/__tests__/project-readiness-checks.test.ts`,
 `src/lib/job-readiness-verdict.test.ts`, and the jsdom
 `overview/__tests__/overview-tab.smoke.test.tsx`, which opens every overlay

@@ -116,7 +116,7 @@ matching the existing `photosUploading` pattern in `maintenance-form.tsx`.
 - **Job Overview** (UX Phase 7, FEATUREDOCS/69) — the readiness section's incidents
   row: open (`status` not `COMPLETED`/`CANCELLED`) incident-flagged maintenance
   records for the job, counted server-side by `projectReadiness.forProject` through
-  `maintenanceRecords.by_organizationId_projectId` (capped at 200, `200+` when
+  `maintenanceRecords.by_projectId`, foreign-org rows dropped (capped at 200, `200+` when
   truncated), linking to the job's warehouse page. It passes at zero and stays listed
   from Out onward while failing. (It replaced the `OpenIssuesBadge`, which subscribed
   to the org's whole `maintenanceRecords.list`.)

@@ -490,6 +490,20 @@ price-looking $0 plus a `priceBreakdown` that makes it look auto-priced. See
 `addLineItemSmartNative` and `groupTemplatesWrites.applyNative`.
 
 
+### Timesheets: crew pay is DERIVED and manager-gated; Query… is not `notes`
+Timesheet rate/total (D49) are derived in `convex/lib/timeEntryMoney.ts` from the
+pay cascade `resolveRate` — a day rate once per person per day, a flat rate once per
+person per assignment, nothing resolved = blank — and never stored. Every read that
+returns crew pay (`allEntries`, `plannerData`, `membersForAssignment`,
+`crewDashboard.pickerList`, the timesheet CSV) gates it on `canSeeCrewPay` (`convex/lib/crewPayVisibility.ts`: manager+ and not a
+`noFinancials` key); add a new pay-bearing read to that list, don't hide a column
+client-side. Query… (D47, enum stays `DISPUTED`) stores its reason on
+`crewTimeEntries.queryReason`, never `notes` (the crew member's own text). Submit /
+approve / query log one activity row per entry with the prior state, and their ONE
+Undo, `revertNative`, takes only ids + the forward stamp (no transition, no prior
+status) and reads which transition ran and the prior state back from those rows —
+never accept either from the client. FEATUREDOCS/31.
+
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved
 flat dollar amount** — recalc, allocation, invoicing and `lineTotal` read that

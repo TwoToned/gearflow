@@ -4,11 +4,13 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { assertBulkSizeOk, enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { calculateTotalHours } from "./lib/crewTimeHours";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
+import { QUERY_REASON_MAX } from "./lib/timeEntryQuery";
+import { TIME_ENTRY_TRANSITION_FROM, TIME_ENTRY_TRANSITION_TO, type TimeEntryTransition } from "./lib/timeEntryTransitions";
 
 /**
  * Native CREW-TIME-ENTRY write mutations (Phase 3 browser-direct — replaces
@@ -242,47 +244,220 @@ export const deleteNative = mutation({
   },
 });
 
-/** Shared bulk status transition with a from-status eligibility gate (TOCTOU-safe per item). */
-async function bulkTransition(ctx: MutationCtx, orgId: string, ids: string[], from: string[], set: Record<string, unknown>): Promise<number> {
-  let count = 0;
-  const fromSet = new Set(from);
-  for (const id of ids) {
-    const doc = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-    if (!doc || doc.organizationId !== orgId) continue;
-    if (!fromSet.has(doc.status ?? "DRAFT")) continue;
-    await ctx.db.patch(doc._id, set);
-    count++;
-  }
-  return count;
+// ─── Bulk status transitions with an exact Undo (UX Phase 15, D47) ─────────────
+//
+// Submit, Approve and Query move a set of entries from an eligible status to a
+// target one. Each changed entry gets its OWN activity row (bulk writes log one
+// row per record), and that row records the entry's prior state in `metadata`.
+// `revertNative` — the one Undo for all three — reads the prior state back from
+// those server-written rows, never from the caller, so an Undo can only restore
+// what the forward write actually replaced.
+
+type Transition = TimeEntryTransition;
+
+/** Marks an activity row as a transition record `revertNative` may read back. */
+export const TIME_ENTRY_TRANSITION_KIND = "time_entry_transition";
+
+// The one from/to table (convex/lib/timeEntryTransitions.ts), shared with the timesheet row menu.
+const TRANSITION_FROM = TIME_ENTRY_TRANSITION_FROM;
+const TRANSITION_TO = TIME_ENTRY_TRANSITION_TO;
+const TRANSITION_VERB: Record<Transition, string> = { submit: "Submitted", approve: "Approved", query: "Queried" };
+const TRANSITION_NOUN: Record<Transition, string> = { submit: "submission", approve: "approval", query: "query" };
+
+type EntryDoc = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
+type EntryFields = Omit<EntryDoc, "_id" | "_creationTime">;
+
+async function findEntry(ctx: MutationCtx, id: string) {
+  return await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).first();
 }
 
+/** The fields a transition replaces, as they stand before it. Absent fields stay absent. */
+function priorState(doc: EntryDoc): Record<string, unknown> {
+  const prior: Record<string, unknown> = { prevStatus: doc.status ?? "DRAFT" };
+  if (doc.queryReason != null) prior.prevQueryReason = doc.queryReason;
+  if (doc.approvedById != null) prior.prevApprovedById = doc.approvedById;
+  if (doc.approvedAt != null) prior.prevApprovedAt = doc.approvedAt;
+  return prior;
+}
+
+/** The entry after `transition`. `queryReason` is set by Query and cleared by Submit/Approve (D47). */
+function transitioned(doc: EntryDoc, t: Transition, actorId: string, now: number, reason: string | undefined): EntryFields {
+  const { _id, _creationTime, ...rest } = doc;
+  void _id; void _creationTime;
+  const next: EntryFields = { ...rest, status: TRANSITION_TO[t] as EntryFields["status"], updatedAt: now };
+  delete next.queryReason;
+  if (t === "query") next.queryReason = reason;
+  if (t === "approve") { next.approvedById = actorId; next.approvedAt = now; }
+  return next;
+}
+
+/**
+ * Apply `t` to every eligible in-org entry of `ids` and write one activity row
+ * per changed entry (`${auditId}:${entryId}`, metadata = the prior state).
+ * Ineligible or foreign ids are skipped, as the from-gate always did.
+ */
+async function applyTransition(
+  ctx: MutationCtx,
+  a: { orgId: string; ids: string[]; t: Transition; actor: Actor; auditId: string; now: number; reason?: string },
+): Promise<string[]> {
+  await assertBulkSizeOk(ctx, a.ids.length);
+  const from = new Set(TRANSITION_FROM[a.t]);
+  const changed: string[] = [];
+  for (const id of new Set(a.ids)) {
+    const doc = await findEntry(ctx, id);
+    if (!doc || doc.organizationId !== a.orgId || !from.has(doc.status ?? "DRAFT")) continue;
+    await ctx.db.replace(doc._id, transitioned(doc, a.t, a.actor.userId, a.now, a.reason));
+    const member = await memberName(ctx, a.orgId, doc.crewMemberId);
+    await writeActivityLog(ctx, {
+      id: `${a.auditId}:${id}`, organizationId: a.orgId, action: "UPDATE", entityType: "crew_time_entry", entityId: id,
+      entityName: member.name, userId: a.actor.userId, userName: a.actor.userName, createdAt: a.now,
+      summary: `${TRANSITION_VERB[a.t]} time entry for ${member.name}${a.reason ? `: ${a.reason}` : ""}`,
+      metadata: { kind: TIME_ENTRY_TRANSITION_KIND, transition: a.t, ...priorState(doc) },
+    });
+    changed.push(id);
+  }
+  if (changed.length === 0) throw new ConvexError("No eligible entries found");
+  return changed;
+}
+
+const transitionArgs = { orgId: v.string(), ids: v.array(v.string()), now: v.number(), actor: actorValidator, auditId: v.string() };
+const transitionReturns = v.object({ count: v.number(), changed: v.array(v.string()) });
+
+async function guardTransition(ctx: MutationCtx, orgId: string, supplied: Actor): Promise<Actor> {
+  await assertWritesEnabled(ctx, "crew");
+  await enforceBrowserWriteLimit(ctx);
+  await requireOrgPermission(ctx, orgId, "crew", "update");
+  return await resolveActor(ctx, supplied);
+}
+
+/** DRAFT/DISPUTED → SUBMITTED. Clears `queryReason`. Undo: `revertNative({ transition: "submit" })`. */
 export const submitNative = mutation({
-  returns: v.object({ count: v.number() }),
-  args: { orgId: v.string(), ids: v.array(v.string()), now: v.number(), actor: actorValidator, auditId: v.string() },
+  returns: transitionReturns,
+  args: transitionArgs,
   handler: async (ctx, a) => {
-    await assertWritesEnabled(ctx, "crew");
-    await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "crew", "update");
-    const actor = await resolveActor(ctx, a.actor);
-    const count = await bulkTransition(ctx, a.orgId, a.ids, ["DRAFT", "DISPUTED"], { status: "SUBMITTED", updatedAt: a.now });
-    if (count === 0) throw new ConvexError("No eligible entries found");
-    await logTime(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.ids[0], name: `${count} time entries`, summary: `Submitted ${count} time entries for approval` });
-    return { count };
+    const actor = await guardTransition(ctx, a.orgId, a.actor);
+    const changed = await applyTransition(ctx, { orgId: a.orgId, ids: a.ids, t: "submit", actor, auditId: a.auditId, now: a.now });
+    return { count: changed.length, changed };
   },
 });
 
+/** SUBMITTED/DISPUTED → APPROVED with the approver stamp. Clears `queryReason`. Undo: `revertNative({ transition: "approve" })`. */
 export const approveNative = mutation({
-  returns: v.object({ count: v.number() }),
-  args: { orgId: v.string(), ids: v.array(v.string()), now: v.number(), actor: actorValidator, auditId: v.string() },
+  returns: transitionReturns,
+  args: transitionArgs,
   handler: async (ctx, a) => {
-    await assertWritesEnabled(ctx, "crew");
-    await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "crew", "update");
-    const actor = await resolveActor(ctx, a.actor);
-    const count = await bulkTransition(ctx, a.orgId, a.ids, ["SUBMITTED", "DISPUTED"], { status: "APPROVED", approvedById: actor.userId, approvedAt: a.now, updatedAt: a.now });
-    if (count === 0) throw new ConvexError("No eligible entries found");
-    await logTime(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.ids[0], name: `${count} time entries`, summary: `Approved ${count} time entries` });
-    return { count };
+    const actor = await guardTransition(ctx, a.orgId, a.actor);
+    const changed = await applyTransition(ctx, { orgId: a.orgId, ids: a.ids, t: "approve", actor, auditId: a.auditId, now: a.now });
+    return { count: changed.length, changed };
+  },
+});
+
+/**
+ * Query… (D47; enum stays `DISPUTED`): SUBMITTED/APPROVED → DISPUTED, storing
+ * WHY on `queryReason` — never on `notes`, the crew member's own text. The
+ * reason is required and bounded here as well as in the client schema
+ * (R-8.6.2). Undo: `revertNative({ transition: "query" })`.
+ */
+export const queryNative = mutation({
+  returns: transitionReturns,
+  args: { ...transitionArgs, reason: v.string() },
+  handler: async (ctx, a) => {
+    const actor = await guardTransition(ctx, a.orgId, a.actor);
+    const reason = a.reason.trim();
+    assertStrLen(reason, "queryReason", { min: 1, max: QUERY_REASON_MAX });
+    const changed = await applyTransition(ctx, { orgId: a.orgId, ids: a.ids, t: "query", actor, auditId: a.auditId, now: a.now, reason });
+    return { count: changed.length, changed };
+  },
+});
+
+/** The prior state a forward transition recorded on its activity row (`applyTransition`). */
+interface TransitionRecord {
+  transition: Transition;
+  prevStatus?: string;
+  prevQueryReason?: string;
+  prevApprovedById?: string;
+  prevApprovedAt?: number;
+}
+
+const isTransition = (t: unknown): t is Transition => t === "submit" || t === "approve" || t === "query";
+
+/**
+ * The forward write's own activity row for `id` at `stamp` by `userId` — the
+ * latest one whose transition produced the entry's CURRENT status. Which
+ * transition it was comes from that server-written row, never from the caller.
+ */
+async function transitionRecord(ctx: MutationCtx, orgId: string, id: string, stamp: number, userId: string, currentStatus: string): Promise<TransitionRecord | null> {
+  const rows = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "crew_time_entry").eq("entityId", id))
+    .order("desc")
+    .take(50);
+  const row = rows.find((r) => {
+    const m = r.metadata as { kind?: string; transition?: unknown } | undefined;
+    return r.createdAt === stamp && r.userId === userId && m?.kind === TIME_ENTRY_TRANSITION_KIND
+      && isTransition(m.transition) && TRANSITION_TO[m.transition] === currentStatus;
+  });
+  return (row?.metadata ?? null) as TransitionRecord | null;
+}
+
+/** Set `key` to `value`, or remove it when the prior state had none. */
+function restoreField(target: Record<string, unknown>, key: string, value: unknown): void {
+  if (value == null) delete target[key];
+  else target[key] = value;
+}
+
+/** The entry with the fields its transition replaced put back exactly as the forward write recorded them. */
+function restored(doc: EntryDoc, prior: TransitionRecord, now: number): EntryFields {
+  const { _id, _creationTime, ...rest } = doc;
+  void _id; void _creationTime;
+  const next: Record<string, unknown> = { ...rest, status: prior.prevStatus, updatedAt: now };
+  restoreField(next, "queryReason", prior.prevQueryReason);
+  if (prior.transition === "approve") {
+    restoreField(next, "approvedById", prior.prevApprovedById);
+    restoreField(next, "approvedAt", prior.prevApprovedAt);
+  }
+  return next as EntryFields;
+}
+
+/** Every refusal `revertNative` can raise for one entry before its record is read; null when it may proceed. */
+function revertRefusal(doc: EntryDoc | null, orgId: string, stamp: number): string | null {
+  if (!doc || doc.organizationId !== orgId) return "Time entry not found";
+  if (doc.updatedAt !== stamp) return "This time entry changed after that write, so it can't be undone";
+  return null;
+}
+
+/** A record is replayable only if its prior status is one its transition may start from. */
+function replayable(prior: TransitionRecord | null): prior is TransitionRecord & { prevStatus: string } {
+  return !!prior?.prevStatus && TRANSITION_FROM[prior.transition].includes(prior.prevStatus);
+}
+
+/**
+ * The ONE Undo for Submit, Approve and Query (Q-I4). Takes ONLY the entry ids
+ * and the forward write's `now` (its stamp) — no transition, no prior status.
+ * For each entry it reads which transition ran and the prior state (status,
+ * query reason, approver) from that write's own activity row (same entry, same
+ * stamp, same user, producing the entry's current status), and refuses the
+ * whole Undo with a ConvexError if any entry's `updatedAt` moved since — so it
+ * reverses exactly the forward write, never "whatever looks reversible".
+ */
+export const revertNative = mutation({
+  returns: v.object({ count: v.number() }),
+  args: { orgId: v.string(), ids: v.array(v.string()), stamp: v.number(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    const actor = await guardTransition(ctx, a.orgId, a.actor);
+    await assertBulkSizeOk(ctx, a.ids.length);
+    const ids = [...new Set(a.ids)];
+    for (const id of ids) {
+      const doc = await findEntry(ctx, id);
+      const refusal = revertRefusal(doc, a.orgId, a.stamp);
+      if (refusal) throw new ConvexError(refusal);
+      const prior = await transitionRecord(ctx, a.orgId, id, a.stamp, actor.userId, doc!.status ?? "DRAFT");
+      if (!replayable(prior)) throw new ConvexError("Nothing to undo for this time entry");
+      await ctx.db.replace(doc!._id, restored(doc!, prior, a.now));
+      const member = await memberName(ctx, a.orgId, doc!.crewMemberId);
+      await logTime(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}:${id}`, now: a.now, action: "UPDATE", id, name: member.name, summary: `Undid the ${TRANSITION_NOUN[prior.transition]} of a time entry for ${member.name}` });
+    }
+    return { count: ids.length };
   },
 });
 
@@ -317,15 +492,23 @@ export const disputeNative = mutation({
 
 export const agentOps: AgentOpsAnnotations = {
   // Stamps approvedById/approvedAt, moving hours into the state that feeds
-  // payroll/billing exports, with no un-approve path in this module —
-  // financial-adjacent and effectively one-way from the API's point of view.
+  // payroll/billing exports — financial-adjacent. The only un-approve path is
+  // revertNative's exact, same-user Undo of one approve call, so it stays high.
   approveNative: { danger: "high" },
   createManyNative: { danger: "medium" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },
   // Just flags a SUBMITTED/APPROVED entry back for review — reversible via
-  // submitNative/approveNative, no data destroyed.
+  // submitNative/approveNative, no data destroyed. Legacy: the Query… verb
+  // (queryNative) replaces it; Phase 13 retires it with the crew dashboard.
   disputeNative: { danger: "low" },
+  // Query… (D47) — flags entries back to the crew member with a reason.
+  // Reversible (revertNative), no data destroyed; same tier as disputeNative.
+  queryNative: { danger: "low" },
+  // The exact Undo of submit/approve/query: restores only what that forward
+  // write recorded, refuses if anything changed since. Un-approving moves hours
+  // OUT of the payroll-feeding state, so medium, not low.
+  revertNative: { danger: "medium" },
   submitNative: { danger: "medium" },
   updateNative: { danger: "medium" },
 };

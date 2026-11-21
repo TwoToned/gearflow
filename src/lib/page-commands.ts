@@ -198,11 +198,11 @@ const RAW_PAGE_COMMANDS: PageCommand[] = [
         description: "Time tracking and timesheets",
       },
       {
-        label: "Roles & Skills",
-        href: "/crew/settings",
-        aliases: ["crewsettings", "crewroles", "crewskills", "roles", "skills"],
+        label: "Crew roles & rates",
+        href: "/crew/planner?sheet=roles",
+        aliases: ["crewsettings", "crewroles", "crewrates", "roles", "rates"],
         icon: "Settings",
-        description: "Manage crew roles and skills",
+        description: "Crew roles with their cost and charge rates",
       },
     ],
   },
@@ -342,7 +342,7 @@ const RAW_PAGE_COMMANDS: PageCommand[] = [
 // ── The shell comes from NAV (§6d.9, R-3.1) ────────────────────────────────────
 // Labels, urls and icons of every NAV row are read from `src/lib/nav.ts`; the
 // hand-written entries above keep only what NAV does not own (aliases, search
-// types, filters, and palette-only extras such as Sub-Hires, Roles & Skills and the
+// types, filters, and palette-only extras such as Sub-Hires, Crew roles & rates, Timesheets and the
 // Settings sub-pages). A NAV row with no entry above gets a generated one, so the
 // palette can never lack a page the sidebar has.
 

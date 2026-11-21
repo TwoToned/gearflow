@@ -21,7 +21,6 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * assignment signal covers the core collaboration case (who's booked on what).
  */
 export type CrewAssignmentDoc = Doc<"crewAssignments">;
-export type CrewTimeEntryDoc = Doc<"crewTimeEntries">;
 export type CrewAvailabilityDoc = Doc<"crewAvailabilities">;
 
 /** All crew assignments for a project (the project crew panel signal). */
@@ -38,11 +37,6 @@ export function useProjectCrewAssignments(
 /** All crew assignments for an org (the planner signal). */
 export function useOrgCrewAssignments(orgId: string | undefined): CrewAssignmentDoc[] | undefined {
   return useAuthedQuery(api.crewAssignments.list, orgId ? { orgId } : "skip");
-}
-
-/** All time entries for an org (the timesheets signal). */
-export function useOrgTimeEntries(orgId: string | undefined): CrewTimeEntryDoc[] | undefined {
-  return useAuthedQuery(api.crewTimeEntries.list, orgId ? { orgId } : "skip");
 }
 
 /** All availability blocks for an org (the planner availability signal).
@@ -65,22 +59,6 @@ export function fingerprintCrewAssignments(
   return rows
     .map((a) =>
       `${a.id}:${a.updatedAt ?? 0}:${a.status ?? ""}:${a.crewMemberId ?? ""}:${a.crewRoleId ?? ""}:${a.serviceId ?? ""}:${a.startDate ?? ""}:${a.endDate ?? ""}:${a.confirmedById ?? ""}:${a.estimatedCost ?? ""}`,
-    )
-    .sort()
-    .join("|");
-}
-
-/**
- * Fingerprint of time entries — changes on create/delete or status/hours/approval
- * mutations (the timesheet collaboration surface).
- */
-export function fingerprintTimeEntries(
-  rows: CrewTimeEntryDoc[] | undefined,
-): string | undefined {
-  if (!rows) return undefined;
-  return rows
-    .map((t) =>
-      `${t.id}:${t.updatedAt ?? 0}:${t.status ?? ""}:${t.crewMemberId ?? ""}:${t.assignmentId ?? ""}:${t.date ?? ""}:${t.totalHours ?? ""}:${t.approvedById ?? ""}`,
     )
     .sort()
     .join("|");

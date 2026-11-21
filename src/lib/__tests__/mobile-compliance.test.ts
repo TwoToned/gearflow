@@ -303,3 +303,31 @@ describe("UX unification §5/§13 — row primitives on a phone", () => {
     expect(ui("line-row.tsx")).toContain("[&>span]:size-[22px]");
   });
 });
+
+describe("UX Phase 15 — the Crew workspace on a phone (§9h.6)", () => {
+  const crew = (rel: string) => readFileSync(path.join(SRC, "components/crew/workspace", rel), "utf8");
+
+  it("the head words (Planner · Timesheets) are 44px tap targets", () => {
+    const head = readFileSync(path.join(SRC, "components/ui/list-page-parts.tsx"), "utf8");
+    const words = head.slice(head.indexOf("function HeadWordLinks"), head.indexOf("export function ListHead"));
+    expect(words).toContain("min-h-11");
+  });
+
+  it("Log time's people rows and the roles sheet's rows are at least 44px", () => {
+    expect(crew("timesheets/log-time-sheet.tsx")).toMatch(/<label[^>]*min-h-11/);
+    expect(crew("roles/crew-roles-sheet.tsx")).toContain("min-h-12");
+  });
+
+  it("sheets open from the bottom on a phone, and every field is the 16px Input/Textarea", () => {
+    for (const rel of ["timesheets/time-entry-sheet.tsx", "timesheets/log-time-sheet.tsx", "roles/crew-roles-sheet.tsx"]) {
+      expect(crew(rel)).toContain('side={isMobile ? "bottom" : "right"}');
+    }
+    const fields = crew("timesheets/time-entry-fields.tsx");
+    expect(fields).not.toMatch(/<input\b/);
+    expect(fields).not.toMatch(/text-(xs|sm)\b/);
+  });
+
+  it("Export all… is a desktop-only page ⋯ item (§9h.6: the desktop-only export is hidden)", () => {
+    expect(crew("timesheets/timesheets-list.tsx")).toContain("...(isMobile ? [] : [exportAll])");
+  });
+});

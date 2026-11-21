@@ -1,12 +1,19 @@
 "use server";
 
-import { requirePermission } from "@/lib/org-context";
+import { getCurrentRole, requirePermission } from "@/lib/org-context";
+import { getAmbientActor } from "@/lib/request-actor";
+import { isManagerPlusRole } from "@/lib/permissions";
 import { getCrewMembersByOrg, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import {
   getTimeEntriesByOrg,
   getAssignmentsByOrg,
+  type MappedCrewTimeEntry,
 } from "@/lib/crew-scheduling-read";
+import { timesheetCsv, type TimesheetCsvRow } from "@/lib/timesheet-csv";
+import { timesheetExportFiltersSchema, type TimesheetExportFilters } from "@/lib/validations/crew";
+import type { z } from "zod";
+import { deriveEntryMoney, type EntryMoney } from "../../convex/lib/timeEntryMoney";
 
 // The time-entry reads + CRUD + status machine are browser-direct (Phase 3):
 // convex/crewTimeEntriesWrites.ts + convex/crewTimeEntries.ts (allEntries/forMember).
@@ -14,14 +21,62 @@ import {
 
 // ─── CSV Export ──────────────────────────────────────────────────────────────
 
-export async function exportTimesheetCSV(filters?: {
-  dateFrom?: string;
-  dateTo?: string;
-  crewMemberId?: string;
-  projectId?: string;
-  status?: string;
-}) {
+type ExportFilters = z.output<typeof timesheetExportFiltersSchema>;
+
+/**
+ * D49: pay columns only for a signed-in manager+ (the same `isManagerPlusRole`
+ * the Convex reads use). An API-key actor never gets them here — keys reach
+ * pay only through the Convex reads, where `noFinancials` is enforced.
+ */
+async function callerSeesPay(): Promise<boolean> {
+  if (getAmbientActor()) return false;
+  return isManagerPlusRole(await getCurrentRole());
+}
+
+/** One predicate per export filter; an unset filter passes. */
+function matches(e: MappedCrewTimeEntry, f: ExportFilters, projectOf: (e: MappedCrewTimeEntry) => string | null): boolean {
+  const t = e.date.getTime();
+  const checks: [unknown, () => boolean][] = [
+    [f.ids, () => f.ids!.includes(e.id)],
+    [f.crewMemberId, () => e.crewMemberId === f.crewMemberId],
+    [f.status, () => e.status === f.status],
+    [f.projectId, () => projectOf(e) === f.projectId],
+    [f.dateFrom, () => t >= new Date(f.dateFrom!).getTime()],
+    [f.dateTo, () => t <= new Date(f.dateTo!).getTime()],
+  ];
+  return checks.every(([set, ok]) => !set || ok());
+}
+
+/** One CSV row; `pay` only when the caller may see it. */
+function csvRow(
+  e: MappedCrewTimeEntry,
+  j: { member?: { firstName?: string; lastName?: string; email?: string | null }; project?: { projectNumber?: string; name?: string } | null; roleName?: string; pay?: EntryMoney },
+): TimesheetCsvRow {
+  const { member, project, pay } = j;
+  return {
+    name: `${str(member?.firstName)} ${str(member?.lastName)}`,
+    email: str(member?.email),
+    projectNumber: str(project?.projectNumber),
+    projectName: str(project?.name),
+    role: str(j.roleName),
+    description: str(e.description),
+    date: e.date.toISOString().split("T")[0],
+    startTime: e.startTime,
+    endTime: e.endTime,
+    breakMinutes: e.breakMinutes,
+    totalHours: e.totalHours,
+    status: e.status,
+    queryReason: str(e.queryReason),
+    ...(pay ? { pay: { rate: pay.rate, total: pay.total, included: pay.included } } : {}),
+  };
+}
+
+const str = (s: string | null | undefined): string => s || "";
+
+export async function exportTimesheetCSV(input?: TimesheetExportFilters) {
   const { organizationId } = await requirePermission("crew", "read");
+  const filters = timesheetExportFiltersSchema.parse(input ?? {});
+  const withPay = await callerSeesPay();
 
   // All reads come from Convex (timeEntry/assignment dual-written; crewMember,
   // crewRole, project Convex-backed). Replicates the Prisma where + orderBy in JS.
@@ -35,60 +90,30 @@ export async function exportTimesheetCSV(filters?: {
   const memberById = new Map(members.map((m) => [m.id, m]));
   const assignmentById = new Map(assignments.map((a) => [a.id, a]));
   const projectsById = new Map(projects.map((p) => [p.id, p]));
+  const projectOf = (e: MappedCrewTimeEntry) => (e.assignmentId ? assignmentById.get(e.assignmentId)?.projectId ?? null : null);
 
-  const dateFrom = filters?.dateFrom ? new Date(filters.dateFrom).getTime() : null;
-  const dateTo = filters?.dateTo ? new Date(filters.dateTo).getTime() : null;
+  // Pay is derived over EVERY entry (the day-rate carrier must not depend on the
+  // filters), exactly as `crewTimeEntries.allEntries` does — one derivation.
+  const money: Map<string, EntryMoney> | null = withPay
+    ? deriveEntryMoney(
+        allEntries.map((e) => ({ ...e, date: e.date.getTime() })),
+        { assignment: (id) => assignmentById.get(id), member: (id) => memberById.get(id), role: (id) => roleMap.get(id) },
+      )
+    : null;
 
-  const entries = allEntries
-    .filter((e) => {
-      if (filters?.crewMemberId && e.crewMemberId !== filters.crewMemberId) return false;
-      if (filters?.status && e.status !== filters.status) return false;
-      if (filters?.projectId) {
-        const a = e.assignmentId ? assignmentById.get(e.assignmentId) : null;
-        if (!a || a.projectId !== filters.projectId) return false;
-      }
-      const t = e.date.getTime();
-      if (dateFrom != null && t < dateFrom) return false;
-      if (dateTo != null && t > dateTo) return false;
-      return true;
-    })
+  const rows: TimesheetCsvRow[] = allEntries
+    .filter((e) => matches(e, filters, projectOf))
     // orderBy [{ date: "asc" }, { crewMemberId: "asc" }]
-    .sort(
-      (a, b) =>
-        a.date.getTime() - b.date.getTime() || a.crewMemberId.localeCompare(b.crewMemberId),
-    );
+    .sort((a, b) => a.date.getTime() - b.date.getTime() || a.crewMemberId.localeCompare(b.crewMemberId))
+    .map((e) => {
+      const assignment = e.assignmentId ? assignmentById.get(e.assignmentId) : null;
+      return csvRow(e, {
+        member: memberById.get(e.crewMemberId),
+        project: assignment ? projectsById.get(assignment.projectId) : null,
+        roleName: assignment?.crewRoleId ? roleMap.get(assignment.crewRoleId)?.name : undefined,
+        pay: money?.get(e.id),
+      });
+    });
 
-  const escapeCSV = (val: string) => {
-    if (val.includes(",") || val.includes('"') || val.includes("\n")) {
-      return `"${val.replace(/"/g, '""')}"`;
-    }
-    return val;
-  };
-
-  const header =
-    "Crew Member,Email,Project Number,Project Name,Role,Description,Date,Start Time,End Time,Break (min),Total Hours,Status";
-  const rows = entries.map((e) => {
-    const member = memberById.get(e.crewMemberId);
-    const assignment = e.assignmentId ? assignmentById.get(e.assignmentId) : null;
-    const project = assignment ? projectsById.get(assignment.projectId) : null;
-    const role = assignment?.crewRoleId ? roleMap.get(assignment.crewRoleId) : null;
-    const name = `${member?.firstName ?? ""} ${member?.lastName ?? ""}`;
-    const date = new Date(e.date).toISOString().split("T")[0];
-    return [
-      escapeCSV(name),
-      escapeCSV(member?.email || ""),
-      escapeCSV(project?.projectNumber || ""),
-      escapeCSV(project?.name || ""),
-      escapeCSV(role?.name || ""),
-      escapeCSV(e.description || ""),
-      date,
-      e.startTime,
-      e.endTime,
-      String(e.breakMinutes),
-      e.totalHours?.toString() || "",
-      e.status,
-    ].join(",");
-  });
-
-  return [header, ...rows].join("\n");
+  return timesheetCsv(rows, withPay);
 }

@@ -227,9 +227,9 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
 | `/crew/new` | CrewMemberForm | Create crew member |
 | `/crew/[id]` | Detail page | Profile picture (upload/remove), contact, rates, skills, assignments (with status management), availability, certifications, time entries, calendar, linked user display |
 | `/crew/[id]/edit` | CrewMemberForm | Edit crew member (includes user account linking) |
-| `/crew/planner` | CrewPlannerPage | 14-day Gantt-style timeline of all crew |
-| `/crew/timesheets` | TimesheetsPage | All time entries with DataTable, filtering, search, edit/delete, export |
-| `/crew/settings` | `src/app/(app)/crew/settings/page.tsx` | Roles admin (WS10 #949) — name/department/colour/cost rate/charge rate/active, reorder, archive-with-usage-guard. Was a documented-but-nonexistent route until WS10 (`crewRoles.ts`'s mutations previously had zero callers) — see `crewRolesWrites.ts` + `use-crew-role-writes.ts`. Skills management is NOT on this page (out of scope for WS10 — the "& Skills" framing in nav labels is aspirational, not yet built) |
+| `/crew/planner` | CrewPlannerPage | The Crew workspace's **Planner** word: the shared Crew head (see "Crew workspace" below) over the 14-day timeline (the one-week grid replaces it in UX Phase 15 slice 3) |
+| `/crew/timesheets` | `TimesheetsList` (`src/components/crew/workspace/timesheets/`) | The Crew workspace's **Timesheets** word on `ListPage` (UX Phase 15, spec §9h.4) — see "Crew workspace" below |
+| `/crew/settings` | redirect | Server redirect to `/crew/planner?sheet=roles`: the roles admin is now the **Crew roles & rates** sheet (`src/components/crew/workspace/roles/`). Old links and bookmarks keep working |
 
 **CrewTable data source (2026-07, perf fix):** server-side paginated —
 `crewMembers.listPage` (filter/sort/crewRole join done in Convex) via
@@ -240,6 +240,57 @@ user (Better Auth, cross-domain) stays a separate merge applied after the pagina
 fetch — search no longer matches the linked user's display name, only this table's
 own fields (a narrow, disclosed tradeoff since Convex can't join Better Auth data).
 `icalToken` redaction for non-service callers carries over unchanged.
+
+## Crew workspace (UX Phase 15, spec §9h, D48)
+
+One page, **Crew**, with two views as head words, `Planner  Timesheets`
+(`ListHead`'s additive `headWords` prop; each word is its own route, so both
+stay deep links). `src/components/crew/workspace/crew-workspace.tsx` owns the
+words, the page ⋯ items both views share (**Crew list**, **Crew roles &
+rates…**) and the roles sheet, which is URL state: `?sheet=roles` (where
+`/crew/settings` redirects). Each view keys its list by the active org, so an
+org switch drops the selection and the seen rows.
+
+### Timesheets (`timesheets/timesheets-list.tsx`, spec §9h.4)
+- `ListPage` over `crewTimeEntries.allEntries`; the URL is the state
+  (`src/lib/list-views/timesheets.ts`): strip **Submitted · Approved · Queried ·
+  All** (Submitted is the default), `Person` and `Status ▾` filters (the strip
+  and Status intersect), sort by person / date / hours / status, the pager, and
+  saved views (old `crewMemberId` filters convert to `person` on read).
+- Columns: person (role) · job (number + name, description, query reason in
+  amber) · date (times and break under it) · hours · **Rate (pay)** · **Total**
+  · status; Approved by and Notes are opt-in under ⋯ › Columns. Rate (pay) and
+  Total are columns ONLY when the server returned them (`payVisible`) — the
+  client never decides who sees pay. A carried day rate prints `incl.`, an
+  unresolved rate is blank, never $0. Footer line: `Totals · 361h · $16,962`
+  (the money only for a pay-visible caller).
+- Row ⋯ (`src/lib/row-actions/time-entry.ts`): Edit entry, Submit, Approve,
+  Query…, Open crew member, Delete entry (confirmed). Which verb a row offers
+  comes from the ONE transition table the server gates on
+  (`convex/lib/timeEntryTransitions.ts`). Exported rows have no ⋯.
+- Bulk: `Approve n · Submit n · Query… · Export` (each count is the rows it
+  would change). Submit / Approve / Query… toast with Undo from ONE closure:
+  `revert(result)` — the forward result's own `changed` + `stamp`. Skipped rows
+  are named. Export calls the same server CSV as Export all…, narrowed to the
+  ticked ids (`exportTimesheetCSV({ ids })`, Zod-validated), so pay columns are
+  still decided server-side.
+- Edit entry and Log time (two steps: tick people, then one set of hours) are
+  sheets (bottom on a phone); an edit's Undo replays its snapshot, Log time's
+  Undo deletes the created entries (offered only to a caller with
+  `crew:delete`). Query… is a dialog whose Save stays disabled until a reason
+  is typed.
+- Phone: cards `name` / `#2336 · Sat 7 Nov · 8.5h · Submitted` with the total
+  on the right, the sticky Log time, `Show 25 more`; Export all… is desktop-only.
+
+### Crew roles & rates (`roles/crew-roles-sheet.tsx`, spec §9h.5)
+The old `/crew/settings` page as a sheet: active roles in display order,
+archived ones under a muted head, cost / charge for managers only (the server
+strips them below manager in `crewRoles.listForSettings`). Row ⋯
+(`src/lib/row-actions/crew-role.ts`): Edit… · Move up / Move down (active roles
+only, absent at the ends) · Archive… (usage dialog) · Restore. A move is ONE
+atomic `moveNative`, its Undo the opposite move; archive ↔ restore and an
+edit's snapshot are the other Undos. New role has no Undo (there is no role
+delete).
 
 ## Profile Pictures
 - Upload/remove via hover overlay on avatar in crew detail page header (only for unlinked crew members)
@@ -435,6 +486,31 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 - Tooltip on hover showing project details or availability reason
 - Navigation: back/forward by week, "Today" button
 - Sidebar: "Planner" link under Crew
+
+### UX Phase 15 reads and writes (spec §9h; the page itself is rebuilt in later slices)
+- **`crewPlanner.openCalls({ orgId, startMs, endMs })`** — the `Needs crew` list:
+  services short of people (filled crew, DECLINED/CANCELLED excluded, below
+  `crewCountRequired`) via the Overbookings board's own `computeServicesMissingCrew`.
+  Only each job's **live-version** service rows count (`isLiveVersionRow` — every
+  version keeps its own copy of a service), on in-org, non-template, non-cancelled
+  jobs. Range ≤ 14 days, bounded both ends on `by_organizationId_date`, capped with
+  a `truncated` flag.
+- **`crewAssignmentsWrites.confirmManyNative`** (`Confirm n`): ACCEPTED → CONFIRMED
+  only, the rest is `skipped`; one activity row per call recording the prior state.
+  **`unconfirmManyNative({ ids, stamp })`** is its exact Undo, reading the prior
+  state from those rows and refusing if any call changed since (same rule as the
+  timesheet `revertNative`).
+- **`crewAssignmentsWrites.cancelManyNative`** (`Cancel n`, `danger: "high"`):
+  PENDING/OFFERED/ACCEPTED/CONFIRMED → CANCELLED, one activity row per call, time
+  entries untouched; returns `toTell` (the calls whose crew member already had the
+  offer) for the caller to send cancellation mail. No Undo — the mail is sent.
+- **`crewRolesWrites.moveNative({ id, direction })`**: Move up / Move down as ONE
+  atomic renumber (replaces the two non-atomic `updateNative` calls; ties become
+  movable). It swaps with the nearest role in the SAME list — active roles past
+  archived ones and vice versa, since the roles sheet lists archived roles under
+  their own head — so a move is always visible. Its Undo is the opposite move.
+- `plannerData` also returns each member's `skillIds` (for `Skill ▾`) and redacts
+  assignment pay below manager (see Time Tracking › pay).
 
 ## Crew Planner — confirmation layer, availability requests, planned vs actual (Work-layer Phase 4, #1246)
 
@@ -637,9 +713,9 @@ Resource `crew` with actions: `read, create, update, delete`
 - manager: create, read, update
 - member/staff/warehouse/viewer: read
 
-Since `crew:create`/`crew:update` are manager+-only, the `/crew/settings` roles
-admin write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
-every role can VIEW the page (`crew:read`), but the cost (`defaultRate`) and
+Since `crew:create`/`crew:update` are manager+-only, the Crew roles & rates
+sheet's write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
+every role can VIEW the sheet (`crew:read`), but the cost (`defaultRate`) and
 charge (`chargeRate`) rate columns render only for manager+
 (`useIsManagerPlus()`), server-enforced via `crewRoles.ts`'s `listForSettings`
 query (field-stripped for non-manager+ callers — the plain `list` query, used by
@@ -668,9 +744,9 @@ read permission.
 - **Crew List**: embedded crew table at the bottom
 
 ## Integration Points
-- **Sidebar**: "Crew" with HardHat icon, sub-items: Planner, Timesheets, Roles & Skills. Gated by `crew` resource
+- **Sidebar**: "Crew" with HardHat icon and ONE sub-item, Planner (`moreLabel` "Planner & timesheets"); Timesheets is the Crew page's head word and `/crew/timesheets` a `NOT_IN_NAV` deep link (D48). Gated by `crew` resource
 - **Top bar**: `crew`, `timesheets`, `planner` segment labels
-- **Page commands**: searchable crew page with children (Planner, Timesheets, Roles & Skills)
+- **Page commands**: searchable crew page with children (Planner, Timesheets, Crew roles & rates → `/crew/planner?sheet=roles`)
 - **Global search**: searches first/last name, email, phone, department, role name, tags
 - **Slash commands**:
   - `/crew` list page: `/new`, `/planner`, `/timesheets`, `/roles`, `/log-time`, `/export`
@@ -730,6 +806,61 @@ DRAFT → SUBMITTED → APPROVED → EXPORTED
 - **Crew detail page**: "Time" tab with table of all entries, add/edit dialog, bulk submit/approve buttons, CSV export
 - **Log Time dialog**: Toggle between "Project" (linked to assignment) and "General" (standalone shift with description)
 - **Actions per entry**: Edit (DRAFT/DISPUTED), Submit (DRAFT), Approve (SUBMITTED), Dispute (SUBMITTED), Delete (DRAFT)
+
+### Query…, exact Undo, and pay (UX Phase 15 — D47, D49)
+
+**Query (D47).** The UI word for `DISPUTED` is **Queried** (status) / **Query…**
+(verb); the enum and API values are unchanged (`docs/glossary.md`). A query
+carries its reason on **`crewTimeEntries.queryReason`** — never on `notes`, which
+is the crew member's own text. `crewTimeEntriesWrites.queryNative({ ids, reason })`
+moves SUBMITTED/APPROVED entries to DISPUTED; the reason is required and bounded
+(`QUERY_REASON_MAX` = 500, `convex/lib/timeEntryQuery.ts`, shared with
+`timeEntryQuerySchema`). `submitNative` and `approveNative` clear `queryReason`.
+The legacy single-entry `disputeNative` (crew dashboard, crew record) is
+unchanged until Phase 13 moves those surfaces to Query….
+
+**One activity row per entry, one exact Undo.** Submit, Approve and Query write
+an activity row PER changed entry (`${auditId}:${entryId}`) whose `metadata`
+records the entry's prior state (`kind: "time_entry_transition"`, `transition`,
+`prevStatus`, and any prior `queryReason` / approver stamp). Each returns
+`{ count, changed }`; the hook adds the call's `stamp` (its `now`).
+`revertNative({ ids, stamp })` is the ONE Undo for all three: it takes ONLY
+the ids and the stamp — no transition, no prior status. For each entry it reads
+which transition ran and the prior state back from the forward write's own row
+(same entry, same stamp, same user, the row whose transition produced the
+entry's current status), and refuses the whole Undo (`ConvexError`) if any
+entry's `updatedAt` no longer equals the stamp, so a second Undo of the same
+write refuses too. Never pass prior state from the client.
+
+**Pay (D49).** `crewTimeEntries.allEntries` adds, per row, `rate` / `rateType` /
+`total` / `rateIncluded`, plus `totals.pay` over the filtered set — **only when
+`canSeeCrewPay`** (`convex/lib/crewPayVisibility.ts`: manager+ and not a
+`noFinancials` key); otherwise those keys are absent and `payVisible: false`.
+Everyone gets `counts` (per status, for the strip), `totals.hours`,
+`queryReason` and `updatedAtMs` (the next Undo's stamp). The money is DERIVED
+in `convex/lib/timeEntryMoney.ts`, never stored:
+- **Rate** = the PAY (cost) cascade `resolveRate` — assignment override →
+  member day → member hourly → role default (a general entry uses the member's
+  own role). Nothing resolved ⇒ blank, never `$0`. The UI labels it "Rate (pay)".
+- **Total** = `HOURLY` rate × hours; `DAILY` the day rate **once per person per
+  calendar day**, however many entries that day has (the earliest carries it,
+  the rest are `rateIncluded`); `FLAT` once per person per assignment.
+- The carrier is computed over every org entry, so paging and filters never
+  move it.
+
+The same gate redacts pay elsewhere: `crewAvailability.plannerData` drops
+`rateOverride` / `estimatedCost` below manager, and
+`crewAssignments.membersForAssignment` returns `defaultDayRate` /
+`defaultHourlyRate` as `null` below manager, and `crewDashboard.pickerList` (the
+Log time picker) drops each call's `rateOverride` / `estimatedCost` below manager.
+Every `crewDashboard` read also strips the single-use offer `responseToken` (a
+bearer credential) in its one `isoAssignment` helper.
+
+**CSV.** `exportTimesheetCSV` builds through `src/lib/timesheet-csv.ts` →
+`toCsv` (`src/lib/csv.ts`, formula-injection guard). The twelve original
+columns keep their order and the raw status enum; `Query reason` is appended,
+and `Rate (pay)` / `Total` only for a signed-in manager+ (never an API-key
+actor), from the same `deriveEntryMoney`.
 
 ## Future Phases (not yet implemented)
 - Phase 7: Crew portal

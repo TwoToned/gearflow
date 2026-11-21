@@ -27,6 +27,9 @@ export function useCrewAssignmentWrites() {
   const bulkDeleteM = useMutation(api.crewAssignmentsWrites.bulkDeleteNative);
   const bulkStatusM = useMutation(api.crewAssignmentsWrites.bulkStatusNative);
   const genShiftsM = useMutation(api.crewAssignmentsWrites.generateShiftsNative);
+  const confirmManyM = useMutation(api.crewAssignmentsWrites.confirmManyNative);
+  const unconfirmManyM = useMutation(api.crewAssignmentsWrites.unconfirmManyNative);
+  const cancelManyM = useMutation(api.crewAssignmentsWrites.cancelManyNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
@@ -82,6 +85,22 @@ export function useCrewAssignmentWrites() {
     bulkStatus: async (ids: string[], status: string): Promise<{ updated: number; skipped: number }> => {
       const org = requireOrg();
       return await bulkStatusM({ orgId: org, ids, status: status as AssignStatus, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** Planner `Confirm n` (ACCEPTED → CONFIRMED). Returns the `stamp` its Undo needs. */
+    confirmMany: async (ids: string[]): Promise<{ confirmed: string[]; skipped: string[]; stamp: number }> => {
+      const org = requireOrg();
+      const stamp = Date.now();
+      return { ...(await confirmManyM({ orgId: org, ids, now: stamp, actor: actor(), auditId: createId() })), stamp };
+    },
+    /** The exact Undo of one `confirmMany` call: its own `confirmed` ids + `stamp`. */
+    unconfirmMany: async (result: { confirmed: string[]; stamp: number }): Promise<{ count: number }> => {
+      const org = requireOrg();
+      return await unconfirmManyM({ orgId: org, ids: result.confirmed, stamp: result.stamp, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** Planner `Cancel n`. `toTell` are the calls whose crew member must get the cancellation mail. No Undo. */
+    cancelMany: async (ids: string[]): Promise<{ cancelled: string[]; toTell: string[]; skipped: string[] }> => {
+      const org = requireOrg();
+      return await cancelManyM({ orgId: org, ids, now: Date.now(), actor: actor(), auditId: createId() });
     },
     generateShifts: async (assignmentId: string): Promise<{ count: number }> => {
       const org = requireOrg();

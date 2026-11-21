@@ -5,6 +5,7 @@ import { ChevronDown, Lock } from "lucide-react";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { StatusWord } from "@/components/ui/status-word";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { ActionMenuSpec, StatusValue } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +44,14 @@ export interface DetailHeaderProps {
   /** The one primary, e.g. `Advance to Prep`. Absent at the end of the pipeline. */
   primary?: { label: string; onSelect: () => void | Promise<void>; disabled?: boolean };
   documents?: ActionMenuSpec;
+  /** Told when `Documents ▾` opens or closes, so a caller can fetch entries
+   *  lazily (the job page's label lists load only once the menu is opened). */
+  onDocumentsOpenChange?: (open: boolean) => void;
+  /**
+   * Phone only (§6b): the primary leaves the action row and renders full-width
+   * BELOW the progress line, under the one current label. Desktop is unchanged.
+   */
+  phonePrimaryBelowProgress?: boolean;
   onEdit?: () => void;
   menu?: ActionMenuSpec;
   /** Thin progress line: done = ink, current = red, upcoming = hairline. */
@@ -158,18 +167,29 @@ function TitleBlock({
   );
 }
 
-function ActionRow({ primary, documents, onEdit, menu }: Pick<DetailHeaderProps, "primary" | "documents" | "onEdit" | "menu">) {
+function PrimaryButton({ primary, className }: { primary: NonNullable<DetailHeaderProps["primary"]>; className?: string }) {
+  return (
+    <Button size="sm" className={className} disabled={primary.disabled} onClick={() => void primary.onSelect()}>
+      {primary.label}
+    </Button>
+  );
+}
+
+function ActionRow({
+  primary,
+  documents,
+  onDocumentsOpenChange,
+  onEdit,
+  menu,
+}: Pick<DetailHeaderProps, "primary" | "documents" | "onDocumentsOpenChange" | "onEdit" | "menu">) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {primary ? (
-        <Button size="sm" disabled={primary.disabled} onClick={() => void primary.onSelect()}>
-          {primary.label}
-        </Button>
-      ) : null}
+      {primary ? <PrimaryButton primary={primary} /> : null}
       {documents?.items.length ? (
         <ActionMenu
           spec={documents}
           label="Documents"
+          onOpenChange={onDocumentsOpenChange}
           trigger={
             <Button type="button" size="sm" variant="line">
               Documents
@@ -188,14 +208,17 @@ function ActionRow({ primary, documents, onEdit, menu }: Pick<DetailHeaderProps,
   );
 }
 
-export function DetailHeader({ progress, strip, className, variant = "job", ...rest }: DetailHeaderProps) {
+export function DetailHeader({ progress, strip, className, variant = "job", phonePrimaryBelowProgress, ...rest }: DetailHeaderProps) {
+  const isMobile = useIsMobile();
+  const primaryBelow = !!(phonePrimaryBelowProgress && isMobile && rest.primary);
   return (
     <header className={cn("flex flex-col gap-3", className)}>
       <div className="flex flex-wrap items-start gap-4">
         <TitleBlock {...rest} variant={variant} />
-        <ActionRow {...rest} />
+        <ActionRow {...rest} primary={primaryBelow ? undefined : rest.primary} />
       </div>
       {progress ? <Progress progress={progress} /> : null}
+      {primaryBelow ? <PrimaryButton primary={rest.primary!} className="h-11 w-full" /> : null}
       {strip ? <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-paper-2 px-3.5 py-2.5 text-table-cell text-ink-2">{strip}</div> : null}
     </header>
   );

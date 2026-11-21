@@ -113,4 +113,33 @@ describe("DetailHeader", () => {
     setup({ strip: "Viewing v2, a draft" });
     expect(screen.getByText("Viewing v2, a draft")).toBeTruthy();
   });
+
+  it("tells the caller when Documents ▾ opens and closes (lazy entries)", async () => {
+    const onDocumentsOpenChange = vi.fn();
+    setup({ onDocumentsOpenChange });
+    await userEvent.click(screen.getByRole("button", { name: /Documents/ }));
+    await screen.findByRole("menuitem", { name: "Pick list" });
+    expect(onDocumentsOpenChange).toHaveBeenLastCalledWith(true);
+    await userEvent.keyboard("{Escape}");
+    expect(onDocumentsOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("phonePrimaryBelowProgress: on a phone the primary is full-width under the progress line", () => {
+    mockIsMobile = true;
+    setup({ phonePrimaryBelowProgress: true });
+    const buttons = screen.getAllByRole("button", { name: "Advance to Prep" });
+    expect(buttons).toHaveLength(1);
+    const progress = screen.getByRole("list", { name: "Progress" });
+    // DOM order: the progress line first, then the primary.
+    expect(progress.compareDocumentPosition(buttons[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(buttons[0].className).toMatch(/w-full/);
+  });
+
+  it("phonePrimaryBelowProgress leaves the desktop action row alone", () => {
+    setup({ phonePrimaryBelowProgress: true });
+    const button = screen.getByRole("button", { name: "Advance to Prep" });
+    const progress = screen.getByRole("list", { name: "Progress" });
+    expect(progress.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(button.className).not.toMatch(/w-full/);
+  });
 });

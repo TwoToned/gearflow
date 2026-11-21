@@ -79,6 +79,51 @@ describe("conflicts check", () => {
   test("passes when clean", () => {
     expect(byId(buildReadinessChecks(input()), "conflicts").severity).toBe("pass");
   });
+
+  test("an unanswered one-shot detection is not checked, never a pass (UX Phase 7)", () => {
+    const c = byId(buildReadinessChecks(input({ conflicts: null })), "conflicts");
+    expect(c.severity).toBe("unknown");
+    expect(c.fix).toEqual({ kind: "tab", tab: "equipment" });
+  });
+
+  test("a dateless job can't be checked for double-booking; the fix is the dates", () => {
+    const c = byId(buildReadinessChecks(input({ hasWindow: false, conflicts: [] })), "conflicts");
+    expect(c.severity).toBe("unknown");
+    expect(c.fix).toEqual({ kind: "edit" });
+  });
+
+  test("a conflict links to Equipment, where the swap is", () => {
+    expect(byId(buildReadinessChecks(input({ conflicts: [conflict] })), "conflicts").fix).toEqual({ kind: "tab", tab: "equipment" });
+  });
+});
+
+describe("blocking discussions check (UX Phase 7)", () => {
+  test("an open blocking discussion holds prep and opens the discussion", () => {
+    const c = byId(buildReadinessChecks(input({ blockingCount: 2 })), "discussions");
+    expect(c).toMatchObject({ severity: "blocking", title: "2 blocking discussions hold prep", fix: { kind: "discussion" } });
+    expect(byId(buildReadinessChecks(input({ blockingCount: 1 })), "discussions").title).toBe("1 blocking discussion holds prep");
+  });
+
+  test("none open passes; a count still loading drops the row", () => {
+    expect(byId(buildReadinessChecks(input({ blockingCount: 0 })), "discussions").severity).toBe("pass");
+    expect(buildReadinessChecks(input({ blockingCount: null })).some((c) => c.id === "discussions")).toBe(false);
+  });
+});
+
+describe("incidents check (UX Phase 7)", () => {
+  test("open incidents warn and link to the warehouse page", () => {
+    const c = byId(buildReadinessChecks(input({ incidents: { openCount: 1, truncated: false } })), "incidents");
+    expect(c).toMatchObject({ severity: "warning", title: "1 open incident on this job's gear", fix: { kind: "warehouse" } });
+  });
+
+  test("a truncated count says it is a floor", () => {
+    const c = byId(buildReadinessChecks(input({ incidents: { openCount: 200, truncated: true } })), "incidents");
+    expect(c.title).toBe("200+ open incidents on this job's gear");
+  });
+
+  test("none passes", () => {
+    expect(byId(buildReadinessChecks(input({ incidents: { openCount: 0, truncated: false } })), "incidents").severity).toBe("pass");
+  });
 });
 
 describe("crew check", () => {
@@ -287,8 +332,9 @@ describe("ordering and summary", () => {
   });
 
   test("an unknown check never collapses into all-clear", () => {
+    // Dateless: neither gear nor double-booking can be checked.
     const s = summariseReadiness(buildReadinessChecks(input({ hasWindow: false })));
-    expect(s.unknown).toBe(1);
+    expect(s.unknown).toBe(2);
     expect(s.allClear).toBe(false);
   });
 

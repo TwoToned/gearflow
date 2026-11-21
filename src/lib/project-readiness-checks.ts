@@ -1,16 +1,18 @@
 /**
- * Turns the three readiness data sources into the ordered list of checks the
- * Overview tab's Readiness panel renders (#1061).
+ * Turns the readiness data sources into the ordered list of checks the
+ * Overview tab's readiness section renders (#1061; restored in UX Phase 7).
  *
  * A plain module, not a hook and not inside a `"use server"` file, so the
  * wording and severity rules are unit-testable without React or Convex — the
  * severity of a check decides whether the panel shouts or whispers, which is
  * exactly the kind of rule that rots silently if it only exists inside JSX.
  *
- * Two sources feed in, deliberately kept separate (R-3.1 — each rule has
+ * Three sources feed in, deliberately kept separate (R-3.1 — each rule has
  * exactly one home):
- *   - `projectReadiness.forProject`         → gear, crew, unpriced
- *   - `reservationConflicts.projectConflicts` → double-booked assets
+ *   - `projectReadiness.forProject`             → gear, crew, unpriced, packing, incidents
+ *   - `reservationConflicts.projectConflicts`   → double-booked assets (one-shot)
+ *   - `collaboration.getProjectBlockingSummary` → blocking discussions (the
+ *     same count the header ⋯ shows; UX Phase 7 — Phase 10 must not rebuild it)
  *
  * Stale auto-pricing (`lineItemWrites.projectPricingStaleness`) is NOT one of
  * these checks — it's already surfaced by `StalePricingBanner` on the Finance
@@ -26,7 +28,27 @@
  */
 type ReadinessSeverity = "blocking" | "warning" | "pass" | "unknown";
 
-export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "services" | "pricing" | "packing";
+export type ReadinessCheckId =
+  | "gear"
+  | "conflicts"
+  | "discussions"
+  | "crew"
+  | "services"
+  | "pricing"
+  | "packing"
+  | "incidents";
+
+/**
+ * Where a row's link goes — the surface that OWNS the fix. A tab key is the
+ * job page's (`src/lib/job-tabs.ts`); `edit` is the job edit page (dates live
+ * there until Phase 9's sheet); `warehouse` is the job's warehouse page;
+ * `discussion` opens the comments panel the header ⋯ opens.
+ */
+export type ReadinessFix =
+  | { kind: "tab"; tab: "equipment" | "labour" | "packing" }
+  | { kind: "edit" }
+  | { kind: "warehouse" }
+  | { kind: "discussion" };
 
 export interface ReadinessCheck {
   id: ReadinessCheckId;
@@ -35,9 +57,13 @@ export interface ReadinessCheck {
   title: string;
   /** The specifics: which models, which assets, how many. */
   detail?: string;
-  /** Label for the row's inline action; absent on a passing/unknown row. */
+  /** Label for the row's inline action; absent on a passing row. */
   actionLabel?: string;
+  /** Where the action goes; absent on a passing row. */
+  fix?: ReadinessFix;
 }
+
+const TAB_FIX = (tab: "equipment" | "labour" | "packing"): ReadinessFix => ({ kind: "tab", tab });
 
 export interface ReadinessGearInput {
   hard: { modelName: string; qty: number }[];
@@ -70,6 +96,13 @@ export interface ReadinessConflictInput {
   conflictingProject: { projectNumber: string };
 }
 
+/** `projectReadiness.forProject`'s bounded count (UX Phase 7). */
+export interface ReadinessIncidentInput {
+  openCount: number;
+  /** The scan hit its cap; `openCount` is a floor. */
+  truncated: boolean;
+}
+
 export interface BuildChecksInput {
   hasWindow: boolean;
   /** Preformatted rental window, e.g. "12 – 16 Aug" — omitted when dateless. */
@@ -77,8 +110,14 @@ export interface BuildChecksInput {
   gear: ReadinessGearInput;
   crew: ReadinessCrewInput;
   pricing: ReadinessPricingInput;
-  conflicts: ReadinessConflictInput[];
+  /** `null` = the one-shot detection has not answered (still loading, or it
+   *  failed) — reported as not checked, never as "no conflicts". */
+  conflicts: ReadinessConflictInput[] | null;
   packing: ReadinessPackingInput;
+  /** Absent on a pre-Phase-7 response shape: the row is dropped. */
+  incidents?: ReadinessIncidentInput;
+  /** Open blocking discussions; `null` while the count is loading. */
+  blockingCount?: number | null;
 }
 
 const plural = (n: number, one: string, many = one + "s") => (n === 1 ? one : many);
@@ -101,6 +140,7 @@ function gearCheck(input: BuildChecksInput): ReadinessCheck {
       title: "Gear availability not checked",
       detail: "Set rental dates to check this job's gear against everything else booked.",
       actionLabel: "Set dates",
+      fix: { kind: "edit" },
     };
   }
   const inWindow = windowLabel ? ` ${windowLabel}` : "";
@@ -111,6 +151,7 @@ function gearCheck(input: BuildChecksInput): ReadinessCheck {
       title: `Gear short for this window`,
       detail: `${gear.hard.length} ${plural(gear.hard.length, "model")} over stock${inWindow} — ${listModels(gear.hard)} short`,
       actionLabel: "Resolve",
+      fix: TAB_FIX("equipment"),
     };
   }
   if (gear.pencilled.length > 0) {
@@ -123,12 +164,28 @@ function gearCheck(input: BuildChecksInput): ReadinessCheck {
       title: "Gear would be short if you confirm",
       detail: `Pencilled against other unconfirmed work — ${listModels(gear.pencilled)} would collide${inWindow}`,
       actionLabel: "Review",
+      fix: TAB_FIX("equipment"),
     };
   }
   return { id: "gear", severity: "pass", title: "Enough gear for this window" };
 }
 
-function conflictsCheck(conflicts: ReadinessConflictInput[]): ReadinessCheck {
+function conflictsCheck(conflicts: ReadinessConflictInput[] | null, hasWindow: boolean): ReadinessCheck {
+  // Same honesty as the gear check: no window means nothing to collide with,
+  // and an unanswered detection means we don't know yet.
+  if (!hasWindow) {
+    return {
+      id: "conflicts",
+      severity: "unknown",
+      title: "Double-booked assets not checked",
+      detail: "Set rental dates to check serialised assets against other jobs.",
+      actionLabel: "Set dates",
+      fix: { kind: "edit" },
+    };
+  }
+  if (conflicts === null) {
+    return { id: "conflicts", severity: "unknown", title: "Double-booked assets not checked yet", actionLabel: "Equipment", fix: TAB_FIX("equipment") };
+  }
   if (conflicts.length === 0) {
     return { id: "conflicts", severity: "pass", title: "No assets double-booked" };
   }
@@ -142,6 +199,40 @@ function conflictsCheck(conflicts: ReadinessConflictInput[]): ReadinessCheck {
       `${first.assetTag} ${first.modelName} — also on ${first.conflictingProject.projectNumber}` +
       (rest > 0 ? ` +${rest} more` : ""),
     actionLabel: "Swap",
+    fix: TAB_FIX("equipment"),
+  };
+}
+
+/**
+ * UX Phase 7 (§6b) — an open blocking discussion holds prep and dispatch
+ * (`updateStatusNative` refuses those moves), so it is a blocker here too.
+ * `null` (count still loading) drops the row rather than guessing.
+ */
+function discussionsCheck(blockingCount: number | null | undefined): ReadinessCheck | null {
+  if (blockingCount == null) return null;
+  if (blockingCount === 0) return { id: "discussions", severity: "pass", title: "No blocking discussions" };
+  return {
+    id: "discussions",
+    severity: "blocking",
+    title: `${blockingCount} blocking ${plural(blockingCount, "discussion")} ${plural(blockingCount, "holds", "hold")} prep`,
+    detail: "Prep and dispatch are held until it is resolved.",
+    actionLabel: "Open the discussion",
+    fix: { kind: "discussion" },
+  };
+}
+
+/** UX Phase 7 — open incidents on this job's gear (Report Issue / a check FAIL). */
+function incidentsCheck(incidents: ReadinessIncidentInput | undefined): ReadinessCheck | null {
+  if (!incidents) return null;
+  const n = incidents.openCount;
+  if (n === 0 && !incidents.truncated) return { id: "incidents", severity: "pass", title: "No open incidents" };
+  const count = incidents.truncated ? `${n}+` : String(n);
+  return {
+    id: "incidents",
+    severity: "warning",
+    title: `${count} open ${plural(n, "incident")} on this job's gear`,
+    actionLabel: "Warehouse",
+    fix: { kind: "warehouse" },
   };
 }
 
@@ -167,6 +258,7 @@ function crewCheck(crew: ReadinessCrewInput): ReadinessCheck | null {
     title: `${crew.unconfirmedCount} of ${crew.activeCount} crew unconfirmed`,
     detail: `${crew.unconfirmedCount} ${plural(crew.unconfirmedCount, "person", "people")} ${plural(crew.unconfirmedCount, "hasn't", "haven't")} responded to the offer`,
     actionLabel: "Chase crew",
+    fix: TAB_FIX("labour"),
   };
 }
 
@@ -199,7 +291,7 @@ function servicesCheck(crew: ReadinessCrewInput): ReadinessCheck | null {
     unconfirmed.length > 0
       ? `${unconfirmed.length} of ${crew.activeServiceCount} ${plural(crew.activeServiceCount, "service")} not confirmed`
       : `${understaffed.length} ${plural(understaffed.length, "service")} short of crew`;
-  return { id: "services", severity: "warning", title, detail: parts.join(" · "), actionLabel: "Open services" };
+  return { id: "services", severity: "warning", title, detail: parts.join(" · "), actionLabel: "Open services", fix: TAB_FIX("labour") };
 }
 
 function pricingCheck(pricing: ReadinessPricingInput): ReadinessCheck {
@@ -212,6 +304,7 @@ function pricingCheck(pricing: ReadinessPricingInput): ReadinessCheck {
     title: `${pricing.unpricedCount} ${plural(pricing.unpricedCount, "line item")} unpriced`,
     detail: `Added while financials were locked — ${pricing.unpriced.slice(0, 3).map((u) => u.label).join(", ")}`,
     actionLabel: "Review",
+    fix: TAB_FIX("equipment"),
   };
 }
 
@@ -231,13 +324,15 @@ function packingCheck(packing: ReadinessPackingInput): ReadinessCheck | null {
     title: `${packing.notPlannedCount} of ${packing.totalCount} ${plural(packing.totalCount, "line")} not planned`,
     detail: "No container assigned yet — plan it on the Packing tab before the warehouse starts prepping.",
     actionLabel: "Open Packing",
+    fix: TAB_FIX("packing"),
   };
 }
 
 /**
- * Fixed order, worst-first within it: gear and conflicts can stop a job going
- * out, services and crew are the people side, pricing and packing cost money/
- * time but not the load-out itself. The order is stable regardless of
+ * Fixed order, worst-first within it: gear, conflicts and a blocking
+ * discussion can stop a job going out, services and crew are the people side,
+ * pricing and packing cost money/time but not the load-out itself, and an open
+ * incident is the warehouse's to sort. The order is stable regardless of
  * severity so the panel doesn't reshuffle under the user as problems
  * resolve — only the marks change.
  *
@@ -250,11 +345,13 @@ function packingCheck(packing: ReadinessPackingInput): ReadinessCheck | null {
 export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] {
   return [
     gearCheck(input),
-    conflictsCheck(input.conflicts),
+    conflictsCheck(input.conflicts, input.hasWindow),
+    discussionsCheck(input.blockingCount),
     servicesCheck(input.crew),
     crewCheck(input.crew),
     pricingCheck(input.pricing),
     packingCheck(input.packing),
+    incidentsCheck(input.incidents),
   ].filter((c): c is ReadinessCheck => c !== null);
 }
 

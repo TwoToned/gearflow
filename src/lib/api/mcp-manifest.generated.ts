@@ -100,6 +100,9 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
         "includeCancelled": {
           "type": "boolean"
         },
+        "overdue": {
+          "type": "boolean"
+        },
         "page": {
           "type": "number"
         },

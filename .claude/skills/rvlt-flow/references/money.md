@@ -110,6 +110,13 @@ invoice's own non-voided payment rows. A payment recorded in error is **voided,
 never deleted**, so the audit trail keeps the record; voiding recomputes the
 parent invoice in the same breath.
 
+**An invoice is overdue** once its due DAY is over (the due date is the start of
+that day in the org's timezone, so it is still on time all day), while it is
+`ISSUED`, not `PAID` and not a `CREDIT`. What is still owed is derived, never
+stored: total, less what has been paid, less any Xero credit against it. That is
+the figure Home's "invoices overdue" line and the Finance count report
+(`financeOrg.counts`: `overdueCount`, `overdueOutstanding`).
+
 Issuing an invoice advances the job to `AWAITING_PAYMENT`. A payment that
 settles an invoice **in full** advances it to `CONFIRMED` — in this business
 payment *is* the confirmation.

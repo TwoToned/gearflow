@@ -290,7 +290,71 @@ describe("financeOrg.bundle", () => {
       neverSentCount: bundle.neverSent.length,
       depositDueCount: bundle.depositDue.length,
       outstandingCount: bundle.outstanding.length,
+      overdueCount: 0, // INV_outstanding is due in 11 days
+      overdueOutstanding: 0,
+      overdueTruncated: false,
     });
+  });
+});
+
+describe("financeOrg.counts — overdue invoices (D88)", () => {
+  const P = (id: string, org = ORG) => ({
+    id, organizationId: org, projectNumber: id, name: id, status: "CONFIRMED" as const, isTemplate: false, createdAt: NOW, updatedAt: NOW,
+  });
+  const inv = (id: string, extra: Record<string, unknown>, org = ORG) => ({
+    id, organizationId: org, projectId: `P_${id}`, clientId: "cli_x", kind: "FULL" as const, status: "ISSUED" as const,
+    paymentStatus: "UNPAID" as const, issuedAt: NOW - 40 * DAY, subtotal: 1000, taxAmount: 0, total: 1000, ...extra,
+  });
+
+  async function seedOverdue(t: T) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "owner" });
+      for (const id of ["late", "part", "paid", "today", "credit", "draft", "nodue"]) await ctx.db.insert("projects", P(`P_${id}`));
+      await ctx.db.insert("projects", P("P_far", OTHER_ORG));
+      // Overdue, nothing paid: owes 1000.
+      await ctx.db.insert("invoices", inv("late", { dueDate: NOW - 5 * DAY }));
+      // Overdue, part paid: owes 1000 - 300 paid - 100 credited = 600.
+      await ctx.db.insert("invoices", inv("part", { dueDate: NOW - 2 * DAY, paymentStatus: "PARTIALLY_PAID", amountPaid: 300, xeroAmountCredited: 100 }));
+      // Not overdue: settled; due today (still on time all day); a credit note; a draft; no due date.
+      await ctx.db.insert("invoices", inv("paid", { dueDate: NOW - 9 * DAY, paymentStatus: "PAID", amountPaid: 1000 }));
+      await ctx.db.insert("invoices", inv("today", { dueDate: NOW - 1000 }));
+      await ctx.db.insert("invoices", inv("credit", { dueDate: NOW - 9 * DAY, kind: "CREDIT" }));
+      await ctx.db.insert("invoices", inv("draft", { dueDate: NOW - 9 * DAY, status: "DRAFT" }));
+      await ctx.db.insert("invoices", inv("nodue", {}));
+      // Another org's overdue invoice never counts.
+      await ctx.db.insert("invoices", inv("far", { dueDate: NOW - 9 * DAY }, OTHER_ORG));
+    });
+  }
+
+  test("counts overdue invoices and sums what is still owed, derived from payments", async () => {
+    const t = makeT();
+    await seedOverdue(t);
+    const c = await t.withIdentity(asUser).query(api.financeOrg.counts, { orgId: ORG, now: NOW });
+    expect(c.overdueCount).toBe(2);
+    expect(c.overdueOutstanding).toBe(1600);
+    expect(c.overdueTruncated).toBe(false);
+  });
+
+  test("past the ISSUED cap the figure says it is a lower bound", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "owner" });
+      await ctx.db.insert("projects", P("P_x"));
+      for (let i = 0; i < SECTION_CAP; i++) {
+        await ctx.db.insert("invoices", { ...inv(`i${i}`, { dueDate: NOW - 5 * DAY }), projectId: "P_x" });
+      }
+    });
+    const c = await t.withIdentity(asUser).query(api.financeOrg.counts, { orgId: ORG, now: NOW });
+    expect(c.overdueTruncated).toBe(true);
+    expect(c.overdueCount).toBe(SECTION_CAP);
+  });
+
+  test("a caller from another org is rejected", async () => {
+    const t = makeT();
+    await seedOverdue(t);
+    await expect(
+      t.withIdentity({ subject: "x", orgId: OTHER_ORG }).query(api.financeOrg.counts, { orgId: ORG, now: NOW }),
+    ).rejects.toThrow();
   });
 });
 

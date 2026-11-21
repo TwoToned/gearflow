@@ -5,18 +5,31 @@
 ## Jobs list (`/projects`, #1393, spec 9b)
 The list is `JobsList` (`src/components/projects/jobs-list.tsx`) on the shared `ListPage`
 (`src/components/ui/list-page.tsx`, see FEATUREDOCS/25): rows are `LineRowList` rows, **the URL
-is the state** (`seg`, `q`, `status`/`type`/`client`/`pm`/`date` comma lists, `sort=key:dir`,
+is the state** (`seg`, `q`, `status`/`type`/`client`/`pm`/`date`/`overdue` comma lists, `sort=key:dir`,
 `page`, `view=board`; defaults omitted, junk dropped; codec `src/lib/list-url-state.ts`). Page
 size is fixed at 25. Nothing about filters/sort/view is read from localStorage any more (only
 column visibility, `colVis`, stays local). Config + row mapping live in
 `src/lib/list-views/jobs.ts`, row menu in `src/lib/row-actions/job.ts`.
 
-- **Segments** (counts from `projects.segmentCounts`): All (excludes CANCELLED), Quoting,
-  Booked, Out, Done, **Needs you** (`projects.needsYouIds`, derived on read: an unresolved blocking discussion, an Out job past its end date, a quote untouched for the stale window, or a hard-overbooked job).
-  Active and Overdue (D86) are config entries but NOT shipped; dashboard tile hrefs are unchanged.
+- **Segments** (counts from `projects.segmentCounts`): All (excludes CANCELLED), **Active**
+  (D86: Booked + Out, derived from those two lists in `convex/lib/projectSegments.ts`; the same
+  set Home's Active jobs tile counts), Quoting, Booked, Out, Done, **Needs you**
+  (`projects.needsYouIds`, derived on read: an unresolved blocking discussion, an overdue return,
+  a quote untouched for the stale window, or a hard-overbooked job).
+- **Overdue returns: one rule** (`convex/lib/overdueReturns.ts`, UX Phase 11 D85/D86). A job that
+  is not a template, not closed (`RETURNED`/`COMPLETED`/`INVOICED`/`CANCELLED`), whose end date
+  (`rentalEndDate ?? projectEndDate`) has passed and whose LIVE version still has a `CHECKED_OUT`
+  line. It feeds the `overdue=1` filter, the Needs-you set and Home's Overdue returns tile
+  (`dashboardStats.bundle`: `overdueReturnJobs` = jobs, `overdueReturns` = lines still out,
+  `overdueTruncated`), so a tile's number is the list it opens. Bounded: open jobs per status
+  (1000), past-end candidates probed most recently ended first (500), lines per job (1000); a hit
+  cap sets `truncated`. Before Phase 11, Needs you used "status is Out and the end date passed"
+  instead: it now also catches a part-deployed Booked job with gear out past its end, and no
+  longer flags an Out job whose gear is all back (or a job with no live version).
 - **Filter words:** Status (multi; cancelled via page ⋯ › Show cancelled), Type, Client (name
   search + `clientIn`), PM (`pmIn`, names from the org roster), Dates (presets resolved with
-  `useStableNow`, never a fresh `Date.now()` in query args).
+  `useStableNow`, never a fresh `Date.now()` in query args), **Returns: Overdue** (`overdue=1`,
+  `projects.listPage`'s additive `overdue` arg; it composes with any segment).
 - **Columns:** # · Job (client, tags, red dot-word flags for overbooked / reduced stock /
   blocking comments) · Status (+ lock glyph) · Dates · Type · Total (whole dollars); PM and Tags
   are opt-in under ⋯ › Columns. Sortable headers.

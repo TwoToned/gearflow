@@ -37,11 +37,20 @@
   z-index: 3;
   cursor: grabbing;
   will-change: transform;
-  box-shadow: var(--sh-hover);
+  background: var(--paper);
 }
 
 :global(.react-grid-item.dropping) {
   visibility: hidden;
+}
+
+/* Customise mode (UX Phase 11, §6c.3): hairline dashed frames instead of the
+   view mode's top rule, so the arrangement reads as editable without cards. */
+:global(.dashboard-widget-card[data-edit-mode="true"]) {
+  border-top-color: transparent;
+  outline: 1px dashed var(--control-line);
+  outline-offset: 6px;
+  border-radius: 2px;
 }
 
 /* The drop-target preview — a soft tinted outline in the app's own radius,

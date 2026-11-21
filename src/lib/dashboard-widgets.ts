@@ -9,34 +9,22 @@ import {
 } from "@/components/dashboard/widgets/stat-tile-widgets";
 import { UpcomingProjectsWidget } from "@/components/dashboard/widgets/upcoming-projects-widget";
 import { RecentActivityWidget } from "@/components/dashboard/widgets/recent-activity-widget";
-import { FinishSetupChecklistWidget } from "@/components/dashboard/widgets/finish-setup-checklist-widget";
-import { ActivationChecklistWidget } from "@/components/dashboard/widgets/activation-checklist-widget";
+import { SetupPanel } from "@/components/dashboard/setup-panel";
 import { MyTasksWidget } from "@/components/dashboard/widgets/my-tasks-widget";
+import { DASHBOARD_LINKS, type DashboardLink } from "@/lib/dashboard-links";
+import type { DashboardWidgetKind } from "@/lib/dashboard-widget-kind";
 
 /**
- * The customizable dashboard's widget catalog (see DESIGN.md's
- * "Dashboard Layout" section for the decision this supersedes, and
- * FEATUREDOCS/81). v1 is deliberately closed: every widget is sourced from
- * data the app already reads on `/dashboard` or `/today` (R-3.1) — no widget
- * introduces a new backend read, and each is a thin extraction of an
- * existing section's JSX into its own file, not new product logic.
+ * The customizable dashboard's widget catalog (FEATUREDOCS/81, DESIGN.md
+ * "Dashboard Layout"). Every widget is sourced from data the app already reads
+ * (R-3.1). A widget kind is a SINGLETON on a board: widgets are parameter-free,
+ * so `id === kind` and "Add widget" lists kinds not already on the board.
  *
- * A widget kind is a SINGLETON on a board — v1's widgets are all
- * parameter-free (no per-instance config), so `id === kind` and "Add widget"
- * simply lists kinds not already on the board.
+ * Every kind stays registered even when the UI merges two of them
+ * (`finishSetupChecklist` + `activationChecklist` are ONE setup panel since UX
+ * Phase 11), so a saved board always loads.
  */
-export type DashboardWidgetKind =
-  | "onTheFloorNow"
-  | "needsAttention"
-  | "statActiveJobs"
-  | "statOverdueReturns"
-  | "statGearDeployed"
-  | "statCrewBooked"
-  | "upcomingProjects"
-  | "recentActivity"
-  | "finishSetupChecklist"
-  | "activationChecklist"
-  | "myTasks";
+export type { DashboardWidgetKind } from "@/lib/dashboard-widget-kind";
 
 interface DashboardWidgetGeometry {
   w: number;
@@ -59,128 +47,115 @@ export interface DashboardWidgetDef {
   defaultSize: DashboardWidgetGeometry;
   minSize: DashboardWidgetGeometry;
   maxSize?: DashboardWidgetGeometry;
+  /** A stat tile: a number, no header outside Customise mode; two to a row on phone. */
+  stat?: boolean;
+  /** The widget header's `View all ›` (from the one link table). */
+  viewAll?: DashboardLink;
+  /** The two checklist kinds share ONE slot (the setup panel). */
+  setupSlot?: boolean;
 }
 
-// 12-column desktop grid (matches the app's existing `lg:grid-cols-4`-style
-// bento layouts scaled up for finer drag/resize granularity).
+// 12-column desktop grid.
 export const GRID_COLS = 12;
 
-// Every min/default height below is sized against each widget's ACTUAL
-// rendered content (header bar ~38px + `p-4` content padding ~32px, on top
-// of whatever the widget itself renders) — not a shared guess. `<DashboardCard>`
-// adds a title bar that none of these widgets budgeted for in their original
-// (non-widget-board) home, so copying their pre-board pixel heights straight
-// into `defaultSize` undersizes almost all of them; a stat tile at the old
-// default (h:2) rendered nothing but a clipped, scrolling sliver. `minSize`
-// is the floor a user can drag a card down to — it must still fit that
-// widget's content with NO internal scroll for anything that's meant to be
-// glanceable (stats, chips, checklists); a genuinely unbounded list (activity
-// feed, work list) is allowed to scroll at any size, since there's no size
-// that guarantees it never will, but its min still has to fit at least a
-// couple of rows so it reads as a list, not a sliver.
+// Heights are sized against each widget's rendered content: a ~26px header row
+// plus the widget's own rows (32px grid rows, 16px gutters). A stat tile (number
+// + label + sub, + the meter on Gear deployed) fits in h:4 with room, used as
+// both default and floor so no tile can be shrunk into clipping. An open-ended
+// list may scroll at any size; its min still fits a couple of rows.
 export const DASHBOARD_WIDGET_REGISTRY: Record<DashboardWidgetKind, DashboardWidgetDef> = {
   onTheFloorNow: {
     kind: "onTheFloorNow",
     title: "On the floor now",
-    description: "Live jobs currently checked out or on site.",
+    description: "Live jobs currently out or on site, soonest back first.",
     component: OnTheFloorNowWidget,
-    // Empty state (mascot + 2 lines) or a couple of `LiveJobRow`s (~56px
-    // each in the 2-col grid) — h:5 fits the empty state comfortably and up
-    // to ~2 rows before scrolling.
     defaultSize: { w: 12, h: 5 },
     minSize: { w: 4, h: 4 },
+    viewAll: DASHBOARD_LINKS.floor,
   },
   needsAttention: {
     kind: "needsAttention",
     title: "Needs attention",
-    description: "Org-wide risk chips — overdue returns, maintenance, crew offers, overbookings.",
+    description: "Org-wide risk lines: overdue returns and invoices, maintenance, crew offers, overbookings, quotes.",
     component: NeedsAttentionWidget,
-    // A chip row is ~34px; narrowed to its min width the chips wrap to 2-3
-    // rows, so the floor needs more height than the roomy default does.
-    defaultSize: { w: 12, h: 3 },
+    defaultSize: { w: 6, h: 6 },
     minSize: { w: 4, h: 3 },
   },
-  // Stat tiles: dot row + a 38px leading-none number + a micro sub-line ≈
-  // 78px of content, +32px content padding +38px header ≈ 148px. h:2 (old
-  // default AND min) is 80px — that's the crushed, scrolling tile from the
-  // dashboard screenshot. h:4 (176px) fits every stat tile, including
-  // Gear Deployed's extra utilisation-meter row, with room to spare — used
-  // as both default and floor so no stat tile can be shrunk into breaking.
   statActiveJobs: {
     kind: "statActiveJobs",
     title: "Active jobs",
-    description: "Count of in-flight jobs.",
+    description: "Count of booked and out jobs.",
     component: StatActiveJobsWidget,
     defaultSize: { w: 3, h: 4 },
     minSize: { w: 2, h: 4 },
     maxSize: { w: 4, h: 5 },
+    stat: true,
   },
   statOverdueReturns: {
     kind: "statOverdueReturns",
     title: "Overdue returns",
-    description: "Count of returns past due.",
+    description: "Count of jobs past their end date with gear still out.",
     component: StatOverdueReturnsWidget,
     defaultSize: { w: 3, h: 4 },
     minSize: { w: 2, h: 4 },
     maxSize: { w: 4, h: 5 },
+    stat: true,
   },
   statGearDeployed: {
     kind: "statGearDeployed",
     title: "Gear deployed",
-    description: "Assets checked out right now, with a utilisation meter.",
+    description: "Assets out right now, with a utilisation meter.",
     component: StatGearDeployedWidget,
     defaultSize: { w: 3, h: 4 },
     minSize: { w: 2, h: 4 },
     maxSize: { w: 4, h: 5 },
+    stat: true,
   },
   statCrewBooked: {
     kind: "statCrewBooked",
     title: "Crew booked",
-    description: "Count of crew currently on the books.",
+    description: "Crew currently on the books.",
     component: StatCrewBookedWidget,
     defaultSize: { w: 3, h: 4 },
     minSize: { w: 2, h: 4 },
     maxSize: { w: 4, h: 5 },
+    stat: true,
   },
   upcomingProjects: {
     kind: "upcomingProjects",
     title: "Upcoming",
     description: "Jobs booked ahead, soonest first.",
     component: UpcomingProjectsWidget,
-    // Up to 4 preview rows behind its own "All →" link — a preview list, so
-    // some scroll at the default size is fine; the min just needs to show
-    // more than one row.
     defaultSize: { w: 12, h: 5 },
     minSize: { w: 3, h: 3 },
+    viewAll: DASHBOARD_LINKS.upcoming,
   },
   recentActivity: {
     kind: "recentActivity",
     title: "Recent activity",
     description: "Scans, tests and maintenance updates across the org.",
     component: RecentActivityWidget,
-    // An open-ended feed — no size makes this never scroll, so the min just
-    // guarantees a readable couple of rows rather than a sliver.
     defaultSize: { w: 12, h: 5 },
     minSize: { w: 4, h: 3 },
+    viewAll: DASHBOARD_LINKS.activity,
   },
   finishSetupChecklist: {
     kind: "finishSetupChecklist",
     title: "Finish setup",
-    description: "Org setup checklist (currency, branding, location, team). Hides itself once complete.",
-    component: FinishSetupChecklistWidget,
-    // Intro line + progress bar + up to 4 checklist rows ≈ 178px of content
-    // — h:4 (176px total card) clipped the last row; h:6 (272px) fits all
-    // four with room. Min stays one row shorter than default, not lower.
-    defaultSize: { w: 6, h: 6 },
+    description: "Org setup and first-run milestones in one panel. Hides itself once complete or dismissed.",
+    component: SetupPanel,
+    defaultSize: { w: 12, h: 5 },
     minSize: { w: 3, h: 4 },
+    setupSlot: true,
   },
   activationChecklist: {
     kind: "activationChecklist",
     title: "Get started",
-    description: "First-run activation milestones. Hides itself once complete.",
-    component: ActivationChecklistWidget,
-    defaultSize: { w: 6, h: 6 },
+    description: "First-run milestones, shown in the setup panel. Hides itself once complete or dismissed.",
+    component: SetupPanel,
+    defaultSize: { w: 12, h: 5 },
     minSize: { w: 3, h: 4 },
+    setupSlot: true,
   },
   myTasks: {
     kind: "myTasks",
@@ -189,6 +164,7 @@ export const DASHBOARD_WIDGET_REGISTRY: Record<DashboardWidgetKind, DashboardWid
     component: MyTasksWidget,
     defaultSize: { w: 6, h: 6 },
     minSize: { w: 3, h: 4 },
+    viewAll: DASHBOARD_LINKS.myTasks,
   },
 };
 
@@ -213,28 +189,45 @@ function widget(kind: DashboardWidgetKind, x: number, y: number): DashboardLayou
 }
 
 /**
- * The default board — everything from the pre-widget-board `/dashboard` at its
- * existing order/size (CLAUDE.md: "everything from the current /dashboard at
- * its current position/size"), plus the basic `myTasks` list under the setup
- * checklists. An existing saved board is not rewritten; "Add widget" or "Reset
- * to default" brings it in.
+ * The default board (D87): the setup panel, the four stat tiles, then My tasks
+ * and Needs attention side by side (6 + 6), then On the floor now, Upcoming and
+ * Recent activity. "Quick stats, then any tasks." The two checklist kinds both
+ * sit at the top; the grid renders the one panel in the first. A saved board is
+ * never rewritten; "Reset layout" brings this back.
  */
 export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutWidget[] = [
   widget("finishSetupChecklist", 0, 0),
-  widget("activationChecklist", 6, 0),
-  widget("myTasks", 0, 6),
-  widget("onTheFloorNow", 0, 14),
-  widget("needsAttention", 0, 19),
-  widget("statActiveJobs", 0, 22),
-  widget("statOverdueReturns", 3, 22),
-  widget("statGearDeployed", 6, 22),
-  widget("statCrewBooked", 9, 22),
-  widget("upcomingProjects", 0, 26),
-  widget("recentActivity", 0, 31),
+  widget("activationChecklist", 0, 5),
+  widget("statActiveJobs", 0, 10),
+  widget("statOverdueReturns", 3, 10),
+  widget("statGearDeployed", 6, 10),
+  widget("statCrewBooked", 9, 10),
+  widget("myTasks", 0, 14),
+  widget("needsAttention", 6, 14),
+  widget("onTheFloorNow", 0, 20),
+  widget("upcomingProjects", 0, 25),
+  widget("recentActivity", 0, 30),
 ];
 
 export function defaultWidgetPosition(kind: DashboardWidgetKind, existing: DashboardLayoutWidget[]): DashboardLayoutWidget {
   const { w, h } = DASHBOARD_WIDGET_REGISTRY[kind].defaultSize;
   const y = existing.reduce((max, w2) => Math.max(max, w2.y + w2.h), 0);
   return { id: kind, kind, x: 0, y, w, h };
+}
+
+/** The widgets as one reads them: top to bottom, then left to right (phone and screen-reader order). */
+export function readingOrder<T extends Pick<DashboardLayoutWidget, "x" | "y">>(widgets: readonly T[]): T[] {
+  return [...widgets].sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
+/**
+ * Of the board's widgets, the ones that actually render: unknown kinds (a saved
+ * board can outlive a removed kind) are dropped, and the two setup kinds collapse
+ * to the first one present in reading order, only while the panel has something
+ * to show.
+ */
+export function renderedWidgets(widgets: readonly DashboardLayoutWidget[], setupVisible: boolean): DashboardLayoutWidget[] {
+  const known = widgets.filter((w) => DASHBOARD_WIDGET_REGISTRY[w.kind]);
+  const setupHost = setupVisible ? readingOrder(known).find((w) => DASHBOARD_WIDGET_REGISTRY[w.kind].setupSlot) : undefined;
+  return known.filter((w) => !DASHBOARD_WIDGET_REGISTRY[w.kind].setupSlot || w === setupHost);
 }

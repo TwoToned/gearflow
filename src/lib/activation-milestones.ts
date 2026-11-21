@@ -1,7 +1,7 @@
 /**
  * The four "Get started" activation milestones (D1, #1105) — shared shape +
  * pure derivation helpers. This is the SINGLE place that knows the milestone
- * order and "which one is next" (R-3.1): `ActivationChecklist`
+ * order and "which one is next" (R-3.1): `useActivationState`
  * (src/components/dashboard/activation-checklist.tsx) and the D2 (#1106)
  * helper-rail coaching both import from here rather than each re-deriving
  * "the active milestone" their own way.

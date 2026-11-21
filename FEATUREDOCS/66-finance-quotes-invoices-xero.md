@@ -986,6 +986,7 @@ bounded sections in `convex/financeOrg.ts`'s single `bundle` query:
 | Never sent | `DRAFT` revisions on active (non-template, non-`CANCELLED`) projects |
 | Deposit due | Same CONFIRMED-or-later candidate set, client `paymentProfile === "DEPOSIT_BALANCE"`, no `ISSUED` `DEPOSIT` invoice — the per-project nudge chip (`project-finance-panel.tsx`) lifted to org scope |
 | Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); Xero-side payments are read back at most hourly by the Xero payment sync (Xero payment sync, below) |
+| Overdue (UX Phase 11, D88) | The Outstanding invoices whose due day is over: `isInvoiceOverdue` in `convex/lib/invoiceOverdue.ts`, the ONE overdue predicate (`ISSUED`, not `PAID`, not a `CREDIT`, `now ≥ dueDate + 1 day`, since `dueDate` is stamped as the start of the due day in the org timezone). What is still owed is derived, never stored: `invoiceOutstanding` = `total − amountPaid − xeroAmountCredited`, floored at 0. `counts` returns `overdueCount`, `overdueOutstanding` and `overdueTruncated` (the ISSUED scan hit `SECTION_CAP`, so the figures are a lower bound) for Home's Needs attention line and the More sheet's Finance row |
 
 ### Perf — bounded, not a per-project loop (the #942 lesson)
 

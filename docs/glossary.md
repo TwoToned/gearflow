@@ -41,6 +41,8 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Pull sheet** | The printable pick list for a job, a dialog on the warehouse job (`?doc=pull-sheet`). The same list as the pull-slip PDF. |
 | **Loose** (UI) | Gear not in a case (replaces "Not planned" / "No container"). |
 | **Return** | UI label for checking an asset **in** from a project back to the warehouse. |
+| **Active** (UI, Jobs segment) | Booked + Out jobs (`AWAITING_PAYMENT`, `CONFIRMED`, `PREPPING`, `CHECKED_OUT`, `ON_SITE`), D86. The same set Home's Active jobs tile counts. See [10-projects.md](../FEATUREDOCS/10-projects.md). |
+| **Overdue return** | A job that is not closed, is past its end date, and still has gear `CHECKED_OUT` on its live version (`convex/lib/overdueReturns.ts`). Judged by the gear, not the status word. Home's tile counts these jobs; the Jobs filter `Returns: Overdue` (`?overdue=1`) lists them. |
 | **Docket** | A delivery or return document generated for a project (delivery docket / return docket) — see [13-pdfs.md](../FEATUREDOCS/13-pdfs.md). |
 | **Prep container (prep)** | The legacy free-text label for a case during pick/prep (`prepContainer`). Superseded by the first-class packing container (`projectContainers`; membership on the unit): see [83-packing-containers.md](../FEATUREDOCS/83-packing-containers.md). |
 | **Check item** | A pass/fail, measurement, notes, or dropdown quality check performed on an asset during deploy/return. See [37-check-items.md](../FEATUREDOCS/37-check-items.md). |

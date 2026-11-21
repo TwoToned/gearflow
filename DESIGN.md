@@ -391,6 +391,32 @@ below no longer exists in the codebase; it was removed in the work-layer
 program's phase 0.5 (#1242) when `/today` became the landing page and took
 over that surface (FEATUREDOCS/79). Don't resurrect the name.
 
+**2026-11-21 — Home v2 (UX Phase 11, §6c): the same bones, a calmer skin.**
+This supersedes the bento-tile and order bullets further down, which are kept
+as history.
+- **Header.** A dynamic greeting with the first name, then the date · org. It
+  is FIXED page furniture, never a widget. ONE red `+ New job`. Warehouse,
+  Add gear and `Customise…` sit in the page ⋯; an action the viewer can't take
+  is absent.
+- **No card chrome.** Each widget is a hairline top rule, a 13 px/600 title, a
+  muted mono count and a quiet `View all ›`. There are no boxes, borders,
+  shadows or icon pills.
+- **Rows and status.** Needs attention lines and row statuses are dot-words
+  (`StatusWord`). Stat tiles are a calm row of numbers, each deep-linked to
+  the list it counts (`src/lib/dashboard-links.ts`). Empty states are one
+  sentence; there is no mascot.
+- **Default order (D87).** Setup panel → four stat tiles (3 + 3 + 3 + 3) →
+  My tasks + Needs attention (6 + 6) → On the floor now → Upcoming → Recent
+  activity.
+- **Customise** is desktop only (D89). While customising, the primary becomes
+  `Done`, frames are dashed, the title is the drag handle, and every change
+  toasts with Undo.
+- **Phone.** The board is read-only in the saved order, with stat tiles two to
+  a row. `+ New job` is a sticky 44 px bar above the bottom nav. The ⋯ sheet
+  says Customise is on desktop.
+
+History (pre-Phase-11):
+
 - Dynamic greeting (Good morning/afternoon/evening) + date — this is FIXED
   page-header furniture, never a widget: a personal board can be
   rearranged and emptied, but the greeting and the "New job"/"Warehouse"/

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { defaultListState, parseListState } from "@/lib/list-url-state";
 import {
   JOBS_SPEC,
+  jobFilters,
   jobFlags,
   jobRowOf,
   jobSegments,
@@ -16,11 +17,24 @@ const NOW = new Date(2026, 10, 19, 10, 0).getTime(); // Thu 19 Nov 2026, local
 const parse = (qs: string) => parseListState(new URLSearchParams(qs), JOBS_SPEC);
 
 describe("jobs segments", () => {
-  it("ships six segments in order; Active and overdue (D86) stay config-only", () => {
-    expect(jobSegments(undefined).map((s) => s.label)).toEqual(["All", "Quoting", "Booked", "Out", "Done", "Needs you"]);
-    expect(JOBS_SPEC.segments).not.toContain("active");
+  it("ships seven segments in order, Active (D86) right after All", () => {
+    expect(jobSegments(undefined).map((s) => s.label)).toEqual(["All", "Active", "Quoting", "Booked", "Out", "Done", "Needs you"]);
+    expect(parse("seg=active").seg).toBe("active");
+    // Overdue is a filter (`overdue=1`), never a segment.
     expect(JOBS_SPEC.segments).not.toContain("overdue");
-    expect(parse("seg=active").seg).toBe("all");
+    expect(parse("seg=overdue").seg).toBe("all");
+  });
+
+  it("overdue=1 (D86) maps to listPage's overdue arg; anything else is no filter", () => {
+    expect(jobsQueryArgs(parse("overdue=1"), NOW).overdue).toBe(true);
+    expect(jobsQueryArgs(parse("overdue=1&seg=out"), NOW)).toMatchObject({ overdue: true, segment: "out" });
+    expect(jobsQueryArgs(parse("overdue=yes"), NOW).overdue).toBeUndefined();
+    expect(jobsQueryArgs(parse(""), NOW).overdue).toBeUndefined();
+  });
+
+  it("the overdue filter word reads Returns: Overdue", () => {
+    const word = jobFilters([], { value: "", onChange: () => {} }).find((f) => f.key === "overdue");
+    expect(word).toMatchObject({ label: "Returns", single: true, options: [{ value: "1", label: "Overdue" }] });
   });
 
   it("carries counts from segmentCounts", () => {

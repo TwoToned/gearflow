@@ -3,116 +3,134 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useNativeDashboardStats, useNativeHome } from "@/hooks/use-native-dashboard";
+import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
+import { useNativeHome } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { ScanBarcode, Plus, Boxes } from "lucide-react";
+import { useCanDo } from "@/lib/use-permissions";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { FadeIn } from "@/components/ui/motion";
 import { Button } from "@/components/ui/button";
+import { ActionMenu } from "@/components/ui/action-menu";
+import { PinnedAboveBottomNav } from "@/components/ui/bulk-bar";
 import { PageHeader } from "@/components/layout/page-header";
 import { formatDateLong } from "@/lib/formatters";
-import { useDashboardLayout } from "@/hooks/use-dashboard-layout";
-import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
+import { useDashboardLayout, type LayoutRestore } from "@/hooks/use-dashboard-layout";
+import { DashboardGrid, type LayoutChange } from "@/components/dashboard/dashboard-grid";
 import { DashboardCustomizeBar } from "@/components/dashboard/dashboard-customize-bar";
+import { DASHBOARD_WIDGET_REGISTRY, type DashboardLayoutWidget, type DashboardWidgetKind } from "@/lib/dashboard-widgets";
+import { buildHomePageActions } from "@/lib/row-actions/home-page";
+import { announceListWrite } from "@/lib/list-write-toast";
 
-const LIVE_STATUSES = new Set(["CHECKED_OUT", "ON_SITE"]);
-
-/**
- * `/dashboard` — the customizable widget board (DESIGN.md "Dashboard
- * Layout" documents the "no widget boards" decision this supersedes, and
- * FEATUREDOCS/81 has the full writeup). The greeting hero + quick actions
- * stay a FIXED page header (never a widget, per that decision); everything
- * below it is `<DashboardGrid>`, backed by `useDashboardLayout` (per-user
- * saved arrangement, `convex/dashboardLayouts.ts`).
- */
-export default function DashboardPage() {
-  const { data: activeOrg } = useActiveOrganization();
-  const orgId = activeOrg?.id;
-
-  // Kept at the page level purely to compose the hero's "aside" line — the
-  // greeting is fixed page furniture, not a widget, so it needs this
-  // regardless of what's on the board. Same hooks the widgets themselves
-  // use (R-3.1) — Convex shares the underlying subscription, so this isn't a
-  // second read, just a second call site of one.
-  const nativeStats = useNativeDashboardStats(orgId);
-  const stats = nativeStats.data;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const myHome = useNativeHome(orgId) as any;
-
-  const { widgets, setLayout, addWidget, removeWidget, resetToDefault, availableToAdd } = useDashboardLayout(orgId);
-  const [editMode, setEditMode] = useState(false);
-
-  const now = new Date();
+function homeTitle(now: Date, userName: string | undefined): string {
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const firstName = myHome?.userName ? String(myHome.userName).split(" ")[0] : "";
+  const firstName = userName ? userName.split(" ")[0] : "";
+  return firstName ? `${greeting}, ${firstName}` : greeting;
+}
 
-  const myProjects = (myHome?.myProjects ?? []) as Record<string, unknown>[];
-  const liveJobs = myProjects.filter((p) => LIVE_STATUSES.has(p.status as string));
+/** The page ⋯, gated once here: an action the viewer can't take is absent. */
+function useHomePageMenu(isMobile: boolean, onCustomise: () => void) {
+  const router = useRouter();
+  const canWarehouse = useCanDo("warehouse", "read");
+  const canAddGear = useCanDo("asset", "create");
+  return buildHomePageActions({
+    onWarehouse: canWarehouse ? () => router.push("/warehouse") : undefined,
+    onAddGear: canAddGear ? () => router.push("/assets/registry/new") : undefined,
+    onCustomise: isMobile ? undefined : onCustomise,
+  });
+}
 
-  const overdue = stats?.overdueReturns ?? 0;
-  // §9: overdue is an alert context — plain copy, no personality/Kalam. The
-  // calm and zero branches keep the handwritten voice.
-  const asideOverdue = !!stats && overdue > 0;
-  const aside = !stats
-    ? ""
-    : asideOverdue
-      ? `${overdue} overdue return${overdue > 1 ? "s" : ""} need review.`
-      : liveJobs.length > 0
-        ? `${liveJobs.length} out on the floor, nothing on fire.`
-        : "Nothing needs you. Suspicious.";
+/** Every layout change toasts with ONE Undo closure: the restore the layout hook returned (Q6). */
+function announceLayout(title: string, restore: LayoutRestore | null) {
+  if (!restore) return;
+  announceListWrite({ title, undoneTitle: "Home layout put back", performUndo: async () => restore() });
+}
+
+/**
+ * Customise mode's layout writes, each toasted with its own Undo. Kept out of
+ * the page body so the page stays a thin composition.
+ */
+function useLayoutActions(orgId: string | undefined) {
+  const layout = useDashboardLayout(orgId);
+  const titleOf = (kind: DashboardWidgetKind) => DASHBOARD_WIDGET_REGISTRY[kind]?.title ?? "Widget";
+  return {
+    ...layout,
+    change: (next: DashboardLayoutWidget[], c: LayoutChange) => announceLayout(`${c.verb} ${titleOf(c.kind)}`, layout.setLayout(next)),
+    hide: (id: string) => {
+      const kind = layout.widgets.find((w) => w.id === id)?.kind;
+      announceLayout(`${kind ? titleOf(kind) : "Widget"} hidden · Add widget brings it back`, layout.removeWidget(id));
+    },
+    add: (kind: DashboardWidgetKind) => announceLayout(`${titleOf(kind)} added at the bottom`, layout.addWidget(kind)),
+    reset: () => announceLayout("Home is back to the standard layout", layout.resetToDefault()),
+  };
+}
+
+/**
+ * `/dashboard`, Home (UX Phase 11, §6c, FEATUREDOCS/81). A fixed header (the
+ * greeting, the date and org, one red `+ New job`, and a page ⋯ holding
+ * Warehouse, Add gear and Customise…), then the per-user widget board.
+ * Customise is desktop only (D89): on a phone the board is read-only and
+ * `+ New job` is a sticky bar above the bottom nav.
+ */
+export default function DashboardPage() {
+  const isMobile = useIsMobile();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+  const myHome = useNativeHome(orgId) as { userName?: string } | undefined;
+  const layout = useLayoutActions(orgId);
+  const [editMode, setEditMode] = useState(false);
+  const editing = editMode && !isMobile;
+  const pageMenu = useHomePageMenu(isMobile, () => setEditMode(true));
+  const now = new Date();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-md:pb-20">
       <FadeIn>
         <PageHeader
-          title={`${greeting}${firstName ? `, ${firstName}` : ""}`}
-          description={formatDateLong(now)}
-          meta={
-            aside &&
-            (asideOverdue ? (
-              <p className="text-ui-text font-medium text-t-out">{aside}</p>
-            ) : (
-              <p className="font-hand text-[15px] text-t-out">{aside}</p>
-            ))
-          }
+          title={homeTitle(now, myHome?.userName)}
+          description={[formatDateLong(now), (activeOrg as { name?: string } | undefined)?.name].filter(Boolean).join(" · ")}
           actions={
-            <>
-              <Button asChild variant="halo">
-                <Link href="/projects/new">
-                  <Plus className="h-4 w-4" /> New job
-                </Link>
-              </Button>
-              <Button asChild variant="line" className="hidden sm:inline-flex">
-                <Link href="/warehouse">
-                  <ScanBarcode className="h-4 w-4" /> Warehouse
-                </Link>
-              </Button>
-              <Button asChild variant="line" className="hidden sm:inline-flex">
-                <Link href="/assets/registry/new">
-                  <Boxes className="h-4 w-4" /> Add gear
-                </Link>
-              </Button>
+            editing ? (
               <DashboardCustomizeBar
-                editMode={editMode}
-                onToggleEditMode={() => setEditMode((v) => !v)}
-                availableToAdd={availableToAdd}
-                onAddWidget={addWidget}
-                onReset={resetToDefault}
+                availableToAdd={layout.availableToAdd}
+                onAddWidget={layout.add}
+                onReset={layout.reset}
+                onDone={() => setEditMode(false)}
               />
-            </>
+            ) : (
+              <>
+                {!isMobile && (
+                  <Button asChild variant="halo">
+                    <Link href="/projects/new">
+                      <Plus className="h-4 w-4" /> New job
+                    </Link>
+                  </Button>
+                )}
+                <ActionMenu
+                  spec={pageMenu}
+                  label="Home actions"
+                  header={isMobile ? <p className="px-2 py-1.5 text-[12.5px] text-muted">Customise Home on a desktop. Your arrangement shows here in the same order.</p> : undefined}
+                />
+              </>
+            )
           }
         />
       </FadeIn>
 
       <FadeIn delay={0.04}>
-        <DashboardGrid
-          widgets={widgets}
-          editMode={editMode}
-          orgId={orgId}
-          onLayoutChange={setLayout}
-          onRemove={removeWidget}
-        />
+        <DashboardGrid widgets={layout.widgets} editMode={editing} orgId={orgId} onLayoutChange={layout.change} onRemove={layout.hide} />
       </FadeIn>
+
+      {isMobile && (
+        <PinnedAboveBottomNav>
+          <Button asChild variant="halo" className="h-11 w-full text-[15px]">
+            <Link href="/projects/new">
+              <Plus className="h-4 w-4" /> New job
+            </Link>
+          </Button>
+        </PinnedAboveBottomNav>
+      )}
     </div>
   );
 }

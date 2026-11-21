@@ -7,7 +7,6 @@ import { formatDistanceToNow } from "date-fns";
 import { useNativeActivity } from "@/hooks/use-native-dashboard";
 import { StaggerList, StaggerItem } from "@/components/ui/motion";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScanBarcode, Zap, Wrench } from "lucide-react";
 
 interface TimelineItem {
   key: string;
@@ -40,9 +39,6 @@ function ActivityItem({ item }: { item: TimelineItem }) {
     const isCheckOut = log.action === "CHECK_OUT";
     return (
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-green-soft text-green">
-          <ScanBarcode className="h-3.5 w-3.5" />
-        </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] leading-snug text-ink">
             <span className="font-medium">{(model?.name as string) || "Asset"}</span>{" "}
@@ -70,9 +66,6 @@ function ActivityItem({ item }: { item: TimelineItem }) {
     const resultColor = result === "PASS" ? "text-ok" : result === "FAIL" ? "text-t-out" : "text-warn";
     return (
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-teal-soft text-teal">
-          <Zap className="h-3.5 w-3.5" />
-        </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] leading-snug text-ink">
             <span className="font-medium">{(ttAsset?.description as string) || (ttAsset?.testTagId as string) || "Item"}</span>{" "}
@@ -95,9 +88,6 @@ function ActivityItem({ item }: { item: TimelineItem }) {
   const mrStatusLabel: Record<string, string> = { SCHEDULED: "scheduled", IN_PROGRESS: "in progress", COMPLETED: "completed", CANCELLED: "cancelled" };
   return (
     <div className="flex items-start gap-3">
-      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-coral-soft text-coral">
-        <Wrench className="h-3.5 w-3.5" />
-      </div>
       <div className="min-w-0 flex-1">
         <p className="text-[14px] leading-snug text-ink">
           <Link href={`/maintenance/${mr.id}`} className="font-medium hover:underline">
@@ -131,7 +121,9 @@ export function RecentActivityWidget({ orgId }: { orgId: string | undefined }) {
           <Skeleton className="h-10 w-full" />
         </div>
       ) : activityItems.length === 0 ? (
-        <p className="t-body text-muted">Quiet so far. Scan some gear and it&rsquo;ll show up here.</p>
+        <p className="py-3 text-[13.5px] text-muted">
+          <span className="font-semibold text-ink">Quiet so far.</span> Scan some gear and it&rsquo;ll show up here.
+        </p>
       ) : (
         <StaggerList className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {activityItems.map((item) => (

@@ -57,16 +57,22 @@ one satisfies the milestone.
 
 ## The card
 
-`src/components/dashboard/activation-checklist.tsx`'s `ActivationChecklist` — four rows, an
-honest "About 5 minutes. Pick up wherever you left off." label, and a permanent dismiss. Renders
+`src/components/dashboard/activation-checklist.tsx`'s `useActivationState`. Since UX Phase 11
+(§6c.2) it is the "Get started" half of Home's ONE setup panel (`setup-panel.tsx`, FEATUREDOCS/81),
+not a card of its own: four rows, each with a destination word, sharing the panel's progress
+line and its Dismiss. Renders
 nothing while loading, once dismissed, or once all four milestones are complete (same
-disappears-for-good rule as C6's card).
+disappears-for-good rule as C6's card). The dismiss is reversible by exactly one Undo (UX Phase
+11): `orgActivationDismissalsWrites.undismissNative` deletes only the row that dismiss created,
+only if it is the caller's own; `useActivationDismissal().dismiss()` resolves to that row's id and
+`undismiss(id)` reverses it (same shape as FEATUREDOCS/71's setup card). The panel's Dismiss toast
+carries that Undo.
 
-**The active row (the first not-yet-done milestone) carries the next action inline** — a button
-like "Add an asset" — rather than a separate CTA block, per #1105's explicit UI requirement. Rows
-after the active one show no CTA at all (nothing to do yet); a done row shows the milestone's
+**Every row is the link to its next action, named by a destination word** (`Models ›`,
+`Assets ›`, `New job ›`, `Equipment ›`). Since UX Phase 11 this replaces the old inline CTA
+button on the active row, so the panel reads as one list of rows. A done row shows the milestone's
 actual value in a small mono chip (e.g. the model's real name) instead of a generic checkmark, so
-the row reads as a fact rather than a scoreboard. CTA targets are the real creation routes, not a
+the row reads as a fact rather than a scoreboard. Row targets are the real creation routes, not a
 wizard step — there is one place each of these things is actually done:
 
 - Model → `/assets/models/new`
@@ -232,8 +238,8 @@ error, not a silently-forked PostHog insight.
    it flips from not-done to done during THIS mount. A milestone already done the first time state
    resolves never fires — that would misreport a historical completion (e.g. an org active for
    months before this instrumentation shipped) as a fresh one on every page load. Mounted
-   unconditionally inside `ActivationChecklist`, ahead of its early returns, so it observes state
-   even while the card itself is rendering nothing.
+   unconditionally inside `SetupPanel`, ahead of its early return, so it observes state while the
+   panel renders.
 4. **Checklist dismissed** (`activation_checklist_dismissed`, `{ milestones_done }`) — fired from
    the existing Dismiss button, with a count (0-4) of how many milestones were already done at
    dismiss time — never which ones, since that would need the same enum-mapping the milestone

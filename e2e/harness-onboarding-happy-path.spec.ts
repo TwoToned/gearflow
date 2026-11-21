@@ -89,12 +89,15 @@ test.describe("harness: onboarding happy path (all five wizard screens, four mil
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     });
 
-    await test.step("Get started checklist shows 1/4 done (the model from step 5)", async () => {
+    await test.step("the setup panel's Get started rows show the model from step 5 done", async () => {
       // The activation checklist lives on /dashboard (#1242) — /dashboard is
-      // also the post-onboarding landing page itself now (D10C).
+      // also the post-onboarding landing page itself now (D10C). UX Phase 11
+      // merged it into ONE setup panel with Finish setup; this flow uploads no
+      // logo and invites nobody, so the setup half (and its title) stays.
       await page.goto("/dashboard");
-      await expect(page.getByText("Get started")).toBeVisible({ timeout: 20000 });
-      await expect(page.getByText("1 / 4")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Finish setup" })).toBeVisible({ timeout: 20000 });
+      await expect(page.getByText("Add a piece of gear you own", { exact: true })).toHaveClass(/line-through/);
+      await expect(page.getByText("Add a real unit of it", { exact: true })).not.toHaveClass(/line-through/);
     });
 
     await test.step("milestone 2: asset on the first model", async () => {
@@ -109,9 +112,11 @@ test.describe("harness: onboarding happy path (all five wizard screens, four mil
       await addModelLineItem(page, projectId, modelName);
     });
 
-    await test.step("all four milestones done -> Get started checklist disappears", async () => {
+    await test.step("all four milestones done -> the Get started rows leave the panel", async () => {
       await page.goto("/dashboard");
-      await expect(page.getByText("Get started")).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Finish setup" })).toBeVisible({ timeout: 20000 });
+      await expect(page.getByText("Put that gear on the job", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Add a piece of gear you own", { exact: true })).toHaveCount(0);
     });
   });
 });

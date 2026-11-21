@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { showError } from "@/lib/show-error";
 import {
   DASHBOARD_WIDGET_REGISTRY,
   DEFAULT_DASHBOARD_LAYOUT,
@@ -14,17 +15,13 @@ import {
 } from "@/lib/dashboard-widgets";
 import { api } from "../../convex/_generated/api";
 
-// Commit on drag/resize END, never per intermediate frame (CLAUDE.md: "Debounce
-// writes on the client"). A user dragging around for a few seconds should
-// produce ONE write, not dozens.
+// Commit on drag/resize END, never per intermediate frame: a user dragging around
+// for a few seconds produces ONE write, not dozens.
 const SAVE_DEBOUNCE_MS = 800;
 
-/** A saved widget can predate a later registry change to that widget kind's
- *  `minSize`/`maxSize` (e.g. the stat tiles' floor going from h:2 to h:4 once
- *  their old default turned out to crush them) — clamp on load so an
- *  existing board picks up a raised floor/lowered ceiling automatically,
- *  rather than staying stuck at a now-invalid size until the user happens to
- *  touch that widget. A no-op for any widget already within bounds. */
+/** A saved widget can predate a registry change to its `minSize`/`maxSize`: clamp
+ *  on load so an existing board picks up a raised floor automatically. A no-op for
+ *  a widget already within bounds. */
 function clampToRegistry(w: DashboardLayoutWidget): DashboardLayoutWidget {
   const def = DASHBOARD_WIDGET_REGISTRY[w.kind];
   if (!def) return w;
@@ -37,18 +34,32 @@ function clampToRegistry(w: DashboardLayoutWidget): DashboardLayoutWidget {
   return width === w.w && height === w.h ? w : { ...w, w: width, h: height };
 }
 
+function sameLayout(a: readonly DashboardLayoutWidget[], b: readonly DashboardLayoutWidget[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((w, i) => {
+    const o = b[i];
+    return w.id === o.id && w.x === o.x && w.y === o.y && w.w === o.w && w.h === o.h;
+  });
+}
+
+/** Puts the board back exactly as it was before ONE change (UX Phase 11, Q6). */
+export type LayoutRestore = () => void;
+
 /**
- * The customizable dashboard's per-user layout (`convex/dashboardLayouts.ts`,
- * modeled on `savedTableViews`'s self-scoped per-user row pattern). No saved row
- * yet ⇒ `DEFAULT_DASHBOARD_LAYOUT` (everything from the pre-widget-board `/dashboard` at
- * its original position/size) — the default lives in exactly one place
- * (`src/lib/dashboard-widgets.ts`), never invented here or on the server.
+ * The per-user Home layout (`convex/dashboardLayouts.ts`). No saved row yet ⇒
+ * `DEFAULT_DASHBOARD_LAYOUT`, which lives in exactly one place
+ * (`src/lib/dashboard-widgets.ts`).
+ *
+ * Every change returns a `LayoutRestore`, the ONE closure that undoes it (the
+ * page hands it to the toast's Undo), or `null` when nothing changed, so a
+ * no-op never toasts. A failed save is surfaced, never swallowed.
  */
 export function useDashboardLayout(orgId: string | undefined) {
   const saved = useAuthedQuery(api.dashboardLayouts.get, orgId ? {} : "skip");
   const saveMutation = useMutation(api.dashboardLayouts.saveNative);
 
   const [widgets, setWidgets] = useState<DashboardLayoutWidget[] | null>(null);
+  const currentRef = useRef<DashboardLayoutWidget[]>(DEFAULT_DASHBOARD_LAYOUT);
   const hydratedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowIdRef = useRef<string>(createId());
@@ -57,36 +68,32 @@ export function useDashboardLayout(orgId: string | undefined) {
     (next: DashboardLayoutWidget[]) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        void saveMutation({ id: rowIdRef.current, widgets: next, now: Date.now() }).catch(() => {
-          // Best-effort — a failed layout save never blocks the UI; the next
-          // successful save (or a page reload re-reading the last saved row)
-          // reconciles it. Not surfaced as a toast: a personal arrangement of
-          // widgets isn't worth interrupting someone over.
+        void saveMutation({ id: rowIdRef.current, widgets: next, now: Date.now() }).catch((e: unknown) => {
+          showError(e, { fallbackTitle: "Couldn't save your Home layout" });
         });
       }, SAVE_DEBOUNCE_MS);
     },
     [saveMutation],
   );
 
-  // Hydrate local state exactly once from the server (or the default) — after
-  // that, local state is the source of truth so an in-flight edit is never
+  // Hydrate local state exactly once from the server (or the default); after
+  // that local state is the source of truth, so an in-flight edit is never
   // clobbered by the query re-running.
   useEffect(() => {
     if (hydratedRef.current || saved === undefined) return;
     hydratedRef.current = true;
-    if (saved) {
-      rowIdRef.current = saved.id;
-      const raw = saved.widgets as DashboardLayoutWidget[];
-      const healed = raw.map(clampToRegistry);
-      setWidgets(healed);
-      // Persist the healed sizes once, silently, so a board that predates a
-      // registry floor change doesn't stay stuck at an invalid size until
-      // the user happens to touch it — best-effort, same as every other
-      // layout write, no toast either way.
-      if (healed.some((w, i) => w !== raw[i])) persist(healed);
-    } else {
+    if (!saved) {
       setWidgets(DEFAULT_DASHBOARD_LAYOUT);
+      return;
     }
+    rowIdRef.current = saved.id;
+    const raw = saved.widgets as DashboardLayoutWidget[];
+    const healed = raw.map(clampToRegistry);
+    currentRef.current = healed;
+    setWidgets(healed);
+    // Persist healed sizes once, silently: a board that predates a registry floor
+    // change shouldn't stay at an invalid size until the user touches it.
+    if (healed.some((w, i) => w !== raw[i])) persist(healed);
   }, [saved, persist]);
 
   useEffect(() => {
@@ -95,58 +102,51 @@ export function useDashboardLayout(orgId: string | undefined) {
     };
   }, []);
 
-  const commit = useCallback(
-    (next: DashboardLayoutWidget[]) => {
+  const apply = useCallback(
+    (next: DashboardLayoutWidget[]): LayoutRestore | null => {
+      const prev = currentRef.current;
+      if (sameLayout(prev, next)) return null;
+      currentRef.current = next;
       setWidgets(next);
       persist(next);
+      return () => {
+        currentRef.current = prev;
+        setWidgets(prev);
+        persist(prev);
+      };
     },
     [persist],
   );
 
   const addWidget = useCallback(
-    (kind: DashboardWidgetKind) => {
-      setWidgets((current) => {
-        const base = current ?? [];
-        if (base.some((w) => w.kind === kind)) return base;
-        const next = [...base, defaultWidgetPosition(kind, base)];
-        persist(next);
-        return next;
-      });
+    (kind: DashboardWidgetKind): LayoutRestore | null => {
+      const base = currentRef.current;
+      if (base.some((w) => w.kind === kind)) return null;
+      return apply([...base, defaultWidgetPosition(kind, base)]);
     },
-    [persist],
+    [apply],
   );
 
   const removeWidget = useCallback(
-    (id: string) => {
-      setWidgets((current) => {
-        const base = current ?? [];
-        const next = base.filter((w) => w.id !== id);
-        persist(next);
-        return next;
-      });
-    },
-    [persist],
+    (id: string): LayoutRestore | null => apply(currentRef.current.filter((w) => w.id !== id)),
+    [apply],
   );
 
-  const resetToDefault = useCallback(() => {
-    commit(DEFAULT_DASHBOARD_LAYOUT);
-  }, [commit]);
+  const resetToDefault = useCallback((): LayoutRestore | null => apply(DEFAULT_DASHBOARD_LAYOUT), [apply]);
 
-  // `DASHBOARD_WIDGET_ORDER` (not `Object.keys(DASHBOARD_WIDGET_REGISTRY)`) is
-  // the single source of truth for the "Add widget" popover's listing order
-  // (R-3.1) — the registry object's own key order happens to agree today, but
-  // nothing enforces that, so relying on it would silently drift the moment
-  // either one is reordered without the other.
+  // `DASHBOARD_WIDGET_ORDER` is the single source of the "Add widget" listing order.
+  // The two setup kinds are one panel: with either on the board, the other adds nothing.
   const availableToAdd = useMemo(() => {
     const present = new Set((widgets ?? []).map((w) => w.kind));
-    return DASHBOARD_WIDGET_ORDER.filter((k) => !present.has(k));
+    const hasSetup = [...present].some((k) => DASHBOARD_WIDGET_REGISTRY[k]?.setupSlot);
+    return DASHBOARD_WIDGET_ORDER.filter((k) => !present.has(k) && !(hasSetup && DASHBOARD_WIDGET_REGISTRY[k].setupSlot));
   }, [widgets]);
 
   return {
     widgets: widgets ?? DEFAULT_DASHBOARD_LAYOUT,
     isLoading: widgets === null,
-    /** Commit a full layout change (drag/resize end) — debounced. */
-    setLayout: commit,
+    /** Commit a full layout change (drag/resize end), debounced. */
+    setLayout: apply,
     addWidget,
     removeWidget,
     resetToDefault,

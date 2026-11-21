@@ -318,6 +318,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "activityLog.recentForProject",
+    "module": "activityLog",
+    "fn": "recentForProject",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "limit",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e33ca6b943a872b",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The newest few activity log entries touching one project (bounded, newest first).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "activityLogWrites.record",
     "module": "activityLogWrites",
     "fn": "record",
@@ -64375,10 +64417,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1246,
-  agentReachable: 618,
-  queries: 446,
+  total: 1247,
+  agentReachable: 619,
+  queries: 447,
   mutations: 800,
-  agentReachableQueries: 311,
+  agentReachableQueries: 312,
   agentReachableMutations: 307,
 } as const;

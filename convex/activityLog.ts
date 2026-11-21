@@ -201,6 +201,28 @@ export const listByEntity = query({
   },
 });
 
+/**
+ * The job Overview's Recent lines (UX Phase 7): the newest audit rows that
+ * touched one project (any entity carrying its `projectId`), BOUNDED — the
+ * Overview is the landing tab, so this is a live read on every job open and
+ * must never read a project's whole history (as `listByEntity` does).
+ * `by_organizationId_projectId` scopes by org IN the index; newest first.
+ */
+const RECENT_FOR_PROJECT_MAX = 20;
+export const recentForProject = query({
+  args: { orgId: v.string(), projectId: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { orgId, projectId, limit }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+    const take = Math.min(Math.max(Math.floor(limit ?? 4), 1), RECENT_FOR_PROJECT_MAX);
+    const rows = (await ctx.db
+      .query("activityLogs")
+      .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+      .order("desc")
+      .take(take)) as unknown as LogDoc[];
+    return { items: await attachUsers(ctx, rows) };
+  },
+});
+
 /** Raw rows for CSV export (newest-first). CSV assembly stays server-side. */
 export const exportRows = query({
   args: { orgId: v.string(), ...filterArgs },
@@ -219,5 +241,6 @@ export const exportRows = query({
 export const agentOps: AgentOpsAnnotations = {
   list: { summary: "Filtered, sorted, paginated org activity log.", danger: "low", mcpTier: 2 },
   listByEntity: { summary: "Activity log entries for one entity (e.g. a project or asset).", danger: "low", mcpTier: 2 },
+  recentForProject: { summary: "The newest few activity log entries touching one project (bounded, newest first).", danger: "low", mcpTier: 3 },
   exportRows: { summary: "Raw activity log rows for CSV export, org-scoped and filtered.", danger: "low", mcpTier: 3 },
 };

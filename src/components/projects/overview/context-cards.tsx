@@ -5,7 +5,7 @@ import * as React from "react";
 import Link from "next/link";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
-import { useEntityActivityLog } from "@/hooks/use-activity-log";
+import { useNavItems } from "@/hooks/use-nav-items";
 import { api } from "../../../../convex/_generated/api";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { formatDate } from "@/lib/formatters";
@@ -97,14 +97,21 @@ function useCrewCounts(projectId: string, orgId: string | undefined, enabled: bo
 function SiteContactLine({ project }: { project: ProjectContextProject }) {
   if (!project.siteContactName) return <OverviewLine muted>No site contact</OverviewLine>;
   return (
-    <OverviewLine>
-      <b className="font-semibold">{project.siteContactName}</b>
-      {project.siteContactPhone ? (
-        <span className="text-muted">
-          {" "}· <a className="font-mono tabular-nums hover:underline" href={`tel:${project.siteContactPhone}`}>{project.siteContactPhone}</a>
-        </span>
+    <>
+      <OverviewLine>
+        <b className="font-semibold">{project.siteContactName}</b>
+        {project.siteContactPhone ? (
+          <span className="text-muted">
+            {" "}· <a className="tap-area font-mono tabular-nums hover:underline" href={`tel:${project.siteContactPhone}`}>{project.siteContactPhone}</a>
+          </span>
+        ) : null}
+      </OverviewLine>
+      {project.siteContactEmail ? (
+        <OverviewLine muted className="truncate">
+          <a className="tap-area hover:underline" href={`mailto:${project.siteContactEmail}`}>{project.siteContactEmail}</a>
+        </OverviewLine>
       ) : null}
-    </OverviewLine>
+    </>
   );
 }
 
@@ -166,8 +173,23 @@ export function OverviewWho({
 
 type LogRow = { id: string; userName?: string | null; summary?: string; createdAt: string | number };
 
-export function OverviewRecent({ projectId, onOpenDiscussion }: { projectId: string; onOpenDiscussion?: () => void }) {
-  const { data } = useEntityActivityLog("project", projectId, 4);
+/**
+ * Recent: the AUDIT LOG (`activityLog.recentForProject`, bounded to four rows,
+ * newest first) — not the sidebar's Activity, which is the collaboration feed.
+ * `All activity ›` shows only when the user can open `/activity` (the NAV's own
+ * gate, `useNavItems`), so it is never a dead link.
+ */
+export function OverviewRecent({
+  projectId,
+  orgId,
+  onOpenDiscussion,
+}: {
+  projectId: string;
+  orgId: string | undefined;
+  onOpenDiscussion?: () => void;
+}) {
+  const data = useAuthedQuery(api.activityLog.recentForProject, orgId ? { orgId, projectId, limit: 4 } : "skip");
+  const canOpenActivity = !!useNavItems().byKey("activity");
   const items = (data?.items ?? []) as LogRow[];
   const allHref = `/activity?entityType=project&entityId=${encodeURIComponent(projectId)}`;
   return (
@@ -186,7 +208,7 @@ export function OverviewRecent({ projectId, onOpenDiscussion }: { projectId: str
         ))
       )}
       <OverviewLinks>
-        <OverviewTextLink href={allHref}>All activity ›</OverviewTextLink>
+        {canOpenActivity ? <OverviewTextLink href={allHref}>All activity ›</OverviewTextLink> : null}
         {onOpenDiscussion ? <OverviewTextButton onClick={onOpenDiscussion}>Discussion ›</OverviewTextButton> : null}
       </OverviewLinks>
     </div>

@@ -89,7 +89,7 @@ export function OverviewTab({
       </OverviewSection>
       {!isTemplate && (
         <OverviewSection aria-label="Recent activity">
-          <OverviewRecent projectId={projectId} onOpenDiscussion={onOpenDiscussion} />
+          <OverviewRecent projectId={projectId} orgId={orgId} onOpenDiscussion={onOpenDiscussion} />
         </OverviewSection>
       )}
     </div>

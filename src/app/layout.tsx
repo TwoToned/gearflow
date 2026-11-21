@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Hanken_Grotesk, Geist_Mono, Kalam, Baloo_2, Archivo } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ConvexClientProvider } from "@/components/providers/convex-provider";
 import { GoogleMapsProvider } from "@/components/providers/google-maps-provider";
@@ -10,6 +9,7 @@ import { OverlayLockReset } from "@/components/overlay-lock-reset";
 import { ReducedMotionProvider } from "@/components/ui/motion";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlatformName } from "@/lib/platform";
+import "./fonts";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -21,35 +21,6 @@ export const viewport: Viewport = {
     { media: "(prefers-color-scheme: light)", color: "#1a100d" },
   ],
 };
-
-const hankenGrotesk = Hanken_Grotesk({
-  variable: "--font-hanken-grotesk",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const baloo2 = Baloo_2({
-  variable: "--font-baloo-2",
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-});
-
-const archivo = Archivo({
-  variable: "--font-archivo",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-});
-
-const kalam = Kalam({
-  variable: "--font-kalam",
-  subsets: ["latin"],
-  weight: ["400"],
-});
 
 export async function generateMetadata(): Promise<Metadata> {
   const platformName = await getPlatformName();
@@ -81,7 +52,7 @@ export default function RootLayout({
         <DomPatch />
       </head>
       <body
-        className={`${hankenGrotesk.variable} ${geistMono.variable} ${kalam.variable} ${baloo2.variable} ${archivo.variable} antialiased`}
+        className="antialiased"
         suppressHydrationWarning
       >
         <GlobalErrorBoundary>

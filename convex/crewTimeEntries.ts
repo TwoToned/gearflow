@@ -42,11 +42,11 @@ function teWire(e: TE) {
 }
 
 /** Per-status counts for the timesheets strip (`Submitted · Approved · Queried · All`). */
-const TE_STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "DISPUTED", "EXPORTED"] as const;
-function statusCounts(entries: TE[]): Record<(typeof TE_STATUSES)[number] | "all", number> {
+type TeStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "DISPUTED" | "EXPORTED";
+function statusCounts(entries: TE[]): Record<TeStatus | "all", number> {
   const out = { DRAFT: 0, SUBMITTED: 0, APPROVED: 0, DISPUTED: 0, EXPORTED: 0, all: entries.length };
   for (const e of entries) {
-    const s = (e.status ?? "DRAFT") as (typeof TE_STATUSES)[number];
+    const s = (e.status ?? "DRAFT") as TeStatus;
     if (s in out) out[s]++;
   }
   return out;
@@ -61,9 +61,11 @@ function payLookups(
   return { assignment: (id) => asgById.get(id), member: (id) => memberById.get(id), role: (id) => roleById.get(id) };
 }
 
-/** A row's pay fields, present ONLY for a caller allowed to see pay (D49). */
-function payFields(money: EntryMoney | undefined) {
-  return { rate: money?.rate ?? null, rateType: money?.rateType ?? null, total: money?.total ?? null, rateIncluded: money?.included ?? false };
+/** A row's pay fields, present ONLY for a caller allowed to see pay (D49): `money` is null otherwise. */
+function payFields(money: Map<string, EntryMoney> | null, id: string) {
+  if (!money) return {};
+  const m = money.get(id);
+  return { rate: m?.rate ?? null, rateType: m?.rateType ?? null, total: m?.total ?? null, rateIncluded: m?.included ?? false };
 }
 
 /** Search + crew-member filter (everything except status, which the strip counts across). */
@@ -75,7 +77,14 @@ function applyNonStatusFilters(
   projectOf: (e: TE) => Doc<"projects"> | null,
 ): TE[] {
   let out = all;
-  if (needle) out = out.filter((e) => { const m = memberById.get(e.crewMemberId); const p = projectOf(e); return (m?.firstName ?? "").toLowerCase().includes(needle) || (m?.lastName ?? "").toLowerCase().includes(needle) || (e.description ?? "").toLowerCase().includes(needle) || (p?.name ?? "").toLowerCase().includes(needle) || (p?.projectNumber ?? "").toLowerCase().includes(needle); });
+  if (needle) {
+    const haystack = (e: TE): (string | undefined)[] => {
+      const m = memberById.get(e.crewMemberId);
+      const p = projectOf(e);
+      return [m?.firstName, m?.lastName, e.description, p?.name, p?.projectNumber];
+    };
+    out = out.filter((e) => haystack(e).some((s) => (s ?? "").toLowerCase().includes(needle)));
+  }
   if (crewMemberIds?.length) { const set = new Set(crewMemberIds); out = out.filter((e) => set.has(e.crewMemberId)); }
   return out;
 }
@@ -151,7 +160,7 @@ export const allEntries = query({
       const role = asg?.crewRoleId ? roleById.get(asg.crewRoleId) ?? null : null;
       return {
         ...teWire(e),
-        ...(money ? payFields(money.get(e.id)) : {}),
+        ...payFields(money, e.id),
         crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName } : null,
         assignment: asg ? { id: asg.id, phase: asg.phase ?? null, status: asg.status ?? null, project: project ? { id: project.id, name: project.name, projectNumber: project.projectNumber } : null, crewRole: role ? { name: role.name } : null } : null,
         approvedBy: e.approvedById ? { name: approvers.get(e.approvedById) ?? null } : null,

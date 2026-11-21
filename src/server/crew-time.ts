@@ -37,15 +37,44 @@ async function callerSeesPay(): Promise<boolean> {
   return isManagerPlusRole(await getCurrentRole());
 }
 
-function matches(e: MappedCrewTimeEntry, f: ExportFilters | undefined, projectOf: (e: MappedCrewTimeEntry) => string | null): boolean {
-  if (f?.crewMemberId && e.crewMemberId !== f.crewMemberId) return false;
-  if (f?.status && e.status !== f.status) return false;
-  if (f?.projectId && projectOf(e) !== f.projectId) return false;
+/** One predicate per export filter; an unset filter passes. */
+function matches(e: MappedCrewTimeEntry, f: ExportFilters, projectOf: (e: MappedCrewTimeEntry) => string | null): boolean {
   const t = e.date.getTime();
-  if (f?.dateFrom && t < new Date(f.dateFrom).getTime()) return false;
-  if (f?.dateTo && t > new Date(f.dateTo).getTime()) return false;
-  return true;
+  const checks: [string | undefined, () => boolean][] = [
+    [f.crewMemberId, () => e.crewMemberId === f.crewMemberId],
+    [f.status, () => e.status === f.status],
+    [f.projectId, () => projectOf(e) === f.projectId],
+    [f.dateFrom, () => t >= new Date(f.dateFrom!).getTime()],
+    [f.dateTo, () => t <= new Date(f.dateTo!).getTime()],
+  ];
+  return checks.every(([set, ok]) => !set || ok());
 }
+
+/** One CSV row; `pay` only when the caller may see it. */
+function csvRow(
+  e: MappedCrewTimeEntry,
+  j: { member?: { firstName?: string; lastName?: string; email?: string | null }; project?: { projectNumber?: string; name?: string } | null; roleName?: string; pay?: EntryMoney },
+): TimesheetCsvRow {
+  const { member, project, pay } = j;
+  return {
+    name: `${str(member?.firstName)} ${str(member?.lastName)}`,
+    email: str(member?.email),
+    projectNumber: str(project?.projectNumber),
+    projectName: str(project?.name),
+    role: str(j.roleName),
+    description: str(e.description),
+    date: e.date.toISOString().split("T")[0],
+    startTime: e.startTime,
+    endTime: e.endTime,
+    breakMinutes: e.breakMinutes,
+    totalHours: e.totalHours,
+    status: e.status,
+    queryReason: str(e.queryReason),
+    ...(pay ? { pay: { rate: pay.rate, total: pay.total, included: pay.included } } : {}),
+  };
+}
+
+const str = (s: string | null | undefined): string => s || "";
 
 export async function exportTimesheetCSV(filters?: ExportFilters) {
   const { organizationId } = await requirePermission("crew", "read");
@@ -75,31 +104,17 @@ export async function exportTimesheetCSV(filters?: ExportFilters) {
     : null;
 
   const rows: TimesheetCsvRow[] = allEntries
-    .filter((e) => matches(e, filters, projectOf))
+    .filter((e) => matches(e, filters ?? {}, projectOf))
     // orderBy [{ date: "asc" }, { crewMemberId: "asc" }]
     .sort((a, b) => a.date.getTime() - b.date.getTime() || a.crewMemberId.localeCompare(b.crewMemberId))
     .map((e) => {
-      const member = memberById.get(e.crewMemberId);
       const assignment = e.assignmentId ? assignmentById.get(e.assignmentId) : null;
-      const project = assignment ? projectsById.get(assignment.projectId) : null;
-      const role = assignment?.crewRoleId ? roleMap.get(assignment.crewRoleId) : null;
-      const pay = money?.get(e.id);
-      return {
-        name: `${member?.firstName ?? ""} ${member?.lastName ?? ""}`,
-        email: member?.email || "",
-        projectNumber: project?.projectNumber || "",
-        projectName: project?.name || "",
-        role: role?.name || "",
-        description: e.description || "",
-        date: e.date.toISOString().split("T")[0],
-        startTime: e.startTime,
-        endTime: e.endTime,
-        breakMinutes: e.breakMinutes,
-        totalHours: e.totalHours,
-        status: e.status,
-        queryReason: e.queryReason ?? "",
-        ...(pay ? { pay: { rate: pay.rate, total: pay.total, included: pay.included } } : {}),
-      };
+      return csvRow(e, {
+        member: memberById.get(e.crewMemberId),
+        project: assignment ? projectsById.get(assignment.projectId) : null,
+        roleName: assignment?.crewRoleId ? roleMap.get(assignment.crewRoleId)?.name : undefined,
+        pay: money?.get(e.id),
+      });
     });
 
   return timesheetCsv(rows, withPay);

@@ -171,8 +171,9 @@ calls for (§6.1) — the one place these five role descriptions are written (R-
 
 ## C6 — "Finish setup" checklist (#1104)
 
-Not another wizard step — a dashboard card (`src/components/dashboard/finish-setup-checklist.tsx`,
-`FinishSetupChecklist`) that closes out Phase C. What makes D3's "skip everything" in the
+Not another wizard step — a dashboard checklist (`src/components/dashboard/finish-setup-checklist.tsx`,
+`useFinishSetupState`; since UX Phase 11 it is the "Finish setup" half of Home's ONE setup panel,
+`setup-panel.tsx`, FEATUREDOCS/81) that closes out Phase C. What makes D3's "skip everything" in the
 wizard actually safe: a dismissible, always-accurate checklist that deep-links back into the
 real settings pages for whatever's still unset, rather than back into a wizard step (there is
 ONE place each setting is edited).
@@ -203,5 +204,6 @@ one row per `(organizationId, userId)`, no prune mechanism, because there's noth
 against. **Dismiss has an exact Undo** (UX Phase 11, §6c.2): the hook's `dismiss()` resolves to
 the row id it created (`null` if the card was already dismissed), and `undismiss(id)` calls
 `undismissNative`, which deletes only that row and only when it is the caller's own (org + user
-checked on the global `by_cuid` read; `convex/lib/personalDismissal.ts`). The Undo toast that
-uses it ships with the merged setup panel (Phase 11 slice 2).
+checked on the global `by_cuid` read; `convex/lib/personalDismissal.ts`). Home's merged setup
+panel (`src/components/dashboard/setup-panel.tsx`) uses it: Dismiss toasts ONE Undo that
+reverses exactly the rows that click created.

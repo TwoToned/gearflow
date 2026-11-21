@@ -46,10 +46,9 @@ export function useActiveMilestoneKey(orgId: string | undefined): MilestoneKey |
 /**
  * D4 (#1108) — fires `activation_milestone` the first time each of the four
  * milestones flips from not-done to done, for as long as this hook stays
- * mounted (the dashboard's `ActivationChecklist` is the one call site — it
- * still reads milestone state even once the card itself renders nothing,
- * per its own dismissed/complete early-returns, so a completion witnessed
- * while the card is hidden still gets reported).
+ * mounted (Home's `SetupPanel` is the one call site — it calls this ahead of
+ * its own early return, so a completion witnessed while the panel is mounted
+ * still gets reported).
  *
  * Never fires for a milestone that was ALREADY done the first time this
  * hook observes state in a given mount — that would report a historical

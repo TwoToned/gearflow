@@ -59,17 +59,17 @@ export function useCrewTimeWrites() {
       await createM({ id, orgId: org, ...entryArgs(p), now: Date.now(), actor: actor(), auditId: createId() });
       return { id };
     },
-    createMany: async (data: CrewTimeEntryFormValues, crewMemberIds: string[]): Promise<{ created: string[]; errors: { crewMemberId: string; message: string }[] }> => {
+    /** `created` are crew-member ids; `entryIds` the new entries' own ids (what an Undo deletes). */
+    createMany: async (data: CrewTimeEntryFormValues, crewMemberIds: string[]): Promise<{ created: string[]; errors: { crewMemberId: string; message: string }[]; entryIds: string[] }> => {
       const org = requireOrg();
       const unique = [...new Set(crewMemberIds)];
-      if (unique.length === 0) return { created: [], errors: [] };
+      if (unique.length === 0) return { created: [], errors: [], entryIds: [] };
       const p = crewTimeEntrySchema.parse({ ...data, crewMemberId: unique[0] });
       const { crewMemberId: _drop, ...shared } = entryArgs(p);
-      return await createManyM({
-        orgId: org, now: Date.now(), actor: actor(),
-        shared,
-        entries: unique.map((crewMemberId) => ({ id: createId(), crewMemberId, auditId: createId() })),
-      });
+      const entries = unique.map((crewMemberId) => ({ id: createId(), crewMemberId, auditId: createId() }));
+      const res = await createManyM({ orgId: org, now: Date.now(), actor: actor(), shared, entries });
+      const made = new Set(res.created);
+      return { ...res, entryIds: entries.filter((e) => made.has(e.crewMemberId)).map((e) => e.id) };
     },
     update: async (id: string, data: CrewTimeEntryFormValues): Promise<{ id: string }> => {
       const org = requireOrg();

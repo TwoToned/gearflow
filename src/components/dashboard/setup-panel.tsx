@@ -48,7 +48,7 @@ function SetupRow({ item }: { item: SetupPanelItem }) {
       >
         <span aria-hidden className={cn("size-2 shrink-0 rounded-full", item.done ? "bg-ok" : "bg-warn")} />
         <span className={cn("min-w-0 flex-1 truncate", item.done && "line-through")}>{item.label}</span>
-        {item.done && item.meta && <span className="truncate font-mono text-[12px] text-faint">{item.meta}</span>}
+        {item.done && item.meta && <span className="truncate font-mono text-[12px] text-muted">{item.meta}</span>}
         <span className="shrink-0 whitespace-nowrap text-[12.5px] text-muted">{item.done ? "done" : `${item.where} ›`}</span>
       </Link>
     </li>

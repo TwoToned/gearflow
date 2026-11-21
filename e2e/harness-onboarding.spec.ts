@@ -127,18 +127,20 @@ test.describe("harness: register / onboarding", () => {
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     });
 
-    await test.step("Finish setup checklist reflects exactly what's unset -> 2 of 4 done", async () => {
-      // FinishSetupChecklist lives on /dashboard (#1242), which is also the
+    await test.step("Home's setup panel reflects exactly what's unset -> 2 of 8 done", async () => {
+      // The setup panel lives on /dashboard (#1242), which is also the
       // post-onboarding landing page itself now (D10C) — this goto is
       // actually a no-op re-navigation, kept for clarity at the call site.
+      // UX Phase 11 merged Finish setup (4 rows) and Get started (4 first-run
+      // milestones, none done in a fresh org) into ONE panel: 2 of 8.
       await page.goto("/dashboard");
-      await expect(page.getByText("Finish setup")).toBeVisible({ timeout: 20000 });
-      await expect(page.getByText("2 of 4 done")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Finish setup" })).toBeVisible({ timeout: 20000 });
+      await expect(page.getByText("2 of 8", { exact: true })).toBeVisible();
 
       const doneRow = (label: string) => page.getByText(label, { exact: true });
       // Done despite skipping every wizard screen (seeded at org creation /
       // by the step-4 skip's own default-location fallback).
-      await expect(doneRow("Set your currency & tax details")).toHaveClass(/line-through/);
+      await expect(doneRow("Set your currency and tax details")).toHaveClass(/line-through/);
       await expect(doneRow("Add a location")).toHaveClass(/line-through/);
       // Genuinely unset — nothing in this flow ever touches either.
       await expect(doneRow("Add your logo")).not.toHaveClass(/line-through/);

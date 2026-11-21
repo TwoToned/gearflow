@@ -56,7 +56,8 @@ function CardHeader({
     >
       {editMode && <GripVertical className="h-3.5 w-3.5 shrink-0 text-faint" aria-hidden />}
       <h2 className="truncate text-[13px] font-semibold text-ink">{title}</h2>
-      <span ref={countRef} className="font-mono text-[11.5px] font-medium text-faint tabular-nums" />
+      {/* Muted, not faint: the count is real text and must pass WCAG AA contrast (harness-a11y). */}
+      <span ref={countRef} className="font-mono text-[11.5px] font-medium text-muted tabular-nums" />
       <span className="ml-auto flex items-center gap-3">
         <span ref={actionRef} className="flex items-center" />
         {viewAll && !editMode && (

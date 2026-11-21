@@ -46,9 +46,12 @@ function onLiveJob(s: Doc<"projectServices">, projects: Map<string, Doc<"project
   return !!p && isLiveVersionRow(p, s.versionId);
 }
 
+/** Calls read per service — a service's crew is a handful; far past any real `crewCountRequired`. */
+const ASSIGNMENTS_PER_SERVICE_CAP = 200;
+
 async function assignmentsByService(ctx: QueryCtx, orgId: string, services: Doc<"projectServices">[]): Promise<Map<string, BoardAssignment[]>> {
   const groups = await Promise.all(
-    services.map((s) => ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", s.id)).collect()),
+    services.map((s) => ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", s.id)).take(ASSIGNMENTS_PER_SERVICE_CAP)),
   );
   return new Map(services.map((s, i) => [s.id, groups[i].filter((a) => a.organizationId === orgId)]));
 }
@@ -65,6 +68,8 @@ export const openCalls = query({
   handler: async (ctx, { orgId, startMs, endMs }) => {
     await requireOrgReadFor(ctx, orgId, "crew");
     assertRange(startMs, endMs);
+    // VERSION-SCOPE: an org-wide date-range scan across every version's services
+    // by design; `onLiveJob` below keeps only each job's LIVE-version rows.
     const ranged = await ctx.db
       .query("projectServices")
       .withIndex("by_organizationId_date", (q) => q.eq("organizationId", orgId).gte("date", startMs).lte("date", endMs))

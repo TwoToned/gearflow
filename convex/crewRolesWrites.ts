@@ -205,6 +205,9 @@ export const archiveNative = mutation({
   },
 });
 
+/** An org's role list is a small config set; past this a reorder refuses rather than renumbering a partial list. */
+const MOVE_ROLES_CAP = 500;
+
 /** The org's roles in display order (sortOrder, then name), as the roles admin lists them. */
 function displayOrder<T extends { sortOrder?: number; name: string }>(roles: T[]): T[] {
   return [...roles].sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0) || x.name.localeCompare(y.name));
@@ -227,7 +230,8 @@ export const moveNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "crew", "update");
     const actor = await resolveActor(ctx, a.actor);
 
-    const roles = displayOrder(await ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()); // r9.8-ok: bounded per-org config set — see docs/exceptions.md R-8.3.3
+    const roles = displayOrder(await ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).take(MOVE_ROLES_CAP));
+    if (roles.length >= MOVE_ROLES_CAP) throw new ConvexError("Too many crew roles to reorder");
     const from = roles.findIndex((r) => r.id === a.id);
     if (from < 0) throw new ConvexError("Crew role not found");
     const to = a.direction === "up" ? from - 1 : from + 1;

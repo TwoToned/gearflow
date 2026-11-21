@@ -26,9 +26,9 @@ hadn't loaded looked identical.
 ## Layout
 
 ```
-Page header · lifecycle stepper · lock strip        ← page-level (every tab)
+Job header (DetailHeader: status word · lock glyph · progress line)   ← page-level (every tab)
 └── DetailLayout
-     ├── Tabs: Overview | Equipment | Labour & logistics | Finance | Tasks | Notes | Files
+     ├── TabStrip: Overview · Equipment · Packing n/m · Logistics · Finance · Tasks n/m · Notes · Files n · Versions n
      │    └── Overview          ← one column, composes its own context cards
      │         ├── Readiness
      │         ├── Quote │ Invoicing
@@ -48,14 +48,15 @@ The facts themselves are shaped once in `src/lib/project-context.ts`
 sidebar and the Overview cards can't disagree about whether a project has a
 window or a map pin (R-3.1). Only the presentation differs.
 
-**The lifecycle stepper and lock strip deliberately stay above the tabs.**
-Status and lock state change what you can do in *every* tab, so they're
-page-level context, not Overview content.
+**The header's progress line and lock glyph deliberately stay above the tabs**
+(UX Phase 7 replaced the stepper and the lock strip with them; see
+FEATUREDOCS/10 "Project Detail Page Layout"). Status and lock state change what
+you can do in *every* tab, so they're page-level context, not Overview content.
 
 **Overview is the landing tab, but `?tab=` still wins** — the org Finance
-section's rows deep-link to `?tab=finance` and must land there (#992).
-`Tabs` is CONTROLLED (it was uncontrolled before) because a failing readiness
-check navigates you to the tab that fixes it.
+section's rows deep-link to `?tab=finance` and must land there (#992). The tabs
+are CONTROLLED because a failing readiness check navigates you to the tab that
+fixes it; the keys and aliases live in `src/lib/job-tabs.ts`.
 
 ## Readiness
 

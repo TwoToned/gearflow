@@ -626,7 +626,7 @@ already facts on rows that own them — an `invoices` row at `ISSUED`, and
 project would be a second source of truth for whether the client's money landed
 (R-3.1), and the two WILL disagree the first time a payment is voided.
 `src/lib/project-payment-progress.ts` computes the three sub-steps on read;
-`<PaymentProgressStrip>` renders them under the stepper, only at
+`<PaymentProgressStrip>` renders them under the job header's progress line, only at
 `AWAITING_PAYMENT`.
 
 Two things about it that look wrong and aren't:
@@ -781,16 +781,22 @@ by child LINE id. A site that filters accessory children by `assetId ?? bulkAsse
 
 ### The project detail's tabs are CONTROLLED, and Overview is the landing tab
 `/projects/[id]` opens on **Overview** — the project's home (#1061,
-FEATUREDOCS/69). Adding a tab means adding it to `VALID_TABS` in
-`src/app/(app)/projects/[id]/page.tsx`, or a `?tab=` deep link to it silently
-falls back to Overview. `Tabs` is controlled (`value`/`onValueChange`, not
-`defaultValue`) because the Overview readiness checklist navigates you to the
-tab that fixes a failing check — don't revert it to uncontrolled.
+FEATUREDOCS/69). Adding a tab means adding its key to `JOB_TAB_KEYS` in
+`src/lib/job-tabs.ts` (this was the page's `VALID_TABS`) AND a panel to the page's
+`panels` map: a key with no panel is unavailable, so a `?tab=` deep link to it
+silently falls back to Overview. A tab's label count and its tab-row primary come
+from its owner through `src/components/projects/job-tab-sources.ts`, never
+computed in the page. The tab strip is controlled (`TabStrip` `value`/
+`onValueChange`) because the Overview readiness checklist navigates you to the
+tab that fixes a failing check — don't make it uncontrolled.
 
 Overview owns the project's **at-a-glance** state: the readiness checklist, the
-current quote + invoicing cards, and the money strip. The lifecycle stepper and
-lock strip stay ABOVE the tabs: they change what you can do in every tab, so
-they're page-level context.
+current quote + invoicing cards, and the money strip. The job header
+(`src/components/projects/job-header.tsx` on `DetailHeader`, UX Phase 7) stays
+ABOVE the tabs: its progress line and lock glyph change what you can do in every
+tab. The header's version lives in ⋯ (`Version ▸`) and under `V`, never as a chip
+(D92). A header action that doesn't apply is absent, and each gate is the
+server's own permission (`src/lib/job-header.ts`).
 
 **The context sidebar (Schedule/Location/Team/Activity) renders on every tab
 EXCEPT Overview** (#1063). Overview composes the same content into its own

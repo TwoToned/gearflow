@@ -57,13 +57,15 @@ content into its own cards, so the one tab where that context IS the page reads
 as a single composition rather than page-plus-rail. Both renderings read
 `src/lib/project-context.ts`, so they can't disagree about the facts.
 
-Still page-level, above the tabs, visible from every tab: the **lifecycle
-stepper** and the **lock strip** (#990). Both change what you can DO in every
-tab, so they are page context rather than Overview content.
+Still page-level, above the tabs, visible from every tab: the **job header**
+(UX Phase 7, see "Project Detail Page Layout" below). Its progress line and lock
+glyph change what you can DO in every tab, so they are page context rather than
+Overview content.
 
-`Tabs` is CONTROLLED (it was uncontrolled): a failing readiness check navigates
-you to the tab that fixes it. A `?tab=` deep link still overrides the Overview
-default, so #992's org-Finance deep links land where they meant to.
+The tabs are CONTROLLED: a failing readiness check navigates you to the tab that
+fixes it. A `?tab=` deep link still overrides the Overview default, so #992's
+org-Finance deep links land where they meant to. The keys, aliases and
+availability rule live in `src/lib/job-tabs.ts` (see below).
 
 ## Status Flow
 ```
@@ -640,46 +642,73 @@ single-cell save).
   something introduced here.
 
 ## Project Detail Page Layout
-Restructured (v0.x) to a clean hero card + lean sidebar — the old big header,
-standalone lifecycle band, and nine-section sidebar were "far too much info".
+UX Phase 7 (spec §6b, D92) replaced the hero card, the circular lifecycle
+stepper, the lock chip, the amber lock strip, the `v4 · Live ▾` version pill, the
+Comments button and the pill tab strip with ONE calm header (`DetailHeader`, the
+primitive the warehouse job page also uses) and the underlined-word `TabStrip`.
+The shell's breadcrumb trail (`PageMeta` → `buildTrail`) replaces the hero's own.
 ```
-HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
-  Projects › PROJ-123                                    (breadcrumb)
-  Project Name [Template?]            [💬][Warehouse][Docs▾][Edit][⋯]
-  PROJ-123 · Wet hire · Client · [PM avatars] [presence]   (meta line)
-  ◉──◉──◉──○──○──○   Enquiry…Return     [Advance to {next} →] [⋯ status]
-                                          (chrome-free ProjectLifecycle)
+Hilton gala ● Confirmed 🔒                   [Advance to Prep] [Documents ▾] [Edit] [⋯]
+#2341 · Hilton · 12 Nov – 14 Nov · 3 days                         (meta line)
+━━━━ ━━━━ ━━━━ ▬▬▬▬ ──── ──── ──── ────   Enquiry … Completed     (progress line)
+                                                    Set status ▾
+[ quiet strip — only while viewing a non-live version ]
+[ payment strip — only at AWAITING_PAYMENT ]
 
-[Summary strip] [Conflicts banner]
-
-┌─── LEFT (~63%) ──────────────────────┐ ┌─── RIGHT (~37%, 340px sticky) ───┐
-│  TABS: [Equipment] [Labour &          │ │  ── Schedule ──                   │
-│   logistics] [Financials] [Tasks]     │ │  date rows                        │
-│   [Notes] [Files]                     │ │  ── Location ──                   │
-│                                       │ │  venue + site contact             │
-│  Financials tab = FinancialSummary    │ │  ── Team ──                       │
-│   + ProjectCostsPanel (non-template)  │ │  client link + PM panel           │
-│  (other tab content below)            │ │  ── Activity ──                   │
-│                                       │ │  ProjectActivityFeed (realtime)   │
-└───────────────────────────────────────┘ └───────────────────────────────────┘
+Overview  Equipment  Packing 36/44  Logistics  Finance  Tasks 9/14  Notes  Files 3  Versions 3
+──────────                                                        (+ the tab's primary, desktop)
+┌─── tab content ───────────────────────┐ ┌─── context sidebar (not on Overview) ─┐
 ```
 
-- **Hero card** (`projects/[id]/page.tsx`): breadcrumb + identity/actions row +
-  the chrome-free `ProjectLifecycle`. The non-template status pill is gone from the
-  title row — status now lives in the lifecycle `⋯` menu. Templates keep a status
-  pill in the hero. The `⋯` overflow action menu holds Runsheet, Duplicate project,
-  Save as template, and the destructive Cancel/Delete (CANCELLED-vs-active logic).
-- **`ProjectLifecycle`** (`components/projects/project-lifecycle.tsx`): the circular
-  stepper is unchanged (done = filled --ink node + check, current = --card node + 2px
-  red ring + red number, upcoming = outlined muted). It has NO card chrome of its own
-  — the page places it in the hero card. Controls at the row's right end: an
-  `Advance to {next} →` button plus a `⋯` dropdown that is the full status picker
-  (props `statuses` + `onStatusChange`); for CANCELLED the off-pipeline t-out line
-  renders but the `⋯` stays so the user can reactivate.
+- **`JobHeader`** (`src/components/projects/job-header.tsx`), on the pure builder
+  `jobHeaderProps` (`src/lib/job-header.ts`):
+  - title · status word (the shared `projectStatusLabels`; a template reads
+    `Template`) · a small lock glyph while pricing is locked on the live version;
+  - its menu says who locked it and what is read-only, offers `Unlock pricing`
+    (only for the server's `canUnlockPricing` audience, with a confirm) and links
+    to Finance;
+  - Unlock's toast **Undo reverses exactly that unlock**: `undoUnlockPricingNative`
+    restores the original who/when from the unlock's own audit row and refuses
+    (`UNDO_STALE`) once anything re-locked or cleared the lock since;
+  - meta line: number · client link · rental dates and days (type is on the edit
+    page; PMs are in Team / Who).
+- **Actions:** one primary `Advance to {next}` (`project:update`, through the same
+  `useConfirmStatusGate` → `updateStatusNative` path; on a phone it sits
+  full-width under the progress line).
+  - **`Documents ▾`:** Manifest, Pull slip, Delivery docket, Return sheet; Case,
+    Kit and Loose item labels, whose lists load the first time the menu opens;
+    Call sheet; Job timeline; then `Quote & invoice PDFs → Finance`. It never
+    renders a sent quote or an issued invoice, which are stored bytes (#987).
+  - **`Edit`** goes to `/projects/[id]/edit` until Phase 9.
+  - **⋯:** Comments & discussion (with the live blocking count), Warehouse page,
+    Runsheet, the `Version ▸` submenu (switch · New version from vN · Compare ·
+    Manage versions… `V`), Duplicate job, Save as template, then Cancel job… or,
+    when cancelled, Delete job…, last and red with its confirm.
+  - A template has `Use template` and no Documents or ⋯.
+- **Progress line** (`src/lib/job-lifecycle.ts`):
+  - the 8 stages over 11 statuses, with a sub-label on two-status stages
+    (`Quote · quoted`, `On site · out`);
+  - `Set status ▾` under it, gated `project:update`, the server's own permission;
+  - confetti fires on reaching Confirmed or Completed;
+  - when cancelled, an off-pipeline notice replaces it with `Set status ▾` and
+    `Delete job…`.
 - **Lean sidebar** — only four sections: Schedule, Location, Team (client name link
-  + `ProjectManagersPanel`), Activity (`ProjectActivityFeed`). Status/Quick-actions/
-  Details/legacy-ActivityTimeline removed; FinancialSummary + ProjectCostsPanel moved
-  into the Financials tab.
+  + `ProjectManagersPanel`), Activity (`ProjectActivityFeed`). It renders on every
+  tab except Overview (#1063).
+
+### Tabs (`src/lib/job-tabs.ts`)
+- **Keys:** `overview · equipment · packing · labour · finance · tasks · notes ·
+  files · versions`. Aliases: `work → tasks`, `logistics → labour`.
+- **Availability:** a key is available only when the page supplies a panel for
+  it, and a template never shows Packing, Finance or Versions. Anything else
+  resolves to Overview.
+- **Mounting:** only the active panel is mounted.
+- **Counts** come from the tab owners through `src/components/projects/job-tab-sources.ts`,
+  not the page: Tasks `done/total`, Files `n`, `Packing n/m` (Phase 8 fills
+  `usePackingTabCount`) and `Versions n`.
+- **Tab primary:** `JOB_TAB_PRIMARY` holds a tab's one primary for the right of the
+  tab row on desktop (outline style; red only as a phone sticky bar).
+- **Versions** is a placeholder that opens the Versions panel until Phase 8 builds the tab.
 
 ### Equipment Tab
 - Flat table layout (`table-layout: fixed` with `<colgroup>`) — no card chrome

@@ -12,7 +12,6 @@ import {
   BLOCKING_THREAD_CAP,
   STALE_QUOTE_JOB_CAP,
   inStatusSegment,
-  isOutPastEnd,
   matchesJobFilter,
   overlapsWindow,
   resolveNow,
@@ -63,7 +62,11 @@ async function seed(t: T) {
     // In the overbooking horizon, so it needs a live version (the board reads version-scoped lines).
     await ctx.db.insert("projects", base("conf", "CONFIRMED", { rentalStartDate: NOW + 5 * DAY, rentalEndDate: NOW + 7 * DAY, liveVersionId: "v-conf" }));
     await ctx.db.insert("projectVersions", { id: "v-conf", organizationId: ORG, projectId: "conf", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
-    await ctx.db.insert("projects", base("late", "CHECKED_OUT", { rentalEndDate: NOW - 2 * DAY }));
+    // Out past its end with gear still out: an overdue return (lib/overdueReturns.ts).
+    await ctx.db.insert("projects", base("late", "CHECKED_OUT", { rentalEndDate: NOW - 2 * DAY, liveVersionId: "v-late" }));
+    await ctx.db.insert("projectLineItems", {
+      id: "l-late", organizationId: ORG, projectId: "late", status: "CHECKED_OUT", quantity: 1, versionId: "v-late", lineageId: "l-late",
+    });
     await ctx.db.insert("projects", base("ontime", "ON_SITE", { rentalEndDate: NOW + 2 * DAY }));
     await ctx.db.insert("projects", base("block", "CONFIRMED"));
     await ctx.db.insert("projects", base("done", "COMPLETED"));
@@ -97,11 +100,13 @@ describe("pure segment rules", () => {
     expect(inStatusSegment({ status: "CANCELLED" }, "all")).toBe(false);
   });
 
-  test("out past end only for CHECKED_OUT / ON_SITE with a passed end", () => {
-    expect(isOutPastEnd({ status: "CHECKED_OUT", rentalEndDate: NOW - 1 }, NOW)).toBe(true);
-    expect(isOutPastEnd({ status: "CHECKED_OUT", rentalEndDate: NOW + 1 }, NOW)).toBe(false);
-    expect(isOutPastEnd({ status: "CONFIRMED", rentalEndDate: NOW - 1 }, NOW)).toBe(false);
-    expect(isOutPastEnd({ status: "ON_SITE" }, NOW)).toBe(false);
+  test("active (D86) is booked + out, nothing else", () => {
+    for (const s of ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"]) {
+      expect(inStatusSegment({ status: s } as never, "active")).toBe(true);
+    }
+    for (const s of ["ENQUIRY", "QUOTING", "QUOTED", "RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]) {
+      expect(inStatusSegment({ status: s } as never, "active")).toBe(false);
+    }
   });
 
   test("window overlap treats open ends as matching and undated jobs as not", () => {
@@ -124,7 +129,7 @@ describe("projects.segmentCounts / needsYouIds", () => {
     const t = makeT();
     await seed(t);
     const c = await t.withIdentity(asUser).query(api.projects.segmentCounts, { orgId: ORG, now: NOW });
-    expect(c).toEqual({ all: 8, quoting: 3, booked: 2, out: 2, done: 1, needs: 3 });
+    expect(c).toEqual({ all: 8, active: 4, quoting: 3, booked: 2, out: 2, done: 1, needs: 3 });
   });
 
   test("needs you = stale quote + out past end + blocking thread, never another org's", async () => {
@@ -154,6 +159,15 @@ describe("projects.listPage list-page filters", () => {
     expect((await list(t, { segment: "all" })).items.map((p) => p.id)).not.toContain("gone");
     expect((await list(t, { segment: "all", includeCancelled: true })).items.map((p) => p.id)).toContain("gone");
     expect((await list(t, { segment: "needs" })).items.map((p) => p.id).sort()).toEqual(["block", "late", "stale"]);
+    expect((await list(t, { segment: "active" })).items.map((p) => p.id).sort()).toEqual(["block", "conf", "late", "ontime"]);
+  });
+
+  test("overdue (D86) keeps only overdue returns and composes with a segment", async () => {
+    const t = makeT();
+    await seed(t);
+    expect((await list(t, { overdue: true })).items.map((p) => p.id)).toEqual(["late"]);
+    expect((await list(t, { overdue: true, segment: "booked" })).total).toBe(0);
+    expect((await list(t, { overdue: false })).total).toBe(9);
   });
 
   test("an unknown segment reads as no segment", async () => {

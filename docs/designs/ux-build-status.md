@@ -1,6 +1,6 @@
 # UX unification — build status
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-11-17 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-11-21 (review quarterly — POLICY.md R-5.5)_
 
 Build tracker for [`ux-unification-2026-10.md`](./ux-unification-2026-10.md) §11. The
 overseer session keeps this current and commits it with its integration commits.
@@ -22,7 +22,12 @@ https://flow.rvlt.app returns 200/307.
 | 5 | D4 · worker model Sonnet | Accepted 2026-11-17 |
 | 6 | D1, D5, D11, D12, D13, D65, D69, D70 | Accepted 2026-11-17 |
 | 4 | D6, D26, D27, D28, D29 | Accepted 2026-11-17 |
-| Wave D | phases 7–18 (spec §11) | plan agreed 2026-11-19; each phase's Gate 0 still to ask |
+| 7 | none | — |
+| 8 | D19, D20, D21 · worker model Sonnet (L) | Accepted 2026-11-21 |
+| 11 | D85, D86, D87, D88, D89 | Accepted 2026-11-21 |
+| 15 | D46, D47, D48, D49 | Accepted 2026-11-21 |
+| 16 | D50, D51, D52, D53 | Accepted 2026-11-21 |
+| Wave D2, D3 | phases 9, 10, 12, 13, 14, 17, 18 (spec §11) | plan agreed 2026-11-19; each phase's Gate 0 still to ask |
 
 Decisions PRs #1377 and #1379 merged 2026-11-17. Knip baseline lowered 405 → 402 after Phase 0 (#1381).
 
@@ -58,6 +63,10 @@ Each is built in its own PR with a /code-review; until then it stays listed as d
 | Durable prep / de-prep scans | §5.7, Phase 3 | the scan-intake ops union / validators | Phase 3 follow-up PR |
 | D10 "remember for the next n" shared across packers | Phase 3 | a stored field; per-device in memory for now | Phase 3 follow-up PR |
 | `subHireItems.coverage` (what a shortfall cover changed, so Undo restores exactly that) | Phase 2a | one optional object field | 2a (#1388) |
+| Seal case (approved 2026-11-21, D21) | §7b, Phase 8 | optional `projectContainers.sealedAt` | 8 |
+| Timesheet query reason (approved 2026-11-21, D47) | §9h.4, Phase 15 | optional `crewTimeEntries.queryReason`, cleared on resubmit/approve | 15 |
+
+Not a schema change (2026-11-21, D50): an ad-hoc check's condition writes the existing `assets.condition` (Worn = `FAIR`, glossary alias) plus an activity row.
 
 ## Wave D (agreed 2026-11-19, spec §11 rows 7–18)
 
@@ -66,3 +75,15 @@ Each is built in its own PR with a /code-review; until then it stays listed as d
 | D1 | 7 Job header + Overview, 8 Packing + Versions, 11 Home + palette + More counts, 15 Crew planner, 16 Scan check | 6a, 6b, 2b merged |
 | D2 | 9 Wizard + edit sheet, 10 Finance + Tasks tabs, 12 Assets, 13 People, 14 Gear | 7, 16, 6b merged |
 | D3 | 17 Finance hub + Settings, 18 Schedule | 10, 11 merged |
+
+### Wave D1 workers (started 2026-11-21)
+
+Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that page only after 7 merges. 11 and 15 both touch `src/lib/nav.ts`: whichever merges second merges main first.
+
+| Phase | Worker | Branch / PR | State | Blockers |
+|---|---|---|---|---|
+| 7 Job header + Overview + tab strip (M) | default | `claude/ux-7-job-header` | plan run | — |
+| 8 Packing + Versions (L) | Sonnet | `claude/ux-8-packing-versions` | plan run | page.tsx tab work waits for 7 |
+| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` | plan run | — |
+| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` | plan run | — |
+| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` | plan run | — |

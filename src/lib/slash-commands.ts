@@ -737,13 +737,13 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     id: "crew-roles",
-    label: "Roles & Skills",
+    label: "Crew roles & rates",
     command: "roles",
-    aliases: ["skills", "settings"],
-    description: "Manage crew roles and skills",
+    aliases: ["rates", "settings"],
+    description: "Crew roles with their cost and charge rates",
     icon: "Settings",
     pages: ["/crew"],
-    action: { type: "navigate", path: "/crew/settings" },
+    action: { type: "navigate", path: "/crew/planner?sheet=roles" },
   },
   {
     id: "crew-log-time",

@@ -26,7 +26,7 @@ import { getStatusColor, intentStyles } from "@/lib/status-colors";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { PageMeta } from "@/components/layout/page-meta";
 import { FadeIn } from "@/components/ui/motion";
-import { PageHeader } from "@/components/layout/page-header";
+import { CrewWorkspaceHead } from "@/components/crew/workspace/crew-workspace";
 import { cn, focusRing } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -416,26 +416,23 @@ export default function CrewPlannerPage() {
       <PageMeta title="Crew planner" />
       <FadeIn>
       <div className="space-y-4">
-        <PageHeader
-          title="Crew planner"
-          description="Who's booked, who's free — across the fortnight."
-          actions={
-            <div className="flex items-center gap-2">
-              <Button variant="line" size="icon" onClick={goBack} aria-label="Previous fortnight">
-                <ChevronLeft className="size-5" />
-              </Button>
-              <Button variant="line" size="sm" onClick={goToday}>
-                Today
-              </Button>
-              <Button variant="line" size="icon" onClick={goForward} aria-label="Next fortnight">
-                <ChevronRight className="size-5" />
-              </Button>
-              <span className="text-caption tabular-nums text-muted ml-2 hidden sm:inline">
-                {formatDateShort(days[0])} &ndash; {formatDateShort(days[days.length - 1])}
-              </span>
-            </div>
-          }
-        />
+        {/* UX Phase 15 slice 2: the shared Crew head (Planner · Timesheets words, page ⋯ with
+            Crew roles & rates). The grid below is rebuilt in slice 3. */}
+        <CrewWorkspaceHead view="planner" />
+        <div className="flex items-center gap-2">
+          <Button variant="line" size="icon" onClick={goBack} aria-label="Previous fortnight">
+            <ChevronLeft className="size-5" />
+          </Button>
+          <Button variant="line" size="sm" onClick={goToday}>
+            Today
+          </Button>
+          <Button variant="line" size="icon" onClick={goForward} aria-label="Next fortnight">
+            <ChevronRight className="size-5" />
+          </Button>
+          <span className="text-caption tabular-nums text-muted ml-2 hidden sm:inline">
+            {formatDateShort(days[0])} &ndash; {formatDateShort(days[days.length - 1])}
+          </span>
+        </div>
 
         {/* ── At-a-glance strip ──────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line shadow-[var(--sh-card)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line sm:bg-card">

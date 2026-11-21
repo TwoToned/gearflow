@@ -161,7 +161,8 @@ describe("More sheet", () => {
     fireEvent.click(within(dialog).getByText("Crew"));
     expect(within(dialog).getByText("Open Crew")).toBeTruthy();
     expect(within(dialog).getByText("Planner")).toBeTruthy();
-    expect(within(dialog).getByText("Timesheets")).toBeTruthy();
+    // D48: one Crew sub; Timesheets is reached from the Crew page's head words.
+    expect(within(dialog).queryByText("Timesheets")).toBeNull();
     fireEvent.click(within(dialog).getByText("Crew")); // the back header
     expect(within(dialog).getByText("Plan")).toBeTruthy();
   });

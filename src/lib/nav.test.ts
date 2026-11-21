@@ -50,6 +50,16 @@ describe("NAV drift", () => {
   it("does not carry My tasks", () => {
     expect(navUrls.has("/my-tasks")).toBe(false);
   });
+
+  it("Crew has ONE sub (Planner); Timesheets and the old roles route are deliberate deep links (D48)", () => {
+    const crew = NAV.find((i) => i.key === "crew")!;
+    expect(crew.subs!.map((s) => s.url)).toEqual(["/crew/planner"]);
+    expect(navUrls.has("/crew/timesheets")).toBe(false);
+    expect(NOT_IN_NAV["/crew/timesheets"]).toBeTruthy();
+    expect(NOT_IN_NAV["/crew/settings"]).toMatch(/sheet=roles/);
+    // Still the Crew module, lit in the shell and named in the trail.
+    expect(findNavItem("/crew/timesheets")?.key).toBe("crew");
+  });
 });
 
 describe("visibleNav gating", () => {

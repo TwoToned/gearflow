@@ -467,7 +467,7 @@ describe("undoAdHocCheckNative (exact undo)", () => {
     t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
       orgId: ORG, assetId: "as1", checks, maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW + 10, actor, ...extra,
     });
-  const undo = (t: T, extra: Record<string, unknown> = {}, identity: Record<string, unknown> = asUser) =>
+  const undo = (t: T, extra: Record<string, unknown> = {}, identity: { subject: string; orgId: string; role: string } = asUser) =>
     t.withIdentity(identity).mutation(api.checkRecordWrites.undoAdHocCheckNative, {
       orgId: ORG, forwardAuditId: "a1", auditId: "u1", now: NOW + 20, actor, ...extra,
     });

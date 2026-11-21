@@ -8,6 +8,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
 import { liveRows } from "./lib/versionScope";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -185,11 +186,16 @@ export const membersForAssignment = query({
       const list = projectAssignmentsByMember.get(a.crewMemberId) ?? [];
       list.push(a); projectAssignmentsByMember.set(a.crewMemberId, list);
     }
+    // UX Phase 15 (D49): a member's default pay is manager-only, server-side.
+    // Below manager (or for a noFinancials key) the fields stay in the shape as
+    // null — the same "no rate" the people picker already renders.
+    const payVisible = await canSeeCrewPay(ctx, orgId);
     const baseShape = (m: typeof members[number]) => {
       const role = m.crewRoleId ? roleById.get(m.crewRoleId) ?? null : null;
       return {
         id: m.id, firstName: m.firstName, lastName: m.lastName, email: m.email ?? null, phone: m.phone ?? null, image: m.image ?? null,
-        department: m.department ?? null, defaultDayRate: m.defaultDayRate ?? null, defaultHourlyRate: m.defaultHourlyRate ?? null,
+        department: m.department ?? null,
+        defaultDayRate: payVisible ? m.defaultDayRate ?? null : null, defaultHourlyRate: payVisible ? m.defaultHourlyRate ?? null : null,
         crewRole: role ? { id: role.id, name: role.name } : null,
         assignments: (projectAssignmentsByMember.get(m.id) ?? []).map((a) => ({ id: a.id, phase: a.phase ?? null, status: a.status ?? null, serviceId: a.serviceId ?? null })),
       };

@@ -132,7 +132,7 @@ describe("projects.segmentCounts / needsYouIds", () => {
     expect(c).toEqual({ all: 8, active: 4, quoting: 3, booked: 2, out: 2, done: 1, needs: 3 });
   });
 
-  test("needs you = stale quote + out past end + blocking thread, never another org's", async () => {
+  test("needs you = stale quote + overdue return + blocking thread, never another org's", async () => {
     const t = makeT();
     await seed(t);
     const ids = await t.withIdentity(asUser).query(api.projects.needsYouIds, { orgId: ORG, now: NOW });

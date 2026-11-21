@@ -176,10 +176,10 @@ function useOverlays(): Overlays {
 const when = <F,>(allowed: boolean, f: F): F | undefined => (allowed ? f : undefined);
 
 /** One entry as a row: its ⋯ from the shared builder, the desktop job/date cells, open = Edit entry. */
-function entryRow(e: TimeEntrySource, a: { perms: Perms; isMobile: boolean; w: Writes; o: Overlays; nameOf: (id: string) => string; push: (href: string) => void }): LineRowData {
+function entryRow(e: TimeEntrySource, a: { perms: Perms; isMobile: boolean; w: Writes; o: Overlays; push: (href: string) => void }): LineRowData {
   const { perms, w, o } = a;
   const menu = buildTimeEntryActions(
-    { title: a.nameOf(e.id), status: e.status },
+    { title: entryName(e), status: e.status },
     {
       onEdit: when(perms.update, () => o.setEditing(e)),
       onSubmit: when(perms.update, () => void w.transition("submit", [e.id])),
@@ -194,6 +194,9 @@ function entryRow(e: TimeEntrySource, a: { perms: Perms; isMobile: boolean; w: W
   return a.isMobile ? row : { ...row, cells: { job: <JobCell e={e} />, date: <DateCell e={e} /> } };
 }
 
+/** `Ana Ruiz · Fri 7 Nov`: how a toast or a confirm names one entry. */
+const entryName = (e: TimeEntrySource) => `${personName(e)} · ${entryDay(e.date)}`;
+
 /** Every entry seen so far (phone pages accumulate): handlers read the row at click time. */
 function useSeenEntries(items: TimeEntrySource[]) {
   const seen = React.useRef(new Map<string, TimeEntrySource>());
@@ -202,7 +205,7 @@ function useSeenEntries(items: TimeEntrySource[]) {
   }, [items]);
   const nameOf = (id: string) => {
     const e = seen.current.get(id);
-    return e ? `${personName(e)} · ${entryDay(e.date)}` : "Entry";
+    return e ? entryName(e) : "Entry";
   };
   const statusOf = (id: string) => seen.current.get(id)?.status ?? "DRAFT";
   return { nameOf, statusOf };
@@ -224,7 +227,7 @@ function TimesheetsListInner({ orgId }: { orgId: string | undefined }) {
   const o = useOverlays();
   useTimesheetSlashEvents({ log: () => perms.create && o.setLogOpen(true), exportAll: () => o.setExportOpen(true) });
 
-  const rows = view.items.map((e) => entryRow(e, { perms, isMobile, w, o, nameOf, push: router.push }));
+  const rows = view.items.map((e) => entryRow(e, { perms, isMobile, w, o, push: router.push }));
   const bulk = (ids: string[]) =>
     buildTimeEntryBulkActions(ids.map(statusOf), {
       onApprove: when(perms.update, () => void w.transition("approve", ids)),
@@ -241,8 +244,10 @@ function TimesheetsListInner({ orgId }: { orgId: string | undefined }) {
         spec={TIMESHEETS_SPEC}
         title="Crew"
         headWords={ws.headWords}
-        noun="entries"
-        bulkNoun="entry"
+        // ListFooter / BulkBar pluralise with a bare "s" ("1 entrie", "2 entrys"), so these
+        // read "lines" until those primitives take an irregular plural (flagged for the overseer).
+        noun="lines"
+        bulkNoun="line"
         searchPlaceholder="Search person, job or note"
         segments={timesheetSegments(view.counts)}
         filters={timesheetFilters(people, { value: personSearch, onChange: setPersonSearch })}

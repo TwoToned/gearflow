@@ -2,39 +2,15 @@
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
 import { use, useState, useEffect } from "react";
-import { useServerMutation } from "@/hooks/use-server-mutation";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageMeta } from "@/components/layout/page-meta";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useMiraPageContext } from "@/hooks/use-mira-page-context";
-import { useProjectServicesSummary } from "@/hooks/use-project-services";
-import { useProjectLabourCost } from "@/hooks/use-project-crew";
-import {
-  Pencil,
-  Archive,
-  Trash2,
-  FileText,
-  ChevronDown,
-  Copy,
-  BookTemplate,
-  MoreHorizontal,
-  Warehouse,
-  ChevronRight,
-  ClipboardList,
-} from "lucide-react";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { PackingTab } from "@/components/projects/packing-tab";
-import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { LogisticsTab } from "@/components/projects/logistics/logistics-tab";
 import { TasksPanel } from "@/components/projects/tasks-panel";
-import { useProjectTaskList } from "@/hooks/use-project-task-list";
-import { FinancialSummary } from "@/components/projects/financial-summary";
-import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
-import { ProjectLockChip } from "@/components/projects/project-lock-chip";
-import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
-import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
-import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import {
   ProjectContextRail,
   type ProjectContextRailProject,
@@ -52,103 +28,26 @@ import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { QuoteCard } from "@/components/projects/overview/quote-card";
 import { InvoicingCard } from "@/components/projects/overview/invoicing-card";
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
-import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
-import { useRouter, useSearchParams } from "next/navigation";
-import { toast } from "sonner";
-import { LabelSubmenu } from "@/components/documents/label-submenu";
 import { useActiveOrganization } from "@/lib/auth-client";
-
-import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { PersonAvatar } from "@/components/ui/avatar";
-import { StatusIndicator } from "@/components/ui/status-indicator";
-import { cn, focusRing } from "@/lib/utils";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { useMediaWrites } from "@/hooks/use-media-writes";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
-import { NotesEditor } from "@/components/ui/notes-editor";
-import { useOptimisticProjectNotes, useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
-import { useConfirmStatusGate } from "@/hooks/use-confirm-status-gate";
+import { useOptimisticProjectNotes } from "@/hooks/use-native-project-writes";
 import { getProjectWindowDates } from "@/lib/project-window";
-import { ConfirmStatusImpactDialog } from "@/components/projects/confirm-status-impact-dialog";
-import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
-import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
-import { PaymentProgressStrip } from "@/components/projects/payment-progress-strip";
-import { useCanDo } from "@/lib/use-permissions";
-import { formatCurrency } from "@/lib/formatters";
-import { useProjectPricingLock } from "@/hooks/use-project-lock";
-import { ProjectVersionProvider, useProjectVersion, useProjectVersionState } from "@/components/projects/project-version-context";
-import { ProjectVersionSwitcher } from "@/components/projects/version-switcher";
-import { VersionStrip } from "@/components/projects/version-strip";
+import { ProjectVersionProvider, useProjectVersionState } from "@/components/projects/project-version-context";
+import { VersionsPanel } from "@/components/projects/versions-panel";
 import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
 import { CompareView } from "@/components/projects/compare/compare-view";
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
-import { MODULE_NAMES, OUT_LABEL } from "@/lib/vocabulary";
-
-const projectStatusLabels: Record<string, string> = {
-  ENQUIRY: "Enquiry",
-  QUOTING: "Quoting",
-  QUOTED: "Quoted",
-  CONFIRMED: "Confirmed",
-  PREPPING: "Prepping",
-  CHECKED_OUT: OUT_LABEL,
-  ON_SITE: "On site",
-  RETURNED: "Returned",
-  COMPLETED: "Completed",
-  INVOICED: "Invoiced",
-  CANCELLED: "Cancelled",
-};
-
-const typeLabels: Record<string, string> = {
-  DRY_HIRE: "Dry hire",
-  WET_HIRE: "Wet hire",
-  INSTALLATION: "Installation",
-  TOUR: "Tour",
-  CORPORATE: "Corporate",
-  THEATRE: "Theatre",
-  FESTIVAL: "Festival",
-  CONFERENCE: "Conference",
-  OTHER: "Other",
-};
-
-const allStatuses = [
-  "ENQUIRY",
-  "QUOTING",
-  "QUOTED",
-  "AWAITING_PAYMENT",
-  "CONFIRMED",
-  "PREPPING",
-  "CHECKED_OUT",
-  "ON_SITE",
-  "RETURNED",
-  "COMPLETED",
-  "INVOICED",
-  "CANCELLED",
-];
-
-function formatLabel(value: string): string {
-  return value
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
+import { JobHeader, type JobHeaderProject } from "@/components/projects/job-header";
+import { JobTabRow } from "@/components/projects/job-tab-row";
+import { VersionsTabPlaceholder } from "@/components/projects/versions-tab-placeholder";
+import { FinanceTabSlot, NotesTabSlot, ProjectSummaryStrip } from "@/components/projects/job-tab-slots";
+import { JOB_TAB_KEYS, availableJobTabs, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
 
 export default function ProjectDetailPage({
   params,
@@ -164,32 +63,23 @@ export default function ProjectDetailPage({
   // asked here is routed to THIS project without having to name it.
   useMiraPageContext({ entityType: "project", entityId: id });
 
-  // #992 (Phase F) — org Finance section rows deep-link here via `?tab=finance`.
-  // #1061 made `Tabs` CONTROLLED: the Overview tab's readiness checklist sends
-  // you to the tab that fixes a failing check ("Open crew" → labour), which
-  // needs a setter the uncontrolled form doesn't give.
-  // The tab is called Tasks again (the Work-layer rename was reverted). `work`
-  // stays a working `?tab=` value (never in VALID_TABS itself, so it never
-  // renders a TabsTrigger for it) via `normalizeTabParam` below, so an old
-  // bookmark/notification link doesn't silently fall back to Overview.
-  const VALID_TABS = ["overview", "equipment", "packing", "labour", "finance", "tasks", "notes", "files"] as const;
-  const normalizeTabParam = (tab: string | null): string | null =>
-    tab === "work" ? "tasks" : tab === "logistics" ? "labour" : tab;
-  const requestedTab = normalizeTabParam(searchParams.get("tab"));
+  // The tab is CONTROLLED (#1061): Overview's readiness list and the header
+  // (Documents ▾ → Finance) move you to the tab that owns a fix. `?tab=` deep
+  // links, their aliases (`work`, `logistics`) and the keys a job can show live
+  // in `src/lib/job-tabs.ts` (UX Phase 7; this was the page's `VALID_TABS`).
+  // The requested value is kept as given and resolved against what THIS job
+  // shows on every render, so a template (no Packing/Finance/Versions) lands on
+  // Overview instead of an empty tab.
+  const [requestedTab, setRequestedTab] = useState<string | null>(() => searchParams.get("tab"));
   // D3 (#1107) — the "Add <model> to it" chained hand-off deep-links here as
   // `?tab=equipment&modelId=<id>`; EquipmentTab auto-opens its add dialog
   // with that model pre-selected the one time this is set. Captured ONCE via
   // the lazy useState initializer (not read from `searchParams` on every
   // render) and the URL is scrubbed of `modelId` right after, in the effect
   // below — otherwise switching tabs away and back remounts EquipmentTab
-  // (Radix `TabsContent` unmounts inactive panels), resetting its own
-  // one-shot ref guard while the URL param is still there, popping the
-  // dialog open again on every return visit for the rest of the session.
-  // #1236 — frozen at mount, same pattern `project-quote-rail.tsx` uses: this
-  // only drives the DERIVED `effectiveQuoteStatus` read inside
-  // `PaymentProgressStrip` below, so it doesn't need to tick — a stale-by-a-
-  // few-minutes EXPIRED read on this one page is not worth a re-render timer.
-  const [lockNow] = useState(() => Date.now());
+  // (only the active panel is mounted), resetting its own one-shot ref guard
+  // while the URL param is still there, popping the dialog open again on
+  // every return visit for the rest of the session.
   const [autoOpenAddModelId] = useState(() => searchParams.get("modelId") ?? undefined);
   useEffect(() => {
     if (!autoOpenAddModelId) return;
@@ -200,10 +90,7 @@ export default function ProjectDetailPage({
     // fight the very replace() this effect just did.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Overview is always the landing tab (#1061) — the project's home. A `?tab=`
-  // deep link still wins, so the org Finance section's rows land where they meant to.
-  const initialTab = (VALID_TABS as readonly string[]).includes(requestedTab ?? "") ? requestedTab! : "overview";
-  const [activeTab, setActiveTab] = useState(initialTab);
+
   // D2 (#1106): only the org's FIRST (oldest) non-template project ever
   // shows the line-item coaching tip in its Equipment tab — this is the one
   // project the "put that gear on the job" milestone (D1, #1105) tracks.
@@ -211,33 +98,21 @@ export default function ProjectDetailPage({
   // adversarial review caught this query running unconditionally on every
   // tab of every project's detail page, forever, for zero visible benefit
   // outside Equipment.
-  const activationState = useActivationMilestones(activeTab === "equipment" ? orgId : undefined);
-
-  const [dupMode, setDupMode] = useState<"duplicate" | "template" | null>(null);
-  const [callSheetOpen, setCallSheetOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [cancelOpen, setCancelOpen] = useState(false);
-  // Slot on the tab row that the Equipment tab portals its "Add ▾" menu into,
-  // so the primary action sits inline with the tab selector. State-backed (not a
-  // plain ref) so EquipmentTab re-renders its portal once the node mounts.
-
-  // #1230 pricing lock — reactive `pricingLocked` status + lock/unlock actions.
-  const pricingLock = useProjectPricingLock(id, orgId);
+  const onEquipment = resolveJobTab(requestedTab, JOB_TAB_KEYS) === "equipment";
+  const activationState = useActivationMilestones(onEquipment ? orgId : undefined);
 
   // Project Versioning v2, Phase 5 (#1231) — computed here (not just inside
   // `ProjectVersionProvider`) so the composed object below can be built
   // BEFORE the provider's own JSX wraps the rest of the page (D32).
   const versionState = useProjectVersionState(id, orgId);
   const [makeLiveTarget, setMakeLiveTarget] = useState<typeof versionState.viewingVersion>(null);
+  // The Versions panel: ⋯ › Version › Manage versions…, the `V` key and the
+  // Versions tab placeholder open it. Phase 8 points `openVersions` at the tab.
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const openVersions = () => setVersionsOpen(true);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
-
-  // The Tasks tab's "9 of 14" label count (always live so the closed tab's
-  // label stays accurate).
-  const taskCountsData = useProjectTaskList(id);
-  const taskDoneCount = taskCountsData.tasks.filter((t) => t.status === "DONE").length;
-  const taskTotalCount = taskCountsData.tasks.filter((t) => t.status !== "CANCELLED").length;
 
   // Phase 3 browser-direct: optimistic project-notes save (always native — the notes
   // are safe to optimistic; a wrong save just re-renders, nothing irreversible happens).
@@ -246,64 +121,6 @@ export default function ProjectDetailPage({
     field: "crewNotes" | "internalNotes" | "clientNotes",
     notes: string,
   ) => optimisticNotes.save(field, notes);
-
-  // Phase 3 browser-direct: status write (always native). The detail view is reactive,
-  // so it re-renders on its own once the native mutation commits.
-  const statusBrowser = useNativeProjectStatus(orgId);
-  const projectWrites = useProjectWrites(orgId);
-
-  // #1230: confirming with no accepted quote now needs only `canUnlockPricing`
-  // permission (owner/admin/manager/PM) server-side, no freeform justification
-  // — a rejection surfaces as an ordinary `FORBIDDEN_UNLOCK_PRICING` toast via
-  // `mapNativeWriteError`, no dialog needed.
-  const statusMutation = useServerMutation({
-    mutationFn: async (nextStatus: string) => {
-      await statusBrowser.updateStatus(id, nextStatus);
-    },
-    onSuccess: () => {
-      toast.success("Status updated");
-      refreshProjectDetail(id);
-      // A status transition into CANCELLED/RETURNED/COMPLETED/INVOICED releases
-      // stock; overbook/availability now reads reactively from Convex (no store to bust).
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  // Confirm-time gate (WS3 #942, non-blocking): previews "would confirming
-  // this now create a hard overbooking / leave crew unconfirmed" before a
-  // transition INTO CONFIRMED, and only then. Every other status change
-  // proceeds exactly as before (requestStatusChange calls onProceed
-  // synchronously-equivalent when there's nothing to warn about).
-  const confirmGate = useConfirmStatusGate(orgId, (_projectId, next) => statusMutation.mutate(next));
-
-  const archiveMutation = useServerMutation({
-    mutationFn: () => projectWrites.archive(id),
-    onSuccess: () => {
-      toast.success("Job cancelled");
-      refreshProjectDetail(id);
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const deleteMutation = useServerMutation({
-    mutationFn: () => projectWrites.remove(id),
-    onSuccess: (result) => {
-      const freedBits: string[] = [];
-      if (result.freedAssets > 0) {
-        freedBits.push(`${result.freedAssets} asset${result.freedAssets === 1 ? "" : "s"}`);
-      }
-      if (result.freedKits > 0) {
-        freedBits.push(`${result.freedKits} kit${result.freedKits === 1 ? "" : "s"}`);
-      }
-      toast.success(
-        freedBits.length > 0 ? `Job deleted — freed ${freedBits.join(" and ")}` : "Job deleted",
-      );
-      router.push("/projects");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const canUpdate = useCanDo("project", "update");
 
   if (isLoading) {
     return <DetailPageSkeleton />;
@@ -358,263 +175,191 @@ export default function ProjectDetailPage({
     rentalEndDate: rentalEnd,
   });
 
+  const isTemplate = !!project.isTemplate;
+  const headerProject: JobHeaderProject = {
+    id,
+    name: project.name,
+    status: project.status,
+    isTemplate,
+    projectNumber: project.projectNumber,
+    client: project.client ?? null,
+    rentalStartDate: (composedProject.rentalStartDate as unknown as string | null) ?? null,
+    rentalEndDate: (composedProject.rentalEndDate as unknown as string | null) ?? null,
+  };
+
+  // ── Tab panels ───────────────────────────────────────────────────────────
+  // One entry per tab; a tab is AVAILABLE only when it has a panel here (and
+  // a template never shows Packing, Finance or Versions — `job-tabs.ts`).
+  // Only the active panel is mounted, as with the old Radix `TabsContent`.
+  const panels: Partial<Record<JobTabKey, React.ReactNode>> = {
+    // ── Overview (#1061, recomposed in #1063). The project's home: read the
+    // state, then pick a tab to work in. Slice B of UX Phase 7 rebuilds it to
+    // §6b (readiness, two money lines, When/Where/Who, Recent). Until then the
+    // open-issues indicator sits here, since it has left the header.
+    overview: (
+      <div className="flex min-w-0 flex-col gap-4">
+        {!isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
+        {!isTemplate && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <QuoteCard
+              projectId={id}
+              orgId={orgId}
+              projectNumber={project.projectNumber}
+              clientId={project.clientId as string | null | undefined}
+              projectStatus={project.status as string | null | undefined}
+              subtotal={project.subtotal as number | null}
+              taxAmount={project.taxAmount as number | null}
+              total={project.total as number | null}
+              onOpenLedger={() => setRequestedTab("finance")}
+            />
+            <InvoicingCard
+              projectId={id}
+              orgId={orgId}
+              projectNumber={project.projectNumber}
+              projectStatus={project.status as string | null | undefined}
+              clientId={project.clientId as string | null | undefined}
+              total={project.total as number | null}
+            />
+          </div>
+        )}
+        {!isTemplate && (
+          <ProjectSummaryStrip
+            projectId={id}
+            equipmentRevenue={project.equipmentRevenue as number | null}
+            total={project.total as number | null}
+          />
+        )}
+        {/* Standing context, as peer cards — the same facts the sidebar shows
+            on every other tab, shaped once in `@/lib/project-context`. */}
+        <div className="grid gap-4 md:grid-cols-2">
+          {!isTemplate && <OverviewScheduleCard project={project as ProjectContextProject} />}
+          <OverviewLocationCard project={project as ProjectContextProject} />
+          <OverviewTeamCard projectId={id} project={project as ProjectContextProject} />
+          {orgId && !isTemplate && <OverviewActivityCard projectId={id} orgId={orgId} />}
+        </div>
+      </div>
+    ),
+    equipment: (
+      <EquipmentTab
+        projectId={id}
+        rentalStartDate={availabilityWindow.start}
+        rentalEndDate={availabilityWindow.end}
+        autoOpenAddModelId={autoOpenAddModelId}
+        versionId={versionState.viewingVersion?.id}
+        versionNumber={(versionState.viewingVersion ?? versionState.liveVersion)?.number}
+      />
+    ),
+    // Packing (#1296 build plan phase 4, D11) — plan which container each piece
+    // of gear travels in; the warehouse does the actual packing. Phase 8 owns it.
+    packing: <PackingTab projectId={id} orgId={orgId} versionId={versionState.viewingVersion?.id} />,
+    // Logistics (value stays `labour` so old deep links keep working). Services
+    // (versioned) and crew assignments (reality) both stay LIVE regardless of
+    // `?v=` this phase — a documented follow-up, not silently dropped.
+    labour: (
+      <div className="space-y-6">
+        <VersionNotTrackedNote what="Services & crew" />
+        <LogisticsTab projectId={id} />
+      </div>
+    ),
+    // Finance (#989): quote revisions + send, invoices + issue, the financial
+    // summary and operational P&L. The quote/invoice PDFs are STORED bytes (#987).
+    finance: (
+      <div className="space-y-6">
+        <FinanceTabSlot
+          projectId={project.id}
+          orgId={orgId}
+          projectNumber={project.projectNumber}
+          clientId={project.clientId as string | null | undefined}
+          projectStatus={project.status as string | null | undefined}
+          subtotal={project.subtotal as number | null}
+          taxAmount={project.taxAmount as number | null}
+          total={project.total as number | null}
+          rentalStartDate={rentalStart}
+          rentalEndDate={rentalEnd}
+          billingWeeksOverride={project.billingWeeksOverride as number | null}
+          billingDaysOverride={project.billingDaysOverride as number | null}
+          categories={project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined}
+          equipmentRevenue={project.equipmentRevenue as number | null}
+          saleRevenue={project.saleRevenue as number | null}
+          saleCostTotal={project.saleCostTotal as number | null}
+          serviceCostTotal={project.serviceCostTotal as number | null}
+          labourCostTotal={project.labourCostTotal as number | null}
+          subHireCostTotal={project.subHireCostTotal as number | null}
+          discountPercent={project.discountPercent as number | null}
+          discountAmount={project.discountAmount as number | null}
+          taxRate={project.taxRate as number | null}
+          margin={project.margin as number | null}
+          depositPaid={project.depositPaid as number | null}
+          invoicedTotal={project.invoicedTotal as number | null}
+        />
+      </div>
+    ),
+    // Tasks — projectTasks isn't in the snapshot; stays live.
+    tasks: (
+      <>
+        <VersionNotTrackedNote what="Tasks" />
+        <TasksPanel projectId={id} />
+      </>
+    ),
+    // Notes — the three note fields ARE captured, so a viewed version shows
+    // its own text, read-only.
+    notes: (
+      <NotesTabSlot
+        liveCrewNotes={(composedProject.crewNotes as string) || ""}
+        liveInternalNotes={(composedProject.internalNotes as string) || ""}
+        liveClientNotes={(composedProject.clientNotes as string) || ""}
+        onChanged={() => refreshProjectDetail(id)}
+        onSave={saveProjectNotes}
+      />
+    ),
+    // Files — projectMedia isn't in the snapshot; stays live.
+    files: (
+      <>
+        <VersionNotTrackedNote what="Files" />
+        <MediaUploader
+          entityType="project"
+          entityId={id}
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
+          existingMedia={(project.media || []) as MediaItem[]}
+          onChanged={() => refreshProjectDetail(id)}
+          onUploadComplete={async (fileUpload) => {
+            await media.add({ parentId: id, fileId: fileUpload.id, type: "OTHER" });
+          }}
+          onRemove={async (mediaId) => {
+            await media.remove(mediaId);
+          }}
+        />
+      </>
+    ),
+    // Versions (D19) — Phase 8 builds the tab; until then it opens the panel.
+    versions: <VersionsTabPlaceholder onOpenVersions={openVersions} />,
+  };
+  const available = availableJobTabs({ isTemplate, panels: new Set(Object.keys(panels) as JobTabKey[]) });
+  const activeTab = resolveJobTab(requestedTab, available);
+
   return (
     <RequirePermission resource="project" action="read">
       <PageMeta title={`${project.projectNumber} ${project.name}`} />
       <FadeIn>
         <ProjectVersionProvider value={versionState}>
         <div className="space-y-6">
-          {/* ── Hero card (breadcrumb + identity/actions + lifecycle) ─ */}
-          <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
-            {/* Breadcrumb */}
-            <nav className="flex items-center gap-1 text-caption text-muted">
-              <Link href="/projects" className={cn("hover:text-ink transition-colors rounded-sm", focusRing)}>
-                Jobs
-              </Link>
-              <ChevronRight className="h-3 w-3" />
-              <span className="t-mono text-ink-2">{project.projectNumber}</span>
-            </nav>
-
-            {/* Identity + actions */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="t-page-title text-ink truncate">
-                    {project.name}
-                  </h1>
-                  {project.isTemplate && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-soft px-2.5 py-1 text-badge font-bold text-blue">
-                      <BookTemplate className="h-3 w-3" />
-                      Template
-                    </span>
-                  )}
-                  {/* Templates keep the status pill here (non-templates use the lifecycle ⋯) */}
-                  {project.isTemplate && (
-                    <StatusIndicator
-                      category="project"
-                      value={project.status}
-                      label={projectStatusLabels[project.status] || formatLabel(project.status)}
-                    />
-                  )}
-                  {!project.isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
-                  {/* #1230 — always-mounted header chip, the same
-                      `pricingLock` subscription the strip below renders from. */}
-                  {!project.isTemplate && <ProjectLockChip status={pricingLock} />}
-                  {/* Phase 3 (#1080/#1093) — project-wide, so it lives here
-                      rather than inside any one tab. Extended (CLAUDE.md
-                      "fine-tune versioning") into the header's full version
-                      menu — add/delete/promote/send/download, not just switch. */}
-                  {!project.isTemplate && orgId && <ProjectVersionSwitcher />}
-                </div>
-                {/* Meta line */}
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
-                  <span className="t-mono text-ink-2">{project.projectNumber}</span>
-                  <span aria-hidden>&middot;</span>
-                  <span>{typeLabels[project.type] || formatLabel(project.type)}</span>
-                  {project.client && (
-                    <>
-                      <span aria-hidden>&middot;</span>
-                      <Link
-                        href={`/clients/${project.client.id}`}
-                        className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}
-                      >
-                        {project.client.name}
-                      </Link>
-                    </>
-                  )}
-                  {/* PM avatars */}
-                  {project.projectManagers && (project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).length > 0 && (
-                    <div className="flex -space-x-1.5">
-                      {(project.projectManagers as { user: { id: string; name: string | null; email: string; image: string | null } }[]).map((pm) => (
-                        <PersonAvatar
-                          key={pm.user.id}
-                          name={pm.user.name ?? pm.user.email}
-                          src={pm.user.image ?? undefined}
-                          className="size-6 ring-2 ring-card"
-                          title={pm.user.name ?? pm.user.email}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Action buttons (compact) */}
-              <div className="flex flex-wrap items-center gap-2">
-                {orgId && !project.isTemplate && (
-                  <ProjectCommentsButton orgId={orgId} projectId={id} />
-                )}
-                {!project.isTemplate && (
-                  <Button variant="line" size="sm" asChild>
-                    <Link href={`/warehouse/${id}`}>
-                      <Warehouse className="h-4 w-4" />
-                      <span className="hidden sm:inline">Warehouse</span>
-                    </Link>
-                  </Button>
-                )}
-                {!project.isTemplate && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="line" size="sm">
-                        <FileText className="h-4 w-4" />
-                        <span className="hidden sm:inline">Documents</span>
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {/* Warehouse artifacts only. Quote and Invoice are
-                          deliberately absent (#987): a client-facing finance
-                          document comes from the Finance panel as the STORED
-                          revision, never a fresh render of live state — two
-                          clicks a week apart used to produce two different
-                          documents under the same name. */}
-                      {([
-                        { label: "Manifest", apiType: "manifest" },
-                        { label: "Pull slip", apiType: "pull-slip" },
-                        { label: "Delivery docket", apiType: "delivery-docket" },
-                        { label: "Return sheet", apiType: "return-sheet" },
-                      ] as const).map(({ label, apiType }) => (
-                        <DropdownMenuItem
-                          key={apiType}
-                          onClick={() => window.open(`/api/documents/${id}?type=${apiType}`, "_blank")}
-                        >
-                          {label}
-                        </DropdownMenuItem>
-                      ))}
-                      <LabelSubmenu projectId={id} apiType="container-label" label="Container labels" allLabel="All containers" emptyLabel="No containers on this job" />
-                      <LabelSubmenu projectId={id} apiType="kit-label" label="Kit labels" allLabel="All kits" emptyLabel="No kits on this job" />
-                      <LabelSubmenu projectId={id} apiType="item-label" label="Item labels" allLabel="All loose items" emptyLabel="No loose items on this job" />
-                      <DropdownMenuItem onClick={() => setCallSheetOpen(true)}>
-                        Call sheet
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => window.open(`/api/documents/timeline/${id}`, "_blank")}
-                      >
-                        Job timeline
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <CanDo resource="project" action="update">
-                  <Button variant="line" size="sm" asChild>
-                    <Link href={`/projects/${id}/edit`}>
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </Link>
-                  </Button>
-                </CanDo>
-                {project.isTemplate ? (
-                  <CanDo resource="project" action="create">
-                    <Button variant="line" size="sm" onClick={() => setDupMode("duplicate")}>
-                      <Copy className="h-4 w-4" />
-                      Use template
-                    </Button>
-                  </CanDo>
-                ) : (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="line" size="sm" aria-label="More actions">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/projects/${id}/runsheet`}>
-                          <ClipboardList className="mr-2 h-4 w-4" />
-                          Runsheet
-                        </Link>
-                      </DropdownMenuItem>
-                      <CanDo resource="project" action="create">
-                        <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
-                          <Copy className="mr-2 h-4 w-4" />
-                          Duplicate job
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setDupMode("template")}>
-                          <BookTemplate className="mr-2 h-4 w-4" />
-                          Save as template
-                        </DropdownMenuItem>
-                      </CanDo>
-                      <CanDo resource="project" action="update">
-                        <DropdownMenuSeparator />
-                        {project.status === "CANCELLED" ? (
-                          <DropdownMenuItem
-                            onClick={() => setDeleteOpen(true)}
-                            disabled={deleteMutation.isPending}
-                            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete job
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            onClick={() => setCancelOpen(true)}
-                            disabled={archiveMutation.isPending}
-                            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                          >
-                            <Archive className="mr-2 h-4 w-4" />
-                            Cancel job
-                          </DropdownMenuItem>
-                        )}
-                      </CanDo>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            </div>
-
-            {/* Lifecycle stepper + controls */}
-            {!project.isTemplate && (
-              <ProjectLifecycle
-                status={project.status}
-                advancing={statusMutation.isPending || confirmGate.checking}
-                canAdvance={canUpdate}
-                onAdvance={(next) => confirmGate.requestStatusChange(id, project.status, next)}
-                statuses={allStatuses.map((s) => ({
-                  value: s,
-                  label: projectStatusLabels[s] || formatLabel(s),
-                }))}
-                onStatusChange={(s) => confirmGate.requestStatusChange(id, project.status, s)}
-              />
-            )}
-
-            {/* #1236 — the money phase's derived sub-steps, directly under the
-                node they belong to. Renders only at AWAITING_PAYMENT; see
-                FEATUREDOCS/77 for why these are three derived facts rather than
-                three statuses. */}
-            {!project.isTemplate && (
-              <PaymentProgressStrip
-                projectId={id}
-                orgId={orgId}
-                status={project.status}
-                now={lockNow}
-              />
-            )}
-          </div>
-
-          <ConfirmStatusImpactDialog
-            open={!!confirmGate.pending}
-            impact={confirmGate.pending?.impact ?? null}
-            pending={statusMutation.isPending}
-            onConfirm={confirmGate.confirmPending}
-            onCancel={confirmGate.cancelPending}
+          {/* UX Phase 7 (§6b, D92): the calm header replaces the hero card,
+              the lifecycle stepper, the lock chip and the lock strip. The
+              shell's breadcrumb trail (`PageMeta`) replaces the hero's own. */}
+          <JobHeader
+            project={headerProject}
+            orgId={orgId}
+            onOpenTab={setRequestedTab}
+            onOpenVersions={openVersions}
+            onMakeLive={setMakeLiveTarget}
           />
-
-          {/* #1061 — the summary strip moved into the Overview tab, where the
-              rest of the project's at-a-glance state now lives. Keeping it
-              above the tabs made every tab pay for context only the home tab
-              actually needs.
-
-              #1061 — the conflicts banner that used to sit here is now a row in
-              the Overview tab's Readiness checklist, alongside the gear, crew
-              and pricing checks. One place to look, and a clean project reads
-              as verified rather than as a banner that failed to appear. */}
 
           {/* Project Versioning v2, Phase 5b (#1232, design §5.1 D46/D47) —
               Compare is a MODE on this same page, not a separate screen: it
-              REPLACES the strip + tabs area rather than living alongside
-              them, which is also what makes "editing suspended" true by
-              construction (nothing under it renders any write UI). */}
-          {!project.isTemplate && orgId && versionState.compare ? (
+              REPLACES the tabs area rather than living alongside them, which
+              is also what makes "editing suspended" true by construction.
+              Phase 8 replaces it with a read-only sheet (D20). */}
+          {!isTemplate && orgId && versionState.compare ? (
             <CompareView
               key={JSON.stringify(versionState.compare)}
               projectId={id}
@@ -630,286 +375,30 @@ export default function ProjectDetailPage({
               }}
             />
           ) : (
-            <>
-          {/* Project Versioning v2, Phase 5 (#1231, design §5.2) — the ONE
-              status strip, mounted once above the tabs, visible on every
-              tab: absent (live+unlocked), viewing a non-live version, or
-              live+pricing-locked. Replaces the old `ProjectLockStrip` +
-              `VersionReadOnlyBar` pair (two components, two queries). */}
-          {!project.isTemplate && orgId && (
-            <VersionStrip
-              isTemplate={project.isTemplate}
-              isViewingVersion={versionState.isViewingVersion}
-              viewingVersion={versionState.viewingVersion}
-              liveVersion={versionState.liveVersion}
-              onMakeLive={() => setMakeLiveTarget(versionState.viewingVersion)}
-              onBackToLive={() => versionState.setViewingNumber(null)}
-              lockStatus={pricingLock}
-              onUnlock={pricingLock.unlock}
-              quoteDrift={versionState.viewingQuoteDrift}
-              onOpenDriftCompare={
-                versionState.viewingQuoteDrift && versionState.viewingVersion
-                  ? () =>
-                      versionState.openCompare(
-                        { kind: "quoteSnapshot", quoteId: versionState.viewingQuoteDrift!.quoteId, label: versionState.viewingQuoteDrift!.quoteLabel },
-                        { kind: "version", number: versionState.viewingVersion!.number },
-                      )
-                  : undefined
-              }
-            />
-          )}
-
-          {/* ── Tabs + context sidebar ─────────────────────────────────
-              #1063: the sidebar (Schedule · Location · Team · Activity) rides
-              along on every tab EXCEPT Overview. On Overview that same content
-              is the point of the page, so it's composed into the tab's own
-              cards instead of arriving as a rail bolted to the side — see
-              `overview/context-cards.tsx`. Rendering both would show the same
-              facts twice on the one tab.
-
-              `DetailMain` is `flex-1`, so omitting the sidebar gives Overview
-              the full width for free — no separate layout branch needed. */}
+          // ── Tabs + context sidebar ───────────────────────────────────────
+          // #1063: the sidebar (Schedule · Location · Team · Activity) rides
+          // along on every tab EXCEPT Overview, which composes the same facts
+          // itself; rendering both would show them twice on one tab.
           <DetailLayout>
             <DetailMain>
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                {/* Tab selector + the active tab's primary action share one row.
-                    The Equipment tab portals its "Add ▾" menu into the right-hand
-                    slot (mirrors how the services panel places its action inline
-                    with the tabs). The slot stays empty for other tabs. */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <TabsList>
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="equipment">Equipment</TabsTrigger>
-                    {!project.isTemplate && (
-                      <TabsTrigger value="packing">Packing</TabsTrigger>
-                    )}
-                    <TabsTrigger value="labour">{MODULE_NAMES.logistics}</TabsTrigger>
-                    {!project.isTemplate && (
-                      <TabsTrigger value="finance">Finance</TabsTrigger>
-                    )}
-                    <TabsTrigger value="tasks">
-                      Tasks{taskTotalCount > 0 ? ` · ${taskDoneCount} of ${taskTotalCount}` : ""}
-                    </TabsTrigger>
-                    <TabsTrigger value="notes">Notes</TabsTrigger>
-                    <TabsTrigger value="files">Files ({(project.media || []).length})</TabsTrigger>
-                  </TabsList>
-                </div>
-
-                {/* ── Overview Tab (#1061, recomposed in #1063) ───────────
-                    The project's home: read the state, then pick a tab to work
-                    in. One column, ordered by what it asks of you — readiness
-                    leads because it's the only section that can tell you to
-                    stop; then the live quote and invoicing; then money; then
-                    the standing context (schedule, location, team, activity)
-                    as peer cards rather than a sidebar. */}
-                <TabsContent value="overview">
-                  <div className="pt-4">
-                    <div className="flex min-w-0 flex-col gap-4">
-                      {/* The live quote and the invoicing position, as peers.
-                          Each carries only the ONE action you'd most likely
-                          take next; the full revision rail and invoice list
-                          stay in the Finance tab (#1061). */}
-                      {!project.isTemplate && (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <QuoteCard
-                            projectId={id}
-                            orgId={orgId}
-                            projectNumber={project.projectNumber}
-                            clientId={project.clientId as string | null | undefined}
-                            projectStatus={project.status as string | null | undefined}
-                            subtotal={project.subtotal as number | null}
-                            taxAmount={project.taxAmount as number | null}
-                            total={project.total as number | null}
-                            onOpenLedger={() => setActiveTab("finance")}
-                          />
-                          <InvoicingCard
-                            projectId={id}
-                            orgId={orgId}
-                            projectNumber={project.projectNumber}
-                            projectStatus={project.status as string | null | undefined}
-                            clientId={project.clientId as string | null | undefined}
-                            total={project.total as number | null}
-                          />
-                        </div>
-                      )}
-                      {!project.isTemplate && (
-                        <ProjectSummaryStrip
-                          projectId={id}
-                          equipmentRevenue={project.equipmentRevenue as number | null}
-                          total={project.total as number | null}
-                        />
-                      )}
-
-                      {/* Standing context, as peer cards — the same facts the
-                          sidebar shows on every other tab, shaped once in
-                          `@/lib/project-context` so the two can't disagree. */}
-                      <div className="grid gap-4 md:grid-cols-2">
-                        {!project.isTemplate && (
-                          <OverviewScheduleCard project={project as ProjectContextProject} />
-                        )}
-                        <OverviewLocationCard project={project as ProjectContextProject} />
-                        <OverviewTeamCard projectId={id} project={project as ProjectContextProject} />
-                        {orgId && !project.isTemplate && (
-                          <OverviewActivityCard projectId={id} orgId={orgId} />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                {/* Equipment Tab — new category/group hierarchy */}
-                <TabsContent value="equipment">
-                  <div className="pt-4">
-                    <EquipmentTab
-                      projectId={id}
-                      rentalStartDate={availabilityWindow.start}
-                      rentalEndDate={availabilityWindow.end}
-                      autoOpenAddModelId={autoOpenAddModelId}
-                      versionId={versionState.viewingVersion?.id}
-                      versionNumber={(versionState.viewingVersion ?? versionState.liveVersion)?.number}
-                    />
-                  </div>
-                </TabsContent>
-
-                {/* Packing Tab (#1296 build plan phase 4, D11) — plan which
-                    container each piece of gear travels in; the warehouse
-                    does the actual packing (see PackingTab's own doc comment). */}
-                {!project.isTemplate && (
-                  <TabsContent value="packing">
-                    <div className="pt-4">
-                      <PackingTab
-                        projectId={id}
-                        orgId={orgId}
-                        versionId={versionState.viewingVersion?.id}
-                      />
-                    </div>
-                  </TabsContent>
-                )}
-
-                {/* Logistics tab (value stays `labour` so Overview deep links keep working;
-                    `?tab=logistics` is an accepted alias). Services, their crew and the
-                    By person list all live in LogisticsTab (FEATUREDOCS/31, /80). */}
-                <TabsContent value="labour">
-                  <div className="space-y-6 pt-4">
-                    {/* Services (a VERSIONED_PLAN_TABLES member) and crew
-                        assignments (never versioned — they're reality) both
-                        stay LIVE regardless of `?v=` this phase — Phase 5
-                        scoped its version-read wiring to the Equipment tab
-                        (the mockups' one worked example); wiring
-                        `LogisticsTab` onto `projectServices.listByProject`'s
-                        own `versionId` arg is a documented follow-up, not
-                        silently dropped. */}
-                    <VersionNotTrackedNote what="Services & crew" />
-                    <LogisticsTab projectId={id} />
-                  </div>
-                </TabsContent>
-
-                {/* Finance Tab (#989) — top-level tab: quote revisions + send
-                    dialog, invoices + issue dialog, financial summary +
-                    operational P&L. Retired the standalone "Financials" tab —
-                    this is that content, not a duplicate of it. The lock
-                    strip/banner used to live here (Phase D's `QuoteLockStrip`)
-                    but is now the page-level `<VersionStrip>` (#1231) above
-                    the tabs — visible from every tab, not just this one.
-
-                    Section order is deliberate (#1038 IA pass): the alert
-                    banner, then Quotes & Invoices — the tab's actual workflow,
-                    what a PM opens this tab to DO — leads. Financial summary
-                    and operational P&L are read-only reference figures a PM
-                    checks less often; they follow behind a divider rather than
-                    burying the actionable content below them. */}
-                {!project.isTemplate && (
-                  <TabsContent value="finance">
-                    <div className="space-y-6 pt-4">
-                      <FinanceTabSlot
-                        projectId={project.id}
-                        orgId={orgId}
-                        projectNumber={project.projectNumber}
-                        clientId={project.clientId as string | null | undefined}
-                        projectStatus={project.status as string | null | undefined}
-                        subtotal={project.subtotal as number | null}
-                        taxAmount={project.taxAmount as number | null}
-                        total={project.total as number | null}
-                        rentalStartDate={rentalStart}
-                        rentalEndDate={rentalEnd}
-                        billingWeeksOverride={project.billingWeeksOverride as number | null}
-                        billingDaysOverride={project.billingDaysOverride as number | null}
-                        categories={project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined}
-                        equipmentRevenue={project.equipmentRevenue as number | null}
-                        saleRevenue={project.saleRevenue as number | null}
-                        saleCostTotal={project.saleCostTotal as number | null}
-                        serviceCostTotal={project.serviceCostTotal as number | null}
-                        labourCostTotal={project.labourCostTotal as number | null}
-                        subHireCostTotal={project.subHireCostTotal as number | null}
-                        discountPercent={project.discountPercent as number | null}
-                        discountAmount={project.discountAmount as number | null}
-                        taxRate={project.taxRate as number | null}
-                        margin={project.margin as number | null}
-                        depositPaid={project.depositPaid as number | null}
-                        invoicedTotal={project.invoicedTotal as number | null}
-                      />
-                    </div>
-                  </TabsContent>
-                )}
-
-                {/* Tasks Tab — projectTasks isn't in the snapshot; stays live. */}
-                <TabsContent value="tasks">
-                  <div className="pt-4">
-                    <VersionNotTrackedNote what="Tasks" />
-                    <TasksPanel projectId={id} />
-                  </div>
-                </TabsContent>
-
-                {/* Notes Tab — crewNotes/internalNotes/clientNotes ARE captured
-                    (the whole project row is snapshotted), so a viewed version
-                    shows its own captured text, read-only. */}
-                <TabsContent value="notes">
-                  <NotesTabSlot
-                    liveCrewNotes={(composedProject.crewNotes as string) || ""}
-                    liveInternalNotes={(composedProject.internalNotes as string) || ""}
-                    liveClientNotes={(composedProject.clientNotes as string) || ""}
-                    onChanged={() => refreshProjectDetail(id)}
-                    onSave={saveProjectNotes}
-                  />
-                </TabsContent>
-
-                {/* Files Tab — projectMedia isn't in the snapshot; stays live. */}
-                <TabsContent value="files">
-                  <div className="pt-4">
-                    <VersionNotTrackedNote what="Files" />
-                    <MediaUploader
-                      entityType="project"
-                      entityId={id}
-                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
-                      existingMedia={(project.media || []) as MediaItem[]}
-                      onChanged={() =>
-                        refreshProjectDetail(id)
-                      }
-                      onUploadComplete={async (fileUpload) => {
-                        await media.add({ parentId: id, fileId: fileUpload.id, type: "OTHER" });
-                      }}
-                      onRemove={async (mediaId) => {
-                        await media.remove(mediaId);
-                      }}
-                    />
-                  </div>
-                </TabsContent>
-              </Tabs>
+              <JobTabRow
+                projectId={id}
+                orgId={orgId}
+                available={available}
+                value={activeTab}
+                onValueChange={setRequestedTab}
+                filesCount={(project.media || []).length}
+              />
+              <div role="tabpanel" id={`job-tabpanel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`} className="pt-4">
+                {panels[activeTab]}
+              </div>
             </DetailMain>
 
-            {/* Every tab but Overview, which composes this content itself. */}
             {activeTab !== "overview" && (
               <DetailSidebar>
                 {/* D2 (#1106): coaching for the "put that gear on the job"
-                    milestone — only on the ONE project it tracks (D1's
-                    firstProjectId). CoachingTip itself checks whether that
-                    milestone is still active (and honors "Hide tips"),
-                    rendering nothing once it isn't — so a normal job's
-                    Equipment tab, or this one after the milestone is done,
-                    shows nothing extra here (`SidebarSection`'s own border
-                    would look odd wrapping empty content, so this skips
-                    that shell and lets the tip carry its own "Get started"
-                    heading, same as the other three forms). */}
+                    milestone — only on the ONE project it tracks. CoachingTip
+                    checks the milestone itself and renders nothing once done. */}
                 {activeTab === "equipment" && activationState?.firstProjectId === id && (
                   <CoachingTip orgId={orgId} milestoneKey="lineItem" fallbackEyebrow="" fallbackTip="" hideWhenInactive />
                 )}
@@ -921,14 +410,25 @@ export default function ProjectDetailPage({
               </DetailSidebar>
             )}
           </DetailLayout>
-            </>
+          )}
+
+          {!isTemplate && orgId && (
+            <VersionsPanel
+              open={versionsOpen}
+              onOpenChange={setVersionsOpen}
+              projectId={id}
+              versions={versionState.versions}
+              liveVersion={versionState.liveVersion}
+              viewingNumber={versionState.viewingNumber}
+              onSwitch={versionState.setViewingNumber}
+            />
           )}
         </div>
         </ProjectVersionProvider>
       </FadeIn>
 
-      {/* The strip's "Make vN live" button opens the same dialog the header
-          pill/Versions panel use (one dialog, three entry points, R-3.1). */}
+      {/* One Make-live dialog for every entry point: the header strip, the
+          version submenu's panel and Compare (R-3.1). */}
       {makeLiveTarget && (
         <MakeLiveDialog
           open
@@ -944,306 +444,6 @@ export default function ProjectDetailPage({
           }}
         />
       )}
-
-      {dupMode && (
-        <DuplicateProjectDialog
-          open={!!dupMode}
-          onOpenChange={(open) => !open && setDupMode(null)}
-          sourceProject={{
-            id: project.id,
-            projectNumber: project.projectNumber,
-            name: project.name,
-          }}
-          mode={dupMode}
-        />
-      )}
-      <CallSheetDialog
-        projectId={id}
-        open={callSheetOpen}
-        onOpenChange={setCallSheetOpen}
-      />
-      <DeleteDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete job?"
-        description="This permanently removes the job and its line items, crew assignments, and documents. This cannot be undone."
-        confirmLabel="Delete job"
-        onConfirm={() => {
-          deleteMutation.mutate();
-          setDeleteOpen(false);
-        }}
-        pending={deleteMutation.isPending}
-      />
-      <DeleteDialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        title="Cancel this job?"
-        description="The job will be marked cancelled. Reservations release and items return to inventory. You can permanently delete a cancelled job later."
-        confirmLabel="Cancel job"
-        cancelLabel="Keep job"
-        onConfirm={() => {
-          archiveMutation.mutate();
-          setCancelOpen(false);
-        }}
-        pending={archiveMutation.isPending}
-      />
     </RequirePermission>
-  );
-}
-
-function ProjectSummaryStrip({
-  projectId,
-  equipmentRevenue,
-  total,
-}: {
-  projectId: string;
-  equipmentRevenue: number | null;
-  total: number | null;
-}) {
-  const { data: summaryOrg } = useActiveOrganization();
-  const { data: labourData } = useProjectLabourCost(projectId, summaryOrg?.id);
-
-  const { data: serviceData } = useProjectServicesSummary(projectId);
-
-  // A faint em-dash for an empty/placeholder metric — calm, not loud.
-  const emptyValue = <span className="text-muted">{"\u2014"}</span>;
-
-  const metrics: {
-    label: string;
-    value: React.ReactNode;
-    bold?: boolean;
-  }[] = [
-    {
-      label: "Equipment",
-      value: equipmentRevenue != null ? formatCurrency(equipmentRevenue) : emptyValue,
-    },
-    {
-      // Lead with the charge; the cost rides along as a quiet muted sub-part.
-      label: "Services",
-      value: serviceData ? (
-        <span>
-          {formatCurrency(serviceData.chargeTotal)}
-          <span className="font-normal text-muted"> · {formatCurrency(serviceData.costTotal)} cost</span>
-        </span>
-      ) : (
-        emptyValue
-      ),
-    },
-    {
-      label: "Crew",
-      value: labourData ? (
-        <span>
-          {formatCurrency(Number(labourData.totalLabourCost))}
-          <span className="font-normal text-muted"> · {labourData.assignmentCount}</span>
-        </span>
-      ) : (
-        emptyValue
-      ),
-    },
-    {
-      label: "Total",
-      value: total != null ? formatCurrency(total) : emptyValue,
-      bold: true,
-    },
-  ];
-
-  // Inline metrics strip (single surface, vertical dividers) per DESIGN dashboard rule.
-  return (
-    <div className="grid grid-cols-2 gap-px rounded-[var(--r)] border border-line bg-line shadow-[var(--sh-card)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line sm:bg-card">
-      {metrics.map((m) => (
-        <div
-          key={m.label}
-          className="bg-card px-4 py-3 sm:first:rounded-l-[var(--r)] sm:last:rounded-r-[var(--r)]"
-        >
-          <div className="t-overline text-muted">
-            {m.label}
-          </div>
-          <div
-            className={
-              m.bold
-                ? "text-card-title font-bold tabular-nums tracking-tight text-ink"
-                : "text-ui-text font-semibold tabular-nums text-ink-2"
-            }
-          >
-            {m.value}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-interface FinanceTabSlotProps {
-  projectId: string;
-  orgId: string | undefined;
-  projectNumber: string;
-  clientId: string | null | undefined;
-  projectStatus: string | null | undefined;
-  subtotal: number | null;
-  taxAmount: number | null;
-  total: number | null;
-  rentalStartDate: Date | null;
-  rentalEndDate: Date | null;
-  billingWeeksOverride: number | null;
-  billingDaysOverride: number | null;
-  categories: { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined;
-  equipmentRevenue: number | null;
-  saleRevenue: number | null;
-  saleCostTotal: number | null;
-  serviceCostTotal: number | null;
-  labourCostTotal: number | null;
-  subHireCostTotal: number | null;
-  discountPercent: number | null;
-  discountAmount: number | null;
-  taxRate: number | null;
-  margin: number | null;
-  depositPaid: number | null;
-  invoicedTotal: number | null;
-}
-
-function FinanceTabSlot(props: FinanceTabSlotProps) {
-  const { isViewingVersion } = useProjectVersion();
-  const allGroups = props.categories?.flatMap((c) => c.groups) ?? [];
-  const totalGroupCount = allGroups.length;
-  const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
-  const groupBreakdown = allGroups
-    .filter((g) => g.price != null && Number(g.price) > 0)
-    .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
-
-  return (
-    <>
-      {/* Recalculate is a live-data write action — not meaningful while
-          viewing a read-only historical version. */}
-      {!isViewingVersion && <StalePricingBanner projectId={props.projectId} orgId={props.orgId} />}
-      {/* The invoice ledger is project-level, never per-version (design doc
-          decision 3 — invoices are lineage-labelled, not per-version
-          ledgers), so it stays live regardless of the viewed version. */}
-      <ProjectFinancePanel
-        projectId={props.projectId}
-        projectNumber={props.projectNumber}
-        clientId={props.clientId}
-        projectStatus={props.projectStatus}
-        subtotal={props.subtotal}
-        taxAmount={props.taxAmount}
-        total={props.total}
-      />
-      <div className="h-px bg-line" />
-      {/* The money breakdown below is always the LIVE project's — Phase 5
-          didn't extend this tab's read hooks with a `versionId` arg (scoped
-          to Equipment, the mockups' one worked example). A viewed version's
-          OWN figures aren't computable without recalculating totals against
-          that version's own line items (`recalcVersionTotals`, a Convex-side
-          job), which is out of scope here — flagged, not silently dropped. */}
-      {isViewingVersion && <VersionNotTrackedNote what="This financial breakdown" />}
-      <BillingSummaryRow
-        projectId={props.projectId}
-        orgId={props.orgId}
-        rentalStartDate={props.rentalStartDate}
-        rentalEndDate={props.rentalEndDate}
-        billingWeeksOverride={props.billingWeeksOverride}
-        billingDaysOverride={props.billingDaysOverride}
-      />
-      <FinancialSummary
-        equipmentRevenue={props.equipmentRevenue}
-        saleRevenue={props.saleRevenue}
-        saleCostTotal={props.saleCostTotal}
-        serviceChargeTotal={
-          props.subtotal != null && props.equipmentRevenue != null
-            ? props.subtotal - props.equipmentRevenue - (props.saleRevenue ?? 0)
-            : null
-        }
-        serviceCostTotal={props.serviceCostTotal}
-        labourCostTotal={props.labourCostTotal}
-        subHireCostTotal={props.subHireCostTotal}
-        subtotal={props.subtotal}
-        discountPercent={props.discountPercent}
-        discountAmount={props.discountAmount}
-        taxRate={props.taxRate}
-        taxAmount={props.taxAmount}
-        total={props.total}
-        margin={props.margin}
-        depositPaid={props.depositPaid}
-        invoicedTotal={props.invoicedTotal}
-        pricedGroupCount={pricedGroupCount}
-        totalGroupCount={totalGroupCount}
-        groupBreakdown={groupBreakdown}
-      />
-      <div className="h-px bg-line" />
-      <ProjectCostsPanel projectId={props.projectId} />
-    </>
-  );
-}
-
-interface NotesTabSlotProps {
-  liveCrewNotes: string;
-  liveInternalNotes: string;
-  liveClientNotes: string;
-  onChanged: () => void;
-  onSave: (field: "crewNotes" | "internalNotes" | "clientNotes", notes: string) => Promise<unknown>;
-}
-
-function ReadOnlyNoteBlock({ title, value }: { title: string; value: string | null }) {
-  return (
-    <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4">
-      <h3 className="text-card-title font-bold text-ink">{title}</h3>
-      <p className="mt-2 whitespace-pre-wrap text-ui-text text-ink-2">{value || "—"}</p>
-    </div>
-  );
-}
-
-/**
- * `crewNotes`/`internalNotes`/`clientNotes` ARE PLAN FIELDS
- * (`convex/lib/versionPlanFields.ts`), so the caller already hands this
- * component the COMPOSED value (design §5 D32) — a non-live version's own
- * captured text, no separate snapshot-projection read needed anymore. Notes
- * writes (`useOptimisticProjectNotes`) patch the LIVE `projects` row only
- * (#1221 follow-up closed this same class of gap for new equipment/group/
- * category/service INSERTS — see `EquipmentTabProps.addDisabledReason`'s
- * doc comment — but notes are a PLAN FIELD on `projects` itself, not one of
- * the five versioned plan tables, so this one is untouched by that fix), so
- * this stays READ-ONLY while viewing a non-live version rather than
- * silently writing the wrong version's notes.
- */
-function NotesTabSlot({ liveCrewNotes, liveInternalNotes, liveClientNotes, onChanged, onSave }: NotesTabSlotProps) {
-  const { isViewingVersion, viewingVersion } = useProjectVersion();
-
-  if (isViewingVersion && viewingVersion) {
-    return (
-      <div className="grid gap-4 pt-4">
-        <p className="text-caption text-muted">Notes as captured in v{viewingVersion.number} — read-only.</p>
-        <ReadOnlyNoteBlock title="Crew notes" value={liveCrewNotes} />
-        <ReadOnlyNoteBlock title="Internal notes" value={liveInternalNotes} />
-        <ReadOnlyNoteBlock title="Client notes" value={liveClientNotes} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 pt-4">
-      <NotesEditor
-        title="Crew notes"
-        initialNotes={liveCrewNotes}
-        onChanged={onChanged}
-        onSave={(notes) => onSave("crewNotes", notes)}
-        placeholder="Notes for crew members..."
-        rows={4}
-      />
-      <NotesEditor
-        title="Internal notes"
-        initialNotes={liveInternalNotes}
-        onChanged={onChanged}
-        onSave={(notes) => onSave("internalNotes", notes)}
-        placeholder="Internal notes (not visible to client)..."
-        rows={4}
-      />
-      <NotesEditor
-        title="Client notes"
-        initialNotes={liveClientNotes}
-        onChanged={onChanged}
-        onSave={(notes) => onSave("clientNotes", notes)}
-        placeholder="Notes visible to client on documents... supports **bold**, *italic*, and '- ' bullets."
-        rows={4}
-      />
-    </div>
   );
 }

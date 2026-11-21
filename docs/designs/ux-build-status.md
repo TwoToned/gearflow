@@ -66,7 +66,36 @@ Each is built in its own PR with a /code-review; until then it stays listed as d
 | Seal case (approved 2026-11-21, D21) | §7b, Phase 8 | optional `projectContainers.sealedAt` | 8 |
 | Timesheet query reason (approved 2026-11-21, D47) | §9h.4, Phase 15 | optional `crewTimeEntries.queryReason`, cleared on resubmit/approve | 15 |
 
-Not a schema change (2026-11-21, D50): an ad-hoc check's condition writes the existing `assets.condition` (Worn = `FAIR`, glossary alias) plus an activity row.
+| T&T readings that are entered but never stored (approved 2026-11-21) | §9i, Phase 16 | three optional `testTagRecords` fields: RCD trip current, RCD push-button, microwave leakage | 16 |
+
+Not a schema change (2026-11-21, D50): an ad-hoc check's condition writes the existing `assets.condition` plus an activity row. `FAIR` reads **Worn** app-wide (owner, 2026-11-21), with the alias in the glossary.
+
+**Owner answers 2026-11-21, round 2:**
+- **D21 seal scope:** a seal also blocks rename, re-nest and delete; the warehouse is not blocked.
+- **R-8.3.3 `loadOrgGraph` exception:** renewed to 2027-02-21 (it had lapsed on 2026-10-25), so Phase 7's double-booked row ships.
+- **D52:** a failed test stores the derived next-due date ("Next due after repair").
+- **Follow-ups:** start the CSV formula-injection guard + the Next.js ≥ 16.4.5 upgrade now. Picomatch is to be FIXED (override), not renewed; come back to the owner before 2026-12-03 if it can't be done cleanly.
+
+**Overseer rulings on worker questions (2026-11-21; these interpret accepted rows):**
+- Phase 15:
+  - D49 pay = the cost (pay) cascade, labelled "Rate (pay)".
+  - A day rate counts once per person per day.
+  - Offer/Cancel email crew, so they get a confirm and no Undo.
+  - "Disputed" reads "Queried" via its one label source.
+  - The timesheet Undo reads prior values from the forward write's own activity rows; it never takes client-supplied values.
+- Phase 8:
+  - The version menu lives in the header ⋯ (D92), with no chip.
+  - "Unplanned" (a plan state) is not "Loose" (a physical state).
+  - Make-live Undo is server-checked against the expected live pointer.
+- Phase 7:
+  - The money tiles go (§6b); CLAUDE.md's Overview paragraph is updated in the same PR.
+  - The invoicing-derivation merge and "Deposit paid" move to Phase 10.
+- Phase 11:
+  - The overdue tile links to `/projects?overdue=1`.
+  - Global search gets a server-side role filter (security fix).
+  - ⌘K Recents are ids in localStorage, keyed per org + user.
+
+**Restart 2026-11-21 ~11:40:** the container restarted mid-slice. Every worker branch was clean and pushed; workers were re-briefed from their PR-body handoffs.
 
 ## Wave D (agreed 2026-11-19, spec §11 rows 7–18)
 
@@ -82,8 +111,9 @@ Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that
 
 | Phase | Worker | Branch / PR | State | Blockers |
 |---|---|---|---|---|
-| 7 Job header + Overview + tab strip (M) | default | `claude/ux-7-job-header` | plan run | — |
-| 8 Packing + Versions (L) | Sonnet | `claude/ux-8-packing-versions` | plan run | page.tsx tab work waits for 7 |
-| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` | plan run | — |
-| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` | plan run | — |
-| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` | plan run | — |
+| 7 Job header + Overview + tab strip (M) | default | `claude/ux-7-job-header` · #1400 | slice A (header + tab strip) pushed; slice B (Overview) next | — |
+| 8 Packing + Versions (L) | Sonnet | `claude/ux-8-packing-versions` · #1399 | slice 1 (Convex) pushed | page.tsx tab work waits for 7 |
+| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` · #1401 | S1 (Convex + Jobs list) pushed | — |
+| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` · #1402 | slice 1 (Convex + server) pushed | — |
+| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` · #1403 | plan approved; slice 1 next | merges before Phase 14 |
+| Follow-up: CSV guard + Next.js ≥ 16.4.5 | default | `claude/fu-csv-next-upgrade` | starting | — |

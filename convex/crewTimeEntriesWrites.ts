@@ -372,18 +372,34 @@ export const queryNative = mutation({
   },
 });
 
-/** The forward write's own activity row for `id` at `stamp`, written by `applyTransition`. */
-async function transitionRecord(ctx: MutationCtx, orgId: string, id: string, t: Transition, stamp: number, userId: string) {
+/** The prior state a forward transition recorded on its activity row (`applyTransition`). */
+interface TransitionRecord {
+  transition: Transition;
+  prevStatus?: string;
+  prevQueryReason?: string;
+  prevApprovedById?: string;
+  prevApprovedAt?: number;
+}
+
+const isTransition = (t: unknown): t is Transition => t === "submit" || t === "approve" || t === "query";
+
+/**
+ * The forward write's own activity row for `id` at `stamp` by `userId` — the
+ * latest one whose transition produced the entry's CURRENT status. Which
+ * transition it was comes from that server-written row, never from the caller.
+ */
+async function transitionRecord(ctx: MutationCtx, orgId: string, id: string, stamp: number, userId: string, currentStatus: string): Promise<TransitionRecord | null> {
   const rows = await ctx.db
     .query("activityLogs")
     .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "crew_time_entry").eq("entityId", id))
     .order("desc")
     .take(50);
   const row = rows.find((r) => {
-    const m = r.metadata as { kind?: string; transition?: string } | undefined;
-    return r.createdAt === stamp && r.userId === userId && m?.kind === TIME_ENTRY_TRANSITION_KIND && m.transition === t;
+    const m = r.metadata as { kind?: string; transition?: unknown } | undefined;
+    return r.createdAt === stamp && r.userId === userId && m?.kind === TIME_ENTRY_TRANSITION_KIND
+      && isTransition(m.transition) && TRANSITION_TO[m.transition] === currentStatus;
   });
-  return (row?.metadata ?? null) as { prevStatus?: string; prevQueryReason?: string; prevApprovedById?: string; prevApprovedAt?: number } | null;
+  return (row?.metadata ?? null) as TransitionRecord | null;
 }
 
 /** Set `key` to `value`, or remove it when the prior state had none. */
@@ -392,54 +408,58 @@ function restoreField(target: Record<string, unknown>, key: string, value: unkno
   else target[key] = value;
 }
 
-/** The entry with the fields `t` replaced put back exactly as the forward write recorded them. */
-function restored(doc: EntryDoc, t: Transition, prior: NonNullable<Awaited<ReturnType<typeof transitionRecord>>>, now: number): EntryFields {
+/** The entry with the fields its transition replaced put back exactly as the forward write recorded them. */
+function restored(doc: EntryDoc, prior: TransitionRecord, now: number): EntryFields {
   const { _id, _creationTime, ...rest } = doc;
   void _id; void _creationTime;
   const next: Record<string, unknown> = { ...rest, status: prior.prevStatus, updatedAt: now };
   restoreField(next, "queryReason", prior.prevQueryReason);
-  if (t === "approve") {
+  if (prior.transition === "approve") {
     restoreField(next, "approvedById", prior.prevApprovedById);
     restoreField(next, "approvedAt", prior.prevApprovedAt);
   }
   return next as EntryFields;
 }
 
-/** Every refusal `revertNative` can raise for one entry; null when it may be undone. */
-function revertRefusal(doc: EntryDoc | null, orgId: string, t: Transition, stamp: number): string | null {
+/** Every refusal `revertNative` can raise for one entry before its record is read; null when it may proceed. */
+function revertRefusal(doc: EntryDoc | null, orgId: string, stamp: number): string | null {
   if (!doc || doc.organizationId !== orgId) return "Time entry not found";
-  if (doc.updatedAt !== stamp || (doc.status ?? "DRAFT") !== TRANSITION_TO[t]) return "This time entry changed after that write, so it can't be undone";
+  if (doc.updatedAt !== stamp) return "This time entry changed after that write, so it can't be undone";
   return null;
 }
 
+/** A record is replayable only if its prior status is one its transition may start from. */
+function replayable(prior: TransitionRecord | null): prior is TransitionRecord & { prevStatus: string } {
+  return !!prior?.prevStatus && TRANSITION_FROM[prior.transition].includes(prior.prevStatus);
+}
+
 /**
- * The ONE Undo for Submit, Approve and Query. Takes only the entry ids and the
- * forward write's `now` (its stamp). For each entry it reads the prior state
- * from that write's own activity row (same entry, same stamp, same user), and
- * refuses the whole Undo if any entry has changed since (`updatedAt` moved) —
- * so it reverses exactly the forward write, never "whatever looks reversible".
+ * The ONE Undo for Submit, Approve and Query (Q-I4). Takes ONLY the entry ids
+ * and the forward write's `now` (its stamp) — no transition, no prior status.
+ * For each entry it reads which transition ran and the prior state (status,
+ * query reason, approver) from that write's own activity row (same entry, same
+ * stamp, same user, producing the entry's current status), and refuses the
+ * whole Undo with a ConvexError if any entry's `updatedAt` moved since — so it
+ * reverses exactly the forward write, never "whatever looks reversible".
  */
 export const revertNative = mutation({
   returns: v.object({ count: v.number() }),
-  args: {
-    orgId: v.string(), transition: v.union(v.literal("submit"), v.literal("approve"), v.literal("query")),
-    ids: v.array(v.string()), stamp: v.number(), now: v.number(), actor: actorValidator, auditId: v.string(),
-  },
+  args: { orgId: v.string(), ids: v.array(v.string()), stamp: v.number(), now: v.number(), actor: actorValidator, auditId: v.string() },
   handler: async (ctx, a) => {
     const actor = await guardTransition(ctx, a.orgId, a.actor);
     await assertBulkSizeOk(ctx, a.ids.length);
-    const from = new Set(TRANSITION_FROM[a.transition]);
-    for (const id of new Set(a.ids)) {
+    const ids = [...new Set(a.ids)];
+    for (const id of ids) {
       const doc = await findEntry(ctx, id);
-      const refusal = revertRefusal(doc, a.orgId, a.transition, a.stamp);
+      const refusal = revertRefusal(doc, a.orgId, a.stamp);
       if (refusal) throw new ConvexError(refusal);
-      const prior = await transitionRecord(ctx, a.orgId, id, a.transition, a.stamp, actor.userId);
-      if (!prior?.prevStatus || !from.has(prior.prevStatus)) throw new ConvexError("Nothing to undo for this time entry");
-      await ctx.db.replace(doc!._id, restored(doc!, a.transition, prior, a.now));
+      const prior = await transitionRecord(ctx, a.orgId, id, a.stamp, actor.userId, doc!.status ?? "DRAFT");
+      if (!replayable(prior)) throw new ConvexError("Nothing to undo for this time entry");
+      await ctx.db.replace(doc!._id, restored(doc!, prior, a.now));
       const member = await memberName(ctx, a.orgId, doc!.crewMemberId);
-      await logTime(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}:${id}`, now: a.now, action: "UPDATE", id, name: member.name, summary: `Undid the ${TRANSITION_NOUN[a.transition]} of a time entry for ${member.name}` });
+      await logTime(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}:${id}`, now: a.now, action: "UPDATE", id, name: member.name, summary: `Undid the ${TRANSITION_NOUN[prior.transition]} of a time entry for ${member.name}` });
     }
-    return { count: new Set(a.ids).size };
+    return { count: ids.length };
   },
 });
 

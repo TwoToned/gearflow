@@ -11,8 +11,6 @@ import {
   type TimeEntryQueryFormValues,
 } from "@/lib/validations/crew";
 
-export type TimeEntryTransition = "submit" | "approve" | "query";
-
 /** What a Submit / Approve / Query call changed, and its stamp (the Undo's key). */
 export interface TransitionResult {
   count: number;
@@ -102,10 +100,10 @@ export function useCrewTimeWrites() {
       const stamp = Date.now();
       return { ...(await queryM({ orgId: org, ids, reason, now: stamp, actor: actor(), auditId: createId() })), stamp };
     },
-    /** The ONE Undo for submit/approve/query: the forward result's own `changed` + `stamp`. */
-    revert: async (transition: TimeEntryTransition, result: Pick<TransitionResult, "changed" | "stamp">): Promise<{ count: number }> => {
+    /** The ONE Undo for submit/approve/query: the forward result's `changed` + `stamp` only (Q-I4). */
+    revert: async (result: Pick<TransitionResult, "changed" | "stamp">): Promise<{ count: number }> => {
       const org = requireOrg();
-      return await revertM({ orgId: org, transition, ids: result.changed, stamp: result.stamp, now: Date.now(), actor: actor(), auditId: createId() });
+      return await revertM({ orgId: org, ids: result.changed, stamp: result.stamp, now: Date.now(), actor: actor(), auditId: createId() });
     },
     /** @deprecated Legacy single-entry Dispute (crew dashboard, crew record) — Phase 13 moves them to `query`. */
     dispute: async (id: string, reason?: string): Promise<{ id: string }> => {

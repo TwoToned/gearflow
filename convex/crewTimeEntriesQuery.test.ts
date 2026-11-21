@@ -106,14 +106,48 @@ describe("queryNative (D47)", () => {
 });
 
 describe("revertNative — the exact Undo", () => {
-  const revert = (t: T, transition: "submit" | "approve" | "query", ids: string[], stamp: number, who = asUser) =>
-    t.withIdentity(who).mutation(api.crewTimeEntriesWrites.revertNative, { orgId: ORG, transition, ids, stamp, now: stamp + 100, actor, auditId: "u1" });
+  // Q-I4: the Undo takes ONLY the ids and the forward stamp. Which transition
+  // ran, and the prior state, come from the forward write's activity rows.
+  const revert = (t: T, ids: string[], stamp: number, who = asUser) =>
+    t.withIdentity(who).mutation(api.crewTimeEntriesWrites.revertNative, { orgId: ORG, ids, stamp, now: stamp + 100, actor, auditId: "u1" });
+
+  test("its args carry no transition and no prior status (Q-I4)", async () => {
+    const t = makeT();
+    await seed(t, [{ id: "s1", status: "SUBMITTED" }]);
+    await query(t, ["s1"], "Check");
+    const smuggled = { orgId: ORG, ids: ["s1"], stamp: NOW, now: NOW + 100, actor, auditId: "u1", prevStatus: "APPROVED" };
+    await expect(t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.revertNative, smuggled as never)).rejects.toThrow();
+    const withTransition = { orgId: ORG, ids: ["s1"], stamp: NOW, now: NOW + 100, actor, auditId: "u1", transition: "approve" };
+    await expect(t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.revertNative, withTransition as never)).rejects.toThrow();
+    expect((await te(t, "s1"))?.status).toBe("DISPUTED");
+  });
+
+  test("reverses the transition the record names, even when one stamp saw several", async () => {
+    const t = makeT();
+    await seed(t, [{ id: "s1", status: "SUBMITTED" }]);
+    // approve then query in the same ms by the same user: the record that produced
+    // the CURRENT status (DISPUTED ⇐ query) is the one replayed, prior = APPROVED.
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.approveNative, { orgId: ORG, ids: ["s1"], now: NOW, actor, auditId: "app" });
+    await query(t, ["s1"], "Check", NOW);
+    await revert(t, ["s1"], NOW);
+    expect(await te(t, "s1")).toMatchObject({ status: "APPROVED", approvedById: USER, approvedAt: NOW });
+    expect((await te(t, "s1"))?.queryReason).toBeUndefined();
+  });
+
+  test("a second Undo of the same write refuses (updatedAt moved)", async () => {
+    const t = makeT();
+    await seed(t, [{ id: "s1", status: "SUBMITTED" }]);
+    await query(t, ["s1"], "Check");
+    await revert(t, ["s1"], NOW);
+    await expect(revert(t, ["s1"], NOW)).rejects.toThrow(/changed after/);
+    expect((await te(t, "s1"))?.status).toBe("SUBMITTED");
+  });
 
   test("query Undo restores the prior status and clears the reason", async () => {
     const t = makeT();
     await seed(t, [{ id: "s1", status: "SUBMITTED" }, { id: "a1", status: "APPROVED", approvedById: USER2, approvedAt: NOW - 5 }]);
     await query(t, ["s1", "a1"], "Check");
-    await revert(t, "query", ["s1", "a1"], NOW);
+    await revert(t, ["s1", "a1"], NOW);
     expect(await te(t, "s1")).toMatchObject({ status: "SUBMITTED" });
     expect((await te(t, "s1"))?.queryReason).toBeUndefined();
     expect(await te(t, "a1")).toMatchObject({ status: "APPROVED", approvedById: USER2, approvedAt: NOW - 5 });
@@ -124,7 +158,7 @@ describe("revertNative — the exact Undo", () => {
     await seed(t, [{ id: "s1", status: "SUBMITTED" }, { id: "d1", status: "SUBMITTED" }]);
     await query(t, ["d1"], "Was 7h?", NOW);
     await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.approveNative, { orgId: ORG, ids: ["s1", "d1"], now: NOW + 10, actor, auditId: "app" });
-    await revert(t, "approve", ["s1", "d1"], NOW + 10);
+    await revert(t, ["s1", "d1"], NOW + 10);
     const s1 = await te(t, "s1");
     expect(s1?.status).toBe("SUBMITTED");
     expect(s1?.approvedById).toBeUndefined();
@@ -138,7 +172,7 @@ describe("revertNative — the exact Undo", () => {
     await query(t, ["s1", "s2"], "Check");
     // s2 is touched again by someone else after the query
     await t.run(async (ctx) => { const d = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "s2")).first(); await ctx.db.patch(d!._id, { updatedAt: NOW + 50 }); });
-    await expect(revert(t, "query", ["s1", "s2"], NOW)).rejects.toThrow(/changed after/);
+    await expect(revert(t, ["s1", "s2"], NOW)).rejects.toThrow(/changed after/);
     // all-or-nothing: s1 was not reverted either
     expect((await te(t, "s1"))?.status).toBe("DISPUTED");
   });
@@ -148,7 +182,7 @@ describe("revertNative — the exact Undo", () => {
     await seed(t, [{ id: "s1", status: "SUBMITTED" }, { id: "other", status: "DISPUTED" }]);
     await query(t, ["s1"], "Check");
     await t.run(async (ctx) => { const d = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "other")).first(); await ctx.db.patch(d!._id, { updatedAt: NOW }); });
-    await expect(revert(t, "query", ["other"], NOW)).rejects.toThrow(/Nothing to undo/);
+    await expect(revert(t, ["other"], NOW)).rejects.toThrow(/Nothing to undo/);
     expect((await te(t, "other"))?.status).toBe("DISPUTED");
   });
 
@@ -156,13 +190,13 @@ describe("revertNative — the exact Undo", () => {
     const t = makeT();
     await seed(t, [{ id: "s1", status: "SUBMITTED" }]);
     await query(t, ["s1"], "Check");
-    await expect(revert(t, "query", ["s1"], NOW, asUser2)).rejects.toThrow(/Nothing to undo/);
+    await expect(revert(t, ["s1"], NOW, asUser2)).rejects.toThrow(/Nothing to undo/);
   });
 
   test("a foreign-org id is refused", async () => {
     const t = makeT();
     await seed(t, [{ id: "x1", status: "DISPUTED", org: OTHER }]);
-    await expect(revert(t, "query", ["x1"], NOW)).rejects.toThrow(/not found/);
+    await expect(revert(t, ["x1"], NOW)).rejects.toThrow(/not found/);
   });
 
   test("submit Undo returns DRAFT entries to DRAFT, one activity row per entry", async () => {
@@ -170,7 +204,7 @@ describe("revertNative — the exact Undo", () => {
     await seed(t, [{ id: "d1", status: "DRAFT" }, { id: "d2", status: "DRAFT" }]);
     await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.submitNative, { orgId: ORG, ids: ["d1", "d2"], now: NOW, actor, auditId: "sub" });
     expect(await logsFor(t, "d1")).toHaveLength(1);
-    await revert(t, "submit", ["d1", "d2"], NOW);
+    await revert(t, ["d1", "d2"], NOW);
     expect((await te(t, "d1"))?.status).toBe("DRAFT");
     expect((await te(t, "d2"))?.status).toBe("DRAFT");
     expect(await logsFor(t, "d2")).toHaveLength(2); // forward + undo

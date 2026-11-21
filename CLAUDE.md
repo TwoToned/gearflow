@@ -500,8 +500,9 @@ CSV) gates it on `canSeeCrewPay` (`convex/lib/crewPayVisibility.ts`: manager+ an
 client-side. Query… (D47, enum stays `DISPUTED`) stores its reason on
 `crewTimeEntries.queryReason`, never `notes` (the crew member's own text). Submit /
 approve / query log one activity row per entry with the prior state, and their ONE
-Undo, `revertNative`, takes only ids + the forward stamp and reads that prior state
-back from those rows — never accept prior state from the client. FEATUREDOCS/31.
+Undo, `revertNative`, takes only ids + the forward stamp (no transition, no prior
+status) and reads which transition ran and the prior state back from those rows —
+never accept either from the client. FEATUREDOCS/31.
 
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved

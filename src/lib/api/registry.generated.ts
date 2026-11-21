@@ -18262,15 +18262,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "stamp",
         "optional": false,
         "type": "number"
-      },
-      {
-        "name": "transition",
-        "optional": false,
-        "type": "union"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7b69ff5d9af9eec9",
+    "argsSha": "d6d4e157c4444c03",
     "returnsSha": "ca20c8538a3cc095",
     "stability": "tracks-app",
     "summary": null,

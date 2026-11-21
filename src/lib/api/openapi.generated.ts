@@ -14345,13 +14345,11 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "stamp": {
                         "type": "number"
-                      },
-                      "transition": {}
+                      }
                     },
                     "required": [
                       "ids",
-                      "stamp",
-                      "transition"
+                      "stamp"
                     ],
                     "additionalProperties": false
                   },

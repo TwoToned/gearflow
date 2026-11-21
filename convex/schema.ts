@@ -2704,6 +2704,12 @@ export default defineSchema({
     // work item), so its peek can show minutes actually worked without a
     // second, hand-maintained time-tracking source (R-3.1).
     workItemId: v.optional(v.string()),
+    // UX Phase 15 (D47, owner-approved 2026-11-21) — why a manager QUERIED this
+    // entry (UI word `Query`; the status enum stays `DISPUTED`). Written only by
+    // `crewTimeEntriesWrites.queryNative`, cleared by submit/approve. Kept apart
+    // from `notes`, which is the crew member's own text. Absent on every older
+    // row; no backfill.
+    queryReason: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])

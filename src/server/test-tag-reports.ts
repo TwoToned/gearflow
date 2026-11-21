@@ -2,6 +2,7 @@
 
 import { getOrgContext } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
+import { toCsv } from "@/lib/csv";
 import { getModelById } from "@/lib/models-read";
 import { getAssetsByOrg, getBulkAssetsByOrg, getBulkAssetById } from "@/lib/assets-read";
 import type { ReportFilters } from "@/lib/test-tag-report-types";
@@ -49,8 +50,10 @@ const statusLabels: Record<string, string> = {
   RETIRED: "Retired",
 };
 
+/** A CSV date cell. A missing date is a BLANK cell, not a "-" placeholder: `-` is a
+ *  formula start, so `toCsv` would print it as `'-`. */
 function fmtDate(d: Date | string | null | undefined): string {
-  if (!d) return "-";
+  if (!d) return "";
   return new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
 
@@ -182,7 +185,7 @@ export async function exportRegisterCSV(filters: ReportFilters) {
     i.asset?.assetTag || "", i.bulkAsset?.assetTag || "",
   ]);
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 2. OVERDUE & NON-COMPLIANT ─────────────────────────────────────────────
@@ -228,7 +231,7 @@ export async function exportOverdueCSV(filters: ReportFilters) {
     fmtDate(i.lastTestDate), fmtDate(i.nextDueDate), i.location || "",
   ]);
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 3. TEST SESSION ────────────────────────────────────────────────────────
@@ -294,7 +297,7 @@ export async function exportSessionCSV(filters: ReportFilters) {
     ];
   });
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 4. ITEM HISTORY ────────────────────────────────────────────────────────
@@ -378,7 +381,7 @@ export async function exportDueScheduleCSV(filters: ReportFilters) {
     fmtDate(i.nextDueDate), statusLabels[i.status] || i.status,
   ]);
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 6. CLASS SUMMARY ───────────────────────────────────────────────────────
@@ -423,7 +426,7 @@ export async function exportClassSummaryCSV(filters: ReportFilters) {
     }
   }
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 7. TESTER ACTIVITY ─────────────────────────────────────────────────────
@@ -481,7 +484,7 @@ export async function exportTesterActivityCSV(filters: ReportFilters) {
     }
   }
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 8. FAILED ITEMS ────────────────────────────────────────────────────────
@@ -565,7 +568,7 @@ export async function exportFailedItemsCSV(filters: ReportFilters) {
     ];
   });
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 9. BULK ASSET SUMMARY ──────────────────────────────────────────────────
@@ -608,7 +611,7 @@ export async function exportBulkSummaryCSV(bulkAssetId: string, filters: ReportF
     fmtDate(i.lastTestDate), fmtDate(i.nextDueDate), statusLabels[i.status] || i.status,
   ]);
 
-  return escapeCSV(headers, rows);
+  return toCsv(headers, rows);
 }
 
 // ─── 10. COMPLIANCE CERTIFICATE ──────────────────────────────────────────────
@@ -687,20 +690,4 @@ export async function getReportPreviewCount(reportType: string, filters: ReportF
   }
 
   return all.filter((i) => assetMatchesFilters(i, filters)).length;
-}
-
-// ─── CSV HELPER ─────────────────────────────────────────────────────────────
-
-function escapeCSV(headers: string[], rows: string[][]): string {
-  const escapeLine = (fields: string[]) =>
-    fields
-      .map((f) => {
-        if (f.includes(",") || f.includes('"') || f.includes("\n")) {
-          return `"${f.replace(/"/g, '""')}"`;
-        }
-        return f;
-      })
-      .join(",");
-
-  return [escapeLine(headers), ...rows.map(escapeLine)].join("\n");
 }

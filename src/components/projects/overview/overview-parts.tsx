@@ -28,11 +28,12 @@ export function OverviewLine({ muted, className, children }: { muted?: boolean; 
   return <p className={cn("text-table-cell leading-relaxed", muted ? "text-muted" : "text-ink", className)}>{children}</p>;
 }
 
+/** A row of text links: 44px tall tap targets on a phone (inline links inside a sentence stay inline). */
 export function OverviewLinks({ children }: { children: React.ReactNode }) {
-  return <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1">{children}</div>;
+  return <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1 max-md:[&>*]:min-h-11">{children}</div>;
 }
 
-const LINK = "inline-flex min-h-11 items-center gap-1 rounded-sm text-caption font-semibold text-link hover:underline md:min-h-0";
+const LINK = "inline-flex items-center gap-1 rounded-sm text-caption font-semibold text-link hover:underline";
 
 /** A text link that does something on this page (opens a dialog, a tab). */
 export const OverviewTextButton = React.forwardRef<HTMLButtonElement, React.ComponentProps<"button">>(

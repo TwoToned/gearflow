@@ -86,8 +86,9 @@ function ReadinessBody({ verdict, onFix }: { verdict: ReadinessVerdict; onFix: (
   const lead = verdict.leadCheck;
   return (
     <>
-      <h2 className={cn("font-display text-section-header font-bold tracking-tight", HEADLINE_TONE[verdict.tone])}>
-        {verdict.headline}
+      {/* Size and tone on separate elements: `cn` would merge two `text-*` classes into one. */}
+      <h2 className="font-display text-page-title font-bold leading-tight tracking-tight">
+        <span className={HEADLINE_TONE[verdict.tone]}>{verdict.headline}</span>
       </h2>
       {verdict.lead ? (
         <p className="mt-1 text-ui-text leading-relaxed text-ink-2">
@@ -95,7 +96,7 @@ function ReadinessBody({ verdict, onFix }: { verdict: ReadinessVerdict; onFix: (
           {lead?.fix && lead.actionLabel ? (
             <>
               {" "}
-              <OverviewTextButton className="text-ui-text" onClick={() => onFix(lead.fix!)}>
+              <OverviewTextButton onClick={() => onFix(lead.fix!)}>
                 {lead.actionLabel} ›
               </OverviewTextButton>
             </>

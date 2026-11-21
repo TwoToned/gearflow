@@ -56,7 +56,7 @@ export function OverviewTab({
   const openLogistics = () => onOpenTab("labour");
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-[860px]">
+    <div className="w-full min-w-0 max-w-[860px]">
       {!isTemplate && <ReadinessSection projectId={projectId} orgId={orgId} status={project.status} onFix={onFix} />}
       {!isTemplate && (
         <OverviewSection aria-label="Money" className="grid gap-5 md:grid-cols-2 md:gap-7">

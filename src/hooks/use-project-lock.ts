@@ -40,6 +40,7 @@ export function useProjectPricingLock(projectId: string | undefined, orgId: stri
   const { data: session } = useSession();
   const lockM = useMutation(api.projectPricingLockWrites.lockPricingNative);
   const unlockM = useMutation(api.projectPricingLockWrites.unlockPricingNative);
+  const undoUnlockM = useMutation(api.projectPricingLockWrites.undoUnlockPricingNative);
 
   const enabled = !!orgId && !!projectId && !!session?.user;
   const actor = () => ({ userId: session!.user.id, userName: session!.user.name ?? "" });
@@ -57,14 +58,26 @@ export function useProjectPricingLock(projectId: string | undefined, orgId: stri
   /** Clear the lock — one click, per the whole rule (D42's `canUnlockPricing`
    *  audience, server-enforced regardless of what this hook's own
    *  `canUnlockPricing` read shows). */
-  const unlock = async (): Promise<void> => {
+  const unlock = async (): Promise<{ undoToken?: string }> => {
     if (!enabled) throw new Error("Not ready");
     try {
-      await unlockM({ id: projectId!, orgId: orgId!, actor: actor(), auditId: createId(), now: Date.now() });
+      const r = await unlockM({ id: projectId!, orgId: orgId!, actor: actor(), auditId: createId(), now: Date.now() });
+      return { undoToken: r.undoToken };
     } catch (e) {
       throw mapNativeWriteError(e);
     }
   };
 
-  return { ...derived, lock, unlock };
+  /** The unlock toast's Undo: reverses exactly the unlock `undoToken` names,
+   *  or the server refuses (`UNDO_STALE`) because the lock changed since. */
+  const undoUnlock = async (undoToken: string): Promise<void> => {
+    if (!enabled) throw new Error("Not ready");
+    try {
+      await undoUnlockM({ id: projectId!, orgId: orgId!, unlockAuditId: undoToken, actor: actor(), auditId: createId(), now: Date.now() });
+    } catch (e) {
+      throw mapNativeWriteError(e);
+    }
+  };
+
+  return { ...derived, lock, unlock, undoUnlock };
 }

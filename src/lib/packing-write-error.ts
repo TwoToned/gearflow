@@ -9,7 +9,7 @@ function errorData(e: unknown): unknown {
   return (e as { data?: unknown } | null)?.data;
 }
 
-function field(data: unknown, key: "message" | "code"): string | null {
+function field(data: unknown, key: "message"): string | null {
   if (!data || typeof data !== "object") return null;
   const value = (data as Record<string, unknown>)[key];
   return typeof value === "string" && value ? value : null;
@@ -21,9 +21,4 @@ export function packingWriteMessage(e: unknown, fallback = "That didn't save"): 
   if (fromData) return fromData;
   const own = e instanceof Error ? e.message : "";
   return own && !own.startsWith("[CONVEX") ? own : fallback;
-}
-
-/** The server's machine code on a failed write (`CASE_SEALED`, `NOT_EMPTY`, …), if any. */
-export function packingWriteCode(e: unknown): string | null {
-  return field(errorData(e), "code");
 }

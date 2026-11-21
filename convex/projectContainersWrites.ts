@@ -398,8 +398,8 @@ export const updateNative = mutation({
 });
 
 /** Clear `plannedContainerId` on every line of the case's version still planned
- *  into it; one PLAN_LINE audit row each. Streams the version's lines (no
- *  `.collect()`); returns the cleared line ids. */
+ *  into it; one PLAN_LINE audit row each. Streams the version's lines (never
+ *  materialises them all); returns the cleared line ids. */
 async function unplanLinesFromCase(
   ctx: MutationCtx,
   container: Doc<"projectContainers">,

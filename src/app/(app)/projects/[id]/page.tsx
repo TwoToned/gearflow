@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageMeta } from "@/components/layout/page-meta";
@@ -100,7 +100,8 @@ export default function ProjectDetailPage({
   // The Versions panel: ⋯ › Version › Manage versions…, the `V` key and the
   // Versions tab placeholder open it. Phase 8 points `openVersions` at the tab.
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const openVersions = () => setVersionsOpen(true);
+  // Stable: `useVersionsShortcut` binds `V` to it, and a fresh closure per render re-bound the key every render.
+  const openVersions = useCallback(() => setVersionsOpen(true), []);
   // The comments panel: the header ⋯ and Overview's blocking-discussion row
   // and `Discussion ›` all open the ONE panel the header mounts.
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -176,6 +177,7 @@ export default function ProjectDetailPage({
     status: project.status,
     isTemplate,
     projectNumber: project.projectNumber,
+    type: (composedProject.type as string | null | undefined) ?? null,
     client: project.client ?? null,
     rentalStartDate: (composedProject.rentalStartDate as unknown as string | null) ?? null,
     rentalEndDate: (composedProject.rentalEndDate as unknown as string | null) ?? null,

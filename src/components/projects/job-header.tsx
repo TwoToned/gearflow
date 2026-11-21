@@ -29,6 +29,8 @@ import { ALL_PROJECT_STATUSES, CELEBRATED_STATUSES, projectStatusLabel } from "@
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import type { JobTabKey } from "@/lib/job-tabs";
 import { cn, focusRing } from "@/lib/utils";
+import { formatLabel } from "@/lib/formatters";
+import { PROJECT_TYPE_LABELS } from "@/lib/project-type-labels";
 import { api } from "../../../convex/_generated/api";
 
 export interface JobHeaderProject {
@@ -37,6 +39,8 @@ export interface JobHeaderProject {
   status: string;
   isTemplate: boolean;
   projectNumber: string;
+  /** The job TYPE (`DRY_HIRE`, …): a live fact, shown in the meta line. */
+  type?: string | null;
   client?: { id: string; name: string } | null;
   rentalStartDate?: string | null;
   rentalEndDate?: string | null;
@@ -128,6 +132,7 @@ function useHeaderLabels(projectId: string, enabled: boolean): JobHeaderInput["l
 function metaParts(project: JobHeaderProject): React.ReactNode[] {
   return [
     <span key="n" className="t-mono text-ink-2">{project.projectNumber}</span>,
+    ...(project.type ? [<span key="t">{PROJECT_TYPE_LABELS[project.type] ?? formatLabel(project.type)}</span>] : []),
     ...(project.client
       ? [<Link key="c" href={`/clients/${project.client.id}`} className={linkClass}>{project.client.name}</Link>]
       : []),
@@ -147,7 +152,7 @@ function CancelledNotice({ onSetStatus, canUpdate, onDelete, status }: {
       {canUpdate ? (
         <>
           <SetStatusMenu status={status} onPick={onSetStatus} />
-          <button type="button" className={cn(linkClass, "text-t-out")} onClick={onDelete}>
+          <button type="button" className={cn(linkClass, "tap-area text-t-out")} onClick={onDelete}>
             Delete job…
           </button>
         </>

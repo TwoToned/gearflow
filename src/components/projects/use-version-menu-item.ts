@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { toast } from "sonner";
 
 import { useCanDo } from "@/lib/use-permissions";
@@ -24,6 +25,10 @@ export function useVersionMenuItem(onManage: () => void): ActionItem | null {
   const canPublish = useCanDo("invoice", "publish");
   const { createVersion } = useProjectVersionWrites(projectId);
 
+  // The old pill disabled `New version` while one was in flight. An ActionItem
+  // has no disabled state (absent, not disabled), so a ref guards the write
+  // instead: a double trigger (two clicks, a click and a key) creates ONE version.
+  const inFlight = useRef(false);
   const create = useServerMutation({
     mutationFn: (fromVersionId: string) => createVersion({ fromVersionId }),
     onSuccess: (r) => {
@@ -31,13 +36,21 @@ export function useVersionMenuItem(onManage: () => void): ActionItem | null {
       setViewingNumber(r.number);
     },
     onError: (e: Error) => toast.error(e.message),
+    onSettled: () => {
+      inFlight.current = false;
+    },
   });
+  const createFrom = (fromVersionId: string) => {
+    if (inFlight.current || create.isPending) return;
+    inFlight.current = true;
+    create.mutate(fromVersionId);
+  };
 
   return buildVersionMenuItem(
     { versions, liveVersion, viewingNumber, canPublish },
     {
       view: setViewingNumber,
-      createFrom: (fromVersionId) => create.mutate(fromVersionId),
+      createFrom,
       compare: (bNumber) => openCompare({ kind: "version", number: null }, { kind: "version", number: bNumber }),
       manage: onManage,
     },

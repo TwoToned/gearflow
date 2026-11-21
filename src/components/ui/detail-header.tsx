@@ -119,8 +119,8 @@ function ProgressStep({ step, state, subLabel }: { step: DetailHeaderStep; state
     <li
       data-state={state}
       aria-current={state === "current" ? "step" : undefined}
-      // Phone: only the current label shows (§6b).
-      className={cn("min-w-0 flex-1", state !== "current" && "max-md:[&>span]:hidden")}
+      // Phone: no per-step labels; the current one shows once, full width, under the line (§6b).
+      className="min-w-0 flex-1 max-md:[&>span]:hidden"
     >
       <i className={cn("mb-1.5 block h-[3px] rounded-sm", STEP_BAR[state])} />
       <span className={cn("block truncate text-badge", state === "current" ? "font-semibold text-ink" : "text-faint")}>
@@ -141,6 +141,13 @@ function Progress({ progress }: { progress: NonNullable<DetailHeaderProps["progr
           <ProgressStep key={s.key} step={s} state={stateOf(i)} subLabel={subLabel} />
         ))}
       </ol>
+      {/* Phone: the current label once, not squeezed into a one-eighth segment. */}
+      {steps[currentIndex] ? (
+        <p aria-hidden="true" data-slot="progress-current" className="mt-0.5 text-badge font-semibold text-ink md:hidden">
+          {steps[currentIndex].label}
+          {subLabel ? ` · ${subLabel}` : ""}
+        </p>
+      ) : null}
       {action ? <div className="mt-1.5 flex justify-end">{action}</div> : null}
     </div>
   );

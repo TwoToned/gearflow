@@ -135,6 +135,13 @@ describe("DetailHeader", () => {
     expect(buttons[0].className).toMatch(/w-full/);
   });
 
+  it("the phone line carries the current label once, outside the one-eighth segments", () => {
+    setup();
+    const line = document.querySelector('[data-slot="progress-current"]');
+    expect(line?.textContent).toBe("Confirmed · accepted");
+    expect(line?.className).toMatch(/md:hidden/);
+  });
+
   it("phonePrimaryBelowProgress leaves the desktop action row alone", () => {
     setup({ phonePrimaryBelowProgress: true });
     const button = screen.getByRole("button", { name: "Advance to Prep" });

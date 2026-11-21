@@ -240,6 +240,7 @@ export function mapTimeEntry(d: ConvexCrewTimeEntry): MappedCrewTimeEntry {
     approvedById: d.approvedById ?? null,
     approvedAt: toDate(d.approvedAt),
     notes: d.notes ?? null,
+    queryReason: d.queryReason,
     createdAt: toDate(d.createdAt),
     updatedAt: toDate(d.updatedAt),
   };

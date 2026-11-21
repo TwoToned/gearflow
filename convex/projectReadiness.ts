@@ -116,6 +116,8 @@ async function readIncidentReadiness(ctx: QueryCtx, orgId: string, projectId: st
   const records = await ctx.db
     .query("maintenanceRecords")
     .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+    // Newest first, so a capped scan reads the records most likely still open.
+    .order("desc")
     .take(INCIDENT_SCAN_CAP + 1);
   return computeProjectIncidentReadiness(
     records.map((r) => ({ organizationId: r.organizationId, incidentType: r.incidentType ?? null, status: r.status ?? null })),

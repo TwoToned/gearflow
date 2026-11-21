@@ -1,3 +1,5 @@
+import { isPastPrep } from "@/lib/job-lifecycle";
+
 /**
  * Turns the readiness data sources into the ordered list of checks the
  * Overview tab's readiness section renders (#1061; restored in UX Phase 7).
@@ -118,6 +120,8 @@ export interface BuildChecksInput {
   incidents?: ReadinessIncidentInput;
   /** Open blocking discussions; `null` while the count is loading. */
   blockingCount?: number | null;
+  /** The job's status — a row's words can depend on it (past prep, a blocker holds send-out, not prep). */
+  status?: string;
 }
 
 const plural = (n: number, one: string, many = one + "s") => (n === 1 ? one : many);
@@ -206,16 +210,23 @@ function conflictsCheck(conflicts: ReadinessConflictInput[] | null, hasWindow: b
 /**
  * UX Phase 7 (§6b) — an open blocking discussion holds prep and dispatch
  * (`updateStatusNative` refuses those moves), so it is a blocker here too.
- * `null` (count still loading) drops the row rather than guessing.
+ * `null` (count still loading) is `unknown`, never a silent drop: a dropped
+ * row could let the section read "Ready for prep" before the count arrives.
  */
-function discussionsCheck(blockingCount: number | null | undefined): ReadinessCheck | null {
-  if (blockingCount == null) return null;
+function discussionsCheck(blockingCount: number | null | undefined, status: string | undefined): ReadinessCheck {
+  if (blockingCount == null) {
+    return { id: "discussions", severity: "unknown", title: "Blocking discussions not checked yet", actionLabel: "Discussion", fix: { kind: "discussion" } };
+  }
   if (blockingCount === 0) return { id: "discussions", severity: "pass", title: "No blocking discussions" };
+  const n = `${blockingCount} blocking ${plural(blockingCount, "discussion")}`;
+  // Once the gear is out there is no prep left to hold; the gate still stops
+  // any further send-out (`evaluateBlockingGate` on checkout).
+  const pastPrep = status != null && isPastPrep(status);
   return {
     id: "discussions",
     severity: "blocking",
-    title: `${blockingCount} blocking ${plural(blockingCount, "discussion")} ${plural(blockingCount, "holds", "hold")} prep`,
-    detail: "Prep and dispatch are held until it is resolved.",
+    title: pastPrep ? `${n} open` : `${n} ${plural(blockingCount, "holds", "hold")} prep`,
+    detail: pastPrep ? "Any further send-out is held until it is resolved." : "Prep and dispatch are held until it is resolved.",
     actionLabel: "Open the discussion",
     fix: { kind: "discussion" },
   };
@@ -226,6 +237,18 @@ function incidentsCheck(incidents: ReadinessIncidentInput | undefined): Readines
   if (!incidents) return null;
   const n = incidents.openCount;
   if (n === 0 && !incidents.truncated) return { id: "incidents", severity: "pass", title: "No open incidents" };
+  // The newest records were scanned and none is open, but older ones weren't:
+  // that is not a clean pass, and "0+" would read as nonsense.
+  if (n === 0) {
+    return {
+      id: "incidents",
+      severity: "unknown",
+      title: "Open incidents not fully checked",
+      detail: "This job has more maintenance records than one check reads; the newest have none open.",
+      actionLabel: "Warehouse",
+      fix: { kind: "warehouse" },
+    };
+  }
   const count = incidents.truncated ? `${n}+` : String(n);
   return {
     id: "incidents",
@@ -346,7 +369,7 @@ export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] 
   return [
     gearCheck(input),
     conflictsCheck(input.conflicts, input.hasWindow),
-    discussionsCheck(input.blockingCount),
+    discussionsCheck(input.blockingCount, input.status),
     servicesCheck(input.crew),
     crewCheck(input.crew),
     pricingCheck(input.pricing),

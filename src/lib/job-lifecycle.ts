@@ -51,6 +51,15 @@ export function stageIndexForStatus(status: string): number {
   return LIFECYCLE_STAGES.findIndex((s) => s.statuses.includes(status));
 }
 
+/**
+ * Past prep: Out, On site, Returned, Completed, Invoiced — and Cancelled, which
+ * has nothing to prep. The Overview's readiness checklist becomes a state
+ * sentence here (UX Phase 7).
+ */
+export function isPastPrep(status: string): boolean {
+  return status === "CANCELLED" || stageIndexForStatus(status) >= stageIndexForStatus("CHECKED_OUT");
+}
+
 /** What `Advance to …` moves to, or null at the end of the pipeline or off it. */
 export function nextStage(status: string): { label: string; status: string } | null {
   const i = stageIndexForStatus(status);

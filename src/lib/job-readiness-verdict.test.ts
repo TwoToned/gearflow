@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, test, expect } from "vitest";
-import { readinessVerdict, isPastPrep } from "@/lib/job-readiness-verdict";
-import type { ReadinessCheck } from "@/lib/project-readiness-checks";
+import { readinessVerdict } from "@/lib/job-readiness-verdict";
+import { isPastPrep } from "@/lib/job-lifecycle";
+import { buildReadinessChecks, type ReadinessCheck } from "@/lib/project-readiness-checks";
 
 const pass = (id: ReadinessCheck["id"], title = `${id} ok`): ReadinessCheck => ({ id, severity: "pass", title });
 const warn = (id: ReadinessCheck["id"]): ReadinessCheck => ({ id, severity: "warning", title: `${id} warn`, fix: { kind: "tab", tab: "labour" } });
@@ -34,6 +35,23 @@ describe("readinessVerdict — before the gear leaves", () => {
     const v = readinessVerdict([unknown("gear")], "ENQUIRY");
     expect(v.tone).toBe("todo");
     expect(v.clear).toEqual([]);
+  });
+
+  test("a blocking count still loading, with nothing else failing, does NOT read Ready", () => {
+    const checks = buildReadinessChecks({
+      hasWindow: true,
+      gear: { hard: [], pencilled: [] },
+      crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
+      pricing: { unpriced: [], unpricedCount: 0 },
+      conflicts: [],
+      packing: { totalCount: 0, notPlannedCount: 0 },
+      incidents: { openCount: 0, truncated: false },
+      blockingCount: null,
+      status: "CONFIRMED",
+    });
+    const v = readinessVerdict(checks, "CONFIRMED");
+    expect(v.headline).not.toBe("Ready for prep");
+    expect(v.rows.map((r) => `${r.id}:${r.severity}`)).toEqual(["discussions:unknown"]);
   });
 
   test("all passing reads Ready for prep", () => {

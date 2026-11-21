@@ -16,6 +16,7 @@ function input(over: Partial<BuildChecksInput> = {}): BuildChecksInput {
     pricing: { unpriced: [], unpricedCount: 0 },
     conflicts: [],
     packing: { totalCount: 0, notPlannedCount: 0 },
+    blockingCount: 0,
     ...over,
   };
 }
@@ -104,9 +105,17 @@ describe("blocking discussions check (UX Phase 7)", () => {
     expect(byId(buildReadinessChecks(input({ blockingCount: 1 })), "discussions").title).toBe("1 blocking discussion holds prep");
   });
 
-  test("none open passes; a count still loading drops the row", () => {
+  test("none open passes; a count still loading is unknown, never dropped", () => {
     expect(byId(buildReadinessChecks(input({ blockingCount: 0 })), "discussions").severity).toBe("pass");
-    expect(buildReadinessChecks(input({ blockingCount: null })).some((c) => c.id === "discussions")).toBe(false);
+    expect(byId(buildReadinessChecks(input({ blockingCount: null })), "discussions").severity).toBe("unknown");
+    expect(summariseReadiness(buildReadinessChecks(input({ blockingCount: null }))).allClear).toBe(false);
+  });
+
+  test("from Out onward it no longer says it holds prep", () => {
+    const c = byId(buildReadinessChecks(input({ blockingCount: 1, status: "CHECKED_OUT" })), "discussions");
+    expect(c.title).toBe("1 blocking discussion open");
+    expect(c.detail).toBe("Any further send-out is held until it is resolved.");
+    expect(byId(buildReadinessChecks(input({ blockingCount: 1, status: "PREPPING" })), "discussions").title).toBe("1 blocking discussion holds prep");
   });
 });
 
@@ -119,6 +128,13 @@ describe("incidents check (UX Phase 7)", () => {
   test("a truncated count says it is a floor", () => {
     const c = byId(buildReadinessChecks(input({ incidents: { openCount: 200, truncated: true } })), "incidents");
     expect(c.title).toBe("200+ open incidents on this job's gear");
+  });
+
+  test("zero open in a truncated scan is not checked, never '0+' and never a pass", () => {
+    const c = byId(buildReadinessChecks(input({ incidents: { openCount: 0, truncated: true } })), "incidents");
+    expect(c.severity).toBe("unknown");
+    expect(c.title).toBe("Open incidents not fully checked");
+    expect(c.title).not.toContain("0+");
   });
 
   test("none passes", () => {
@@ -302,12 +318,12 @@ describe("packing check (#1296 build plan phase 4)", () => {
 describe("ordering and summary", () => {
   test("order is stable regardless of severity so rows don't reshuffle", () => {
     // Default crew/services are both empty, so those two rows drop out —
-    // only gear, conflicts and pricing survive on a clean, crewless project.
+    // only gear, conflicts, discussions and pricing survive on a clean, crewless project.
     const clean = buildReadinessChecks(input()).map((c) => c.id);
     const messy = buildReadinessChecks(
       input({ conflicts: [{ assetTag: "A", modelName: "M", conflictingProject: { projectNumber: "P-1" } }] }),
     ).map((c) => c.id);
-    expect(clean).toEqual(["gear", "conflicts", "pricing"]);
+    expect(clean).toEqual(["gear", "conflicts", "discussions", "pricing"]);
     expect(messy).toEqual(clean);
   });
 
@@ -324,7 +340,7 @@ describe("ordering and summary", () => {
         },
       }),
     ).map((c) => c.id);
-    expect(checks).toEqual(["gear", "conflicts", "services", "crew", "pricing"]);
+    expect(checks).toEqual(["gear", "conflicts", "discussions", "services", "crew", "pricing"]);
   });
 
   test("all-clear only when every applicable check actually ran and passed", () => {

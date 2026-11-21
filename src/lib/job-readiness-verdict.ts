@@ -1,4 +1,4 @@
-import { stageIndexForStatus } from "@/lib/job-lifecycle";
+import { isPastPrep } from "@/lib/job-lifecycle";
 import { OUT_LABEL } from "@/lib/vocabulary";
 import type { ReadinessCheck } from "@/lib/project-readiness-checks";
 
@@ -31,7 +31,6 @@ export interface ReadinessVerdict {
 
 const SEVERITY_ORDER = { blocking: 0, unknown: 1, warning: 2, pass: 3 } as const;
 const STILL_MATTERS_WHEN_OUT: ReadonlySet<ReadinessCheck["id"]> = new Set(["incidents", "discussions"]);
-const OUT_STAGE_INDEX = stageIndexForStatus("CHECKED_OUT");
 
 const STATE_SENTENCE: Record<string, string> = {
   CHECKED_OUT: `${OUT_LABEL} — the gear has left the warehouse.`,
@@ -41,11 +40,6 @@ const STATE_SENTENCE: Record<string, string> = {
   INVOICED: "Invoiced — this job is closed out.",
   CANCELLED: "Cancelled — off the pipeline; its reservations are released.",
 };
-
-/** Out, On site, Returned, Completed, Invoiced — and Cancelled, which has nothing to prep. */
-export function isPastPrep(status: string): boolean {
-  return status === "CANCELLED" || stageIndexForStatus(status) >= OUT_STAGE_INDEX;
-}
 
 function failingWorstFirst(checks: ReadinessCheck[]): ReadinessCheck[] {
   return checks

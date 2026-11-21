@@ -84,6 +84,15 @@ describe("projectReadiness.forProject — incidents", () => {
     expect((await read(t)).incidents).toEqual({ openCount: 0, truncated: false });
   });
 
+  test("a capped scan reads the NEWEST records first and says it was truncated", async () => {
+    const t = makeT();
+    await seed(t);
+    const closed = Array.from({ length: 201 }, (_, i) => ({ id: `c${i}`, incidentType: "BROKEN_DAMAGED" as const, status: "COMPLETED" as const }));
+    // Oldest record is an open incident; the newest is too. Only the newest is in the scan.
+    await addRecords(t, [{ id: "old-open", incidentType: "BROKEN_DAMAGED" }, ...closed, { id: "new-open", incidentType: "NEEDS_SERVICE" }]);
+    expect((await read(t)).incidents).toEqual({ openCount: 1, truncated: true });
+  });
+
   test("no records reads as zero, not truncated", async () => {
     const t = makeT();
     await seed(t);

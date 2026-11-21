@@ -124,7 +124,7 @@ export function ReadinessSection({
   status: string;
   onFix: (fix: ReadinessFix) => void;
 }) {
-  const { checks } = useProjectReadiness(projectId, orgId, true);
+  const { checks } = useProjectReadiness(projectId, orgId, true, status);
   return (
     <OverviewSection aria-label="Readiness">
       {checks ? (

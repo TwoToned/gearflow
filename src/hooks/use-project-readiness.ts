@@ -57,6 +57,7 @@ export function useProjectReadiness(
   projectId: string,
   orgId: string | undefined,
   enabled: boolean,
+  status?: string,
 ): { checks: ReadinessCheck[] | null } {
   const args = orgId && enabled ? { orgId, projectId } : "skip";
   const readiness = useAuthedQuery(api.projectReadiness.forProject, args);
@@ -77,8 +78,9 @@ export function useProjectReadiness(
       incidents: readiness.incidents,
       conflicts,
       blockingCount: blocking?.count ?? null,
+      status,
     });
-  }, [readiness, conflicts, blocking]);
+  }, [readiness, conflicts, blocking, status]);
 
   return { checks };
 }

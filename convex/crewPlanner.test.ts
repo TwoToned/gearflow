@@ -152,4 +152,26 @@ describe("crewRolesWrites.moveNative", () => {
     await move("r3", "down");
     expect(await order()).toEqual(["r2", "r3", "r1"]);
   });
+
+  test("moves past archived roles to the nearest role in the same list, and back", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewRoles", { id: "r2", organizationId: ORG, name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("crewRoles", { id: "rx", organizationId: ORG, name: "Old", sortOrder: 1, isActive: false });
+      await ctx.db.insert("crewRoles", { id: "r4", organizationId: ORG, name: "Vision", sortOrder: 2 });
+    });
+    const order = () => t.run(async (ctx) => (await ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect())
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name)).map((r) => r.id));
+    const move = (id: string, direction: "up" | "down") => t.withIdentity(asUser).mutation(api.crewRolesWrites.moveNative, { id, orgId: ORG, direction, now: D0, actor, auditId: `mv2-${id}-${direction}` });
+    const before = await order();
+    const active = (ids: string[]) => ids.filter((id) => id !== "rx");
+    // Vision swaps with the nearest ACTIVE role above it, never the archived one between.
+    const i = active(before).indexOf("r4");
+    expect((await move("r4", "up")).moved).toBe(true);
+    expect(active(await order()).indexOf("r4")).toBe(i - 1);
+    await move("r4", "down");
+    expect(await order()).toEqual(before);
+    // The only archived role has no neighbour in its own list.
+    expect((await move("rx", "up")).moved).toBe(false);
+  });
 });

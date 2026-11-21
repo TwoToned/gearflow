@@ -64,7 +64,7 @@ function deriveInvoicingView(
  * adding `Deposit paid` is Phase 10's): the headline label, then the figures
  * that mean something — outstanding, invoiced, paid.
  */
-export function invoicingStateWords(view: InvoicingView): { line: string; detail: string | null } {
+function invoicingStateWords(view: InvoicingView): { line: string; detail: string | null } {
   const { state, clientName, depositPercent } = view;
   const headline = INVOICING_HEADLINE_LABEL[state.headline];
   if (state.liveInvoices.length === 0) {
@@ -76,7 +76,7 @@ export function invoicingStateWords(view: InvoicingView): { line: string; detail
 }
 
 /** The next step under the state: what is left to raise, or the last invoice out. */
-export function invoicingNextWords(state: InvoicingState): string | null {
+function invoicingNextWords(state: InvoicingState): string | null {
   const parts: string[] = [];
   if (state.notYetInvoiced != null && state.notYetInvoiced > 0.005 && state.liveInvoices.length > 0) {
     parts.push(`${money(state.notYetInvoiced)} not yet raised`);

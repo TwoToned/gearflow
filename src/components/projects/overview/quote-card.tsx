@@ -94,7 +94,7 @@ const STATUS_WORD: Record<string, string> = {
 };
 
 /** `v3 sent 4 Nov · valid until 4 Dec`, `v3 accepted`, `v2 · not sent yet`. */
-export function quoteStateWords(view: Pick<QuoteView, "live" | "status" | "revision">): string {
+function quoteStateWords(view: Pick<QuoteView, "live" | "status" | "revision">): string {
   const { live, status, revision } = view;
   if (!live) return `v${revision} · not sent yet`;
   const word = STATUS_WORD[status] ?? status.toLowerCase();

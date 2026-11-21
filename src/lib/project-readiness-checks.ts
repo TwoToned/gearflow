@@ -97,7 +97,7 @@ export interface ReadinessConflictInput {
 }
 
 /** `projectReadiness.forProject`'s bounded count (UX Phase 7). */
-export interface ReadinessIncidentInput {
+interface ReadinessIncidentInput {
   openCount: number;
   /** The scan hit its cap; `openCount` is a floor. */
   truncated: boolean;

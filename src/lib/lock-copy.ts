@@ -55,13 +55,20 @@ export function formatLockElapsed(lockedAt: number, now: number): string {
   return lockedDate.toLocaleDateString();
 }
 
+/** The locked headline; also the job header lock glyph's accessible name. */
+const LOCKED_HEADLINE = "Pricing locked";
+
 /** The one "go do something about it" action every gated field/button offers
- *  when it doesn't own an unlock affordance itself — the actual "Unlock
- *  pricing" button lives in `<ProjectLockStrip>`, mounted once above every
- *  tab, so any deeper surface (a dialog buried in the Equipment or Crew tab)
- *  just scrolls there instead of duplicating the strip's own action wiring. */
+ *  when it doesn't own an unlock affordance itself. "Unlock pricing" lives in
+ *  the job header's lock glyph menu (UX Phase 7, §6b; the old lock strip and
+ *  its `#lock-strip` anchor are gone, and that anchor no longer existed
+ *  before then either). Any deeper surface scrolls the header
+ *  (`#job-header`) into view and focuses the glyph, so Enter opens its menu.
+ *  The name is kept for its callers. */
 export function scrollToLockStrip(): void {
-  document.getElementById("lock-strip")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const header = document.getElementById("job-header");
+  header?.scrollIntoView({ behavior: "smooth", block: "start" });
+  header?.querySelector<HTMLElement>(`button[aria-label="${LOCKED_HEADLINE}"]`)?.focus({ preventScroll: true });
 }
 
 export function resolveLockCopy(status: LockCopyStatus): LockCopy {
@@ -81,10 +88,10 @@ export function resolveLockCopy(status: LockCopyStatus): LockCopy {
   const detail = `A quote has been sent or this job is confirmed${who}${when}.`;
   return {
     intent: "warning",
-    headline: "Pricing locked",
+    headline: LOCKED_HEADLINE,
     detail,
     exitLabel: "Unlock pricing",
-    chipLabel: "Pricing locked",
+    chipLabel: LOCKED_HEADLINE,
     oneLiner: `Pricing locked — ${detail} Unlock pricing to edit money fields.`,
   };
 }

@@ -22,7 +22,12 @@ export interface NativeDashboardStats {
   /** WS6 #945 — distinct models with an open, due recurring-PM cycle. Separate
    *  from `maintenanceDue` (which excludes schedule-generated records). */
   modelsDueForService: number;
+  /** CHECKED_OUT lines on overdue-return jobs: the tile's sub-line (D85). */
   overdueReturns: number;
+  /** Overdue-return JOBS (`convex/lib/overdueReturns.ts`): the tile's number, what `?overdue=1` lists. */
+  overdueReturnJobs: number;
+  /** A read cap was hit: print `n+`. */
+  overdueTruncated: boolean;
   countersReady: boolean;
 }
 
@@ -190,6 +195,12 @@ export interface NativeOrgFinanceCounts {
   neverSentCount: number;
   depositDueCount: number;
   outstandingCount: number;
+  /** D88: issued invoices past their due day and not settled. */
+  overdueCount: number;
+  /** What is still owed on them (derived remaining balance). */
+  overdueOutstanding: number;
+  /** The ISSUED scan hit its cap: the overdue figures are a lower bound. */
+  overdueTruncated: boolean;
 }
 
 /**

@@ -17,12 +17,12 @@ import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
  */
 export type CrewView = "planner" | "timesheets";
 
-export const CREW_VIEW_HREF: Record<CrewView, string> = {
+const CREW_VIEW_HREF: Record<CrewView, string> = {
   planner: "/crew/planner",
   timesheets: "/crew/timesheets",
 };
 
-export function crewHeadWords(view: CrewView): HeadWords {
+function crewHeadWords(view: CrewView): HeadWords {
   return {
     value: view,
     words: [

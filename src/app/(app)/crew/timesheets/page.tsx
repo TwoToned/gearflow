@@ -1,5 +1,3 @@
-"use client";
-
 import { RequirePermission } from "@/components/auth/require-permission";
 import { TimesheetsList } from "@/components/crew/workspace/timesheets/timesheets-list";
 import { PageMeta } from "@/components/layout/page-meta";

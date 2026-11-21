@@ -20,7 +20,7 @@ export interface AssignmentOption {
 }
 
 /** `#2336 Hilton gala (Rigger)`; `GENERAL` = no job, a description instead. */
-export const GENERAL = "__general__";
+const GENERAL = "__general__";
 
 function FieldError({ message }: { message?: string }) {
   return message ? <p className="text-caption text-t-out">{message}</p> : null;

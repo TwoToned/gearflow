@@ -48,7 +48,7 @@ export const TIMESHEETS_VIEW_ALIASES: LegacyKeyAliases = { crewMemberId: "person
 
 // ─── Filter words ────────────────────────────────────────────────────────
 
-export const TIME_ENTRY_STATUS_ORDER = ["DRAFT", "SUBMITTED", "APPROVED", "DISPUTED", "EXPORTED"] as const;
+const TIME_ENTRY_STATUS_ORDER = ["DRAFT", "SUBMITTED", "APPROVED", "DISPUTED", "EXPORTED"] as const;
 
 export interface PersonOption {
   id: string;
@@ -168,7 +168,7 @@ export function entryDay(iso: string): string {
   return new Date(iso).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).replace(",", "");
 }
 
-export function hoursText(h: number | null | undefined): string {
+function hoursText(h: number | null | undefined): string {
   if (h == null) return "—";
   return `${Math.round(h * 100) / 100}h`;
 }
@@ -176,13 +176,13 @@ export function hoursText(h: number | null | undefined): string {
 const RATE_UNIT: Record<string, string> = { HOURLY: "/h", DAILY: "/day", FLAT: " flat" };
 
 /** `$450/day`; blank when nothing in the cascade resolved (never $0). */
-export function rateText(e: TimeEntrySource): string {
+function rateText(e: TimeEntrySource): string {
   if (e.rate == null) return "—";
   return `${factText({ kind: "money", amount: e.rate })}${RATE_UNIT[e.rateType ?? ""] ?? ""}`;
 }
 
 /** A day rate already carried by an earlier entry prints `incl.`; blank stays blank. */
-export function totalFact(e: TimeEntrySource): Fact {
+function totalFact(e: TimeEntrySource): Fact {
   if (e.rateIncluded) return { kind: "text", label: "incl." };
   return { kind: "money", amount: e.total ?? null };
 }

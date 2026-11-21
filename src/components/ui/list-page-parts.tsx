@@ -53,7 +53,7 @@ export interface ListPrimary {
 // ─── Head ────────────────────────────────────────────────────────────────
 
 /** One page-level view word in the head (`Planner  Timesheets`, §9h.2): a route, not a list param. */
-export interface HeadWord {
+interface HeadWord {
   key: string;
   label: string;
   href: string;

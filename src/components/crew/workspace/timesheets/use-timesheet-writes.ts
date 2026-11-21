@@ -21,7 +21,7 @@ import type { TimeEntryTransition } from "../../../../../convex/lib/timeEntryTra
  * - Delete entry → confirmed first, no Undo (as live).
  */
 
-export const entries = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
+const entries = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
 
 const VERB: Record<TimeEntryTransition, { done: string; undone: string; why: string }> = {
   submit: { done: "Submitted", undone: "back to where they were", why: "not a draft or queried" },

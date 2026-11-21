@@ -12,7 +12,7 @@ import { crewTimeEntrySchema, type CrewTimeEntryFormValues } from "@/lib/validat
 import { TimeEntryFields, dateInputValue, type AssignmentOption } from "./time-entry-fields";
 
 /** The form values an entry is saved from; also the Undo snapshot for an edit. */
-export function entryFormValues(e: TimeEntrySource): CrewTimeEntryFormValues {
+function entryFormValues(e: TimeEntrySource): CrewTimeEntryFormValues {
   return {
     assignmentId: e.assignmentId ?? "",
     crewMemberId: e.crewMemberId,

@@ -1,6 +1,6 @@
 # UX unification — build status
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-11-17 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-11-21 (review quarterly — POLICY.md R-5.5)_
 
 Build tracker for [`ux-unification-2026-10.md`](./ux-unification-2026-10.md) §11. The
 overseer session keeps this current and commits it with its integration commits.
@@ -22,7 +22,12 @@ https://flow.rvlt.app returns 200/307.
 | 5 | D4 · worker model Sonnet | Accepted 2026-11-17 |
 | 6 | D1, D5, D11, D12, D13, D65, D69, D70 | Accepted 2026-11-17 |
 | 4 | D6, D26, D27, D28, D29 | Accepted 2026-11-17 |
-| Wave D | phases 7–18 (spec §11) | plan agreed 2026-11-19; each phase's Gate 0 still to ask |
+| 7 | none | — |
+| 8 | D19, D20, D21 · worker model Sonnet (L) | Accepted 2026-11-21 |
+| 11 | D85, D86, D87, D88, D89 | Accepted 2026-11-21 |
+| 15 | D46, D47, D48, D49 | Accepted 2026-11-21 |
+| 16 | D50, D51, D52, D53 | Accepted 2026-11-21 |
+| Wave D2, D3 | phases 9, 10, 12, 13, 14, 17, 18 (spec §11) | plan agreed 2026-11-19; each phase's Gate 0 still to ask |
 
 Decisions PRs #1377 and #1379 merged 2026-11-17. Knip baseline lowered 405 → 402 after Phase 0 (#1381).
 
@@ -58,6 +63,39 @@ Each is built in its own PR with a /code-review; until then it stays listed as d
 | Durable prep / de-prep scans | §5.7, Phase 3 | the scan-intake ops union / validators | Phase 3 follow-up PR |
 | D10 "remember for the next n" shared across packers | Phase 3 | a stored field; per-device in memory for now | Phase 3 follow-up PR |
 | `subHireItems.coverage` (what a shortfall cover changed, so Undo restores exactly that) | Phase 2a | one optional object field | 2a (#1388) |
+| Seal case (approved 2026-11-21, D21) | §7b, Phase 8 | optional `projectContainers.sealedAt` | 8 |
+| Timesheet query reason (approved 2026-11-21, D47) | §9h.4, Phase 15 | optional `crewTimeEntries.queryReason`, cleared on resubmit/approve | 15 |
+
+| T&T readings that are entered but never stored (approved 2026-11-21) | §9i, Phase 16 | three optional `testTagRecords` fields: RCD trip current, RCD push-button, microwave leakage | 16 |
+
+Not a schema change (2026-11-21, D50): an ad-hoc check's condition writes the existing `assets.condition` plus an activity row. `FAIR` reads **Worn** app-wide (owner, 2026-11-21), with the alias in the glossary.
+
+**Owner answers 2026-11-21, round 2:**
+- **D21 seal scope:** a seal also blocks rename, re-nest and delete; the warehouse is not blocked.
+- **R-8.3.3 `loadOrgGraph` exception:** renewed to 2027-02-21 (it had lapsed on 2026-10-25), so Phase 7's double-booked row ships.
+- **D52:** a failed test stores the derived next-due date ("Next due after repair").
+- **Follow-ups:** start the CSV formula-injection guard + the Next.js ≥ 16.4.5 upgrade now. Picomatch is to be FIXED (override), not renewed; come back to the owner before 2026-12-03 if it can't be done cleanly.
+
+**Overseer rulings on worker questions (2026-11-21; these interpret accepted rows):**
+- Phase 15:
+  - D49 pay = the cost (pay) cascade, labelled "Rate (pay)".
+  - A day rate counts once per person per day.
+  - Offer/Cancel email crew, so they get a confirm and no Undo.
+  - "Disputed" reads "Queried" via its one label source.
+  - The timesheet Undo reads prior values from the forward write's own activity rows; it never takes client-supplied values.
+- Phase 8:
+  - The version menu lives in the header ⋯ (D92), with no chip.
+  - "Unplanned" (a plan state) is not "Loose" (a physical state).
+  - Make-live Undo is server-checked against the expected live pointer.
+- Phase 7:
+  - The money tiles go (§6b); CLAUDE.md's Overview paragraph is updated in the same PR.
+  - The invoicing-derivation merge and "Deposit paid" move to Phase 10.
+- Phase 11:
+  - The overdue tile links to `/projects?overdue=1`.
+  - Global search gets a server-side role filter (security fix).
+  - ⌘K Recents are ids in localStorage, keyed per org + user.
+
+**Restart 2026-11-21 ~11:40:** the container restarted mid-slice. Every worker branch was clean and pushed; workers were re-briefed from their PR-body handoffs.
 
 ## Wave D (agreed 2026-11-19, spec §11 rows 7–18)
 
@@ -66,3 +104,16 @@ Each is built in its own PR with a /code-review; until then it stays listed as d
 | D1 | 7 Job header + Overview, 8 Packing + Versions, 11 Home + palette + More counts, 15 Crew planner, 16 Scan check | 6a, 6b, 2b merged |
 | D2 | 9 Wizard + edit sheet, 10 Finance + Tasks tabs, 12 Assets, 13 People, 14 Gear | 7, 16, 6b merged |
 | D3 | 17 Finance hub + Settings, 18 Schedule | 10, 11 merged |
+
+### Wave D1 workers (started 2026-11-21)
+
+Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that page only after 7 merges. 11 and 15 both touch `src/lib/nav.ts`: whichever merges second merges main first.
+
+| Phase | Worker | Branch / PR | State | Blockers |
+|---|---|---|---|---|
+| 7 Job header + Overview + tab strip (M) | default | `claude/ux-7-job-header` · #1400 | slice A (header + tab strip) pushed; slice B (Overview) next | — |
+| 8 Packing + Versions (L) | Sonnet | `claude/ux-8-packing-versions` · #1399 | slice 1 (Convex) pushed | page.tsx tab work waits for 7 |
+| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` · #1401 | S1 (Convex + Jobs list) pushed | — |
+| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` · #1402 | slice 1 (Convex + server) pushed | — |
+| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` · #1403 | plan approved; slice 1 next | merges before Phase 14 |
+| Follow-up: CSV guard + Next.js ≥ 16.4.5 | default | `claude/fu-csv-next-upgrade` | starting | — |

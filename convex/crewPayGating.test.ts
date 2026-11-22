@@ -146,3 +146,39 @@ describe("planner reads redact pay below manager", () => {
     expect(mem.status).toBe("CONFIRMED");
   });
 });
+
+describe("crew roles: rates follow the one pay rule (S4, S5)", () => {
+  const roles = (t: T, who = asUser) => t.withIdentity(who).query(api.crewRoles.listForSettings, { orgId: ORG });
+  const role = (t: T) => t.run(async (ctx) => ctx.db.query("crewRoles").withIndex("by_cuid", (q) => q.eq("id", "r1")).first());
+  const edit = (t: T, who: typeof asUser, rates: { defaultRate?: number; chargeRate?: number }) =>
+    t.withIdentity(who).mutation(api.crewRolesWrites.updateNative, {
+      id: "r1", orgId: ORG, name: "Rigger II", rateType: "DAILY", ...rates, now: D0, actor: { userId: USER, userName: "Alice" }, auditId: `e-${Math.random()}`,
+    });
+
+  test("S5: listForSettings gives a noFinancials key (even as an owner) no rates; a manager gets them", async () => {
+    const ta = makeT(); await seed(ta, "owner", { noFinancials: true });
+    const agentRow = (await roles(ta, asAgent))[0] as Record<string, unknown>;
+    expect(agentRow.defaultRate).toBeUndefined();
+    expect(agentRow.name).toBe("Rigger");
+    const tm = makeT(); await seed(tm, "manager");
+    expect((await roles(tm))[0]).toMatchObject({ defaultRate: 600 });
+  });
+
+  test("S4: an edit by a caller who can't see pay keeps the stored rates; a manager's edit can clear them", async () => {
+    const ta = makeT(); await seed(ta, "owner", { noFinancials: true });
+    await ta.run(async (ctx) => {
+      const r = await ctx.db.query("crewRoles").withIndex("by_cuid", (q) => q.eq("id", "r1")).first();
+      await ctx.db.patch(r!._id, { chargeRate: 900 });
+    });
+    await edit(ta, asAgent, {}); // the redacted read had no rates, so the edit sends none
+    expect(await role(ta)).toMatchObject({ name: "Rigger II", defaultRate: 600, chargeRate: 900 });
+    await edit(ta, asAgent, { defaultRate: 1 }); // and a rate it sends anyway is ignored
+    expect((await role(ta))?.defaultRate).toBe(600);
+
+    const tm = makeT(); await seed(tm, "manager");
+    await edit(tm, asUser, { defaultRate: 650 });
+    expect((await role(tm))?.defaultRate).toBe(650);
+    await edit(tm, asUser, {});
+    expect((await role(tm))?.defaultRate).toBeUndefined();
+  });
+});

@@ -103,6 +103,30 @@ describe("CrewRolesSheet (smoke)", () => {
     expect((within(editor).getByLabelText("Name") as HTMLInputElement).value).toBe("Rigger");
   });
 
+  it("S4: below manager, saving an edit sends no rate fields (ratesShown: false), and so does its Undo", async () => {
+    perms.manager = false;
+    const user = userEvent.setup();
+    render(<CrewRolesSheet open onOpenChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Audio actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: /Edit…/ }));
+    const editor = await screen.findByRole("dialog", { name: "Edit Audio" });
+    expect(within(editor).queryByLabelText(/Cost rate/)).toBeNull();
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(w.update).toHaveBeenCalledWith("r1", expect.objectContaining({ name: "Audio" }), { ratesShown: false }));
+    await announced[0].performUndo!();
+    expect(w.update).toHaveBeenLastCalledWith("r1", expect.anything(), { ratesShown: false });
+  });
+
+  it("a manager's edit sends the rates it showed", async () => {
+    const user = userEvent.setup();
+    render(<CrewRolesSheet open onOpenChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Audio actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: /Edit…/ }));
+    const editor = await screen.findByRole("dialog", { name: "Edit Audio" });
+    await user.click(within(editor).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(w.update).toHaveBeenCalledWith("r1", expect.objectContaining({ name: "Audio" }), { ratesShown: true }));
+  });
+
   it("Archive… shows where the role is used before archiving; Undo restores", async () => {
     const user = userEvent.setup();
     render(<CrewRolesSheet open onOpenChange={vi.fn()} />);

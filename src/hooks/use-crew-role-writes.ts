@@ -53,9 +53,16 @@ export function useCrewRoleWrites() {
         auditId: createId(),
       });
     },
-    update: async (id: string, data: CrewRoleFormValues): Promise<{ id: string }> => {
+    /**
+     * `ratesShown: false` (the editor hid the rates) sends no rate fields at
+     * all: the caller never saw them, so it must not be read as clearing them.
+     * The server keeps them regardless for a caller who can't see pay.
+     */
+    update: async (id: string, data: CrewRoleFormValues, opts: { ratesShown: boolean } = { ratesShown: true }): Promise<{ id: string }> => {
       const parsed = crewRoleSchema.parse(data);
-      return await updateM({ id, orgId: requireOrg(), ...fields(parsed), now: Date.now(), actor: actor(), auditId: createId() });
+      const f = fields(parsed);
+      const sent = opts.ratesShown ? f : { ...f, defaultRate: undefined, chargeRate: undefined };
+      return await updateM({ id, orgId: requireOrg(), ...sent, now: Date.now(), actor: actor(), auditId: createId() });
     },
     archive: async (id: string, isActive: boolean): Promise<{ id: string; isActive: boolean; usage: { crewMembers: number; crewAssignments: number; projectServices: number } }> => {
       return await archiveM({ id, orgId: requireOrg(), isActive, now: Date.now(), actor: actor(), auditId: createId() });

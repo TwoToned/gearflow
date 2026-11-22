@@ -8,6 +8,8 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { crewRoleUsage } from "./lib/crewRoleUsage";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { compareRoleOrder } from "./lib/crewRoleOrder";
 import * as enums from "./lib/validators";
 
 /**
@@ -157,15 +159,19 @@ export const updateNative = mutation({
     if (!a.name) throw new ConvexError("Name is required");
     assertCrewRoleFields(a);
 
+    // A caller who can't see pay (below manager, or a noFinancials key) never
+    // read the rates (`listForSettings` strips them), so the blanks it sends are
+    // not an intent to clear them: the rates stay exactly as stored (S4).
+    const payVisible = await canSeeCrewPay(ctx, a.orgId);
+    const rates = payVisible ? { defaultRate: a.defaultRate ?? undefined, chargeRate: a.chargeRate ?? undefined } : {};
     // Clears use `undefined` (Convex removes the optional; the schema rejects null).
     await ctx.db.patch(doc._id, {
       name: a.name,
       description: a.description || undefined,
       department: a.department || undefined,
       color: a.color || undefined,
-      defaultRate: a.defaultRate ?? undefined,
       rateType: a.rateType || undefined,
-      chargeRate: a.chargeRate ?? undefined,
+      ...rates,
       sortOrder: a.sortOrder ?? doc.sortOrder ?? 0,
     });
 
@@ -210,7 +216,7 @@ const MOVE_ROLES_CAP = 500;
 
 /** The org's roles in display order (sortOrder, then name), as the roles admin lists them. */
 function displayOrder<T extends { sortOrder?: number; name: string }>(roles: T[]): T[] {
-  return [...roles].sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0) || x.name.localeCompare(y.name));
+  return [...roles].sort(compareRoleOrder);
 }
 
 const isArchived = (r: { isActive?: boolean }): boolean => r.isActive === false;

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgReadFor, requireOrgReadDocFor, requireService, isCallerManagerPlus, redactFields } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, redactFields } from "./lib/auth";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import { crewRoleUsage } from "./lib/crewRoleUsage";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -52,8 +53,9 @@ export const listForSettings = query({
       .query("crewRoles")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
       .collect();
-    const managerPlus = await isCallerManagerPlus(ctx, orgId);
-    return managerPlus ? rows : rows.map((r) => redactFields(r, ["defaultRate", "chargeRate"]));
+    // The one crew-pay rule (manager+ AND not a noFinancials key), S5.
+    const payVisible = await canSeeCrewPay(ctx, orgId);
+    return payVisible ? rows : rows.map((r) => redactFields(r, ["defaultRate", "chargeRate"]));
   },
 });
 

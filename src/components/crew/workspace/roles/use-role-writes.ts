@@ -33,7 +33,7 @@ const opposite = (d: "up" | "down"): "up" | "down" => (d === "up" ? "down" : "up
  * Undo from ONE closure: a move → the opposite move (one atomic `moveNative`
  * each way), archive ↔ restore, an edit → its snapshot replayed.
  */
-export function useRoleSheetWrites() {
+export function useRoleSheetWrites({ ratesShown }: { ratesShown: boolean }) {
   const w = useCrewRoleWrites();
 
   async function move(role: CrewRoleDoc, direction: "up" | "down") {
@@ -77,12 +77,13 @@ export function useRoleSheetWrites() {
         return true;
       }
       const snapshot = roleFormValues(role);
-      await w.update(role.id, values);
+      // Rates the editor hid are never sent (S4): an edit below manager keeps them.
+      await w.update(role.id, values, { ratesShown });
       announceListWrite({
         title: `${values.name} updated · new calls use the new rate`,
         undoneTitle: `Undone · ${role.name} restored`,
         performUndo: async () => {
-          await w.update(role.id, snapshot);
+          await w.update(role.id, snapshot, { ratesShown });
         },
       });
       return true;

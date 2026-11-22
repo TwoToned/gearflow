@@ -126,4 +126,16 @@ describe("dashboardLayouts", () => {
       t.withIdentity(asUser).mutation(api.dashboardLayouts.saveNative, { id: "row1", widgets: many, now: NOW }),
     ).rejects.toThrow(/at most 40/i);
   });
+
+  test("a client-named org must be the token's org: org A's board can never be read or saved into org B", async () => {
+    const t = makeT();
+    await t.withIdentity(asUser).mutation(api.dashboardLayouts.saveNative, { id: "row1", widgets: [WIDGET], now: NOW, orgId: ORG });
+    expect((await t.withIdentity(asUser).query(api.dashboardLayouts.get, { orgId: ORG }))?.id).toBe("row1");
+    await expect(t.withIdentity(asUser).query(api.dashboardLayouts.get, { orgId: OTHER_ORG })).rejects.toThrow(/organization mismatch/i);
+    await expect(
+      t.withIdentity(asOtherOrgUser).mutation(api.dashboardLayouts.saveNative, { id: "row1", widgets: [WIDGET], now: NOW, orgId: ORG }),
+    ).rejects.toThrow(/organization mismatch/i);
+    // Nothing landed in org B.
+    expect(await t.withIdentity(asOtherOrgUser).query(api.dashboardLayouts.get, { orgId: OTHER_ORG })).toBeNull();
+  });
 });

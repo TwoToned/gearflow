@@ -51,6 +51,7 @@ function sameLayout(a: readonly DashboardLayoutWidget[], b: readonly DashboardLa
 export type LayoutRestore = () => void;
 
 export const LAYOUT_CHANGED_SINCE = "Layout changed since. Undo the newer change first.";
+export const LAYOUT_OTHER_ORG = "That change was on another organisation's Home, so nothing was put back here.";
 
 /**
  * The per-user Home layout (`convex/dashboardLayouts.ts`). No saved row yet ⇒
@@ -60,22 +61,36 @@ export const LAYOUT_CHANGED_SINCE = "Layout changed since. Undo the newer change
  * Every change returns a `LayoutRestore`, the ONE closure that undoes it (the
  * page hands it to the toast's Undo), or `null` when nothing changed, so a
  * no-op never toasts. A failed save is surfaced, never swallowed.
+ *
+ * Everything is per ORG: switching org drops the pending save, re-hydrates from
+ * the new org's row (the query is keyed by `orgId`, and both the read and the
+ * save name it so the server rejects a mismatch), takes a fresh row id, and
+ * turns any Undo still held from the old org into a refusal. Before this, a
+ * switch kept org A's board on screen and could write it into org B's row.
  */
 export function useDashboardLayout(orgId: string | undefined) {
-  const saved = useAuthedQuery(api.dashboardLayouts.get, orgId ? {} : "skip");
+  const saved = useAuthedQuery(api.dashboardLayouts.get, orgId ? { orgId } : "skip");
   const saveMutation = useMutation(api.dashboardLayouts.saveNative);
 
-  const [widgets, setWidgets] = useState<DashboardLayoutWidget[] | null>(null);
+  // The board is stamped with the org it belongs to; another org's board is never shown.
+  const [board, setBoard] = useState<{ orgId: string | undefined; widgets: DashboardLayoutWidget[] } | null>(null);
+  const widgets = board && board.orgId === orgId ? board.widgets : null;
+  const orgRef = useRef(orgId);
   const currentRef = useRef<DashboardLayoutWidget[]>(DEFAULT_DASHBOARD_LAYOUT);
   const hydratedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowIdRef = useRef<string>(createId());
 
+  const setWidgets = useCallback((next: DashboardLayoutWidget[]) => setBoard({ orgId: orgRef.current, widgets: next }), []);
+
   const persist = useCallback(
     (next: DashboardLayoutWidget[]) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      const org = orgRef.current;
+      const id = rowIdRef.current;
       debounceRef.current = setTimeout(() => {
-        void saveMutation({ id: rowIdRef.current, widgets: next, now: Date.now() }).catch((e: unknown) => {
+        if (!org || org !== orgRef.current) return;
+        void saveMutation({ id, widgets: next, now: Date.now(), orgId: org }).catch((e: unknown) => {
           showError(e, { fallbackTitle: "Couldn't save your Home layout" });
         });
       }, SAVE_DEBOUNCE_MS);
@@ -83,11 +98,22 @@ export function useDashboardLayout(orgId: string | undefined) {
     [saveMutation],
   );
 
-  // Hydrate local state exactly once from the server (or the default); after
-  // that local state is the source of truth, so an in-flight edit is never
+  // An org switch: drop the old org's pending save and start over for the new one.
+  // Declared before the hydrate effect so it runs first in the same commit.
+  useEffect(() => {
+    if (orgRef.current === orgId) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    orgRef.current = orgId;
+    hydratedRef.current = false;
+    rowIdRef.current = createId();
+    currentRef.current = DEFAULT_DASHBOARD_LAYOUT;
+  }, [orgId]);
+
+  // Hydrate local state exactly once per org from the server (or the default);
+  // after that local state is the source of truth, so an in-flight edit is never
   // clobbered by the query re-running.
   useEffect(() => {
-    if (hydratedRef.current || saved === undefined) return;
+    if (hydratedRef.current || saved === undefined || orgRef.current !== orgId) return;
     hydratedRef.current = true;
     if (!saved) {
       setWidgets(DEFAULT_DASHBOARD_LAYOUT);
@@ -101,7 +127,7 @@ export function useDashboardLayout(orgId: string | undefined) {
     // Persist healed sizes once, silently: a board that predates a registry floor
     // change shouldn't stay at an invalid size until the user touches it.
     if (healed.some((w, i) => w !== raw[i])) persist(healed);
-  }, [saved, persist]);
+  }, [saved, persist, setWidgets, orgId]);
 
   useEffect(() => {
     return () => {
@@ -113,10 +139,13 @@ export function useDashboardLayout(orgId: string | undefined) {
     (next: DashboardLayoutWidget[]): LayoutRestore | null => {
       const prev = currentRef.current;
       if (sameLayout(prev, next)) return null;
+      const org = orgRef.current;
       currentRef.current = next;
       setWidgets(next);
       persist(next);
       return () => {
+        // An Undo from another org's Home writes nothing here.
+        if (orgRef.current !== org) throw new Error(LAYOUT_OTHER_ORG);
         // Tied to the board THIS change produced: once anything else moved it, putting
         // `prev` back would silently revert the later change too, so it refuses instead.
         if (currentRef.current !== next) throw new Error(LAYOUT_CHANGED_SINCE);

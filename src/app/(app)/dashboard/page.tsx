@@ -81,8 +81,10 @@ export default function DashboardPage() {
   const orgId = activeOrg?.id;
   const myHome = useNativeHome(orgId) as { userName?: string } | undefined;
   const layout = useLayoutActions(orgId);
-  const [editMode, setEditMode] = useState(false);
-  const editing = editMode && !isMobile;
+  // Customise belongs to the org it was opened in: an org switch ends it (no effect needed).
+  const [editOrg, setEditOrg] = useState<string | undefined>(undefined);
+  const setEditMode = (on: boolean) => setEditOrg(on ? orgId : undefined);
+  const editing = !!orgId && editOrg === orgId && !isMobile;
   const pageMenu = useHomePageMenu(isMobile, () => setEditMode(true));
   const now = new Date();
 

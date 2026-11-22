@@ -12,17 +12,20 @@ const m = vi.hoisted(() => ({
   save: vi.fn(async (_args: unknown) => ({ ok: true })),
 }));
 
-vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: (_q: unknown, args: unknown) => (args === "skip" ? undefined : m.saved) }));
+const defaultQuery = (_q: unknown, args: unknown) => (args === "skip" ? undefined : m.saved);
+const mockedQuery = vi.hoisted(() => vi.fn());
+vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: mockedQuery }));
 vi.mock("convex/react", () => ({ useMutation: () => m.save }));
 vi.mock("@/lib/show-error", () => ({ showError: vi.fn() }));
 
-import { useDashboardLayout, LAYOUT_CHANGED_SINCE } from "@/hooks/use-dashboard-layout";
+import { useDashboardLayout, LAYOUT_CHANGED_SINCE, LAYOUT_OTHER_ORG } from "@/hooks/use-dashboard-layout";
 
 const kinds = (ws: { kind: string }[]) => ws.map((w) => w.kind);
 
 beforeEach(() => {
   m.saved = null;
   m.save.mockClear();
+  mockedQuery.mockImplementation(defaultQuery);
 });
 
 describe("useDashboardLayout › Undo is tied to the layout its change produced", () => {
@@ -48,6 +51,40 @@ describe("useDashboardLayout › Undo is tied to the layout its change produced"
     expect(result.current.widgets).toBe(before);
     expect(kinds(result.current.widgets)).not.toContain("myTasks");
     expect(kinds(result.current.widgets)).not.toContain("needsAttention");
+  });
+
+  it("an org switch re-hydrates from the new org, drops the old org's pending save, and voids its Undo", () => {
+    vi.useFakeTimers();
+    try {
+      const orgA = [{ id: "myTasks", kind: "myTasks", x: 0, y: 0, w: 6, h: 6 }];
+      const orgB = [{ id: "needsAttention", kind: "needsAttention", x: 0, y: 0, w: 6, h: 6 }];
+      const rows: Record<string, unknown> = { A: { id: "rowA", widgets: orgA, updatedAt: 1 }, B: { id: "rowB", widgets: orgB, updatedAt: 1 } };
+      mockedQuery.mockImplementation((_q: unknown, args: unknown) => (args === "skip" ? undefined : rows[(args as { orgId: string }).orgId]));
+      const { result, rerender } = renderHook(({ org }) => useDashboardLayout(org), { initialProps: { org: "A" } });
+      expect(kinds(result.current.widgets)).toEqual(["myTasks"]);
+
+      let undoA: (() => void) | null = null;
+      act(() => { undoA = result.current.removeWidget("myTasks"); });
+      rerender({ org: "B" });
+      expect(kinds(result.current.widgets)).toEqual(["needsAttention"]);
+
+      // The save org A scheduled never fires (it would have landed under B's token).
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(m.save).not.toHaveBeenCalled();
+
+      // A's Undo writes nothing into B.
+      expect(() => act(() => undoA!())).toThrow(LAYOUT_OTHER_ORG);
+      expect(kinds(result.current.widgets)).toEqual(["needsAttention"]);
+
+      // B's own change saves to B's row, naming B.
+      act(() => { result.current.removeWidget("needsAttention"); });
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(m.save).toHaveBeenCalledTimes(1);
+      expect(m.save.mock.calls[0][0]).toMatchObject({ id: "rowB", orgId: "B", widgets: [] });
+    } finally {
+      vi.useRealTimers();
+      mockedQuery.mockImplementation(defaultQuery);
+    }
   });
 
   it("a change that changes nothing returns no restore (so it never toasts)", () => {

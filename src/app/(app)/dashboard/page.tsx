@@ -53,7 +53,9 @@ function announceLayout(title: string, restore: LayoutRestore | null) {
  */
 function useLayoutActions(orgId: string | undefined) {
   const layout = useDashboardLayout(orgId);
-  const titleOf = (kind: DashboardWidgetKind) => DASHBOARD_WIDGET_REGISTRY[kind]?.title ?? "Widget";
+  // The two setup kinds are one panel: it is named as the panel, hidden and added as one.
+  const titleOf = (kind: DashboardWidgetKind) =>
+    DASHBOARD_WIDGET_REGISTRY[kind]?.setupSlot ? "Setup panel" : (DASHBOARD_WIDGET_REGISTRY[kind]?.title ?? "Widget");
   return {
     ...layout,
     change: (next: DashboardLayoutWidget[], c: LayoutChange) => announceLayout(`${c.verb} ${titleOf(c.kind)}`, layout.setLayout(next)),

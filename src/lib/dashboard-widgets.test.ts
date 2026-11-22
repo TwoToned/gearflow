@@ -5,8 +5,11 @@ import {
   DASHBOARD_WIDGET_REGISTRY,
   DEFAULT_DASHBOARD_LAYOUT,
   GRID_COLS,
+  addableKinds,
+  boardHasSetup,
   readingOrder,
   renderedWidgets,
+  withoutWidget,
   type DashboardLayoutWidget,
 } from "@/lib/dashboard-widgets";
 
@@ -71,5 +74,24 @@ describe("renderedWidgets", () => {
     expect(kinds(renderedWidgets(actFirst, true))[0]).toBe("activationChecklist");
     expect(kinds(renderedWidgets(actFirst, true))).not.toContain("finishSetupChecklist");
     expect(kinds(renderedWidgets(PRE_D87, false))).not.toContain("finishSetupChecklist");
+  });
+});
+
+describe("hiding and adding the setup panel", () => {
+  it("hiding either setup slot removes BOTH in one change; any other widget is removed alone", () => {
+    const hidden = withoutWidget(DEFAULT_DASHBOARD_LAYOUT, "activationChecklist");
+    expect(boardHasSetup(hidden)).toBe(false);
+    expect(hidden).toHaveLength(DEFAULT_DASHBOARD_LAYOUT.length - 2);
+    expect(withoutWidget(DEFAULT_DASHBOARD_LAYOUT, "myTasks").map((w) => w.kind)).not.toContain("myTasks");
+    expect(boardHasSetup(withoutWidget(DEFAULT_DASHBOARD_LAYOUT, "myTasks"))).toBe(true);
+  });
+
+  it("Add widget offers the panel once (as its first kind), only while neither setup kind is on the board", () => {
+    expect(addableKinds(DEFAULT_DASHBOARD_LAYOUT)).toEqual([]);
+    const hidden = withoutWidget(DEFAULT_DASHBOARD_LAYOUT, "finishSetupChecklist");
+    expect(addableKinds(hidden)).toEqual(["finishSetupChecklist"]);
+    // A saved board holding only one setup kind offers neither.
+    const one = DEFAULT_DASHBOARD_LAYOUT.filter((w) => w.kind !== "activationChecklist");
+    expect(addableKinds(one)).toEqual([]);
   });
 });

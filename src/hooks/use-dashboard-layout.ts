@@ -8,8 +8,9 @@ import { showError } from "@/lib/show-error";
 import {
   DASHBOARD_WIDGET_REGISTRY,
   DEFAULT_DASHBOARD_LAYOUT,
+  addableKinds,
   defaultWidgetPosition,
-  DASHBOARD_WIDGET_ORDER,
+  withoutWidget,
   type DashboardLayoutWidget,
   type DashboardWidgetKind,
 } from "@/lib/dashboard-widgets";
@@ -127,20 +128,17 @@ export function useDashboardLayout(orgId: string | undefined) {
     [apply],
   );
 
+  // Hiding a setup slot hides BOTH setup kinds in one change (`withoutWidget`).
   const removeWidget = useCallback(
-    (id: string): LayoutRestore | null => apply(currentRef.current.filter((w) => w.id !== id)),
+    (id: string): LayoutRestore | null => apply(withoutWidget(currentRef.current, id)),
     [apply],
   );
 
   const resetToDefault = useCallback((): LayoutRestore | null => apply(DEFAULT_DASHBOARD_LAYOUT), [apply]);
 
-  // `DASHBOARD_WIDGET_ORDER` is the single source of the "Add widget" listing order.
-  // The two setup kinds are one panel: with either on the board, the other adds nothing.
-  const availableToAdd = useMemo(() => {
-    const present = new Set((widgets ?? []).map((w) => w.kind));
-    const hasSetup = [...present].some((k) => DASHBOARD_WIDGET_REGISTRY[k]?.setupSlot);
-    return DASHBOARD_WIDGET_ORDER.filter((k) => !present.has(k) && !(hasSetup && DASHBOARD_WIDGET_REGISTRY[k].setupSlot));
-  }, [widgets]);
+  // `DASHBOARD_WIDGET_ORDER` is the single source of the "Add widget" listing order;
+  // the setup panel is offered once, and again once both setup kinds are hidden.
+  const availableToAdd = useMemo(() => addableKinds(widgets ?? []), [widgets]);
 
   return {
     widgets: widgets ?? DEFAULT_DASHBOARD_LAYOUT,

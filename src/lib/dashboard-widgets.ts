@@ -215,6 +215,36 @@ export function defaultWidgetPosition(kind: DashboardWidgetKind, existing: Dashb
   return { id: kind, kind, x: 0, y, w, h };
 }
 
+const isSetupKind = (kind: DashboardWidgetKind): boolean => DASHBOARD_WIDGET_REGISTRY[kind]?.setupSlot === true;
+
+/**
+ * The board without widget `id`. The two setup kinds are ONE panel, so hiding
+ * either hides both, in one change (one toast, one Undo): removing only the
+ * clicked slot would just promote the other and the panel would stay.
+ */
+export function withoutWidget(widgets: readonly DashboardLayoutWidget[], id: string): DashboardLayoutWidget[] {
+  const target = widgets.find((w) => w.id === id);
+  if (target && isSetupKind(target.kind)) return widgets.filter((w) => !isSetupKind(w.kind));
+  return widgets.filter((w) => w.id !== id);
+}
+
+/**
+ * What "Add widget" offers, in `DASHBOARD_WIDGET_ORDER`: every kind not on the
+ * board, with the setup panel offered ONCE (as its first kind) and only while
+ * neither setup kind is on the board.
+ */
+export function addableKinds(widgets: readonly DashboardLayoutWidget[]): DashboardWidgetKind[] {
+  const present = new Set(widgets.map((w) => w.kind));
+  const hasSetup = [...present].some(isSetupKind);
+  const firstSetup = DASHBOARD_WIDGET_ORDER.find(isSetupKind);
+  return DASHBOARD_WIDGET_ORDER.filter((k) => !present.has(k) && (!isSetupKind(k) || (!hasSetup && k === firstSetup)));
+}
+
+/** Is any setup kind on the board? (When none is, the panel's reads are skipped.) */
+export function boardHasSetup(widgets: readonly DashboardLayoutWidget[]): boolean {
+  return widgets.some((w) => isSetupKind(w.kind));
+}
+
 /** The widgets as one reads them: top to bottom, then left to right (phone and screen-reader order). */
 export function readingOrder<T extends Pick<DashboardLayoutWidget, "x" | "y">>(widgets: readonly T[]): T[] {
   return [...widgets].sort((a, b) => a.y - b.y || a.x - b.x);

@@ -19,6 +19,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import {
   applyCheckCondition,
   loadUndoableAdHocCheck,
+  requireNewestCheck,
   requireUntouchedCheckRecords,
   type AdHocCheckDetails,
 } from "./lib/adHocCheck";
@@ -555,6 +556,8 @@ export const saveAdHocCheck = mutation({
 
     const details: AdHocCheckDetails = {
       kind: "adHocCheck", assetId: a.assetId, ...condition, recordIds, createdMaintenanceIds,
+      // The SERVER clock (Date.now() is fine in a mutation): the Undo window is measured on it.
+      serverSavedAt: Date.now(),
       ...(a.notes ? { notes: a.notes } : {}),
     };
     await writeActivityLog(ctx, {
@@ -574,9 +577,10 @@ export const saveAdHocCheck = mutation({
 // The EXACT reverse of one `saveAdHocCheck`, for the Scan page's single Undo closure
 // (toast + Last scans row). Takes only ids: everything it restores comes from the
 // forward save's own server-written audit row, never from the caller. Refuses as a
-// whole — changing nothing — when the asset's condition moved since, any check record
-// is gone, any maintenance record it opened has been touched, it was already undone,
-// or a different user saved it. Otherwise deletes exactly that save's check records
+// whole — changing nothing — outside the 10-minute server-clock window, when the asset
+// was checked again since (its newest check record isn't this save's), its condition
+// moved since, any check record is gone or holds photos, any maintenance record it
+// opened has been touched, it was already undone, or a different user saved it. Otherwise deletes exactly that save's check records
 // and the maintenance records (+ asset links) it created, restores the condition
 // exactly (unsetting it when it was absent) and appends an UNDO activity row; audit
 // rows themselves are append-only (R-8.11.4).
@@ -595,10 +599,13 @@ export const undoAdHocCheckNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "warehouse", "scan");
     const actor = await resolveActor(ctx, a.actor);
 
-    const { forward, details } = await loadUndoableAdHocCheck(ctx, a.orgId, a.forwardAuditId, actor.userId);
+    const { forward, details } = await loadUndoableAdHocCheck(ctx, {
+      orgId: a.orgId, forwardAuditId: a.forwardAuditId, actorUserId: actor.userId, serverNow: Date.now(),
+    });
     const asset = await requireAssetDoc(ctx, details.assetId, a.orgId);
     if ((asset.condition ?? null) !== details.conditionAfter) throw new ConvexError("The asset's condition changed since: this check can't be undone");
     if (details.conditionChanged && asset.updatedAt !== forward.createdAt) throw new ConvexError("The asset was edited since: this check can't be undone");
+    await requireNewestCheck(ctx, a.orgId, details);
     const records = await requireUntouchedCheckRecords(ctx, a.orgId, details);
     const maintenance = await requireUntouchedMaintenance(ctx, a.orgId, details.createdMaintenanceIds, forward.createdAt);
 

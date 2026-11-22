@@ -8,6 +8,7 @@ import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { writeActivityLog } from "./audit";
+import { assertWithinUndoWindow } from "./undoWindow";
 import {
   conditionWord,
   resolveCheckCondition,
@@ -27,6 +28,8 @@ export interface AdHocCheckDetails {
   updatedAtBefore: number | null;
   recordIds: string[];
   createdMaintenanceIds: string[];
+  /** The SERVER clock at save time: the Undo window is measured on it (`./undoWindow`). */
+  serverSavedAt: number;
   notes?: string;
 }
 
@@ -69,24 +72,28 @@ export async function applyCheckCondition(
 
 function isAdHocDetails(d: unknown): d is AdHocCheckDetails {
   const x = d as Partial<AdHocCheckDetails> | null;
-  return !!x && x.kind === "adHocCheck" && typeof x.assetId === "string" && Array.isArray(x.recordIds) && Array.isArray(x.createdMaintenanceIds);
+  return (
+    !!x && x.kind === "adHocCheck" && typeof x.assetId === "string" && typeof x.serverSavedAt === "number" &&
+    Array.isArray(x.recordIds) && Array.isArray(x.createdMaintenanceIds)
+  );
 }
 
 /**
  * The forward save's audit row, proven undoable: in this org, an ad-hoc check CREATE
- * carrying the Phase 16 snapshot, saved by `actorUserId`, and not undone already.
+ * carrying the Phase 16 snapshot, saved by `actorUserId`, inside the server-clock
+ * window, and not undone already.
  */
 export async function loadUndoableAdHocCheck(
   ctx: MutationCtx,
-  orgId: string,
-  forwardAuditId: string,
-  actorUserId: string,
+  a: { orgId: string; forwardAuditId: string; actorUserId: string; serverNow: number },
 ): Promise<{ forward: Doc<"activityLogs">; details: AdHocCheckDetails }> {
+  const { orgId, forwardAuditId, actorUserId } = a;
   const forward = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", forwardAuditId)).first();
   if (!forward || forward.organizationId !== orgId || forward.action !== "CREATE" || forward.entityType !== "checkRecord" || !isAdHocDetails(forward.details)) {
     throw new ConvexError("This check can't be undone");
   }
   if (forward.userId !== actorUserId) throw new ConvexError("Only the person who saved this check can undo it");
+  assertWithinUndoWindow(forward.details.serverSavedAt, a.serverNow, "check");
   const siblings = await ctx.db
     .query("activityLogs")
     .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "checkRecord").eq("entityId", forward.entityId))
@@ -109,7 +116,28 @@ export async function requireUntouchedCheckRecords(
     if (!r || r.organizationId !== orgId || r.context !== "AD_HOC" || r.assetId !== details.assetId) {
       throw new ConvexError("This check's records changed since: it can't be undone");
     }
+    // Photos are evidence uploaded BEFORE the save (their files exist on their own).
+    // Deleting the records would orphan them, deleting the files would destroy what the
+    // tester attached — neither is the exact reverse, so a check with photos stays.
+    if ((r.photos?.length ?? 0) > 0) throw new ConvexError("This check has photos attached: it can't be undone");
     out.push(r);
   }
   return out;
+}
+
+/**
+ * Nothing was checked on the asset after this save: its newest check record (any
+ * context) must be one of this save's. Without it, undoing an earlier save would
+ * restore a condition over a later check, or delete a maintenance record a later
+ * check's dedup relies on (the PM `[Auto]` record serves every later fail).
+ */
+export async function requireNewestCheck(ctx: MutationCtx, orgId: string, details: AdHocCheckDetails): Promise<void> {
+  const newest = await ctx.db
+    .query("checkRecords")
+    .withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", details.assetId))
+    .order("desc")
+    .first();
+  if (!newest || !details.recordIds.includes(newest.id)) {
+    throw new ConvexError("This asset was checked again since: this check can't be undone");
+  }
 }

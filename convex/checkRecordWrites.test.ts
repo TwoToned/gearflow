@@ -8,7 +8,7 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
@@ -544,6 +544,62 @@ describe("undoAdHocCheckNative (exact undo)", () => {
     const outsider = { subject: "user_2", orgId: OTHER, role: "admin" };
     await expect(undo(t, { orgId: OTHER, actor: { userId: "user_2", userName: "Bob" } }, outsider)).rejects.toThrow(/can't be undone/);
     await expect(undo(t, { actor: { userId: "user_2", userName: "Bob" } }, outsider)).rejects.toThrow();
+    expect((await asset(t, "as1"))?.condition).toBe("DAMAGED");
+  });
+
+  test("the 10-minute window is measured on the SERVER clock", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
+    try {
+      await save(t, { condition: "FAIR" });
+      clock.mockReturnValue(NOW + 11 * 60 * 1000);
+      // The caller's own `now` says "10 ms later" — ignored.
+      await expect(undo(t)).rejects.toThrow(/within 10 minutes/);
+      expect((await asset(t, "as1"))?.condition).toBe("FAIR");
+      clock.mockReturnValue(NOW + 9 * 60 * 1000);
+      expect(await undo(t)).toEqual({ ok: true });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test("refuses when the asset was checked again since: a later fail keeps its DAMAGED", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
+    // A fails (→ DAMAGED); B fails too (stays DAMAGED, no change of its own).
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [mkCheck({ recordId: "r1", result: "FAIL" })]);
+    await save(t, {
+      auditId: "a2",
+      incidentPlan: [{ ...incidentEntry(), maintenanceId: "inc2", maintenanceLinkId: "ilnk2", auditId: "ia2" }],
+      maintenancePlan: [{ ...pmEntry(), maintenanceId: "mnt2", maintenanceLinkId: "mlnk2", auditId: "ma2" }],
+    }, [mkCheck({ recordId: "r2", result: "FAIL" })]);
+    await expect(undo(t)).rejects.toThrow(/checked again since/);
+    expect((await asset(t, "as1"))?.condition).toBe("DAMAGED");
+    expect((await records(t)).map((r) => r.id).sort()).toEqual(["r1", "r2"]);
+  });
+
+  test("refuses when a later check relies on this save's [Auto] maintenance record (PM dedup)", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "DAMAGED" });
+    // Two earlier fails, so A's fail trips the 2-of-3 threshold and opens the PM record.
+    await save(t, { auditId: "a0", incidentPlan: [{ ...incidentEntry(), maintenanceId: "inc0", maintenanceLinkId: "ilnk0", auditId: "ia0" }], maintenancePlan: [{ ...pmEntry(), maintenanceId: "mnt0", maintenanceLinkId: "mlnk0", auditId: "ma0" }] }, [mkCheck({ recordId: "r0", result: "FAIL" })]);
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [mkCheck({ recordId: "r1", result: "FAIL" })]);
+    expect((await maint(t)).map((m) => m.id)).toContain("mnt1");
+    // B fails again: its PM dedups against A's mnt1, so mnt2 is never created.
+    await save(t, {
+      auditId: "a2",
+      incidentPlan: [{ ...incidentEntry(), maintenanceId: "inc2", maintenanceLinkId: "ilnk2", auditId: "ia2" }],
+      maintenancePlan: [{ ...pmEntry(), maintenanceId: "mnt2", maintenanceLinkId: "mlnk2", auditId: "ma2" }],
+    }, [mkCheck({ recordId: "r2", result: "FAIL" })]);
+    expect((await maint(t)).map((m) => m.id)).not.toContain("mnt2");
+    await expect(undo(t)).rejects.toThrow(/checked again since/);
+    expect((await maint(t)).map((m) => m.id)).toContain("mnt1");
+  });
+
+  test("a check with photos attached can't be undone (no orphaned or destroyed files)", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [{ ...mkCheck({ recordId: "r1", result: "FAIL" }), notes: "Cracked", photos: ["https://x/files/p1.jpg"] }]);
+    await expect(undo(t)).rejects.toThrow(/photos attached/);
+    expect((await records(t)).map((r) => r.id)).toEqual(["r1"]);
+    expect((await maint(t)).map((m) => m.id)).toContain("inc1");
     expect((await asset(t, "as1"))?.condition).toBe("DAMAGED");
   });
 

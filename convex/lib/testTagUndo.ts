@@ -5,8 +5,8 @@
  * transaction — the Undo takes only ids and never a caller-supplied prior value.
  *
  * Undo is allowed only:
- *  - within {@link TT_UNDO_WINDOW_MS} of the save, measured on the SERVER clock the
- *    save stamped (`serverSavedAt`), never the caller's `now`;
+ *  - within the shared `UNDO_WINDOW_MS` (`./undoWindow`) of the save, measured on the
+ *    SERVER clock the save stamped (`serverSavedAt`), never the caller's `now`;
  *  - by the person who saved it, once;
  *  - while nothing references the record: it is still the asset's newest record and
  *    the T&T asset (and any inventory asset it flagged) is exactly as the save left it.
@@ -15,9 +15,7 @@
 import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-
-/** How long after a save its record may be undone (owner/overseer Q10). */
-export const TT_UNDO_WINDOW_MS = 10 * 60 * 1000;
+import { assertWithinUndoWindow } from "./undoWindow";
 
 /** Rows scanned to find the forward audit row (and any earlier UNDO) for a record. */
 const MAX_ENTITY_ROWS = 20;
@@ -107,9 +105,7 @@ export async function loadUndoableTestSave(
   if (!forward || !isSaveDetails(forward.details)) throw new ConvexError("This test can't be undone");
   if (rows.some((r) => r.action === "UNDO")) throw new ConvexError("This test was already undone");
   if (forward.userId !== a.actorUserId) throw new ConvexError("Only the person who saved this test can undo it");
-  if (a.serverNow - forward.details.serverSavedAt > TT_UNDO_WINDOW_MS) {
-    throw new ConvexError("A test can only be undone within 10 minutes of saving it");
-  }
+  assertWithinUndoWindow(forward.details.serverSavedAt, a.serverNow, "test");
   return { forward, details: forward.details };
 }
 

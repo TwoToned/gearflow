@@ -12,6 +12,7 @@ import {
 } from "./lib/searchScore";
 import { getPrimaryContact, type ClientContactLike } from "./lib/clientContactCore";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { filterReadable, readableSearchTypes, type SearchResultType as LibSearchResultType } from "./lib/searchResultResource";
 
 /**
  * Native global search — the LIVE-Convex replacement for the frozen-Postgres
@@ -29,9 +30,12 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * assets/kits/sub-locations under locations, models/sub-categories under categories),
  * same child-dedup sets, same type-boost + grouped relevance sort.
  *
- * SERVICE-gated: the `globalSearch` server action already authorises the caller via
- * `getOrgContext()` and calls this with the service token (same pattern as
- * projectEquipment.bundle). Org scoping is enforced by the `by_organizationId` reads.
+ * Browser-callable (`requireOrgRead`, user token). Org scoping is enforced by the guard
+ * and by the `by_organizationId` reads. ROLE scoping (UX Phase 11, Q4 — a security fix):
+ * every result type is mapped to its RBAC resource (`lib/searchResultResource.ts`) and a
+ * type the caller's role can't read is dropped on the SERVER, parent and children alike,
+ * so the palette can't list what the role could never open. Before this a member row was
+ * not even required: any token for the org searched all 14 types.
  */
 
 // Per-entity org-scan bound. The current tenant has hundreds of docs total, so this
@@ -46,21 +50,17 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 // bug now, which is the user-visible regression. Keep SCAN_CAP well under the read cap.
 const SCAN_CAP = 5000;
 
-export type SearchResultType =
-  | "model"
-  | "kit"
-  | "asset"
-  | "bulk-asset"
-  | "project"
-  | "client"
-  | "supplier"
-  | "location"
-  | "category"
-  | "maintenance"
-  | "crew"
-  | "check-item"
-  | "group-template"
-  | "sub-hire";
+/** The 14 result types; the union and its RBAC resource live in ./lib/searchResultResource.ts. */
+export type SearchResultType = LibSearchResultType;
+
+/**
+ * Per-type match counts (UX Phase 11, §6d.3 `Show all n in X ›`). `total` is
+ * the number of rows of that type that matched BEFORE the per-type LIMIT (a
+ * kept parent's children are not counted); `truncated` means that type's org
+ * scan hit SCAN_CAP, so the true count may be higher. Only types the caller's
+ * role may read are listed.
+ */
+export type SearchGroupTotal = { type: SearchResultType; total: number; truncated: boolean };
 
 export type SearchResult = {
   id: string;
@@ -120,6 +120,17 @@ function rankLimit<T extends { q: number }>(rows: T[], tiebreak: (r: T) => strin
   return rows.slice(0, limit);
 }
 
+/** The `groups` summary: matched-before-LIMIT counts for the readable types only. */
+function groupTotals(
+  matched: Partial<Record<SearchResultType, number>>,
+  scanned: Partial<Record<SearchResultType, number>>,
+  readable: Set<SearchResultType>,
+): SearchGroupTotal[] {
+  return (Object.keys(matched) as SearchResultType[])
+    .filter((type) => readable.has(type) && (matched[type] ?? 0) > 0)
+    .map((type) => ({ type, total: matched[type] ?? 0, truncated: (scanned[type] ?? 0) >= SCAN_CAP }));
+}
+
 function nonNull<T>(x: T | null): x is T {
   return x !== null;
 }
@@ -133,13 +144,23 @@ const bool = (v: unknown): boolean => v === true;
 
 export const search = query({
   args: { orgId: v.string(), query: v.string() },
-  handler: async (ctx, { orgId, query: rawQuery }): Promise<{ results: SearchResult[] }> => {
+  handler: async (ctx, { orgId, query: rawQuery }): Promise<{ results: SearchResult[]; groups: SearchGroupTotal[] }> => {
     await requireOrgRead(ctx, orgId); // browser-callable (user token) + service (PDF/API) short-circuits allow
 
-    if (!rawQuery || rawQuery.trim().length < 2) return { results: [] };
+    if (!rawQuery || rawQuery.trim().length < 2) return { results: [], groups: [] };
     const terms: SearchTerms = parseTerms(rawQuery);
-    if (terms.nq.length < 1) return { results: [] };
+    if (terms.nq.length < 1) return { results: [], groups: [] };
     const { ql } = terms;
+    // Q4: the types this role may read (one existing role check per resource).
+    const readable = await readableSearchTypes(ctx, orgId);
+    if (readable.size === 0) return { results: [], groups: [] };
+
+    // Matched-before-LIMIT count per type, for the `groups` summary.
+    const matched: Partial<Record<SearchResultType, number>> = {};
+    const ranked = <T extends { q: number }>(type: SearchResultType, rows: T[], tiebreak: (r: T) => string, limit: number): T[] => {
+      matched[type] = rows.length;
+      return rankLimit(rows, tiebreak, limit);
+    };
 
     // ── Full org scans (live Convex) + lookup maps for joins ──────────────────
     const [
@@ -164,6 +185,15 @@ export const search = query({
       orgScan(ctx, "subHires", orgId),
     ]);
 
+    // Org-scan sizes per result type: a scan at SCAN_CAP marks that type `truncated`.
+    const scanned: Partial<Record<SearchResultType, number>> = {
+      model: allModels.length, kit: allKits.length, asset: allAssets.length, "bulk-asset": allBulks.length,
+      project: allProjects.length, client: allClients.length, supplier: allSuppliers.length,
+      location: allLocations.length, category: allCategories.length, maintenance: allMaintenance.length,
+      crew: allCrew.length, "check-item": allCheckItems.length, "group-template": allGroupTemplates.length,
+      "sub-hire": allSubHires.length,
+    };
+
     const modelById = new Map(allModels.map((m) => [m.id, m]));
     const clientById = new Map(allClients.map((c) => [c.id, c]));
     const supplierById = new Map(allSuppliers.map((s) => [s.id, s]));
@@ -186,7 +216,7 @@ export const search = query({
     // ── Score + filter + rank each entity (parity with the SQL WHERE + LIMIT) ──
 
     // Models (isActive) — LIMIT 15
-    const models = rankLimit(
+    const models = ranked("model",
       allModels
         .filter((m) => m.isActive === true)
         .map((m) => {
@@ -204,7 +234,7 @@ export const search = query({
     );
 
     // Kits (isActive) — LIMIT 10
-    const kits = rankLimit(
+    const kits = ranked("kit",
       allKits
         .filter((k) => k.isActive === true)
         .map((k) => {
@@ -221,7 +251,7 @@ export const search = query({
     );
 
     // Assets (isActive, join model) — LIMIT 10
-    const assets = rankLimit(
+    const assets = ranked("asset",
       allAssets
         .filter((a) => a.isActive === true)
         .map((a) => {
@@ -243,7 +273,7 @@ export const search = query({
     );
 
     // Bulk assets (isActive, join model) — LIMIT 10
-    const bulkAssets = rankLimit(
+    const bulkAssets = ranked("bulk-asset",
       allBulks
         .filter((b) => b.isActive === true)
         .map((b) => {
@@ -264,7 +294,7 @@ export const search = query({
     );
 
     // Projects (isTemplate === false, join client) — LIMIT 10
-    const projects = rankLimit(
+    const projects = ranked("project",
       allProjects
         .filter((p) => p.isTemplate === false)
         .map((p) => {
@@ -289,7 +319,7 @@ export const search = query({
     // to the legacy embedded contactName/contactEmail during the migration window.
     const clientContactsRaw = await collectByIndex(ctx, "clientContacts", "by_clientId", "clientId", allClients.map((c) => c.id));
     const contactsByClient = groupBy(clientContactsRaw as Record<string, unknown>[], (cc) => str(cc.clientId));
-    const clients = rankLimit(
+    const clients = ranked("client",
       allClients
         .filter((c) => c.isActive === true)
         .map((c) => {
@@ -311,7 +341,7 @@ export const search = query({
     );
 
     // Suppliers (isActive) — LIMIT 10
-    const suppliers = rankLimit(
+    const suppliers = ranked("supplier",
       allSuppliers
         .filter((s) => s.isActive === true)
         .map((s) => {
@@ -328,7 +358,7 @@ export const search = query({
     );
 
     // Locations (no active filter) — LIMIT 5
-    const locations = rankLimit(
+    const locations = ranked("location",
       allLocations
         .map((l) => {
           if (!matchesQuery(terms, { ilikeFields: [l.name, l.address], normFields: [l.name], fuzzyFields: [l.name], tags: l.tags })) return null;
@@ -345,7 +375,7 @@ export const search = query({
         activeModelCountByCategory.set(m.categoryId, (activeModelCountByCategory.get(m.categoryId) ?? 0) + 1);
       }
     }
-    const categories = rankLimit(
+    const categories = ranked("category",
       allCategories
         .map((c) => {
           if (!matchesQuery(terms, { ilikeFields: [c.name, c.description], normFields: [c.name], fuzzyFields: [c.name], tags: c.tags })) return null;
@@ -356,7 +386,7 @@ export const search = query({
     );
 
     // Maintenance — LIMIT 3
-    const maintenance = rankLimit(
+    const maintenance = ranked("maintenance",
       allMaintenance
         .map((mr) => {
           if (!matchesQuery(terms, { ilikeFields: [mr.title, mr.description], normFields: [mr.title], fuzzyFields: [mr.title], tags: mr.tags })) return null;
@@ -367,7 +397,7 @@ export const search = query({
     );
 
     // Crew (status !== ARCHIVED, join role) — LIMIT 10
-    const crew = rankLimit(
+    const crew = ranked("crew",
       allCrew
         .filter((cm) => cm.status !== "ARCHIVED")
         .map((cm) => {
@@ -387,7 +417,7 @@ export const search = query({
     );
 
     // Check items — LIMIT 10
-    const checkItems = rankLimit(
+    const checkItems = ranked("check-item",
       allCheckItems
         .map((ci) => {
           if (!matchesQuery(terms, { ilikeFields: [ci.label, ci.category, ci.description], normFields: [ci.label], fuzzyFields: [ci.label] })) return null;
@@ -408,7 +438,7 @@ export const search = query({
         groupTemplateItemCount.set(gt.id, items.length);
       }),
     );
-    const groupTemplates = rankLimit(
+    const groupTemplates = ranked("group-template",
       allGroupTemplates
         .map((gt) => {
           if (!matchesQuery(terms, { ilikeFields: [gt.name, gt.description], normFields: [gt.name], fuzzyFields: [gt.name] })) return null;
@@ -419,7 +449,7 @@ export const search = query({
     );
 
     // Sub-hires (join supplier + item description drill) — LIMIT 10
-    const subHires = rankLimit(
+    const subHires = ranked("sub-hire",
       allSubHires
         .map((sh) => {
           // Inner join sub-hire→supplier (mirrors the SQL JOIN).
@@ -726,7 +756,7 @@ export const search = query({
       sorted.push(g.parent);
       sorted.push(...g.children);
     }
-    return { results: sorted };
+    return { results: filterReadable(sorted, readable), groups: groupTotals(matched, scanned, readable) };
   },
 });
 

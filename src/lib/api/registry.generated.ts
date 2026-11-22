@@ -35717,7 +35717,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a248087362c6fa2f",
     "returnsSha": "42f28e263a2d90a0",
     "stability": "tracks-app",
-    "summary": "Undo a bulk plan change by its batch audit id: put lines back to the case the server recorded, only where they are still as that change left them.",
+    "summary": "Undo a bulk plan change by its batch audit id: put lines back to the case the server recorded, only where they are still as that change left them. Once per change.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -35765,6 +35765,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "03f3db641059a5f0",
     "stability": "tracks-app",
     "summary": "Seal a packing case: its plan is locked (no lines planned in or out) until unsealed.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainerPlanWrites.undoDeleteContainerNative",
+    "module": "projectContainerPlanWrites",
+    "fn": "undoDeleteContainerNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "batchAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a248087362c6fa2f",
+    "returnsSha": "12dfb0f819bdd6eb",
+    "stability": "tracks-app",
+    "summary": "Undo a custom case delete by its batch audit id: re-create the case in place and put its planned lines back. Once per delete.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -58600,7 +58652,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9528e846ef8c4f41",
-    "returnsSha": "adc51f18ebaa7ea6",
+    "returnsSha": "6345c2cfd8cdd30f",
     "stability": "tracks-app",
     "summary": "Per-version facts for the Versions tab: line and planned counts, total, quote status, and a derived diff against the previous version.",
     "danger": "low",
@@ -64652,10 +64704,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1252,
-  agentReachable: 622,
+  total: 1253,
+  agentReachable: 623,
   queries: 449,
-  mutations: 803,
+  mutations: 804,
   agentReachableQueries: 314,
-  agentReachableMutations: 308,
+  agentReachableMutations: 309,
 } as const;

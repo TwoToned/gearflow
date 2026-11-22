@@ -184,7 +184,6 @@ export default function AdHocCheckPage({
               onSubmit={(checks) => submitMutation.mutate(checks)}
               onCancel={() => router.back()}
               isSubmitting={submitMutation.isPending}
-              embedded
             />
           </div>
         )}

@@ -40,7 +40,11 @@ interface ScanTarget {
  */
 export interface ScanDockProps {
   onScan: (raw: string) => void;
-  /** Mode words under the input; defaults to the Prep stage's two. */
+  /**
+   * Mode words under the input; defaults to the Prep stage's two. `[]` renders no
+   * mode row at all, for a surface whose modes sit above the dock as stage words
+   * (the Scan page's `Check · Test & tag`).
+   */
   modes?: ScanModeOption[];
   mode: string;
   onModeChange: (mode: string) => void;
@@ -48,6 +52,12 @@ export interface ScanDockProps {
   target?: { verb: string; current: ScanTarget | null; options: ScanTarget[]; onChange: (id: string) => void };
   placeholder?: string;
   cameraTitle?: string;
+  /**
+   * Keep the camera live after a read (batch scanning, the default). `false` closes
+   * the sheet on the first read, for a surface that loads one item per scan (the Scan
+   * page, spec §9i.5). Only passes the existing `continuous` flag through.
+   */
+  cameraContinuous?: boolean;
   disabled?: boolean;
   className?: string;
   /**
@@ -69,6 +79,7 @@ export function ScanDock({
   target,
   placeholder = "Scan or type a tag",
   cameraTitle = "Scan with camera",
+  cameraContinuous = true,
   disabled,
   className,
   onValueChange,
@@ -131,25 +142,31 @@ export function ScanDock({
             }
           }}
         />
-        <ScanButton onScan={onScan} scannerTitle={cameraTitle} continuous disabled={disabled} />
+        <ScanButton onScan={onScan} scannerTitle={cameraTitle} continuous={cameraContinuous} disabled={disabled} />
       </div>
-      <div role="radiogroup" aria-label="Scan mode" className="flex items-center gap-4 text-caption">
-        {modes.map((m) => (
-          <button
-            key={m.value}
-            type="button"
-            role="radio"
-            aria-checked={mode === m.value}
-            onClick={() => onModeChange(m.value)}
-            className={cn(
-              "min-h-11 border-b-2 px-1 font-medium [@media(pointer:fine)]:min-h-8",
-              mode === m.value ? "border-ink text-ink" : "border-transparent text-muted",
-            )}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
+      {modes.length > 0 ? <ModeWords modes={modes} mode={mode} onModeChange={onModeChange} /> : null}
+    </div>
+  );
+}
+
+function ModeWords({ modes, mode, onModeChange }: { modes: ScanModeOption[]; mode: string; onModeChange: (mode: string) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Scan mode" className="flex items-center gap-4 text-caption">
+      {modes.map((m) => (
+        <button
+          key={m.value}
+          type="button"
+          role="radio"
+          aria-checked={mode === m.value}
+          onClick={() => onModeChange(m.value)}
+          className={cn(
+            "min-h-11 border-b-2 px-1 font-medium [@media(pointer:fine)]:min-h-8",
+            mode === m.value ? "border-ink text-ink" : "border-transparent text-muted",
+          )}
+        >
+          {m.label}
+        </button>
+      ))}
     </div>
   );
 }

@@ -19,6 +19,7 @@
  * the warehouse — the Packing tab is the PLAN, always whole-kit, per D9).
  */
 import type { CategoryData, GroupData, SubHireGroupData, LineItemData } from "@/components/projects/equipment-rows";
+import { isPackedUnit } from "../../convex/lib/packedUnit";
 
 export interface PlannableLine {
   item: LineItemData;
@@ -91,15 +92,12 @@ export function collectPlannableLines(
  *  reimplemented — that module reads the warehouse page's own `LineItem`
  *  shape, not `LineItemData`; same question, different input type). */
 function resolvePackedContainerId(item: LineItemData): string | null {
-  const units = item.units ?? [];
-  if (units.length === 0) return null;
-  const counts = new Map<string | null, number>();
-  for (const u of units) {
-    const key = u.containerId ?? null;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
+  // "Packed" is `isPackedUnit` (the server's own predicate, `convex/lib/packedUnit.ts`):
+  // ANY non-cancelled unit in a case, however many of its siblings are still loose.
+  const counts = new Map<string, number>();
+  for (const u of item.units ?? []) if (isPackedUnit(u)) counts.set(u.containerId!, (counts.get(u.containerId!) ?? 0) + 1);
   let best: string | null = null;
-  let bestN = -1;
+  let bestN = 0;
   for (const [key, n] of counts) {
     if (n > bestN) {
       best = key;

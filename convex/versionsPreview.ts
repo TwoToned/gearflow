@@ -4,7 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor } from "./lib/auth";
 import { listProjectVersions } from "./lib/projectVersionState";
-import { versionRows } from "./lib/versionScope";
+import { isPackedUnit } from "./lib/packedUnit";
 import { loadTotalsBundle, computeTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { classifyCompareRows } from "./lib/versionCompare";
@@ -20,11 +20,35 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * second diff or totals implementation exists (R-3.1).
  */
 
-/** Per-version cap on units/lines examined, so the read stays bounded. */
+/**
+ * Read budgets. Convex caps a query at 16,384 documents read, so the caps below
+ * are on the TOTAL examined across the whole query (not per line or per
+ * version), and every cap that bites sets `truncated` (or leaves a figure
+ * `null`) rather than guessing. Each version's own totals bundle is read with
+ * `loadTotalsBundle` (lines, groups, services, ...), so the versions-with-facts
+ * count and the line budget are kept well under the ceiling together.
+ */
+const MAX_UNITS_EXAMINED = 2000;
 const MAX_LINES_EXAMINED = 500;
-const MAX_UNITS_PER_LINE = 500;
+/** Lines across every bundle `versionRowFacts` loads; the next version is skipped once spent. */
+const MAX_BUNDLE_LINES = 2500;
 /** Versions that get row facts (newest first); older rows render without them. */
-const MAX_VERSIONS_WITH_FACTS = 12;
+const MAX_VERSIONS_WITH_FACTS = 6;
+/** Of those, how many also get `plannedCount` (it reads units); the rest show `null`. */
+const MAX_VERSIONS_WITH_PLANNED = 3;
+
+/** A running allowance of documents one query may still read; `truncated` once it bites. */
+class ReadBudget {
+  truncated = false;
+  constructor(public left: number) {}
+  /** Reserve up to `want`; returns how many were granted (0 = spent). */
+  take(want: number): number {
+    const got = Math.max(0, Math.min(want, this.left));
+    this.left -= got;
+    if (got < want) this.truncated = true;
+    return got;
+  }
+}
 
 /** The lines a packing plan is about: top-level equipment, not containers. */
 function isPlannableLine(l: Doc<"projectLineItems">): boolean {
@@ -39,13 +63,21 @@ async function loadVersionInProject(ctx: QueryCtx, orgId: string, projectId: str
   return version;
 }
 
-/** Non-cancelled units of a line (bounded), org-checked. */
-async function liveUnits(ctx: QueryCtx, orgId: string, lineItemId: string) {
+/** Non-cancelled units of a line, org-checked, drawn from the query's unit
+ *  budget. `complete: false` means the budget ran out before this line's units
+ *  were all read (so the caller must not treat the result as the whole truth). */
+async function liveUnits(ctx: QueryCtx, orgId: string, lineItemId: string, budget: ReadBudget) {
+  const granted = budget.take(1); // a line with no units still costs one probe
+  if (granted === 0) return { units: [], complete: false };
+  const room = budget.left + 1;
   const units = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId))
-    .take(MAX_UNITS_PER_LINE + 1);
-  return { units: units.filter((u) => u.organizationId === orgId && u.status !== "CANCELLED"), capped: units.length > MAX_UNITS_PER_LINE };
+    .take(room + 1);
+  const complete = units.length <= room;
+  budget.take(Math.min(units.length, room));
+  if (!complete) budget.truncated = true;
+  return { units: units.slice(0, room).filter((u) => u.organizationId === orgId && u.status !== "CANCELLED"), complete };
 }
 
 /** Sum of ordered quantity per model over plannable lines, for a demand diff. */
@@ -68,20 +100,21 @@ async function realityFootprint(
   orgId: string,
   outgoing: Doc<"projectLineItems">[],
   incomingLineages: Set<string>,
+  budget: ReadBudget,
 ) {
   let carriedLines = 0;
   let packedUnits = 0;
   let notOnIncoming = 0;
-  let truncated = outgoing.length > MAX_LINES_EXAMINED;
+  if (outgoing.length > MAX_LINES_EXAMINED) budget.truncated = true;
   for (const line of outgoing.slice(0, MAX_LINES_EXAMINED)) {
-    const { units, capped } = await liveUnits(ctx, orgId, line.id);
-    truncated ||= capped;
+    const { units, complete } = await liveUnits(ctx, orgId, line.id, budget);
+    if (!complete && units.length === 0) break; // budget spent: every count above is a floor, `truncated` says so
     if (units.length === 0) continue;
     carriedLines++;
-    packedUnits += units.filter((u) => u.containerId).length;
+    packedUnits += units.filter(isPackedUnit).length;
     if (!incomingLineages.has(line.lineageId ?? line.id)) notOnIncoming++;
   }
-  return { carriedLines, packedUnits, notOnIncoming, truncated };
+  return { carriedLines, packedUnits, notOnIncoming };
 }
 
 const MONEY_PAIR = v.object({ before: v.number(), after: v.number() });
@@ -118,20 +151,20 @@ export const makeLivePreview = query({
     const incoming = await loadVersionInProject(ctx, organizationId, projectId, versionId);
     const outgoing = await loadVersionInProject(ctx, organizationId, projectId, project.liveVersionId);
 
-    const [inRows, outRows] = await Promise.all([
-      versionRows(ctx, "projectLineItems", incoming.id),
-      versionRows(ctx, "projectLineItems", outgoing.id),
-    ]);
-    const inLines = inRows.filter((l) => l.organizationId === organizationId && isPlannableLine(l));
-    const outLines = outRows.filter((l) => l.organizationId === organizationId && isPlannableLine(l));
-    const footprint = await realityFootprint(ctx, organizationId, outLines, new Set(inRows.map((l) => l.lineageId ?? l.id)));
-
+    // ONE read of each version's lines (the totals bundle already carries them), not
+    // a second `versionRows` pass over the same documents.
     const taxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
     const [bundleIn, bundleOut] = await Promise.all([
       loadTotalsBundle(ctx, projectId, organizationId, taxRate, incoming.id),
       loadTotalsBundle(ctx, projectId, organizationId, taxRate, outgoing.id),
     ]);
     if (!bundleIn || !bundleOut) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    const inRows = bundleIn.projectLines.filter((l) => l.organizationId === organizationId);
+    const outRows = bundleOut.projectLines.filter((l) => l.organizationId === organizationId);
+    const inLines = inRows.filter(isPlannableLine);
+    const outLines = outRows.filter(isPlannableLine);
+    const budget = new ReadBudget(MAX_UNITS_EXAMINED);
+    const footprint = await realityFootprint(ctx, organizationId, outLines, new Set(inRows.map((l) => l.lineageId ?? l.id)), budget);
     const totIn = computeTotals(bundleIn);
     const totOut = computeTotals(bundleOut);
 
@@ -147,29 +180,46 @@ export const makeLivePreview = query({
       invoiceCount: bundleOut.invoices.filter((i) => i.status !== "VOID").length,
       total: { before: totOut.total, after: totIn.total },
       balance: { before: totOut.total - totOut.invoicedTotal, after: totIn.total - totIn.invoicedTotal },
-      truncated: footprint.truncated,
+      truncated: budget.truncated,
     };
   },
 });
 
 /** A line counts as planned when the PM planned it into a case, or any of its
  *  units is already physically in one (packed wins: `resolvePackingStatus`). */
-async function isPlannedOrPacked(ctx: QueryCtx, orgId: string, line: Doc<"projectLineItems">): Promise<boolean> {
-  if (line.plannedContainerId) return true;
-  const { units } = await liveUnits(ctx, orgId, line.id);
-  return units.some((u) => u.containerId);
+async function isPlannedOrPacked(
+  ctx: QueryCtx,
+  orgId: string,
+  line: Doc<"projectLineItems">,
+  budget: ReadBudget,
+): Promise<boolean | null> {
+  if (line.plannedContainerId) return true; // no read needed
+  const { units, complete } = await liveUnits(ctx, orgId, line.id, budget);
+  if (units.some(isPackedUnit)) return true;
+  return complete ? false : null; // not packed in what we could read, but we couldn't read it all
 }
 
-async function plannedCount(ctx: QueryCtx, orgId: string, lines: Doc<"projectLineItems">[]): Promise<number> {
+/** Planned-or-packed lines, or `null` when the read budget ran out or the job has
+ *  more lines than we examine (an honest "unknown", never a guessed number). */
+async function plannedCount(ctx: QueryCtx, orgId: string, lines: Doc<"projectLineItems">[], budget: ReadBudget): Promise<number | null> {
+  if (lines.length > MAX_LINES_EXAMINED) {
+    budget.truncated = true;
+    return null;
+  }
   let n = 0;
-  for (const l of lines.slice(0, MAX_LINES_EXAMINED)) if (await isPlannedOrPacked(ctx, orgId, l)) n++;
+  for (const l of lines) {
+    const planned = await isPlannedOrPacked(ctx, orgId, l, budget);
+    if (planned === null) return null;
+    if (planned) n++;
+  }
   return n;
 }
 
 const ROW_FACTS = v.object({
   versionId: v.string(),
   lineCount: v.number(),
-  plannedCount: v.number(),
+  /** `null` = not counted (a version beyond the newest few, or the read budget ran out). */
+  plannedCount: v.union(v.number(), v.null()),
   total: v.number(),
   /** The version's own quote, if any (derived status; `EXPIRED` is computed). */
   quoteStatus: v.union(v.string(), v.null()),
@@ -203,14 +253,30 @@ export const versionRowFacts = query({
     if (!project || project.organizationId !== organizationId) return { rows: [], truncated: false };
 
     const all = (await listProjectVersions(ctx, organizationId, projectId)).sort((a, b) => b.number - a.number);
-    const versions = all.slice(0, MAX_VERSIONS_WITH_FACTS).filter((ver) => ver.contentState === "ready");
+    const candidates = all.slice(0, MAX_VERSIONS_WITH_FACTS).filter((ver) => ver.contentState === "ready");
     const taxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
-    const bundles = await Promise.all(versions.map((ver) => loadTotalsBundle(ctx, projectId, organizationId, taxRate, ver.id)));
+
+    // Load bundles ONE AT A TIME against a shared line budget, so a large job
+    // stops after a version or two instead of reading past Convex's limit.
+    const lineBudget = new ReadBudget(MAX_BUNDLE_LINES);
+    const unitBudget = new ReadBudget(MAX_UNITS_EXAMINED);
+    const versions: typeof candidates = [];
+    const bundles: NonNullable<Awaited<ReturnType<typeof loadTotalsBundle>>>[] = [];
+    for (const ver of candidates) {
+      if (lineBudget.left <= 0) {
+        lineBudget.truncated = true;
+        break;
+      }
+      const bundle = await loadTotalsBundle(ctx, projectId, organizationId, taxRate, ver.id);
+      if (!bundle) continue;
+      lineBudget.take(bundle.projectLines.length);
+      versions.push(ver);
+      bundles.push(bundle);
+    }
 
     const rows: RowFacts[] = [];
     for (let i = 0; i < versions.length; i++) {
       const bundle = bundles[i];
-      if (!bundle) continue;
       const ver = versions[i];
       const lines = bundle.projectLines.filter((l) => l.organizationId === organizationId && isPlannableLine(l));
       const quote = await findQuoteForVersion(ctx, organizationId, projectId, ver.id);
@@ -231,13 +297,18 @@ export const versionRowFacts = query({
       rows.push({
         versionId: ver.id,
         lineCount: lines.length,
-        plannedCount: await plannedCount(ctx, organizationId, lines),
+        plannedCount: i < MAX_VERSIONS_WITH_PLANNED ? await plannedCount(ctx, organizationId, lines, unitBudget) : null,
         total,
         quoteStatus: quote ? effectiveQuoteStatus(quote, now ?? Date.now()) : null,
         diff,
       });
     }
-    return { rows, truncated: all.length > MAX_VERSIONS_WITH_FACTS };
+    // `truncated` = any version lacks full facts: older ones beyond the cap, a
+    // version skipped when the line budget ran out, or a `plannedCount` we couldn't
+    // finish (the planned count is skipped for all but the newest few by design,
+    // which is why a long list is always "truncated").
+    const truncated = all.length > MAX_VERSIONS_WITH_FACTS || lineBudget.truncated || unitBudget.truncated || rows.some((r) => r.plannedCount === null);
+    return { rows, truncated };
   },
 });
 

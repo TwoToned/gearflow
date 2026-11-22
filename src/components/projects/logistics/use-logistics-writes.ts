@@ -10,7 +10,7 @@
 import { toast } from "sonner";
 
 import { useCrewAssignmentWrites } from "@/hooks/use-crew-assignment-writes";
-import { refreshProjectCrew, refreshProjectLabourCost } from "@/hooks/use-project-crew";
+import { refreshProjectCrew } from "@/hooks/use-project-crew";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { refreshProjectServices, refreshProjectServicesSummary } from "@/hooks/use-project-services";
 import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
@@ -24,7 +24,6 @@ export function refreshLogistics(projectId: string): void {
   refreshProjectServicesSummary(projectId);
   refreshProjectDetail(projectId);
   refreshProjectCrew(projectId);
-  refreshProjectLabourCost(projectId);
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

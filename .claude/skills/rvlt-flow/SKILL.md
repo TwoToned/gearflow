@@ -178,11 +178,13 @@ still cheap to fix. Work backwards from the gear-committed start.
 ### T-minus, roughly
 
 **A week out — does this job actually stand up?**
-Pull the job and run the five readiness checks Flow itself uses: **gear**
+Pull the job and run the readiness checks Flow itself uses: **gear**
 (enough stock for the window), **conflicts** (specific assets double-booked),
 **crew** (assignments still awaiting a yes), **services** (work still `PLANNED`,
 or understaffed against the required crew count; a **client pick up / drop off** is a service too, staffed
-at our counter by one Warehouse person, not a truck), **pricing** (unpriced lines).
+at our counter by one Warehouse person, not a truck), **pricing** (unpriced lines),
+plus **blocking discussions** (they hold prep), **packing** (lines with no case) and
+**incidents** (open reports on the job's gear); see `references/job-prep.md`.
 Each returns blocking / warning / pass / unknown. Report the blockers first, and
 be explicit about anything that came back `unknown` — a dateless job cannot have
 its gear checked, and that is not the same as being fine.

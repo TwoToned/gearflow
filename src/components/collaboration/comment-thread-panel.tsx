@@ -310,6 +310,12 @@ interface CommentThreadPanelProps {
   /** Label for the trigger button. */
   triggerLabel?: string;
   children?: React.ReactNode;
+  /** Controlled open state, for a panel opened from a menu item (the job
+   *  header's ⋯ › Comments & discussion). Uncontrolled when omitted. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Render no trigger at all (the opener lives elsewhere, e.g. a menu). */
+  noTrigger?: boolean;
 }
 
 /**
@@ -326,8 +332,16 @@ export function CommentThreadPanel({
   projectId,
   triggerLabel,
   children,
+  open: openProp,
+  onOpenChange,
+  noTrigger = false,
 }: CommentThreadPanelProps) {
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  const open = openProp ?? innerOpen;
+  const setOpen = (next: boolean) => {
+    setInnerOpen(next);
+    onOpenChange?.(next);
+  };
   const [newComment, setNewComment] = useState("");
   const [blocking, setBlocking] = useState(false);
   const [mentions, setMentions] = useState<string[]>([]);
@@ -378,6 +392,7 @@ export function CommentThreadPanel({
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
+      {noTrigger ? null : (
       <SheetTrigger asChild>
         {children ?? (
           <Button size="sm" variant="ghost" className="relative h-7 gap-1 px-2 text-xs">
@@ -395,6 +410,7 @@ export function CommentThreadPanel({
           </Button>
         )}
       </SheetTrigger>
+      )}
       <SheetContent side="right" className="w-[360px] sm:w-[400px] flex flex-col">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2 text-base">

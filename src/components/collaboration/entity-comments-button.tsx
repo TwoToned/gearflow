@@ -10,8 +10,9 @@ import { CommentThreadPanel } from "./comment-thread-panel";
  * Generic entity-level comments button with a live open-thread count badge.
  * Reusable on any collaborative record (asset, client, supplier, …).
  *
- * For projects use ProjectCommentsButton instead — it also surfaces the
- * blocking-comment count that gates prep / send-out.
+ * Not for jobs: the job header's ⋯ › Comments & discussion opens the same
+ * `CommentThreadPanel` and carries the blocking-comment count that gates
+ * prep / send-out (`job-header.tsx`).
  */
 export function EntityCommentsButton({
   orgId,

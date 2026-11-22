@@ -37,7 +37,7 @@ vi.mock("@/hooks/use-date-move-gate", () => ({
   },
 }));
 vi.mock("sonner", () => ({ toast: { success: writes.toastSuccess, error: writes.toastError } }));
-vi.mock("@/hooks/use-project-crew", () => ({ refreshProjectCrew: vi.fn(), refreshProjectLabourCost: vi.fn() }));
+vi.mock("@/hooks/use-project-crew", () => ({ refreshProjectCrew: vi.fn() }));
 vi.mock("@/hooks/use-project-detail", () => ({ refreshProjectDetail: vi.fn() }));
 vi.mock("@/hooks/use-project-services", () => ({ refreshProjectServices: vi.fn(), refreshProjectServicesSummary: vi.fn() }));
 

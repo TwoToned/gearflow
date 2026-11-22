@@ -41,6 +41,21 @@ a person, via `projectPricingLockWrites.unlockPricingNative` (D42 audience:
 version's quote only) — never automatically, never on a status revert (D57).
 See FEATUREDOCS/77 for the merge-time reasoning in full.
 
+**Undo of an unlock (UX Phase 7).** `unlockPricingNative` keeps the lock it
+removed (`pricingLockedAt/ById/ByName`) in its own audit row's `details.previous`,
+and returns that row's id as `undoToken`. The header toast's Undo calls
+`undoUnlockPricingNative({ unlockAuditId })`. It restores exactly those fields,
+never caller-supplied values. It refuses with `UNDO_STALE`:
+- when the project is locked again (a re-lock, a quote send or a status move
+  raised it);
+- when anything cleared the lock after that unlock (a newer `PRICING_UNLOCKED`
+  row, or a `QUOTE_RECALLED` row with `metadata.pricingUnlocked`);
+- when the unlock is not among the project's newest 200 audit rows (fail closed).
+
+A new path that clears `pricingLocked` must write one of those rows, or be
+added to `clearedLockAgain`. The undo is gated like re-locking
+(`project:update`, `danger: "low"`), and it writes `PRICING_UNLOCK_UNDONE`.
+
 ## Snapshots (`projectSnapshots` + `projectSnapshotEntries`) — unchanged by Phase 4
 
 Parent row + per-entity rows, NOT a single JSON blob (Convex's ~1MB doc limit
@@ -91,7 +106,8 @@ onto a real `projectVersions` row, FEATUREDOCS/78), not a snapshot restore.
 ## Reads: `convex/projectLocksRead.ts`
 
 `status` returns `{ pricingLocked, pricingLockedAt, pricingLockedByName,
-canUnlockPricing }` for the caller — the header lock chip/glyph and the
+canUnlockPricing }` for the caller — the job header's lock glyph (UX Phase 7;
+it replaced the chip and the lock strip), the list/board glyph and the
 Overview readiness checklist read this, never a stored tier. `listSnapshots`/
 `snapshotEntries`/`currentEntries` are unchanged by Phase 4 (see Snapshots
 above).

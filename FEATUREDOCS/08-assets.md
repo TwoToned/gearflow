@@ -187,8 +187,10 @@ The old list page (`page.tsx`) was a thin auth-gated wrapper that rendered `<Ass
   are intentionally **not** shared into the Gallery — the Grid keeps its own search only.
 
 ## Asset Record Page (`/assets/registry/[id]`)
-The serialized-asset detail page mirrors the approved project-detail "bar"
-(`projects/[id]` + `project-lifecycle.tsx`). Layout/composition only — all data,
+The serialized-asset detail page mirrors the project-detail "bar" as it stood
+when this page was built (`projects/[id]` and its since-deleted
+`project-lifecycle.tsx` hero; UX Phase 7 replaced that hero with
+`job-header.tsx` on `DetailHeader`, FEATUREDOCS/10). Layout/composition only — all data,
 mutations, handlers and permission gates are unchanged.
 
 - **Hero card** — breadcrumb, photo (`MediaThumbnail`, `resolveAssetPhotoUrl`),

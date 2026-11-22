@@ -13,9 +13,11 @@
  * Bounded reads throughout; every read on a GLOBAL index (`by_cuid`) is org re-checked;
  * the lookups on org-scoped composite indexes are org-scoped by construction.
  */
-import { v, type Infer } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { requireOrgReadFor } from "./auth";
+import type { Resource } from "./permissionsCore";
 import { getProjectWindow } from "./projectWindow";
 import { activityFromUnits, projectFor, unitsFor, type Activity } from "./scanActivity";
 
@@ -251,4 +253,36 @@ export async function loadScanCard(ctx: Ctx, orgId: string, tag: string): Promis
     .withIndex("by_organizationId_testTagId", (q) => q.eq("organizationId", orgId).eq("testTagId", tag))
     .first();
   return tt ? await testTagCard(ctx, orgId, tag, tt) : unknownCard(tag);
+}
+
+/**
+ * True when the caller may also read `resource` — the caller's OWN read guard
+ * (`requireOrgReadFor`), asked again for a second resource. Only a missing key scope
+ * answers false; every other refusal still throws.
+ */
+async function canAlsoRead(ctx: Ctx, orgId: string, resource: Resource): Promise<boolean> {
+  try {
+    await requireOrgReadFor(ctx, orgId, resource);
+    return true;
+  } catch (e) {
+    if (e instanceof ConvexError && (e.data as { code?: string } | undefined)?.code === "MISSING_SCOPE") return false;
+    throw e;
+  }
+}
+
+/**
+ * `testCard` is a `testTag` read: the card's job (project data) and its location and
+ * last check (warehouse data) are only for a caller who may read those too. A
+ * testTag-only API key gets the identity, the T&T facts and the profile, nothing else.
+ */
+export async function redactForTestTagOnly(ctx: Ctx, orgId: string, card: ScanCard): Promise<ScanCard> {
+  const project = await canAlsoRead(ctx, orgId, "project");
+  const warehouse = await canAlsoRead(ctx, orgId, "warehouse");
+  return {
+    ...card,
+    job: project ? card.job : null,
+    location: warehouse ? card.location : null,
+    lastCheck: warehouse ? card.lastCheck : null,
+    checkItemCount: warehouse ? card.checkItemCount : 0,
+  };
 }

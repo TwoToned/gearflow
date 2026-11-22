@@ -238,4 +238,32 @@ describe("scanLookup.checkCard / testCard", () => {
     });
     expect((await t.withIdentity(asViewer).query(api.scanLookup.testCard, { orgId: ORG, value: "NOTT" })).profile).toBeNull();
   });
+
+  test("a testTag-only API key gets no project, location or check data from testCard", async () => {
+    const t = makeT(); await seedCard(t);
+    const key = (id: string, scopes: string[]) => t.run(async (ctx) => {
+      await ctx.db.insert("apiKeys", {
+        id, organizationId: ORG, name: id, prefix: "gf_live_aaaaaa", tokenHash: "h" + id,
+        scopes: JSON.stringify(scopes), isActive: true, actingUserId: USER, createdById: USER,
+      });
+    });
+    await key("k-tt", ["testTag:read"]);
+    await key("k-all", ["testTag:read", "warehouse:read", "project:read"]);
+    const asKey = (akid: string) => ({ subject: USER, orgId: ORG, akid });
+
+    const narrow = await t.withIdentity(asKey("k-tt")).query(api.scanLookup.testCard, { orgId: ORG, value: "TT-0412" });
+    expect(narrow.kind).toBe("asset");
+    expect(narrow.tt).toMatchObject({ id: "tt1" });
+    expect(narrow.profile).toMatchObject({ id: "prof1" });
+    expect(narrow.job).toBeNull();
+    expect(narrow.location).toBeNull();
+    expect(narrow.lastCheck).toBeNull();
+    expect(narrow.checkItemCount).toBe(0);
+    expect(JSON.stringify(narrow)).not.toMatch(/Tour|Warehouse A|2342/);
+
+    const wide = await t.withIdentity(asKey("k-all")).query(api.scanLookup.testCard, { orgId: ORG, value: "TT-0412" });
+    expect(wide.job).toMatchObject({ projectNumber: "2342" });
+    expect(wide.location).toEqual({ id: "loc1", name: "Warehouse A" });
+    expect(wide.lastCheck).toMatchObject({ total: 2 });
+  });
 });

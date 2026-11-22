@@ -4,7 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { ACTIVE_UNIT_STATUSES, activityFromUnits, projectFor, stateOf, unitsFor, type Activity } from "./lib/scanActivity";
-import { loadScanCard, orNull, scanCardFields, unknownCard, type ScanCard } from "./lib/scanCard";
+import { loadScanCard, orNull, redactForTestTagOnly, scanCardFields, unknownCard, type ScanCard } from "./lib/scanCard";
 import type { Doc } from "./_generated/dataModel";
 import { resolveTestProfileForAsset } from "./lib/testProfileResolve";
 
@@ -196,7 +196,7 @@ export const testCard = query({
     await requireOrgReadFor(ctx, orgId, "testTag");
     const tag = safeTag(value);
     const card = tag ? await loadScanCard(ctx, orgId, tag) : unknownCard(value.trim().slice(0, 128));
-    return { ...card, profile: await profileFor(ctx, orgId, card) };
+    return { ...(await redactForTestTagOnly(ctx, orgId, card)), profile: await profileFor(ctx, orgId, card) };
   },
 });
 

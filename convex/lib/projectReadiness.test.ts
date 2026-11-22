@@ -6,6 +6,7 @@ import {
   computeProjectCrewReadiness,
   computeProjectPricingReadiness,
   computeProjectPackingReadiness,
+  computeProjectIncidentReadiness,
   type PricingLineInput,
   type PricingGroupInput,
   type PackingLineInput,
@@ -214,6 +215,40 @@ describe("computeProjectPricingReadiness", () => {
       [pgroup({ id: "g1", projectId: "p2", title: "Elsewhere" })],
     );
     expect(r.unpricedCount).toBe(0);
+  });
+});
+
+describe("computeProjectIncidentReadiness (UX Phase 7)", () => {
+  const ORG_ID = "org_1";
+  test("counts only open incidents: incidentType set, not COMPLETED or CANCELLED", () => {
+    const r = computeProjectIncidentReadiness(
+      [
+        { organizationId: ORG_ID, incidentType: "BROKEN_DAMAGED", status: "SCHEDULED" },
+        { organizationId: ORG_ID, incidentType: "NEEDS_SERVICE", status: "IN_PROGRESS" },
+        { organizationId: ORG_ID, incidentType: "BROKEN_DAMAGED", status: "COMPLETED" },
+        { organizationId: ORG_ID, incidentType: "LOST_MISSING", status: "CANCELLED" },
+        { organizationId: ORG_ID, incidentType: null, status: "SCHEDULED" }, // planned maintenance, not an incident
+      ],
+      ORG_ID,
+    );
+    expect(r).toEqual({ openCount: 2, truncated: false });
+  });
+
+  test("an org-mismatch row is dropped (the by_projectId index is global)", () => {
+    const r = computeProjectIncidentReadiness(
+      [
+        { organizationId: ORG_ID, incidentType: "BROKEN_DAMAGED", status: "SCHEDULED" },
+        { organizationId: "org_other", incidentType: "BROKEN_DAMAGED", status: "SCHEDULED" },
+      ],
+      ORG_ID,
+    );
+    expect(r).toEqual({ openCount: 1, truncated: false });
+  });
+
+  test("past the cap it counts the first `cap` rows and says the count is a floor", () => {
+    const rows = Array.from({ length: 4 }, () => ({ organizationId: ORG_ID, incidentType: "BROKEN_DAMAGED", status: "SCHEDULED" }));
+    expect(computeProjectIncidentReadiness(rows, ORG_ID, 3)).toEqual({ openCount: 3, truncated: true });
+    expect(computeProjectIncidentReadiness(rows.slice(0, 3), ORG_ID, 3)).toEqual({ openCount: 3, truncated: false });
   });
 });
 

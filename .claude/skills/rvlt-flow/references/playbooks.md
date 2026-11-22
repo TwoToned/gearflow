@@ -86,7 +86,7 @@ not a fault — say so rather than raising a false alarm.
 Answers: which of the upcoming jobs are not ready.
 
 1. `list_projects` for jobs whose gear window starts in the next 7–10 days.
-2. For each, run the five readiness checks (see `job-prep.md`).
+2. For each, run the readiness checks (see `job-prep.md`).
 3. Report as a single table, worst first:
 
 ```

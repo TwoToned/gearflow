@@ -680,7 +680,25 @@ silently assumed away.
 
 ### VersionStrip — three states, one query
 
-`src/components/projects/version-strip.tsx` replaces `ProjectLockStrip` +
+> **UX Phase 7 (2026-11, spec §6b, D92) superseded this and the header pill
+> below.**
+> - State 2 (viewing a non-live version: Make vN live, Back to live, the drift
+>   line → Compare) is now the job header's one quiet strip,
+>   `src/components/projects/job-version-strip.tsx`.
+> - State 3 (live + locked) is now the header's lock glyph, whose menu holds
+>   `Unlock pricing`. Its toast Undo is `undoUnlockPricingNative`, which reverses
+>   exactly that unlock or refuses.
+> - The `v4 · Live ▾` pill is gone. Its menu (switch · New version from vN ·
+>   Compare · Manage versions… `V`) is the header ⋯'s `Version ▸` submenu,
+>   built by `src/lib/row-actions/job-version-menu.ts` and
+>   `use-version-menu-item.ts`.
+> - `V` and the Versions panel are hosted by the job page and
+>   `job-header.tsx`. Phase 8 (D19) moves them to a Versions tab.
+>
+> `version-strip.tsx` is deleted; `version-switcher.tsx` is unmounted (Phase 8
+> deletes it). The history below is kept as written.
+
+`src/components/projects/version-strip.tsx` replaced `ProjectLockStrip` +
 `VersionReadOnlyBar` (both deleted) with one component:
 
 1. **Absent** — live, unlocked, nothing to say.
@@ -1211,7 +1229,7 @@ instead of calling `useProjectVersion()` itself. `ProjectFinancePanel` (the
 Finance tab's own wrapper, always rendered under `ProjectVersionProvider`) is
 the ONE caller that builds one, from the exact same `versions`/
 `isViewingVersion`/`viewingVersion` fields `VersionStrip`/the header pill
-already subscribe to (R-3.1 — no new query). The Overview tab's `QuoteCard`/
+already subscribe to (R-3.1 — no new query). The Overview tab's `QuoteMoneyLine`/
 `QuoteManagerDialog` (`overview/quote-card.tsx`, `finance/quote-manager-dialog.tsx`)
 deliberately do NOT pass it — Overview stays live-only (this doc's Phase 5
 section), so `versionContext` omitted is byte-identical to every pre-follow-up

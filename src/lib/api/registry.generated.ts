@@ -318,6 +318,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "activityLog.recentForProject",
+    "module": "activityLog",
+    "fn": "recentForProject",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "limit",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e33ca6b943a872b",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The newest few activity log entries touching one project (bounded, newest first).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "activityLogWrites.record",
     "module": "activityLogWrites",
     "fn": "record",
@@ -40274,6 +40316,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectPricingLockWrites.undoUnlockPricingNative",
+    "module": "projectPricingLockWrites",
+    "fn": "undoUnlockPricingNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "unlockAuditId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4bd2a8daec1e7469",
+    "returnsSha": "3db258de17c847d6",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectPricingLockWrites.unlockPricingNative",
     "module": "projectPricingLockWrites",
     "fn": "unlockPricingNative",
@@ -40317,7 +40416,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "3db258de17c847d6",
+    "returnsSha": "c846585326a13a17",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -40356,7 +40455,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f75cf9c7cfef7f2e",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines.",
+    "summary": "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines, unplanned packing, open incidents.",
     "danger": "low",
     "mcpTier": 1,
     "agentAccess": null,
@@ -64318,10 +64417,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1245,
-  agentReachable: 617,
-  queries: 446,
-  mutations: 799,
-  agentReachableQueries: 311,
-  agentReachableMutations: 306,
+  total: 1247,
+  agentReachable: 619,
+  queries: 447,
+  mutations: 800,
+  agentReachableQueries: 312,
+  agentReachableMutations: 307,
 } as const;

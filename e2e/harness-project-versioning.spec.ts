@@ -17,6 +17,23 @@ import { addModelViaAddBar } from "./harness-helpers";
  * chain), but have NOT been executed and confirmed green in this session.
  * They are ready to run in CI/a real environment, not verified passing here.
  */
+type Page = import("@playwright/test").Page;
+
+/** UX 7 (§6b, D92): the version pill is gone; the version lives in the job
+ *  header's ⋯ as `Version ▸` (one submenu level). Opens that submenu. */
+async function openVersionMenu(page: Page): Promise<void> {
+  await page.locator("#job-header").getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: /^Version/ }).click();
+}
+
+/** UX 7: the job page's Warehouse button moved into the header ⋯. The
+ *  sidebar's "Warehouse" link is the floor, not this job. */
+async function openJobWarehouse(page: Page): Promise<void> {
+  await page.locator("#job-header").getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Warehouse page" }).click();
+  await expect(page).toHaveURL(/\/warehouse\/[^/?]+/);
+}
+
 test.describe("harness: project versioning v2", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
 
@@ -121,15 +138,15 @@ test.describe("harness: project versioning v2", () => {
     });
 
     await test.step("open the version menu and create a new version", async () => {
-      await page.getByRole("button", { name: "Job versions" }).click();
+      await openVersionMenu(page);
       await page.getByRole("menuitem", { name: /new version/i }).click();
       // Switching to the new version updates the header pill and the URL's
       // `?v=` param (design §3.1 — per-user, never a DB field).
       await expect(page).toHaveURL(/[?&]v=\d+/, { timeout: 20000 });
     });
 
-    await test.step("the VersionStrip announces a non-live, fully editable version", async () => {
-      await expect(page.getByText(/a draft version, fully editable/i)).toBeVisible();
+    await test.step("the header's viewing strip announces a non-live, editable version", async () => {
+      await expect(page.getByText(/a draft, editable on Equipment and Finance/i)).toBeVisible();
     });
 
     await test.step("edit the line item's price on this non-live version", async () => {
@@ -163,7 +180,7 @@ test.describe("harness: project versioning v2", () => {
     await setUpProjectWithOneLineItem(page, unique);
 
     await test.step("check the line item's unit out through the warehouse pipeline", async () => {
-      await page.getByRole("link", { name: "Warehouse" }).click();
+      await openJobWarehouse(page);
       // Stage strip (StageFilter toggles named "<word> <count>") + the section's "Select all in …" box.
       const stage = (word: RegExp) => page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: word });
       const tickAll = page.getByRole("checkbox", { name: /^Select all in/ }).first();
@@ -179,7 +196,7 @@ test.describe("harness: project versioning v2", () => {
     await test.step("create a new version that removes the checked-out line", async () => {
       await page.goBack();
       await page.getByRole("tab", { name: "Equipment", exact: true }).click();
-      await page.getByRole("button", { name: "Job versions" }).click();
+      await openVersionMenu(page);
       await page.getByRole("menuitem", { name: /new version/i }).click();
       await expect(page).toHaveURL(/[?&]v=\d+/, { timeout: 20000 });
 
@@ -189,7 +206,7 @@ test.describe("harness: project versioning v2", () => {
     });
 
     await test.step("make this version live — the conflict (checked-out unit) is listed", async () => {
-      await page.getByRole("button", { name: "Job versions" }).click();
+      await openVersionMenu(page);
       await page.getByRole("menuitem", { name: "Manage versions…" }).click();
       const panel = page.getByRole("dialog", { name: "Versions" });
       const nonLiveRow = panel.locator("div").filter({ hasText: /^v2/ }).first();
@@ -203,7 +220,7 @@ test.describe("harness: project versioning v2", () => {
     });
 
     await test.step("the checked-out gear stays on the job (still shown as deployed in the warehouse)", async () => {
-      await page.getByRole("link", { name: "Warehouse" }).click();
+      await openJobWarehouse(page);
       await expect(page.getByRole("toolbar", { name: "Job stage" }).getByRole("button", { name: /^Out 1$/ })).toBeVisible({ timeout: 20000 });
     });
   });
@@ -272,10 +289,10 @@ test.describe("harness: project versioning v2", () => {
 
     await test.step("create a new (non-live) version on the Finance tab", async () => {
       await page.getByRole("tab", { name: "Finance", exact: true }).click();
-      await page.getByRole("button", { name: "Job versions" }).click();
+      await openVersionMenu(page);
       await page.getByRole("menuitem", { name: /new version/i }).click();
       await expect(page).toHaveURL(/[?&]v=\d+/, { timeout: 20000 });
-      await expect(page.getByText(/a draft version, fully editable/i)).toBeVisible();
+      await expect(page.getByText(/a draft, editable on Equipment and Finance/i)).toBeVisible();
     });
 
     await test.step("send v2's quote — version-labelled, never the old quote-revision \"v1\"", async () => {

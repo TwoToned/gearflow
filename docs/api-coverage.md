@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 446 | 311 | 132 | 1 | 2 |
-| Mutations | 799 | 306 | 484 | 0 | 9 |
-| **Total** | **1245** | **617** | **616** | **1** | **11** |
+| Queries | 447 | 312 | 132 | 1 | 2 |
+| Mutations | 800 | 307 | 484 | 0 | 9 |
+| **Total** | **1247** | **619** | **616** | **1** | **11** |
 
-<!-- reachability-floor: 617 -->
+<!-- reachability-floor: 619 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -44,7 +44,7 @@ idempotency key, already required of every mutation) at the dispatcher — see
 |---|---|
 | `high` | 94 |
 | `medium` | 152 |
-| `low` | 60 |
+| `low` | 61 |
 
 ## Modules with no agent-reachable operation
 

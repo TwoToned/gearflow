@@ -327,8 +327,10 @@ describe("UX Phase 15 — the Crew workspace on a phone (§9h.6)", () => {
     expect(fields).not.toMatch(/text-(xs|sm)\b/);
   });
 
-  it("Export all… is a desktop-only page ⋯ item (§9h.6: the desktop-only export is hidden)", () => {
-    expect(crew("timesheets/timesheets-list.tsx")).toContain("...(isMobile ? [] : [exportAll])");
+  it("Export all… stays in the page ⋯ on a phone (it is the only date-range export)", () => {
+    expect(crew("timesheets/timesheets-list.tsx")).toContain("pageMenu={{ items: [...ws.menuItems, exportAll] }}");
+    // Its date fields are the 16px Input, so a phone never zooms.
+    expect(crew("timesheets/export-dialog.tsx")).not.toMatch(/<input\b/);
   });
 });
 

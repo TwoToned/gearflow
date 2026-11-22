@@ -259,7 +259,8 @@ function TimesheetsListInner({ orgId }: { orgId: string | undefined }) {
         itemHeader={TIMESHEET_ITEM_HEADER}
         itemSortKey={TIMESHEET_ITEM_SORT_KEY}
         primary={primary}
-        pageMenu={{ items: [...ws.menuItems, ...(isMobile ? [] : [exportAll])] }}
+        // Export all… stays on a phone: it is the ONLY date-range export (the bulk bar exports ticked rows).
+        pageMenu={{ items: [...ws.menuItems, exportAll] }}
         bulk={bulk}
         empty={{ title: "No time entries yet", description: "Log time for the crew, or wait for them to submit.", action: primary }}
         toolbarExtra={<UrlSavedViewsMenu tableId="timesheets" spec={TIMESHEETS_SPEC} state={state} setState={setState} aliases={TIMESHEETS_VIEW_ALIASES} />}

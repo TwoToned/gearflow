@@ -288,4 +288,14 @@ describe("TimesheetsList (smoke)", () => {
     expect(screen.getByRole("button", { name: "Log time" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Planner" }).className).toContain("min-h-11");
   });
+
+  it("phone: the page ⋯ still opens Export all… (the date-range export is not desktop-only)", async () => {
+    mobile.value = true;
+    const user = userEvent.setup();
+    render(<TimesheetsList />);
+    await user.click(screen.getByRole("button", { name: "Crew options" }));
+    // On a phone the ⋯ is a bottom sheet of 48px buttons, not a menu.
+    await user.click(await screen.findByRole("button", { name: /Export all…/ }));
+    expect(await screen.findByRole("dialog", { name: "Export timesheets" })).toBeTruthy();
+  });
 });

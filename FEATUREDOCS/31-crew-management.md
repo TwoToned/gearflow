@@ -281,7 +281,8 @@ org switch drops the selection and the seen rows.
   `crew:delete`). Query… is a dialog whose Save stays disabled until a reason
   is typed.
 - Phone: cards `name` / `#2336 · Sat 7 Nov · 8.5h · Submitted` with the total
-  on the right, the sticky Log time, `Show 25 more`; Export all… is desktop-only.
+  on the right, the sticky Log time, `Show 25 more`. Export all… stays in the
+  page ⋯ on a phone too: it is the only date-range export.
 
 ### Crew roles & rates (`roles/crew-roles-sheet.tsx`, spec §9h.5)
 The old `/crew/settings` page as a sheet: active roles in display order,

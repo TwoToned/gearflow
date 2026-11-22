@@ -20,20 +20,27 @@ export function buildCaseMenu(args: {
   setExpanded: (on: boolean) => void;
   containers: readonly RealContainer[];
   caseWrites: ReturnType<typeof usePackingCaseWrites>;
+  /** THE planning write: Unpack is `planInto(plannedOnlyIds, null)`, not a second caller of the mutation. */
+  planInto: (ids: readonly string[], target: CaseRef | null, opts?: { packedStay?: number }) => Promise<unknown>;
   onRename: (c: CaseRef) => void;
 }): ActionMenuSpec {
-  const { bucket, expanded, setExpanded, containers, caseWrites, onRename } = args;
+  const { bucket, expanded, setExpanded, containers, caseWrites, planInto, onRename } = args;
+  const unplan = (ids: readonly string[], packedStay: number) => planInto(ids, null, { packedStay });
   const me = containers.find((c) => c.id === bucket.containerId);
   const self: CaseRef = { id: bucket.containerId, label: bucket.label ?? me?.label ?? "Case" };
   const parentDoc = me?.parentContainerId ? containers.find((c) => c.id === me.parentContainerId) : undefined;
-  const parent: CaseRef | null = parentDoc ? { id: parentDoc.id, label: parentDoc.label } : null;
+  const parent = parentDoc ? { id: parentDoc.id, label: parentDoc.label, sealed: parentDoc.sealedAt != null } : null;
   const facts = caseCardFacts(bucket);
   const excluded = caseAndDescendantIds(containers, self.id);
-  const moveTargets = containers.filter((c) => !excluded.has(c.id) && c.id !== parent?.id).map((c) => ({ id: c.id, label: c.label }));
+  // A sealed case refuses having a case packed into it (server: CASE_SEALED), so it is no target.
+  const moveTargets = containers
+    .filter((c) => !excluded.has(c.id) && c.id !== parent?.id && c.sealedAt == null)
+    .map((c) => ({ id: c.id, label: c.label }));
   return buildPackingCaseActions(
     {
       ...self,
       parent,
+      hasNestedCase: containers.some((c) => c.parentContainerId === self.id),
       plannedOnlyCount: facts.plannedOnlyIds.length,
       sealed: me?.sealedAt != null,
       hiddenLineCount: Math.max(0, bucket.lines.length - CARD_COLLAPSED_LINES),
@@ -45,22 +52,15 @@ export function buildCaseMenu(args: {
       onRename: () => onRename(self),
       onMoveInto: (targetId) => {
         const target = moveTargets.find((c) => c.id === targetId);
-        if (target) void caseWrites.moveInto(self, target, parent);
+        if (target) void caseWrites.moveInto(self, target, parent && { id: parent.id, label: parent.label });
       },
-      onTakeOut: parent ? () => void caseWrites.takeOut(self, parent) : undefined,
-      onUnpack: () => void caseWrites.unpack(self, facts.plannedOnlyIds, facts.packedCount),
+      onTakeOut: parent ? () => void caseWrites.takeOut(self, { id: parent.id, label: parent.label }) : undefined,
+      onUnpack: () => void unplan(facts.plannedOnlyIds, facts.packedCount),
       onPrintLabel: () => caseWrites.printLabel(self),
       onSeal: () => void caseWrites.seal(self),
       onUnseal: () => void caseWrites.unseal(self),
       onToggleExpanded: () => setExpanded(!expanded),
-      onDelete: () =>
-        void caseWrites.remove({
-          ...self,
-          kind: me?.kind,
-          description: me?.description,
-          parentContainerId: me?.parentContainerId,
-          versionId: me?.versionId,
-        }),
+      onDelete: () => void caseWrites.remove({ ...self, kind: me?.kind }),
     },
   );
 }

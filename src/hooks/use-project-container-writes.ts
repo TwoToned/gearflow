@@ -26,6 +26,7 @@ export function useProjectContainerWrites() {
   const unpackM = useMutation(api.projectContainersWrites.unpackNative);
   const setPlannedContainerM = useMutation(api.projectContainersWrites.setPlannedContainerNative);
   const restorePlannedM = useMutation(api.projectContainerPlanWrites.restorePlannedContainersNative);
+  const undoDeleteM = useMutation(api.projectContainerPlanWrites.undoDeleteContainerNative);
   const sealM = useMutation(api.projectContainerPlanWrites.sealNative);
   const unsealM = useMutation(api.projectContainerPlanWrites.unsealNative);
 
@@ -105,6 +106,12 @@ export function useProjectContainerWrites() {
      *  reads each line's previous case from its own audit rows. */
     restorePlannedContainers: async (batchAuditId: string) => {
       return restorePlannedM({ orgId: requireOrg(), batchAuditId, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    /** The exact Undo of `remove` (a CUSTOM case): ONE mutation re-creates the case in
+     *  place and restores its planned lines from the delete's own audit rows. */
+    undoDeleteContainer: async (batchAuditId: string) => {
+      return undoDeleteM({ orgId: requireOrg(), batchAuditId, now: Date.now(), actor: actor(), auditId: createId() });
     },
 
     seal: async (id: string) => sealM({ id, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),

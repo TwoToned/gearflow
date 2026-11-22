@@ -33,7 +33,8 @@ export function PackingToolbar({
   filters: PackingFilters;
   onFilters: (next: PackingFilters) => void;
   categories: readonly string[];
-  /** Empty on a phone (the tab ⋯ is desktop-only, §7b.5). */
+  /** Print all labels, Manifest, Select the unplanned, Show every line, Open the warehouse page. On a
+   *  phone it is the same ⋯, opening as a 48 px bottom sheet, so none of these is lost there. */
   tabMenu: ActionMenuSpec;
   /** Absent without `project:manage_line_items`, and on a phone (the red sticky bar replaces it). */
   onAddCase?: () => void;

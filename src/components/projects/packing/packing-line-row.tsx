@@ -29,7 +29,10 @@ export function PackingLineRow({
   onToggle,
   canDrag,
   menu,
+  selectable = true,
 }: {
+  /** False inside a sealed case: its lines cannot move, so there is nothing to tick. */
+  selectable?: boolean;
   item: LineItemData;
   categoryName: string;
   labelById: ReadonlyMap<string, string>;
@@ -43,7 +46,7 @@ export function PackingLineRow({
   const name = lineDisplayName(item);
 
   const onRowClick = (e: MouseEvent) => {
-    if ((e.target as HTMLElement).closest(INTERACTIVE)) return;
+    if (!selectable || (e.target as HTMLElement).closest(INTERACTIVE)) return;
     onToggle({ range: e.shiftKey });
   };
 
@@ -60,7 +63,11 @@ export function PackingLineRow({
         isDragging && "opacity-40",
       )}
     >
-      <Checkbox checked={selected} onCheckedChange={() => onToggle({ range: false })} aria-label={`Select ${name}`} />
+      {selectable ? (
+        <Checkbox checked={selected} onCheckedChange={() => onToggle({ range: false })} aria-label={`Select ${name}`} />
+      ) : (
+        <span aria-hidden="true" className="w-4 shrink-0" />
+      )}
       {canDrag ? (
         <button
           type="button"

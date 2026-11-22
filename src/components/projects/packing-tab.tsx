@@ -22,6 +22,7 @@ import {
   filterPlannableLines,
   packingFiltersActive,
   packingFooterFacts,
+  plannedCaseOf,
   type PlannableLine,
 } from "@/lib/packing-tab";
 import { buildPackingBulkActions, buildPackingLineActions } from "@/lib/row-actions/packing-line";
@@ -65,21 +66,16 @@ export function PackingTab({ projectId, orgId, versionId }: PackingTabProps) {
       />
     );
   }
-  return <PackingBody projectId={projectId} data={data} />;
+  return <PackingBody projectId={projectId} versionId={versionId} data={data} />;
 }
 
-function plannedCaseOf(item: PlannableLine["item"], containers: readonly RealContainer[]) {
-  const c = item.plannedContainerId ? containers.find((x) => x.id === item.plannedContainerId) : undefined;
-  return c ? { id: c.id, label: c.label, sealed: c.sealedAt != null } : null;
-}
-
-function PackingBody({ projectId, data }: { projectId: string; data: PackingTabData }) {
+function PackingBody({ projectId, versionId, data }: { projectId: string; versionId?: string; data: PackingTabData }) {
   const { lines, containers } = data;
   const router = useRouter();
   const isMobile = useIsMobile();
   const canManage = useCanDo("project", "manage_line_items");
   const caseWrites = usePackingCaseWrites(projectId);
-  const { planInto } = usePackingPlan(lines);
+  const { planInto } = usePackingPlan(lines, containers);
 
   const [filters, setFilters] = useState(NO_PACKING_FILTERS);
   const [expandAll, setExpandAll] = useState(false);
@@ -112,6 +108,8 @@ function PackingBody({ projectId, data }: { projectId: string; data: PackingTabD
     [lineById, containers],
   );
 
+  const canUnplan = [...selection.selected].some((id) => lineById.get(id)?.plannedContainerId);
+
   const planSelected = (target: CaseRef | null) => {
     void planInto([...selection.selected], target).then((r) => r && selection.clear());
   };
@@ -134,13 +132,14 @@ function PackingBody({ projectId, data }: { projectId: string; data: PackingTabD
         selected={selection.selected.has(item.id)}
         onToggle={({ range }) => selection.toggle(item.id, { range })}
         canDrag={canManage && canMove(item.id)}
+        selectable={!plannedCaseOf(item, containers)?.sealed}
         menu={menu}
       />
     );
   };
 
   const caseMenu = (bucket: CaseBucket, expanded: boolean, setExpanded: (on: boolean) => void): ActionMenuSpec | undefined =>
-    canManage ? buildCaseMenu({ bucket, expanded, setExpanded, containers, caseWrites, onRename: setRenaming }) : undefined;
+    canManage ? buildCaseMenu({ bucket, expanded, setExpanded, containers, caseWrites, planInto, onRename: setRenaming }) : undefined;
 
   const tabMenu: ActionMenuSpec = {
     items: [
@@ -166,7 +165,7 @@ function PackingBody({ projectId, data }: { projectId: string; data: PackingTabD
         filters={filters}
         onFilters={setFilters}
         categories={categories}
-        tabMenu={isMobile ? { items: [] } : tabMenu}
+        tabMenu={tabMenu}
         onAddCase={canManage && !isMobile ? () => setNewCaseOpen(true) : undefined}
       />
 
@@ -213,7 +212,7 @@ function PackingBody({ projectId, data }: { projectId: string; data: PackingTabD
         <BulkBar
           selection={selection}
           noun="line"
-          actions={buildPackingBulkActions({ cases: caseRefs, onPlanInto: (id, label) => planSelected(id ? { id, label: label ?? "" } : null) })}
+          actions={buildPackingBulkActions({ cases: caseRefs, canUnplan, onPlanInto: (id, label) => planSelected(id ? { id, label: label ?? "" } : null) })}
         />
       )}
       {isMobile && canManage && selection.count === 0 && (
@@ -236,7 +235,8 @@ function PackingBody({ projectId, data }: { projectId: string; data: PackingTabD
         open={newCaseOpen}
         onOpenChange={setNewCaseOpen}
         projectId={projectId}
-        existingContainers={containers.map((c) => ({ id: c.id, label: c.label }))}
+        versionId={versionId}
+        existingContainers={caseRefs}
         onCreated={() => setNewCaseOpen(false)}
       />
     </div>

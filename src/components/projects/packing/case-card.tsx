@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Lock } from "lucide-react";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +11,8 @@ import { useCaseDrop, useIsDragging } from "./packing-dnd";
 
 /** Lines a card shows before `Show n more` (§7b.2). */
 export const CARD_COLLAPSED_LINES = 6;
+/** Rows one `Show n more` click reveals. */
+const SHOW_MORE_STEP = 5;
 
 interface CaseHeaderProps {
   label: string;
@@ -28,8 +30,9 @@ function CaseHeader({ label, kind, parentLabel, sealed, lineCount, packedCount, 
   const counts = `${lineCount} ${lineCount === 1 ? "line" : "lines"} · ${packedCount} packed`;
   return (
     <header className="flex min-h-11 items-center gap-1 bg-paper-2/60 py-1 pl-1 pr-1">
-      {lineCount > 0 && <Checkbox checked={checked} onCheckedChange={(v) => onCheckedChange(v === true)} aria-label={`Select all in ${label}`} />}
-      <div className={cn("flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2", lineCount === 0 && "pl-2")}>
+      {/* A sealed card's lines cannot move, so the card offers nothing to tick. */}
+      {lineCount > 0 && !sealed && <Checkbox checked={checked} onCheckedChange={(v) => onCheckedChange(v === true)} aria-label={`Select all in ${label}`} />}
+      <div className={cn("flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2", (lineCount === 0 || sealed) && "pl-2")}>
         <span className="truncate font-mono text-ui-text font-semibold text-ink">{label}</span>
         {kind && <span className="text-caption text-muted">{CONTAINER_KIND_WORDS[kind]}</span>}
         {parentLabel && <span className="text-caption text-muted">· in {parentLabel}</span>}
@@ -73,8 +76,13 @@ export function CaseCard({
 }) {
   const { setNodeRef, isOver } = useCaseDrop(caseId);
   const dragging = useIsDragging();
-  const shown = expanded ? rows : rows.slice(0, CARD_COLLAPSED_LINES);
-  const left = rows.length - CARD_COLLAPSED_LINES;
+  // `Show 5 more` reveals five more rows, not the whole case; "Show every line" (the ⋯,
+  // `expanded`) reveals all.
+  const [extra, setExtra] = useState(0);
+  const visibleCount = expanded ? rows.length : CARD_COLLAPSED_LINES + extra;
+  const shown = rows.slice(0, visibleCount);
+  const left = rows.length - visibleCount;
+  const collapsible = rows.length > CARD_COLLAPSED_LINES;
 
   return (
     <section
@@ -86,13 +94,19 @@ export function CaseCard({
     >
       <CaseHeader {...header} />
       {header.lineCount === 0 ? <p className="px-3 py-3 text-caption text-muted">Nothing planned in this case</p> : shown}
-      {header.lineCount > 0 && left > 0 && (
+      {header.lineCount > 0 && collapsible && (
         <button
           type="button"
-          onClick={() => onExpandedChange(!expanded)}
-          className="w-full border-t border-line px-3 py-2 text-left text-caption font-medium text-muted hover:bg-elev/60 hover:text-ink"
+          onClick={() => {
+            if (left > 0) setExtra((n) => n + SHOW_MORE_STEP);
+            else {
+              setExtra(0);
+              onExpandedChange(false);
+            }
+          }}
+          className="min-h-11 w-full border-t border-line px-3 py-2 text-left text-caption font-medium text-muted hover:bg-elev/60 hover:text-ink"
         >
-          {expanded ? "Show fewer lines" : `Show ${Math.min(5, left)} more · ${left} left`}
+          {left > 0 ? `Show ${Math.min(SHOW_MORE_STEP, left)} more · ${left} left` : "Show fewer lines"}
         </button>
       )}
     </section>

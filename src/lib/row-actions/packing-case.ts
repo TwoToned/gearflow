@@ -7,7 +7,9 @@ export interface PackingCaseRow {
   id: string;
   label: string;
   /** The case this one sits inside, if any. */
-  parent: { id: string; label: string } | null;
+  parent: { id: string; label: string; sealed?: boolean } | null;
+  /** Another case is packed inside this one: the server refuses a delete until it is moved out. */
+  hasNestedCase?: boolean;
   /** Lines only PLANNED into this case: what "Unpack" sends loose. */
   plannedOnlyCount: number;
   /** Sealed (D21): the plan is locked, and so are rename, move and delete. */
@@ -60,7 +62,8 @@ function openCaseEntries(row: PackingCaseRow, ctx: PackingCaseCtx): Entry[] {
   return [
     ctx.onRename && { key: "rename", label: "Rename…", group: "edit", icon: Pencil, onSelect: ctx.onRename },
     moveEntry(ctx),
-    row.parent && ctx.onTakeOut && {
+    // A sealed PARENT refuses having a case taken out of it (server: CASE_SEALED), so no verb is offered.
+    row.parent && !row.parent.sealed && ctx.onTakeOut && {
       key: "take-out",
       label: `Take out of ${row.parent.label}`,
       group: "organise",
@@ -87,8 +90,9 @@ function sealEntry(row: PackingCaseRow, ctx: PackingCaseCtx): Entry {
 function deleteEntry(row: PackingCaseRow, ctx: PackingCaseCtx): Entry {
   if (row.sealed || !ctx.onDelete) return false;
   const lines = row.plannedOnlyCount;
-  const body =
-    row.packedCount > 0
+  const body = row.hasNestedCase
+    ? `${row.label} has another case packed inside it. The delete will be refused until that case is moved out.`
+    : row.packedCount > 0
       ? `${row.label} still has ${row.packedCount} packed ${row.packedCount === 1 ? "line" : "lines"}. Move or unpack them in the warehouse first; the delete will be refused until then.`
       : lines > 0
         ? `${lines} ${lines === 1 ? "line" : "lines"} planned into ${row.label} go back to Unplanned. Nothing physical moves.`

@@ -127,6 +127,18 @@ export function lineDisplayName(item: LineItemData): string {
   return item.model?.name ?? item.description ?? "—";
 }
 
+export interface CaseLike {
+  id: string;
+  label: string;
+  sealedAt?: number | null;
+}
+
+/** The case a line is PLANNED into (with whether it is sealed), or `null`. */
+export function plannedCaseOf(item: LineItemData, containers: readonly CaseLike[]): { id: string; label: string; sealed: boolean } | null {
+  const c = item.plannedContainerId ? containers.find((x) => x.id === item.plannedContainerId) : undefined;
+  return c ? { id: c.id, label: c.label, sealed: c.sealedAt != null } : null;
+}
+
 /** A line can be dragged / bulk-planned only while nothing of it is physically
  *  packed: packed wins over the plan and the office never moves physical gear
  *  (§7b.3). The server enforces the same rule (`skipped: PACKED`). */

@@ -45,6 +45,19 @@ describe("planGlyph (the glyph rule)", () => {
   });
 });
 
+describe("ONE packed predicate (isPackedUnit, shared with the server)", () => {
+  test("ANY non-cancelled unit in a case is packed, even when most of its siblings are loose", () => {
+    const units = [{ id: "u1", ordinal: 1, containerId: null }, { id: "u2", ordinal: 2, containerId: null }, { id: "u3", ordinal: 3, containerId: "lx" }];
+    expect(planGlyph(line({ id: "a", units }), labels).packed).toBe(true);
+    expect(packingCounts([asLine(line({ id: "a", units }))])).toEqual({ planned: 1, total: 1 });
+  });
+  test("a cancelled unit in a case is not packed (the line stays plannable)", () => {
+    const units = [{ id: "u1", ordinal: 1, containerId: "lx", status: "CANCELLED" }];
+    expect(planGlyph(line({ id: "a", units }), labels).packed).toBe(false);
+    expect(canDragLine(line({ id: "a", units }))).toBe(true);
+  });
+});
+
 describe("canDragLine / packingCounts / footer", () => {
   test("a packed line cannot be dragged; planned and unplanned can", () => {
     expect(canDragLine(line({ id: "a", units: packedIn("lx") }))).toBe(false);
@@ -136,8 +149,12 @@ describe("buildPackingLineActions / buildPackingBulkActions", () => {
     expect(buildPackingLineActions({ id: "a", canPlan: true, plannedCase: { id: "sl", label: "SEAL-01", sealed: true } }, { cases, onPlanInto }).items).toEqual([]);
   });
   test("bulk verbs carry the count and never offer a sealed case", () => {
-    const actions = buildPackingBulkActions({ cases, onPlanInto });
+    const actions = buildPackingBulkActions({ cases, canUnplan: true, onPlanInto });
     expect(actions.map((a) => a.label(3))).toEqual(["Plan 3 into…", "Unplan 3"]);
     expect(actions[0].children?.map((c) => c.label(3))).toEqual(["LX-02", "VID-04"]);
+  });
+  test("Unplan is absent (not disabled) when no ticked line is planned", () => {
+    const actions = buildPackingBulkActions({ cases, canUnplan: false, onPlanInto });
+    expect(actions.map((a) => a.label(3))).toEqual(["Plan 3 into…"]);
   });
 });

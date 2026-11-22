@@ -3,7 +3,7 @@
 // dialog is OPENED (closed triggers prove nothing), and each write's single Undo
 // closure is handed to the toast.
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { LineItemData, CategoryData } from "@/components/projects/equipment-rows";
@@ -17,6 +17,7 @@ const writes = vi.hoisted(() => ({
   update: vi.fn(async () => ({ ok: true })),
   create: vi.fn(async () => ({ id: "sl2", lineItemId: "x" })),
   remove: vi.fn(async () => ({ ok: true, batchAuditId: "del1" })),
+  undoDeleteContainer: vi.fn(async () => ({ id: "vid", restored: 1, skipped: 0 })),
   seal: vi.fn(async () => ({ ok: true, changed: true })),
   unseal: vi.fn(async () => ({ ok: true, changed: true })),
   setPlannedContainer: vi.fn(async (ids: string[]) => ({ updated: ids.length, changes: [], skipped: [] as { lineItemId: string; reason: string }[], batchAuditId: "batch1" })),
@@ -35,10 +36,20 @@ vi.mock("@/components/documents/label-submenu", () => ({ openLabel }));
 
 type TestContainer = { id: string; label: string; kind?: string; parentContainerId?: string | null; unitCount: number; sealedAt?: number | null };
 const containers = vi.hoisted(() => ({ value: [] as TestContainer[] }));
-vi.mock("convex/react", () => ({ useQuery: vi.fn(() => containers.value) }));
-vi.mock("@/components/warehouse/new-container-sheet", () => ({
-  NewContainerSheet: ({ open }: { open: boolean }) => (open ? <div>New container sheet open</div> : null),
+// The REAL NewContainerSheet renders here (it reads the same `useQuery`): its asset search
+// carries a `query` arg and answers `[]`, the job's containers query answers `containers`.
+vi.mock("convex/react", () => ({
+  useQuery: vi.fn((_ref: unknown, args: unknown) => (args && typeof args === "object" && "query" in args ? [] : containers.value)),
 }));
+vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org1" } }) }));
+
+// Radix Select / Popover / Dialog need these in jsdom.
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+});
 
 function line(overrides: Partial<LineItemData> & { id: string }): LineItemData {
   return {
@@ -159,6 +170,22 @@ describe("Packing tab body", () => {
     await user.click(within(vid).getByRole("button", { name: /Show 5 more · 5 left/ }));
     expect(within(vid).getAllByRole("checkbox", { name: /^Select Item/ })).toHaveLength(11);
   });
+
+  it("'Show 5 more' reveals FIVE rows, not the whole case, and is a 44px target", async () => {
+    const many = Array.from({ length: 17 }, (_, i) => line({ id: `m${i}`, description: `Item ${i}`, plannedContainerId: "vid" }));
+    equipment.categories = [{ id: "c1", name: "Lighting", sortOrder: 0, groups: [], lineItems: many }];
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    const vid = screen.getByRole("region", { name: "Case VID-04" });
+    const more = within(vid).getByRole("button", { name: /Show 5 more · 11 left/ });
+    expect(more.className).toContain("min-h-11");
+    await user.click(more);
+    expect(within(vid).getAllByRole("checkbox", { name: /^Select Item/ })).toHaveLength(11);
+    await user.click(within(vid).getByRole("button", { name: /Show 5 more · 6 left/ }));
+    expect(within(vid).getAllByRole("checkbox", { name: /^Select Item/ })).toHaveLength(16);
+    await user.click(within(vid).getByRole("button", { name: /Show 1 more · 1 left/ }));
+    expect(within(vid).getByRole("button", { name: "Show fewer lines" })).toBeTruthy();
+  });
 });
 
 describe("Case ⋯, seal, delete", () => {
@@ -211,7 +238,9 @@ describe("Case ⋯, seal, delete", () => {
     await openMenu(user, "LX-02 actions");
     await user.click(screen.getByRole("menuitem", { name: /Unpack/ }));
     await waitFor(() => expect(writes.setPlannedContainer).toHaveBeenCalledWith(["aura"], null));
-    expect(toastMock.success).toHaveBeenCalledWith("1 line unplanned · 2 packed lines stay (move in the warehouse)", expect.anything());
+    // Unpack IS planInto(ids, null): the same toast, note and Undo as every other plan write.
+    expect(toastMock.success).toHaveBeenCalledWith("1 line → Unplanned", expect.objectContaining({ description: "2 packed lines stay (move in the warehouse)" }));
+    expect(writes.setPlannedContainer).toHaveBeenCalledTimes(1);
     lastUndo()();
     expect(writes.restorePlannedContainers).toHaveBeenCalledWith("batch1");
   });
@@ -238,7 +267,7 @@ describe("Case ⋯, seal, delete", () => {
     await waitFor(() => expect(writes.unseal).toHaveBeenCalledWith("sl"));
   });
 
-  it("Delete case… opens a confirm that names the effect; confirming deletes; a CUSTOM case's Undo re-creates it then restores by batch id", async () => {
+  it("Delete case… opens a confirm that names the effect; confirming deletes; a CUSTOM case's Undo is ONE call by batch id", async () => {
     const user = setup();
     render(<PackingTab projectId="p1" orgId="o1" />);
     await openMenu(user, "VID-04 actions");
@@ -248,8 +277,17 @@ describe("Case ⋯, seal, delete", () => {
     await user.click(screen.getByRole("button", { name: "Delete case" }));
     await waitFor(() => expect(writes.remove).toHaveBeenCalledWith("vid"));
     lastUndo()();
-    await waitFor(() => expect(writes.restorePlannedContainers).toHaveBeenCalledWith("del1"));
-    expect(writes.create).toHaveBeenCalledWith(expect.objectContaining({ id: "vid", projectId: "p1", kind: "CUSTOM", label: "VID-04" }));
+    await waitFor(() => expect(writes.undoDeleteContainer).toHaveBeenCalledWith("del1"));
+    expect(writes.create).not.toHaveBeenCalled(); // no separate re-create call: it is atomic server-side
+    expect(writes.restorePlannedContainers).not.toHaveBeenCalled();
+  });
+
+  it("a case holding another case says the delete will be refused until it is moved out", async () => {
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await openMenu(user, "LX-02 actions"); // BATT-01 is packed inside LX-02
+    await user.click(screen.getByRole("menuitem", { name: /Delete case/ }));
+    expect(await screen.findByText(/has another case packed inside it/)).toBeTruthy();
   });
 
   it("Delete surfaces the server's NOT_EMPTY reason as the toast", async () => {
@@ -344,15 +382,61 @@ describe("Planning: row ⋯, bulk, one Undo", () => {
     await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("VID-04 is sealed. Unseal it to plan lines into it."));
   });
 
-  it("the Undo reports lines changed since instead of claiming success", async () => {
+  it("an Undo that restored nothing never says 'Undone': it names why", async () => {
     writes.restorePlannedContainers.mockResolvedValueOnce({ restored: 0, skipped: 1 });
     const user = setup();
     render(<PackingTab projectId="p1" orgId="o1" />);
     await openMenu(user, "MAC Aura actions");
     await user.click(screen.getByRole("menuitem", { name: "Unplan" }));
-    await waitFor(() => expect(writes.setPlannedContainer).toHaveBeenCalled());
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("1 line → Unplanned", expect.anything()));
+    const undo = lastUndo();
+    toastMock.success.mockClear();
+    undo();
+    await waitFor(() => expect(toastMock.info).toHaveBeenCalledWith("Nothing was restored", expect.objectContaining({ description: expect.stringMatching(/1 line changed since/) })));
+    expect(toastMock.success).not.toHaveBeenCalledWith("Undone", expect.anything());
+  });
+
+  it("a partial Undo says how many lines were left as they are", async () => {
+    writes.restorePlannedContainers.mockResolvedValueOnce({ restored: 1, skipped: 1 });
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await openMenu(user, "MAC Aura actions");
+    await user.click(screen.getByRole("menuitem", { name: "Unplan" }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("1 line → Unplanned", expect.anything()));
     lastUndo()();
-    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Undone · 1 line changed since, left as is", expect.anything()));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Undone · 1 line changed since, left as is"));
+  });
+
+  it("an Undo the server refuses (a seal, or already undone) shows its sentence as the error", async () => {
+    writes.restorePlannedContainers.mockRejectedValueOnce(Object.assign(new Error("[CONVEX] ConvexError"), { data: { code: "CASE_SEALED", message: "LX-02 is sealed. Unseal it to undo this." } }));
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await openMenu(user, "MAC Aura actions");
+    await user.click(screen.getByRole("menuitem", { name: "Unplan" }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("1 line → Unplanned", expect.anything()));
+    lastUndo()();
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("LX-02 is sealed. Unseal it to undo this."));
+  });
+
+  it("a bulk move leaves lines in a SEALED case out of the write and says so quietly", async () => {
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    expect(screen.queryByRole("checkbox", { name: "Select Strobe" })).toBeNull(); // sealed card: nothing to tick
+    expect(screen.queryByRole("checkbox", { name: "Select all in SEAL-01" })).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: "Select Par Can" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: /Plan 1 into/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "VID-04" }));
+    await waitFor(() => expect(writes.setPlannedContainer).toHaveBeenCalledWith(["par"], "vid"));
+  });
+
+  it("bulk Unplan is present only when a ticked line is planned", async () => {
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await user.click(screen.getByRole("checkbox", { name: "Select Par Can" })); // not planned
+    const bulk = screen.getByRole("toolbar", { name: "Bulk actions" });
+    expect(within(bulk).queryByRole("button", { name: /^Unplan/ })).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: "Select MAC Aura" })); // planned into LX-02
+    expect(within(bulk).getByRole("button", { name: "Unplan 2" })).toBeTruthy();
   });
 });
 
@@ -371,11 +455,34 @@ describe("Tab ⋯, Add case, phone", () => {
     expect(routerPush).toHaveBeenCalledWith("/warehouse/p1");
   });
 
-  it("+ Add case opens the New container sheet", async () => {
+  it("+ Add case opens the REAL New container sheet: sealed cases are not parents, and the case is created on the viewed version", async () => {
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" versionId="v2" />);
+    await user.click(screen.getByRole("button", { name: "Add case" }));
+    expect(await screen.findByText("New container")).toBeTruthy();
+    await user.click(screen.getByRole("tab", { name: "Custom" }));
+    await user.type(screen.getByLabelText("Label"), "Tub 9");
+    await user.click(screen.getByText("Top level"));
+    expect(await screen.findByRole("button", { name: "LX-02" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "SEAL-01" })).toBeNull(); // a sealed case refuses having a case packed into it
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(writes.create).toHaveBeenCalledWith(expect.objectContaining({ projectId: "p1", versionId: "v2", kind: "CUSTOM", label: "Tub 9" })));
+  });
+
+  it("the Category and Status filters OPEN and filter the lines", async () => {
     const user = setup();
     render(<PackingTab projectId="p1" orgId="o1" />);
-    await user.click(screen.getByRole("button", { name: "Add case" }));
-    expect(screen.getByText("New container sheet open")).toBeTruthy();
+    await user.click(screen.getByRole("combobox", { name: "Category" }));
+    await user.click(await screen.findByRole("option", { name: "Video" }));
+    expect(screen.getByText("LED panel")).toBeTruthy();
+    expect(screen.queryByText("Par Can")).toBeNull();
+    await user.click(screen.getByRole("combobox", { name: "Status" }));
+    await user.click(await screen.findByRole("option", { name: "Packed" }));
+    expect(screen.getByText("Moved box")).toBeTruthy();
+    expect(screen.queryByText("LED panel")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByText("Par Can")).toBeTruthy();
   });
 
   it("phone: the row ⋯ and case ⋯ open as bottom sheets, Add case is pinned, and ticking swaps it for the bulk bar", async () => {
@@ -383,7 +490,12 @@ describe("Tab ⋯, Add case, phone", () => {
     const user = setup();
     render(<PackingTab projectId="p1" orgId="o1" />);
     expect(screen.getByRole("button", { name: "Add case" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Packing actions" })).toBeNull(); // the tab ⋯ is desktop-only
+    // The tab ⋯ is reachable on a phone too (a bottom sheet): labels, manifest, select the unplanned, warehouse.
+    await user.click(screen.getByRole("button", { name: "Packing actions" }));
+    for (const name of ["Print all case labels", "Manifest", "Select the unplanned", "Open the warehouse page"]) {
+      expect(await screen.findByText(name)).toBeTruthy();
+    }
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "LX-02 actions" }));
     expect(await screen.findByText(/Unpack · lines go unplanned/)).toBeTruthy();
     await user.keyboard("{Escape}");

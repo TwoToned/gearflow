@@ -46,6 +46,8 @@ export const buildPackingLineActions: RowActionBuilder<PackingLineRow, PackingLi
 /** The bulk bar's verbs (§7b.3 / §7b.5): `Plan 3 into… ▾` and `Unplan 2`. */
 export function buildPackingBulkActions(ctx: {
   cases: Array<{ id: string; label: string; sealed: boolean }>;
+  /** At least one ticked line is planned into a case; absent otherwise (absent, not disabled). */
+  canUnplan: boolean;
   onPlanInto: (caseId: string | null, caseLabel: string | null) => void;
 }): BulkAction[] {
   const open = ctx.cases.filter((c) => !c.sealed);
@@ -64,6 +66,8 @@ export function buildPackingBulkActions(ctx: {
       })),
     });
   }
-  actions.push({ key: "unplan", label: (n) => `Unplan ${n}`, group: "organise", onSelect: () => ctx.onPlanInto(null, null) });
+  if (ctx.canUnplan) {
+    actions.push({ key: "unplan", label: (n) => `Unplan ${n}`, group: "organise", onSelect: () => ctx.onPlanInto(null, null) });
+  }
   return actions;
 }

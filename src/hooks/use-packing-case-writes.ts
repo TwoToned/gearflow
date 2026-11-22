@@ -4,18 +4,16 @@ import { toast } from "sonner";
 import { useProjectContainerWrites } from "@/hooks/use-project-container-writes";
 import { openLabel } from "@/components/documents/label-submenu";
 import { packingWriteMessage } from "@/lib/packing-write-error";
+import { announceUndo } from "@/lib/packing-undo";
 
 interface CaseRef {
   id: string;
   label: string;
 }
 
-/** What re-creating a deleted case needs (only a CUSTOM case can be re-created exactly). */
+/** Only a CUSTOM case can be re-created exactly (the server holds the snapshot), so only it offers Undo. */
 export interface DeletableCase extends CaseRef {
   kind?: "ASSET" | "BULK_ASSET" | "CUSTOM";
-  description?: string | null;
-  parentContainerId?: string | null;
-  versionId?: string | null;
 }
 
 /**
@@ -39,12 +37,7 @@ export function usePackingCaseWrites(projectId: string) {
     toast.success(message(result), undo && {
       action: {
         label: "Undo",
-        onClick: () => {
-          undo(result).then(
-            () => toast.success("Undone"),
-            (e: unknown) => toast.error(packingWriteMessage(e, "Couldn't undo")),
-          );
-        },
+        onClick: () => announceUndo(() => undo(result)),
       },
     });
     return result;
@@ -68,20 +61,6 @@ export function usePackingCaseWrites(projectId: string) {
         () => `${c.label} taken out of ${parent.label}`,
         () => writes.update(c.id, { parentContainerId: parent.id }),
       ),
-
-    /** Un-PLAN the case's planned-only lines (they go Unplanned). Packed lines
-     *  stay: packed wins, and physical moves happen in the warehouse. Undo is
-     *  the server-sourced exact restore of THAT write. */
-    unpack: async (c: CaseRef, plannedOnlyIds: string[], packedCount: number) => {
-      const n = plannedOnlyIds.length;
-      const loose = `${n} ${n === 1 ? "line" : "lines"} unplanned`;
-      const stay = packedCount > 0 ? ` · ${packedCount} packed ${packedCount === 1 ? "line stays" : "lines stay"} (move in the warehouse)` : "";
-      return run(
-        () => writes.setPlannedContainer(plannedOnlyIds, null),
-        () => `${loose}${stay}`,
-        (r) => writes.restorePlannedContainers(r.batchAuditId),
-      );
-    },
 
     /** Seal: lock the plan and print the label the seal vouches for. Undo = unseal. */
     seal: async (c: CaseRef) => {
@@ -110,20 +89,9 @@ export function usePackingCaseWrites(projectId: string) {
       run(
         () => writes.remove(c.id),
         () => `Deleted ${c.label}`,
-        c.kind === "CUSTOM"
-          ? async (r) => {
-              await writes.create({
-                id: c.id,
-                projectId,
-                kind: "CUSTOM",
-                label: c.label,
-                description: c.description ?? undefined,
-                parentContainerId: c.parentContainerId ?? undefined,
-                versionId: c.versionId ?? undefined,
-              });
-              await writes.restorePlannedContainers(r.batchAuditId);
-            }
-          : undefined,
+        // ONE mutation re-creates the case in place (same id, label, parent, sort
+        // position) and restores its planned lines from the delete's audit rows.
+        c.kind === "CUSTOM" ? (r) => writes.undoDeleteContainer(r.batchAuditId) : undefined,
       ),
   };
 }

@@ -76,6 +76,17 @@ describe("buildPackingCaseActions", () => {
     expect(spec.items[0].confirm?.body).toMatch(/2 packed lines/);
   });
 
+  it("offers no 'Take out of X' when X is sealed (the server refuses it), but does for an open parent", () => {
+    const h = handlers();
+    expect(labels(buildPackingCaseActions(row({ parent: { id: "p", label: "LX-01", sealed: true } }), { moveTargets: [], onTakeOut: h.onTakeOut }))).toEqual([]);
+    expect(labels(buildPackingCaseActions(row({ parent: { id: "p", label: "LX-01" } }), { moveTargets: [], onTakeOut: h.onTakeOut }))).toEqual(["Take out of LX-01"]);
+  });
+
+  it("the delete confirm says a case holding another case will be refused, before the packed-lines sentence", () => {
+    const spec = buildPackingCaseActions(row({ hasNestedCase: true, packedCount: 2 }), { moveTargets: [], onDelete: vi.fn() });
+    expect(spec.items[0].confirm?.body).toMatch(/another case packed inside it.*refused/);
+  });
+
   it("leaves out what does not apply instead of disabling it", () => {
     expect(buildPackingCaseActions(row(), { moveTargets: [] }).items).toEqual([]);
     const withUnpack = buildPackingCaseActions(row({ plannedOnlyCount: 1 }), { moveTargets: [], onUnpack: vi.fn() });

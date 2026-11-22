@@ -331,3 +331,20 @@ describe("UX Phase 15 — the Crew workspace on a phone (§9h.6)", () => {
     expect(crew("timesheets/timesheets-list.tsx")).toContain("...(isMobile ? [] : [exportAll])");
   });
 });
+
+describe("UX Phase 7 — the job Overview's text links are 44px tap targets on a phone", () => {
+  const src = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
+
+  it("`.tap-area` grows the hit box to at least 44×44px below md, without moving the line", () => {
+    const css = src("app/globals.css");
+    expect(css).toMatch(/\.tap-area::after\s*\{[^}]*width:\s*max\(100%,\s*44px\)[^}]*height:\s*max\(100%,\s*44px\)/);
+  });
+
+  it("every Overview text link and button carries it (PM +, Logistics ›, and n more ›, see what changed ›, directions)", () => {
+    expect(src("components/projects/overview/overview-parts.tsx")).toMatch(/const LINK = "tap-area /);
+  });
+
+  it("the cancelled notice's Delete job… carries it", () => {
+    expect(src("components/projects/job-header.tsx")).toMatch(/"tap-area text-t-out"/);
+  });
+});

@@ -48,9 +48,13 @@ export function ActionMenu({
   triggerClassName,
   trigger: customTrigger,
   header,
+  onOpenChange,
 }: {
   spec: ActionMenuSpec;
   label?: string;
+  /** Told when the menu opens or closes, e.g. to fetch a submenu's entries
+   *  only once someone opens it (the job header's label lists). */
+  onOpenChange?: (open: boolean) => void;
   /** Replaces the default ⋯ button (e.g. `Documents ▾`, a lock glyph). One
    *  element: composed with Radix `asChild` on desktop; on phone the same
    *  element opens the bottom sheet. */
@@ -62,7 +66,11 @@ export function ActionMenu({
   triggerClassName?: string;
 }) {
   const isMobile = useIsMobile();
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpenState] = React.useState(false);
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const [pending, setPending] = React.useState<ActionItem | null>(null);
 
   if (spec.items.length === 0) return null;

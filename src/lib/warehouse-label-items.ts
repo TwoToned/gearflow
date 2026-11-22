@@ -5,9 +5,12 @@ type OpenLabel = (type: "container-label" | "kit-label" | "item-label", labelId?
 
 const entry = (l: LabelIndexEntry) => (l.tag ? `${l.title} (${l.tag})` : l.title);
 
-/** "All X" plus one pick per label the job would print (the API's `list=1` answer), as one Documents entry. */
-function labelGroup(
-  key: string, title: string, allLabel: string, type: "kit-label" | "item-label", labels: LabelIndexEntry[] | null, open: OpenLabel,
+/**
+ * "All X" plus one pick per label the job would print (the API's `list=1` answer), as one Documents entry.
+ * Exported for the job page's Documents ▾, which lists case labels the same way (it has no case list of its own).
+ */
+export function labelGroup(
+  key: string, title: string, allLabel: string, type: "container-label" | "kit-label" | "item-label", labels: LabelIndexEntry[] | null, open: OpenLabel,
 ): ActionItem {
   return {
     key, label: title, group: "documents", onSelect: () => open(type),

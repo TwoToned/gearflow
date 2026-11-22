@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (624 agent-reachable)
+## Operations (626 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -360,6 +360,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `activityLog.exportRows` (query, scope: project:read)
 - `activityLog.list` (query, scope: project:read)
 - `activityLog.listByEntity` (query, scope: project:read)
+- `activityLog.recentForProject` (query, scope: project:read)
 - `availability.assetBookings` (query, scope: project:read)
 - `availability.calendarData` (query, scope: project:read)
 - `availability.kitBookings` (query, scope: project:read)
@@ -462,6 +463,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectManagersWrites.setNative` (mutation, scope: project:manage)
 - `projectMedia.list` (query, scope: project:read)
 - `projectPricingLockWrites.lockPricingNative` (mutation, scope: project:update)
+- `projectPricingLockWrites.undoUnlockPricingNative` (mutation, scope: project:update)
 - `projectPricingLockWrites.unlockPricingNative` (mutation, scope: project:update)
 - `projectReadiness.forProject` (query, scope: project:read)
 - `projects.getById` (query, scope: project:read)

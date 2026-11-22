@@ -211,11 +211,12 @@ test.describe("harness: primary revenue path", () => {
     });
 
     await test.step("check the gear out through the warehouse pipeline (flow 8)", async () => {
-      // getByRole("link", { name: "Warehouse" }) is ambiguous: the app sidebar's
-      // global nav item (-> /warehouse) and the mobile nav both use the exact
-      // same label, alongside this project page's own button (-> /warehouse/
-      // [projectId]). Scope by href to target the project-specific one only.
-      await page.locator(`a[href="/warehouse/${projectId}"]`).click();
+      // UX 7: the job page's own Warehouse button moved into the job header's ⋯
+      // (§6b, "Warehouse page"). The sidebar's global "Warehouse" link goes to
+      // the floor (/warehouse), not this job, so open the header menu and pick
+      // the job-scoped item; the URL assertion pins it to THIS job's page.
+      await page.locator("#job-header").getByRole("button", { name: "More actions" }).click();
+      await page.getByRole("menuitem", { name: "Warehouse page" }).click();
       await expect(page).toHaveURL(new RegExp(`/warehouse/${projectId}$`));
 
       // Every click here races the Assign-assets dialog, not just the ones

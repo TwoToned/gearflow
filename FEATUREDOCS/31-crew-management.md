@@ -207,8 +207,9 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
   service-linked assignment's cost is already inside `serviceCostTotal` via the
   service's own `costTotal`. Standalone assignments (rare now — see below) still
   roll up through `labourCostTotal` as before. The SAME exclusion applies to
-  `crewAssignments.projectLabourCost` (the "Crew" tile in `ProjectSummaryStrip`
-  and the "Est. labour" figure in `CrewPanel`'s summary bar) and its pure
+  `crewAssignments.projectLabourCost` (it fed the Overview's "Crew" tile and the old
+  `CrewPanel` summary bar; both are gone, the tile in UX Phase 7, and no page reads
+  it now) and its pure
   counterpart `aggregateProjectLabourCost` — both were fixed to exclude
   service-linked assignments after they were found double-displaying a
   service's crew cost as a second, separate "Crew" total.

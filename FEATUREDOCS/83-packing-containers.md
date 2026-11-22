@@ -416,7 +416,7 @@ units directly, never by container label, so neither needed to touch it).
 ## Packing tab (phase 4, #1301 — landed except drag)
 
 A new **Packing** project tab (D11 — its own tab, not a view inside
-Equipment; `VALID_TABS` in `src/app/(app)/projects/[id]/page.tsx`, hidden on
+Equipment; a key in `src/lib/job-tabs.ts` (it was `VALID_TABS` in the page), hidden on
 template projects same as Finance) lets the PM plan which container each
 piece of gear travels in before the warehouse starts prepping.
 

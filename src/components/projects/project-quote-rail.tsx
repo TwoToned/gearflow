@@ -108,7 +108,7 @@ interface QuoteRailProjectVersion {
 /**
  * #1233 (Phase 6) UI follow-up — threaded down by the ONE caller under
  * `ProjectVersionProvider` that needs it (`ProjectFinancePanel`, the Finance
- * tab). `undefined` (every other embed site: the Overview tab's `QuoteCard`/
+ * tab). `undefined` (every other embed site: the Overview tab's `QuoteMoneyLine`/
  * `QuoteManagerDialog`) behaves EXACTLY like `{ versions: [], viewing: null }`
  * — always targets the live version, byte-identical to every pre-follow-up
  * caller. FEATUREDOCS/78: Overview is deliberately live-only, same as every

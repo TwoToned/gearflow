@@ -155,12 +155,6 @@ minimumReleaseAgeExclude:
 #                        which is not published (3.0.3 is latest) so an override cannot fix
 #                        it. Dev/build tooling only (next-pwa build, eslint-config-next,
 #                        shadcn CLI) — never in the runtime bundle. Remove once braces ships.
-#   GHSA-fc5q-39xc-vjpf  picomatch <=4.0.7 ReDoS through a single-branch glob (high, 2026-11-18).
-#                        Advisory says fixed in 4.0.8, which is not published (4.0.7 is latest),
-#                        so an override cannot fix it. Reached only via better-auth>vitest>vite /
-#                        tinyglobby / fdir (test tooling), never the runtime bundle. Expires
-#                        2026-12-03; remove as soon as a patched picomatch ships.
 auditConfig:
   ignoreGhsas:
     - GHSA-vfj7-8cjw-p6xm
-    - GHSA-fc5q-39xc-vjpf

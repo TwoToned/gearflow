@@ -160,18 +160,32 @@ describe("TimesheetsList (smoke)", () => {
     expect(writes.remove).toHaveBeenCalledWith("e1");
   });
 
-  it("Edit entry opens as a sheet with the entry's fields; Save goes through ONE update and offers its snapshot as Undo", async () => {
+  it("Edit entry on a DRAFT: ONE update, and its snapshot replayed is the Undo", async () => {
+    const user = userEvent.setup();
+    render(<TimesheetsList />);
+    await user.click(screen.getByRole("button", { name: "Ben Lee actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: /Edit entry/ }));
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Edit time entry")).toBeTruthy();
+    expect((within(sheet).getByLabelText("Start") as HTMLInputElement).value).toBe("08:00");
+    expect(within(sheet).queryByTestId("edit-resets-note")).toBeNull();
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    expect(writes.update).toHaveBeenCalledTimes(1);
+    await announced[0].performUndo!();
+    expect(writes.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("Edit entry on a SUBMITTED entry warns it returns to Draft, and offers no Undo (the approval can't be replayed)", async () => {
     const user = userEvent.setup();
     render(<TimesheetsList />);
     await user.click(screen.getByRole("button", { name: "Ana Ruiz actions" }));
     await user.click(await screen.findByRole("menuitem", { name: /Edit entry/ }));
     const sheet = await screen.findByRole("dialog");
-    expect(within(sheet).getByText("Edit time entry")).toBeTruthy();
-    expect((within(sheet).getByLabelText("Start") as HTMLInputElement).value).toBe("08:00");
+    expect(within(sheet).getByTestId("edit-resets-note").textContent).toMatch(/returns it to Draft and clears the approval/);
     await user.click(within(sheet).getByRole("button", { name: "Save" }));
     expect(writes.update).toHaveBeenCalledTimes(1);
-    await announced[0].performUndo!();
-    expect(writes.update).toHaveBeenCalledTimes(2);
+    expect(announced[0]).toMatchObject({ title: expect.stringMatching(/saved as Draft/) });
+    expect(announced[0].performUndo).toBeUndefined();
   });
 
   it("Query… keeps Save disabled until a reason is typed, then queries with it", async () => {

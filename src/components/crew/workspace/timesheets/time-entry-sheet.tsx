@@ -64,6 +64,11 @@ function EditForm({
         </p>
       )}
       <TimeEntryFields form={form} assignments={options} />
+      {entry.status !== "DRAFT" && (
+        <p className="text-caption text-muted" data-testid="edit-resets-note">
+          Saving returns it to Draft and clears the approval. It can&apos;t be undone.
+        </p>
+      )}
       <SheetFooter>
         <Button type="button" variant="line" onClick={onCancel}>
           Cancel

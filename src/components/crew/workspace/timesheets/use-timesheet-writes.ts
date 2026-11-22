@@ -74,20 +74,28 @@ export function useTimesheetWrites(ctx: TimesheetWriteCtx) {
     return true;
   }
 
-  /** Edit entry: Undo replays the row's snapshot through the same write. */
-  async function update(id: string, next: CrewTimeEntryFormValues, snapshot: CrewTimeEntryFormValues): Promise<boolean> {
+  /**
+   * Edit entry. `updateNative` returns the entry to Draft and clears its
+   * approval, so replaying the snapshot restores a DRAFT entry exactly and
+   * nothing else: Undo is offered only when the entry was a draft (the sheet
+   * warns before saving any other).
+   */
+  async function update(id: string, next: CrewTimeEntryFormValues, snapshot: CrewTimeEntryFormValues, wasStatus: string): Promise<boolean> {
     try {
       await w.update(id, next);
     } catch (e) {
       showError(e, { fallbackTitle: "Could not save the entry" });
       return false;
     }
+    const exact = wasStatus === "DRAFT";
     announceListWrite({
-      title: `${ctx.nameOf(id)} · entry saved`,
+      title: exact ? `${ctx.nameOf(id)} · entry saved` : `${ctx.nameOf(id)} · entry saved as Draft`,
       undoneTitle: "Undone · entry restored",
-      performUndo: async () => {
-        await w.update(id, snapshot);
-      },
+      performUndo: exact
+        ? async () => {
+            await w.update(id, snapshot);
+          }
+        : undefined,
     });
     return true;
   }

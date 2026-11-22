@@ -294,7 +294,7 @@ function TimesheetOverlays({
         entry={editing}
         assignments={editing ? assignmentsOf(editing.crewMemberId) : []}
         onOpenChange={(open) => !open && o.setEditing(null)}
-        onSave={(next, snapshot) => (editing ? w.update(editing.id, next, snapshot) : Promise.resolve(false))}
+        onSave={(next, snapshot) => (editing ? w.update(editing.id, next, snapshot, editing.status) : Promise.resolve(false))}
       />
       <LogTimeSheet open={o.logOpen} onOpenChange={o.setLogOpen} people={people} onLog={(values, chosen) => w.logTime(values, chosen)} />
       <QueryDialog ids={o.queryIds} onOpenChange={(open) => !open && o.setQueryIds(null)} onQuery={(ids, reason) => w.transition("query", ids, reason)} />

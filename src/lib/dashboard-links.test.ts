@@ -5,6 +5,8 @@ import { DASHBOARD_LINKS, blockerLink, canOpenLink } from "@/lib/dashboard-links
 import { parseListState } from "@/lib/list-url-state";
 import { JOBS_SPEC, jobsQueryArgs } from "@/lib/list-views/jobs";
 import { ASSETS_SPEC } from "@/lib/list-views/assets";
+import { ORG_ROLES, rolePermissions } from "@/lib/permissions";
+import { visibleNav } from "@/lib/nav";
 
 const APP = join(process.cwd(), "src/app/(app)");
 
@@ -58,10 +60,25 @@ describe("DASHBOARD_LINKS", () => {
 });
 
 describe("canOpenLink", () => {
-  it("needs read on the link's resource; loading permissions read as no", () => {
-    expect(canOpenLink(DASHBOARD_LINKS.activity, { reports: ["read"] })).toBe(true);
+  it("any action on the link's resource opens it (the shell's rule); loading permissions read as no", () => {
+    expect(canOpenLink(DASHBOARD_LINKS.activity, { reports: ["view"] })).toBe(true);
+    expect(canOpenLink(DASHBOARD_LINKS.activity, { reports: [] })).toBe(false);
     expect(canOpenLink(DASHBOARD_LINKS.activity, { project: ["read"] })).toBe(false);
     expect(canOpenLink(DASHBOARD_LINKS.activity, null)).toBe(false);
     expect(canOpenLink({ href: "/x", tip: "x" }, null)).toBe(true);
+  });
+
+  it("with the REAL role tables, every built-in role can open Activity, and agrees with what the shell shows", () => {
+    for (const role of ORG_ROLES) {
+      const perms = role === "owner" ? null : rolePermissions[role];
+      if (!perms) continue; // owner holds everything via hasPermission's safety net
+      expect(canOpenLink(DASHBOARD_LINKS.activity, perms), role).toBe(true);
+      for (const link of Object.values(DASHBOARD_LINKS)) {
+        const shown = !!link.resource && visibleNav(perms).some((i) => i.resource === link.resource);
+        if (shown) expect(canOpenLink(link, perms), `${role} ${link.href}`).toBe(true);
+      }
+    }
+    // The viewer has no warehouse access: the floor's View all is absent for it.
+    expect(canOpenLink(DASHBOARD_LINKS.floor, rolePermissions.viewer)).toBe(false);
   });
 });

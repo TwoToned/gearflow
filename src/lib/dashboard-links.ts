@@ -49,8 +49,13 @@ export function blockerLink(projectId: string): DashboardLink {
 /** Permission map as `useCurrentRole()` returns it (`null` while loading). */
 type PermissionsLike = Partial<Record<Resource, readonly string[]>> | null | undefined;
 
-/** Can this viewer open the link's target? Unknown permissions (still loading) = no. */
+/**
+ * Can this viewer open the link's target? The SAME rule the shell uses to show a
+ * page (`canSee` in `src/lib/nav.ts`): ANY action on the resource opens it. Not
+ * literally `read`: `reports` grants `view`, so a read-only test left Activity's
+ * `View all ›` dead for every role. Unknown permissions (still loading) = no.
+ */
 export function canOpenLink(link: DashboardLink, permissions: PermissionsLike): boolean {
   if (!link.resource) return true;
-  return permissions?.[link.resource]?.includes("read") ?? false;
+  return (permissions?.[link.resource]?.length ?? 0) > 0;
 }

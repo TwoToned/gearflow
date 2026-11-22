@@ -8,6 +8,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { rolePermissions } from "@/lib/permissions";
 
 const state = vi.hoisted(() => ({ isMobile: false, permissions: { project: ["read"] } as Record<string, string[]> | null }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => state.isMobile }));
@@ -112,11 +113,17 @@ describe("DashboardGrid (smoke)", () => {
   });
 
   it("View all › is a link to the widget's list, absent when the role can't open it", () => {
-    render(grid(false));
+    // A real role table: `member` holds `reports: ["view"]` (not "read"), so Activity opens.
+    state.permissions = rolePermissions.member as Record<string, string[]>;
+    const { unmount } = render(grid(false));
     const links = screen.getAllByRole("link", { name: "View all ›" });
-    expect(links).toHaveLength(1);
-    expect(links[0].getAttribute("href")).toBe("/projects?seg=booked");
-    expect(links[0].getAttribute("title")).toBe("Jobs · Booked");
+    expect(links.map((l) => l.getAttribute("href"))).toContain("/activity");
+    expect(links).toHaveLength(2);
+    unmount();
+
+    state.permissions = { ...(rolePermissions.member as Record<string, string[]>), reports: [] };
+    render(grid(false));
+    expect(screen.getAllByRole("link", { name: "View all ›" }).map((l) => l.getAttribute("href"))).not.toContain("/activity");
   });
 
   it("hides the Hide button in view mode and shows it in Customise mode", () => {

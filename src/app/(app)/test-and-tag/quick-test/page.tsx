@@ -207,7 +207,8 @@ function QuickTestContent() {
         failureAction: state.failureAction as "NONE" | "REPAIRED" | "REMOVED_FROM_SERVICE" | "DISPOSED" | "REFERRED_TO_ELECTRICIAN",
         failureNotes: state.failureNotes || undefined,
         subTests: subTests.length > 0 ? subTests : undefined,
-        outletCount: state.outletCount > 1 ? state.outletCount : undefined,
+        // The server requires the count to equal the outlets tested.
+        outletCount: subTests.length > 0 ? subTests.length : undefined,
       });
     },
     onSuccess: () => {

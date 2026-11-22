@@ -2,7 +2,8 @@
  * The ONE test-profile cascade for a test & tag asset (extracted from
  * `testProfiles.resolveForAsset`, Phase 16): asset.testProfileId → the linked
  * inventory asset's model `defaultTestProfileId` → the org default for the asset's
- * class + type → any active profile for class + type → null. Every hop uses a GLOBAL
+ * class + type → any active profile for class + type → null. A deactivated profile
+ * (`isActive: false`) is skipped at every hop. Every hop uses a GLOBAL
  * `by_cuid` index and is org re-checked here. Shared by `resolveForAsset`, the Scan
  * page's `scanLookup.testCard`, and `testTagRecordsWrites.createNative` (which
  * enforces the resolved profile's enabled tests, D51) — so the profile a tester sees
@@ -36,12 +37,14 @@ export async function resolveTestProfileForAsset(
   orgId: string,
   asset: Doc<"testTagAssets">,
 ): Promise<Doc<"testProfiles"> | null> {
+  // A deactivated profile is never what an item is tested against: fall through.
+  const usable = (p: Doc<"testProfiles"> | null) => (p && p.isActive !== false ? p : null);
   if (asset.testProfileId) {
-    const own = await orgTestProfile(ctx, orgId, asset.testProfileId);
+    const own = usable(await orgTestProfile(ctx, orgId, asset.testProfileId));
     if (own) return own;
   }
   if (asset.assetId) {
-    const fromModel = await modelDefaultProfile(ctx, orgId, asset.assetId);
+    const fromModel = usable(await modelDefaultProfile(ctx, orgId, asset.assetId));
     if (fromModel) return fromModel;
   }
   // A small admin-configured catalog (12 seeded AS/NZS 3760 profiles); bounded rather

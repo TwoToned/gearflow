@@ -84,10 +84,28 @@ function asOperator(raw: unknown): Operator | null {
   return raw === "lt" || raw === "lte" || raw === "gt" || raw === "gte" ? raw : null;
 }
 
-/** Parse the `electricalTests` blob defensively (it is `v.any()` in the schema). */
+/**
+ * A legacy object-shaped blob (`{ earthContinuity: true }` or `{ earthContinuity:
+ * { enabled, threshold, operator } }`, keyed by test) as the array shape. Normalised
+ * rather than ignored: ignoring it would silently switch D51 off for that profile.
+ */
+function legacyObjectTests(raw: Bag): Bag[] {
+  return Object.entries(raw).map(([key, val]) =>
+    // An entry without an explicit `enabled: false` counts as enabled (fail closed).
+    val && typeof val === "object" ? { ...(val as Bag), key, enabled: (val as Bag).enabled !== false } : { key, enabled: val === true },
+  );
+}
+
+/**
+ * Parse the `electricalTests` blob defensively (it is `v.any()` in the schema). Absent
+ * → no tests; an array or a legacy keyed object → its tests; anything else is a
+ * corrupt profile and is rejected (never read as "no tests required").
+ */
 export function parseProfileTests(raw: unknown): ProfileTest[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
+  if (raw === undefined || raw === null) return [];
+  if (typeof raw !== "object") throw new ConvexError("This test profile's electrical tests can't be read: fix the profile first");
+  const rows: unknown[] = Array.isArray(raw) ? raw : legacyObjectTests(raw as Bag);
+  return rows
     .filter((t): t is Bag => !!t && typeof t === "object" && typeof (t as Bag).key === "string")
     .map((t) => ({
       key: t.key as string,
@@ -158,7 +176,8 @@ export function checkSubTest(
     if (enabledKeys.has(f.key) && verdict === undefined) throw new ConvexError(`${where}Enter ${f.label}, or mark it N/A`);
     if (f.threshold) {
       const limit = typeof thresholds[f.threshold] === "number" ? (thresholds[f.threshold] as number) : null;
-      assertThreshold(verdict, evaluateReading(readingOf(sub, f.reading), limit || null, f.operator), f.label, where);
+      // `limit` is already null when unset; a threshold of 0 is a real limit.
+      assertThreshold(verdict, evaluateReading(readingOf(sub, f.reading), limit, f.operator), f.label, where);
     }
     if (verdict === "FAIL") failed = true;
   }

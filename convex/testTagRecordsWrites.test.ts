@@ -56,7 +56,10 @@ const CLASS_I_TESTS = [
 async function seedProfile(t: T, patch: Record<string, unknown> = {}, id = "prof1", org = ORG) {
   await t.run(async (ctx) => {
     await ctx.db.insert("testProfiles", {
-      id, organizationId: org, name: "Class I", visualChecks: [], electricalTests: CLASS_I_TESTS, thresholds: {}, ...patch,
+      // Matches seedAsset's class + type, so it is the asset's RESOLVED profile (the only
+      // one a test may be held to — a caller can't pick another).
+      id, organizationId: org, name: "Class I", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", isActive: true, isDefault: true,
+      visualChecks: [], electricalTests: CLASS_I_TESTS, thresholds: {}, ...patch,
     });
   });
 }
@@ -87,7 +90,7 @@ describe("testTagRecordsWrites.createNative", () => {
     const t = makeT(); await seed(t); await seedAsset(t);
     await seedProfile(t, { electricalTests: [] });
     const res = await create(t, {
-      testProfileId: "prof1", outletCount: 4,
+      testProfileId: "prof1", outletCount: 2,
       subTests: [
         { id: "s1", label: "Outlet 1", sortOrder: 0, result: "PASS", earthContinuityResult: "PASS", earthContinuityReading: 0.1 },
         { id: "s2", label: "Outlet 2", sortOrder: 1, result: "PASS" },
@@ -107,7 +110,7 @@ describe("testTagRecordsWrites.createNative", () => {
     const a = await tta(t);
     expect(a?.lastTestDate).toBe(NOW);
     expect(a?.nextDueDate).toBe(due);
-    expect(a?.outletCount).toBe(4);
+    expect(a?.outletCount).toBe(2);
     expect(a?.testProfileId).toBe("prof1"); // set (asset had none)
     expect(a?.status).toBe("CURRENT"); // ~3 months out
     const l = await log(t, "a1");
@@ -255,10 +258,10 @@ describe("testTagRecordsWrites.createNative", () => {
       const outlet = (id: string, label: string, reading?: number) => ({
         id, label, sortOrder: 0, ...(reading === undefined ? {} : { earthContinuityResult: reading < 1 ? "PASS" : "FAIL", earthContinuityReading: reading }),
       });
-      await expect(create(t, { testProfileId: "prof1", earthContinuityResult: "PASS", earthContinuityReading: 0.2, subTests: [outlet("s1", "Outlet 1", 0.2), outlet("s2", "Outlet 2")] }))
+      await expect(create(t, { testProfileId: "prof1", earthContinuityResult: "PASS", earthContinuityReading: 0.2, outletCount: 2, subTests: [outlet("s1", "Outlet 1", 0.2), outlet("s2", "Outlet 2")] }))
         .rejects.toThrow(/Outlet 2: Enter earth continuity, or mark it N\/A/);
       const res = await create(t, {
-        testProfileId: "prof1", earthContinuityResult: "PASS", earthContinuityReading: 0.2, failureAction: "NONE",
+        testProfileId: "prof1", earthContinuityResult: "PASS", earthContinuityReading: 0.2, failureAction: "NONE", outletCount: 2,
         subTests: [outlet("s1", "Outlet 1", 0.2), outlet("s2", "Outlet 2", 2.5)],
       });
       expect(res.result).toBe("FAIL");
@@ -269,6 +272,76 @@ describe("testTagRecordsWrites.createNative", () => {
       const t = makeT(); await seed(t); await seedAsset(t);
       const subTests = Array.from({ length: 51 }, (_, i) => ({ id: `s${i}`, label: `O${i}`, sortOrder: i }));
       await expect(create(t, { subTests })).rejects.toThrow(/At most 50 sub-tests/);
+    });
+  });
+
+  describe("review fixes: the profile is the resolved one, dates and outlets are bounded", () => {
+    test("a caller-named LAX profile is rejected (D51 can't be switched off) and never pinned onto the asset", async () => {
+      const t = makeT(); await seed(t); await seedAsset(t); await seedProfile(t);
+      // A same-org profile with no enabled tests, for some other class.
+      await seedProfile(t, { name: "Lax", equipmentClass: "CLASS_II", isDefault: false, electricalTests: [] }, "lax");
+      await expect(create(t, { testProfileId: "lax" })).rejects.toThrow(/tested against "Class I", not the profile sent/);
+      expect(await rec(t, "rec1")).toBeNull();
+      expect((await tta(t))?.testProfileId).toBeUndefined();
+    });
+
+    test("an inactive profile is rejected when named, and skipped by the cascade", async () => {
+      const t = makeT(); await seed(t); await seedAsset(t, { testProfileId: "old" });
+      await seedProfile(t, { name: "Old", isActive: false, isDefault: false }, "old");
+      await expect(create(t, { testProfileId: "old" })).rejects.toThrow(/inactive/);
+      // Unnamed: the cascade skips the inactive pin, finds no active profile, and holds
+      // the test to none — the inactive profile's tests are never what decides it.
+      const res = await create(t, {});
+      expect(res.result).toBe("PASS");
+      expect((await rec(t, "rec1"))?.testProfileId).toBeUndefined();
+    });
+
+    test("rejects a test date in the future (5 minutes of skew allowed)", async () => {
+      const t = makeT(); await seed(t); await seedAsset(t);
+      const clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
+      await expect(create(t, { testDate: NOW + 10 * 60 * 1000 })).rejects.toThrow(/can't be in the future/);
+      expect((await create(t, { testDate: NOW + 60 * 1000 })).id).toBe("rec1");
+      clock.mockRestore();
+    });
+
+    test("outlets: a sub-test profile needs at least one, the count must match, and it is bounded", async () => {
+      const t = makeT(); await seed(t); await seedAsset(t);
+      await seedProfile(t, { requiresSubTests: true, electricalTests: [] });
+      const sub = (id: string) => ({ id, label: id, sortOrder: 0, result: "PASS" as const });
+      await expect(create(t, { testProfileId: "prof1" })).rejects.toThrow(/at least one outlet/);
+      await expect(create(t, { testProfileId: "prof1", outletCount: 3, subTests: [sub("s1")] })).rejects.toThrow(/must match the outlets tested/);
+      await expect(create(t, { testProfileId: "prof1", subTests: [sub("s1")] })).rejects.toThrow(/must match the outlets tested/);
+      await expect(create(t, { testProfileId: "prof1", outletCount: 0, subTests: [] })).rejects.toThrow(/whole number from 1 to 50/);
+      await expect(create(t, { testProfileId: "prof1", outletCount: 1.5, subTests: [sub("s1")] })).rejects.toThrow(/whole number/);
+      expect((await create(t, { testProfileId: "prof1", outletCount: 1, subTests: [sub("s1")] })).result).toBe("PASS");
+    });
+
+    test("a sub-test threshold of 0 is a real limit (not 'no threshold')", async () => {
+      const t = makeT(); await seed(t); await seedAsset(t);
+      await seedProfile(t, { requiresSubTests: true, thresholds: { leakageMax: 0 }, electricalTests: [] });
+      await expect(create(t, {
+        testProfileId: "prof1", outletCount: 1,
+        subTests: [{ id: "s1", label: "Outlet 1", sortOrder: 0, leakageCurrentResult: "PASS", leakageCurrentReading: 0.4 }],
+      })).rejects.toThrow(/Outlet 1: The leakage current reading is a fail/);
+    });
+
+    test("a legacy object-shaped electricalTests blob still enforces D51", async () => {
+      const t = makeT(); await seed(t); await seedAsset(t);
+      await seedProfile(t, { electricalTests: { earthContinuity: true, leakageCurrent: false } });
+      await expect(create(t, { testProfileId: "prof1" })).rejects.toThrow(/Enter earth continuity, or mark it N\/A/);
+      const t2 = makeT(); await seed(t2); await seedAsset(t2);
+      await seedProfile(t2, { electricalTests: "corrupt" });
+      await expect(create(t2, { testProfileId: "prof1" })).rejects.toThrow(/can't be read/);
+    });
+
+    test("rejects a maintenanceLinkId that already names a link (no foreign link row reused)", async () => {
+      const t = makeT(); await seed(t); await seedAsset(t, { assetId: "as1" });
+      await t.run(async (ctx) => {
+        await ctx.db.insert("assets", { id: "as1", organizationId: ORG, assetTag: "PA-1", modelId: "m", status: "AVAILABLE", isActive: true });
+        await ctx.db.insert("maintenanceRecordAssets", { id: "lnkX", maintenanceRecordId: "theirM", assetId: "theirA" });
+      });
+      await expect(create(t, { visualInspectionResult: "FAIL", failureAction: "REFERRED_TO_ELECTRICIAN", maintenanceId: "mnt1", maintenanceLinkId: "lnkX" }))
+        .rejects.toThrow(/link id already exists/);
     });
   });
 
@@ -368,7 +441,7 @@ describe("testTagRecordsWrites.undoCreateNative (exact undo)", () => {
   test("restores every field exactly — including ones that were ABSENT — and leaves an UNDO trace", async () => {
     const t = makeT(); await seed(t); await seedAsset(t); await seedProfile(t, { electricalTests: [] });
     const before = await tta(t);
-    await create(t, { testProfileId: "prof1", outletCount: 3, subTests: [{ id: "s1", label: "Outlet 1", sortOrder: 0 }] });
+    await create(t, { testProfileId: "prof1", outletCount: 1, subTests: [{ id: "s1", label: "Outlet 1", sortOrder: 0 }] });
     expect((await tta(t))?.status).toBe("CURRENT");
 
     expect(await undo(t)).toEqual({ ok: true });
@@ -402,6 +475,21 @@ describe("testTagRecordsWrites.undoCreateNative (exact undo)", () => {
     expect(a?.status).toBe("CURRENT");
     expect(a?.lastTestDate).toBe(NOW - 90 * DAY);
     expect(a?.nextDueDate).toBe(NOW + DAY);
+  });
+
+  test("a referral onto an EXISTING record: undo deletes only the link it added, by (record, asset), never a same-id foreign row", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, { assetId: "as1" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "as1", organizationId: ORG, assetTag: "PA-1", modelId: "m", status: "AVAILABLE", isActive: true });
+      await ctx.db.insert("maintenanceRecords", { id: "mOld", organizationId: ORG, type: "REPAIR", status: "SCHEDULED", title: "x", createdAt: NOW - DAY, updatedAt: NOW - DAY });
+    });
+    await create(t, { visualInspectionResult: "FAIL", failureAction: "REFERRED_TO_ELECTRICIAN", maintenanceId: "mOld", maintenanceLinkId: "lnk1" });
+    // A foreign row that shares the link id (by_cuid is global; links have no org column).
+    await t.run(async (ctx) => { await ctx.db.insert("maintenanceRecordAssets", { id: "lnk1", maintenanceRecordId: "theirM", assetId: "theirA" }); });
+    await undo(t);
+    const rows = await t.run(async (ctx) => ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", "lnk1")).collect());
+    expect(rows.map((r) => r.maintenanceRecordId)).toEqual(["theirM"]);
+    expect(await t.run(async (ctx) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "mOld")).first())).not.toBeNull();
   });
 
   test("refuses when the item was tested again since", async () => {
@@ -445,7 +533,8 @@ describe("testTagRecordsWrites.undoCreateNative (exact undo)", () => {
     await expect(undo(t, { actor: { userId: USER2, userName: "Bob" } }, { subject: USER2, orgId: ORG, role: "admin" }))
       .rejects.toThrow(/Only the person who saved this test can undo it/);
     await undo(t);
-    await expect(undo(t, { auditId: "u2" })).rejects.toThrow(/not found|already undone/);
+    // The UNDO-row guard itself answers (it runs before the deleted record is looked up).
+    await expect(undo(t, { auditId: "u2" })).rejects.toThrow(/already undone/);
 
     await t.run(async (ctx) => {
       await ctx.db.insert("testTagRecords", { id: "old1", organizationId: ORG, testTagAssetId: "tt1", testDate: NOW, testedById: USER, testerName: "Al", result: "PASS", nextDueDate: NOW });
@@ -472,7 +561,7 @@ describe("testTagRecordsWrites.undoCreateNative (exact undo)", () => {
     });
     await create(t);
     const outsider = { subject: USER2, orgId: OTHER, role: "admin" };
-    await expect(undo(t, { orgId: OTHER, actor: { userId: USER2, userName: "Bob" } }, outsider)).rejects.toThrow(/Test record not found/);
+    await expect(undo(t, { orgId: OTHER, actor: { userId: USER2, userName: "Bob" } }, outsider)).rejects.toThrow(/can't be undone/);
     await expect(undo(t, { actor: { userId: USER2, userName: "Bob" } }, outsider)).rejects.toThrow();
     expect(await rec(t, "rec1")).not.toBeNull();
   });

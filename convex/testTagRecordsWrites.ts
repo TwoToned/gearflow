@@ -166,13 +166,22 @@ function assertCreateFields(a: { testerName: string; visualNotes?: string; funct
   }
 }
 
-/** The profile the test is held to: the one the caller named (org-checked), else the
- *  asset's cascade — so omitting `testProfileId` can't skip the D51 check. */
+/**
+ * The profile the test is held to is ALWAYS the asset's resolved cascade — the one the
+ * tester saw (`testCard` / `resolveForAsset`). A caller may name it (`testProfileId`),
+ * but only to confirm it: naming another profile (a laxer one would switch D51 off, and
+ * would then be pinned onto the asset), a foreign one or an inactive one is rejected.
+ */
 async function profileForTest(ctx: MutationCtx, orgId: string, asset: Doc<"testTagAssets">, testProfileId: string | undefined) {
-  if (!testProfileId) return await resolveTestProfileForAsset(ctx, orgId, asset);
+  const resolved = await resolveTestProfileForAsset(ctx, orgId, asset);
+  if (!testProfileId) return resolved;
   const named = await orgTestProfile(ctx, orgId, testProfileId);
   if (!named) throw new ConvexError("Test profile not found");
-  return named;
+  if (named.isActive === false) throw new ConvexError("That test profile is inactive");
+  if (named.id !== resolved?.id) {
+    throw new ConvexError(resolved ? `This item is tested against "${resolved.name}", not the profile sent` : "No test profile applies to this item");
+  }
+  return resolved;
 }
 
 /** D51 + Q11: validate every reading and derive the verdicts the record stores. */
@@ -200,10 +209,12 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "testTag", "create");
     const actor = await resolveActor(ctx, a.actor);
     assertCreateFields(a);
+    if (a.testDate > Date.now() + TEST_DATE_SKEW_MS) throw new ConvexError("The test date can't be in the future");
 
     // The parent T&T asset, org re-checked (by_cuid is GLOBAL).
     const asset = await requireTtAssetInOrg(ctx, a.orgId, a.testTagAssetId);
     const profile = await profileForTest(ctx, a.orgId, asset, a.testProfileId);
+    assertOutlets(a, profile);
     const verdicts = deriveVerdicts(a, profile);
     const testedById = await resolveTester(ctx, a.orgId, a.testedById, actor.userId);
     await assertNewRecordId(ctx, a.recordId);
@@ -212,7 +223,7 @@ export const createNative = mutation({
     const before = ttAssetSnapshot(asset);
     await insertRecord(ctx, a, { testedById, verdicts, nextDueDate, profileId: profile?.id });
     await insertSubTests(ctx, a.recordId, a.subTests ?? [], verdicts.subResults, a.now);
-    await ctx.db.patch(asset._id, assetScalarsPatch(a, asset, nextDueDate));
+    await ctx.db.patch(asset._id, assetScalarsPatch(a, asset, nextDueDate, profile?.id));
 
     // Failure actions (only on a FAIL result — the DERIVED one).
     const failure = verdicts.result === "FAIL" ? await applyFailureAction(ctx, a, asset, actor.userId) : NO_FAILURE;
@@ -264,11 +275,37 @@ function assetScalarsPatch(
   a: { testDate: number; now: number; outletCount?: number; testProfileId?: string },
   asset: Doc<"testTagAssets">,
   nextDueDate: number,
+  resolvedProfileId: string | undefined,
 ): Partial<Doc<"testTagAssets">> {
   const patch: Partial<Doc<"testTagAssets">> = { lastTestDate: a.testDate, nextDueDate, updatedAt: a.now };
   if (a.outletCount) patch.outletCount = a.outletCount;
-  if (!asset.testProfileId && a.testProfileId) patch.testProfileId = a.testProfileId;
+  // Pin the profile only when the caller confirmed the RESOLVED one (profileForTest
+  // rejects any other), never a caller-chosen id.
+  if (!asset.testProfileId && a.testProfileId && resolvedProfileId === a.testProfileId) patch.testProfileId = resolvedProfileId;
   return patch;
+}
+
+/** A test can't be dated in the future (a little clock skew allowed). */
+const TEST_DATE_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * Outlets (sub-test profiles): a profile that requires them needs 1–50, and the outlet
+ * count the asset keeps must be the number actually tested.
+ */
+function assertOutletCountBounds(count: number | undefined): void {
+  if (count === undefined) return;
+  if (!Number.isInteger(count) || count < 1 || count > MAX_SUB_TESTS) {
+    throw new ConvexError(`Outlet count must be a whole number from 1 to ${MAX_SUB_TESTS}`);
+  }
+}
+
+function assertOutlets(a: { outletCount?: number; subTests?: SubTestInput[] }, profile: Doc<"testProfiles"> | null): void {
+  const n = a.subTests?.length ?? 0;
+  assertOutletCountBounds(a.outletCount);
+  if (profile?.requiresSubTests && n < 1) throw new ConvexError("Test at least one outlet");
+  if ((n > 0 || a.outletCount !== undefined) && a.outletCount !== n) {
+    throw new ConvexError("The outlet count must match the outlets tested");
+  }
 }
 
 /** Tester defaults to the verified actor; a supplied non-self tester must be a member. */
@@ -371,8 +408,8 @@ async function insertSubTests(ctx: MutationCtx, recordId: string, subTests: SubT
   }
 }
 
-type FailureOutcome = Pick<TestTagSaveDetails, "inventory" | "createdMaintenanceId" | "createdLinkId">;
-const NO_FAILURE: FailureOutcome = { inventory: null, createdMaintenanceId: null, createdLinkId: null };
+type FailureOutcome = Pick<TestTagSaveDetails, "inventory" | "createdMaintenanceId" | "referralMaintenanceId" | "createdLinkId">;
+const NO_FAILURE: FailureOutcome = { inventory: null, createdMaintenanceId: null, referralMaintenanceId: null, createdLinkId: null };
 
 /** Apply the chosen failure action; returns what it created/changed, for the Undo. */
 async function applyFailureAction(ctx: MutationCtx, a: CreateArgs, asset: Doc<"testTagAssets">, actorUserId: string): Promise<FailureOutcome> {
@@ -427,6 +464,10 @@ async function referToElectrician(ctx: MutationCtx, a: CreateArgs, asset: Doc<"t
   let createdLinkId: string | null = null;
   if (!existingLink) {
     createdLinkId = a.maintenanceLinkId || createId();
+    // by_cuid is GLOBAL and the link has no org column: a replayed / foreign link id
+    // must not land a second row under that id (the incident + PM cores reject it too).
+    const linkDup = await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", createdLinkId!)).first();
+    if (linkDup) throw new ConvexError("Maintenance link id already exists");
     await ctx.db.insert("maintenanceRecordAssets", { id: createdLinkId, maintenanceRecordId: maintenanceId, assetId: asset.assetId! });
   }
   // Mark the linked INVENTORY asset in-maintenance (per-row org re-check).
@@ -440,6 +481,7 @@ async function referToElectrician(ctx: MutationCtx, a: CreateArgs, asset: Doc<"t
   return {
     inventory: { id: invAsset.id, before: invBefore, after: { status: "IN_MAINTENANCE", updatedAt: a.now } },
     createdMaintenanceId: created ? maintenanceId : null,
+    referralMaintenanceId: maintenanceId,
     createdLinkId,
   };
 }
@@ -514,9 +556,11 @@ export const undoCreateNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "testTag", "create");
     const actor = await resolveActor(ctx, a.actor);
 
+    // The forward audit row first: it is what proves author / once / window (a second
+    // undo finds its own UNDO row here, before the deleted record could be looked up).
+    const { forward, details } = await loadUndoableTestSave(ctx, { orgId: a.orgId, recordId: a.recordId, actorUserId: actor.userId, serverNow: Date.now() });
     const record = await ctx.db.query("testTagRecords").withIndex("by_cuid", (q) => q.eq("id", a.recordId)).first();
     if (!record || record.organizationId !== a.orgId) throw new ConvexError("Test record not found");
-    const { forward, details } = await loadUndoableTestSave(ctx, { orgId: a.orgId, recordId: a.recordId, actorUserId: actor.userId, serverNow: Date.now() });
     await requireNewestRecord(ctx, a.orgId, record);
     const asset = await requireUntouchedTtAsset(ctx, a.orgId, record, details);
 
@@ -552,7 +596,7 @@ async function reverseFailureAction(ctx: MutationCtx, orgId: string, record: Doc
   const created = details.createdMaintenanceId ? [details.createdMaintenanceId] : [];
   const maintenance = await requireUntouchedMaintenance(ctx, orgId, created, record.createdAt);
   for (const m of maintenance) await deleteMaintenanceWithLinks(ctx, m);
-  if (created.length === 0 && details.createdLinkId) await deleteLinkById(ctx, details.createdLinkId);
+  if (created.length === 0 && details.createdLinkId) await deleteAddedLink(ctx, orgId, details);
   if (inventory && details.inventory) {
     const b = details.inventory.before;
     await ctx.db.patch(inventory._id, { status: (b.status ?? undefined) as Doc<"assets">["status"], updatedAt: b.updatedAt ?? undefined });
@@ -568,10 +612,23 @@ async function deleteRecordWithSubTests(ctx: MutationCtx, record: Doc<"testTagRe
   await ctx.db.delete(record._id);
 }
 
-/** A link the save added to a pre-existing same-org maintenance record. */
-async function deleteLinkById(ctx: MutationCtx, linkId: string): Promise<void> {
-  const link = await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", linkId)).first();
-  if (link) await ctx.db.delete(link._id);
+/**
+ * The link the save added to a PRE-EXISTING same-org maintenance record. Found by the
+ * (maintenance record, inventory asset) pair the save recorded — never by a bare link id
+ * on the global index — after proving the record is in this org and the row there is
+ * the one this save inserted.
+ */
+async function deleteAddedLink(ctx: MutationCtx, orgId: string, details: TestTagSaveDetails): Promise<void> {
+  const maintenanceId = details.referralMaintenanceId;
+  const assetId = details.inventory?.id;
+  if (!maintenanceId || !assetId) throw new ConvexError("This test's referral link can't be undone");
+  const m = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", maintenanceId)).first();
+  if (!m || m.organizationId !== orgId) throw new ConvexError("This test's referral can't be found");
+  const link = await ctx.db
+    .query("maintenanceRecordAssets")
+    .withIndex("by_maintenanceRecordId_assetId", (q) => q.eq("maintenanceRecordId", maintenanceId).eq("assetId", assetId))
+    .first();
+  if (link && link.id === details.createdLinkId) await ctx.db.delete(link._id);
 }
 
 // See docs/designs/api-mcp-reimplementation.md §9 for the classification rubric.

@@ -48,6 +48,8 @@ export interface TestTagSaveDetails {
   after: TtAssetSnapshot;
   inventory: { id: string; before: InvAssetSnapshot; after: InvAssetSnapshot } | null;
   createdMaintenanceId: string | null;
+  /** The referral the link points at — this save's own, or an existing same-org one. */
+  referralMaintenanceId?: string | null;
   createdLinkId: string | null;
 }
 

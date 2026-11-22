@@ -4,7 +4,8 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { redactFields, requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { ASSIGNMENT_PAY_FIELDS, canSeeCrewPay } from "./lib/crewPayVisibility";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { ASSIGNMENT_COST_FIELDS } from "./crewAssignments";
 
 /**
  * Browser-direct crew-dashboard reads (Phase 3 — replace getCrewPickerList /
@@ -104,7 +105,7 @@ export const pickerList = query({
       const memberAssignments = (byMember.get(m.id) ?? [])
         .filter((a) => !EXCLUDED.has(a.status ?? ""))
         .sort((a, b) => cmpDescNulls(a.startDate, b.startDate))
-        .map((a) => { const p = g.projById.get(a.projectId); const aRole = a.crewRoleId ? g.roleById.get(a.crewRoleId) : null; const shown = payVisible ? a : redactFields(a, ASSIGNMENT_PAY_FIELDS); return { ...isoAssignment(shown), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null, crewRole: aRole ? { id: aRole.id, name: aRole.name } : null }; });
+        .map((a) => { const p = g.projById.get(a.projectId); const aRole = a.crewRoleId ? g.roleById.get(a.crewRoleId) : null; const shown = payVisible ? a : redactFields(a, ASSIGNMENT_COST_FIELDS); return { ...isoAssignment(shown), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null, crewRole: aRole ? { id: aRole.id, name: aRole.name } : null }; });
       return { id: m.id, firstName: m.firstName, lastName: m.lastName, department: m.department ?? null, crewRole: role ? { name: role.name } : null, assignments: memberAssignments };
     });
   },

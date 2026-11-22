@@ -15,6 +15,7 @@ import { factText } from "@/lib/primitives/facts";
 import { buildCrewRoleActions } from "@/lib/row-actions/crew-role";
 import { crewRateTypeLabels } from "@/lib/status-labels";
 import { useCanDo, useIsManagerPlus } from "@/lib/use-permissions";
+import { compareRoleOrder } from "../../../../../convex/lib/crewRoleOrder";
 import { RoleEditor } from "./role-editor";
 import { useRoleSheetWrites } from "./use-role-writes";
 
@@ -28,12 +29,10 @@ import { useRoleSheetWrites } from "./use-role-writes";
 
 type Usage = { crewMembers: number; crewAssignments: number; projectServices: number };
 
-const byOrder = (a: CrewRoleDoc, b: CrewRoleDoc) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name);
-
-/** The org's roles in display order (read only while the sheet is open). */
+/** The org's roles in display order — the SAME order `moveNative` renumbers by (read only while the sheet is open). */
 function useSortedRoles(orgId: string | undefined): CrewRoleDoc[] {
   const roles = useCrewRolesForSettings(orgId);
-  return React.useMemo(() => [...(roles ?? [])].sort(byOrder), [roles]);
+  return React.useMemo(() => [...(roles ?? [])].sort(compareRoleOrder), [roles]);
 }
 
 function rate(value: number | undefined | null): string {
@@ -182,7 +181,7 @@ export function CrewRolesSheet({ open, onOpenChange }: { open: boolean; onOpenCh
   const showRates = useIsManagerPlus();
   const canCreate = useCanDo("crew", "create");
   const canUpdate = useCanDo("crew", "update");
-  const w = useRoleSheetWrites();
+  const w = useRoleSheetWrites({ ratesShown: showRates });
   const archive = useArchiveTarget(orgId);
   const [editing, setEditing] = React.useState<CrewRoleDoc | null | undefined>(undefined);
   const menuFor = roleMenuFor(roles, canUpdate, {

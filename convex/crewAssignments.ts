@@ -22,8 +22,10 @@ import { canSeeCrewPay } from "./lib/crewPayVisibility";
 
 /** Phase 4 (#1000, decision 6): what the org pays this assignment/its crew
  *  member — cost data, distinct from client-facing service pricing. */
-const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
-const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
+// ONE definition of the pay fields (R-3.1): the planner (`crewAvailability`)
+// and the crew dashboard redact with these too.
+export const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
+export const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
 const ROLE_RATE_FIELDS = ["defaultRate"] as const;
 
 /** `projectCrew`'s enriched row nests cost fields inside `crewMember`/`crewRole`

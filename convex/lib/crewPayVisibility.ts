@@ -14,8 +14,3 @@ export async function canSeeCrewPay(ctx: QueryCtx | MutationCtx, orgId: string):
   if (!(await isCallerManagerPlus(ctx, orgId))) return false;
   return !(await isAgentNoFinancials(ctx, await getAuthContext(ctx)));
 }
-
-/** Assignment fields that carry pay. */
-export const ASSIGNMENT_PAY_FIELDS = ["rateOverride", "estimatedCost"] as const;
-/** Crew-member fields that carry pay. */
-export const MEMBER_PAY_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;

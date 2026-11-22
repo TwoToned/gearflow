@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Check, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { RenameVersionDialog } from "@/components/projects/versions/version-dialogs";
 import {
   Sheet,
   SheetContent,
@@ -89,71 +89,6 @@ function VersionRow({
       </button>
       <ActionMenu spec={{ items: actions }} label={`v${v.number} actions`} />
     </div>
-  );
-}
-
-/** Wrapper renders null with no `target`; the inner component is KEYED by
- *  `target.id` so switching targets remounts it with a fresh, correctly-
- *  seeded field instead of carrying stale `useState` across a prop change
- *  (React only re-runs a `useState` initializer on mount) — same pattern
- *  `project-quote-rail.tsx`'s `EditLabelDialog`/`EditLabelDialogContent` used. */
-function RenameDialog({
-  target,
-  projectId,
-  onClose,
-}: {
-  target: ProjectVersionSummary | null;
-  projectId: string;
-  onClose: () => void;
-}) {
-  if (!target) return null;
-  return <RenameDialogContent key={target.id} target={target} projectId={projectId} onClose={onClose} />;
-}
-
-function RenameDialogContent({
-  target,
-  projectId,
-  onClose,
-}: {
-  target: ProjectVersionSummary;
-  projectId: string;
-  onClose: () => void;
-}) {
-  const { setLabel } = useProjectVersionWrites(projectId);
-  const [value, setValue] = useState(target.label ?? "");
-  const mutation = useServerMutation({
-    mutationFn: () => setLabel(target.id, value || undefined),
-    onSuccess: () => {
-      toast.success(value ? `Labelled v${target.number} "${value}"` : `Cleared v${target.number}'s label`);
-      onClose();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Rename v{target.number}</DialogTitle>
-          <DialogDescription>An internal name — never printed unless checked at send time.</DialogDescription>
-        </DialogHeader>
-        <Input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="e.g. With LED wall"
-          maxLength={60}
-          autoFocus
-        />
-        <DialogFooter>
-          <Button type="button" variant="line" onClick={onClose} disabled={mutation.isPending}>
-            Cancel
-          </Button>
-          <Button type="button" loading={mutation.isPending} onClick={() => mutation.mutate(undefined)}>
-            Save name
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -264,7 +199,7 @@ export function VersionsPanel({ open, onOpenChange, projectId, versions, liveVer
         </SheetContent>
       </Sheet>
 
-      <RenameDialog target={renameTarget} projectId={projectId} onClose={() => setRenameTarget(null)} />
+      <RenameVersionDialog target={renameTarget} projectId={projectId} onClose={() => setRenameTarget(null)} />
       <DeleteVersionConfirm target={deleteTarget} projectId={projectId} onClose={() => setDeleteTarget(null)} />
       {makeLiveTarget && (
         <MakeLiveDialog

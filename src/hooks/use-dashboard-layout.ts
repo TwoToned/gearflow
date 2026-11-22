@@ -43,8 +43,14 @@ function sameLayout(a: readonly DashboardLayoutWidget[], b: readonly DashboardLa
   });
 }
 
-/** Puts the board back exactly as it was before ONE change (UX Phase 11, Q6). */
+/**
+ * Puts the board back exactly as it was before ONE change (UX Phase 11, Q6).
+ * Throws `LAYOUT_CHANGED_SINCE` (the toast's Undo surfaces it) when the board
+ * is no longer the one that change produced.
+ */
 export type LayoutRestore = () => void;
+
+export const LAYOUT_CHANGED_SINCE = "Layout changed since. Undo the newer change first.";
 
 /**
  * The per-user Home layout (`convex/dashboardLayouts.ts`). No saved row yet ⇒
@@ -111,6 +117,9 @@ export function useDashboardLayout(orgId: string | undefined) {
       setWidgets(next);
       persist(next);
       return () => {
+        // Tied to the board THIS change produced: once anything else moved it, putting
+        // `prev` back would silently revert the later change too, so it refuses instead.
+        if (currentRef.current !== next) throw new Error(LAYOUT_CHANGED_SINCE);
         currentRef.current = prev;
         setWidgets(prev);
         persist(prev);

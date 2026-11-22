@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 446 | 311 | 132 | 1 | 2 |
+| Queries | 447 | 311 | 132 | 2 | 2 |
 | Mutations | 801 | 308 | 484 | 0 | 9 |
-| **Total** | **1247** | **619** | **616** | **1** | **11** |
+| **Total** | **1248** | **619** | **616** | **2** | **11** |
 
 <!-- reachability-floor: 619 -->
 
@@ -90,6 +90,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `orgErasure` | 4 |
 | `orgExport` | 6 |
 | `orgSettings` | 8 |
+| `paletteRecents` | 1 |
 | `parity` | 1 |
 | `pendingOrgJoinRequests` | 6 |
 | `pendingSSOApprovals` | 5 |
@@ -166,6 +167,7 @@ fails the build otherwise.
 | `orgExport.scanTableFiltered` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |
 | `orgSettings.getByIcalToken` | Global secret-token lookup (no orgId argument to scope against) — structurally not an org-scoped read. |
 | `orgSettings.getByOrg` | Row/lookup exposes apiKillSwitchAt (the org's own write-kill-switch state) and/or icalToken (a bearer credential for the public iCal feed); no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
+| `paletteRecents.resolve` | Resolves the browser palette's own localStorage Recent refs across several RBAC domains (same per-result-type scope gap as globalSearch.search); no agent use. |
 | `parity.countPage` | Internal migration-parity diagnostic tool, not an application read surface. |
 | `pendingOrgJoinRequests.findJoinableOrgsForDomain` | Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet. |
 | `pendingOrgJoinRequests.list` | Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet. |

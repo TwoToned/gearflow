@@ -34384,6 +34384,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "paletteRecents.resolve",
+    "module": "paletteRecents",
+    "fn": "resolve",
+    "kind": "query",
+    "guard": "orgRead",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "refs",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c55963142a08c186",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Resolves the browser palette's own localStorage Recent refs across several RBAC domains (same per-result-type scope gap as globalSearch.search); no agent use."
+  },
+  {
     "operation": "parity.countPage",
     "module": "parity",
     "fn": "countPage",
@@ -64387,9 +64419,9 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1247,
+  total: 1248,
   agentReachable: 619,
-  queries: 446,
+  queries: 447,
   mutations: 801,
   agentReachableQueries: 311,
   agentReachableMutations: 308,

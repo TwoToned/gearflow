@@ -147,7 +147,7 @@ export const plannerData = query({
           const { _id, _creationTime, responseToken, ...withPay } = a;
           void _id; void _creationTime; void responseToken;
           const arest = payVisible ? withPay : redactFields(withPay, ASSIGNMENT_PAY_FIELDS);
-          return { ...arest, startDate: iso(a.startDate), endDate: iso(a.endDate), offeredAt: iso(a.offeredAt), respondedAt: iso(a.respondedAt), confirmedAt: iso(a.confirmedAt), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null } : null, crewRole: aRole ? { name: aRole.name, color: aRole.color ?? null } : null };
+          return { ...arest, startDate: iso(a.startDate), endDate: iso(a.endDate), offeredAt: iso(a.offeredAt), respondedAt: iso(a.respondedAt), confirmedAt: iso(a.confirmedAt), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null, projectManagerId: p.projectManagerId ?? null } : null, crewRole: aRole ? { name: aRole.name, color: aRole.color ?? null } : null };
         });
       const availability = (availByMember.get(m.id) ?? [])
         .filter((r) => overlaps(r.startDate, r.endDate, startMs, endMs))

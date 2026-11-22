@@ -66,6 +66,12 @@ describe("crewPlanner.openCalls (Needs crew)", () => {
     expect(res.calls[0]).toMatchObject({ projectNumber: "2341", crewCountRequired: 2, assignedCount: 1, shortfall: 1, startTime: "08:00", crewRoleName: "Rigger" });
   });
 
+  test("each open call carries the phase a call on it staffs (Offer a call creates with it)", async () => {
+    const t = makeT(); await seedBase(t); await seedServices(t);
+    const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });
+    expect(res.calls[0]).toMatchObject({ phase: "EVENT", endDate: null });
+  });
+
   test("the range is bounded", async () => {
     const t = makeT(); await seedBase(t);
     await expect(t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 15 * DAY })).rejects.toThrow(/exceeds 14 days/);
@@ -173,5 +179,19 @@ describe("crewRolesWrites.moveNative", () => {
     expect(await order()).toEqual(before);
     // The only archived role has no neighbour in its own list.
     expect((await move("rx", "up")).moved).toBe(false);
+  });
+});
+
+describe("crewAvailability.plannerData (the planner grid)", () => {
+  test("a call's job carries its project manager (the planner's Mine = the Jobs My jobs rule)", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", status: "OFFERED", startDate: D0 + DAY, endDate: D0 + DAY, responseToken: "secret" });
+    });
+    const rows = await t.withIdentity(asUser).query(api.crewAvailability.plannerData, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });
+    const call = rows[0].assignments[0];
+    expect(call.project).toMatchObject({ projectNumber: "2341", projectManagerId: USER });
+    expect("responseToken" in call).toBe(false);
   });
 });

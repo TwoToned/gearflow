@@ -15,6 +15,7 @@ import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
 import * as enums from "./lib/validators";
 import { assertPricingUnlocked, afterLockAuditMetadata, defaultsToZeroOnInsert } from "./lib/projectLocks";
+import { TOLD_ON_CANCEL, canCrewCall } from "./lib/crewCallTransitions";
 
 /** Fetch a project by cuid, confirm it's the caller's org. */
 async function requireCrewProjectInOrg(ctx: MutationCtx, projectId: string, orgId: string) {
@@ -428,9 +429,6 @@ export const bulkStatusNative = mutation({
 
 /** Marks an activity row as a confirm record `unconfirmManyNative` may read back. */
 const CONFIRM_RECORD_KIND = "crew_assignment_confirm";
-const CANCELLABLE: ReadonlySet<string> = new Set(["PENDING", "OFFERED", "ACCEPTED", "CONFIRMED"]);
-/** Cancelling these tells the crew member (the offer reached them). */
-const TOLD_ON_CANCEL: ReadonlySet<string> = new Set(["OFFERED", "ACCEPTED", "CONFIRMED"]);
 
 type AssignmentDoc = import("./_generated/dataModel").Doc<"crewAssignments">;
 
@@ -473,7 +471,7 @@ export const confirmManyNative = mutation({
     const confirmed: string[] = [], skipped: string[] = [];
     for (const id of new Set(a.ids)) {
       const doc = await findAssignment(ctx, id);
-      if (!doc || doc.organizationId !== a.orgId || doc.status !== "ACCEPTED") { skipped.push(id); continue; }
+      if (!doc || doc.organizationId !== a.orgId || !canCrewCall(doc.status, "confirm")) { skipped.push(id); continue; }
       await replaceAssignment(ctx, doc, { status: "CONFIRMED", confirmedAt: a.now, confirmedById: actor.userId, updatedAt: a.now });
       const { name, pn } = await assignmentLabel(ctx, a.orgId, doc);
       await logAssignment(ctx, {
@@ -545,7 +543,7 @@ export const cancelManyNative = mutation({
     const cancelled: string[] = [], toTell: string[] = [], skipped: string[] = [];
     for (const id of new Set(a.ids)) {
       const doc = await findAssignment(ctx, id);
-      if (!doc || doc.organizationId !== a.orgId || !CANCELLABLE.has(doc.status ?? "PENDING")) { skipped.push(id); continue; }
+      if (!doc || doc.organizationId !== a.orgId || !canCrewCall(doc.status, "cancel")) { skipped.push(id); continue; }
       await replaceAssignment(ctx, doc, { status: "CANCELLED", updatedAt: a.now });
       if (TOLD_ON_CANCEL.has(doc.status ?? "PENDING")) toTell.push(id);
       const { name, pn } = await assignmentLabel(ctx, a.orgId, doc);

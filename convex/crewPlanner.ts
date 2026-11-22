@@ -6,6 +6,7 @@ import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { computeServicesMissingCrew, type BoardAssignment } from "./lib/overbookingBoard";
 import { isLiveVersionRow } from "./lib/projectLocks";
+import { serviceTypeToPhase } from "./lib/serviceSchedule";
 
 /**
  * Crew planner reads (UX Phase 15, spec §9h). The planner grid itself still
@@ -92,10 +93,14 @@ export const openCalls = query({
       const s = serviceById.get(r.serviceId)!;
       return {
         ...r,
+        endDate: s.endDate ?? null,
         startTime: s.startTime ?? null,
         endTime: s.endTime ?? null,
         crewRoleId: s.crewRoleId ?? null,
         crewRoleName: s.crewRoleId ? roleName.get(s.crewRoleId) ?? null : null,
+        // The phase a call on this service staffs: the planner's Offer a call
+        // creates the assignment with it (the service write path's own mapping).
+        phase: serviceTypeToPhase(s.type),
       };
     });
     return { calls, truncated };

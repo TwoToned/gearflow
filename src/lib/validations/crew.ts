@@ -175,3 +175,9 @@ const MAX_OFFER_BATCH = 100;
 export const sendCrewOffersSchema = z.object({
   assignmentIds: z.array(z.string().min(1)).min(1).max(MAX_OFFER_BATCH),
 });
+
+/**
+ * `sendCancellationEmails` input: `cancelManyNative`'s `toTell`. The same
+ * shape and cap as an offer batch (each is one email), so it IS that schema.
+ */
+export const sendCrewCancellationsSchema = sendCrewOffersSchema;

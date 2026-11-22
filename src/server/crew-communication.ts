@@ -25,7 +25,8 @@ import {
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectByIdMapped } from "@/lib/projects-read";
-import { sendCrewOffersSchema } from "@/lib/validations/crew";
+import { sendCrewCancellationsSchema, sendCrewOffersSchema } from "@/lib/validations/crew";
+import { canCrewCall } from "../../convex/lib/crewCallTransitions";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
@@ -135,12 +136,24 @@ export async function sendCrewOffer(assignmentId: string) {
  * audit row: the caller has already authorised and owns the audit, so a bulk send
  * writes ONE summary row instead of N+1 (`sendCrewOffers`).
  */
-async function offerAssignment(assignmentId: string, organizationId: string) {
+async function offerAssignment(
+  assignmentId: string,
+  organizationId: string,
+  gateStatus = false,
+) {
   const { assignment, emailData } =
     await buildAssignmentEmailData(assignmentId);
 
   if (assignment.organizationId !== organizationId) {
     throw new Error("Assignment not found");
+  }
+  // A bulk send (`sendCrewOffers`) only offers calls still waiting on an offer
+  // (the planner's one transition table): re-offering an ACCEPTED/CONFIRMED
+  // call would silently knock it back to OFFERED.
+  if (gateStatus && !canCrewCall(assignment.status, "offer")) {
+    throw new Error(
+      `${assignment.crewMember.firstName} ${assignment.crewMember.lastName} is already ${(assignment.status ?? "").toLowerCase()}`
+    );
   }
 
   const crewEmail = assignment.crewMember.email;
@@ -227,10 +240,11 @@ export async function sendCrewOfferAll(projectId: string) {
 // ─── Send Offers to the ticked assignments ───────────────────────────────────
 
 /**
- * Offer each ticked assignment (Logistics bulk verb `Send N offers`). Same
- * per-row path as `sendCrewOffer`; a row that cannot be offered (no email, not
- * this org's) is reported in `errors`, never thrown, so one bad row does not
- * stop the rest.
+ * Offer each ticked assignment (Logistics `Send N offers`, the planner's
+ * `Offer n` / `Offer to suggested n` / Offer a call). Same per-row path as
+ * `sendCrewOffer`; a row that cannot be offered (no email, not this org's,
+ * already accepted or confirmed) is reported in `errors`, never thrown, so one
+ * bad row does not stop the rest.
  */
 export async function sendCrewOffers(input: { assignmentIds: string[] }) {
   const { organizationId, userId, userName } = await requirePermission("crew", "update");
@@ -242,7 +256,7 @@ export async function sendCrewOffers(input: { assignmentIds: string[] }) {
   const errors: string[] = [];
   for (const id of ids) {
     try {
-      await offerAssignment(id, organizationId);
+      await offerAssignment(id, organizationId, true);
       sent++;
     } catch (e) {
       errors.push((e as Error).message);
@@ -316,6 +330,60 @@ export async function sendCancellationEmail(assignmentId: string) {
   });
 
   return serialize({ success: true });
+}
+
+// ─── Cancellation mail for the planner's Cancel n ────────────────────────────
+
+/**
+ * Tell each crew member their call was cancelled (the planner's `Cancel n`,
+ * spec §9h.3). `assignmentIds` is `cancelManyNative`'s `toTell`. Each id is
+ * re-checked here: this org's, and actually CANCELLED, so the action can never
+ * be used to mail a cancellation for a call that still stands. A row that
+ * cannot be told (no email, not cancelled) is reported, never thrown. ONE
+ * audit row for the click.
+ */
+export async function sendCancellationEmails(input: { assignmentIds: string[] }) {
+  const { organizationId, userId, userName } = await requirePermission("crew", "update");
+  const { assignmentIds } = sendCrewCancellationsSchema.parse(input);
+  const ids = [...new Set(assignmentIds)];
+  let sent = 0;
+  const errors: string[] = [];
+  for (const id of ids) {
+    try {
+      await mailCancellation(id, organizationId);
+      sent++;
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
+  }
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "crew_assignment",
+    entityId: ids[0],
+    entityName: `${ids.length} crew assignments`,
+    summary: `Sent ${sent} of ${ids.length} crew cancellation emails`,
+  });
+  return serialize({ sent, errors, total: ids.length });
+}
+
+async function mailCancellation(assignmentId: string, organizationId: string) {
+  const { assignment, emailData } = await buildAssignmentEmailData(assignmentId);
+  if (assignment.organizationId !== organizationId) throw new Error("Assignment not found");
+  const name = `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`;
+  if (assignment.status !== "CANCELLED") throw new Error(`${name}'s call is not cancelled`);
+  if (!assignment.crewMember.email) throw new Error(`${name} has no email address`);
+  const email = crewCancellationEmail(emailData);
+  await deliverSideEffectEmail({
+    // The cancel write's own stamp is the nonce: a retry of this send dedupes,
+    // while a later cancel of the same (re-offered) call is a new email.
+    idempotencyKey: `crew-cancel:${assignmentId}:${assignment.updatedAt?.getTime() ?? 0}`,
+    to: assignment.crewMember.email,
+    subject: email.subject,
+    html: email.html,
+  });
 }
 
 // ─── Bulk Message ────────────────────────────────────────────────────────────

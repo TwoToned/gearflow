@@ -596,7 +596,7 @@ describe("undoAdHocCheckNative (exact undo)", () => {
 
   test("a check with photos attached can't be undone (no orphaned or destroyed files)", async () => {
     const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
-    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [{ ...mkCheck({ recordId: "r1", result: "FAIL" }), notes: "Cracked", photos: ["https://x/files/p1.jpg"] }]);
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [{ ...mkCheck({ recordId: "r1", result: "FAIL" }), notes: "Cracked", photos: ["https://x/files/p1.jpg"] } as ReturnType<typeof mkCheck>]);
     await expect(undo(t)).rejects.toThrow(/photos attached/);
     expect((await records(t)).map((r) => r.id)).toEqual(["r1"]);
     expect((await maint(t)).map((m) => m.id)).toContain("inc1");

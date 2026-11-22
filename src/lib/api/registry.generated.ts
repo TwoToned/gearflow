@@ -19162,9 +19162,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "agentReachable": true,
-    "args": [],
+    "args": [
+      {
+        "name": "orgId",
+        "optional": true,
+        "type": "string"
+      }
+    ],
     "privilegedArgs": [],
-    "argsSha": "5151b7eb8536aa97",
+    "argsSha": "c2eec38dc033e953",
     "returnsSha": "eb29fac8cd3e5a2a",
     "stability": "tracks-app",
     "summary": "Get the caller's own saved dashboard widget layout.",
@@ -19200,13 +19206,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "orgId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "widgets",
         "optional": false,
         "type": "array"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "ed6d8afc493b8fc0",
+    "argsSha": "c3591aa900f06c24",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": "Save the caller's own dashboard widget layout (positions/sizes).",

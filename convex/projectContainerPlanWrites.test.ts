@@ -189,20 +189,47 @@ describe("delete case returns planned lines to Unplanned, and is exactly undoabl
     expect(row?.metadata).toMatchObject({ kind: "PLAN_LINE", from: "c1", to: null });
   });
 
-  test("Undo = re-create the case under the same id, then restore by the delete's audit id", async () => {
+  const undoDelete = (t: T, batchAuditId: string, auditId: string, orgId = ORG) =>
+    t.withIdentity(asUser(orgId)).mutation(api.projectContainerPlanWrites.undoDeleteContainerNative, {
+      orgId, batchAuditId, now: NOW, actor: ACTOR, auditId,
+    });
+
+  test("Undo is ONE mutation: re-creates the case in place (same id, label, sort position) and restores its lines", async () => {
     const t = makeT();
     await seed(t);
+    const before = await containerById(t, "c1");
     await plan(t, ["li1", "li2"], "c1", "p1");
     await remove(t, "c1", "x1");
-    await t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.createNative, {
-      id: "c1", orgId: ORG, projectId: "p1", kind: "CUSTOM", label: "Case 1", now: NOW, actor: ACTOR, auditId: "re1",
-    });
-    const r = await t.withIdentity(asUser(ORG)).mutation(api.projectContainerPlanWrites.restorePlannedContainersNative, {
-      orgId: ORG, batchAuditId: "x1", now: NOW, actor: ACTOR, auditId: "r1",
-    });
-    expect(r).toEqual({ restored: 2, skipped: 0 });
+    expect(await undoDelete(t, "x1", "r1")).toEqual({ id: "c1", restored: 2, skipped: 0 });
+    const back = await containerById(t, "c1");
+    expect(back).toMatchObject({ label: "Case 1", sortOrder: before?.sortOrder, versionId: V1 });
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
     expect((await lineById(t, "li2"))?.plannedContainerId).toBe("c1");
+    await expect(undoDelete(t, "x1", "r2")).rejects.toThrow(/already undone|already back/i);
+  });
+
+  test("Undo refuses another org's delete, and a plan batch that is not a delete", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m-other", organizationId: OTHER, userId: USER, role: "member" });
+    });
+    await plan(t, ["li1"], "c1", "p1");
+    await remove(t, "c2", "x2");
+    await expect(undoDelete(t, "x2", "r1", OTHER)).rejects.toThrow(/not found/i);
+    await expect(undoDelete(t, "p1", "r2")).rejects.toThrow(/not found/i);
+  });
+
+  test("a legacy case with no versionId still returns its lines to Unplanned (live version fallback)", async () => {
+    const t = makeT();
+    await seed(t);
+    await plan(t, ["li1"], "c1", "p1");
+    await t.run(async (ctx) => {
+      const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", "c1")).unique();
+      await ctx.db.patch(c!._id, { versionId: undefined });
+    });
+    await remove(t, "c1", "x1");
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBeUndefined();
   });
 });
 
@@ -288,7 +315,7 @@ describe("restorePlannedContainersNative", () => {
     expect(r).toEqual({ restored: 3, skipped: 0 });
     expect(await auditRow(t, "r1:li1")).toMatchObject({ metadata: { undoOf: "p3", from: "c3", to: "c1" } });
     expect(await auditRow(t, "r1:li3")).toMatchObject({ metadata: { undoOf: "p3", from: "c3", to: null } });
-    expect(await restore(t, "p3", "r2")).toEqual({ restored: 0, skipped: 3 }); // replay is a no-op
+    await expect(restore(t, "p3", "r2")).rejects.toThrow(/already undone/i); // a batch undoes once
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
     expect((await lineById(t, "li2"))?.plannedContainerId).toBe("c2");
     expect((await lineById(t, "li3"))?.plannedContainerId).toBeUndefined();
@@ -310,10 +337,10 @@ describe("restorePlannedContainersNative", () => {
     await plan(t, ["li1"], "c1", "p1");
     await plan(t, ["li1"], "c2", "p2");
     await seal(t, "c1", "s1"); // the case it would return to
-    expect(await restore(t, "p2", "r1")).toEqual({ restored: 0, skipped: 1 });
+    await expect(restore(t, "p2", "r1")).rejects.toThrow(/sealed/i); // never a silent "Undone"
     await unseal(t, "c1", "u1");
     await seal(t, "c2", "s2"); // the case it would leave
-    expect(await restore(t, "p2", "r2")).toEqual({ restored: 0, skipped: 1 });
+    await expect(restore(t, "p2", "r2")).rejects.toThrow(/sealed/i);
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c2");
   });
 
@@ -334,5 +361,102 @@ describe("restorePlannedContainersNative", () => {
     await seal(t, "c1", "s1"); // writes an audit row that is NOT a plan batch
     await expect(restore(t, "nope", "r1")).rejects.toThrow(/not found/i);
     await expect(restore(t, "s1", "r2")).rejects.toThrow(/not found/i);
+  });
+});
+
+describe("seal from the parent side (review fix 1)", () => {
+  const create = (t: T, id: string, parentContainerId: string | undefined, auditId: string) =>
+    t.withIdentity(asUser(ORG)).mutation(api.projectContainersWrites.createNative, {
+      id, orgId: ORG, projectId: "p1", kind: "CUSTOM", label: id, parentContainerId, now: NOW, actor: ACTOR, auditId,
+    });
+
+  test("moving a case INTO a sealed parent is rejected; allowed after unseal", async () => {
+    const t = makeT();
+    await seed(t);
+    await seal(t, "c2", "s1");
+    await expect(update(t, "c1", { parentContainerId: "c2" }, "n1")).rejects.toThrow(/sealed/i);
+    expect((await containerById(t, "c1"))?.parentContainerId).toBeUndefined();
+    await unseal(t, "c2", "u1");
+    await expect(update(t, "c1", { parentContainerId: "c2" }, "n2")).resolves.toEqual({ ok: true });
+  });
+
+  test("taking a case OUT of a sealed parent is rejected", async () => {
+    const t = makeT();
+    await seed(t);
+    await update(t, "c1", { parentContainerId: "c2" }, "n1");
+    await seal(t, "c2", "s1");
+    await expect(update(t, "c1", { parentContainerId: null }, "n2")).rejects.toThrow(/sealed/i);
+    await expect(update(t, "c1", { parentContainerId: "c3" }, "n3")).rejects.toThrow(/sealed/i);
+    expect((await containerById(t, "c1"))?.parentContainerId).toBe("c2");
+  });
+
+  test("creating a case INSIDE a sealed one is rejected", async () => {
+    const t = makeT();
+    await seed(t);
+    await seal(t, "c1", "s1");
+    await expect(create(t, "c9", "c1", "k1")).rejects.toThrow(/sealed/i);
+    expect(await containerById(t, "c9")).toBeNull();
+    await unseal(t, "c1", "u1");
+    await expect(create(t, "c9", "c1", "k2")).resolves.toMatchObject({ id: "c9" });
+  });
+});
+
+describe("restore: no replay (ABA), packed-skip, cancelled units (review fixes 2 and 5)", () => {
+  const restore = (t: T, batchAuditId: string, auditId: string) =>
+    t.withIdentity(asUser(ORG)).mutation(api.projectContainerPlanWrites.restorePlannedContainersNative, {
+      orgId: ORG, batchAuditId, now: NOW, actor: ACTOR, auditId,
+    });
+
+  test("B1, undo, B2, then a SECOND undo of B1 refuses and leaves B2's plan alone", async () => {
+    const t = makeT();
+    await seed(t);
+    await plan(t, ["li1"], "c1", "b1");
+    await restore(t, "b1", "r1"); // li1 back to unplanned
+    await plan(t, ["li1"], "c1", "b2"); // the same case again: the line looks exactly as b1 left it
+    await expect(restore(t, "b1", "r2")).rejects.toThrow(/already undone/i);
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
+  });
+
+  test("a line packed since is left alone by the restore (packed wins)", async () => {
+    const t = makeT();
+    await seed(t);
+    await plan(t, ["li1", "li2"], "c1", "b1");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 1, containerId: "c3", status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      } as never);
+    });
+    expect(await restore(t, "b1", "r1")).toEqual({ restored: 1, skipped: 1 });
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
+  });
+
+  test("a cancelled unit in a case does not count as packed", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 1, containerId: "c3", status: "CANCELLED", createdAt: NOW, updatedAt: NOW,
+      } as never);
+    });
+    expect((await plan(t, ["li1"], "c1", "p1")).updated).toBe(1);
+  });
+});
+
+describe("unplanning is one job at a time", () => {
+  test("lines of a second job in the same call are skipped OTHER_JOB", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P-2", name: "Two", total: 0, liveVersionId: "v-p2", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: USER });
+      await ctx.db.insert("projectLineItems", {
+        id: "lx", organizationId: ORG, projectId: "p2", versionId: "v-p2", lineageId: "lx",
+        type: "EQUIPMENT", quantity: 1, sortOrder: 5, plannedContainerId: "zz", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    await plan(t, ["li1"], "c1", "p1");
+    const r = await plan(t, ["li1", "lx"], null, "p2");
+    expect(r.skipped).toEqual([{ lineItemId: "lx", reason: "OTHER_JOB" }]);
+    expect((await lineById(t, "lx"))?.plannedContainerId).toBe("zz");
   });
 });

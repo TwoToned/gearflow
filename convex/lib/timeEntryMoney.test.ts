@@ -49,6 +49,42 @@ describe("timeEntryMoney (D49 — derived pay, never stored)", () => {
     expect(two.get("y")?.included).toBe(true);
   });
 
+  test("the carrier is the most advanced entry (EXPORTED > APPROVED > SUBMITTED > DISPUTED/DRAFT), then the earliest", () => {
+    const l = lookups({ a1: { rateOverride: 600, rateType: "DAILY" } }, { c1: {} }, {});
+    const m = deriveEntryMoney(
+      [
+        e("draftEarly", { assignmentId: "a1", startTime: "06:00", status: "DRAFT" }),
+        e("queried", { assignmentId: "a1", startTime: "07:00", status: "DISPUTED" }),
+        e("submitted", { assignmentId: "a1", startTime: "08:00", status: "SUBMITTED" }),
+        e("approvedLate", { assignmentId: "a1", startTime: "15:00", status: "APPROVED" }),
+        e("approvedEarly", { assignmentId: "a1", startTime: "10:00", status: "APPROVED" }),
+      ],
+      l,
+    );
+    expect(m.get("approvedEarly")).toMatchObject({ total: 600, included: false });
+    for (const id of ["draftEarly", "queried", "submitted", "approvedLate"]) expect(m.get(id)).toMatchObject({ included: true, total: null });
+    const exported = deriveEntryMoney([e("ap", { assignmentId: "a1", status: "APPROVED", startTime: "06:00" }), e("ex", { assignmentId: "a1", status: "EXPORTED", startTime: "20:00" })], l);
+    expect(exported.get("ex")?.included).toBe(false);
+    expect(exported.get("ap")?.included).toBe(true);
+  });
+
+  test("a deleted carrier hands the charge to the next entry (derived, nothing to repair)", () => {
+    const l = lookups({ a1: { rateOverride: 600, rateType: "DAILY" } }, { c1: {} }, {});
+    const before = [e("carrier", { assignmentId: "a1", status: "APPROVED" }), e("rest", { assignmentId: "a1", status: "SUBMITTED", startTime: "13:00" })];
+    expect(deriveEntryMoney(before, l).get("rest")?.included).toBe(true);
+    const after = deriveEntryMoney(before.filter((x) => x.id !== "carrier"), l);
+    expect(after.get("rest")).toMatchObject({ total: 600, included: false });
+  });
+
+  test("FLAT on general (job-less) entries is once per person per DAY, not once ever", () => {
+    const l = lookups({}, { c1: { crewRoleId: "r1" } }, { r1: { defaultRate: 300, rateType: "FLAT" } });
+    const m = deriveEntryMoney([e("g1"), e("g2", { startTime: "13:00" }), e("g3", { date: D0 + DAY })], l);
+    expect(m.get("g1")).toMatchObject({ total: 300, included: false });
+    expect(m.get("g2")).toMatchObject({ total: null, included: true });
+    expect(m.get("g3")).toMatchObject({ total: 300, included: false });
+    expect(sumTotals(m.values())).toBe(600);
+  });
+
   test("FLAT counts once per person per assignment", () => {
     const l = lookups({ a1: { rateOverride: 900, rateType: "FLAT" } }, { c1: {} }, {});
     const m = deriveEntryMoney([e("d1", { assignmentId: "a1" }), e("d2", { assignmentId: "a1", date: D0 + DAY })], l);

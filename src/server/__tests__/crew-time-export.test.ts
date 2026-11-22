@@ -41,8 +41,9 @@ describe("exportTimesheetCSV — pay columns are server-gated", () => {
     const lines = (await exportTimesheetCSV()).split("\n");
     expect(lines[0].endsWith("Status,Query reason,Rate (pay),Total")).toBe(true);
     expect(lines[1]).toContain("Bob Ryan");
-    expect(lines[1].endsWith(",DISPUTED,Was it 4h?,650,650")).toBe(true);
-    expect(lines[2].endsWith(",SUBMITTED,,650,incl.")).toBe(true);
+    // S2: the SUBMITTED entry carries the day rate over the earlier, queried one.
+    expect(lines[1].endsWith(",DISPUTED,Was it 4h?,650,incl.")).toBe(true);
+    expect(lines[2].endsWith(",SUBMITTED,,650,650")).toBe(true);
   });
 
   it("below manager: no pay columns at all", async () => {
@@ -59,9 +60,9 @@ describe("exportTimesheetCSV — pay columns are server-gated", () => {
   });
 
   it("bulk Export: ids narrow to the ticked rows, and the carried day rate still reads incl.", async () => {
-    const lines = (await exportTimesheetCSV({ ids: ["t2"] })).trim().split("\n");
+    const lines = (await exportTimesheetCSV({ ids: ["t1"] })).trim().split("\n");
     expect(lines).toHaveLength(2);
-    expect(lines[1].endsWith(",SUBMITTED,,650,incl.")).toBe(true);
+    expect(lines[1].endsWith(",DISPUTED,Was it 4h?,650,incl.")).toBe(true);
   });
 
   it("the filters are a validated trust boundary", async () => {

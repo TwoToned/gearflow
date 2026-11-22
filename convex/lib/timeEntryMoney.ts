@@ -12,9 +12,11 @@ import { resolveRate } from "./crewRate";
  *   resolved ⇒ `null` (blank), never `$0`.
  * - **Total**: `HOURLY` = rate × the entry's hours. `DAILY` = the day rate ONCE
  *   per person per calendar day, however many entries that day has (owner,
- *   2026-11-21): the earliest entry carries it and the rest are `included`.
- *   `FLAT` = the flat rate ONCE per person per assignment, the same way
- *   `calculateEstimatedCost` books a flat call.
+ *   2026-11-21): the most advanced entry carries it (EXPORTED > APPROVED >
+ *   SUBMITTED > DISPUTED/DRAFT), the earliest among equals, and the rest are
+ *   `included`. `FLAT` = the flat rate ONCE per person per assignment, the
+ *   same way `calculateEstimatedCost` books a flat call; a general (job-less)
+ *   FLAT entry is once per person per day.
  *
  * Plain module: Convex reads and the Node CSV export share it, so the two can
  * never print different totals.
@@ -27,6 +29,8 @@ export interface MoneyEntry {
   date: number;
   startTime: string;
   totalHours?: number | null;
+  /** Decides which entry carries a shared DAILY/FLAT charge (`byCarrier`). */
+  status?: string | null;
 }
 
 export interface MoneyAssignment {
@@ -82,16 +86,29 @@ export function entryDayKey(date: number): string {
   return new Date(date).toISOString().slice(0, 10);
 }
 
-/** Which entries share one DAILY/FLAT charge: one person per day, or one person per assignment. */
+/**
+ * Which entries share one DAILY/FLAT charge: one person per day, or one person
+ * per assignment. A FLAT rate on a general (job-less) entry has no assignment
+ * to be "once per", so it is once per person per DAY — never once ever.
+ */
 function chargeKey(entry: MoneyEntry, rateType: string): string | null {
-  if (rateType === "DAILY") return `${entry.crewMemberId}|day|${entryDayKey(entry.date)}`;
-  if (rateType === "FLAT") return `${entry.crewMemberId}|asg|${entry.assignmentId ?? "general"}`;
+  const day = entryDayKey(entry.date);
+  if (rateType === "DAILY") return `${entry.crewMemberId}|day|${day}`;
+  if (rateType === "FLAT") return entry.assignmentId ? `${entry.crewMemberId}|asg|${entry.assignmentId}` : `${entry.crewMemberId}|general|${day}`;
   return null;
 }
 
-/** Earliest first: date, then start time, then id — so the carrier never depends on paging or filters. */
-function byEarliest(a: MoneyEntry, b: MoneyEntry): number {
-  return a.date - b.date || a.startTime.localeCompare(b.startTime) || a.id.localeCompare(b.id);
+/**
+ * The carrier rank: the entry furthest through approval carries a shared
+ * charge, so the money sits on the line that is (or will be) paid — a later
+ * DRAFT never steals it from an APPROVED or EXPORTED entry the same day.
+ */
+const CARRIER_RANK: Record<string, number> = { EXPORTED: 3, APPROVED: 2, SUBMITTED: 1, DISPUTED: 0, DRAFT: 0 };
+const rankOf = (e: MoneyEntry): number => CARRIER_RANK[e.status ?? "DRAFT"] ?? 0;
+
+/** Most advanced status first, then earliest (date, start, id) — never dependent on paging or filters. */
+function byCarrier(a: MoneyEntry, b: MoneyEntry): number {
+  return rankOf(b) - rankOf(a) || a.date - b.date || a.startTime.localeCompare(b.startTime) || a.id.localeCompare(b.id);
 }
 
 function hourlyTotal(rate: number, hours: number | null | undefined): number | null {
@@ -106,7 +123,7 @@ function hourlyTotal(rate: number, hours: number | null | undefined): number | n
 export function deriveEntryMoney(entries: readonly MoneyEntry[], l: MoneyLookups): Map<string, EntryMoney> {
   const out = new Map<string, EntryMoney>();
   const carried = new Set<string>();
-  for (const entry of [...entries].sort(byEarliest)) {
+  for (const entry of [...entries].sort(byCarrier)) {
     const r = entryRate(entry, l);
     if (!r) {
       out.set(entry.id, { rate: null, rateType: null, total: null, included: false });

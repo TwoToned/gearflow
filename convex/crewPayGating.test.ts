@@ -57,6 +57,21 @@ describe("crewTimeEntries.allEntries — pay is manager-only (server-side)", () 
     expect(res.counts).toMatchObject({ SUBMITTED: 2, all: 2 });
   });
 
+  test("S2: the approved entry carries the day rate even when a draft is earlier that day", async () => {
+    const t = makeT(); await seed(t, "manager");
+    await t.run(async (ctx) => {
+      const t2 = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "t2")).first();
+      await ctx.db.patch(t2!._id, { status: "APPROVED" });
+      const t1 = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "t1")).first();
+      await ctx.db.patch(t1!._id, { status: "DRAFT" });
+    });
+    const res = await list(t);
+    const byId = new Map(res.entries.map((e) => [e.id, e as Record<string, unknown>]));
+    expect(byId.get("t2")).toMatchObject({ total: 650, rateIncluded: false });
+    expect(byId.get("t1")).toMatchObject({ total: null, rateIncluded: true });
+    expect(res.totals).toEqual({ hours: 9, pay: 650 });
+  });
+
   test("below manager (member holds crew:read): no rate, no total, no pay total", async () => {
     const t = makeT(); await seed(t, "member");
     const res = await list(t);

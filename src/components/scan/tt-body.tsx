@@ -132,12 +132,21 @@ function NotOnRegister({ card, onAdd }: { card: TestCardData; onAdd: TtBodyProps
   );
 }
 
+/**
+ * A register item that can't be tested. Reactivation is for a RETIRED item only (the
+ * server's own rule), so an item that is merely inactive gets no Reactivate: absent,
+ * not an error after the tap.
+ */
 function Retired({ tt, onReactivate }: { tt: NonNullable<TestCardData["tt"]>; onReactivate: TtBodyProps["register"]["reactivate"] }) {
+  const retired = tt.status === "RETIRED";
+  const title = retired ? `${tt.description} is retired from test & tag` : `${tt.description} is inactive on the test & tag register`;
   return (
-    <State tag={tt.testTagId} title={`${tt.description} is retired from test & tag`}>
-      <Button variant="ghost" size="sm" className="px-1 text-link" onClick={() => void onReactivate(tt)}>
-        Reactivate and test
-      </Button>
+    <State tag={tt.testTagId} title={title}>
+      {retired ? (
+        <Button variant="ghost" size="sm" className="px-1 text-link" onClick={() => void onReactivate(tt)}>
+          Reactivate and test
+        </Button>
+      ) : null}
       <Link href={`/test-and-tag/${tt.id}`} className={cn("font-medium text-link hover:underline", focusRing)}>
         Open in test & tag list
       </Link>

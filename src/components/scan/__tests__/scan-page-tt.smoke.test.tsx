@@ -302,6 +302,17 @@ describe("ScanPage — Test & tag mode", () => {
     expect(h.ttRetire).not.toHaveBeenCalled();
   });
 
+  it("inactive but not RETIRED: no Reactivate (the server only reactivates a retired item), logged as inactive", async () => {
+    h.testCards["TT-OFF"] = card("TT-OFF", { tt: tt({ status: "CURRENT", isActive: false, testTagId: "TT-OFF" }) });
+    setUrl("/scan?mode=tt&tag=TT-OFF");
+    render(<ScanPage />);
+    expect(screen.getByText("Aura Wash is inactive on the test & tag register")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reactivate and test" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Open in test & tag list" })).toBeTruthy();
+    const rows = await screen.findByRole("list", { name: "Recent scans" });
+    expect(within(rows).getByText(/Inactive on the test & tag register/)).toBeTruthy();
+  });
+
   it("keyboard: Ctrl+Shift+P passes the visual checks, Ctrl+Enter saves even from a reading, Esc goes back", async () => {
     setUrl("/scan?mode=tt&tag=TT-0412");
     h.record.mockResolvedValueOnce({ id: "rec9", nextDueDate: Date.UTC(2027, 1, 22), result: "PASS" });

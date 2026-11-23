@@ -67,7 +67,7 @@ export function effectiveMode(requested: ScanMode | null, held: readonly ScanMod
 export const LAST_SCAN_UNDO_MS = 10_000;
 export const LAST_SCANS_SHOWN = { desktop: 5, phone: 3 } as const;
 
-export type LastScanVerdict = "clean" | "failed" | "unknown" | "kit" | "bulk" | "ttOnly" | "noItems" | "notOnRegister" | "retired" | "unreadable";
+export type LastScanVerdict = "clean" | "failed" | "unknown" | "kit" | "bulk" | "ttOnly" | "noItems" | "notOnRegister" | "retired" | "inactive" | "unreadable";
 
 export interface LastScan {
   id: string;
@@ -94,6 +94,7 @@ export const VERDICT_WORDS: Record<LastScanVerdict, string> = {
   noItems: "No check items",
   notOnRegister: "Not on the test & tag register",
   retired: "Retired from test & tag",
+  inactive: "Inactive on the test & tag register",
   unreadable: "Can't read this tag",
 };
 
@@ -117,6 +118,7 @@ export const VERDICT_TONE: Record<LastScanVerdict, "success" | "warning" | "erro
   noItems: "warning",
   notOnRegister: "warning",
   retired: "info",
+  inactive: "info",
   unreadable: "error",
 };
 
@@ -124,7 +126,8 @@ export const VERDICT_TONE: Record<LastScanVerdict, "success" | "warning" | "erro
 export function ttExceptionVerdict(card: ScanCardData): LastScanVerdict | null {
   if (card.kind === "unknown" || card.kind === "kit" || card.kind === "bulk") return card.kind;
   if (!card.tt) return "notOnRegister";
-  return card.tt.isActive && card.tt.status !== "RETIRED" ? null : "retired";
+  if (card.tt.status === "RETIRED") return "retired";
+  return card.tt.isActive ? null : "inactive";
 }
 
 /** The card kind an exception scan logs as, or `null` when the card can be checked. */

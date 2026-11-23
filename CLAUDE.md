@@ -363,10 +363,17 @@ passes `requireAgentScope` (the key's scopes ∩ the user's live RBAC). See
 3. **A new read should use `requireOrgReadFor(ctx, orgId, resource)`**, not
    `requireOrgRead`. The resource-less guard has nothing to intersect a key's scopes
    against, so it rejects agents. Phase 5's coverage sweep (`#1001`) migrated
-   essentially every remaining call site (169 → 1; the sole holdout,
-   `globalSearch.search`, is a deliberate `agentAccess: "denied"` decision, not
-   an oversight — see `docs/api-coverage.md`'s denied table), so a brand-new
-   read starting on the bare guard is now the exception, not the norm.
+   essentially every remaining call site (169 → 1; the holdouts are the ⌘K
+   palette's two cross-resource reads, `globalSearch.search` and
+   `paletteRecents.resolve` (UX Phase 11), each a deliberate
+   `agentAccess: "denied"` decision, not an oversight — see
+   `docs/api-coverage.md`'s denied table), so a brand-new read starting on the
+   bare guard is now the exception, not the norm. **`requireOrgReadFor` does
+   not check a human's ROLE** (org match + agent scope only): a read that must
+   hide what the role can't open adds `callerMayRead(ctx, orgId, resource)`
+   (`convex/lib/auth.ts`, the non-throwing form of `requireOrgPermission(…,
+   "read")` — never a second permission table), as global search does per
+   result type (`convex/lib/searchResultResource.ts`).
    Personal-scope surfaces use `requireSelfScope`. Colocate an `agentOps`
    annotation (`convex/lib/agentOps.ts`) — `{ summary, danger, mcpTier }`, or
    `{ agentAccess: "denied", reason }` for a deliberate denial — next to any

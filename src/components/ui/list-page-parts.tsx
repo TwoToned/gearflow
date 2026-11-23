@@ -68,7 +68,7 @@ export interface HeadWords {
 /**
  * Page-level view words (Jobs' `Table  Board` position, §9h.2). Each word is a
  * link to its own route, so a deep link and Back keep working; the current one
- * is ink with the red underline. Desktop: in the head before ⋯ and the primary.
+ * is ink with an ink underline (`border-ink`). Desktop: in the head before ⋯ and the primary.
  * Phone: its own row under the title (44 px targets).
  */
 function HeadWordLinks({ headWords }: { headWords: HeadWords }) {

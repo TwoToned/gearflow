@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { buildScanRowMenu } from "@/lib/row-actions/scan-actions";
-import { VERDICT_TONE, VERDICT_WORDS, clockTime, lastScansHead, type LastScan } from "@/lib/scan-page";
+import { VERDICT_TONE, clockTime, lastScansHead, verdictWord, type LastScan, type ScanMode } from "@/lib/scan-page";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { ScanStrip, type ScanStripEntry } from "@/components/ui/scan-strip";
@@ -16,25 +16,27 @@ import { ScanStrip, type ScanStripEntry } from "@/components/ui/scan-strip";
  */
 export function LastScans({
   entries,
+  mode,
   shown,
   onRescan,
   onOpen,
 }: {
   entries: LastScan[];
+  mode: ScanMode;
   shown: number;
   onRescan: (tag: string) => void;
   onOpen: (href: string) => void;
 }) {
   const [limit, setLimit] = useState(shown);
   if (entries.length === 0) return null;
-  const head = lastScansHead(entries);
+  const head = lastScansHead(entries, mode);
   const visible = entries.slice(0, limit);
   const left = entries.length - visible.length;
   const strip: ScanStripEntry[] = visible.map((e) => ({
     id: e.id,
     tone: VERDICT_TONE[e.verdict],
     text: e.name ? `${e.tag} · ${e.name}` : e.tag,
-    detail: `${VERDICT_WORDS[e.verdict]} · ${clockTime(e.at)}`,
+    detail: `${verdictWord(mode, e.verdict)} · ${clockTime(e.at)}`,
     undo: e.undo,
     onSelect: () => onRescan(e.tag),
     trailing: <ActionMenu spec={buildScanRowMenu({ assetId: e.assetId, tag: e.tag, onOpen, onRescan })} label={`Actions for ${e.tag}`} />,

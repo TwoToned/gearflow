@@ -53,7 +53,7 @@ export function effectiveMode(requested: ScanMode | null, held: readonly ScanMod
 export const LAST_SCAN_UNDO_MS = 10_000;
 export const LAST_SCANS_SHOWN = { desktop: 5, phone: 3 } as const;
 
-export type LastScanVerdict = "clean" | "failed" | "unknown" | "kit" | "bulk" | "ttOnly" | "noItems";
+export type LastScanVerdict = "clean" | "failed" | "unknown" | "kit" | "bulk" | "ttOnly" | "noItems" | "notOnRegister" | "retired";
 
 export interface LastScan {
   id: string;
@@ -76,7 +76,19 @@ export const VERDICT_WORDS: Record<LastScanVerdict, string> = {
   bulk: "Bulk stock",
   ttOnly: "Not in inventory",
   noItems: "No check items",
+  notOnRegister: "Not on the test & tag register",
+  retired: "Retired from test & tag",
 };
+
+/** Test & tag mode words its saved rows `pass` / `fail`; Check mode `clean` / `failed`. */
+const SAVED_WORDS: Record<ScanMode, { clean: string; failed: string }> = {
+  check: { clean: "Saved", failed: "Saved · failed" },
+  tt: { clean: "Pass", failed: "Fail" },
+};
+
+export function verdictWord(mode: ScanMode, verdict: LastScanVerdict): string {
+  return verdict === "clean" || verdict === "failed" ? SAVED_WORDS[mode][verdict] : VERDICT_WORDS[verdict];
+}
 
 export const VERDICT_TONE: Record<LastScanVerdict, "success" | "warning" | "error" | "info"> = {
   clean: "success",
@@ -86,7 +98,16 @@ export const VERDICT_TONE: Record<LastScanVerdict, "success" | "warning" | "erro
   bulk: "info",
   ttOnly: "info",
   noItems: "warning",
+  notOnRegister: "warning",
+  retired: "info",
 };
+
+/** Test & tag mode: the card kind an exception scan logs as, or `null` when it can be tested. */
+export function ttExceptionVerdict(card: ScanCardData): LastScanVerdict | null {
+  if (card.kind === "unknown" || card.kind === "kit" || card.kind === "bulk") return card.kind;
+  if (!card.tt) return "notOnRegister";
+  return card.tt.isActive && card.tt.status !== "RETIRED" ? null : "retired";
+}
 
 /** The card kind an exception scan logs as, or `null` when the card can be checked. */
 export function exceptionVerdict(card: ScanCardData): LastScanVerdict | null {
@@ -112,11 +133,14 @@ export function scanCardAssetId(card: ScanCardData): string | null {
   return card.asset?.id ?? card.bulk?.id ?? null;
 }
 
-/** `Last scans 7 · 6 clean · 1 failed` — saved rows only are counted as clean/failed. */
-export function lastScansHead(entries: LastScan[]): { count: number; summary: string } {
+const HEAD_WORDS: Record<ScanMode, [string, string]> = { check: ["clean", "failed"], tt: ["pass", "fail"] };
+
+/** `Last scans 7 · 6 clean · 1 failed` (T&T: `6 pass · 1 fail`) — saved rows only are counted. */
+export function lastScansHead(entries: LastScan[], mode: ScanMode = "check"): { count: number; summary: string } {
   const clean = entries.filter((e) => e.verdict === "clean").length;
   const failed = entries.filter((e) => e.verdict === "failed").length;
-  const parts = [clean ? `${clean} clean` : null, failed ? `${failed} failed` : null].filter(Boolean);
+  const [ok, bad] = HEAD_WORDS[mode];
+  const parts = [clean ? `${clean} ${ok}` : null, failed ? `${failed} ${bad}` : null].filter(Boolean);
   return { count: entries.length, summary: parts.join(" · ") };
 }
 

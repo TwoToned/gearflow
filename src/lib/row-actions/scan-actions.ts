@@ -85,6 +85,39 @@ export function buildScanCardMenu(c: ScanCardMenuCtx): ActionMenuSpec {
   ]);
 }
 
+export interface TtCardMenuCtx {
+  assetId: string | null;
+  ttId: string;
+  testTagId: string;
+  onOpen: (href: string) => void;
+  onQuickPass: () => void;
+  onClearScan: () => void;
+  onRetire: () => void;
+}
+
+/** Test & tag mode's card ⋯. Retire has no exact Undo, so it confirms and names what follows. */
+export function buildTtCardMenu(c: TtCardMenuCtx): ActionMenuSpec {
+  return spec([
+    c.assetId && { key: "open", label: "Open asset", group: "edit", icon: ExternalLink, onSelect: () => c.onOpen(`/assets/registry/${c.assetId}`) },
+    { key: "quick-pass", label: "Quick pass: repeat the last test", group: "edit", icon: RotateCcw, onSelect: c.onQuickPass },
+    { key: "tt", label: "Open in test & tag list", group: "organise", icon: ClipboardList, onSelect: () => c.onOpen(`/test-and-tag/${c.ttId}`) },
+    { key: "clear", label: "Clear this scan", group: "organise", icon: X, onSelect: c.onClearScan },
+    {
+      key: "retire",
+      label: "Retire from test & tag…",
+      group: "danger",
+      icon: Trash2,
+      danger: true,
+      onSelect: c.onRetire,
+      confirm: {
+        title: `Retire ${c.testTagId}?`,
+        body: "It leaves the test & tag register: no more due reminders, and it can't be tested until it is reactivated (which starts it again as not yet tested). Its test history stays.",
+        confirmLabel: "Retire",
+      },
+    },
+  ]);
+}
+
 export interface ScanRowMenuCtx {
   assetId: string | null;
   tag: string;

@@ -13,6 +13,14 @@ const h = vi.hoisted(() => ({
   items: [] as unknown[],
   save: vi.fn(),
   undo: vi.fn(),
+  testCards: {} as Record<string, unknown>,
+  record: vi.fn(),
+  undoRecord: vi.fn(),
+  ttCreate: vi.fn(),
+  ttRemove: vi.fn(),
+  ttReactivate: vi.fn(),
+  ttRetire: vi.fn(),
+  convexQuery: vi.fn(),
   toasts: [] as Array<{ title: string; action?: { label: string; onClick: () => void } }>,
   info: vi.fn(),
   perms: { warehouse: ["read", "scan"], testTag: ["read", "create"], asset: ["read", "create"], checkItem: ["read"] } as Record<string, string[]>,
@@ -47,6 +55,7 @@ vi.mock("@/hooks/use-authed-query", () => ({
     if (args === "skip") return undefined;
     const name = getFunctionName(fn as Parameters<typeof getFunctionName>[0]);
     if (name === "scanLookup:checkCard") return h.cards[(args as { value: string }).value];
+    if (name === "scanLookup:testCard") return h.testCards[(args as { value: string }).value];
     if (name === "modelCheckItems:assignmentsForModel") return h.items;
     return undefined;
   },
@@ -54,7 +63,17 @@ vi.mock("@/hooks/use-authed-query", () => ({
 vi.mock("@/hooks/use-check-record-writes", () => ({
   useCheckRecordWrites: () => ({ saveAdHocCheck: h.save, undoAdHocCheck: h.undo }),
 }));
-vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org_1" } }) }));
+vi.mock("@/lib/auth-client", () => ({
+  useActiveOrganization: () => ({ data: { id: "org_1" } }),
+  useSession: () => ({ data: { user: { id: "u1", name: "Sam Tester" } } }),
+}));
+vi.mock("@/hooks/use-member-roster", () => ({
+  useMemberRoster: () => ({ nameOf: new Map([["u1", "Sam Tester"], ["u2", "Kim"]]), options: [{ id: "u1", name: "Sam Tester" }, { id: "u2", name: "Kim" }] }),
+}));
+vi.mock("@/hooks/use-test-tag-writes", () => ({
+  useTestTagWrites: () => ({ recordTest: h.record, undoRecordTest: h.undoRecord, create: h.ttCreate, remove: h.ttRemove, reactivate: h.ttReactivate, retire: h.ttRetire }),
+}));
+vi.mock("convex/react", () => ({ useConvex: () => ({ query: h.convexQuery }) }));
 vi.mock("@/lib/use-permissions", () => ({
   useCurrentRole: () => ({ permissions: h.perms, isLoading: false }),
   useCanDo: (r: string, a: string) => h.perms[r]?.includes(a) ?? false,

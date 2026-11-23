@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Save } from "lucide-react";
+import { Printer, Save } from "lucide-react";
 
 import { api } from "../../../convex/_generated/api";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useMemberRoster } from "@/hooks/use-member-roster";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { useActiveOrganization } from "@/lib/auth-client";
+import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
 import { buildScanCardMenu, buildScanPageMenu } from "@/lib/row-actions/scan-actions";
 import {
   LAST_SCANS_SHOWN,
@@ -19,16 +20,18 @@ import {
   exceptionVerdict,
   scanCardAssetId,
   scanCardName,
+  ttExceptionVerdict,
   type CheckableCard,
   type LastScan,
   type ScanCardData,
   type ScanMode,
 } from "@/lib/scan-page";
 import { useCanDo, useCurrentRole } from "@/lib/use-permissions";
-import { cn, focusRing } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useScanTarget } from "@/components/scanner/scan-target";
 import { PageMeta } from "@/components/layout/page-meta";
 import { ActionMenu } from "@/components/ui/action-menu";
+import { PinnedAboveBottomNav } from "@/components/ui/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { ScanDock } from "@/components/ui/scan-dock";
 import { StageFilter } from "@/components/ui/stage-filter";
@@ -38,8 +41,11 @@ import { LastScans } from "./last-scans";
 import { ResultCard } from "./result-card";
 import { SavePrimary } from "./save-primary";
 import { ExceptionState, LoadingState, ReadyState } from "./scan-states";
+import { TtBody } from "./tt-body";
 import { useCheckMode } from "./use-check-mode";
 import { useScanSession } from "./use-scan-session";
+import { useTtMode } from "./use-tt-mode";
+import { useTtRegister } from "./use-tt-register";
 
 /** The modes this user holds (absent, not greyed): Check needs `warehouse:scan`, T&T `testTag:create`. */
 function useHeldModes(): ScanMode[] {
@@ -80,18 +86,45 @@ function useScanPageModel(session: Session, mode: ScanMode) {
   const orgId = activeOrg?.id;
   const feedback = useScanFeedback();
   const { tag, lastScans, setDirty } = session;
-  const cardArgs = orgId && tag && mode === "check" ? { orgId, value: tag } : "skip";
-  const card = useAuthedQuery(api.scanLookup.checkCard, cardArgs);
-  const check = useCheckMode({
-    orgId, card, tag, play: feedback.play,
-    addLastScan: lastScans.add, markUndone: lastScans.markUndone,
+  const args = orgId && tag ? { orgId, value: tag } : null;
+  const checkCard = useAuthedQuery(api.scanLookup.checkCard, args && mode === "check" ? args : "skip");
+  const testCard = useAuthedQuery(api.scanLookup.testCard, args && mode === "tt" ? args : "skip");
+  const shared = {
+    orgId, tag, play: feedback.play, addLastScan: lastScans.add, markUndone: lastScans.markUndone,
     finishScan: session.finishScan, reload: session.reload,
-  });
-  useEffect(() => setDirty(check.dirty), [setDirty, check.dirty]);
+  };
+  const check = useCheckMode({ ...shared, card: checkCard });
+  const tt = useTtMode({ ...shared, card: testCard });
+  const dirty = mode === "check" ? check.dirty : tt.dirty;
+  useEffect(() => setDirty(dirty), [setDirty, dirty]);
   // The bottom-nav Scan lands in this page's pipeline, not the shell's lookup.
   useScanTarget((value) => session.scan(value));
-  useLogExceptions({ card, tag, mode, play: feedback.play, add: lastScans.add });
-  return { feedback, card, check, checkable: checkableCard(card) };
+  useLogExceptions({ card: mode === "check" ? checkCard : testCard, tag, mode, play: feedback.play, add: lastScans.add });
+  return { orgId, feedback, checkCard, testCard, check, tt, checkable: checkableCard(checkCard) };
+}
+
+type Model = ReturnType<typeof useScanPageModel>;
+
+/** What the head primary saves, or `null` for `Scan` (focus the dock). */
+function primaryFor(mode: ScanMode, m: Model): { blocker: string | null; saving: boolean; save: (o: { keepOpen: boolean; print?: boolean }) => void; caret: ActionItem[] } | null {
+  const keep = (save: (o: { keepOpen: boolean }) => unknown): ActionItem => ({
+    key: "keep", label: "Save and keep this asset open", group: "edit", icon: Save, onSelect: () => void save({ keepOpen: true }),
+  });
+  if (mode === "check") {
+    if (!m.checkable) return null;
+    return { blocker: m.check.blocker, saving: m.check.saving, save: (o) => void m.check.save(o), caret: [keep(m.check.save)] };
+  }
+  if (!m.tt.item) return null;
+  const print: ActionItem = { key: "print", label: "Save and print label", group: "documents", icon: Printer, onSelect: () => void m.tt.save({ keepOpen: false, print: true }) };
+  return { blocker: m.tt.blocker, saving: m.tt.saving, save: (o) => void m.tt.save(o), caret: [keep(m.tt.save), print] };
+}
+
+function testerMenuFor(tt: Model["tt"], roster: ReturnType<typeof useMemberRoster>): { label: string; spec: ActionMenuSpec } {
+  const options = roster.options.length > 0 ? roster.options : tt.tester ? [tt.tester] : [];
+  return {
+    label: tt.tester?.name || "Choose",
+    spec: { items: options.map((o) => ({ key: o.id, label: o.name, group: "edit" as const, onSelect: () => tt.setTester(o) })) },
+  };
 }
 
 function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMode[]; mode: ScanMode }) {
@@ -100,25 +133,32 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
   const now = useStableNow();
   const inputRef = useRef<HTMLInputElement>(null);
   const perms = { canAssets: useCanDo("asset", "read"), canRegister: useCanDo("asset", "create"), canCheckItemSettings: useCanDo("checkItem", "read") };
-  const { feedback, card, check, checkable } = useScanPageModel(session, mode);
+  const model = useScanPageModel(session, mode);
+  const roster = useMemberRoster(model.orgId);
+  const register = useTtRegister();
   const { tag, lastScans } = session;
 
   const focusDock = () => inputRef.current?.focus();
   const open = (href: string) => router.push(href);
   const entries = lastScans.entries.filter((e) => e.mode === mode);
   const pageMenu = buildScanPageMenu({
-    soundsOn: feedback.enabled, hasLoaded: !!tag, lastScanCount: entries.length,
+    soundsOn: model.feedback.enabled, hasLoaded: !!tag, lastScanCount: entries.length,
     canTestTag: held.includes("tt"), canAssets: perms.canAssets, canCheckItemSettings: perms.canCheckItemSettings,
-    onToggleSounds: feedback.toggle, onClearScan: session.clear, onOpen: open,
+    onToggleSounds: model.feedback.toggle, onClearScan: session.clear, onOpen: open,
     onClearLastScans: () => lastScans.clear(mode),
   });
+  const primary = <HeadPrimary primary={primaryFor(mode, model)} onScan={focusDock} />;
+  const scanAgain = () => {
+    session.clear();
+    focusDock();
+  };
 
   return (
-    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-4">
+    <div className={cn("mx-auto flex w-full max-w-[640px] flex-col gap-4", isMobile && "pb-28")}>
       <PageMeta title="Scan" />
       <header className="flex items-start gap-3">
         <h1 className="min-w-0 flex-1 font-display text-page-title font-extrabold leading-tight tracking-tight text-ink">Scan</h1>
-        <HeadPrimary check={checkable ? check : null} onScan={focusDock} />
+        {isMobile ? null : primary}
         <ActionMenu spec={pageMenu} label="Scan page actions" />
       </header>
 
@@ -138,19 +178,20 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
       </div>
 
       {mode === "tt" ? (
-        <TtInterim />
+        <TtBody
+          tag={tag} card={model.testCard} now={now} tt={model.tt} register={register}
+          testerMenu={testerMenuFor(model.tt, roster)} onOpen={open} onClearScan={session.clear}
+          onScanAgain={scanAgain} onType={focusDock} canRegister={perms.canRegister}
+        />
       ) : (
         <CheckBody
           tag={tag}
-          card={card}
+          card={model.checkCard}
           now={now}
-          check={check}
-          checkable={checkable}
+          check={model.check}
+          checkable={model.checkable}
           menuCtx={{ canTestTag: held.includes("tt"), onOpen: open, onClearScan: session.clear }}
-          onScanAgain={() => {
-            session.clear();
-            focusDock();
-          }}
+          onScanAgain={scanAgain}
           onType={focusDock}
           canRegister={perms.canRegister}
           canCheckItemSettings={perms.canCheckItemSettings}
@@ -160,10 +201,17 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
       <LastScans
         key={mode}
         entries={entries}
+        mode={mode}
         shown={isMobile ? LAST_SCANS_SHOWN.phone : LAST_SCANS_SHOWN.desktop}
         onRescan={session.scan}
         onOpen={open}
       />
+
+      {isMobile ? (
+        <PinnedAboveBottomNav>
+          <div className="flex justify-end rounded-[var(--r)] bg-paper/95 p-2 shadow-[var(--sh-card)]">{primary}</div>
+        </PinnedAboveBottomNav>
+      ) : null}
 
       <DiscardDialog
         open={!!session.pending}
@@ -171,7 +219,8 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
         tag={tag}
         onKeep={session.cancelDiscard}
         onDiscard={() => {
-          check.discard();
+          model.check.discard();
+          model.tt.discard();
           session.confirmDiscard();
         }}
       />
@@ -179,18 +228,18 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
   );
 }
 
-const DOCK_PLACEHOLDER: Record<ScanMode, string> = { check: "Scan or type a tag to check", tt: "Scan or type a test tag" };
+const DOCK_PLACEHOLDER: Record<ScanMode, string> = { check: "Scan or type a tag to check", tt: "Scan or type a tag or test tag" };
 const DISCARD_NOUN: Record<ScanMode, "check" | "test"> = { check: "check", tt: "test" };
 
-/** `Save and scan next` once something checkable is loaded; `Scan` (focus the dock) before that. */
-function HeadPrimary({ check, onScan }: { check: ReturnType<typeof useCheckMode> | null; onScan: () => void }) {
-  if (!check) return <Button onClick={onScan}>Scan</Button>;
+/** `Save and scan next` once something can be saved; `Scan` (focus the dock) before that. */
+function HeadPrimary({ primary, onScan }: { primary: ReturnType<typeof primaryFor>; onScan: () => void }) {
+  if (!primary) return <Button onClick={onScan}>Scan</Button>;
   return (
     <SavePrimary
-      blocker={check.blocker}
-      saving={check.saving}
-      onSave={() => void check.save({ keepOpen: false })}
-      caret={{ items: [{ key: "keep", label: "Save and keep this asset open", group: "edit", icon: Save, onSelect: () => void check.save({ keepOpen: true }) }] }}
+      blocker={primary.blocker}
+      saving={primary.saving}
+      onSave={() => primary.save({ keepOpen: false })}
+      caret={{ items: primary.caret }}
     />
   );
 }
@@ -263,19 +312,12 @@ function CheckBody({
   );
 }
 
-/** Slice 2 interim: Test & tag mode lands in slice 3; until then it points at Quick test. */
-function TtInterim() {
-  return (
-    <section className="flex flex-col gap-2 border-y border-line py-6">
-      <p className="text-ui-text text-ink">Test & tag on this page is coming next.</p>
-      <Link href="/test-and-tag/quick-test" className={cn("text-caption font-medium text-link hover:underline", focusRing)}>
-        Open Quick test
-      </Link>
-    </section>
-  );
-}
+const EXCEPTION_VERDICT: Record<ScanMode, (card: ScanCardData) => LastScan["verdict"] | null> = {
+  check: exceptionVerdict,
+  tt: ttExceptionVerdict,
+};
 
-/** Each exception scan (unknown, kit, bulk, T&T-only, no check items) is logged once per load. */
+/** Each exception scan (a tag this mode can't check or test) is logged once per load. */
 function useLogExceptions({
   card,
   tag,
@@ -295,7 +337,7 @@ function useLogExceptions({
     const key = `${mode}|${tag}`;
     if (!tag || card?.tag !== tag || logged.current === key) return;
     logged.current = key;
-    const verdict = exceptionVerdict(card);
+    const verdict = EXCEPTION_VERDICT[mode](card);
     if (!verdict) return;
     play("exception");
     const at = Date.now();

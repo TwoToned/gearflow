@@ -322,12 +322,20 @@ export function prefillFromRecord(d: TtDraft, record: Bag, profile: TtProfile | 
   for (const row of testRows(profile)) {
     const f = TEST_FIELDS.find((x) => x.key === row.key)!;
     const verdict = record[f.result] as Verdict | undefined;
-    const value = f.reading ? record[f.reading] : undefined;
     if (!row.numeric) {
       if (verdict) manual[row.key] = verdict;
-    } else if (verdict === "NOT_APPLICABLE") readings[row.key] = { ...BLANK, na: true };
-    else if (typeof value === "number") readings[row.key] = { value: String(value), na: false, ...(verdict === "PASS" || verdict === "FAIL" ? { verdict } : {}) };
+      continue;
+    }
+    const reading = storedReading(verdict, f.reading ? record[f.reading] : undefined);
+    if (reading) readings[row.key] = reading;
   }
   const method = record.testMethod as TestMethod | undefined;
   return { ...d, visual, readings, manual, method: method ?? d.method };
+}
+
+/** A stored numeric reading back as the draft's `{ value, na }`; null when it was blank. */
+function storedReading(verdict: Verdict | undefined, value: unknown): Reading | null {
+  if (verdict === "NOT_APPLICABLE") return { ...BLANK, na: true };
+  if (typeof value !== "number") return null;
+  return { value: String(value), na: false, ...(verdict === "PASS" || verdict === "FAIL" ? { verdict } : {}) };
 }

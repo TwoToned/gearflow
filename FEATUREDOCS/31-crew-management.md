@@ -499,8 +499,11 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
   `crewCountRequired`) via the Overbookings board's own `computeServicesMissingCrew`.
   Only each job's **live-version** service rows count (`isLiveVersionRow` — every
   version keeps its own copy of a service), on in-org, non-template, non-cancelled
-  jobs. Range ≤ 14 days, bounded both ends on `by_organizationId_date`, capped with
-  a `truncated` flag.
+  jobs. A multi-day service counts when its `[date, endDate]` overlaps the window,
+  even if it started before it (the scan reaches back 31 days). Range ≤ 14 days,
+  bounded both ends on `by_organizationId_date`, capped with a `truncated` flag.
+  Each row also carries `phase` (what a call on it staffs) and `endDate`, which
+  the planner's Offer a call creates the assignment with.
 - **`crewAssignmentsWrites.confirmManyNative`** (`Confirm n`): ACCEPTED → CONFIRMED
   only, the rest is `skipped`; one activity row per call recording the prior state.
   **`unconfirmManyNative({ ids, stamp })`** is its exact Undo, reading the prior

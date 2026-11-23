@@ -66,6 +66,19 @@ describe("crewPlanner.openCalls (Needs crew)", () => {
     expect(res.calls[0]).toMatchObject({ projectNumber: "2341", crewCountRequired: 2, assignedCount: 1, shortfall: 1, startTime: "08:00", crewRoleName: "Rigger" });
   });
 
+  test("a multi-day service that started before the window but runs into it is open in it; one that ended before is not", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false });
+      const svc = (id: string, date: number, endDate: number) =>
+        ctx.db.insert("projectServices", { id, organizationId: ORG, projectId: "p1", type: "LABOUR", title: id, date, endDate, crewCountRequired: 1 } as never);
+      await svc("runsIn", D0 - 3 * DAY, D0 + DAY);
+      await svc("endedBefore", D0 - 5 * DAY, D0 - DAY);
+    });
+    const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });
+    expect(res.calls.map((c) => c.serviceId)).toEqual(["runsIn"]);
+  });
+
   test("each open call carries the phase a call on it staffs (Offer a call creates with it)", async () => {
     const t = makeT(); await seedBase(t); await seedServices(t);
     const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });

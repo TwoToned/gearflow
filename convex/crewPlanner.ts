@@ -19,6 +19,13 @@ const DAY_MS = 86_400_000;
 const OPEN_CALLS_MAX_RANGE_DAYS = 14;
 /** Services read per call — far above one org's week; past it the result says `truncated`. */
 const OPEN_CALLS_SERVICE_CAP = 500;
+/** How far back a multi-day service may start and still run into the window (a month-long install). */
+const MULTI_DAY_LOOKBACK_DAYS = 31;
+
+/** Does the service's [date, endDate] reach the window (its start is already ≤ the window's end)? */
+function overlapsWindow(s: Doc<"projectServices">, startMs: number): boolean {
+  return Math.max(s.date ?? 0, s.endDate ?? 0) >= startMs;
+}
 
 export const agentOps: AgentOpsAnnotations = {
   openCalls: { summary: "Crew calls still short of people over a date range (the planner's Needs crew list): live-version services whose filled crew is below crewCountRequired.", danger: "low", mcpTier: 2 },
@@ -71,18 +78,25 @@ export const openCalls = query({
     assertRange(startMs, endMs);
     // VERSION-SCOPE: an org-wide date-range scan across every version's services
     // by design; `onLiveJob` below keeps only each job's LIVE-version rows.
+    // A multi-day service that STARTED before the window but runs into it is
+    // still open in it, so the scan reaches back `MULTI_DAY_LOOKBACK_DAYS` and
+    // keeps every service whose [date, endDate] overlaps the window.
+    const scanFrom = startMs - MULTI_DAY_LOOKBACK_DAYS * DAY_MS;
     const ranged = await ctx.db
       .query("projectServices")
-      .withIndex("by_organizationId_date", (q) => q.eq("organizationId", orgId).gte("date", startMs).lte("date", endMs))
+      .withIndex("by_organizationId_date", (q) => q.eq("organizationId", orgId).gte("date", scanFrom).lte("date", endMs))
       .take(OPEN_CALLS_SERVICE_CAP + 1);
     const truncated = ranged.length > OPEN_CALLS_SERVICE_CAP;
-    const capped = ranged.slice(0, OPEN_CALLS_SERVICE_CAP).filter((s) => (s.crewCountRequired ?? 0) > 0);
+    const capped = ranged
+      .slice(0, OPEN_CALLS_SERVICE_CAP)
+      .filter((s) => (s.crewCountRequired ?? 0) > 0 && overlapsWindow(s, startMs));
 
     const projects = await liveProjects(ctx, orgId, [...new Set(capped.map((s) => s.projectId))]);
     const services = capped.filter((s) => onLiveJob(s, projects));
     const byService = await assignmentsByService(ctx, orgId, services);
     const refs = new Map([...projects.values()].map((p) => [p.id, { id: p.id, name: p.name, projectNumber: p.projectNumber }]));
-    const rows = computeServicesMissingCrew({ start: startMs, end: endMs }, services, byService, refs);
+    // The board's gap rule, over the scanned span (the window overlap is already applied above).
+    const rows = computeServicesMissingCrew({ start: scanFrom, end: endMs }, services, byService, refs);
 
     const serviceById = new Map(services.map((s) => [s.id, s]));
     const roleIds = [...new Set(services.map((s) => s.crewRoleId).filter((x): x is string => !!x))];

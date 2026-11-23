@@ -22,6 +22,13 @@ describe("parsePaletteDate (§6d.3: a date lists that day's jobs)", () => {
     expect(parsePaletteDate(input, NOW)).toBeNull();
   });
 
+  it.each(["2.4", "1.5", "2-4", "12.11", "1.5 m XLR", "1/4 inch jack", "3/8 bolt", "2.4 GHz"])(
+    "%s is an everyday gear search, not a date (decimals, fractions, yearless d/m with words)",
+    (input) => {
+      expect(splitDateQuery(input, NOW)).toBeNull();
+    },
+  );
+
   it("the day is a local midnight-to-midnight window, labelled for humans", () => {
     const d = parsePaletteDate("14/11", NOW)!;
     expect(d.dayStart).toBe(new Date(2026, 10, 14).getTime());
@@ -35,10 +42,13 @@ describe("parsePaletteDate (§6d.3: a date lists that day's jobs)", () => {
 });
 
 describe("splitDateQuery", () => {
-  it("takes the longest date at the start, then the search words", () => {
-    expect(splitDateQuery("14 nov drum shield", NOW)).toMatchObject({ date: { iso: "2026-11-14" }, rest: "drum shield" });
+  it("a date WITH a year may be followed by search words; a yearless one must be the whole input", () => {
+    expect(splitDateQuery("14 nov 2026 drum shield", NOW)).toMatchObject({ date: { iso: "2026-11-14" }, rest: "drum shield" });
     expect(splitDateQuery("26/01/2026 aura", NOW)).toMatchObject({ date: { iso: "2026-01-26" }, rest: "aura" });
     expect(splitDateQuery("14/11", NOW)).toMatchObject({ rest: "" });
+    expect(splitDateQuery("14 nov", NOW)).toMatchObject({ date: { iso: "2026-11-14" }, rest: "" });
+    expect(splitDateQuery("14 nov drum shield", NOW)).toBeNull();
+    expect(splitDateQuery("14/11 aura", NOW)).toBeNull();
   });
 
   it("no date at the start is no date", () => {

@@ -163,7 +163,21 @@ describe("⌘K palette (smoke)", () => {
     expect(day.dateTo - day.dateFrom).toBe(86_400_000 - 1);
     expect(day.pageSize).toBe(4);
     expect(within(groupNamed("Schedule")).getByRole("option").textContent).toContain("Schedule at 14 Nov ›");
-    expect(m.search).not.toHaveBeenCalled();
+    // A date never switches the plain search off: the whole string is searched too.
+    await waitFor(() => expect(m.search).toHaveBeenCalledWith("14/11"));
+  });
+
+  it("a decimal or a fraction is a search, not a date: `1/4 inch jack` lists its search hits and no day", async () => {
+    const user = userEvent.setup();
+    m.search.mockImplementation(async (q: string) =>
+      q === "1/4 inch jack" ? { results: [res("model", "mj", "1/4 inch jack lead", { href: "/assets/models/mj" })], groups: [{ type: "model", total: 1, truncated: false }] } : { results: [], groups: [] },
+    );
+    render(<CommandSearch />);
+    openPalette();
+    await user.type(box(), "1/4 inch jack");
+    expect(await screen.findByRole("group", { name: "Models" }, { timeout: 2000 })).toBeDefined();
+    expect(screen.queryByRole("group", { name: /^Jobs on/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Schedule" })).toBeNull();
   });
 
   it("`/` and `@` still work: page actions + Global; pages", async () => {

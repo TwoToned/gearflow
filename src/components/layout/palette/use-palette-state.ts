@@ -122,7 +122,9 @@ function useModes(i: InputState, ctx: { orgId: string | undefined; permissions: 
     canReadJobs: reaches(ctx.permissions, "project"),
     search: ctx.search,
   });
-  const plain = !slash.active && !at.active && !i.drilling && !date.date;
+  // Plain search runs for any plain input, a date included: `14/11` lists that day's
+  // jobs AND whatever the words match, so a date can never hide a search hit.
+  const plain = !slash.active && !at.active && !i.drilling;
   const found = useSearchMode(ctx.search, i.query, plain);
   return { slash, at, date, plain, found, isEmpty: plain && i.query.trim().length < 2 };
 }
@@ -137,7 +139,7 @@ function modeSections(i: InputState, m: Modes, empty: PaletteSection[]): Palette
     entity: i.entityPage ? m.at.sections : null,
     drill: i.drill ? [{ key: "drill", label: null, rows: filterDrill(i.drill.rows, i.drillQuery) }] : null,
     at: m.at.active ? [...(dated ?? []), ...m.at.sections] : null,
-    date: dated,
+    date: dated ? [...dated, ...searchSections(m.found.results, m.found.groups, i.query, i.expandedFamilies)] : null,
     empty: m.isEmpty ? empty : null,
     search: () => searchSections(m.found.results, m.found.groups, i.query, i.expandedFamilies),
   });

@@ -4,8 +4,12 @@
  * stable `now`, never a fresh clock read.
  *
  *   ISO        2026-11-14
- *   numeric    14/11/26 · 14-11-2026 · 14.11.26 · 14/11 (this year)
- *   words      14 nov · 14 November · nov 14 (this year)
+ *   numeric    14/11/26 · 14-11-2026 · 14.11.26 · 14/11 (this year, whole input only)
+ *   words      14 nov 2026 · 14 nov · nov 14 (this year, whole input only)
+ *
+ * Decimals and fractions are gear (`2.4`, `1.5 m XLR`, `1/4 inch jack`): a
+ * yearless date must be the whole input and `d/m` with a slash, and the plain
+ * search still runs alongside any date (`use-palette-state.ts`).
  */
 
 import { formatDateDayMonth, formatDateLong } from "@/lib/formatters";
@@ -44,20 +48,28 @@ function fullYear(y: string | undefined, refYear: number): number {
   return n < 100 ? 2000 + n : n;
 }
 
-function parseNumeric(s: string, refYear: number): Date | null {
+/**
+ * Numbers with separators. A YEAR makes any separator a date (`14.11.26`,
+ * `14-11-2026`, ISO); WITHOUT one only `d/m` is, and only when `yearless` is
+ * allowed (the whole input) — `2.4`, `1.5 m XLR` and `1/4 inch jack` are
+ * everyday gear searches, not dates.
+ */
+function parseNumeric(s: string, refYear: number, yearless: boolean): Date | null {
   const iso = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (iso) return day(+iso[1], +iso[2] - 1, +iso[3]);
-  const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})(?:[-/.](\d{2}|\d{4}))?$/);
-  if (dmy) return day(fullYear(dmy[3], refYear), +dmy[2] - 1, +dmy[1]);
-  return null;
+  const dmy = s.match(/^(\d{1,2})([-/.])(\d{1,2})\2(\d{2}|\d{4})$/);
+  if (dmy) return day(fullYear(dmy[4], refYear), +dmy[3] - 1, +dmy[1]);
+  const dm = yearless ? s.match(/^(\d{1,2})\/(\d{1,2})$/) : null;
+  return dm ? day(refYear, +dm[2] - 1, +dm[1]) : null;
 }
 
-function parseWords(s: string, refYear: number): Date | null {
+/** `14 nov`, `nov 14` (yearless: whole input only) or with a year anywhere. */
+function parseWords(s: string, refYear: number, yearless: boolean): Date | null {
   const dm = s.match(/^(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?$/i);
-  if (dm && monthIndex(dm[2]) >= 0) return day(fullYear(dm[3], refYear), monthIndex(dm[2]), +dm[1]);
   const md = s.match(/^([a-z]+)\s+(\d{1,2})(?:\s+(\d{4}))?$/i);
-  if (md && monthIndex(md[1]) >= 0) return day(fullYear(md[3], refYear), monthIndex(md[1]), +md[2]);
-  return null;
+  const parts = dm ? { d: dm[1], m: dm[2], y: dm[3] } : md ? { d: md[2], m: md[1], y: md[3] } : null;
+  if (!parts || monthIndex(parts.m) < 0 || (!parts.y && !yearless)) return null;
+  return day(fullYear(parts.y, refYear), monthIndex(parts.m), +parts.d);
 }
 
 function describe(d: Date): PaletteDate {
@@ -73,24 +85,32 @@ function describe(d: Date): PaletteDate {
   };
 }
 
-/** The whole input as a date, or null. `now` only supplies the year for `14/11` / `14 nov`. */
-export function parsePaletteDate(input: string, now: number): PaletteDate | null {
-  const s = input.trim();
-  if (!s) return null;
+function parse(s: string, now: number, yearless: boolean): PaletteDate | null {
   const refYear = new Date(now).getFullYear();
-  const d = parseNumeric(s, refYear) ?? parseWords(s, refYear);
+  const d = parseNumeric(s, refYear, yearless) ?? parseWords(s, refYear, yearless);
   return d ? describe(d) : null;
 }
 
 /**
- * A date at the START of the input, then optional search words
- * (`14 nov drum shield`, `26/01/2026 aura`). The longest date wins, so
- * `14 nov` beats `14`.
+ * The WHOLE input as a date, or null. Yearless dates (`14/11`, `14 nov`) only
+ * count here, as the entire input; `now` only supplies their year.
+ */
+export function parsePaletteDate(input: string, now: number): PaletteDate | null {
+  const s = input.trim();
+  return s ? parse(s, now, true) : null;
+}
+
+/**
+ * The whole input as a date, or a date WITH A YEAR at the start followed by
+ * search words (`26/01/2026 aura`, `14 nov 2026 drum`). A yearless date never
+ * takes words after it, so `1/4 inch jack` stays a search.
  */
 export function splitDateQuery(input: string, now: number): { date: PaletteDate; rest: string } | null {
+  const whole = parsePaletteDate(input, now);
+  if (whole) return { date: whole, rest: "" };
   const words = input.trim().split(/\s+/).filter(Boolean);
-  for (let n = Math.min(3, words.length); n >= 1; n--) {
-    const date = parsePaletteDate(words.slice(0, n).join(" "), now);
+  for (let n = Math.min(3, words.length - 1); n >= 1; n--) {
+    const date = parse(words.slice(0, n).join(" "), now, false);
     if (date) return { date, rest: words.slice(n).join(" ") };
   }
   return null;

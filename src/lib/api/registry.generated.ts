@@ -32327,6 +32327,76 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "navCounts.get",
+    "module": "navCounts",
+    "fn": "get",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      },
+      {
+        "resource": "testTag",
+        "action": "read"
+      },
+      {
+        "resource": "maintenance",
+        "action": "read"
+      },
+      {
+        "resource": "warehouse",
+        "action": "read"
+      },
+      {
+        "resource": "client",
+        "action": "read"
+      },
+      {
+        "resource": "supplier",
+        "action": "read"
+      },
+      {
+        "resource": "location",
+        "action": "read"
+      },
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "source",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e559da0724d8ea60",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Count one phone-More-sheet row (assets, overdue test & tag, open/overdue maintenance, overdue returns, clients, suppliers, locations or crew), capped with a truncated flag.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "notificationDismissals.create",
     "module": "notificationDismissals",
     "fn": "create",
@@ -64529,10 +64599,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1250,
-  agentReachable: 621,
-  queries: 448,
+  total: 1251,
+  agentReachable: 622,
+  queries: 449,
   mutations: 802,
-  agentReachableQueries: 312,
+  agentReachableQueries: 313,
   agentReachableMutations: 309,
 } as const;

@@ -142,8 +142,9 @@ export function useTtMode(d: TtModeDeps) {
       const res = await writes.recordTest(recordArgs(item, profile, tester, testDate, snapshot));
       logSaved(item, res, tag, announce(item, res, snapshot, tag), ttFailureReason(snapshot, profile));
       if (print) setLabel({ testTagId: item.testTagId, result: res.result, testDate, nextDueDate: res.nextDueDate, testerName: tester.name });
-      setDraft(emptyTtDraft(null, null, null));
-      if (!keepOpen) d.finishScan();
+      // Clear only what is still this item's; a scan that landed mid-save keeps its item (SF3).
+      setDraft((prev) => (prev.forTtId === item.id ? emptyTtDraft(null, null, null) : prev));
+      if (!keepOpen && tagRef.current === d.tag) d.finishScan();
       return true;
     } catch (e) {
       d.play("error");
@@ -170,7 +171,8 @@ export function useTtMode(d: TtModeDeps) {
     item, profile, draft: current, edit, tester, setTester, blocker, result, saving, save, quickPass, label,
     /** What failed, in words — a maintenance job's prefill. */
     failureReason: ttFailureReason(current, profile),
-    dirty: !!item && ttDraftDirty(current),
+    // A save in flight carries the answers: they are not "unsaved" any more (SF3).
+    dirty: !!item && !saving && ttDraftDirty(current),
     discard: () => setDraft(emptyTtDraft(null, null, null)),
   };
 }

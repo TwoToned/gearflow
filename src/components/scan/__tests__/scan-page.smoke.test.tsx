@@ -301,6 +301,23 @@ describe("ScanPage — Check mode", () => {
     expect(screen.getByText("Yoke needs a photo")).toBeTruthy();
   });
 
+  it("SF3: a scan mid-save loads the next item at once (no Discard prompt), and the landing save leaves it and its answers alone", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    const pending = deferred<{ success: true; recordIds: string[]; auditId: string; condition: string }>();
+    h.save.mockReturnValueOnce(pending.promise);
+    render(<ScanPage />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    await userEvent.click(saveButton());
+    await userEvent.type(screen.getByLabelText("Scan input"), "AURA-02{Enter}");
+    expect(screen.queryByRole("dialog", { name: "Discard this check?" })).toBeNull();
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=check&tag=AURA-02", { scroll: false });
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    await act(async () => pending.resolve({ success: true, recordIds: ["r1"], auditId: "aud5", condition: "GOOD" }));
+    // B is still loaded, with its answers.
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=check&tag=AURA-02", { scroll: false });
+    expect(saveButton()).toHaveProperty("disabled", false);
+  });
+
   it("a failed save keeps the card and its answers", async () => {
     setUrl("/scan?mode=check&tag=AURA-01");
     h.save.mockRejectedValueOnce(new Error("Network down"));

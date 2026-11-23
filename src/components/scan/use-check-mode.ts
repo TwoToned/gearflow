@@ -81,7 +81,8 @@ export function useCheckMode(d: CheckModeDeps) {
     canPassAll: canPassAllFor(items, draft.current.states),
     passAll: () => items && draft.passAll(items),
     blocker,
-    dirty: draft.dirty,
+    // A save in flight carries the answers: they are not "unsaved" any more (SF3).
+    dirty: draft.dirty && !save.saving,
     saving: save.saving,
     save: save.save,
     /** Forget the answers (a confirmed discard). */
@@ -136,6 +137,8 @@ function useCheckDraft(assetId: string | null) {
     passAll,
     restore: setDraft,
     reset: () => setDraft(EMPTY_DRAFT),
+    /** After a save: forget the answers only if they are still that asset's (review SF3). */
+    resetIfFor: (id: string) => setDraft((prev) => (prev.forAssetId === id ? EMPTY_DRAFT : prev)),
     dirty: checkStatesDirty(current.states) || current.condition !== null || current.notes !== "",
   };
 }
@@ -144,9 +147,11 @@ type Draft = ReturnType<typeof useCheckDraft>;
 
 /**
  * The awaited save. It makes ONE undo closure (`announceListWrite`), handed unchanged
- * to the toast and to the Last scans row; it reverses the save on the server and,
- * when nothing else is loaded, puts the draft back. A check with photos can't be
- * undone server-side (its files predate the save), so it offers no Undo at all.
+ * to the toast and to the Last scans row; it reverses the save on the server (deleting
+ * the photo files the save proved it owns) and, when nothing else is loaded, puts the
+ * draft back without its photos. While it is in flight the answers no longer count as
+ * unsaved, so a scan loads the next item at once; when it lands it clears only what is
+ * still the saved asset's (review SF3).
  */
 function useCheckSave(s: CheckModeDeps & {
   asset: ScanAsset | null;
@@ -190,6 +195,7 @@ function useCheckSave(s: CheckModeDeps & {
     const { asset, items } = s;
     if (!asset || !items || s.blocker || saving) return false;
     const snapshot = s.draft.current;
+    const savedTag = s.tag;
     const checks = checksPayload(items, snapshot.states);
     setSaving(true);
     try {
@@ -200,8 +206,9 @@ function useCheckSave(s: CheckModeDeps & {
         id: res.auditId, mode: "check", tag: asset.assetTag, name: asset.modelName, verdict: s.failCount > 0 ? "failed" : "clean",
         at: Date.now(), assetId: asset.id, undo, reason: checkFailureReason(items, snapshot.states),
       });
-      s.draft.reset();
-      if (!keepOpen) s.finishScan();
+      s.draft.resetIfFor(asset.id);
+      // A scan that landed mid-save already loaded the next item: leave it be.
+      if (!keepOpen && tagRef.current === savedTag) s.finishScan();
       return true;
     } catch (e) {
       s.play("error");

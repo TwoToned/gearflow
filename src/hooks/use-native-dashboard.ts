@@ -100,7 +100,7 @@ export function useNativeUpcoming(orgId: string | undefined) {
 }
 
 /** How many live jobs On the floor now shows; the header counts the org-wide total. */
-export const FLOOR_ROWS = 4;
+const FLOOR_ROWS = 4;
 
 /**
  * On the floor now: the ORG's live jobs (the Jobs `out` segment, soonest due back

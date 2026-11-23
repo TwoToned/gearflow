@@ -25,7 +25,7 @@ import {
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
 import { getProjectByIdMapped } from "@/lib/projects-read";
-import { sendCrewCancellationsSchema, sendCrewOffersSchema } from "@/lib/validations/crew";
+import { crewMailBatchSchema } from "@/lib/validations/crew";
 import { canCrewCall } from "../../convex/lib/crewCallTransitions";
 
 function generateToken(): string {
@@ -248,7 +248,7 @@ export async function sendCrewOfferAll(projectId: string) {
  */
 export async function sendCrewOffers(input: { assignmentIds: string[] }) {
   const { organizationId, userId, userName } = await requirePermission("crew", "update");
-  const { assignmentIds } = sendCrewOffersSchema.parse(input);
+  const { assignmentIds } = crewMailBatchSchema.parse(input);
 
   // Deduped: a repeated id is one offer, and the count we report and audit says so.
   const ids = [...new Set(assignmentIds)];
@@ -344,7 +344,7 @@ export async function sendCancellationEmail(assignmentId: string) {
  */
 export async function sendCancellationEmails(input: { assignmentIds: string[] }) {
   const { organizationId, userId, userName } = await requirePermission("crew", "update");
-  const { assignmentIds } = sendCrewCancellationsSchema.parse(input);
+  const { assignmentIds } = crewMailBatchSchema.parse(input);
   const ids = [...new Set(assignmentIds)];
   let sent = 0;
   const errors: string[] = [];

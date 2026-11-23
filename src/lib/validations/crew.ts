@@ -168,16 +168,14 @@ export const timesheetExportFiltersSchema = z.object({
 
 export type TimesheetExportFilters = z.input<typeof timesheetExportFiltersSchema>;
 
-/** Most offers one "Send N offers" click may fan out (each is an email). */
-const MAX_OFFER_BATCH = 100;
-
-/** `sendCrewOffers` input: the assignments ticked on the Logistics tab. */
-export const sendCrewOffersSchema = z.object({
-  assignmentIds: z.array(z.string().min(1)).min(1).max(MAX_OFFER_BATCH),
-});
+/** Most crew emails one click may fan out ("Send N offers", "Cancel n"). */
+const MAX_CREW_MAIL_BATCH = 100;
 
 /**
- * `sendCancellationEmails` input: `cancelManyNative`'s `toTell`. The same
- * shape and cap as an offer batch (each is one email), so it IS that schema.
+ * The input of a crew-mail batch: `sendCrewOffers` (the assignments ticked on
+ * the Logistics tab or the planner) and `sendCancellationEmails`
+ * (`cancelManyNative`'s `toTell`). One shape, one cap — each id is one email.
  */
-export const sendCrewCancellationsSchema = sendCrewOffersSchema;
+export const crewMailBatchSchema = z.object({
+  assignmentIds: z.array(z.string().min(1)).min(1).max(MAX_CREW_MAIL_BATCH),
+});

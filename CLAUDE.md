@@ -948,20 +948,46 @@ carry it. Rate reads (`getSupplierRateHistory`, `getSupplierModelRate`) need `su
 ### Packing tab (Phase 8) — one `planInto`, a server-sourced Undo, a seal that locks the PLAN
 `src/components/projects/packing-tab.tsx` plans which case each line travels in (FEATUREDOCS/83).
 - **`usePackingPlan().planInto(ids, case | null)` is the ONLY caller of `setPlannedContainer`**: drag,
-  bulk `Plan n into…` and the row ⋯ all use it, so they share what it skips and its single Undo. Never add
-  a second plan write site.
-- **A plan Undo takes no client-supplied prior values.** The forward `setPlannedContainerNative` writes one
-  audit row per changed line (`PLAN_LINE`: previous + new case) and a batch header (`PLAN_BATCH`, id =
-  the call's `auditId`); `restorePlannedContainersNative({ batchAuditId })` reads each line's previous case
-  from those org-checked rows and restores only lines still as that write left them. Case delete uses the
-  same shape (`unplanLinesFromCase`), so its Undo is "re-create the case, then restore by the delete's id".
+  bulk `Plan n into…`, the row ⋯ and the case's `Unpack` all use it, so they share what it skips (packed
+  lines, lines in a sealed case, other versions) and its single Undo. Never add a second plan write site.
+- **A plan Undo takes no client-supplied prior values, and runs once.** The forward
+  `setPlannedContainerNative` writes one audit row per changed line (`PLAN_LINE`: previous + new case) and
+  a batch header (`PLAN_BATCH`, id = the call's `auditId`); `restorePlannedContainersNative({ batchAuditId })`
+  reads each line's previous case from those org-checked rows, restores only lines still as that write left
+  them (not packed since, not in a sealed case), and writes an `undo:<batchAuditId>` marker so a stale Undo
+  can never replay over a later plan (ABA). A no-op restore is never "Undone": a seal-only block throws
+  `CASE_SEALED`, otherwise the toast says nothing was restored (`announceUndo`, `src/lib/packing-undo.ts`,
+  the ONE result-to-toast). A case delete's Undo is ONE mutation (`undoDeleteContainerNative`: re-create in
+  place from the delete's audit snapshot, then the same exact restore).
 - **A seal (`projectContainers.sealedAt`) locks the PLAN only**: `assertContainerNotSealed`
   (`convex/lib/containerSeal.ts`, `CASE_SEALED`) guards plan-in, plan-out, rename, re-nest and delete of the
+  case, AND (from the parent side) nesting a case into, taking one out of, or creating one inside a sealed
   case. It never blocks warehouse prep or unit moves (owner-decided). Show the server's own message (it
   names Unseal); don't hand-write a second copy.
+- **"Packed" is ONE predicate** (`convex/lib/packedUnit.ts`: a non-cancelled unit with a `containerId`),
+  read by the plan writes, the Make-live preview, `versionRowFacts`, readiness and the Packing tab, so
+  `plannedCount` and `Packing n/m` agree.
 - **Unplanned (plan state) is not Loose (physical state)**: the dashed card is titled `UNPLANNED_LABEL`.
   The glyph rule (`planGlyph`) prints `Planned → LX-04` only when a packed line's plan disagrees with reality.
-- `packingCounts(lines)` is the one derivation of the tab's `Packing n/m`.
+- `packingCounts(lines)` is the one derivation of the tab's `Packing n/m` (`usePackingTabCount`).
+
+### Versions tab (Phase 8) — a tab, a sheet, one dialog, all driven from the version context
+Versions is a job tab (`?tab=versions`; `V` and ⋯ › Version › Manage versions… open it), not a sheet.
+- **The tab** (`versions/versions-tab.tsx`) is a dated list; its row ⋯ is `buildVersionRowActions`
+  (`src/lib/row-actions/version-row.ts`: Open · Make vN live… · Compare with vN… · Rename… · Save a copy… ·
+  Delete… red last, never on the live row). Facts come from ONE bounded read
+  (`versionsPreview.versionRowFacts`: the newest 6 versions, `plannedCount` only for the newest 3, budgeted
+  on TOTAL documents, `truncated`/`null` when a cap bites). Never add per-row queries.
+- **Compare is a read-only SHEET** (`compare/compare-sheet.tsx`, a 92% bottom sheet on a phone), not a page
+  mode: it renders `versionsRead.compareVersions` (no second diff) with both side pickers, the money bridge
+  jump and the `n`/`p` stepper. **Make live is ONE dialog** (`versions/make-live-dialog.tsx`: counts-only
+  preview that fails OPEN, Undo only when `conflicts.length === 0`, server-checked via `expectLiveVersionId`).
+  `VersionOverlays` hosts both once under `ProjectVersionProvider`; every entry point calls the context's
+  `openCompare` / `openMakeLive`. Never mount a second copy.
+- **Save as new version** is `useSaveVersion` (one write, Undo = delete exactly that version id), shared by
+  the tab primary, the row ⋯ and the header ⋯'s `New version from vN`. The tab-row primaries
+  (`JOB_TAB_PRIMARY`: `+ Add case`, `Save as new version`) are outline on desktop; the phone gets a red
+  sticky bar from the tab body.
 
 ### BulkBar and ScanStrip — two footguns
 `BulkBar` (`src/components/ui/bulk-bar.tsx`, replaced `BulkActionBar`) is the ONE bulk

@@ -77,12 +77,34 @@ missing operation behind defect 1), `unpackNative` (empty to Loose),
   server's own org-checked audit rows. A line is restored only while its plan still equals the case the
   forward write left it in (a later edit is never clobbered), it is on the batch's job, and neither
   case is sealed. Anything else is counted in `skipped`. One audit row per restored line.
+- **Review fixes (UX Phase 8):** the seal is also enforced from the PARENT side (`createNative` into,
+  `updateNative` into / out of a sealed case; the UI drops sealed cases from Move into, the New case parent
+  list and "Take out of"). `restorePlannedContainersNative` writes an `undo:<batchAuditId>` marker and
+  refuses a second restore (`ALREADY_UNDONE`; no ABA replay), skips lines packed since, and throws
+  `CASE_SEALED` when a seal is the only thing that blocked it. Case delete stores a snapshot on its audit
+  row; `undoDeleteContainerNative` re-creates the CUSTOM case in place (id, label, parent, version, sort
+  position) and restores its lines in ONE mutation (once). `unplanLinesFromCase` falls back to the live
+  version for a legacy case with no `versionId` and is bounded (3,000 lines scanned). An Unplan call spans
+  one job (others are skipped `OTHER_JOB`). "Packed" is `convex/lib/packedUnit.ts` everywhere.
 - `versions.makeLiveNative` takes an optional `expectLiveVersionId` (used only by Undo of a make-live):
   it refuses with `VERSION_LIVE_MOVED` if the live pointer is no longer that version.
 - `versionsPreview.makeLivePreview` (counts only: lines, packed units carried, models whose demand
   changes, invoices, quote total and balance before/after; the client fails open) and
   `versionsPreview.versionRowFacts` (Versions tab: line / planned counts, total, quote state, diff vs
-  the previous version; newest 12 versions, `truncated` says older ones have no facts).
+  the previous version; the newest 6 versions, `plannedCount` for the newest 3, all budgeted on TOTAL
+  documents read; `truncated` / a `null` count says a cap bit, and the query never throws on a big job).
+
+### Versions tab, Compare sheet, Make live (slice 3, UX Phase 8)
+
+Versions is a job tab (D19): `versions/versions-tab.tsx` (dated list in the Discussion rendering, row ⋯
+from `src/lib/row-actions/version-row.ts`, phone: 64 px rows + a red sticky `Save as new version`),
+`versions/version-dialogs.tsx` (Rename, Save as new version), `versions/use-save-version.ts` (one write,
+one Undo = delete exactly the created version id, shared with the header ⋯). Compare is a read-only sheet
+(`compare/compare-sheet.tsx`, D20) and Make live one dialog (`versions/make-live-dialog.tsx`: Warehouse /
+Availability / Invoices rows from `makeLivePreview`, fail-open; Undo only with no conflicts, checked on the
+server against the expected live pointer). `versions/version-overlays.tsx` hosts both under the version
+context (`openCompare`, `openMakeLive`). The tab-row primaries live in `JOB_TAB_PRIMARY`
+(`job-tab-sources.ts`); `Packing n/m` is `usePackingTabCount` over `packingCounts()`.
 - Vocabulary: **Unplanned** (a plan state, `UNPLANNED_LABEL`) is not **Loose** (a physical state).
 
 ### Checkout/return rewire (phase 1c)

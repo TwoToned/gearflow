@@ -532,11 +532,15 @@ export const search = query({
     const subCategoriesByParent = groupBy(subCategories as C[], (c) => str(c.parentId));
 
     // ── Assemble results (mirrors src/server/search.ts assembly order) ─────────
+    // A record shown as a CHILD is not repeated as a top-level row. That dedupe only
+    // counts a parent the role can READ: under an unreadable model / kit / client the
+    // child would be dropped with its parent, so it must keep its own top-level row.
     const shownAsChildAssetIds = new Set<string>();
     const shownAsChildBulkIds = new Set<string>();
     const results: SearchResult[] = [];
+    const readableParents = <R>(type: SearchResultType, rows: R[]): R[] => (readable.has(type) ? rows : []);
 
-    for (const m of models) {
+    for (const m of readableParents("model", models)) {
       results.push({
         id: m.id, type: "model",
         title: m.name + (m.modelNumber ? ` (${m.modelNumber})` : ""),
@@ -562,7 +566,7 @@ export const search = query({
       }
     }
 
-    for (const k of kits) {
+    for (const k of readableParents("kit", kits)) {
       results.push({
         id: k.id, type: "kit",
         title: `${k.assetTag} — ${k.name}`,
@@ -599,7 +603,7 @@ export const search = query({
     }
 
     const shownAsChildProjectIds = new Set<string>();
-    for (const c of clients) {
+    for (const c of readableParents("client", clients)) {
       results.push({
         id: c.id, type: "client",
         title: c.name, subtitle: c.primarySubtitle,

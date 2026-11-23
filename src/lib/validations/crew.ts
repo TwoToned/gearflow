@@ -190,8 +190,12 @@ export const plannerOfferSchema = z.object({
 
 export type PlannerOfferValues = z.input<typeof plannerOfferSchema>;
 
-/** Most crew emails one click may fan out ("Send N offers", "Cancel n"). */
-const MAX_CREW_MAIL_BATCH = 100;
+/**
+ * Most crew emails ONE server-action call may fan out. A bulk write may change
+ * up to 500 calls (`assertBulkSizeOk`), so a caller with more ids sends them in
+ * batches of this size (the planner's `mailInBatches`).
+ */
+export const MAX_CREW_MAIL_BATCH = 100;
 
 /**
  * The input of a crew-mail batch: `sendCrewOffers` (the assignments ticked on

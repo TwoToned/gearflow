@@ -6,7 +6,27 @@ import { useCrewAssignmentWrites } from "@/hooks/use-crew-assignment-writes";
 import { keyOfMs, type OpenCall, type PlannerMember, type SuggestedOffer } from "@/lib/crew-planner";
 import { announceListWrite, listWriteTitle } from "@/lib/list-write-toast";
 import { showError } from "@/lib/show-error";
+import { MAX_CREW_MAIL_BATCH } from "@/lib/validations/crew";
 import { sendCancellationEmails, sendCrewOffers } from "@/server/crew-communication";
+
+/**
+ * Send crew mail in batches of at most `MAX_CREW_MAIL_BATCH` (the action's own
+ * cap): a 150-call Cancel or a large Offer to suggested must email everyone,
+ * not fail the whole send on the validator. One merged result.
+ */
+export async function mailInBatches(
+  send: (input: { assignmentIds: string[] }) => Promise<MailResult>,
+  ids: readonly string[],
+): Promise<MailResult> {
+  const out: MailResult = { sent: 0, errors: [], total: 0 };
+  for (let i = 0; i < ids.length; i += MAX_CREW_MAIL_BATCH) {
+    const r = await send({ assignmentIds: ids.slice(i, i + MAX_CREW_MAIL_BATCH) });
+    out.sent += r.sent;
+    out.total += r.total;
+    out.errors.push(...r.errors);
+  }
+  return out;
+}
 
 /**
  * Every planner write (UX Phase 15, §9h.3). Each is an existing mutation or
@@ -116,7 +136,7 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
 
   async function offer(ids: string[]) {
     try {
-      toastMail(await sendCrewOffers({ assignmentIds: ids }), offers);
+      toastMail(await mailInBatches(sendCrewOffers, ids), offers);
     } catch (e) {
       showError(e, { fallbackTitle: "Could not send the offers" });
     }
@@ -161,7 +181,7 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
       return;
     }
     try {
-      const r = await sendCrewOffers({ assignmentIds: ids });
+      const r = await mailInBatches(sendCrewOffers, ids);
       const title = mailTitle({ ...r, errors: [...r.errors, ...failed] }, offers);
       toast.success(short.length ? `${title} · ${short[0]}` : title);
     } catch (e) {
@@ -181,7 +201,7 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
     let told = "";
     if (result.toTell.length > 0) {
       try {
-        const r = await sendCancellationEmails({ assignmentIds: result.toTell });
+        const r = await mailInBatches(sendCancellationEmails, result.toTell);
         told = ` · ${r.sent} told by email${r.errors.length ? ` (${r.errors[0]})` : ""}`;
       } catch (e) {
         showError(e, { fallbackTitle: "The calls were cancelled, but the emails did not send" });

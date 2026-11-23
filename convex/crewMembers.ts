@@ -1,6 +1,10 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { MEMBER_RATE_FIELDS } from "./crewAssignments";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
@@ -17,10 +21,28 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  */
 
 export const agentOps: AgentOpsAnnotations = {
-  list: { summary: "List crew members for the org (icalToken redacted for non-service callers).", danger: "low", mcpTier: 1 },
+  list: { summary: "List crew members for the org (icalToken redacted for non-service callers; rates manager+ only).", danger: "low", mcpTier: 1 },
   listPage: { summary: "Paginated/searchable/sortable crew member list.", danger: "low", mcpTier: 1 },
-  getById: { summary: "Get a single crew member by id.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get a single crew member by id (rates manager+ only).", danger: "low", mcpTier: 1 },
 };
+
+/**
+ * Field-level read boundary for `list`/`getById`: the service identity gets the
+ * full row; everyone else loses `icalToken` (the public calendar-feed bearer),
+ * and the default rates unless `canSeeCrewPay` (manager+ AND not a
+ * `noFinancials` key). Resolved once per call, applied per row.
+ */
+async function memberRowRedactor(
+  ctx: QueryCtx,
+  orgId: string,
+): Promise<<R extends Doc<"crewMembers">>(row: R) => R> {
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind === "service") return (row) => row;
+  const fields: readonly string[] = (await canSeeCrewPay(ctx, orgId))
+    ? ["icalToken"]
+    : ["icalToken", ...MEMBER_RATE_FIELDS];
+  return (row) => redactFields(row, fields);
+}
 
 export const list = query({
   args: { orgId: v.string() },
@@ -30,8 +52,7 @@ export const list = query({
       .query("crewMembers")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded by the org's crew roster (full roster read) — see docs/exceptions.md R-8.3.3
       .collect();
-    const auth = await getAuthContext(ctx);
-    return auth?.kind === "service" ? docs : docs.map((d) => redactFields(d, ["icalToken"]));
+    return docs.map(await memberRowRedactor(ctx, orgId));
   },
 });
 
@@ -113,8 +134,7 @@ export const getById = query({
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
     if (!doc) return doc;
-    const auth = await getAuthContext(ctx);
-    return auth?.kind === "service" ? doc : redactFields(doc, ["icalToken"]);
+    return (await memberRowRedactor(ctx, doc.organizationId))(doc);
   },
 });
 

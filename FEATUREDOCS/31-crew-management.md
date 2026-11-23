@@ -680,6 +680,22 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
 - Crew responds via token-based links: OFFERED -> ACCEPTED or DECLINED
 - Admin confirms: ACCEPTED -> CONFIRMED (confirmation email sent)
 - `responseToken` on CrewAssignment — unique, one-time use, cleared after response
+- **The token is service-only.** It is a bearer credential for
+  `/api/crew/respond/[token]`, so no `crew:read` caller may ever read it: the
+  raw-row reads `crewAssignments.{list,getById,listByProject,listByServiceIds}`
+  strip it for every non-service caller (user AND agent), the same way
+  `projectCrew`/`plannerData` already did. Respond links are only ever built
+  server-side (offer/reminder emails via `src/lib/crew-scheduling-read.ts` and
+  the respond route, all on the service token) — never hand the token to the
+  browser to build one.
+- **Crew pay on those reads is manager+.** `estimatedCost`/`rateOverride` on the
+  four assignment reads, and `defaultDayRate`/`defaultHourlyRate` on
+  `crewMembers.{list,getById}`, reach only callers for whom
+  `canSeeCrewPay(ctx, orgId)` (`convex/lib/crewPayVisibility.ts`) holds —
+  manager+ standing (`isCallerManagerPlus`, re-read from the member row) AND not
+  a `noFinancials` API key. The service identity always passes. Field lists are
+  the `ASSIGNMENT_COST_FIELDS`/`MEMBER_RATE_FIELDS` constants in
+  `convex/crewAssignments.ts`. Covered by `convex/crewReadRedaction.test.ts`.
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons

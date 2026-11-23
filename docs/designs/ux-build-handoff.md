@@ -186,7 +186,7 @@ for stage-word changes, and `pnpm run mira:feature-map` when a FEATUREDOC or ARC
 
 **Gate before review:**
 - `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm test`;
-- `node scripts/{complexity,knip,collect}-ratchet.mjs`, `pnpm run xtenant-bycuid-ratchet`, `pnpm run api:registry:check`;
+- the full CI Hygiene set (added 2026-11-21 after `depcruise-ratchet` broke three branches): `pnpm audit --audit-level high`, `pnpm run check-docs-npm-npx`, `check-dependency-justification`, `depcruise-ratchet`, `any-ratchet`, `date-format-ratchet`, `collect-ratchet`, `knip-ratchet`, `complexity-ratchet`, `xtenant-bycuid-ratchet`, `check-client-routes`, `api:registry:check`, `wasm:sync:check`, `api:docs:check`, `api:mcp:check`, `mira:feature-map:check`;
 - `DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy pnpm build`.
 
 Locally failing timezone, localStorage and registry-spawn tests are known; CI "Tests" is the

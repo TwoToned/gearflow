@@ -1,14 +1,14 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
 import { liveRows } from "./lib/versionScope";
-import { canSeeCrewPay } from "./lib/crewPayVisibility";
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -27,6 +27,31 @@ import { canSeeCrewPay } from "./lib/crewPayVisibility";
 export const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
 export const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
 const ROLE_RATE_FIELDS = ["defaultRate"] as const;
+
+/** The single-use offer-respond bearer credential (`/api/crew/respond/[token]`).
+ *  Only the trusted backend ever needs it (offer + reminder emails, the respond
+ *  route); handing it to a `crew:read` caller would let them answer a call AS
+ *  the crew member. */
+const ASSIGNMENT_SECRET_FIELDS = ["responseToken"] as const;
+
+/**
+ * Field-level read boundary for the raw-row assignment reads (`list`, `getById`,
+ * `listByProject`, `listByServiceIds`). The service identity gets the full row
+ * (it builds respond links server-side); every other caller loses the
+ * `responseToken`, and the pay fields unless `canSeeCrewPay` (manager+ AND not a
+ * `noFinancials` key). Resolved once per call, applied per row.
+ */
+async function assignmentRowRedactor(
+  ctx: QueryCtx,
+  orgId: string,
+): Promise<<R extends Doc<"crewAssignments">>(row: R) => R> {
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind === "service") return (row) => row;
+  const fields: readonly string[] = (await canSeeCrewPay(ctx, orgId))
+    ? ASSIGNMENT_SECRET_FIELDS
+    : [...ASSIGNMENT_SECRET_FIELDS, ...ASSIGNMENT_COST_FIELDS];
+  return (row) => redactFields(row, fields);
+}
 
 /** `projectCrew`'s enriched row nests cost fields inside `crewMember`/`crewRole`
  *  too, so a top-level-only `redactFields` would miss them. */
@@ -56,10 +81,10 @@ export const agentOps: AgentOpsAnnotations = {
   projectLabourCost: { summary: "Aggregate estimated labour cost for a project's crew assignments.", danger: "low", mcpTier: 2 },
   membersForAssignment: { summary: "Active crew members eligible for assignment, with conflict/availability signals.", danger: "low", mcpTier: 2 },
   conflictsForProject: { summary: "Per-assignment conflict flags for a project's crew.", danger: "low", mcpTier: 3 },
-  list: { summary: "List crew assignments for the org.", danger: "low", mcpTier: 2 },
-  getById: { summary: "Get a single crew assignment by id.", danger: "low", mcpTier: 2 },
-  listByProject: { summary: "List crew assignments for a project.", danger: "low", mcpTier: 1 },
-  listByServiceIds: { summary: "Crew assignments for a set of project service ids.", danger: "low", mcpTier: 3 },
+  list: { summary: "List crew assignments for the org (pay fields manager+ only).", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single crew assignment by id (pay fields manager+ only).", danger: "low", mcpTier: 2 },
+  listByProject: { summary: "List crew assignments for a project (pay fields manager+ only).", danger: "low", mcpTier: 1 },
+  listByServiceIds: { summary: "Crew assignments for a set of project service ids (pay fields manager+ only).", danger: "low", mcpTier: 3 },
 };
 
 /**
@@ -314,9 +339,7 @@ export const list = query({
       .query("crewAssignments")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
-    const auth = await getAuthContext(ctx);
-    if (!(await isAgentNoFinancials(ctx, auth))) return rows;
-    return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
+    return rows.map(await assignmentRowRedactor(ctx, orgId));
   },
 });
 
@@ -325,9 +348,8 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
-    const auth = await getAuthContext(ctx);
-    if (!doc || !(await isAgentNoFinancials(ctx, auth))) return doc;
-    return redactFields(doc, ASSIGNMENT_COST_FIELDS);
+    if (!doc) return doc;
+    return (await assignmentRowRedactor(ctx, doc.organizationId))(doc);
   },
 });
 
@@ -340,9 +362,7 @@ export const listByProject = query({
       .query("crewAssignments")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect()).filter((r) => r.organizationId === orgId);
-    const auth = await getAuthContext(ctx);
-    if (!(await isAgentNoFinancials(ctx, auth))) return rows;
-    return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
+    return rows.map(await assignmentRowRedactor(ctx, orgId));
   },
 });
 
@@ -378,7 +398,7 @@ export const listByServiceIds = query({
       // by_serviceId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
       results.push(...rows.filter((r) => r.organizationId === orgId));
     }
-    return results;
+    return results.map(await assignmentRowRedactor(ctx, orgId));
   },
 });
 

@@ -456,7 +456,12 @@ rates (`dailyRate`/`weeklyRate`/`defaultRentalPrice`) visible — an agent still
 needs those to quote/book; `crewAssignments.{list,getById,listByProject,
 projectCrew}` strip `estimatedCost`/`rateOverride` plus the nested
 `crewMember`/`crewRole` rate fields. Extending it across every remaining
-financial field family (quotes, invoices) is left to a future slice.
+financial field family (quotes, invoices) is left to a future slice. (Since
+the crew-read hotfix, `crewAssignments.{list,getById,listByProject,
+listByServiceIds}` and `crewMembers.{list,getById}` go further: their pay
+fields need `canSeeCrewPay` — manager+ AND not `noFinancials` — and the
+assignment reads never return `responseToken` to any non-service caller;
+see FEATUREDOCS/31.)
 
 **Agent-justified activity-log badge/filter** — `convex/activityLog.ts` gained
 an `agentAuthored` filter arg (and the exported `isAgentAuthored` helper) over

@@ -200,7 +200,12 @@ substitute, not a note to pass along.
 T&T work against an asset. Statuses: `SCHEDULED`, `AWAITING_PARTS`,
 `IN_PROGRESS`, `QA`, `COMPLETED`, `CANCELLED`. Results: `PASS`, `FAIL`,
 `CONDITIONAL`. An asset `IN_MAINTENANCE` is out of effective stock — which is
-exactly why a maintenance record is also an availability event.
+exactly why a maintenance record is also an availability event. **Open** work is
+everything not finished or cancelled (`SCHEDULED`, `AWAITING_PARTS`,
+`IN_PROGRESS`, `QA`); **overdue** is scheduled or in-progress work past its date
+(waiting on parts or in QA is held for a reason, not late). Home, the phone More
+sheet and the Maintenance page all count by these two definitions
+(`convex/lib/maintenanceOpen.ts`).
 
 **Check item** — a pass/fail, measurement, notes or dropdown quality check
 performed on an asset during deploy or return. This is where "came back

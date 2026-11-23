@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,16 +19,16 @@ const STATUS_LABELS: Record<PackingStatusFilter, string> = {
 
 /**
  * The Packing toolbar (§7b.2): a bare search, `Category ▾` and `Status ▾`
- * filter words that read their value, `Clear`, the tab ⋯ and, on desktop, the
- * tab's `+ Add case` (outline; the phone gets the red sticky bar instead, and
- * a bulk bar replaces it while anything is ticked).
+ * filter words that read their value, `Clear` and the tab ⋯. The tab's `+ Add
+ * case` is the TAB ROW's primary (`PackingTabPrimary`, outline); the phone gets
+ * the red sticky bar in the tab body, replaced by the bulk bar while anything is
+ * ticked.
  */
 export function PackingToolbar({
   filters,
   onFilters,
   categories,
   tabMenu,
-  onAddCase,
 }: {
   filters: PackingFilters;
   onFilters: (next: PackingFilters) => void;
@@ -36,8 +36,6 @@ export function PackingToolbar({
   /** Print all labels, Manifest, Select the unplanned, Show every line, Open the warehouse page. On a
    *  phone it is the same ⋯, opening as a 48 px bottom sheet, so none of these is lost there. */
   tabMenu: ActionMenuSpec;
-  /** Absent without `project:manage_line_items`, and on a phone (the red sticky bar replaces it). */
-  onAddCase?: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -87,12 +85,6 @@ export function PackingToolbar({
 
       <div className="ml-auto flex items-center gap-1">
         {tabMenu.items.length > 0 && <ActionMenu spec={tabMenu} label="Packing actions" />}
-        {onAddCase && (
-          <Button variant="line" size="sm" onClick={onAddCase}>
-            <Plus className="h-4 w-4" />
-            Add case
-          </Button>
-        )}
       </div>
     </div>
   );

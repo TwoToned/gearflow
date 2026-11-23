@@ -455,7 +455,13 @@ describe("Tab ⋯, Add case, phone", () => {
     expect(routerPush).toHaveBeenCalledWith("/warehouse/p1");
   });
 
-  it("+ Add case opens the REAL New container sheet: sealed cases are not parents, and the case is created on the viewed version", async () => {
+  it("desktop has no second Add case here: it is the tab row's primary (PackingTabPrimary)", () => {
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    expect(screen.queryByRole("button", { name: "Add case" })).toBeNull();
+  });
+
+  it("phone: the pinned + Add case opens the REAL New container sheet; sealed cases are not parents, and the case is created on the viewed version", async () => {
+    mobile.value = true;
     const user = setup();
     render(<PackingTab projectId="p1" orgId="o1" versionId="v2" />);
     await user.click(screen.getByRole("button", { name: "Add case" }));

@@ -166,7 +166,6 @@ function PackingBody({ projectId, versionId, data }: { projectId: string; versio
         onFilters={setFilters}
         categories={categories}
         tabMenu={tabMenu}
-        onAddCase={canManage && !isMobile ? () => setNewCaseOpen(true) : undefined}
       />
 
       <PackingDndProvider

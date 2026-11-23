@@ -45,7 +45,7 @@ const PREVIEW = {
   truncated: false,
 };
 
-import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
+import { MakeLiveDialog } from "@/components/projects/versions/make-live-dialog";
 import type { ProjectVersionSummary } from "@/components/projects/project-version-context";
 
 const TARGET: ProjectVersionSummary = { id: "v3", number: 3, isLive: false, contentState: "ready", createdAt: 1, createdById: "u1" };

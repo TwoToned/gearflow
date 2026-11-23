@@ -33,26 +33,22 @@ export interface VersionRowHandlers {
   remove: () => void;
 }
 
-function writeVerbs(v: VersionRowTarget, ctx: VersionRowContext, h: VersionRowHandlers): ActionItem[] {
-  if (!ctx.canPublish) return [];
-  const verbs: ActionItem[] = [];
-  if (!v.isLive && v.contentState === "ready") {
-    verbs.push({ key: "make-live", label: `Make v${v.number} live…`, group: "organise", icon: Sparkles, onSelect: h.makeLive });
-  }
-  if (v.contentState === "ready") {
-    verbs.push({ key: "save-copy", label: "Save a copy as new version…", group: "organise", icon: Copy, onSelect: h.saveCopy });
-  }
-  return verbs;
-}
-
+/** Spec order (§7b.4): Open · Make vN live… · Compare with vN… · Rename… · Save a
+ *  copy… · Delete…. All but Delete sit in one group so the renderer keeps it. */
 export function buildVersionRowActions(v: VersionRowTarget, ctx: VersionRowContext, h: VersionRowHandlers): ActionMenuSpec {
   const items: ActionItem[] = [];
+  const ready = v.contentState === "ready";
   if (!ctx.onScreen) items.push({ key: "open", label: "Open this version", group: "organise", icon: Eye, onSelect: h.open });
-  items.push(...writeVerbs(v, ctx, h));
+  if (ctx.canPublish && !v.isLive && ready) {
+    items.push({ key: "make-live", label: `Make v${v.number} live…`, group: "organise", icon: Sparkles, onSelect: h.makeLive });
+  }
   if (ctx.compareWith != null) {
     items.push({ key: "compare", label: `Compare with v${ctx.compareWith}…`, group: "organise", icon: ArrowRightLeft, onSelect: h.compare });
   }
-  items.push({ key: "rename", label: "Rename…", group: "edit", icon: Pencil, onSelect: h.rename });
+  items.push({ key: "rename", label: "Rename…", group: "organise", icon: Pencil, onSelect: h.rename });
+  if (ctx.canPublish && ready) {
+    items.push({ key: "save-copy", label: "Save a copy as new version…", group: "organise", icon: Copy, onSelect: h.saveCopy });
+  }
   if (ctx.canPublish && !v.isLive) {
     items.push({
       key: "delete",

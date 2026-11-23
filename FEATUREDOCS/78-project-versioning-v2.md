@@ -1426,11 +1426,20 @@ entirely. A wrong, misleadingly-precise row diff is worse than an honest
 reliable row-level drift (matching a SENT quote's actual line items against
 current ones) needs its own per-quote row snapshot, not attempted here.
 
-### The UI — `src/components/projects/compare/compare-view.tsx`
+### The UI — `src/components/projects/compare/compare-sheet.tsx` (UX Phase 8, D20)
 
-One React component tree, D46's **one scroll container** (only the row
-table's wrapper carries `overflow-y-auto` — the header strip, bridge bar and
-controls row are all fixed). Not a pixel-precise waterfall render (the
+> **UX Phase 8 supersedes the page mode.** Compare is now a read-only right **sheet** (a 92% bottom sheet
+> on a phone) hosted once by `versions/version-overlays.tsx`; `compare-view.tsx` and the page's
+> tab-hiding ternary are gone. The pure parts are `compare-model.ts`, the table is `compare-rows.tsx`,
+> the money bridge `compare-bridge.tsx`, the stepper `use-compare-stepper.ts`. Kept: both side pickers (a
+> sent quote's snapshot may be side A), the bridge jump, `n`/`p`, All/Only changes, Make vN live (hands
+> off to the ONE Make-live dialog). The sheet itself is the one scroll container. The D47 paragraph below
+> describes the original page mode (history); "editing suspended" is now true because the sheet is
+> read-only and modal.
+
+Originally one React component tree, D46's **one scroll container** (only the row
+table's wrapper carried `overflow-y-auto` — the header strip, bridge bar and
+controls row were all fixed). Not a pixel-precise waterfall render (the
 mockup's absolute-positioned bars) — a horizontal list of clickable segment
 cards between two total pills, same substance (every segment traces to
 rows/plan-fields, sum is exact, click-to-jump), chosen over the SVG waterfall

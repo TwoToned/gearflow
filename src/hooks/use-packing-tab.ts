@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
-import { collectPlannableLines, buildPackingBuckets, type PackingContainerBucket } from "@/lib/packing-tab";
+import { collectPlannableLines, buildPackingBuckets, type PackingContainerBucket, type PlannableLine } from "@/lib/packing-tab";
 
 export interface RealContainer {
   id: string;
@@ -12,9 +12,15 @@ export interface RealContainer {
   kind?: "ASSET" | "BULK_ASSET" | "CUSTOM";
   parentContainerId?: string | null;
   unitCount: number;
+  description?: string | null;
+  versionId?: string | null;
+  /** Set while the case is sealed (D21): its plan is locked. */
+  sealedAt?: number | null;
 }
 
 export interface PackingTabData {
+  /** Every plannable line (unfiltered); the tab filters and re-buckets. */
+  lines: PlannableLine[];
   buckets: PackingContainerBucket[];
   containers: RealContainer[];
   notPlannedCount: number;
@@ -60,6 +66,7 @@ export function usePackingTab(projectId: string | undefined, orgId: string | und
   const notPlannedCount = buckets.find((b) => b.containerId === null)?.lines.length ?? 0;
 
   return {
+    lines,
     buckets,
     containers,
     notPlannedCount,

@@ -29,14 +29,12 @@ import { getProjectWindowDates } from "@/lib/project-window";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { ProjectVersionProvider, useProjectVersionState } from "@/components/projects/project-version-context";
-import { VersionsPanel } from "@/components/projects/versions-panel";
-import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
-import { CompareView } from "@/components/projects/compare/compare-view";
+import { VersionsTab } from "@/components/projects/versions/versions-tab";
+import { VersionOverlays } from "@/components/projects/versions/version-overlays";
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
 import { JobHeader, type JobHeaderProject } from "@/components/projects/job-header";
 import { JobTabRow } from "@/components/projects/job-tab-row";
-import { VersionsTabPlaceholder } from "@/components/projects/versions-tab-placeholder";
 import { FinanceTabSlot, NotesTabSlot } from "@/components/projects/job-tab-slots";
 import { JOB_TAB_KEYS, availableJobTabs, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
 
@@ -96,12 +94,9 @@ export default function ProjectDetailPage({
   // `ProjectVersionProvider`) so the composed object below can be built
   // BEFORE the provider's own JSX wraps the rest of the page (D32).
   const versionState = useProjectVersionState(id, orgId);
-  const [makeLiveTarget, setMakeLiveTarget] = useState<typeof versionState.viewingVersion>(null);
-  // The Versions panel: ⋯ › Version › Manage versions…, the `V` key and the
-  // Versions tab placeholder open it. Phase 8 points `openVersions` at the tab.
-  const [versionsOpen, setVersionsOpen] = useState(false);
+  // ⋯ › Version › Manage versions… and the `V` key open the Versions TAB (D19).
   // Stable: `useVersionsShortcut` binds `V` to it, and a fresh closure per render re-bound the key every render.
-  const openVersions = useCallback(() => setVersionsOpen(true), []);
+  const openVersions = useCallback(() => setRequestedTab("versions"), []);
   // The comments panel: the header ⋯ and Overview's blocking-discussion row
   // and `Discussion ›` all open the ONE panel the header mounts.
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -292,8 +287,9 @@ export default function ProjectDetailPage({
         />
       </>
     ),
-    // Versions (D19) — Phase 8 builds the tab; until then it opens the panel.
-    versions: <VersionsTabPlaceholder onOpenVersions={openVersions} />,
+    // Versions (D19, UX Phase 8): the dated list; Compare and Make live open the
+    // sheet and dialog `VersionOverlays` hosts.
+    versions: <VersionsTab projectId={id} orgId={orgId} />,
   };
   const available = availableJobTabs({ isTemplate, panels: new Set(Object.keys(panels) as JobTabKey[]) });
   const activeTab = resolveJobTab(requestedTab, available);
@@ -312,36 +308,17 @@ export default function ProjectDetailPage({
             orgId={orgId}
             onOpenTab={setRequestedTab}
             onOpenVersions={openVersions}
-            onMakeLive={setMakeLiveTarget}
+            onMakeLive={versionState.openMakeLive}
             commentsOpen={commentsOpen}
             onCommentsOpenChange={setCommentsOpen}
           />
 
-          {/* Project Versioning v2, Phase 5b (#1232, design §5.1 D46/D47) —
-              Compare is a MODE on this same page, not a separate screen: it
-              REPLACES the tabs area rather than living alongside them, which
-              is also what makes "editing suspended" true by construction.
-              Phase 8 replaces it with a read-only sheet (D20). */}
-          {!isTemplate && orgId && versionState.compare ? (
-            <CompareView
-              key={JSON.stringify(versionState.compare)}
-              projectId={id}
-              orgId={orgId}
-              compare={versionState.compare}
-              versions={versionState.versions}
-              liveVersion={versionState.liveVersion}
-              onChangeCompare={(next) => versionState.openCompare(next.a, next.b)}
-              onExit={versionState.closeCompare}
-              onMakeLive={(versionNumber) => {
-                const target = versionState.versions.find((v) => v.number === versionNumber) ?? null;
-                if (target) setMakeLiveTarget(target);
-              }}
-            />
-          ) : (
-          // ── Tabs + context sidebar ───────────────────────────────────────
-          // #1063: the sidebar (Schedule · Location · Team · Activity) rides
-          // along on every tab EXCEPT Overview, which composes the same facts
-          // itself; rendering both would show them twice on one tab.
+          {/* ── Tabs + context sidebar ───────────────────────────────────────
+              #1063: the sidebar (Schedule · Location · Team · Activity) rides
+              along on every tab EXCEPT Overview, which composes the same facts
+              itself; rendering both would show them twice on one tab.
+              Compare is a read-only SHEET (D20), hosted by `VersionOverlays`
+              below, so the tabs stay on screen. */}
           <DetailLayout>
             <DetailMain>
               <JobTabRow
@@ -373,40 +350,12 @@ export default function ProjectDetailPage({
               </DetailSidebar>
             )}
           </DetailLayout>
-          )}
 
-          {!isTemplate && orgId && (
-            <VersionsPanel
-              open={versionsOpen}
-              onOpenChange={setVersionsOpen}
-              projectId={id}
-              versions={versionState.versions}
-              liveVersion={versionState.liveVersion}
-              viewingNumber={versionState.viewingNumber}
-              onSwitch={versionState.setViewingNumber}
-            />
-          )}
+          {/* The ONE Compare sheet and ONE Make-live dialog, for every entry point (R-3.1). */}
+          {!isTemplate && orgId && <VersionOverlays />}
         </div>
         </ProjectVersionProvider>
       </FadeIn>
-
-      {/* One Make-live dialog for every entry point: the header strip, the
-          version submenu's panel and Compare (R-3.1). */}
-      {makeLiveTarget && (
-        <MakeLiveDialog
-          open
-          onOpenChange={(open) => !open && setMakeLiveTarget(null)}
-          targetVersion={makeLiveTarget}
-          liveVersion={versionState.liveVersion}
-          projectId={id}
-          onMadeLive={(r) => {
-            if (r.conflicts.length === 0) {
-              setMakeLiveTarget(null);
-              versionState.setViewingNumber(null);
-            }
-          }}
-        />
-      )}
     </RequirePermission>
   );
 }

@@ -17,8 +17,8 @@ import { api } from "../../../convex/_generated/api";
  *
  * Mounted once above the tabs (`ProjectDetailPage`); every consumer that
  * needs to know "which version, and is it live" reads `useProjectVersion()`
- * rather than re-deriving it. The header pill (`version-switcher.tsx`), the
- * Versions panel (`versions-panel.tsx`), `VersionStrip` and the Equipment
+ * rather than re-deriving it. The header ⋯'s version submenu, the Versions tab,
+ * the viewing strip, `VersionOverlays` and the Equipment
  * tab's warehouse-verb greying all share this one context/one query — the
  * "one control to switch, one place to manage" principle (§5.1) starts here:
  * a single `versionsRead.listForProject` subscription, not the four
@@ -86,14 +86,19 @@ export interface ProjectVersionContextValue {
   } | null;
   /** Updates `?v=` (preserving every other param); `null` switches back to live. */
   setViewingNumber: (number: number | null) => void;
-  /** #1232 — Compare mode is a MODE on this page, not a route (D46/D47): a
-   *  page-level toggle, not `?v=`-driven, so it never fights the browser
-   *  back button against ordinary version switching. `null` = compare is
-   *  off. Opened by the switcher's "Compare" menu item and by
-   *  `VersionStrip`'s drift line (D53). */
+  /** UX Phase 8 (D20) — which two sides the Compare SHEET shows, `null` = closed. It is
+   *  open-state for one read-only sheet (`VersionOverlays`), no longer a page mode that
+   *  hides the tabs. Not `?v=`-driven, so it never fights the back button. Opened by
+   *  the header ⋯ Compare, a Versions-tab row's `Compare with…` and the drift line (D53). */
   compare: CompareModeState | null;
   openCompare: (a: CompareSide, b: CompareSide) => void;
   closeCompare: () => void;
+  /** The version the ONE Make-live dialog is open for, `null` = closed. Every entry
+   *  point (the viewing strip, a row's `Make vN live…`, the Compare sheet's footer)
+   *  calls `openMakeLive` (R-3.1). */
+  makeLiveTarget: ProjectVersionSummary | null;
+  openMakeLive: (target: ProjectVersionSummary) => void;
+  closeMakeLive: () => void;
 }
 
 const ProjectVersionContext = createContext<ProjectVersionContextValue | null>(null);
@@ -183,6 +188,9 @@ export function useProjectVersionState(projectId: string, orgId: string | undefi
   const [compare, setCompare] = useState<CompareModeState | null>(null);
   const openCompare = useCallback((a: CompareSide, b: CompareSide) => setCompare({ a, b }), []);
   const closeCompare = useCallback(() => setCompare(null), []);
+  const [makeLiveTarget, setMakeLiveTarget] = useState<ProjectVersionSummary | null>(null);
+  const openMakeLive = useCallback((target: ProjectVersionSummary) => setMakeLiveTarget(target), []);
+  const closeMakeLive = useCallback(() => setMakeLiveTarget(null), []);
 
   return {
     projectId,
@@ -200,6 +208,9 @@ export function useProjectVersionState(projectId: string, orgId: string | undefi
     compare,
     openCompare,
     closeCompare,
+    makeLiveTarget,
+    openMakeLive,
+    closeMakeLive,
   };
 }
 

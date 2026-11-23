@@ -107,6 +107,19 @@ const ASSET_WRITE_ERROR_MAP: Record<
     message: "This job's pricing is locked. Clear the lock (job header) to edit money fields.",
     hint: "An admin/owner/manager or this job's assigned PM can clear it — it's logged and auditable.",
   },
+  // UX Phase 8: Make-live's Undo is checked against the live pointer it expects.
+  VERSION_CHANGED: {
+    title: "Can't undo",
+    message: "That version has changed since it was saved, so it was kept.",
+  },
+  VERSION_IS_LIVE: {
+    title: "Can't delete a live version",
+    message: "That version is live. Make another version live first.",
+  },
+  VERSION_LIVE_MOVED: {
+    title: "Can't undo",
+    message: "The live version changed since that action, so it can't be undone automatically.",
+  },
   FORBIDDEN_UNLOCK_PRICING: {
     title: "Not allowed",
     message: "Only org admins/owners/managers or this job's assigned PM(s) can clear the pricing lock.",

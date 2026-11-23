@@ -126,13 +126,14 @@ export function useTimesheetWrites(ctx: TimesheetWriteCtx) {
     announceListWrite({
       title: listWriteTitle(`Logged time · ${entries(res.entryIds.length)}`, skipped),
       undoneTitle: `Undone · ${entries(res.entryIds.length)} removed`,
-      performUndo: ctx.canDelete ? () => removeAll(res.entryIds) : undefined,
+      // ONE atomic delete of exactly the created ids; it refuses if any was submitted or approved since.
+      performUndo: ctx.canDelete
+        ? async () => {
+            await w.undoCreateMany(res);
+          }
+        : undefined,
     });
     return true;
-  }
-
-  async function removeAll(ids: string[]) {
-    for (const id of ids) await w.remove(id);
   }
 
   /** Bulk Export: the SAME server CSV as Export all (pay columns decided there), narrowed to `ids`. */

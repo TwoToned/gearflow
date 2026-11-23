@@ -18369,6 +18369,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewTimeEntriesWrites.undoCreateManyNative",
+    "module": "crewTimeEntriesWrites",
+    "fn": "undoCreateManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "stamp",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d6d4e157c4444c03",
+    "returnsSha": "ca20c8538a3cc095",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewTimeEntriesWrites.updateNative",
     "module": "crewTimeEntriesWrites",
     "fn": "updateNative",
@@ -64791,10 +64848,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1254,
-  agentReachable: 626,
+  total: 1255,
+  agentReachable: 627,
   queries: 448,
-  mutations: 806,
+  mutations: 807,
   agentReachableQueries: 313,
-  agentReachableMutations: 313,
+  agentReachableMutations: 314,
 } as const;

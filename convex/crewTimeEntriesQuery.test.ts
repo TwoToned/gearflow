@@ -210,3 +210,39 @@ describe("revertNative — the exact Undo", () => {
     expect(await logsFor(t, "d2")).toHaveLength(2); // forward + undo
   });
 });
+
+describe("undoCreateManyNative — Log time's Undo, ONE atomic mutation", () => {
+  const logTime = (t: T, ids: string[], now = NOW) =>
+    t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.createManyNative, {
+      orgId: ORG, now, actor, shared: { date: NOW, startTime: "08:00", endTime: "16:00" },
+      entries: ids.map((id) => ({ id, crewMemberId: "c1", auditId: `a-${id}` })),
+    });
+  const undo = (t: T, ids: string[], stamp = NOW) =>
+    t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.undoCreateManyNative, { orgId: ORG, ids, stamp, now: NOW + 9, actor, auditId: "u" });
+
+  test("deletes exactly the created ids, one activity row each", async () => {
+    const t = makeT(); await seed(t, [{ id: "keep", status: "DRAFT" }]);
+    await logTime(t, ["n1", "n2"]);
+    expect(await undo(t, ["n1", "n2"])).toEqual({ count: 2 });
+    expect(await te(t, "n1")).toBeNull();
+    expect(await te(t, "n2")).toBeNull();
+    expect(await te(t, "keep")).not.toBeNull();
+    expect((await logsFor(t, "n1")).map((r) => r.action)).toEqual(["CREATE", "DELETE"]);
+  });
+
+  test("refuses the WHOLE Undo (nothing deleted) when any entry was submitted or approved since", async () => {
+    const t = makeT(); await seed(t, []);
+    await logTime(t, ["n1", "n2"]);
+    await t.withIdentity(asUser).mutation(api.crewTimeEntriesWrites.submitNative, { orgId: ORG, ids: ["n2"], now: NOW + 5, actor, auditId: "s" });
+    await expect(undo(t, ["n1", "n2"])).rejects.toThrow(/can't be undone/);
+    expect(await te(t, "n1")).not.toBeNull();
+    expect((await te(t, "n2"))?.status).toBe("SUBMITTED");
+  });
+
+  test("refuses ids it did not create (another stamp, another org)", async () => {
+    const t = makeT(); await seed(t, [{ id: "old", status: "DRAFT" }, { id: "theirs", status: "DRAFT", org: OTHER }]);
+    await expect(undo(t, ["old"])).rejects.toThrow(/can't be undone/);
+    await expect(undo(t, ["theirs"])).rejects.toThrow(/not found/);
+    expect(await te(t, "old")).not.toBeNull();
+  });
+});

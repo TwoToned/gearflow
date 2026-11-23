@@ -38,6 +38,7 @@ export function useCrewTimeWrites() {
   const disputeM = useMutation(api.crewTimeEntriesWrites.disputeNative);
   const queryM = useMutation(api.crewTimeEntriesWrites.queryNative);
   const revertM = useMutation(api.crewTimeEntriesWrites.revertNative);
+  const undoCreateManyM = useMutation(api.crewTimeEntriesWrites.undoCreateManyNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
@@ -60,16 +61,22 @@ export function useCrewTimeWrites() {
       return { id };
     },
     /** `created` are crew-member ids; `entryIds` the new entries' own ids (what an Undo deletes). */
-    createMany: async (data: CrewTimeEntryFormValues, crewMemberIds: string[]): Promise<{ created: string[]; errors: { crewMemberId: string; message: string }[]; entryIds: string[] }> => {
+    createMany: async (data: CrewTimeEntryFormValues, crewMemberIds: string[]): Promise<{ created: string[]; errors: { crewMemberId: string; message: string }[]; entryIds: string[]; stamp: number }> => {
       const org = requireOrg();
       const unique = [...new Set(crewMemberIds)];
-      if (unique.length === 0) return { created: [], errors: [], entryIds: [] };
+      const stamp = Date.now();
+      if (unique.length === 0) return { created: [], errors: [], entryIds: [], stamp };
       const p = crewTimeEntrySchema.parse({ ...data, crewMemberId: unique[0] });
       const { crewMemberId: _drop, ...shared } = entryArgs(p);
       const entries = unique.map((crewMemberId) => ({ id: createId(), crewMemberId, auditId: createId() }));
-      const res = await createManyM({ orgId: org, now: Date.now(), actor: actor(), shared, entries });
+      const res = await createManyM({ orgId: org, now: stamp, actor: actor(), shared, entries });
       const made = new Set(res.created);
-      return { ...res, entryIds: entries.filter((e) => made.has(e.crewMemberId)).map((e) => e.id) };
+      return { ...res, entryIds: entries.filter((e) => made.has(e.crewMemberId)).map((e) => e.id), stamp };
+    },
+    /** The exact Undo of ONE `createMany`: its own `entryIds` + `stamp`, one atomic delete that refuses if any moved on. */
+    undoCreateMany: async (result: { entryIds: string[]; stamp: number }): Promise<{ count: number }> => {
+      const org = requireOrg();
+      return await undoCreateManyM({ orgId: org, ids: result.entryIds, stamp: result.stamp, now: Date.now(), actor: actor(), auditId: createId() });
     },
     update: async (id: string, data: CrewTimeEntryFormValues): Promise<{ id: string }> => {
       const org = requireOrg();

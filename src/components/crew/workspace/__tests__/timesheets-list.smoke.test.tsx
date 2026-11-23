@@ -42,7 +42,8 @@ const writes = vi.hoisted(() => ({
   revert: vi.fn(async () => ({ count: 1 })),
   update: vi.fn(async () => ({ id: "e1" })),
   remove: vi.fn(async () => ({ id: "e1" })),
-  createMany: vi.fn(async () => ({ created: ["c1"], errors: [], entryIds: ["new1"] })),
+  createMany: vi.fn(async () => ({ created: ["c1"], errors: [], entryIds: ["new1"], stamp: 444 })),
+  undoCreateMany: vi.fn(async () => ({ count: 1 })),
 }));
 vi.mock("@/hooks/use-crew-time-writes", () => ({ useCrewTimeWrites: () => writes }));
 vi.mock("@/hooks/use-crew-role-writes", () => ({ useCrewRoleWrites: () => ({ create: vi.fn(), update: vi.fn(), archive: vi.fn(), move: vi.fn() }) }));
@@ -243,6 +244,10 @@ describe("TimesheetsList (smoke)", () => {
     await user.click(within(sheet).getByRole("button", { name: "Log time" }));
     expect(writes.createMany).toHaveBeenCalledTimes(1);
     expect((writes.createMany.mock.calls[0] as unknown[])[1]).toEqual(["c1"]);
+    // The Undo is ONE atomic call with the forward result, never a loop of deletes.
+    await announced[0].performUndo!();
+    expect(writes.undoCreateMany).toHaveBeenCalledWith(expect.objectContaining({ entryIds: ["new1"], stamp: 444 }));
+    expect(writes.remove).not.toHaveBeenCalled();
   });
 
   it("page ⋯ holds Crew list, Crew roles & rates…, Columns and Export all…; each opens", async () => {

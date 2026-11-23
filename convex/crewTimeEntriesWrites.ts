@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
@@ -241,6 +242,46 @@ export const deleteNative = mutation({
     await ctx.db.delete(doc._id);
     await logTime(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name: member.name, summary: `Deleted time entry for ${member.name}` });
     return { id: a.id };
+  },
+});
+
+/** Why one created entry can't be taken back by `undoCreateManyNative`, or null. */
+function undoCreateRefusal(doc: Doc<"crewTimeEntries"> | null, orgId: string, stamp: number): string | null {
+  if (!doc || doc.organizationId !== orgId) return "Time entry not found";
+  if (doc.status !== "DRAFT" || doc.updatedAt !== stamp || doc.createdAt !== stamp) {
+    return "An entry was edited, submitted or approved since it was logged, so Log time can't be undone";
+  }
+  return null;
+}
+
+/**
+ * The exact Undo of ONE Log time (`createManyNative`), as ONE atomic mutation:
+ * deletes exactly `ids` — the entries that call created at `stamp` — and
+ * refuses the WHOLE Undo (nothing deleted) if any of them is gone, another
+ * org's, or was edited, submitted or approved since (it would no longer be the
+ * row the Undo is about). One activity row per deleted entry.
+ */
+export const undoCreateManyNative = mutation({
+  returns: v.object({ count: v.number() }),
+  args: { orgId: v.string(), ids: v.array(v.string()), stamp: v.number(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "crew");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "crew", "delete");
+    await assertBulkSizeOk(ctx, a.ids.length);
+    const actor = await resolveActor(ctx, a.actor);
+    const ids = [...new Set(a.ids)];
+    const docs = await Promise.all(ids.map((id) => ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).first()));
+    for (const doc of docs) {
+      const refusal = undoCreateRefusal(doc, a.orgId, a.stamp);
+      if (refusal) throw new ConvexError(refusal);
+    }
+    for (const doc of docs as Doc<"crewTimeEntries">[]) {
+      const member = await memberName(ctx, a.orgId, doc.crewMemberId);
+      await ctx.db.delete(doc._id);
+      await logTime(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}:${doc.id}`, now: a.now, action: "DELETE", id: doc.id, name: member.name, summary: `Undid logging time for ${member.name}` });
+    }
+    return { count: docs.length };
   },
 });
 
@@ -510,5 +551,7 @@ export const agentOps: AgentOpsAnnotations = {
   // OUT of the payroll-feeding state, so medium, not low.
   revertNative: { danger: "medium" },
   submitNative: { danger: "medium" },
+  // Deletes entries (the exact Undo of one Log time; refuses if any moved on) — a delete, so high.
+  undoCreateManyNative: { danger: "high" },
   updateNative: { danger: "medium" },
 };

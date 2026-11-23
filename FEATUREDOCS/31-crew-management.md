@@ -276,10 +276,14 @@ org switch drops the selection and the seen rows.
   ticked ids (`exportTimesheetCSV({ ids })`, Zod-validated), so pay columns are
   still decided server-side.
 - Edit entry and Log time (two steps: tick people, then one set of hours) are
-  sheets (bottom on a phone); an edit's Undo replays its snapshot, Log time's
-  Undo deletes the created entries (offered only to a caller with
-  `crew:delete`). Query… is a dialog whose Save stays disabled until a reason
-  is typed.
+  sheets (bottom on a phone). Saving an edit returns the entry to Draft and
+  clears its approval (`updateNative`), so its Undo (the snapshot replayed) is
+  offered only for an entry that WAS a draft; any other says so before Save.
+  Log time's Undo is ONE atomic mutation,
+  `crewTimeEntriesWrites.undoCreateManyNative({ ids, stamp })`: it deletes
+  exactly the entries that call created and refuses the whole Undo if any was
+  edited, submitted or approved since (offered only with `crew:delete`).
+  Query… is a dialog whose Save stays disabled until a reason is typed.
 - Phone: cards `name` / `#2336 · Sat 7 Nov · 8.5h · Submitted` with the total
   on the right, the sticky Log time, `Show 25 more`. Export all… stays in the
   page ⋯ on a phone too: it is the only date-range export.

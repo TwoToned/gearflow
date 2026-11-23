@@ -13,12 +13,12 @@ import { StatusWord } from "@/components/ui/status-word";
 import { Switch } from "@/components/ui/switch";
 import type { CrewRoleDoc } from "@/hooks/use-crew";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { byLastName, dayState, displayDate, DAY_KIND_INTENT, memberName, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
+import { byLastName, coversDay, dayState, displayDate, DAY_KIND_INTENT, isMultiDay, keyOfMs, memberName, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
 import { factText } from "@/lib/primitives/facts";
 import { formatWeekdayDayMonth } from "@/lib/formatters";
 import { crewRateTypeLabels } from "@/lib/status-labels";
+import { cn } from "@/lib/utils";
 import { plannerOfferSchema, type PlannerOfferValues } from "@/lib/validations/crew";
-import { openDay } from "./needs-crew-list";
 
 /**
  * Offer a call (spec §9h.3): for a person and a day, one of the open job
@@ -46,7 +46,8 @@ interface Ctx {
 
 type Form = UseFormReturn<PlannerOfferValues>;
 
-const servicesOn = (c: Ctx, day: string) => c.open.filter((o) => openDay(o, c.week) === day);
+/** Every open service that runs on `day` — a multi-day run is listed on each day it covers. */
+const servicesOn = (c: Ctx, day: string) => c.open.filter((o) => coversDay(o, day));
 
 /** The service a new offer defaults to: one with the person's role, else the first open one. */
 function defaultService(c: Ctx, memberId: string, day: string): OpenCall | undefined {
@@ -68,7 +69,7 @@ function initialValues(t: OfferTarget, c: Ctx): PlannerOfferValues {
   const memberId = t.memberId ?? "";
   const member = c.members.find((m) => m.id === memberId);
   const svc = (t.serviceId && c.open.find((o) => o.serviceId === t.serviceId)) || defaultService(c, memberId, t.day);
-  return { memberId, day: t.day, sendNow: true, ...fromService(svc, member) };
+  return { memberId, day: t.day, sendNow: true, span: "day", ...fromService(svc, member) };
 }
 
 const dayLabel = (d: string) => formatWeekdayDayMonth(displayDate(d));
@@ -144,6 +145,36 @@ function ServiceField({ form, c, onPick }: { form: Form; c: Ctx; onPick: (id: st
   );
 }
 
+/** A multi-day service asks what the call covers: the picked day, or the whole run. */
+function SpanField({ open, value, day, onChange }: { open: OpenCall | undefined; value: PlannerOfferValues["span"]; day: string; onChange: (v: PlannerOfferValues["span"]) => void }) {
+  if (!open || !isMultiDay(open)) return null;
+  const run = `${dayLabel(keyOfMs(open.date!))} – ${dayLabel(keyOfMs(open.endDate!))}`;
+  const choices: { v: PlannerOfferValues["span"]; label: string }[] = [
+    { v: "day", label: `This day only · ${dayLabel(day)}` },
+    { v: "run", label: `Whole run · ${run}` },
+  ];
+  return (
+    <div role="radiogroup" aria-label="Call covers" className="flex flex-col gap-1">
+      <span className="text-ui-text font-medium text-ink">This service runs {run}</span>
+      {choices.map((ch) => (
+        <button
+          key={ch.v}
+          type="button"
+          role="radio"
+          aria-checked={value === ch.v}
+          onClick={() => onChange(ch.v)}
+          className="flex min-h-11 items-center gap-3 text-left text-ui-text text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
+        >
+          <span aria-hidden="true" className={cn("grid size-4 place-items-center rounded-full border-2", value === ch.v ? "border-primary" : "border-input")}>
+            {value === ch.v && <span className="size-2 rounded-full bg-primary" />}
+          </span>
+          {ch.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Fields({ form, c }: { form: Form; c: Ctx }) {
   const v = form.watch();
   const member = c.members.find((m) => m.id === v.memberId);
@@ -168,6 +199,7 @@ function Fields({ form, c }: { form: Form; c: Ctx }) {
         {/* The service label is long (`#2341 Show day · LX op · needs 1`): its own full row. */}
         <div className="md:col-span-2">
           <ServiceField form={form} c={c} onPick={pickService} />
+          <SpanField open={c.open.find((o) => o.serviceId === v.serviceId)} value={v.span} day={v.day} onChange={(span) => set({ span })} />
         </div>
       </div>
       {err.serviceId && <p className="text-caption text-t-out">{err.serviceId.message}</p>}

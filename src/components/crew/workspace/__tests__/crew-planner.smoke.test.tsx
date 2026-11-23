@@ -86,7 +86,7 @@ const open = [{
   serviceId: "svc1", projectId: "p1", projectName: "Hilton gala", projectNumber: "#2341", title: "Bump in", date: Date.parse(day("2026-11-18")),
   endDate: null, crewCountRequired: 3, assignedCount: 1, shortfall: 2, startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN",
 }];
-const queried = vi.hoisted(() => ({ planner: undefined as unknown, truncated: false }));
+const queried = vi.hoisted(() => ({ planner: undefined as unknown, truncated: false, open: undefined as unknown[] | undefined }));
 vi.mock("@/hooks/use-authed-query", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
@@ -94,7 +94,7 @@ vi.mock("@/hooks/use-authed-query", async () => {
       if (args === "skip") return undefined;
       const name = getFunctionName(q);
       if (name === "crewAvailability:plannerData") { queried.planner = args; return members; }
-      if (name === "crewPlanner:openCalls") return { calls: open, truncated: queried.truncated };
+      if (name === "crewPlanner:openCalls") return { calls: queried.open ?? open, truncated: queried.truncated };
       if (name === "crewTimeEntries:approvedHoursByMember") return { c1: 9 };
       if (name === "crewRoles:listForSettings") return [{ id: "r1", name: "Rigger", isActive: true, defaultRate: 420, rateType: "DAILY", sortOrder: 0 }];
       if (name === "crewSkills:list") return [{ id: "k1", name: "Dante" }];
@@ -108,6 +108,7 @@ import { CrewPlanner } from "../planner/crew-planner";
 beforeEach(() => {
   mobile.value = false;
   queried.truncated = false;
+  queried.open = undefined;
   nav.search = "";
   nav.push.mockClear();
   perms.all = true;
@@ -328,6 +329,28 @@ describe("CrewPlanner (smoke)", () => {
     nav.search = "seg=needs";
     render(<CrewPlanner />);
     expect(screen.getByRole("region", { name: "Wed, 18 Nov" }).textContent).toContain("needs 2");
+  });
+
+  it("a multi-day run is offerable from an empty cell on any day it covers; the call takes that day only, or the whole run", async () => {
+    queried.open = [{ ...open[0], serviceId: "run", title: "Install", date: Date.parse(day("2026-11-17")), endDate: Date.parse(day("2026-11-19")) }];
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    // Thursday: the run started Tuesday, and is still listed on Thursday.
+    await user.click(screen.getByRole("button", { name: "Offer Dev Patel a call on 2026-11-19" }));
+    let sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByRole("combobox", { name: "Job service" }).textContent).toMatch(/#2341 Install/);
+    const span = within(sheet).getByRole("radiogroup", { name: "Call covers" });
+    expect(within(span).getByRole("radio", { name: /This day only/ }).getAttribute("aria-checked")).toBe("true");
+    await user.click(within(sheet).getByRole("switch", { name: "Send the offer now" }));
+    await user.click(within(sheet).getByRole("button", { name: "Save as pending" }));
+    await waitFor(() => expect(asg.create).toHaveBeenCalledWith("p1", expect.objectContaining({ startDate: "2026-11-19", endDate: "2026-11-19" })));
+    // The whole run takes the service's own dates.
+    await user.click(screen.getByRole("button", { name: "Offer Dev Patel a call on 2026-11-18" }));
+    sheet = await screen.findByRole("dialog");
+    await user.click(within(sheet).getByRole("radio", { name: /Whole run/ }));
+    await user.click(within(sheet).getByRole("switch", { name: "Send the offer now" }));
+    await user.click(within(sheet).getByRole("button", { name: "Save as pending" }));
+    await waitFor(() => expect(asg.create).toHaveBeenLastCalledWith("p1", expect.objectContaining({ startDate: "2026-11-17", endDate: "2026-11-19" })));
   });
 
   it("Needs crew says `n+` when the server's read stopped at its cap (desktop and phone)", () => {

@@ -7,7 +7,7 @@ import { ActionMenu } from "@/components/ui/action-menu";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusWord } from "@/components/ui/status-word";
-import { callTimes, candidatesFor, displayDate, keyOfMs, memberName, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
+import { callTimes, candidatesFor, daysCovered, displayDate, keyOfMs, memberName, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
 import { formatWeekdayDayMonth } from "@/lib/formatters";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ export function openDay(o: OpenCall, week: string): string {
 
 export interface NeedsCrewProps {
   open: OpenCall[];
+  /** The visible week's days (a multi-day run's suggestions check each one it covers). */
+  days: readonly string[];
   members: PlannerMember[];
   week: string;
   selected: ReadonlySet<string>;
@@ -50,8 +52,9 @@ export function TruncatedNote({ open }: { open: OpenCall[] }) {
   );
 }
 
-function Suggestions({ o, members }: { o: OpenCall; members: PlannerMember[] }) {
-  const c = candidatesFor(o, members).slice(0, 3);
+/** Free on EVERY day of the window the service covers (a multi-day run), preferred first. */
+function Suggestions({ o, members, days }: { o: OpenCall; members: PlannerMember[]; days: readonly string[] }) {
+  const c = candidatesFor(o, members, daysCovered(o, days)).slice(0, 3);
   if (c.length === 0) return <span className="text-caption text-faint">no one free</span>;
   return (
     <span className="inline-flex items-center gap-2 text-caption text-muted">
@@ -100,7 +103,7 @@ function OpenRow({ o, members, ticked, p }: { o: OpenCall; members: PlannerMembe
         <StatusWord status={{ label: `needs ${o.shortfall}`, intent: "error" }} className="text-caption" />
       </td>
       <td className="w-40 align-middle">
-        <Suggestions o={o} members={members} />
+        <Suggestions o={o} members={members} days={p.days} />
       </td>
       <td className="w-10 align-middle" onClick={stop}>
         <ActionMenu spec={p.menuFor(o)} label={`${o.projectNumber} ${o.title} actions`} />

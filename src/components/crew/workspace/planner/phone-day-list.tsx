@@ -10,6 +10,7 @@ import {
   callStatusWord,
   callTimes,
   callsOn,
+  coversDay,
   dayState,
   displayDate,
   DAY_KIND_INTENT,
@@ -149,7 +150,8 @@ function PersonCard({ m, day, p }: { m: PlannerMember; day: string; p: PhonePlan
 }
 
 function DaySections({ day, p }: { day: string; p: PhonePlannerProps }) {
-  const opens = p.open.filter((o) => openDay(o, p.week) === day);
+  // A multi-day run is open on every day it covers.
+  const opens = p.open.filter((o) => coversDay(o, day));
   const booked = p.members.flatMap((m) => callsOn(m, day).map((c) => ({ m, c })));
   const bookedIds = new Set(booked.map((b) => b.m.id));
   const rest = p.members.filter((m) => !bookedIds.has(m.id));
@@ -181,14 +183,17 @@ function firstDay(days: string[], open: OpenCall[], week: string, today: string)
 
 export function PhonePlanner(p: PhonePlannerProps & { today: string }) {
   const [day, setDay] = React.useState(() => firstDay(p.days, p.open, p.week, p.today));
-  const openOn = (d: string) => p.open.filter((o) => openDay(o, p.week) === d).reduce((n, o) => n + o.shortfall, 0);
+  // The Needs crew strip lists each run once, under its first day in the week;
+  // the day chips count every day a run covers (it is open on each).
+  const listedOn = (d: string) => p.open.filter((o) => openDay(o, p.week) === d).reduce((n, o) => n + o.shortfall, 0);
+  const openOn = (d: string) => p.open.filter((o) => coversDay(o, d)).reduce((n, o) => n + o.shortfall, 0);
   if (p.needsOnly) {
-    const days = p.days.filter((d) => openOn(d) > 0);
+    const days = p.days.filter((d) => listedOn(d) > 0);
     return (
       <div>
         {p.truncated && <TruncatedNote open={p.open} />}
         {days.map((d) => (
-          <Section key={d} title={label(d)} count={openOn(d)}>
+          <Section key={d} title={label(d)} count={listedOn(d)}>
             {p.open.filter((o) => openDay(o, p.week) === d).map((o) => <OpenCard key={o.serviceId} o={o} p={p} />)}
           </Section>
         ))}

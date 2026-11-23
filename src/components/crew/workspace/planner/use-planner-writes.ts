@@ -31,6 +31,16 @@ export interface OfferCallInput {
   startTime: string;
   endTime: string;
   sendNow: boolean;
+  /** The day the call was offered from; with `span: "day"` the call covers only it. */
+  day: string;
+  /** A multi-day service: this day only, or the whole run (a one-day service is the same either way). */
+  span: "day" | "run";
+}
+
+/** The call's dates: the service's run, or just the picked day. */
+function callDates(open: OpenCall, pick?: { day: string; span: "day" | "run" }): { startDate: string; endDate: string } {
+  if (pick?.span === "day") return { startDate: pick.day, endDate: pick.day };
+  return { startDate: dayKey(open.date), endDate: dayKey(open.endDate) || dayKey(open.date) };
 }
 
 export interface PlannerWriteCtx {
@@ -57,8 +67,8 @@ const dayKey = (ms: number | null | undefined): string => (ms != null ? keyOfMs(
 export function usePlannerWrites(ctx: PlannerWriteCtx) {
   const asg = useCrewAssignmentWrites();
 
-  /** A PENDING call on the open call's service, for this person. */
-  async function createCall(open: OpenCall, memberId: string, f: { crewRoleId: string; startTime: string; endTime: string }): Promise<string> {
+  /** A PENDING call on the open call's service, for this person (the whole run unless a day is picked). */
+  async function createCall(open: OpenCall, memberId: string, f: { crewRoleId: string; startTime: string; endTime: string; day?: string; span?: "day" | "run" }): Promise<string> {
     const { id } = await asg.create(open.projectId, {
       crewMemberId: memberId,
       crewRoleId: f.crewRoleId,
@@ -67,8 +77,7 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
       phase: open.phase as "EVENT",
       isProjectManager: false,
       generateShifts: false,
-      startDate: dayKey(open.date),
-      endDate: dayKey(open.endDate) || dayKey(open.date),
+      ...callDates(open, f.day && f.span ? { day: f.day, span: f.span } : undefined),
       startTime: f.startTime,
       endTime: f.endTime,
     });

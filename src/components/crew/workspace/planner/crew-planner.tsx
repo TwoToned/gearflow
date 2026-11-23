@@ -16,6 +16,7 @@ import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import {
   byLastName,
   candidatesFor,
+  daysCovered,
   localDayKey,
   memberMatches,
   memberName,
@@ -140,7 +141,7 @@ function OfferSheetHost({ target, setTarget, data, days, week, canDelete }: {
     const member = members.find((m) => m.id === v.memberId);
     const open = data.open.find((o) => o.serviceId === v.serviceId);
     if (!member || !open) return false;
-    return await w.offerCall({ member, open, crewRoleId: v.crewRoleId, startTime: v.startTime ?? "", endTime: v.endTime ?? "", sendNow: v.sendNow });
+    return await w.offerCall({ member, open, crewRoleId: v.crewRoleId, startTime: v.startTime ?? "", endTime: v.endTime ?? "", sendNow: v.sendNow, day: v.day, span: v.span });
   };
   return (
     <OfferCallSheet target={target} onOpenChange={(o) => !o && setTarget(null)} onSubmit={submit}
@@ -189,12 +190,13 @@ function usePlannerMenus(p: BodyProps, all: PlannerMember[], w: Writes) {
       },
     );
 
-  const offerTo = (o: OpenCall) => p.onOffer({ day: openDay(o, p.url.week), serviceId: o.serviceId, memberId: candidatesFor(o, all)[0]?.member.id });
+  const offerTo = (o: OpenCall) =>
+    p.onOffer({ day: openDay(o, p.url.week), serviceId: o.serviceId, memberId: candidatesFor(o, all, daysCovered(o, p.days))[0]?.member.id });
   const openMenu = (o: OpenCall): ActionMenuSpec =>
     buildOpenCallActions({
       onOfferTo: when(p.perms.create, () => offerTo(o)),
-      onOfferSuggested: when(p.perms.create && p.perms.update, () => void w.offerSuggested(planSuggestedOffers([o], all))),
-      suggestedCount: planSuggestedOffers([o], all).offers.length,
+      onOfferSuggested: when(p.perms.create && p.perms.update, () => void w.offerSuggested(planSuggestedOffers([o], all, p.days))),
+      suggestedCount: planSuggestedOffers([o], all, p.days).offers.length,
       onOpenJob: () => router.push(logisticsHref(o.projectId)),
     });
   return { callMenu, openMenu, offerTo };
@@ -230,7 +232,7 @@ function PlannerBody(p: BodyProps) {
     menuFor: callMenu,
   };
   const sel = needs ? opens : calls;
-  const bulk = useBulk({ all, open: shown.open, calls: calls.ids, opens: opens.ids, needs, perms: p.perms, w, clear: sel.clear });
+  const bulk = useBulk({ all, open: shown.open, calls: calls.ids, opens: opens.ids, needs, perms: p.perms, w, clear: sel.clear, days: p.days });
   const openOrder = shown.open.map((o) => o.serviceId);
   const onOpenOpen = (o: OpenCall) => p.perms.create && offerTo(o);
   const views = {
@@ -243,7 +245,7 @@ function PlannerBody(p: BodyProps) {
     ),
     needs: () => (
       <NeedsCrewList
-        open={shown.open} members={all} week={p.url.week} selected={opens.ids}
+        open={shown.open} members={all} week={p.url.week} days={p.days} selected={opens.ids}
         onToggle={(id, shift) => opens.toggle(id, openOrder, shift)} onToggleAll={(on) => opens.setAll(openOrder, on)}
         onOpen={onOpenOpen} menuFor={openMenu} truncated={p.data.openTruncated}
         empty={<NeedsEmpty filtered={hasFilters(p.url)} onClear={p.url.clear} />}
@@ -280,13 +282,13 @@ const hasFilters = (url: PlannerUrl) => Object.keys(url.state.filters).length > 
 
 function useBulk(a: {
   all: PlannerMember[]; open: OpenCall[]; calls: ReadonlySet<string>; opens: ReadonlySet<string>; needs: boolean; perms: Perms;
-  w: ReturnType<typeof usePlannerWrites>; clear: () => void;
+  w: ReturnType<typeof usePlannerWrites>; clear: () => void; days: readonly string[];
 }): BulkAction[] {
   const statusById = new Map<string, string | null | undefined>();
   for (const m of a.all) for (const c of m.assignments) statusById.set(c.id, c.status);
   const ticked = a.needs ? [] : [...a.calls];
   const pick = (ok: (s: string | null | undefined) => boolean) => ticked.filter((id) => ok(statusById.get(id)));
-  const plan = planSuggestedOffers(a.needs ? a.open.filter((o) => a.opens.has(o.serviceId)) : [], a.all);
+  const plan = planSuggestedOffers(a.needs ? a.open.filter((o) => a.opens.has(o.serviceId)) : [], a.all, a.days);
   const after = (f: () => Promise<void>) => async () => {
     await f();
     a.clear();

@@ -4,6 +4,9 @@ import {
   callStatusWord,
   callsOn,
   candidatesFor,
+  coversDay,
+  daysCovered,
+  isMultiDay,
   dayState,
   defaultWeek,
   isDimmed,
@@ -177,12 +180,41 @@ describe("suggestions", () => {
   const already = member("y", "Ay", { assignments: [call("q", "2026-11-18", "OFFERED", { serviceId: "svc1" })] });
 
   it("role match, not on the service, never unavailable: preferred first, then by last name", () => {
-    expect(candidatesFor(open(), [free, pref, pencil, off, audio, already]).map((c) => c.member.id)).toEqual(["p", "f", "t"]);
+    expect(candidatesFor(open(), [free, pref, pencil, off, audio, already], ["2026-11-18"]).map((c) => c.member.id)).toEqual(["p", "f", "t"]);
   });
 
   it("Offer to suggested: free or preferred up to the shortfall, one person once per day", () => {
-    const plan = planSuggestedOffers([open(), open({ serviceId: "svc2", shortfall: 1 })], [free, pref, pencil]);
+    const plan = planSuggestedOffers([open(), open({ serviceId: "svc2", shortfall: 1 })], [free, pref, pencil], weekDays(WEEK));
     expect(plan.offers.map((o) => `${o.open.serviceId}:${o.member.id}`)).toEqual(["svc1:p", "svc1:f"]);
     expect(plan.unfilled.map((o) => o.serviceId)).toEqual(["svc2"]);
+  });
+});
+
+describe("multi-day open calls (a Tue–Thu run)", () => {
+  const run = open({ serviceId: "run", date: Date.parse(iso("2026-11-17")), endDate: Date.parse(iso("2026-11-19")), shortfall: 1 });
+  // Ana is free Tuesday (the run's start) but unavailable Wednesday.
+  const ana = member("ana", "Ruiz", { availability: [{ id: "v", type: "UNAVAILABLE", startDate: iso("2026-11-18"), endDate: iso("2026-11-18"), reason: "Dentist" }] });
+  const ben = member("ben", "Lee");
+
+  it("covers every day of the run, and only those", () => {
+    expect(daysCovered(run, weekDays(WEEK))).toEqual(["2026-11-17", "2026-11-18", "2026-11-19"]);
+    expect(coversDay(run, "2026-11-18")).toBe(true);
+    expect(coversDay(run, "2026-11-20")).toBe(false);
+    expect(isMultiDay(run)).toBe(true);
+    expect(isMultiDay(open())).toBe(false);
+  });
+
+  it("Ana, unavailable on Wednesday, is never suggested for the whole run (she was, checking only Tuesday)", () => {
+    expect(candidatesFor(run, [ana, ben], daysCovered(run, weekDays(WEEK))).map((c) => c.member.id)).toEqual(["ben"]);
+    expect(planSuggestedOffers([run], [ana, ben], weekDays(WEEK)).offers.map((o) => o.member.id)).toEqual(["ben"]);
+    // Offered for Tuesday alone, she can take it.
+    expect(candidatesFor(run, [ana, ben], ["2026-11-17"]).map((c) => c.member.id)).toEqual(["ben", "ana"]);
+  });
+
+  it("a run claims every day it covers: a Wednesday call can't go to the person the run took", () => {
+    const wed = open({ serviceId: "wed", date: Date.parse(iso("2026-11-18")), shortfall: 1 });
+    const plan = planSuggestedOffers([run, wed], [ben], weekDays(WEEK));
+    expect(plan.offers.map((o) => `${o.open.serviceId}:${o.member.id}`)).toEqual(["run:ben"]);
+    expect(plan.unfilled.map((o) => o.serviceId)).toEqual(["wed"]);
   });
 });

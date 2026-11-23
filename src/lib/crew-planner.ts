@@ -334,26 +334,56 @@ export function plannerFooter(members: PlannerMember[], week: string): { text: s
 
 const SUGGEST_RANK: Partial<Record<DayKind, number>> = { preferred: 0, free: 1, pencilled: 2 };
 
+/** Does the service (a single day, or a `[date, endDate]` run) cover `day`? */
+export function coversDay(o: Pick<OpenCall, "date" | "endDate">, day: string): boolean {
+  if (o.date == null) return false;
+  const from = keyOfMs(o.date);
+  const to = o.endDate != null ? keyOfMs(o.endDate) : from;
+  return from <= day && day <= to;
+}
+
+/** The days of `window` the service covers (a multi-day run may start before it). */
+export function daysCovered(o: Pick<OpenCall, "date" | "endDate">, window: readonly string[]): string[] {
+  return window.filter((d) => coversDay(o, d));
+}
+
+/** A run that covers more than one calendar day. */
+export const isMultiDay = (o: Pick<OpenCall, "date" | "endDate">): boolean =>
+  o.date != null && o.endDate != null && keyOfMs(o.endDate) > keyOfMs(o.date);
+
 export interface Candidate {
   member: PlannerMember;
+  /** The person's WORST covered day (what decides whether they can take the whole call). */
   day: DayState;
+}
+
+/** The worst of a person's states across `days` (Unavailable/booked anywhere sinks the whole run). */
+function worstDay(m: PlannerMember, days: readonly string[]): DayState | null {
+  let worst: DayState | null = null;
+  for (const d of days) {
+    const s = dayState(m, d);
+    const rank = SUGGEST_RANK[s.kind];
+    if (rank === undefined) return s;
+    if (!worst || rank > SUGGEST_RANK[worst.kind]!) worst = s;
+  }
+  return worst;
 }
 
 /**
  * Who could fill an open call: people with the call's role (any role when the
  * call has none), not already on that service, whose day is Preferred, Free
- * or Pencilled — preferred first, then by last name. Advisory: the server
- * still decides the rate and the offer gate.
+ * or Pencilled on EVERY day of `days` (the days of the visible window the
+ * service covers, or the one day being offered) — preferred first, then by
+ * last name. Advisory: the server still decides the rate and the offer gate.
  */
-export function candidatesFor(o: OpenCall, members: PlannerMember[]): Candidate[] {
-  const day = o.date != null ? keyOfMs(o.date) : null;
-  if (!day) return [];
+export function candidatesFor(o: OpenCall, members: PlannerMember[], days: readonly string[]): Candidate[] {
+  if (days.length === 0) return [];
   const out: Candidate[] = [];
   for (const m of members) {
     if (o.crewRoleId && m.crewRole?.id !== o.crewRoleId) continue;
     if (m.assignments.some((c) => c.serviceId === o.serviceId && isActiveCall(c))) continue;
-    const state = dayState(m, day);
-    if (SUGGEST_RANK[state.kind] !== undefined) out.push({ member: m, day: state });
+    const state = worstDay(m, days);
+    if (state && SUGGEST_RANK[state.kind] !== undefined) out.push({ member: m, day: state });
   }
   return out.sort((a, b) => SUGGEST_RANK[a.day.kind]! - SUGGEST_RANK[b.day.kind]! || byLastName(a.member, b.member));
 }
@@ -364,22 +394,25 @@ export interface SuggestedOffer {
 }
 
 /**
- * What `Offer to suggested n` would send: for each open call, up to its
- * shortfall, the free or preferred candidates (never pencilled). One person is
- * suggested once per day across the batch, so two calls the same day never go
- * to the same person. `unfilled` names the calls left with no one.
+ * What `Offer to suggested n` would send: for each open call (its whole run),
+ * up to its shortfall, the candidates free or preferred on every day of the
+ * window it covers (never pencilled). One person is suggested once per DAY
+ * across the batch — a multi-day run claims every day it covers — so two calls
+ * on a shared day never go to the same person. `unfilled` names the calls left
+ * with no one.
  */
-export function planSuggestedOffers(opens: OpenCall[], members: PlannerMember[]): { offers: SuggestedOffer[]; unfilled: OpenCall[] } {
+export function planSuggestedOffers(opens: OpenCall[], members: PlannerMember[], window: readonly string[]): { offers: SuggestedOffer[]; unfilled: OpenCall[] } {
   const used = new Set<string>();
   const offers: SuggestedOffer[] = [];
   const unfilled: OpenCall[] = [];
   for (const open of opens) {
-    const day = open.date != null ? keyOfMs(open.date) : "";
-    const picks = candidatesFor(open, members)
-      .filter((c) => c.day.kind !== "pencilled" && !used.has(`${c.member.id}:${day}`))
+    const days = daysCovered(open, window);
+    const free = (id: string) => days.every((d) => !used.has(`${id}:${d}`));
+    const picks = candidatesFor(open, members, days)
+      .filter((c) => c.day.kind !== "pencilled" && free(c.member.id))
       .slice(0, Math.max(0, open.shortfall));
     for (const p of picks) {
-      used.add(`${p.member.id}:${day}`);
+      for (const d of days) used.add(`${p.member.id}:${d}`);
       offers.push({ open, member: p.member });
     }
     if (picks.length < open.shortfall) unfilled.push(open);

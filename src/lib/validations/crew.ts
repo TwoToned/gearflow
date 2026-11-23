@@ -184,6 +184,8 @@ export const plannerOfferSchema = z.object({
   startTime: clockTime,
   endTime: clockTime,
   sendNow: z.boolean(),
+  /** A multi-day service: the picked day only, or the whole run. One-day services ignore it. */
+  span: z.enum(["day", "run"]),
 });
 
 export type PlannerOfferValues = z.input<typeof plannerOfferSchema>;

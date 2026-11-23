@@ -500,7 +500,9 @@ describe("restore: no replay (ABA), packed-skip, cancelled units (review fixes 2
     expect((await plan(t, ids, "c1", "big")).updated).toBe(500);
     expect(await restore(t, "big", "rbig")).toEqual({ restored: 500, skipped: 0 });
     await expect(plan(t, [...ids, "li1"], "c1", "toobig")).rejects.toThrow();
-  });
+    // A real 500-line write + 500-line Undo in convex-test takes ~8 s under CI load,
+    // past vitest's 5 s default — the work is the point of the test, so give it room.
+  }, 30_000);
 
   test("a cancelled unit in a case does not count as packed", async () => {
     const t = makeT();

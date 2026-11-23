@@ -492,6 +492,57 @@ describe("testTagRecordsWrites.undoCreateNative (exact undo)", () => {
     expect(await t.run(async (ctx) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "mOld")).first())).not.toBeNull();
   });
 
+  // Review SF6: one test per guard, each failing without its guard.
+  describe("each failure-action guard refuses on its own", () => {
+    const linkRows = (t: T) => t.run(async (ctx) => ctx.db.query("maintenanceRecordAssets").collect());
+    async function seedInventory(t: T) {
+      await seed(t); await seedAsset(t, { assetId: "as1" });
+      await t.run(async (ctx) => { await ctx.db.insert("assets", { id: "as1", organizationId: ORG, assetTag: "PA-1", modelId: "m", status: "AVAILABLE", isActive: true, updatedAt: NOW - DAY }); });
+    }
+    async function referOntoExisting(t: T) {
+      await seedInventory(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("maintenanceRecords", { id: "mOld", organizationId: ORG, type: "REPAIR", status: "SCHEDULED", title: "x", createdAt: NOW - DAY, updatedAt: NOW - DAY });
+      });
+      await create(t, { visualInspectionResult: "FAIL", failureAction: "REFERRED_TO_ELECTRICIAN", maintenanceId: "mOld", maintenanceLinkId: "lnk1" });
+    }
+
+    test("the linked inventory asset's snapshot: a status change since refuses", async () => {
+      const t = makeT(); await seedInventory(t);
+      await create(t, { visualInspectionResult: "FAIL", failureAction: "REFERRED_TO_ELECTRICIAN", maintenanceId: "mnt1", maintenanceLinkId: "lnk1" });
+      await t.run(async (ctx) => {
+        const inv = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "as1")).first();
+        await ctx.db.patch(inv!._id, { status: "AVAILABLE" }); // someone put it back in service; same updatedAt
+      });
+      await expect(undo(t)).rejects.toThrow(/linked asset changed since/);
+      expect(await rec(t, "rec1")).not.toBeNull();
+      expect(await t.run(async (ctx) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "mnt1")).first())).not.toBeNull();
+    });
+
+    test("deleteAddedLink: a referral record now in another org refuses, and its link is kept", async () => {
+      const t = makeT(); await referOntoExisting(t);
+      await t.run(async (ctx) => {
+        const m = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "mOld")).first();
+        await ctx.db.patch(m!._id, { organizationId: OTHER });
+      });
+      await expect(undo(t)).rejects.toThrow(/referral can't be found/);
+      expect((await linkRows(t)).map((l) => l.id)).toEqual(["lnk1"]);
+      expect(await rec(t, "rec1")).not.toBeNull();
+    });
+
+    test("deleteAddedLink: only the link row THIS save inserted is deleted (a re-made link under that pair survives)", async () => {
+      const t = makeT(); await referOntoExisting(t);
+      // Someone removed the save's link and linked the same asset again themselves.
+      await t.run(async (ctx) => {
+        const l = await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", "lnk1")).first();
+        await ctx.db.delete(l!._id);
+        await ctx.db.insert("maintenanceRecordAssets", { id: "lnkTheirs", maintenanceRecordId: "mOld", assetId: "as1" });
+      });
+      expect(await undo(t)).toEqual({ ok: true });
+      expect((await linkRows(t)).map((l) => l.id)).toEqual(["lnkTheirs"]);
+    });
+  });
+
   test("refuses when the item was tested again since", async () => {
     const t = makeT(); await seed(t); await seedAsset(t);
     await create(t);

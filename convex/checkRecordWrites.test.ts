@@ -521,6 +521,59 @@ describe("undoAdHocCheckNative (exact undo)", () => {
     expect((await asset(t2, "as1"))?.condition).toBe("POOR");
   });
 
+  // Review SF6: one test per guard, each failing without its guard.
+  describe("each guard refuses on its own (and changes nothing)", () => {
+    const patchDoc = (t: T, table: "assets" | "checkRecords" | "maintenanceRecords", id: string, patch: Record<string, unknown>) =>
+      t.run(async (ctx) => {
+        const d = await ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+        await ctx.db.patch(d!._id, patch as never);
+      });
+    /** Two records (r1 older, r2 newest), so tampering r1 leaves the newest-check guard satisfied. */
+    async function twoRecordSave(t: T, extra: Record<string, unknown> = {}) {
+      await seed(t); await seedCheckItem(t); await seedCheckItem(t, "ci2", "Lens"); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
+      await save(t, { condition: "FAIR", ...extra }, [mkCheck({ recordId: "r1" }), mkCheck({ recordId: "r2", checkItemId: "ci2" })]);
+    }
+
+    test("asset.updatedAt: an edit since (same condition word) refuses", async () => {
+      const t = makeT(); await twoRecordSave(t);
+      await patchDoc(t, "assets", "as1", { updatedAt: NOW + 15, notes: "relabelled" });
+      await expect(undo(t)).rejects.toThrow(/asset was edited since/);
+      expect(await records(t)).toHaveLength(2);
+      expect((await asset(t, "as1"))?.condition).toBe("FAIR");
+    });
+
+    test("a record moved to another org refuses", async () => {
+      const t = makeT(); await twoRecordSave(t);
+      await patchDoc(t, "checkRecords", "r1", { organizationId: OTHER });
+      await expect(undo(t)).rejects.toThrow(/records changed since/);
+      expect((await asset(t, "as1"))?.condition).toBe("FAIR");
+    });
+
+    test("a record that is no longer AD_HOC refuses", async () => {
+      const t = makeT(); await twoRecordSave(t);
+      await patchDoc(t, "checkRecords", "r1", { context: "PREP" });
+      await expect(undo(t)).rejects.toThrow(/records changed since/);
+      expect(await records(t)).toHaveLength(2);
+    });
+
+    test("a record now on another asset refuses", async () => {
+      const t = makeT(); await twoRecordSave(t);
+      await patchDoc(t, "checkRecords", "r1", { assetId: "as2" });
+      await expect(undo(t)).rejects.toThrow(/records changed since/);
+      expect((await records(t)).map((r) => r.id).sort()).toEqual(["r1", "r2"]); // neither deleted
+    });
+
+    test("a maintenance record this save opened, now in another org, refuses (never deleted cross-org)", async () => {
+      const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
+      await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [mkCheck({ recordId: "r1", result: "FAIL" })]);
+      await patchDoc(t, "maintenanceRecords", "inc1", { organizationId: OTHER });
+      await expect(undo(t)).rejects.toThrow(/opened is gone/);
+      const foreign = await t.run(async (ctx) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "inc1")).unique());
+      expect(foreign?.organizationId).toBe(OTHER);
+      expect(await records(t)).toHaveLength(1);
+    });
+  });
+
   test("refuses a second undo and another user's save", async () => {
     const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
     await t.run(async (ctx) => {

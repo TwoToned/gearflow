@@ -352,6 +352,29 @@ describe("ScanPage — Check mode", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
+  it("a tag the URL rule refuses is reported — toast, exception sound, Last scans row — never dropped (SF4)", async () => {
+    const { playScanFeedback } = await import("@/lib/scan-feedback");
+    render(<ScanPage />);
+    await userEvent.type(screen.getByLabelText("Scan input"), "AB#CD{Enter}");
+    expect(h.toasts.map((t) => t.title)).toContain("Can't read tag AB#CD");
+    expect(playScanFeedback).toHaveBeenCalledWith("exception");
+    const rows = await screen.findByRole("list", { name: "Recent scans" });
+    expect(within(rows).getByText(/Can't read this tag/)).toBeTruthy();
+    expect(within(rows).getByRole("button", { name: "AB#CD" })).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled(); // nothing loads
+  });
+
+  it("an old link carrying an unreadable tag is reported once, then dropped from the URL (SF4)", async () => {
+    const { playScanFeedback } = await import("@/lib/scan-feedback");
+    setUrl("/scan?mode=check&tag=%3Cscript%3E");
+    render(<ScanPage />);
+    const rows = await screen.findByRole("list", { name: "Recent scans" });
+    expect(within(rows).getByText(/Can't read this tag/)).toBeTruthy();
+    expect(h.toasts.filter((t) => t.title === "Can't read tag <script>")).toHaveLength(1);
+    expect(playScanFeedback).toHaveBeenCalledWith("exception");
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=check", { scroll: false });
+  });
+
   it("an unknown tag shows its state, is logged in Last scans, and a row tap scans again", async () => {
     setUrl("/scan?mode=check&tag=ZZ-9");
     render(<ScanPage />);

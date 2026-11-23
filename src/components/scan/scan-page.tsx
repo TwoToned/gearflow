@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Printer, Save, Wrench } from "lucide-react";
+import { toast } from "sonner";
 
 import { api } from "../../../convex/_generated/api";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -101,6 +102,7 @@ function useScanPageModel(session: Session, mode: ScanMode) {
   useEffect(() => setDirty(dirty), [setDirty, dirty]);
   // The bottom-nav Scan lands in this page's pipeline, not the shell's lookup.
   useScanTarget((value) => session.scan(value));
+  useReportUnreadable(session, mode, feedback.play);
   useLogExceptions({ card: mode === "check" ? checkCard : testCard, tag, mode, play: feedback.play, add: lastScans.add });
   return { orgId, feedback, checkCard, testCard, check, tt, checkable: checkableCard(checkCard) };
 }
@@ -371,6 +373,37 @@ function CheckBody({
       />
     </div>
   );
+}
+
+/**
+ * A tag the page can't read (review SF4) — typed, scanned, from the bottom nav or an old
+ * `/check/<tag>` link — says so: `Can't read tag X`, the exception sound and a Last scans
+ * row. Never silently dropped.
+ */
+function useReportUnreadable(session: Session, mode: ScanMode, play: ReturnType<typeof useScanFeedback>["play"]) {
+  const { setOnUnreadable, badTag, dropBadTag, lastScans } = session;
+  const add = lastScans.add;
+  const report = useCallback(
+    (raw: string) => {
+      toast.error(`Can't read tag ${raw}`);
+      play("exception");
+      const at = Date.now();
+      add({ id: `unreadable|${raw}|${at}`, mode, tag: raw, name: null, verdict: "unreadable", at, assetId: null });
+    },
+    [add, mode, play],
+  );
+  useEffect(() => setOnUnreadable(report), [setOnUnreadable, report]);
+  const reported = useRef<string | null>(null);
+  useEffect(() => {
+    if (!badTag) {
+      reported.current = null;
+      return;
+    }
+    if (reported.current === badTag) return;
+    reported.current = badTag;
+    report(badTag);
+    dropBadTag();
+  }, [badTag, report, dropBadTag]);
 }
 
 const EXCEPTION_VERDICT: Record<ScanMode, (card: ScanCardData) => LastScan["verdict"] | null> = {

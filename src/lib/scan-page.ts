@@ -20,16 +20,30 @@ export const SCAN_MODE_LABELS: Record<ScanMode, string> = { check: "Check", tt: 
 
 /** A tag as the server's lookup accepts it (`scanLookup`'s SAFE_TAG). */
 const TAG = /^[A-Za-z0-9\-_.:/ ]+$/;
+/** The ONE tag rule: the URL, every `scan()` input and the `/check` redirect use it. */
+const tagSchema = z.string().trim().min(1).max(128).regex(TAG);
+
+/** The tag as the page reads it, or `null` when it can't be one of ours. */
+export function readTag(raw: string | null | undefined): string | null {
+  const r = tagSchema.safeParse(raw ?? "");
+  return r.success ? r.data : null;
+}
 
 /** Each field falls back on a bad value, never throws. `mode: null` = the first one held. */
 const scanUrlSchema = z.object({
   mode: z.enum(SCAN_MODES).nullable().catch(null),
-  tag: z.string().trim().min(1).max(128).regex(TAG).nullable().catch(null),
+  tag: tagSchema.nullable().catch(null),
 });
-export type ScanUrlState = z.output<typeof scanUrlSchema>;
+export type ScanUrlState = z.output<typeof scanUrlSchema> & {
+  /** A `?tag=` the page can't read (e.g. from an old `/check/` link): reported, then dropped. */
+  badTag: string | null;
+};
 
 export function parseScanUrl(params: { get: (k: string) => string | null }): ScanUrlState {
-  return scanUrlSchema.parse({ mode: params.get("mode"), tag: params.get("tag") });
+  const raw = params.get("tag");
+  const parsed = scanUrlSchema.parse({ mode: params.get("mode"), tag: raw });
+  const badTag = raw && raw.trim() && !parsed.tag ? raw.trim().slice(0, 128) : null;
+  return { ...parsed, badTag };
 }
 
 /** `/scan?mode=check&tag=AURA-01` (defaults omitted). */
@@ -53,7 +67,7 @@ export function effectiveMode(requested: ScanMode | null, held: readonly ScanMod
 export const LAST_SCAN_UNDO_MS = 10_000;
 export const LAST_SCANS_SHOWN = { desktop: 5, phone: 3 } as const;
 
-export type LastScanVerdict = "clean" | "failed" | "unknown" | "kit" | "bulk" | "ttOnly" | "noItems" | "notOnRegister" | "retired";
+export type LastScanVerdict = "clean" | "failed" | "unknown" | "kit" | "bulk" | "ttOnly" | "noItems" | "notOnRegister" | "retired" | "unreadable";
 
 export interface LastScan {
   id: string;
@@ -80,6 +94,7 @@ export const VERDICT_WORDS: Record<LastScanVerdict, string> = {
   noItems: "No check items",
   notOnRegister: "Not on the test & tag register",
   retired: "Retired from test & tag",
+  unreadable: "Can't read this tag",
 };
 
 /** Test & tag mode words its saved rows `pass` / `fail`; Check mode `clean` / `failed`. */
@@ -102,6 +117,7 @@ export const VERDICT_TONE: Record<LastScanVerdict, "success" | "warning" | "erro
   noItems: "warning",
   notOnRegister: "warning",
   retired: "info",
+  unreadable: "error",
 };
 
 /** Test & tag mode: the card kind an exception scan logs as, or `null` when it can be tested. */

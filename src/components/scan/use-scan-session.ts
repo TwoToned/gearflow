@@ -8,6 +8,7 @@ import {
   LAST_SCAN_UNDO_MS,
   effectiveMode,
   parseScanUrl,
+  readTag,
   scanHref,
   type LastScan,
   type ScanMode,
@@ -61,11 +62,19 @@ export function useScanSession({ held }: { held: readonly ScanMode[] }) {
     [apply],
   );
 
+  // How the page reports a tag it can't read (sound + toast + Last scans); set by the page.
+  const unreadableRef = useRef<(raw: string) => void>(() => {});
+  const setOnUnreadable = useCallback((fn: (raw: string) => void) => {
+    unreadableRef.current = fn;
+  }, []);
+
   /** The ONE entry point every input path ends in. */
   const scan = useCallback(
     (raw: string) => {
-      const next = raw.trim();
-      if (!next) return;
+      if (!raw.trim()) return;
+      // The same rule the URL uses (`readTag`): a tag it would drop is reported, never lost.
+      const next = readTag(raw);
+      if (!next) return unreadableRef.current(raw.trim().slice(0, 128));
       if (next === tag) {
         toast.info(`${next} is already open`);
         return;
@@ -89,6 +98,10 @@ export function useScanSession({ held }: { held: readonly ScanMode[] }) {
     /** Put a tag back without asking (an Undo restoring its draft). */
     reload: (t: string) => apply({ kind: "tag", tag: t }),
     setDirty,
+    setOnUnreadable,
+    /** A `?tag=` the page couldn't read (an old link); the page reports it, then drops it. */
+    badTag: url.badTag,
+    dropBadTag: () => go({ mode, tag: null }),
     pending,
     confirmDiscard: () => {
       if (pending) apply(pending);

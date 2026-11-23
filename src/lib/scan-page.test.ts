@@ -5,6 +5,7 @@ import {
   exceptionVerdict,
   lastScansHead,
   parseScanUrl,
+  readTag,
   scanHref,
   ttFlag,
   type LastScan,
@@ -26,17 +27,31 @@ const tt = (patch: Partial<NonNullable<ScanCardData["tt"]>>): ScanCardData["tt"]
 
 describe("scan-page URL", () => {
   it("parses mode and tag, dropping junk instead of throwing", () => {
-    expect(parseScanUrl(params("mode=check&tag=AURA-01"))).toEqual({ mode: "check", tag: "AURA-01" });
-    expect(parseScanUrl(params("mode=tt&tag=TT-0412"))).toEqual({ mode: "tt", tag: "TT-0412" });
-    expect(parseScanUrl(params("mode=nope&tag=<script>"))).toEqual({ mode: null, tag: null });
-    expect(parseScanUrl(params(""))).toEqual({ mode: null, tag: null });
+    expect(parseScanUrl(params("mode=check&tag=AURA-01"))).toEqual({ mode: "check", tag: "AURA-01", badTag: null });
+    expect(parseScanUrl(params("mode=tt&tag=TT-0412"))).toEqual({ mode: "tt", tag: "TT-0412", badTag: null });
+    expect(parseScanUrl(params("mode=nope&tag=<script>"))).toEqual({ mode: null, tag: null, badTag: "<script>" });
+    expect(parseScanUrl(params(""))).toEqual({ mode: null, tag: null, badTag: null });
     expect(parseScanUrl(params(`tag=${"x".repeat(129)}`)).tag).toBeNull();
+  });
+
+  it("keeps a tag it can't read as badTag so the page reports it (SF4), never silently drops it", () => {
+    expect(parseScanUrl(params("tag=%20%20")).badTag).toBeNull();
+    expect(parseScanUrl(params("tag=%20AB%23CD%20")).badTag).toBe("AB#CD");
+    expect(parseScanUrl(params(`tag=${"x".repeat(200)}`)).badTag).toHaveLength(128);
+  });
+
+  it("readTag is the one tag rule: trims, caps at 128, refuses characters the lookup can't take", () => {
+    expect(readTag("  AURA-01 ")).toBe("AURA-01");
+    expect(readTag("AB#CD")).toBeNull();
+    expect(readTag("x".repeat(129))).toBeNull();
+    expect(readTag("")).toBeNull();
+    expect(readTag(null)).toBeNull();
   });
 
   it("builds the href with defaults omitted, and round-trips", () => {
     expect(scanHref({ mode: null, tag: null })).toBe("/scan");
     expect(scanHref({ mode: "check", tag: "A 1" })).toBe("/scan?mode=check&tag=A+1");
-    expect(parseScanUrl(params(scanHref({ mode: "check", tag: "A 1" }).split("?")[1]))).toEqual({ mode: "check", tag: "A 1" });
+    expect(parseScanUrl(params(scanHref({ mode: "check", tag: "A 1" }).split("?")[1]))).toEqual({ mode: "check", tag: "A 1", badTag: null });
   });
 
   it("shows only a held mode: the URL's when held, else the first held, else none", () => {

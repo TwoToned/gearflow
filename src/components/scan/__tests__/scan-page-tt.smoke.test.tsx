@@ -18,8 +18,10 @@ const h = vi.hoisted(() => ({
   ttReactivate: vi.fn(),
   ttRetire: vi.fn(),
   convexQuery: vi.fn(),
+  mxCreate: vi.fn(),
+  mxRemove: vi.fn(),
   toasts: [] as Array<{ title: string; action?: { label: string; onClick: () => void } }>,
-  perms: { testTag: ["read", "create"], asset: ["read", "create"] } as Record<string, string[]>,
+  perms: { testTag: ["read", "create"], asset: ["read", "create"], maintenance: ["create", "delete"] } as Record<string, string[]>,
   mobile: false,
 }));
 
@@ -58,6 +60,7 @@ vi.mock("@/hooks/use-test-tag-writes", () => ({
   useTestTagWrites: () => ({ recordTest: h.record, undoRecordTest: h.undoRecord, create: h.ttCreate, remove: h.ttRemove, reactivate: h.ttReactivate, retire: h.ttRetire }),
 }));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: h.convexQuery }) }));
+vi.mock("@/hooks/use-maintenance-writes", () => ({ useMaintenanceWrites: () => ({ create: h.mxCreate, remove: h.mxRemove }) }));
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org_1" } }),
   useSession: () => ({ data: { user: { id: "u1", name: "Sam Tester" } } }),
@@ -125,8 +128,45 @@ beforeEach(() => {
     "AURA-02": card("AURA-02", { tt: null, profile: null }),
     "TT-OLD": card("TT-OLD", { tt: tt({ status: "RETIRED", isActive: false, testTagId: "TT-OLD" }) }),
   };
-  h.perms = { testTag: ["read", "create"], asset: ["read", "create"] };
+  h.perms = { testTag: ["read", "create"], asset: ["read", "create"], maintenance: ["create", "delete"] };
   h.mobile = false;
+});
+
+describe("ScanPage — T&T Create maintenance job", () => {
+  it("on a fail, the card ⋯ opens the dialog prefilled with what failed; Undo deletes exactly that job", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    h.mxCreate.mockResolvedValueOnce({ id: "mx7" });
+    h.mxRemove.mockResolvedValue({ id: "mx7" });
+    render(<ScanPage />);
+    await answerPassing();
+    await userEvent.click(screen.getByRole("button", { name: "Plug: failed" }));
+    await userEvent.click(screen.getByRole("button", { name: "Scan actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Create maintenance job…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create maintenance job" });
+    expect(within(dialog).getByLabelText("What failed")).toHaveProperty("value", "Visual: Plug");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create job" }));
+    expect(h.mxCreate).toHaveBeenCalledWith(expect.objectContaining({ assetId: "a1", type: "REPAIR", title: "Repair — AURA-01" }));
+    const toast = h.toasts.find((t) => t.title === "Maintenance job created for AURA-01");
+    await act(async () => toast!.action!.onClick());
+    expect(h.mxRemove).toHaveBeenCalledTimes(1);
+    expect(h.mxRemove).toHaveBeenCalledWith("mx7");
+  });
+
+  it("the save caret offers 'Save and create maintenance job' only on a fail", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    h.record.mockResolvedValueOnce({ id: "rec9", nextDueDate: 0, result: "FAIL" });
+    render(<ScanPage />);
+    await answerPassing();
+    await userEvent.click(screen.getByRole("button", { name: "More ways to save" }));
+    expect(await screen.findByRole("menuitem", { name: "Save and print label" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Save and create maintenance job" })).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Plug: failed" }));
+    await userEvent.click(screen.getByRole("button", { name: "More ways to save" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Save and create maintenance job" }));
+    expect(h.record).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("dialog", { name: "Create maintenance job" })).toBeTruthy();
+  });
 });
 
 describe("ScanPage — phone (≤ 859 px, §9i.6)", () => {

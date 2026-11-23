@@ -11,7 +11,17 @@ import { announceListWrite } from "@/lib/list-write-toast";
 import type { LastScan } from "@/lib/scan-page";
 import type { ScanFeedbackKind } from "@/lib/scan-feedback";
 import { showError } from "@/lib/show-error";
-import { emptyTtDraft, prefillFromRecord, ttBlocker, ttDraftDirty, ttPayload, ttResult, type TtDraft, type TtProfile } from "@/lib/tt-draft";
+import {
+  emptyTtDraft,
+  prefillFromRecord,
+  ttBlocker,
+  ttDraftDirty,
+  ttFailureReason,
+  ttPayload,
+  ttResult,
+  type TtDraft,
+  type TtProfile,
+} from "@/lib/tt-draft";
 
 export type TestCardData = FunctionReturnType<typeof api.scanLookup.testCard>;
 type TtItem = NonNullable<TestCardData["tt"]>;
@@ -115,27 +125,30 @@ export function useTtMode(d: TtModeDeps) {
     });
 
   /** The tone, and the Last scans row carrying the save's undo. */
-  const logSaved = (it: TtItem, res: { id: string; result: "PASS" | "FAIL" }, tag: string, undo: (() => Promise<void>) | undefined) => {
+  const logSaved = (it: TtItem, res: { id: string; result: "PASS" | "FAIL" }, tag: string, undo: (() => Promise<void>) | undefined, reason: string) => {
     const passed = res.result === "PASS";
     d.play(passed ? "success" : "error");
-    d.addLastScan({ id: res.id, mode: "tt", tag, name: it.description, verdict: passed ? "clean" : "failed", at: Date.now(), assetId: it.assetId, undo });
+    d.addLastScan({ id: res.id, mode: "tt", tag, name: it.description, verdict: passed ? "clean" : "failed", at: Date.now(), assetId: it.assetId, undo, reason });
   };
 
-  const save = async ({ keepOpen, print }: { keepOpen: boolean; print?: boolean }) => {
-    if (!item || !tester || blocker || saving) return;
+  /** Resolves `true` once saved (the caret's follow-ups wait for it), `false` otherwise. */
+  const save = async ({ keepOpen, print }: { keepOpen: boolean; print?: boolean }): Promise<boolean> => {
+    if (!item || !tester || blocker || saving) return false;
     const snapshot = current;
     const testDate = Date.now();
     const tag = d.tag ?? item.testTagId;
     setSaving(true);
     try {
       const res = await writes.recordTest(recordArgs(item, profile, tester, testDate, snapshot));
-      logSaved(item, res, tag, announce(item, res, snapshot, tag));
+      logSaved(item, res, tag, announce(item, res, snapshot, tag), ttFailureReason(snapshot, profile));
       if (print) setLabel({ testTagId: item.testTagId, result: res.result, testDate, nextDueDate: res.nextDueDate, testerName: tester.name });
       setDraft(emptyTtDraft(null, null, null));
       if (!keepOpen) d.finishScan();
+      return true;
     } catch (e) {
       d.play("error");
       showError(e, { fallbackTitle: "Couldn't save the test" });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -155,6 +168,8 @@ export function useTtMode(d: TtModeDeps) {
 
   return {
     item, profile, draft: current, edit, tester, setTester, blocker, result, saving, save, quickPass, label,
+    /** What failed, in words — a maintenance job's prefill. */
+    failureReason: ttFailureReason(current, profile),
     dirty: !!item && ttDraftDirty(current),
     discard: () => setDraft(emptyTtDraft(null, null, null)),
   };

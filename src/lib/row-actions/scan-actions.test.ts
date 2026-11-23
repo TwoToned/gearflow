@@ -30,6 +30,17 @@ describe("scan-actions", () => {
     expect(onOpen).toHaveBeenCalledWith("/assets/registry/a1");
   });
 
+  it("Create maintenance job… is present only when a handler is passed (absent, not disabled)", () => {
+    const base = { assetId: "a1", ttId: null, canTestTag: true, canPassAll: false, onOpen: vi.fn(), onPassAll: vi.fn(), onClearScan: vi.fn() };
+    expect(keys(buildScanCardMenu(base))).not.toContain("maintenance");
+    const on = vi.fn();
+    const card = buildScanCardMenu({ ...base, onCreateMaintenance: on });
+    expect(keys(card)).toEqual(["open", "maintenance", "clear"]);
+    void card.items[1].onSelect();
+    expect(on).toHaveBeenCalledTimes(1);
+    expect(keys(buildScanRowMenu({ assetId: "a1", tag: "A-1", onOpen: vi.fn(), onRescan: vi.fn(), onCreateMaintenance: on }))).toEqual(["open", "rescan", "maintenance"]);
+  });
+
   it("row ⋯: Open asset only for a known asset; Scan it again always", () => {
     const onRescan = vi.fn();
     expect(keys(buildScanRowMenu({ assetId: null, tag: "ZZ", onOpen: vi.fn(), onRescan }))).toEqual(["rescan"]);

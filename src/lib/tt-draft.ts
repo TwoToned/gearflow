@@ -239,6 +239,15 @@ export function ttResult(d: TtDraft, profile: TtProfile | null): "PASS" | "FAIL"
   return cols && d.outlets.some((o) => outletFailed(o, cols)) ? "FAIL" : "PASS";
 }
 
+/** What failed, in words, one per line (plus the failure notes) — a maintenance job's prefill. */
+export function ttFailureReason(d: TtDraft, profile: TtProfile | null): string {
+  const visual = visualItems(profile).filter((v) => d.visual[v.key] === false).map((v) => `Visual: ${v.label}`);
+  const tests = testRows(profile).filter((row) => rowVerdict(d, row) === "FAIL").map((row) => `${row.label}: fail`);
+  const cols = outletColumns(profile);
+  const outlets = cols ? d.outlets.filter((o) => outletFailed(o, cols)).map((o) => `${o.label}: fail`) : [];
+  return [...visual, ...tests, ...outlets, d.failureNotes.trim()].filter(Boolean).join("\n");
+}
+
 /** `Next due 21 Feb 2027 · every 3 months` — displayed only; the server derives the stored date (D52). */
 export function nextDueText(testDate: number, intervalMonths: number | null, result: "PASS" | "FAIL" | null): string {
   const months = intervalMonths && intervalMonths > 0 ? intervalMonths : 3;

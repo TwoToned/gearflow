@@ -107,6 +107,17 @@ export function checkStatesDirty(states: CheckStates): boolean {
   return Object.values(states).some((s) => s.result !== null || s.value !== "" || s.notes !== "" || s.photos.length > 0);
 }
 
+/** The failed items in words (`Yoke: tilt lock slips`), one per line — a maintenance job's prefill. */
+export function checkFailureReason(items: CheckItemData[], states: CheckStates): string {
+  return items
+    .filter((mci) => states[mci.checkItem.id]?.result === "FAIL")
+    .map((mci) => {
+      const notes = states[mci.checkItem.id]?.notes.trim();
+      return notes ? `${mci.checkItem.label}: ${notes}` : mci.checkItem.label;
+    })
+    .join("\n");
+}
+
 /** What the save sends: one row per item, an unanswered notes item as NOTES_ONLY. */
 export function checksPayload(items: CheckItemData[], states: CheckStates): CheckRecordFormValues[] {
   return items.map((mci) => {

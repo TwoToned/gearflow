@@ -9,6 +9,7 @@ import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import {
   checkBlocker,
   checkFailCount,
+  checkFailureReason,
   checksPayload,
   checkStatesDirty,
   passAllStates,
@@ -61,7 +62,7 @@ export function useCheckMode(d: CheckModeDeps) {
   const failCount = checkFailCount(draft.current.states);
   // Any fail forces and locks Damaged (D50; the server forces it too).
   const condition: CheckConditionValue = failCount > 0 ? "DAMAGED" : (draft.current.condition ?? preselectFor(asset));
-  const blocker = items ? checkBlocker(items, draft.current.states, draft.photoUploading) : "Loading check items";
+  const blocker = blockerFor(items, draft.current.states, draft.photoUploading);
   const save = useCheckSave({ ...d, asset, items, draft, condition, failCount, blocker });
 
   return {
@@ -75,6 +76,8 @@ export function useCheckMode(d: CheckModeDeps) {
     notes: draft.current.notes,
     setNotes: (n: string) => draft.patch({ notes: n }),
     failCount,
+    /** The failed items in words — a maintenance job's prefill. */
+    failureReason: checkFailureReason(items ?? [], draft.current.states),
     canPassAll: canPassAllFor(items, draft.current.states),
     passAll: () => items && draft.passAll(items),
     blocker,
@@ -89,6 +92,10 @@ export function useCheckMode(d: CheckModeDeps) {
 /** The word the asset's stored condition reads as, as the value a check submits (Q5). */
 function preselectFor(asset: ScanAsset | null): CheckConditionValue {
   return CHECK_CONDITION_VALUE[conditionWord(asset?.condition as StoredAssetCondition | null | undefined)];
+}
+
+function blockerFor(items: CheckItemData[] | undefined, states: CheckStates, photoUploading: boolean): string | null {
+  return items ? checkBlocker(items, states, photoUploading) : "Loading check items";
 }
 
 function canPassAllFor(items: CheckItemData[] | undefined, states: CheckStates): boolean {
@@ -178,9 +185,10 @@ function useCheckSave(s: CheckModeDeps & {
     });
   };
 
-  const save = async ({ keepOpen }: { keepOpen: boolean }) => {
+  /** Resolves `true` once saved (the caret's follow-ups wait for it), `false` otherwise. */
+  const save = async ({ keepOpen }: { keepOpen: boolean }): Promise<boolean> => {
     const { asset, items } = s;
-    if (!asset || !items || s.blocker || saving) return;
+    if (!asset || !items || s.blocker || saving) return false;
     const snapshot = s.draft.current;
     const checks = checksPayload(items, snapshot.states);
     setSaving(true);
@@ -190,13 +198,15 @@ function useCheckSave(s: CheckModeDeps & {
       const undo = announce(asset, res.auditId, snapshot);
       s.addLastScan({
         id: res.auditId, mode: "check", tag: asset.assetTag, name: asset.modelName, verdict: s.failCount > 0 ? "failed" : "clean",
-        at: Date.now(), assetId: asset.id, undo,
+        at: Date.now(), assetId: asset.id, undo, reason: checkFailureReason(items, snapshot.states),
       });
       s.draft.reset();
       if (!keepOpen) s.finishScan();
+      return true;
     } catch (e) {
       s.play("error");
       showError(e, { fallbackTitle: "Couldn't save the check" });
+      return false;
     } finally {
       setSaving(false);
     }

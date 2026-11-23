@@ -33,6 +33,8 @@ interface TtBodyProps {
   onScanAgain: () => void;
   onType: () => void;
   canRegister: boolean;
+  /** Card ⋯ `Create maintenance job…`; absent without `maintenance:create` or an inventory asset. */
+  onCreateMaintenance?: () => void;
 }
 
 /**
@@ -81,6 +83,7 @@ function TtContent(p: TtBodyProps) {
   const menu = buildTtCardMenu({
     assetId: item.assetId, ttId: item.id, testTagId: item.testTagId, onOpen: p.onOpen,
     onQuickPass: () => void p.tt.quickPass(), onClearScan: p.onClearScan, onRetire: () => void p.register.retire(item),
+    onCreateMaintenance: p.onCreateMaintenance,
   });
   const asAsset = checkableCard({ ...card, checkItemCount: 1 });
   return (

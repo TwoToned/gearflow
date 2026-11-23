@@ -1,4 +1,4 @@
-import { CheckCheck, ClipboardList, ExternalLink, Package, RotateCcw, ScanLine, Settings2, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { CheckCheck, ClipboardList, ExternalLink, Package, RotateCcw, ScanLine, Settings2, Trash2, Volume2, VolumeX, Wrench, X } from "lucide-react";
 
 import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
 
@@ -68,12 +68,20 @@ export interface ScanCardMenuCtx {
   onOpen: (href: string) => void;
   onPassAll: () => void;
   onClearScan: () => void;
+  /** Absent without `maintenance:create`. */
+  onCreateMaintenance?: () => void;
+}
+
+/** `Create maintenance job…` — present only when the caller may create one. */
+function maintenanceItem(on: (() => void) | undefined): ActionItem | false {
+  return !!on && { key: "maintenance", label: "Create maintenance job…", group: "edit", icon: Wrench, onSelect: on };
 }
 
 export function buildScanCardMenu(c: ScanCardMenuCtx): ActionMenuSpec {
   return spec([
     c.assetId && { key: "open", label: "Open asset", group: "edit", icon: ExternalLink, onSelect: () => c.onOpen(`/assets/registry/${c.assetId}`) },
     c.canPassAll && { key: "pass-all", label: "Pass all", group: "edit", icon: CheckCheck, onSelect: c.onPassAll },
+    maintenanceItem(c.onCreateMaintenance),
     c.canTestTag && c.ttId && {
       key: "tt",
       label: "Open in test & tag list",
@@ -93,6 +101,8 @@ export interface TtCardMenuCtx {
   onQuickPass: () => void;
   onClearScan: () => void;
   onRetire: () => void;
+  /** Absent without `maintenance:create`, or for an item with no inventory asset. */
+  onCreateMaintenance?: () => void;
 }
 
 /** Test & tag mode's card ⋯. Retire has no exact Undo, so it confirms and names what follows. */
@@ -100,6 +110,7 @@ export function buildTtCardMenu(c: TtCardMenuCtx): ActionMenuSpec {
   return spec([
     c.assetId && { key: "open", label: "Open asset", group: "edit", icon: ExternalLink, onSelect: () => c.onOpen(`/assets/registry/${c.assetId}`) },
     { key: "quick-pass", label: "Quick pass: repeat the last test", group: "edit", icon: RotateCcw, onSelect: c.onQuickPass },
+    maintenanceItem(c.onCreateMaintenance),
     { key: "tt", label: "Open in test & tag list", group: "organise", icon: ClipboardList, onSelect: () => c.onOpen(`/test-and-tag/${c.ttId}`) },
     { key: "clear", label: "Clear this scan", group: "organise", icon: X, onSelect: c.onClearScan },
     {
@@ -123,11 +134,14 @@ export interface ScanRowMenuCtx {
   tag: string;
   onOpen: (href: string) => void;
   onRescan: (tag: string) => void;
+  /** A failed saved row only, and only with `maintenance:create`. */
+  onCreateMaintenance?: () => void;
 }
 
 export function buildScanRowMenu(c: ScanRowMenuCtx): ActionMenuSpec {
   return spec([
     c.assetId && { key: "open", label: "Open asset", group: "edit", icon: ExternalLink, onSelect: () => c.onOpen(`/assets/registry/${c.assetId}`) },
     { key: "rescan", label: "Scan it again", group: "edit", icon: c.assetId ? RotateCcw : ScanLine, onSelect: () => c.onRescan(c.tag) },
+    maintenanceItem(c.onCreateMaintenance),
   ]);
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Printer, Save } from "lucide-react";
+import { Printer, Save, Wrench } from "lucide-react";
 
 import { api } from "../../../convex/_generated/api";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -36,6 +36,8 @@ import { Button } from "@/components/ui/button";
 import { ScanDock } from "@/components/ui/scan-dock";
 import { StageFilter } from "@/components/ui/stage-filter";
 import { CheckSection } from "./check-section";
+import { CreateMaintenanceDialog } from "./create-maintenance-dialog";
+import { useMaintenanceJob, type MaintenancePrefill } from "./use-maintenance-job";
 import { DiscardDialog } from "./discard-dialog";
 import { LastScans } from "./last-scans";
 import { ResultCard } from "./result-card";
@@ -105,18 +107,54 @@ function useScanPageModel(session: Session, mode: ScanMode) {
 
 type Model = ReturnType<typeof useScanPageModel>;
 
+type Mx = ReturnType<typeof useMaintenanceJob>;
+
+/**
+ * `Save and create maintenance job` (a fail only, with `maintenance:create`): the prefill
+ * is taken BEFORE the save clears the draft, and the dialog opens only once it saved.
+ */
+function saveThenMaintenance(save: (o: { keepOpen: boolean }) => Promise<boolean>, mx: Mx, prefill: MaintenancePrefill | null): ActionItem | null {
+  if (!prefill || !mx.canCreate) return null;
+  return {
+    key: "save-maintenance", label: "Save and create maintenance job", group: "edit", icon: Wrench,
+    onSelect: async () => {
+      if (await save({ keepOpen: false })) mx.open(prefill);
+    },
+  };
+}
+
+/** The save caret's prefill: only on a fail. */
+const checkPrefill = (m: Model) => (m.check.failCount > 0 ? checkCardPrefill(m) : null);
+const ttPrefill = (m: Model) => (m.tt.result === "FAIL" ? ttCardPrefill(m) : null);
+
+/** Card ⋯: the loaded asset, with whatever has failed so far (maybe nothing yet). */
+function checkCardPrefill(m: Model): MaintenancePrefill | null {
+  const a = m.checkable?.asset;
+  return a ? { assetId: a.id, assetTag: a.assetTag, reason: m.check.failureReason } : null;
+}
+
+function ttCardPrefill(m: Model): MaintenancePrefill | null {
+  const item = m.tt.item;
+  return item?.assetId ? { assetId: item.assetId, assetTag: m.testCard?.asset?.assetTag ?? item.testTagId, reason: m.tt.failureReason } : null;
+}
+
+type Primary = { blocker: string | null; saving: boolean; save: (o: { keepOpen: boolean; print?: boolean }) => void; caret: ActionItem[] };
+
 /** What the head primary saves, or `null` for `Scan` (focus the dock). */
-function primaryFor(mode: ScanMode, m: Model): { blocker: string | null; saving: boolean; save: (o: { keepOpen: boolean; print?: boolean }) => void; caret: ActionItem[] } | null {
+function primaryFor(mode: ScanMode, m: Model, mx: Mx): Primary | null {
   const keep = (save: (o: { keepOpen: boolean }) => unknown): ActionItem => ({
     key: "keep", label: "Save and keep this asset open", group: "edit", icon: Save, onSelect: () => void save({ keepOpen: true }),
   });
+  const present = (items: (ActionItem | null)[]) => items.filter((i): i is ActionItem => !!i);
   if (mode === "check") {
     if (!m.checkable) return null;
-    return { blocker: m.check.blocker, saving: m.check.saving, save: (o) => void m.check.save(o), caret: [keep(m.check.save)] };
+    const caret = present([keep(m.check.save), saveThenMaintenance(m.check.save, mx, checkPrefill(m))]);
+    return { blocker: m.check.blocker, saving: m.check.saving, save: (o) => void m.check.save(o), caret };
   }
   if (!m.tt.item) return null;
   const print: ActionItem = { key: "print", label: "Save and print label", group: "documents", icon: Printer, onSelect: () => void m.tt.save({ keepOpen: false, print: true }) };
-  return { blocker: m.tt.blocker, saving: m.tt.saving, save: (o) => void m.tt.save(o), caret: [keep(m.tt.save), print] };
+  const caret = present([keep(m.tt.save), print, saveThenMaintenance(m.tt.save, mx, ttPrefill(m))]);
+  return { blocker: m.tt.blocker, saving: m.tt.saving, save: (o) => void m.tt.save(o), caret };
 }
 
 function testerMenuFor(tt: Model["tt"], roster: ReturnType<typeof useMemberRoster>): { label: string; spec: ActionMenuSpec } {
@@ -136,7 +174,10 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
   const model = useScanPageModel(session, mode);
   const roster = useMemberRoster(model.orgId);
   const register = useTtRegister();
+  const mx = useMaintenanceJob();
   const { tag, lastScans } = session;
+  /** Card ⋯ `Create maintenance job…`, prefilled with what has failed so far. */
+  const cardMaintenance = (p: MaintenancePrefill | null) => (mx.canCreate && p ? () => mx.open(p) : undefined);
 
   const focusDock = () => inputRef.current?.focus();
   const open = (href: string) => router.push(href);
@@ -147,7 +188,7 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
     onToggleSounds: model.feedback.toggle, onClearScan: session.clear, onOpen: open,
     onClearLastScans: () => lastScans.clear(mode),
   });
-  const primary = <HeadPrimary primary={primaryFor(mode, model)} onScan={focusDock} />;
+  const primary = <HeadPrimary primary={primaryFor(mode, model, mx)} onScan={focusDock} />;
   const scanAgain = () => {
     session.clear();
     focusDock();
@@ -184,6 +225,7 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
         <TtBody
           tag={tag} card={model.testCard} now={now} tt={model.tt} register={register}
           testerMenu={testerMenuFor(model.tt, roster)} onOpen={open} onClearScan={session.clear}
+          onCreateMaintenance={cardMaintenance(ttCardPrefill(model))}
           onScanAgain={scanAgain} onType={focusDock} canRegister={perms.canRegister}
         />
       ) : (
@@ -193,7 +235,7 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
           now={now}
           check={model.check}
           checkable={model.checkable}
-          menuCtx={{ canTestTag: held.includes("tt"), onOpen: open, onClearScan: session.clear }}
+          menuCtx={{ canTestTag: held.includes("tt"), onOpen: open, onClearScan: session.clear, onCreateMaintenance: cardMaintenance(checkCardPrefill(model)) }}
           onScanAgain={scanAgain}
           onType={focusDock}
           canRegister={perms.canRegister}
@@ -208,6 +250,16 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
         shown={isMobile ? LAST_SCANS_SHOWN.phone : LAST_SCANS_SHOWN.desktop}
         onRescan={session.scan}
         onOpen={open}
+        onCreateMaintenance={mx.canCreate ? (e) => mx.open({ assetId: e.assetId!, assetTag: e.tag, reason: e.reason ?? "" }) : undefined}
+      />
+
+      <CreateMaintenanceDialog
+        prefill={mx.prefill}
+        saving={mx.saving}
+        onCancel={mx.close}
+        onCreate={(form) => {
+          if (mx.prefill) void mx.create(mx.prefill, form);
+        }}
       />
 
       {isMobile ? (
@@ -285,7 +337,7 @@ function CheckBody({
   now: number;
   check: ReturnType<typeof useCheckMode>;
   checkable: CheckableCard | null;
-  menuCtx: { canTestTag: boolean; onOpen: (href: string) => void; onClearScan: () => void };
+  menuCtx: { canTestTag: boolean; onOpen: (href: string) => void; onClearScan: () => void; onCreateMaintenance?: () => void };
   onScanAgain: () => void;
   onType: () => void;
   canRegister: boolean;
@@ -299,6 +351,7 @@ function CheckBody({
   const menu = buildScanCardMenu({
     assetId: checkable.asset.id, ttId: checkable.tt?.id ?? null, canTestTag: menuCtx.canTestTag,
     canPassAll: check.canPassAll, onOpen: menuCtx.onOpen, onPassAll: check.passAll, onClearScan: menuCtx.onClearScan,
+    onCreateMaintenance: menuCtx.onCreateMaintenance,
   });
   return (
     <div className="flex flex-col gap-5 border-t border-line pt-4">

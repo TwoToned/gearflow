@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   ttReactivate: vi.fn(),
   ttRetire: vi.fn(),
   convexQuery: vi.fn(),
+  mxCreate: vi.fn(),
+  mxRemove: vi.fn(),
   toasts: [] as Array<{ title: string; action?: { label: string; onClick: () => void } }>,
   info: vi.fn(),
   perms: { warehouse: ["read", "scan"], testTag: ["read", "create"], asset: ["read", "create"], checkItem: ["read"] } as Record<string, string[]>,
@@ -74,6 +76,7 @@ vi.mock("@/hooks/use-test-tag-writes", () => ({
   useTestTagWrites: () => ({ recordTest: h.record, undoRecordTest: h.undoRecord, create: h.ttCreate, remove: h.ttRemove, reactivate: h.ttReactivate, retire: h.ttRetire }),
 }));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: h.convexQuery }) }));
+vi.mock("@/hooks/use-maintenance-writes", () => ({ useMaintenanceWrites: () => ({ create: h.mxCreate, remove: h.mxRemove }) }));
 vi.mock("@/lib/use-permissions", () => ({
   useCurrentRole: () => ({ permissions: h.perms, isLoading: false }),
   useCanDo: (r: string, a: string) => h.perms[r]?.includes(a) ?? false,
@@ -134,7 +137,66 @@ beforeEach(() => {
   h.toasts.length = 0;
   h.items = [item("power", "Power on"), item("yoke", "Yoke")];
   h.cards = { "AURA-01": assetCard("AURA-01"), "AURA-02": assetCard("AURA-02"), "ZZ-9": unknownCard("ZZ-9") };
-  h.perms = { warehouse: ["read", "scan"], testTag: ["read", "create"], asset: ["read", "create"], checkItem: ["read"] };
+  h.perms = { warehouse: ["read", "scan"], testTag: ["read", "create"], asset: ["read", "create"], checkItem: ["read"], maintenance: ["create", "delete"] };
+});
+
+describe("ScanPage — Create maintenance job", () => {
+  async function failYoke() {
+    const yoke = screen.getByText("Yoke").closest("[data-check-item]") as HTMLElement;
+    await userEvent.click(within(yoke).getByRole("button", { name: "Fail" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    await userEvent.type(within(yoke).getByPlaceholderText("Describe the failure..."), "Tilt lock slips");
+    await userEvent.click(within(yoke).getByRole("button", { name: "Add photo" }));
+  }
+
+  it("the save caret's 'Save and create maintenance job' saves first, then opens the dialog prefilled; Undo deletes exactly that job", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    h.save.mockResolvedValueOnce({ success: true, recordIds: ["r1", "r2"], auditId: "aud9", condition: "DAMAGED" });
+    h.mxCreate.mockResolvedValueOnce({ id: "mx1" });
+    h.mxRemove.mockResolvedValue({ id: "mx1" });
+    render(<ScanPage />);
+    await failYoke();
+    await userEvent.click(screen.getByRole("button", { name: "More ways to save" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Save and create maintenance job" }));
+    expect(h.save).toHaveBeenCalledTimes(1);
+    const dialog = await screen.findByRole("dialog", { name: "Create maintenance job" });
+    expect(within(dialog).getByLabelText("Title")).toHaveProperty("value", "Repair — AURA-01");
+    expect(within(dialog).getByLabelText("What failed")).toHaveProperty("value", "Yoke: Tilt lock slips");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create job" }));
+    expect(h.mxCreate).toHaveBeenCalledWith({ assetId: "id-AURA-01", type: "REPAIR", status: "SCHEDULED", title: "Repair — AURA-01", description: "Yoke: Tilt lock slips" });
+    const toast = h.toasts.find((t) => t.title === "Maintenance job created for AURA-01");
+    await act(async () => toast!.action!.onClick());
+    await act(async () => toast!.action!.onClick()); // the ONE guarded closure: a second click does nothing
+    expect(h.mxRemove).toHaveBeenCalledTimes(1);
+    expect(h.mxRemove).toHaveBeenCalledWith("mx1");
+  });
+
+  it("the card ⋯ opens the dialog; a passing check offers no 'Save and create maintenance job'; no Undo without maintenance:delete", async () => {
+    h.perms = { ...h.perms, maintenance: ["create"] };
+    setUrl("/scan?mode=check&tag=AURA-01");
+    h.mxCreate.mockResolvedValueOnce({ id: "mx2" });
+    render(<ScanPage />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: "More ways to save" }));
+    expect(await screen.findByRole("menuitem", { name: "Save and keep this asset open" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Save and create maintenance job" })).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Scan actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Create maintenance job…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Create maintenance job" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create job" }));
+    expect(h.mxCreate).toHaveBeenCalledTimes(1);
+    expect(h.toasts.find((t) => t.title === "Maintenance job created for AURA-01")?.action).toBeUndefined();
+  });
+
+  it("absent without maintenance:create", async () => {
+    h.perms = { ...h.perms, maintenance: [] };
+    setUrl("/scan?mode=check&tag=AURA-01");
+    render(<ScanPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Scan actions" }));
+    expect(await screen.findByRole("menuitem", { name: "Open asset" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Create maintenance job…" })).toBeNull();
+  });
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────

@@ -20,12 +20,15 @@ export function LastScans({
   shown,
   onRescan,
   onOpen,
+  onCreateMaintenance,
 }: {
   entries: LastScan[];
   mode: ScanMode;
   shown: number;
   onRescan: (tag: string) => void;
   onOpen: (href: string) => void;
+  /** A failed saved row's `Create maintenance job`; absent without `maintenance:create`. */
+  onCreateMaintenance?: (e: LastScan) => void;
 }) {
   const [limit, setLimit] = useState(shown);
   if (entries.length === 0) return null;
@@ -39,7 +42,15 @@ export function LastScans({
     detail: `${verdictWord(mode, e.verdict)} · ${clockTime(e.at)}`,
     undo: e.undo,
     onSelect: () => onRescan(e.tag),
-    trailing: <ActionMenu spec={buildScanRowMenu({ assetId: e.assetId, tag: e.tag, onOpen, onRescan })} label={`Actions for ${e.tag}`} />,
+    trailing: (
+      <ActionMenu
+        spec={buildScanRowMenu({
+          assetId: e.assetId, tag: e.tag, onOpen, onRescan,
+          onCreateMaintenance: onCreateMaintenance && e.verdict === "failed" && e.assetId ? () => onCreateMaintenance(e) : undefined,
+        })}
+        label={`Actions for ${e.tag}`}
+      />
+    ),
   }));
   return (
     <section aria-labelledby="last-scans-head" className="flex flex-col gap-2">

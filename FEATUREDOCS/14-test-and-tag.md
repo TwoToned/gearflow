@@ -97,6 +97,11 @@ is a server redirect into it (old links, the item page's "Test now", the palette
   (`Enter insulation resistance, or mark it N/A`, `Finish the visual inspection (2 left)`).
   Caret: `Save and keep this asset open`, `Save and print label` (mounts the saved record's
   `LabelTemplate` print-only, then prints — it used to print the page).
+- **Create maintenance job…** (card ⋯, and the caret's `Save and create maintenance job` on a
+  fail; only for an item linked to inventory): the same dialog and exact Undo as Check mode
+  (FEATUREDOCS/37), prefilled with what failed (`Visual: Plug condition`, `Earth Continuity:
+  fail`, the failure notes). The old wizard's fail dialog only set `Referred to electrician`,
+  which stays reachable as a failure action.
 - **Card ⋯**: Open asset, `Quick pass: repeat the last test` (PREFILLS the last record's
   ticks, readings and method for review; every blocker still applies — it can no longer
   save a reading-less PASS), Open in test & tag list, Clear this scan, `Retire from test &

@@ -64,6 +64,8 @@ export interface LastScan {
   verdict: LastScanVerdict;
   at: number;
   assetId: string | null;
+  /** A failed save: what failed, in words (a maintenance job's prefill). */
+  reason?: string;
   /** The save's ONE undo closure (the toast's own), while inside its window. */
   undo?: () => Promise<void>;
 }

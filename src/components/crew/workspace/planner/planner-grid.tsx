@@ -107,7 +107,7 @@ function CallBlock({ call, member, day, now, filters, userId, h }: { call: Plann
         {word.age && <span className={cn("ml-1 font-mono text-caption", word.stale ? "text-warn" : "text-faint")}>{word.age}</span>}
       </div>
       {menu.items.length > 0 && (
-        <span onClick={stop} className="absolute right-0 top-0 opacity-0 focus-within:opacity-100 group-hover/blk:opacity-100">
+        <span onClick={stop} className="absolute right-0 top-0 opacity-0 focus-within:opacity-100 group-hover/blk:opacity-100 pointer-coarse:opacity-100">
           <ActionMenu spec={menu} label={`${label} actions`} />
         </span>
       )}
@@ -145,7 +145,7 @@ function EmptyCell({ member, day, h }: { member: PlannerMember; day: string; h: 
       )}
     >
       {body}
-      <span aria-hidden="true" className="absolute inset-0 hidden items-center justify-center text-xl font-light text-muted group-hover/cell:flex">
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center text-xl font-light text-muted opacity-0 group-hover/cell:opacity-100 pointer-coarse:opacity-100">
         +
       </span>
     </button>

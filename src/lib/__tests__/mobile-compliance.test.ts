@@ -327,6 +327,23 @@ describe("UX Phase 15 — the Crew workspace on a phone (§9h.6)", () => {
     expect(fields).not.toMatch(/text-(xs|sm)\b/);
   });
 
+  it("planner on a phone: day mode (no 7-column grid), 64px cards with a 22px tick, 44px day chips, bottom sheets, 16px fields", () => {
+    expect(crew("planner/crew-planner.tsx")).toMatch(/if \(phone\) return "phone"/);
+    const phone = crew("planner/phone-day-list.tsx");
+    expect(phone).toContain("min-h-16");
+    expect(phone).toContain("size-[22px]");
+    expect(phone).toMatch(/role="tab"[\s\S]*min-h-11/);
+    for (const rel of ["planner/offer-call-sheet.tsx", "planner/call-sheet.tsx"]) expect(crew(rel)).toContain('side={isMobile ? "bottom" : "right"}');
+    const offer = crew("planner/offer-call-sheet.tsx");
+    expect(offer).not.toMatch(/<input\b/);
+    expect(offer).toContain("grid-cols-1 gap-3 md:grid-cols-2"); // max 2 columns, 1 on a phone
+  });
+
+  it("planner on a phone: the sticky primary sits in the shared dock, replaced by the bulk bar while ticked", () => {
+    expect(crew("planner/crew-planner.tsx")).toMatch(/isMobile && p\.primary && sel\.count === 0 && <StickyPrimary/);
+    expect(crew("planner/crew-planner.tsx")).toContain("<PinnedAboveBottomNav>");
+  });
+
   it("Export all… stays in the page ⋯ on a phone (it is the only date-range export)", () => {
     expect(crew("timesheets/timesheets-list.tsx")).toContain("pageMenu={{ items: [...ws.menuItems, exportAll] }}");
     // Its date fields are the 16px Input, so a phone never zooms.

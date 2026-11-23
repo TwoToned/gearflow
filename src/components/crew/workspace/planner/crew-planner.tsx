@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { CrewWorkspaceHead } from "@/components/crew/workspace/crew-workspace";
-import { BulkBar } from "@/components/ui/bulk-bar";
+import { BulkBar, PinnedAboveBottomNav } from "@/components/ui/bulk-bar";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ListSegments } from "@/components/ui/list-page-parts";
+import { ListSegments, type ListPrimary } from "@/components/ui/list-page-parts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import {
@@ -35,6 +37,7 @@ import { canCrewCall } from "../../../../../convex/lib/crewCallTransitions";
 import { CallSheet, type OpenedCall } from "./call-sheet";
 import { NeedsCrewList, openDay } from "./needs-crew-list";
 import { OfferCallSheet, type OfferTarget } from "./offer-call-sheet";
+import { PhonePlanner } from "./phone-day-list";
 import { PlannerGrid, gridOrder, logisticsHref, type GridHandlers } from "./planner-grid";
 import { PlannerToolbar, plannerFilterDefs } from "./planner-toolbar";
 import { usePlannerData, type PlannerData } from "./use-planner-data";
@@ -99,7 +102,7 @@ function CrewPlannerInner({ orgId }: { orgId: string | undefined }) {
       <CrewWorkspaceHead view="planner" primary={primary} />
       <PlannerStrip url={url} data={data} userId={userId} />
       <PlannerToolbar url={url} defs={plannerFilterDefs(data.roles, data.skills, all, data.open)} />
-      <PlannerBody key={`${url.week}:${url.state.seg}`} url={url} data={data} days={days} today={today} now={now} userId={userId} perms={perms} onOffer={setOffer} />
+      <PlannerBody key={`${url.week}:${url.state.seg}`} url={url} data={data} days={days} today={today} now={now} userId={userId} perms={perms} onOffer={setOffer} primary={primary} />
       <Footer members={data.members} week={url.week} />
       <OfferSheetHost target={offer} setTarget={setOffer} data={data} days={days} week={url.week} canDelete={perms.remove} />
     </div>
@@ -154,6 +157,8 @@ interface BodyProps {
   userId?: string;
   perms: Perms;
   onOffer: (t: OfferTarget) => void;
+  /** The head's primary; on a phone it is the sticky button instead. */
+  primary?: ListPrimary;
 }
 
 function useShown(data: PlannerData, filters: PlannerFilters, week: string, userId?: string) {
@@ -167,16 +172,11 @@ function useShown(data: PlannerData, filters: PlannerFilters, week: string, user
   }, [data, filters, week, userId]);
 }
 
-function PlannerBody(p: BodyProps) {
-  const router = useRouter();
-  const all = p.data.members ?? [];
-  const shown = useShown(p.data, p.url.filters, p.url.week, p.userId);
-  const calls = useRangeSelection();
-  const opens = useRangeSelection();
-  const w = usePlannerWrites({ nameOf: callNamer(all), canDelete: p.perms.remove });
-  const [opened, setOpened] = React.useState<OpenedCall | null>(null);
-  const needs = p.url.state.seg === "needs";
+type Writes = ReturnType<typeof usePlannerWrites>;
 
+/** The block ⋯, the Needs crew row ⋯ and "offer this open call to…", from the shared builders. */
+function usePlannerMenus(p: BodyProps, all: PlannerMember[], w: Writes) {
+  const router = useRouter();
   const callMenu = (c: PlannerCall, m: PlannerMember): ActionMenuSpec =>
     buildCrewCallActions(
       { status: c.status, title: `${memberName(m)} · ${c.project?.projectNumber ?? ""}` },
@@ -197,7 +197,29 @@ function PlannerBody(p: BodyProps) {
       suggestedCount: planSuggestedOffers([o], all).offers.length,
       onOpenJob: () => router.push(logisticsHref(o.projectId)),
     });
+  return { callMenu, openMenu, offerTo };
+}
 
+function StickyPrimary({ primary }: { primary: ListPrimary }) {
+  return (
+    <PinnedAboveBottomNav>
+      <Button className="w-full" onClick={primary.onSelect}>
+        {primary.label}
+      </Button>
+    </PinnedAboveBottomNav>
+  );
+}
+
+function PlannerBody(p: BodyProps) {
+  const all = p.data.members ?? [];
+  const shown = useShown(p.data, p.url.filters, p.url.week, p.userId);
+  const calls = useRangeSelection();
+  const opens = useRangeSelection();
+  const w = usePlannerWrites({ nameOf: callNamer(all), canDelete: p.perms.remove });
+  const [opened, setOpened] = React.useState<OpenedCall | null>(null);
+  const needs = p.url.state.seg === "needs";
+  const isMobile = useIsMobile();
+  const { callMenu, openMenu, offerTo } = usePlannerMenus(p, all, w);
   const order = gridOrder(shown.members, p.days);
   const handlers: GridHandlers = {
     selected: calls.ids,
@@ -207,31 +229,51 @@ function PlannerBody(p: BodyProps) {
     onOfferCell: when(p.perms.create, (m: PlannerMember, day: string) => p.onOffer({ memberId: m.id, day })),
     menuFor: callMenu,
   };
-  const bulk = useBulk({ all, open: shown.open, calls: calls.ids, opens: opens.ids, needs, perms: p.perms, w, clear: () => (needs ? opens.clear() : calls.clear()) });
+  const sel = needs ? opens : calls;
+  const bulk = useBulk({ all, open: shown.open, calls: calls.ids, opens: opens.ids, needs, perms: p.perms, w, clear: sel.clear });
   const openOrder = shown.open.map((o) => o.serviceId);
+  const onOpenOpen = (o: OpenCall) => p.perms.create && offerTo(o);
+  const views = {
+    phone: () => (
+      <PhonePlanner
+        members={shown.members} open={shown.open} days={p.days} week={p.url.week} today={p.today} now={p.now} needsOnly={needs}
+        selected={calls.ids} onToggle={(id) => calls.toggle(id, order, false)} onOpenCall={handlers.onOpenCall}
+        onOfferFree={handlers.onOfferCell} onOpenOpen={onOpenOpen} menuFor={callMenu} openMenuFor={openMenu}
+      />
+    ),
+    needs: () => (
+      <NeedsCrewList
+        open={shown.open} members={all} week={p.url.week} selected={opens.ids}
+        onToggle={(id, shift) => opens.toggle(id, openOrder, shift)} onToggleAll={(on) => opens.setAll(openOrder, on)}
+        onOpen={onOpenOpen} menuFor={openMenu}
+        empty={<NeedsEmpty filtered={hasFilters(p.url)} onClear={p.url.clear} />}
+      />
+    ),
+    empty: () => <GridEmpty roster={all.length} onClear={p.url.clear} />,
+    grid: () => (
+      <PlannerGrid members={shown.members} days={p.days} week={p.url.week} today={p.today} now={p.now} filters={p.url.filters} userId={p.userId} logged={p.data.logged} order={order} h={handlers} />
+    ),
+    loading: () => <PlannerSkeleton />,
+  };
+  const view = viewKind(p.data.members === undefined, isMobile, needs, shown.members.length === 0);
 
   return (
     <>
-      <div className="overflow-x-auto">
-        {p.data.members === undefined ? (
-          <PlannerSkeleton />
-        ) : needs ? (
-          <NeedsCrewList
-            open={shown.open} members={all} week={p.url.week} selected={opens.ids}
-            onToggle={(id, shift) => opens.toggle(id, openOrder, shift)} onToggleAll={(on) => opens.setAll(openOrder, on)}
-            onOpen={(o) => p.perms.create && offerTo(o)} menuFor={openMenu}
-            empty={<NeedsEmpty filtered={hasFilters(p.url)} onClear={p.url.clear} />}
-          />
-        ) : shown.members.length === 0 ? (
-          <GridEmpty roster={all.length} onClear={p.url.clear} />
-        ) : (
-          <PlannerGrid members={shown.members} days={p.days} week={p.url.week} today={p.today} now={p.now} filters={p.url.filters} userId={p.userId} logged={p.data.logged} order={order} h={handlers} />
-        )}
-      </div>
-      <BulkBar selection={{ count: needs ? opens.count : calls.count, clear: needs ? opens.clear : calls.clear }} actions={bulk} noun={needs ? "open call" : "call"} />
+      <div className="overflow-x-auto">{views[view]()}</div>
+      <BulkBar selection={{ count: sel.count, clear: sel.clear }} actions={bulk} noun={needs ? "open call" : "call"} />
+      {/* Phone: the sticky primary, replaced by the bulk bar while anything is ticked (§9h.6). */}
+      {isMobile && p.primary && sel.count === 0 && <StickyPrimary primary={p.primary} />}
       <CallSheet opened={opened} spec={opened ? callMenu(opened.call, opened.member) : { items: [] }} now={p.now} onOpenChange={(o) => !o && setOpened(null)} />
     </>
   );
+}
+
+/** Which body the planner shows: loading, the phone day list, Needs crew, the grid, or the grid's empty state. */
+function viewKind(loading: boolean, phone: boolean, needs: boolean, noPeople: boolean): "loading" | "phone" | "needs" | "empty" | "grid" {
+  if (loading) return "loading";
+  if (phone) return "phone";
+  if (needs) return "needs";
+  return noPeople ? "empty" : "grid";
 }
 
 const hasFilters = (url: PlannerUrl) => Object.keys(url.state.filters).length > 0 || !!url.state.q.trim();

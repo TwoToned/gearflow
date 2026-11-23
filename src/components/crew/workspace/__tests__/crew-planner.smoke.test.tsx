@@ -33,7 +33,8 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/crew/planner",
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+const mobile = vi.hoisted(() => ({ value: false }));
+vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => mobile.value }));
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
   useSession: () => ({ data: { user: { id: "me", name: "Alice" } } }),
@@ -105,6 +106,7 @@ vi.mock("@/hooks/use-authed-query", async () => {
 import { CrewPlanner } from "../planner/crew-planner";
 
 beforeEach(() => {
+  mobile.value = false;
   nav.search = "";
   nav.push.mockClear();
   perms.all = true;
@@ -283,6 +285,48 @@ describe("CrewPlanner (smoke)", () => {
     render(<CrewPlanner />);
     expect(screen.queryByRole("button", { name: "Offer call" })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Offer Dev Patel a call/ })).toBeNull();
+  });
+
+  it("phone: day chips (open count), one day as Needs crew · Booked · Free · Unavailable, the sticky Offer call", async () => {
+    mobile.value = true;
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    expect(screen.queryByRole("table", { name: /one week/ })).toBeNull(); // no sideways-scrolling grid on a phone
+    const chips = screen.getByRole("tablist", { name: "Day" });
+    expect(within(chips).getByRole("tab", { name: /Wed 18/ }).textContent).toContain("2 open");
+    expect(within(chips).getByRole("tab", { name: /Tue 17/ }).getAttribute("aria-selected")).toBe("true"); // today
+    expect(screen.getByRole("region", { name: "Booked" }).textContent).toContain("Oli Martin");
+    expect(screen.getByRole("region", { name: "Free" }).textContent).toContain("Dev Patel");
+    // The phone primary is the sticky button, not the head's
+    expect(screen.getAllByRole("button", { name: "Offer call" })).toHaveLength(1);
+    await user.click(within(chips).getByRole("tab", { name: /Mon 16/ }));
+    expect(screen.getByRole("region", { name: "Unavailable" }).textContent).toContain("Dev Patel");
+    await user.click(within(chips).getByRole("tab", { name: /Wed 18/ }));
+    expect(screen.getByRole("region", { name: "Needs crew" }).textContent).toContain("#2341 Bump in");
+    await user.click(screen.getByRole("button", { name: "Offer Dev Patel a call on 2026-11-18" }));
+    expect(within(await screen.findByRole("dialog")).getByText("Offer a call")).toBeTruthy();
+  });
+
+  it("phone: a booked card opens the call sheet; its ⋯ opens as a bottom sheet; ticking swaps the primary for the bulk bar", async () => {
+    mobile.value = true;
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(within(screen.getByRole("region", { name: "Booked" })).getByText("Oli Martin"));
+    expect(within(await screen.findByRole("dialog")).getByRole("button", { name: /^Offer/ })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Oli Martin #2341 actions" }));
+    expect(await screen.findByRole("button", { name: /Cancel call/ })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("checkbox", { name: "Select Oli Martin #2341" }));
+    expect(screen.getByRole("toolbar", { name: "Bulk actions" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Offer call" })).toBeNull();
+  });
+
+  it("phone: the Needs crew strip lists the week's open calls by day", () => {
+    mobile.value = true;
+    nav.search = "seg=needs";
+    render(<CrewPlanner />);
+    expect(screen.getByRole("region", { name: "Wed, 18 Nov" }).textContent).toContain("needs 2");
   });
 
   it("page ⋯ holds Crew list and Crew roles & rates… (the roles sheet is URL state)", async () => {

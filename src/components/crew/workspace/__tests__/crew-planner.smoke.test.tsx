@@ -33,6 +33,8 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/crew/planner",
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
+const weekStart = vi.hoisted(() => ({ value: 1 as 0 | 1 }));
+vi.mock("@/lib/use-org-country", () => ({ useOrgWeekStartsOn: () => weekStart.value }));
 const mobile = vi.hoisted(() => ({ value: false }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => mobile.value }));
 vi.mock("@/lib/auth-client", () => ({
@@ -107,6 +109,7 @@ import { CrewPlanner } from "../planner/crew-planner";
 
 beforeEach(() => {
   mobile.value = false;
+  weekStart.value = 1;
   queried.truncated = false;
   queried.open = undefined;
   queried.members = undefined;
@@ -137,6 +140,15 @@ describe("CrewPlanner (smoke)", () => {
     expect(screen.getByTestId("planner-footer").textContent).toBe("2 people · 0 of 3 confirmed · 1 accepted · 1 offered · 1 pending");
     // the query args come from the URL week (stable), never Date.now()
     expect(queried.planner).toEqual({ orgId: "org1", startMs: Date.parse(day("2026-11-16")), endMs: Date.parse(day("2026-11-23")) - 1 });
+  });
+
+  it("a Sunday-start org (#1086) gets a Sun–Sat week, and the query window follows it", () => {
+    weekStart.value = 0;
+    render(<CrewPlanner />);
+    const grid = screen.getByRole("table", { name: /one week/ });
+    expect(within(grid).getAllByRole("columnheader").map((h) => h.textContent).slice(1, 8)).toEqual(["Sun15", "Mon16", "Tue17", "Wed18", "Thu19", "Fri20", "Sat21"]);
+    expect(screen.getByTestId("planner-week").textContent).toBe("15 Nov – 21 Nov");
+    expect(queried.planner).toMatchObject({ startMs: Date.parse(day("2026-11-15")) });
   });
 
   it("the #1246 find-cover deep link (?week=<ms>&role&avail=AVAILABLE) lands filtered, reading Free", () => {

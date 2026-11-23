@@ -12,7 +12,7 @@
  */
 import { z } from "zod";
 
-import { AVAIL_KEYS, defaultWeek, keyOfMs, weekOf, type AvailKey, type PlannerFilters } from "@/lib/crew-planner";
+import { AVAIL_KEYS, defaultWeek, localDayKey, weekOf, type AvailKey, type PlannerFilters, type WeekStart } from "@/lib/crew-planner";
 import type { ListUrlSpec, ListUrlState } from "@/lib/list-url-state";
 
 export const PLANNER_SPEC: ListUrlSpec = {
@@ -27,18 +27,23 @@ export const WEEK_PARAM = "week";
 const DayKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)));
 const EpochMs = z.coerce.number().int().min(0).max(8.64e15);
 
-/** `?week=` as the Monday it falls in; junk falls back to the default week. */
-export function parseWeek(raw: string | null, todayKey: string): string {
+/**
+ * `?week=` as the first day (by the org's week start) of the week it falls in;
+ * junk falls back to the default week. The legacy #1246 `week=<epoch ms>` was
+ * written from a LOCAL date (`startOfWeek(new Date(ms))`), so it is read as the
+ * viewer's local day — read in UTC it lands a day early east of Greenwich.
+ */
+export function parseWeek(raw: string | null, todayKey: string, startsOn: WeekStart = 1): string {
   const key = DayKey.safeParse(raw);
-  if (key.success) return weekOf(key.data);
+  if (key.success) return weekOf(key.data, startsOn);
   const ms = raw ? EpochMs.safeParse(raw) : null;
-  if (ms?.success) return weekOf(keyOfMs(ms.data));
-  return defaultWeek(todayKey);
+  if (ms?.success) return weekOf(localDayKey(ms.data), startsOn);
+  return defaultWeek(todayKey, startsOn);
 }
 
 /** The week param to write: omitted for the default week. */
-export function weekParam(week: string, todayKey: string): string | null {
-  return week === defaultWeek(todayKey) ? null : week;
+export function weekParam(week: string, todayKey: string, startsOn: WeekStart = 1): string | null {
+  return week === defaultWeek(todayKey, startsOn) ? null : week;
 }
 
 const LEGACY_AVAIL: Record<string, AvailKey> = {

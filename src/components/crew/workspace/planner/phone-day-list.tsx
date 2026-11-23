@@ -175,7 +175,7 @@ function DaySections({ day, p }: { day: string; p: PhonePlannerProps }) {
   );
 }
 
-/** The first day worth opening: today if it is in the week, else the first day with an open call, else Monday. */
+/** The first day worth opening: today if it is in the week, else the first day with an open call, else the week's first day. */
 function firstDay(days: string[], open: OpenCall[], week: string, today: string): string {
   if (days.includes(today)) return today;
   return open.map((o) => openDay(o, week)).sort()[0] ?? week;

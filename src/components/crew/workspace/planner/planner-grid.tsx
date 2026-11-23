@@ -28,7 +28,7 @@ import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
 
 /**
- * The planner's one-week grid (spec §9h.3, D46): people by last name, Mon–Sun,
+ * The planner's one-week grid (spec §9h.3, D46): people by last name, seven days from the org's week start,
  * then Hours (planned from booked calls / logged from approved timesheets,
  * derived). A call is a block — tick, job number (links to the job's
  * Logistics tab), role, times, status word — and the rest of the block opens

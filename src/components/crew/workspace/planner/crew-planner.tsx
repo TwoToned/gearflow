@@ -48,7 +48,7 @@ import { usePlannerWrites } from "./use-planner-writes";
 import { useRangeSelection } from "./use-range-selection";
 
 /**
- * Crew › Planner (UX Phase 15, spec §9h.2–9h.3, D46): one week, Mon–Sun, the
+ * Crew › Planner (UX Phase 15, spec §9h.2–9h.3, D46): one week from the org's week start (#1086), the
  * strip All · Needs crew · Unconfirmed · Mine, Role / Skill / Job /
  * Availability filters, all in the URL (the #1246 find-cover deep link
  * `?week&role&avail` still lands here). Click an empty cell to offer a call;
@@ -79,7 +79,7 @@ function callNamer(members: PlannerMember[]) {
   return (id: string) => byCall.get(id) ?? "a call";
 }
 
-/** The day Offer call (the primary) opens on: the first day with an open call, else today in this week, else Monday. */
+/** The day Offer call (the primary) opens on: the first day with an open call, else today in this week, else the week's first day. */
 function primaryDay(open: OpenCall[], week: string, days: string[], today: string): string {
   const first = open.map((o) => openDay(o, week)).sort()[0];
   return first ?? (days.includes(today) ? today : week);

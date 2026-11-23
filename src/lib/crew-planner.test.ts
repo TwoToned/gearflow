@@ -56,6 +56,29 @@ describe("weeks (D46: one week, Mon–Sun)", () => {
     expect(defaultWeek("2026-11-22")).toBe("2026-11-23");
   });
 
+  it("honours the org's week start (#1086): a Sunday-start org's week is Sun–Sat", () => {
+    expect(weekOf("2026-11-19", 0)).toBe("2026-11-15");
+    expect(weekOf("2026-11-15", 0)).toBe("2026-11-15"); // Sunday opens its own week
+    expect(weekDays(weekOf("2026-11-19", 0))[6]).toBe("2026-11-21");
+    // On a weekend the planner opens on the week holding the next working days.
+    expect(defaultWeek("2026-11-21", 0)).toBe("2026-11-22"); // Saturday → tomorrow's week
+    expect(defaultWeek("2026-11-22", 0)).toBe("2026-11-22"); // Sunday → this week (starts today)
+    expect(parseWeek("2026-11-19", "2026-11-01", 0)).toBe("2026-11-15");
+    expect(weekParam("2026-11-15", "2026-11-18", 0)).toBeNull();
+  });
+
+  it("the legacy week=<ms> link is read as the viewer's LOCAL day it was written from", () => {
+    // East of Greenwich, local midnight Monday is still Sunday in UTC: reading it in UTC lands a week early.
+    const tz = process.env.TZ;
+    process.env.TZ = "Australia/Sydney";
+    try {
+      const localMon = new Date(2026, 10, 16, 0, 0, 0).getTime(); // local midnight Monday (startOfWeek output)
+      expect(parseWeek(String(localMon), "2026-11-01")).toBe("2026-11-16");
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
+
   it("the query window spans the whole Sunday", () => {
     const r = weekRange(WEEK);
     expect(new Date(r.endMs).toISOString()).toBe("2026-11-22T23:59:59.999Z");

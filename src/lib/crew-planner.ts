@@ -72,10 +72,13 @@ export const keyOfIso = (iso: string): string => iso.slice(0, 10);
 const msOfKey =(key: string): number => Date.parse(`${key}T00:00:00.000Z`);
 export const addDays = (key: string, n: number): string => keyOfMs(msOfKey(key) + n * DAY_MS);
 
-/** 0 = Mon … 6 = Sun (the planner is Mon–Sun, D46). */
-const monIndex = (key: string): number => (new Date(msOfKey(key)).getUTCDay() + 6) % 7;
-export const isWeekend = (key: string): boolean => monIndex(key) >= 5;
-export const weekOf = (key: string): string => addDays(key, -monIndex(key));
+/** The org's first day of the week (#1086, `useOrgWeekStartsOn`): 0 = Sunday, 1 = Monday. */
+export type WeekStart = 0 | 1;
+
+const dayOfWeek = (key: string): number => new Date(msOfKey(key)).getUTCDay();
+export const isWeekend = (key: string): boolean => dayOfWeek(key) === 0 || dayOfWeek(key) === 6;
+/** The first day of the week `key` falls in, by the org's week start (D46 fixes ONE week, not Monday). */
+export const weekOf = (key: string, startsOn: WeekStart = 1): string => addDays(key, -((dayOfWeek(key) - startsOn + 7) % 7));
 export const weekDays = (week: string): string[] => [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(week, i));
 
 /** The viewer's local calendar day as a key. */
@@ -85,8 +88,9 @@ export function localDayKey(nowMs: number): string {
 }
 
 /** The week the planner opens on: this week, or the next working week on a weekend (§9h.3). */
-export function defaultWeek(todayKey: string): string {
-  return weekOf(isWeekend(todayKey) ? addDays(todayKey, 2) : todayKey);
+export function defaultWeek(todayKey: string, startsOn: WeekStart = 1): string {
+  // +2 from Sat/Sun lands on Mon/Tue: its week holds the next working days for either start.
+  return weekOf(isWeekend(todayKey) ? addDays(todayKey, 2) : todayKey, startsOn);
 }
 
 /** A key as a local-noon Date, for the `Intl` display formatters (never off by a day). */
@@ -95,7 +99,7 @@ export function displayDate(key: string): Date {
   return new Date(y, m - 1, d, 12);
 }
 
-/** The query window for a week: its Monday 00:00 UTC to its Sunday 23:59:59.999 UTC. */
+/** The query window for a week: its first day 00:00 UTC to its seventh day 23:59:59.999 UTC. */
 export function weekRange(week: string): { startMs: number; endMs: number } {
   const startMs = msOfKey(week);
   return { startMs, endMs: startMs + 7 * DAY_MS - 1 };

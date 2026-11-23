@@ -19,7 +19,7 @@ export type NavIconKey =
   | "home" | "jobs" | "finance" | "schedule" | "crew" | "assets" | "warehouse"
   | "testTag" | "maintenance" | "clients" | "suppliers" | "locations" | "activity"
   | "settings" | "templates" | "overbookings" | "planner" | "timesheets" | "models"
-  | "categories" | "kits" | "roi" | "salesStock" | "returns" | "registry" | "quickTest"
+  | "categories" | "kits" | "roi" | "salesStock" | "returns" | "scan" | "registry" | "quickTest"
   | "reports" | "more";
 
 /** The sidebar's three hairline groups (§6d.2). */
@@ -96,7 +96,11 @@ export const NAV: readonly NavItem[] = [
   },
   {
     key: "warehouse", label: "Warehouse", url: "/warehouse", icon: "warehouse", hue: "teal", group: 1, moreGroup: "gear", resource: "warehouse",
-    subs: [{ key: "warehouse-returns", label: "Returns", url: "/warehouse?mode=returning", icon: "returns", resource: "warehouse" }],
+    subs: [
+      { key: "warehouse-returns", label: "Returns", url: "/warehouse?mode=returning", icon: "returns", resource: "warehouse" },
+      // The Scan page (Phase 16, plan Q6b): Check mode's desktop entry.
+      { key: "warehouse-scan", label: "Scan", url: "/scan", icon: "scan", resource: "warehouse" },
+    ],
   },
   {
     key: "test-and-tag", label: "Test & Tag", url: "/test-and-tag", icon: "testTag", hue: "teal", group: 1, moreGroup: "gear", resource: "testTag",

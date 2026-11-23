@@ -29,7 +29,7 @@ export const SEARCH_RESULT_RESOURCE = {
 
 export type SearchResultType = keyof typeof SEARCH_RESULT_RESOURCE;
 
-export const SEARCH_RESULT_TYPES = Object.keys(SEARCH_RESULT_RESOURCE) as SearchResultType[];
+const SEARCH_RESULT_TYPES =Object.keys(SEARCH_RESULT_RESOURCE) as SearchResultType[];
 
 /**
  * Drop every result whose type the role can't read, from a flat parent-then-

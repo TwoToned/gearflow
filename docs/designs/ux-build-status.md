@@ -111,9 +111,25 @@ Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that
 
 | Phase | Worker | Branch / PR | State | Blockers |
 |---|---|---|---|---|
-| 7 Job header + Overview + tab strip (M) | default | `claude/ux-7-job-header` · #1400 | slice A (header + tab strip) pushed; slice B (Overview) next | — |
-| 8 Packing + Versions (L) | Sonnet | `claude/ux-8-packing-versions` · #1399 | slice 1 (Convex) pushed | page.tsx tab work waits for 7 |
-| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` · #1401 | S1 (Convex + Jobs list) pushed | — |
-| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` · #1402 | slice 1 (Convex + server) pushed | — |
-| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` · #1403 | plan approved; slice 1 next | merges before Phase 14 |
-| Follow-up: CSV guard + Next.js ≥ 16.4.5 | default | `claude/fu-csv-next-upgrade` | starting | — |
+| 7 Job header + Overview + tab strip (M) | default | #1400 **merged 2026-11-22** (15450b14) | done. Independent review: 0 blockers, 6 should-fix, all fixed. An unapproved index was reverted (`by_projectId` used instead) | — |
+| 8 Packing + Versions (L) | Sonnet | `claude/ux-8-packing-versions` · #1399 | slices 1–2 pushed; review: 0 blockers, 7 should-fix in progress; slice 3 (Versions) next, then slice 4 (page.tsx, now unlocked) | — |
+| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` · #1401 | S1 approved; S2 (Home) pushed, review running; S3 (⌘K) building | — |
+| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` · #1402 | slice 1 approved; slice 2 (Timesheets, roles sheet, nav) pushed, review running; slice 3 (planner) building | — |
+| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` · #1403 | slice 1 pushed; review: 3 blockers (ad-hoc Undo window, later-save clobber, caller-chosen test profile) + 4 should-fix, in progress; slice 2 next | merges before Phase 14 |
+| Follow-up: CSV formula guard | default | #1405 **merged 2026-11-21** (d2b323c7) | done | — |
+| Follow-up: Next.js 16.4.3 → 16.4.5 | default | #1406 **merged 2026-11-22** (f3c5547f) | done (7 moderate advisories cleared) | — |
+| Follow-up: picomatch GHSA-fc5q | default | #1407 **merged 2026-11-22** (9e847a93) | done: the audit passes without the ignore, so the exception row is retired | — |
+
+**Restarts:** the container restarted twice (2026-11-21 ~11:40 and ~15:25); the second left the build idle about 32 h. Branches were always clean and pushed, and workers were re-briefed from their PR-body handoffs.
+
+**Gate addendum (2026-11-21):** the handoff §6 gate list missed several CI Hygiene steps (depcruise-ratchet broke three branches). Workers now run the full Hygiene set: check-docs-npm-npx, check-dependency-justification, depcruise / any / date-format / collect / knip / complexity / xtenant ratchets, check-client-routes, api:registry/docs/mcp checks, wasm:sync:check, mira:feature-map:check, plus pnpm audit.
+
+**Owner, 2026-11-22:** Phase 16's T&T reading fields are FIVE optional columns (two readings, each with its own result, plus three `*Result` columns).
+
+### Logged follow-ups (not in any phase)
+- CSV importers don't strip the formula guard's leading `'` on re-import.
+- tailwind-merge drops the custom font-size tokens (`text-caption`, `text-table-cell`) in `cn()` at about 40 sites; needs `extendTailwindMerge`.
+- `recalcServiceCostFromCrew` counts cancelled/declined calls; the Overbookings `fetchServicesData` doesn't filter non-live versions; version-scope-ratchet reads 41 vs 32 (not in CI).
+- Job page: the `V` hint inside the version submenu is inert; Documents label lists go stale per mount.
+- The labour-cost store in `use-project-crew.ts` may be dead after Phase 7.
+- The `braces` R-6.6 exception expired 2026-10-17 (flagged to the owner earlier).

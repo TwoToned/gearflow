@@ -228,7 +228,7 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
 | `/crew/new` | CrewMemberForm | Create crew member |
 | `/crew/[id]` | Detail page | Profile picture (upload/remove), contact, rates, skills, assignments (with status management), availability, certifications, time entries, calendar, linked user display |
 | `/crew/[id]/edit` | CrewMemberForm | Edit crew member (includes user account linking) |
-| `/crew/planner` | CrewPlannerPage | The Crew workspace's **Planner** word: the shared Crew head (see "Crew workspace" below) over the 14-day timeline (the one-week grid replaces it in UX Phase 15 slice 3) |
+| `/crew/planner` | CrewPlannerPage → `CrewPlanner` | The Crew workspace's **Planner** word: the shared Crew head (see "Crew workspace" below) over the one-week planner (see "Crew Planner") |
 | `/crew/timesheets` | `TimesheetsList` (`src/components/crew/workspace/timesheets/`) | The Crew workspace's **Timesheets** word on `ListPage` (UX Phase 15, spec §9h.4) — see "Crew workspace" below |
 | `/crew/settings` | redirect | Server redirect to `/crew/planner?sheet=roles`: the roles admin is now the **Crew roles & rates** sheet (`src/components/crew/workspace/roles/`). Old links and bookmarks keep working |
 
@@ -482,18 +482,77 @@ keyed `(projectId, range)` and bounded to the project's own dated assignments.
 UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 `computeMemberConflictSignal`'s `availability` field.
 
-## Crew Planner
-- 14-day Gantt-style timeline at `/crew/planner`
-- Shows all active crew with their assignments and availability blocks
-- **At-a-glance strip** above the board (single surface, vertical dividers): crew on roster, booked today, free today, off today — computed client-side from the loaded data
-- **Filter / search bar**: free-text search (name, role, department, project), plus crew-member, project, and availability-status (`Booked` / `Unavailable` / `Tentative` / `Preferred`) Selects. All filtering is **client-side** over the already-loaded planner data — no server round-trip. "N of M shown" counter + Clear button when any filter is active. Picking a project filter highlights matching assignment chips (red ring) and dims non-matching ones; a dedicated "no crew match these filters" empty state appears when filters exclude everyone.
-- Day cells render labelled status **chips** (project number / `N×` / `Off` / `Tent.` / `Pref.`) via `status-colors`, not bare dots: primary red (assignment), `t-out` (unavailable), warn (tentative), ok (preferred). Blank cell = no plans. On-fill text follows §3.7 (`text-white` on the red assignment fill).
-- Sticky crew name column with per-row `Nd` booked-days chip; circular today pill in the header; weekend columns tinted
-- Tooltip on hover showing project details or availability reason
-- Navigation: back/forward by week, "Today" button
-- Sidebar: "Planner" link under Crew
+## Crew Planner (UX Phase 15, spec §9h.3, D46)
 
-### UX Phase 15 reads and writes (spec §9h; the page itself is rebuilt in later slices)
+`/crew/planner` is the Crew workspace's **Planner** word
+(`src/components/crew/workspace/planner/`, pure derivations in
+`src/lib/crew-planner.ts`, URL codec in `src/lib/crew-planner-url.ts`, row and
+bulk verbs in `src/lib/row-actions/crew-call.ts`). The route is a thin server
+component; the fortnight, the today-tiles, the crew-member Select and the glyph
+legend are gone (every block prints its own word).
+
+- **One week, Mon–Sun** with ‹ › Today; it opens on this week, or the next
+  working week on a weekend. Rows are active crew by last name; the last column
+  is **Hours** = planned (each booked call's `estimatedHours`, else its times ×
+  its days in the week; PENDING / DECLINED are not planned — the live rule) `/`
+  logged (`crewTimeEntries.approvedHoursByMember`). Derived, never stored.
+- **A call is a block**: tick · job number (links to the job's Logistics tab) ·
+  role · times · status word (`Offered 4d`, amber from 3 days). The rest of the
+  block opens the **call sheet**; ⋯ on hover/focus (always on touch).
+- **Empty cells print the person's day**: `Unavailable` (hatched, with its
+  reason), `Pencilled` (a TENTATIVE block, Q-S5), `Preferred`. Clicking one opens
+  **Offer a call** for that person and day (needs `crew:create`).
+- **Strip** `All · Needs crew · Unconfirmed · Mine`: All = calls this week; Needs
+  crew = open slots (`crewPlanner.openCalls`); Unconfirmed = Pending + Offered +
+  Accepted; Mine = calls on jobs I am the PM of (the Jobs `My jobs` rule —
+  `plannerData` now carries each job's `projectManagerId`). Unconfirmed and Mine
+  keep only people with a matching call and dim the other blocks.
+- **Filters** read their value: `Role`, `Skill`, `Job` (also dims other jobs'
+  blocks), `Availability` (Free · Booked · Unavailable · Pencilled · Preferred).
+  Week, strip, search and filters are ALL the URL (D11); other params
+  (`sheet=roles`) are kept. The #1246 find-cover deep link
+  `?week=<epoch ms>&role=<id>&avail=AVAILABLE` still lands filtered (`AVAILABLE`
+  reads as Free; the old `TENTATIVE`/`ASSIGNED`/… values map too).
+- **Needs crew** replaces the grid with the open calls by day: job · call ·
+  times · `needs n` · up to three free people with that role (preferred first).
+  A row opens Offer a call with the first suggestion picked; row ⋯ = Offer to…,
+  Offer to suggested, Open job.
+- **Offer a call** (sheet): Person (each with their day state), Day, Job service
+  (that day's open services, `needs n`), Role, Start, End, the role's cost rate
+  (only when the server sent it), `Send the offer now`. It creates a PENDING call
+  through the same `crewAssignmentsWrites.createNative` Logistics uses (with the
+  service's `phase`); with Send on it then calls `sendCrewOffers` — the button
+  asks once more in place, and the toast has no Undo (the email is out). Saved as
+  Pending, its Undo deletes the created call (only with `crew:delete`).
+- **Bulk** (tick calls, shift-click ranges, select-all in the header): `Offer n`
+  (PENDING → OFFERED, confirmed, no Undo), `Confirm n` (ACCEPTED → CONFIRMED,
+  Undo `unconfirmManyNative(result)`), `Cancel n` (red, last, confirmed;
+  `cancelManyNative` then `sendCancellationEmails(toTell)`; no Undo). Ticking
+  open calls under Needs crew offers `Offer to suggested n`: free or preferred
+  people with the role, up to each shortfall, one person once per day across the
+  batch (`planSuggestedOffers`), created then offered in one send.
+- **Which verb a call offers** comes from ONE table,
+  `convex/lib/crewCallTransitions.ts` (`canCrewCall`), read by the server gates
+  (`confirmManyNative`, `cancelManyNative`, `sendCrewOffers`) and the menus.
+  `sendCrewOffers` now refuses (per row, named) a call that is not PENDING or
+  OFFERED, so a bulk offer can never knock an ACCEPTED/CONFIRMED call back.
+  `cancelManyNative` also clears the call's `responseToken`.
+- **The call sheet** shows role, times, status (with when it was offered) and
+  the person's day, and the block ⋯ verbs as buttons (the same spec). Editing a
+  call's role, times or rate stays on the job's Logistics tab: `updateNative`
+  replaces the whole assignment, and a planner edit below the pay line (which
+  never read `rateOverride`) would wipe it.
+- **Footer**: `10 people · 5 of 13 confirmed · 2 accepted · 2 offered · 4 pending`,
+  with `n declined` in red as the one flag.
+- **Live**: `plannerData`, `openCalls` and the logged hours are live
+  subscriptions keyed on the URL week (no `Date.now()` in the args).
+- **Phone** (§9h.6): day mode — day chips (`Tue 17 · 1 open`, red count), then one
+  day as Needs crew · Booked (64px cards, 22px tick, ⋯) · Free (tap = Offer a
+  call) · Unavailable; the Needs crew strip lists the week's open calls by day.
+  Sticky `Offer call`, replaced by the bulk bar while ticked. Sheets open from the
+  bottom.
+
+### UX Phase 15 reads and writes (spec §9h)
 - **`crewPlanner.openCalls({ orgId, startMs, endMs })`** — the `Needs crew` list:
   services short of people (filled crew, DECLINED/CANCELLED excluded, below
   `crewCountRequired`) via the Overbookings board's own `computeServicesMissingCrew`.
@@ -522,6 +581,12 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
   assignment pay below manager (see Time Tracking › pay).
 
 ## Crew Planner — confirmation layer, availability requests, planned vs actual (Work-layer Phase 4, #1246)
+
+> **History.** The fortnight grid, its glyph badges and the header sentence
+> described below were replaced by UX Phase 15's one-week planner (see "Crew
+> Planner" above): status words, the footer counts and the Hours column carry
+> the same facts. The server pieces here (`PLANNER_HIDDEN_STATUSES`,
+> `approvedHoursByMember`, the offer nudges, first-come fill) are unchanged.
 
 > Design: `docs/designs/work-layer.md` §8.5/§9/§10, build plan phase 4.
 > Seam: ROADMAP §2.1 (crew & services overhaul) owns services, rates and the

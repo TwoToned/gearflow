@@ -493,7 +493,10 @@ price-looking $0 plus a `priceBreakdown` that makes it look auto-priced. See
 ### Timesheets: crew pay is DERIVED and manager-gated; Query… is not `notes`
 Timesheet rate/total (D49) are derived in `convex/lib/timeEntryMoney.ts` from the
 pay cascade `resolveRate` — a day rate once per person per day, a flat rate once per
-person per assignment, nothing resolved = blank — and never stored. Every read that
+person per assignment (a job-less FLAT entry: once per person per day), nothing
+resolved = blank — and never stored. The entry that CARRIES a shared charge is the
+most advanced one (EXPORTED > APPROVED > SUBMITTED > DISPUTED/DRAFT), then the
+earliest; never "the earliest" alone, or a later draft steals it. Every read that
 returns crew pay (`allEntries`, `plannerData`, `membersForAssignment`,
 `crewDashboard.pickerList`, the timesheet CSV) gates it on `canSeeCrewPay` (`convex/lib/crewPayVisibility.ts`: manager+ and not a
 `noFinancials` key); add a new pay-bearing read to that list, don't hide a column
@@ -502,7 +505,22 @@ client-side. Query… (D47, enum stays `DISPUTED`) stores its reason on
 approve / query log one activity row per entry with the prior state, and their ONE
 Undo, `revertNative`, takes only ids + the forward stamp (no transition, no prior
 status) and reads which transition ran and the prior state back from those rows —
-never accept either from the client. FEATUREDOCS/31.
+never accept either from the client. Query clears the approval stamp and its
+revert restores it. Log time's Undo is ONE atomic `undoCreateManyNative({ ids,
+stamp })` that refuses if any entry moved on — never a loop of deletes.
+FEATUREDOCS/31.
+
+### The crew planner — one call-verb table, mail has no Undo
+Which planner verb a crew call offers (Offer / Confirm / Cancel) comes from ONE
+table, `convex/lib/crewCallTransitions.ts` (`canCrewCall`): the server gates
+(`confirmManyNative`, `cancelManyNative`, `sendCrewOffers`) and the planner menus
+read it, so add a status there, not in a menu. `sendCrewOffers` refuses a call
+that is not PENDING/OFFERED (it would knock a yes back to OFFERED). Offer and
+Cancel email the crew: confirm first, toast with no Undo; `Confirm n`'s Undo is
+`unconfirmManyNative(result)` with the forward result unchanged. The planner
+reads `plannerData` / `openCalls` as live subscriptions keyed on the URL week;
+editing a call stays on the job's Logistics tab (`updateNative` is a full
+replace). FEATUREDOCS/31 "Crew Planner".
 
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved

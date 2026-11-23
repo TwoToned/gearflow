@@ -84,7 +84,8 @@ export const bundle = query({
     // the list it opens). It reads the org's OPEN jobs by (org, status), then
     // probes each past-end job's LIVE version for CHECKED_OUT lines, bounded,
     // with a `truncated` flag.
-    const overdue = await overdueReturnsForOrg(ctx, orgId, now);
+    // The tile's sub-line counts the lines still out, so this caller counts them.
+    const overdue = await overdueReturnsForOrg(ctx, orgId, now, { countLines: true });
 
     return {
       totalAssets: counter.activeAssets + counter.bulkQuantity,

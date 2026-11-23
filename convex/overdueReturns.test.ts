@@ -10,7 +10,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { OVERDUE_PROBE_CAP, isOverdueCandidate, returnDueAt } from "./lib/overdueReturns";
+import { OVERDUE_PROBE_CAP, isOverdueCandidate, overdueReturnsFromRows, returnDueAt } from "./lib/overdueReturns";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -168,5 +168,35 @@ describe("bounds", () => {
     const s = await t.withIdentity(asUser).query(api.dashboardStats.bundle, { orgId: ORG, now: NOW });
     expect(s.overdueTruncated).toBe(true);
     expect(s.overdueReturnJobs).toBe(0);
+  });
+});
+
+describe("overdue returns — read budget", () => {
+  /** A fake ctx that records each line probe's take(n) and hands back that many out lines. */
+  function probeCtx() {
+    const takes: number[] = [];
+    const ctx = {
+      db: {
+        query: () => ({ withIndex: () => ({ take: async (n: number) => (takes.push(n), Array.from({ length: Math.min(n, 3) }, () => ({}))) }) }),
+      },
+    } as unknown as Parameters<typeof overdueReturnsFromRows>[0];
+    return { ctx, takes };
+  }
+  const rows = ["a", "b"].map((id) => ({
+    id, isTemplate: false, status: "CHECKED_OUT", rentalEndDate: NOW - DAY, liveVersionId: `v-${id}`,
+  })) as unknown as Parameters<typeof overdueReturnsFromRows>[1];
+
+  test("presence only (Jobs filter, Needs you, More sheet): ONE line per job", async () => {
+    const { ctx, takes } = probeCtx();
+    const r = await overdueReturnsFromRows(ctx, rows, NOW);
+    expect(takes).toEqual([1, 1]);
+    expect([...r.projectIds].sort()).toEqual(["a", "b"]);
+  });
+
+  test("the Home tile counts the lines (its sub-line), capped", async () => {
+    const { ctx, takes } = probeCtx();
+    const r = await overdueReturnsFromRows(ctx, rows, NOW, { countLines: true });
+    expect(takes).toEqual([1001, 1001]);
+    expect(r.lineCount).toBe(6);
   });
 });

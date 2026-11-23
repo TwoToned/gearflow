@@ -54,7 +54,7 @@ type Project = Doc<"projects">;
 export interface OverdueReturns {
   /** Overdue-return job ids. */
   projectIds: Set<string>;
-  /** CHECKED_OUT live lines across those jobs (the tile's sub-line). */
+  /** CHECKED_OUT live lines across those jobs (the tile's sub-line). Only counted with `countLines`; else the job count. */
   lineCount: number;
   /** A cap was hit: the counts are a lower bound. */
   truncated: boolean;
@@ -80,19 +80,28 @@ export function isOverdueCandidate(
  * From an org's already-loaded, org-checked project rows (the Jobs list loads them
  * anyway): probe the candidates' live versions for CHECKED_OUT lines.
  */
-export async function overdueReturnsFromRows(ctx: QueryCtx, rows: readonly Project[], now: number): Promise<OverdueReturns> {
+export async function overdueReturnsFromRows(
+  ctx: QueryCtx,
+  rows: readonly Project[],
+  now: number,
+  opts: { countLines?: boolean } = {},
+): Promise<OverdueReturns> {
   const candidates = rows
     .filter((p) => isOverdueCandidate(p, now))
     .sort((a, b) => (returnDueAt(b) ?? 0) - (returnDueAt(a) ?? 0) || (a.id < b.id ? -1 : 1));
   const probed = candidates.slice(0, OVERDUE_PROBE_CAP);
   let truncated = candidates.length > OVERDUE_PROBE_CAP;
 
+  // Presence only needs ONE out line per job; only the Home tile's sub-line counts
+  // them. Reading up to 1,001 lines for each of 500 jobs could hit the Convex read
+  // limit on a large org, so every other caller takes one.
+  const take = opts.countLines ? OVERDUE_LINE_CAP + 1 : 1;
   const outLines = await Promise.all(
     probed.map((p) =>
       ctx.db
         .query("projectLineItems")
         .withIndex("by_versionId_status", (q) => q.eq("versionId", p.liveVersionId as string).eq("status", "CHECKED_OUT"))
-        .take(OVERDUE_LINE_CAP + 1),
+        .take(take),
     ),
   );
 
@@ -113,7 +122,12 @@ export async function overdueReturnsFromRows(ctx: QueryCtx, rows: readonly Proje
  * range per non-terminal status (org and status in the index, then the cap), never
  * the org's whole project history.
  */
-export async function overdueReturnsForOrg(ctx: QueryCtx, orgId: string, now: number): Promise<OverdueReturns> {
+export async function overdueReturnsForOrg(
+  ctx: QueryCtx,
+  orgId: string,
+  now: number,
+  opts: { countLines?: boolean } = {},
+): Promise<OverdueReturns> {
   const perStatus = await Promise.all(
     OPEN_STATUSES.map((status) =>
       ctx.db
@@ -124,6 +138,6 @@ export async function overdueReturnsForOrg(ctx: QueryCtx, orgId: string, now: nu
   );
   const statusTruncated = perStatus.some((rows) => rows.length > OVERDUE_STATUS_CAP);
   const rows = perStatus.flatMap((r) => r.slice(0, OVERDUE_STATUS_CAP));
-  const result = await overdueReturnsFromRows(ctx, rows, now);
+  const result = await overdueReturnsFromRows(ctx, rows, now, opts);
   return { ...result, truncated: result.truncated || statusTruncated };
 }

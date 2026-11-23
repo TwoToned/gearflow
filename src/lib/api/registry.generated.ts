@@ -56591,6 +56591,110 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "testTagAssetsWrites.undoCreateNative",
+    "module": "testTagAssetsWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagAssetsWrites.undoReactivateNative",
+    "module": "testTagAssetsWrites",
+    "fn": "undoReactivateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "testTagAssetsWrites.updateNative",
     "module": "testTagAssetsWrites",
     "fn": "updateNative",
@@ -64974,10 +65078,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1258,
-  agentReachable: 628,
+  total: 1260,
+  agentReachable: 630,
   queries: 451,
-  mutations: 807,
+  mutations: 809,
   agentReachableQueries: 316,
-  agentReachableMutations: 312,
+  agentReachableMutations: 314,
 } as const;

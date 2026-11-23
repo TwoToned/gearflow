@@ -12,7 +12,7 @@ import { ConvexError } from "convex/values";
 export const UNDO_WINDOW_MS = 10 * 60 * 1000;
 
 /** Throws when `serverSavedAt` is outside the window on the server clock. */
-export function assertWithinUndoWindow(serverSavedAt: number, serverNow: number, noun: "check" | "test"): void {
+export function assertWithinUndoWindow(serverSavedAt: number, serverNow: number, noun: "check" | "test" | "change"): void {
   if (serverNow - serverSavedAt > UNDO_WINDOW_MS) {
     throw new ConvexError(`A ${noun} can only be undone within 10 minutes of saving it`);
   }

@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (628 agent-reachable)
+## Operations (630 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -621,6 +621,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `testTagAssetsWrites.deleteNative` (mutation, scope: testTag:delete)
 - `testTagAssetsWrites.reactivateNative` (mutation, scope: testTag:update)
 - `testTagAssetsWrites.retireNative` (mutation, scope: testTag:update)
+- `testTagAssetsWrites.undoCreateNative` (mutation, scope: testTag:create)
+- `testTagAssetsWrites.undoReactivateNative` (mutation, scope: testTag:update)
 - `testTagAssetsWrites.updateNative` (mutation, scope: testTag:update)
 - `testTagRecords.latestForAsset` (query, scope: testTag:read)
 - `testTagRecords.recordsPage` (query, scope: testTag:read)

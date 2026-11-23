@@ -85,6 +85,8 @@ export function useTestTagWrites() {
   const backfillM = useMutation(api.testTagAssetsWrites.backfillNative);
   const recordTestM = useMutation(api.testTagRecordsWrites.createNative);
   const undoRecordTestM = useMutation(api.testTagRecordsWrites.undoCreateNative);
+  const undoCreateM = useMutation(api.testTagAssetsWrites.undoCreateNative);
+  const undoReactivateM = useMutation(api.testTagAssetsWrites.undoReactivateNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
@@ -112,6 +114,16 @@ export function useTestTagWrites() {
     remove: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();
       return await deleteM({ id, orgId: org });
+    },
+    /** The exact reverse of one {@link create} (ids only; the server guards it). */
+    undoCreate: async (id: string): Promise<{ ok: boolean }> => {
+      const org = requireOrg();
+      return await undoCreateM({ orgId: org, id, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+    /** The exact reverse of one {@link reactivate}: back to retired, with its old `updatedAt`. */
+    undoReactivate: async (id: string): Promise<{ ok: boolean }> => {
+      const org = requireOrg();
+      return await undoReactivateM({ orgId: org, id, auditId: createId(), now: Date.now(), actor: actor() });
     },
     reactivate: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();

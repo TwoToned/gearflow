@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   ttRemove: vi.fn(),
   ttReactivate: vi.fn(),
   ttRetire: vi.fn(),
+  ttUndoReactivate: vi.fn(),
   convexQuery: vi.fn(),
   mxCreate: vi.fn(),
   mxRemove: vi.fn(),
@@ -57,7 +58,10 @@ vi.mock("@/hooks/use-authed-query", () => ({
 }));
 vi.mock("@/hooks/use-check-record-writes", () => ({ useCheckRecordWrites: () => ({ saveAdHocCheck: vi.fn(), undoAdHocCheck: vi.fn() }) }));
 vi.mock("@/hooks/use-test-tag-writes", () => ({
-  useTestTagWrites: () => ({ recordTest: h.record, undoRecordTest: h.undoRecord, create: h.ttCreate, remove: h.ttRemove, reactivate: h.ttReactivate, retire: h.ttRetire }),
+  useTestTagWrites: () => ({
+    recordTest: h.record, undoRecordTest: h.undoRecord, create: h.ttCreate, undoCreate: h.ttRemove,
+    reactivate: h.ttReactivate, undoReactivate: h.ttUndoReactivate, retire: h.ttRetire,
+  }),
 }));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: h.convexQuery }) }));
 vi.mock("@/hooks/use-maintenance-writes", () => ({ useMaintenanceWrites: () => ({ create: h.mxCreate, remove: h.mxRemove }) }));
@@ -271,14 +275,15 @@ describe("ScanPage — Test & tag mode", () => {
     expect(h.ttRemove).toHaveBeenCalledWith("ttNew");
   });
 
-  it("retired: Reactivate and test, with Undo (retire again)", async () => {
+  it("retired: Reactivate and test, with its exact Undo (undoReactivate, never a bare retire)", async () => {
     setUrl("/scan?mode=tt&tag=TT-OLD");
     render(<ScanPage />);
     await userEvent.click(screen.getByRole("button", { name: "Reactivate and test" }));
     expect(h.ttReactivate).toHaveBeenCalledWith("tt1");
     const toast = h.toasts.find((t) => t.title === "TT-OLD reactivated: test it now");
     await act(async () => toast!.action!.onClick());
-    expect(h.ttRetire).toHaveBeenCalledWith("tt1");
+    expect(h.ttUndoReactivate).toHaveBeenCalledWith("tt1");
+    expect(h.ttRetire).not.toHaveBeenCalled();
   });
 
   it("card ⋯ opens; Retire confirms first; Quick pass prefills the last test for review", async () => {

@@ -30,9 +30,10 @@ interface PendingPhoto {
   error?: string;
 }
 
-async function uploadOne(file: File): Promise<string> {
+async function uploadOne(file: File, folder: string | undefined): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
+  if (folder) formData.append("folder", folder);
   const res = await fetch("/api/uploads", {
     method: "POST",
     body: formData,
@@ -56,6 +57,11 @@ export interface PhotoGridInputProps {
   maxPhotos?: number;
   /** Smaller layout density (4 cols vs 3). Useful inside narrow drawers. */
   compact?: boolean;
+  /**
+   * The upload folder (`/api/uploads` stores it on the file's record). Check-item photos
+   * send `check-photos`: the ad-hoc check's Undo only ever deletes files from there.
+   */
+  folder?: string;
 }
 
 export function PhotoGridInput({
@@ -64,6 +70,7 @@ export function PhotoGridInput({
   onUploadingChange,
   maxPhotos = 20,
   compact = false,
+  folder,
 }: PhotoGridInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingPhoto[]>([]);
@@ -112,7 +119,7 @@ export function PhotoGridInput({
     await Promise.all(
       newEntries.map(async (entry) => {
         try {
-          const url = await uploadOne(entry.file);
+          const url = await uploadOne(entry.file, folder);
           setPending((prev) =>
             prev.map((p) =>
               p.previewUrl === entry.previewUrl

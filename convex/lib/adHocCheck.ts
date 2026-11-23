@@ -30,6 +30,8 @@ export interface AdHocCheckDetails {
   createdMaintenanceIds: string[];
   /** The SERVER clock at save time: the Undo window is measured on it (`./undoWindow`). */
   serverSavedAt: number;
+  /** Exactly the photo files this save proved it owns (`./undoPhotos`); the Undo deletes only these. */
+  photoStorageIds?: string[];
   notes?: string;
 }
 

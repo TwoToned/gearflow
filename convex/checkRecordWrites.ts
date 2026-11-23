@@ -24,7 +24,7 @@ import {
   type AdHocCheckDetails,
 } from "./lib/adHocCheck";
 import { deleteMaintenanceWithLinks, existingMaintenanceIds, requireUntouchedMaintenance } from "./lib/undoMaintenance";
-import { deleteSavePhotos } from "./lib/undoPhotos";
+import { assertOwnedCheckPhotos, deleteSavePhotos } from "./lib/undoPhotos";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — the densest warehouse-check state
@@ -528,6 +528,9 @@ export const saveAdHocCheck = mutation({
 
     const asset = await requireAssetDoc(ctx, a.assetId, a.orgId);
     if (a.bulkAssetId) await assertBulkAssetInOrg(ctx, a.bulkAssetId, a.orgId);
+    // Every photo must be this actor's fresh check-photo upload, used nowhere else: the
+    // Undo deletes these files, so the save proves they are the check's own (review B1).
+    const photoStorageIds = await assertOwnedCheckPhotos(ctx, { orgId: a.orgId, actorUserId: actor.userId, serverNow: Date.now(), checks: a.checks });
 
     // Which plan ids already name a row BEFORE the cores run — anything that exists
     // afterwards and didn't before is a record this save created (PM can dedup-skip).
@@ -559,6 +562,7 @@ export const saveAdHocCheck = mutation({
       kind: "adHocCheck", assetId: a.assetId, ...condition, recordIds, createdMaintenanceIds,
       // The SERVER clock (Date.now() is fine in a mutation): the Undo window is measured on it.
       serverSavedAt: Date.now(),
+      photoStorageIds,
       ...(a.notes ? { notes: a.notes } : {}),
     };
     await writeActivityLog(ctx, {
@@ -617,8 +621,8 @@ export const undoAdHocCheckNative = mutation({
     // The photos uploaded for this save go with it (overseer ruling): only files no
     // other record on the asset references.
     const photosDeleted = await deleteSavePhotos(ctx, {
-      orgId: a.orgId, assetId: details.assetId, photos: [...records.map((r) => r.photos), ...maintenance.map((m) => m.photos)],
-      ownRecordIds: details.recordIds, ownMaintenanceIds: details.createdMaintenanceIds,
+      orgId: a.orgId, assetId: details.assetId, storageIds: details.photoStorageIds ?? [],
+      ownRecordIds: details.recordIds, ownMaintenanceIds: details.createdMaintenanceIds, savedAt: details.serverSavedAt,
     });
     if (details.conditionChanged) {
       await ctx.db.patch(asset._id, { condition: details.conditionBefore ?? undefined, updatedAt: details.updatedAtBefore ?? undefined });

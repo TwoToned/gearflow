@@ -596,15 +596,16 @@ describe("undoAdHocCheckNative (exact undo)", () => {
 
   /** One uploaded photo as `/api/uploads` stores it: original + thumbnail blobs, their
    *  `storedFiles` rows, and the `fileUploads` row naming both. */
-  async function upload(t: T, org = ORG) {
+  async function upload(t: T, o: { org?: string; by?: string; folder?: string } = {}) {
+    const { org = ORG, by = USER, folder = "check-photos" } = o;
     return t.run(async (ctx) => {
       const sid = await ctx.storage.store(new Blob(["jpg"]));
       const thumb = await ctx.storage.store(new Blob(["th"]));
-      await ctx.db.insert("storedFiles", { storageId: sid, organizationId: org });
-      await ctx.db.insert("storedFiles", { storageId: thumb, organizationId: org });
+      await ctx.db.insert("storedFiles", { storageId: sid, organizationId: org, folder });
+      await ctx.db.insert("storedFiles", { storageId: thumb, organizationId: org, folder });
       await ctx.db.insert("fileUploads", {
         id: "fu-" + sid, organizationId: org, fileName: "p.jpg", fileSize: 3, mimeType: "image/jpeg",
-        storageKey: sid, url: `/api/files/${sid}`, thumbnailUrl: `/api/files/${thumb}`, uploadedById: USER,
+        storageKey: sid, url: `/api/files/${sid}`, thumbnailUrl: `/api/files/${thumb}`, uploadedById: by, createdAt: Date.now(),
       });
       return { sid, thumb, url: `/api/files/${sid}` };
     });
@@ -632,23 +633,68 @@ describe("undoAdHocCheckNative (exact undo)", () => {
     expect((await asset(t, "as1"))?.condition).toBe("GOOD");
   });
 
-  test("a photo another record on the asset references is kept; a foreign org's file is never deleted", async () => {
-    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
-    const shared = await upload(t);
-    const foreign = await upload(t, OTHER);
-    // An earlier check on the asset already holds `shared`.
+  // Review B1: the save proves each photo is the check's own, so the Undo can never be
+  // pointed at someone else's file.
+  const passWithPhoto = (url: string) => [{ ...mkCheck({ recordId: "r1" }), photos: [url] } as ReturnType<typeof mkCheck>];
+  const intact = async (t: T, sid: string) => {
+    const s = await stored(t, sid);
+    expect(s.row).not.toBeNull();
+    expect(s.blob).toBe(true);
+  };
+
+  test("B1 repro: a photo already on ANOTHER asset's check is refused at save, so its Undo can't delete it", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1"); await seedAsset(t, "as2");
+    const x = await upload(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("checkRecords", { id: "r0", organizationId: ORG, context: "AD_HOC", assetId: "as1", checkItemId: "ci1", checkItemLabelSnapshot: "V", checkItemTypeSnapshot: "PASS_FAIL", result: "FAIL", photos: [shared.url], performedById: USER, performedAt: NOW });
+      await ctx.db.insert("checkRecords", { id: "r2", organizationId: ORG, context: "AD_HOC", assetId: "as2", checkItemId: "ci1", checkItemLabelSnapshot: "V", checkItemTypeSnapshot: "PASS_FAIL", result: "FAIL", photos: [x.url], performedById: USER, performedAt: NOW });
     });
-    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [
-      { ...failWithPhoto("r1", shared.url)[0], photos: [shared.url, foreign.url] } as ReturnType<typeof mkCheck>,
-    ]);
+    await expect(save(t, {}, passWithPhoto(x.url))).rejects.toThrow(/already on another check/);
+    expect(await records(t)).toHaveLength(1);
+    await intact(t, x.sid);
+  });
+
+  test("B1: a stored quote/invoice PDF (no upload row) is refused at save", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
+    const pdf = await t.run(async (ctx) => {
+      const sid = await ctx.storage.store(new Blob(["%PDF"]));
+      await ctx.db.insert("storedFiles", { storageId: sid, organizationId: ORG, folder: "finance" });
+      return sid;
+    });
+    await expect(save(t, {}, passWithPhoto(`/api/files/${pdf}`))).rejects.toThrow(/isn't a recent upload/);
+    await intact(t, pdf);
+  });
+
+  test("B1: a file another user uploaded, or uploaded elsewhere than the check picker, is refused at save", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
+    const theirs = await upload(t, { by: "user_9" });
+    await expect(save(t, {}, passWithPhoto(theirs.url))).rejects.toThrow(/uploaded by someone else/);
+    const media = await upload(t, { folder: "models" });
+    await expect(save(t, {}, passWithPhoto(media.url))).rejects.toThrow(/wasn't uploaded as a check photo/);
+    const foreign = await upload(t, { org: OTHER });
+    await expect(save(t, {}, passWithPhoto(foreign.url))).rejects.toThrow(/isn't a recent upload/);
+    for (const f of [theirs, media, foreign]) await intact(t, f.sid);
+    expect(await records(t)).toHaveLength(0);
+  });
+
+  test("B1: a non-upload URL is refused at save", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
+    await expect(save(t, {}, passWithPhoto("https://evil.example/x.jpg"))).rejects.toThrow(/must be an uploaded file/);
+    await expect(save(t, {}, passWithPhoto("/api/files/abc/../../x"))).rejects.toThrow(/must be an uploaded file/);
+    expect(await records(t)).toHaveLength(0);
+  });
+
+  test("B1: the Undo deletes only the ids its save recorded, and still skips one referenced since", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" }); await seedAsset(t, "as2");
+    const p = await upload(t);
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, failWithPhoto("r1", p.url));
+    const fwd = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "a1")).first());
+    expect((fwd?.details as { photoStorageIds?: string[] }).photoStorageIds).toEqual([p.sid]);
+    // A record on another asset picks the same file up after the save.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("checkRecords", { id: "r9", organizationId: ORG, context: "AD_HOC", assetId: "as2", checkItemId: "ci1", checkItemLabelSnapshot: "V", checkItemTypeSnapshot: "PASS_FAIL", result: "FAIL", photos: [p.url], performedById: USER, performedAt: NOW });
+    });
     expect(await undo(t)).toEqual({ ok: true, photosDeleted: 0 });
-    expect(await stored(t, shared.sid)).toMatchObject({ blob: true });
-    expect((await stored(t, shared.sid)).row).not.toBeNull();
-    expect(await stored(t, foreign.sid)).toMatchObject({ blob: true });
-    expect((await stored(t, foreign.sid)).row).not.toBeNull();
-    expect((await records(t)).map((r) => r.id)).toEqual(["r0"]);
+    await intact(t, p.sid);
   });
 
   test("a refused Undo deletes no photo (the guards run first)", async () => {

@@ -236,7 +236,7 @@ function PlannerBody(p: BodyProps) {
   const views = {
     phone: () => (
       <PhonePlanner
-        members={shown.members} open={shown.open} days={p.days} week={p.url.week} today={p.today} now={p.now} needsOnly={needs}
+        members={shown.members} open={shown.open} days={p.days} week={p.url.week} today={p.today} now={p.now} needsOnly={needs} truncated={p.data.openTruncated}
         selected={calls.ids} onToggle={(id) => calls.toggle(id, order, false)} onOpenCall={handlers.onOpenCall}
         onOfferFree={handlers.onOfferCell} onOpenOpen={onOpenOpen} menuFor={callMenu} openMenuFor={openMenu}
       />
@@ -245,7 +245,7 @@ function PlannerBody(p: BodyProps) {
       <NeedsCrewList
         open={shown.open} members={all} week={p.url.week} selected={opens.ids}
         onToggle={(id, shift) => opens.toggle(id, openOrder, shift)} onToggleAll={(on) => opens.setAll(openOrder, on)}
-        onOpen={onOpenOpen} menuFor={openMenu}
+        onOpen={onOpenOpen} menuFor={openMenu} truncated={p.data.openTruncated}
         empty={<NeedsEmpty filtered={hasFilters(p.url)} onClear={p.url.clear} />}
       />
     ),

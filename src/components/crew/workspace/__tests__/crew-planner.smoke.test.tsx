@@ -86,7 +86,7 @@ const open = [{
   serviceId: "svc1", projectId: "p1", projectName: "Hilton gala", projectNumber: "#2341", title: "Bump in", date: Date.parse(day("2026-11-18")),
   endDate: null, crewCountRequired: 3, assignedCount: 1, shortfall: 2, startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN",
 }];
-const queried = vi.hoisted(() => ({ planner: undefined as unknown }));
+const queried = vi.hoisted(() => ({ planner: undefined as unknown, truncated: false }));
 vi.mock("@/hooks/use-authed-query", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
@@ -94,7 +94,7 @@ vi.mock("@/hooks/use-authed-query", async () => {
       if (args === "skip") return undefined;
       const name = getFunctionName(q);
       if (name === "crewAvailability:plannerData") { queried.planner = args; return members; }
-      if (name === "crewPlanner:openCalls") return { calls: open, truncated: false };
+      if (name === "crewPlanner:openCalls") return { calls: open, truncated: queried.truncated };
       if (name === "crewTimeEntries:approvedHoursByMember") return { c1: 9 };
       if (name === "crewRoles:listForSettings") return [{ id: "r1", name: "Rigger", isActive: true, defaultRate: 420, rateType: "DAILY", sortOrder: 0 }];
       if (name === "crewSkills:list") return [{ id: "k1", name: "Dante" }];
@@ -107,6 +107,7 @@ import { CrewPlanner } from "../planner/crew-planner";
 
 beforeEach(() => {
   mobile.value = false;
+  queried.truncated = false;
   nav.search = "";
   nav.push.mockClear();
   perms.all = true;
@@ -327,6 +328,17 @@ describe("CrewPlanner (smoke)", () => {
     nav.search = "seg=needs";
     render(<CrewPlanner />);
     expect(screen.getByRole("region", { name: "Wed, 18 Nov" }).textContent).toContain("needs 2");
+  });
+
+  it("Needs crew says `n+` when the server's read stopped at its cap (desktop and phone)", () => {
+    queried.truncated = true;
+    nav.search = "seg=needs";
+    const { unmount } = render(<CrewPlanner />);
+    expect(screen.getByTestId("needs-truncated").textContent).toMatch(/^2\+ open slots/);
+    unmount();
+    mobile.value = true;
+    render(<CrewPlanner />);
+    expect(screen.getByTestId("needs-truncated").textContent).toMatch(/^2\+/);
   });
 
   it("page ⋯ holds Crew list and Crew roles & rates… (the roles sheet is URL state)", async () => {

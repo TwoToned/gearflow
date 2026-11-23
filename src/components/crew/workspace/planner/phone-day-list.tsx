@@ -21,7 +21,7 @@ import {
 import { formatWeekday, formatWeekdayDayMonth } from "@/lib/formatters";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
-import { openDay } from "./needs-crew-list";
+import { openDay, TruncatedNote } from "./needs-crew-list";
 
 /**
  * The planner on a phone (spec §9h.6, Logistics' day mode): day chips for the
@@ -38,6 +38,8 @@ export interface PhonePlannerProps {
   week: string;
   now: number;
   needsOnly: boolean;
+  /** The server's open-call read stopped at its cap. */
+  truncated?: boolean;
   selected: ReadonlySet<string>;
   onToggle: (id: string) => void;
   onOpenCall: (call: PlannerCall, member: PlannerMember) => void;
@@ -184,6 +186,7 @@ export function PhonePlanner(p: PhonePlannerProps & { today: string }) {
     const days = p.days.filter((d) => openOn(d) > 0);
     return (
       <div>
+        {p.truncated && <TruncatedNote open={p.open} />}
         {days.map((d) => (
           <Section key={d} title={label(d)} count={openOn(d)}>
             {p.open.filter((o) => openDay(o, p.week) === d).map((o) => <OpenCard key={o.serviceId} o={o} p={p} />)}

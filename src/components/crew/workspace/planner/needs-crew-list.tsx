@@ -36,6 +36,18 @@ export interface NeedsCrewProps {
   onOpen: (o: OpenCall) => void;
   menuFor: (o: OpenCall) => ActionMenuSpec;
   empty: React.ReactNode;
+  /** The server stopped reading at its cap: the count is a floor (`n+`). */
+  truncated?: boolean;
+}
+
+/** `12+ open slots · the list stops at its cap; narrow it with a filter` — said once, above the list. */
+export function TruncatedNote({ open }: { open: OpenCall[] }) {
+  const n = open.reduce((s, o) => s + o.shortfall, 0);
+  return (
+    <p className="pb-2 text-caption text-warn" data-testid="needs-truncated">
+      {n}+ open slots · the list stops at its cap; narrow it with a Role or Job filter to see the rest.
+    </p>
+  );
 }
 
 function Suggestions({ o, members }: { o: OpenCall; members: PlannerMember[] }) {
@@ -102,6 +114,8 @@ export function NeedsCrewList(p: NeedsCrewProps) {
   const allOn = p.open.length > 0 && p.open.every((o) => p.selected.has(o.serviceId));
   if (p.open.length === 0) return <>{p.empty}</>;
   return (
+    <>
+    {p.truncated && <TruncatedNote open={p.open} />}
     <table className="w-full table-fixed border-collapse" aria-label="Calls that need crew">
       <thead>
         <tr className="text-left text-caption font-semibold text-muted">
@@ -133,5 +147,6 @@ export function NeedsCrewList(p: NeedsCrewProps) {
         );
       })}
     </table>
+    </>
   );
 }

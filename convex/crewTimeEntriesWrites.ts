@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
+import { isTransition, priorState, replayable, restored, revertRefusal, transitioned, undoCreateRefusal, type TransitionRecord } from "./lib/timeEntryTransitionState";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
@@ -245,21 +246,10 @@ export const deleteNative = mutation({
   },
 });
 
-/** Why one created entry can't be taken back by `undoCreateManyNative`, or null. */
-function undoCreateRefusal(doc: Doc<"crewTimeEntries"> | null, orgId: string, stamp: number): string | null {
-  if (!doc || doc.organizationId !== orgId) return "Time entry not found";
-  if (doc.status !== "DRAFT" || doc.updatedAt !== stamp || doc.createdAt !== stamp) {
-    return "An entry was edited, submitted or approved since it was logged, so Log time can't be undone";
-  }
-  return null;
-}
-
 /**
- * The exact Undo of ONE Log time (`createManyNative`), as ONE atomic mutation:
- * deletes exactly `ids` — the entries that call created at `stamp` — and
- * refuses the WHOLE Undo (nothing deleted) if any of them is gone, another
- * org's, or was edited, submitted or approved since (it would no longer be the
- * row the Undo is about). One activity row per deleted entry.
+ * The exact Undo of ONE Log time (`createManyNative`), ONE atomic mutation: deletes exactly
+ * `ids` (what that call created at `stamp`) and refuses the WHOLE Undo if any is gone, another
+ * org's, or moved on since. One activity row per deleted entry.
  */
 export const undoCreateManyNative = mutation({
   returns: v.object({ count: v.number() }),
@@ -299,40 +289,15 @@ type Transition = TimeEntryTransition;
 /** Marks an activity row as a transition record `revertNative` may read back. */
 export const TIME_ENTRY_TRANSITION_KIND = "time_entry_transition";
 
-// The one from/to table (convex/lib/timeEntryTransitions.ts), shared with the timesheet row menu.
+// The one from/to table (convex/lib/timeEntryTransitions.ts), shared with the timesheet row menu;
+// the state math (prior state, next state, the Undo's restore) is convex/lib/timeEntryTransitionState.ts.
 const TRANSITION_FROM = TIME_ENTRY_TRANSITION_FROM;
 const TRANSITION_TO = TIME_ENTRY_TRANSITION_TO;
 const TRANSITION_VERB: Record<Transition, string> = { submit: "Submitted", approve: "Approved", query: "Queried" };
 const TRANSITION_NOUN: Record<Transition, string> = { submit: "submission", approve: "approval", query: "query" };
 
-type EntryDoc = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
-type EntryFields = Omit<EntryDoc, "_id" | "_creationTime">;
-
 async function findEntry(ctx: MutationCtx, id: string) {
   return await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-}
-
-/** The fields a transition replaces, as they stand before it. Absent fields stay absent. */
-function priorState(doc: EntryDoc): Record<string, unknown> {
-  const prior: Record<string, unknown> = { prevStatus: doc.status ?? "DRAFT" };
-  if (doc.queryReason != null) prior.prevQueryReason = doc.queryReason;
-  if (doc.approvedById != null) prior.prevApprovedById = doc.approvedById;
-  if (doc.approvedAt != null) prior.prevApprovedAt = doc.approvedAt;
-  return prior;
-}
-
-/** The entry after `transition`. `queryReason` is set by Query and cleared by Submit/Approve (D47). */
-function transitioned(doc: EntryDoc, t: Transition, actorId: string, now: number, reason: string | undefined): EntryFields {
-  const { _id, _creationTime, ...rest } = doc;
-  void _id; void _creationTime;
-  const next: EntryFields = { ...rest, status: TRANSITION_TO[t] as EntryFields["status"], updatedAt: now };
-  delete next.queryReason;
-  // A queried entry is no longer approved: Query clears the approval stamp
-  // (the dialog says "an approved entry loses its approval"), and its Undo
-  // restores it exactly from the recorded prior state (`restored`).
-  if (t === "query") { next.queryReason = reason; delete next.approvedById; delete next.approvedAt; }
-  if (t === "approve") { next.approvedById = actorId; next.approvedAt = now; }
-  return next;
 }
 
 /**
@@ -414,17 +379,6 @@ export const queryNative = mutation({
   },
 });
 
-/** The prior state a forward transition recorded on its activity row (`applyTransition`). */
-interface TransitionRecord {
-  transition: Transition;
-  prevStatus?: string;
-  prevQueryReason?: string;
-  prevApprovedById?: string;
-  prevApprovedAt?: number;
-}
-
-const isTransition = (t: unknown): t is Transition => t === "submit" || t === "approve" || t === "query";
-
 /**
  * The forward write's own activity row for `id` at `stamp` by `userId` — the
  * latest one whose transition produced the entry's CURRENT status. Which
@@ -444,37 +398,6 @@ async function transitionRecord(ctx: MutationCtx, orgId: string, id: string, sta
   return (row?.metadata ?? null) as TransitionRecord | null;
 }
 
-/** Set `key` to `value`, or remove it when the prior state had none. */
-function restoreField(target: Record<string, unknown>, key: string, value: unknown): void {
-  if (value == null) delete target[key];
-  else target[key] = value;
-}
-
-/** The entry with the fields its transition replaced put back exactly as the forward write recorded them. */
-function restored(doc: EntryDoc, prior: TransitionRecord, now: number): EntryFields {
-  const { _id, _creationTime, ...rest } = doc;
-  void _id; void _creationTime;
-  const next: Record<string, unknown> = { ...rest, status: prior.prevStatus, updatedAt: now };
-  restoreField(next, "queryReason", prior.prevQueryReason);
-  // Approve and Query both replace the approval stamp, so both put it back.
-  if (prior.transition === "approve" || prior.transition === "query") {
-    restoreField(next, "approvedById", prior.prevApprovedById);
-    restoreField(next, "approvedAt", prior.prevApprovedAt);
-  }
-  return next as EntryFields;
-}
-
-/** Every refusal `revertNative` can raise for one entry before its record is read; null when it may proceed. */
-function revertRefusal(doc: EntryDoc | null, orgId: string, stamp: number): string | null {
-  if (!doc || doc.organizationId !== orgId) return "Time entry not found";
-  if (doc.updatedAt !== stamp) return "This time entry changed after that write, so it can't be undone";
-  return null;
-}
-
-/** A record is replayable only if its prior status is one its transition may start from. */
-function replayable(prior: TransitionRecord | null): prior is TransitionRecord & { prevStatus: string } {
-  return !!prior?.prevStatus && TRANSITION_FROM[prior.transition].includes(prior.prevStatus);
-}
 
 /**
  * The ONE Undo for Submit, Approve and Query (Q-I4). Takes ONLY the entry ids

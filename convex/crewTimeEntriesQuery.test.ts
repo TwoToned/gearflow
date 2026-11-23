@@ -59,6 +59,11 @@ describe("queryNative (D47)", () => {
     expect(s1?.queryReason).toBe("Break looks wrong"); // trimmed
     expect(s1?.notes).toBe("my own note"); // the crew member's own text is untouched
     expect((await te(t, "d1"))?.status).toBe("DRAFT");
+    // A queried entry loses its approval (what the Query… dialog says); revert puts it back.
+    const a1 = await te(t, "a1");
+    expect(a1?.status).toBe("DISPUTED");
+    expect(a1?.approvedById).toBeUndefined();
+    expect(a1?.approvedAt).toBeUndefined();
   });
 
   test("the reason is required and bounded server-side (mirrors the Zod bound)", async () => {

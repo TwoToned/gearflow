@@ -821,7 +821,10 @@ carries its reason on **`crewTimeEntries.queryReason`** — never on `notes`, wh
 is the crew member's own text. `crewTimeEntriesWrites.queryNative({ ids, reason })`
 moves SUBMITTED/APPROVED entries to DISPUTED; the reason is required and bounded
 (`QUERY_REASON_MAX` = 500, `convex/lib/timeEntryQuery.ts`, shared with
-`timeEntryQuerySchema`). `submitNative` and `approveNative` clear `queryReason`.
+`timeEntryQuerySchema`). A queried entry is no longer approved: Query clears
+`approvedById` / `approvedAt` (the dialog says "an approved entry loses its
+approval"), and `revertNative` of a query restores that stamp exactly from the
+recorded prior state. `submitNative` and `approveNative` clear `queryReason`.
 The legacy single-entry `disputeNative` (crew dashboard, crew record) is
 unchanged until Phase 13 moves those surfaces to Query….
 

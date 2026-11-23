@@ -327,7 +327,10 @@ function transitioned(doc: EntryDoc, t: Transition, actorId: string, now: number
   void _id; void _creationTime;
   const next: EntryFields = { ...rest, status: TRANSITION_TO[t] as EntryFields["status"], updatedAt: now };
   delete next.queryReason;
-  if (t === "query") next.queryReason = reason;
+  // A queried entry is no longer approved: Query clears the approval stamp
+  // (the dialog says "an approved entry loses its approval"), and its Undo
+  // restores it exactly from the recorded prior state (`restored`).
+  if (t === "query") { next.queryReason = reason; delete next.approvedById; delete next.approvedAt; }
   if (t === "approve") { next.approvedById = actorId; next.approvedAt = now; }
   return next;
 }
@@ -453,7 +456,8 @@ function restored(doc: EntryDoc, prior: TransitionRecord, now: number): EntryFie
   void _id; void _creationTime;
   const next: Record<string, unknown> = { ...rest, status: prior.prevStatus, updatedAt: now };
   restoreField(next, "queryReason", prior.prevQueryReason);
-  if (prior.transition === "approve") {
+  // Approve and Query both replace the approval stamp, so both put it back.
+  if (prior.transition === "approve" || prior.transition === "query") {
     restoreField(next, "approvedById", prior.prevApprovedById);
     restoreField(next, "approvedAt", prior.prevApprovedAt);
   }

@@ -49,14 +49,26 @@ export function initialCheckStates(items: CheckItemData[]): CheckStates {
 /** Every unanswered PASS_FAIL item set to PASS; answered ones are left alone. */
 export function passAllStates(items: CheckItemData[], states: CheckStates): CheckStates {
   const next = { ...states };
-  for (const mci of items) {
-    const id = mci.checkItem.id;
-    if (mci.checkItem.type === "PASS_FAIL" && !next[id]?.result) next[id] = { ...(next[id] ?? BLANK), result: "PASS" };
-  }
+  for (const id of passAllTargets(items, states)) next[id] = { ...(next[id] ?? BLANK), result: "PASS" };
   return next;
 }
 
-export const hasPassFail = (items: CheckItemData[]): boolean => items.some((mci) => mci.checkItem.type === "PASS_FAIL");
+/** The items Pass all would change: unanswered pass/fail ones. */
+export function passAllTargets(items: CheckItemData[], states: CheckStates): string[] {
+  return items.filter((mci) => mci.checkItem.type === "PASS_FAIL" && !states[mci.checkItem.id]?.result).map((mci) => mci.checkItem.id);
+}
+
+/**
+ * Pass all's exact reverse (review SF5): un-answer only the items Pass all answered,
+ * and only those still reading Pass. Answers, notes and photos given since survive.
+ */
+export function revertPassAll(states: CheckStates, ids: readonly string[]): CheckStates {
+  const next = { ...states };
+  for (const id of ids) if (next[id]?.result === "PASS") next[id] = { ...next[id], result: null };
+  return next;
+}
+
+export const hasPassFail =(items: CheckItemData[]): boolean => items.some((mci) => mci.checkItem.type === "PASS_FAIL");
 
 /** A measurement against its limits; `null` until the value is a number. */
 export function measurementAutoResult(value: string, min: number | null, max: number | null): "PASS" | "FAIL" | null {

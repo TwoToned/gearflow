@@ -174,6 +174,35 @@ export function emptyTtDraft(ttId: string | null, profile: TtProfile | null, out
   };
 }
 
+/** What Pass all changed: each visual key it ticked, with the value it had before (absent = not inspected). */
+export type VisualPassAll = Record<string, boolean | undefined>;
+
+/** Tick every visual check, and record what that changed so its Undo can reverse only that. */
+export function passAllVisual(d: TtDraft, profile: TtProfile | null): { draft: TtDraft; changed: VisualPassAll } {
+  const visual = { ...d.visual };
+  const changed: VisualPassAll = {};
+  for (const { key } of visualItems(profile)) {
+    if (visual[key] === true) continue;
+    changed[key] = visual[key];
+    visual[key] = true;
+  }
+  return { draft: { ...d, visual }, changed };
+}
+
+/**
+ * Pass all's exact reverse (review SF5): each key it ticked goes back to what it was,
+ * but only while it still reads ticked. A tick, fail or note given since survives.
+ */
+export function revertPassAllVisual(d: TtDraft, changed: VisualPassAll): TtDraft {
+  const visual = { ...d.visual };
+  for (const [key, before] of Object.entries(changed)) {
+    if (visual[key] !== true) continue;
+    if (before === undefined) delete visual[key];
+    else visual[key] = before;
+  }
+  return { ...d, visual };
+}
+
 /** A draft holds answers once anything was ticked, typed or picked. */
 export function ttDraftDirty(d: TtDraft): boolean {
   const outletAnswered = d.outlets.some((o) => o.polarity !== null || o.notes !== "" || Object.keys(o.readings).length > 0);

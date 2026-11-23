@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useConvex } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 
@@ -13,7 +13,9 @@ import type { ScanFeedbackKind } from "@/lib/scan-feedback";
 import { showError } from "@/lib/show-error";
 import {
   emptyTtDraft,
+  passAllVisual,
   prefillFromRecord,
+  revertPassAllVisual,
   ttBlocker,
   ttDraftDirty,
   ttFailureReason,
@@ -106,7 +108,24 @@ export function useTtMode(d: TtModeDeps) {
     setLabel(null);
   }, [label]);
 
-  const edit = useCallback((fn: (prev: TtDraft) => TtDraft) => setDraft(() => fn(current)), [current]);
+  const edit = (fn: (prev: TtDraft) => TtDraft) => setDraft(() => fn(current));
+
+  /**
+   * Pass all ticks every visual check, with its own exact Undo (review SF5): it puts
+   * back only the keys it ticked, only while they still read ticked and the draft is
+   * still this item's. Later ticks, fails, readings and notes survive.
+   */
+  const passAllVisualChecks = () => {
+    if (!item) return;
+    const forId = item.id;
+    const { draft: next, changed } = passAllVisual(current, profile);
+    setDraft(next);
+    announceListWrite({
+      title: "Every visual check ticked",
+      undoneTitle: "Visual ticks restored",
+      performUndo: async () => setDraft((prev) => (prev.forTtId === forId ? revertPassAllVisual(prev, changed) : prev)),
+    });
+  };
   const blocker = blockerFor(item, tester, current, profile);
   const result = item ? ttResult(current, profile) : null;
 
@@ -168,7 +187,7 @@ export function useTtMode(d: TtModeDeps) {
   };
 
   return {
-    item, profile, draft: current, edit, tester, setTester, blocker, result, saving, save, quickPass, label,
+    item, profile, draft: current, edit, passAllVisual: passAllVisualChecks, tester, setTester, blocker, result, saving, save, quickPass, label,
     /** What failed, in words — a maintenance job's prefill. */
     failureReason: ttFailureReason(current, profile),
     // A save in flight carries the answers: they are not "unsaved" any more (SF3).

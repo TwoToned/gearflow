@@ -3,7 +3,6 @@
 import { useRef } from "react";
 import { ChevronDown, Minus, Plus } from "lucide-react";
 
-import { announceListWrite } from "@/lib/list-write-toast";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import {
   FAILURE_ACTION_LABELS,
@@ -53,6 +52,8 @@ const inputClass = "h-11 w-28 font-mono text-reading-body md:h-9 md:text-ui-text
 export function TtSection(p: {
   draft: TtDraft;
   edit: Edit;
+  /** Tick every visual check (its exact Undo lives with the draft, `useTtMode`). */
+  onPassAllVisual: () => void;
   profile: TtProfile | null;
   testerMenu: { label: string; spec: ActionMenuSpec };
   result: "PASS" | "FAIL" | null;
@@ -66,7 +67,7 @@ export function TtSection(p: {
         <WordMenu label={`Tested by: ${p.testerMenu.label}`} spec={p.testerMenu.spec} />
         <WordMenu label={`Method: ${METHOD_LABELS[p.draft.method]}`} spec={methodMenu(p.edit)} />
       </div>
-      <VisualSection draft={p.draft} edit={p.edit} profile={p.profile} />
+      <VisualSection draft={p.draft} edit={p.edit} profile={p.profile} onPassAll={p.onPassAllVisual} />
       <ElectricalSection draft={p.draft} edit={p.edit} profile={p.profile} />
       <OutletsSection draft={p.draft} edit={p.edit} profile={p.profile} />
       <ResultSection {...p} />
@@ -109,7 +110,7 @@ function SectionHead({ id, title, meta, children }: { id: string; title: string;
 
 // ─── Visual ───────────────────────────────────────────────────────────────────
 
-function VisualSection({ draft, edit, profile }: { draft: TtDraft; edit: Edit; profile: TtProfile | null }) {
+function VisualSection({ draft, edit, profile, onPassAll }: { draft: TtDraft; edit: Edit; profile: TtProfile | null; onPassAll: () => void }) {
   const items = visualItems(profile);
   const last = useRef<number | null>(null);
   if (items.length === 0) return null;
@@ -126,15 +127,10 @@ function VisualSection({ draft, edit, profile }: { draft: TtDraft; edit: Edit; p
     set(shift && last.current !== null ? last.current : i, i, value);
     last.current = i;
   };
-  const passAll = () => {
-    const before = draft.visual;
-    set(0, items.length - 1, true);
-    announceListWrite({ title: "Every visual check ticked", undoneTitle: "Visual ticks restored", performUndo: async () => edit((d) => ({ ...d, visual: before })) });
-  };
   return (
     <section aria-labelledby="tt-visual-head" className="flex flex-col gap-1">
       <SectionHead id="tt-visual-head" title="Visual inspection" meta={<VisualMeta ok={ok} total={items.length} failed={failed} />}>
-        <Button variant="ghost" size="sm" onClick={passAll}>Pass all</Button>
+        <Button variant="ghost" size="sm" onClick={onPassAll}>Pass all</Button>
       </SectionHead>
       <ul className="flex flex-col">
         {items.map((v, i) => (

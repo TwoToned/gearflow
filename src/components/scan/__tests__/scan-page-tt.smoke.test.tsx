@@ -210,6 +210,22 @@ describe("ScanPage — Test & tag mode", () => {
     expect(screen.queryByLabelText(/next due/i, { selector: "input" })).toBeNull(); // never typed
   });
 
+  it("SF5: Pass all's Undo un-ticks only what it ticked and still reads ticked; a later fail and the notes survive", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    render(<ScanPage />);
+    const visual = screen.getByRole("region", { name: /Visual inspection/ });
+    await userEvent.click(within(visual).getByRole("button", { name: "Pass all" }));
+    await userEvent.click(within(visual).getByRole("button", { name: "Plug: failed" }));
+    await userEvent.type(within(visual).getByLabelText("Visual notes"), "Scuffed");
+    await userEvent.type(screen.getByRole("spinbutton", { name: "Earth Continuity" }), "0.2");
+    const toast = h.toasts.find((t) => t.title === "Every visual check ticked");
+    await act(async () => toast!.action!.onClick());
+    expect(within(visual).getByRole("checkbox", { name: "Cord" }).getAttribute("aria-checked")).toBe("false");
+    expect(within(visual).getByRole("button", { name: "Plug: failed" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(visual).getByLabelText("Visual notes")).toHaveProperty("value", "Scuffed");
+    expect(screen.getByRole("spinbutton", { name: "Earth Continuity" })).toHaveProperty("value", "0.2");
+  });
+
   it("save AWAITS recordTest with per-reading verdicts; ONE undo closure for toast and row", async () => {
     setUrl("/scan?mode=tt&tag=TT-0412");
     let resolve!: (v: unknown) => void;

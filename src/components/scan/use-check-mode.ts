@@ -13,6 +13,8 @@ import {
   checksPayload,
   checkStatesDirty,
   passAllStates,
+  passAllTargets,
+  revertPassAll,
   type CheckItemData,
   type CheckState,
   type CheckStates,
@@ -60,8 +62,7 @@ export function useCheckMode(d: CheckModeDeps) {
   const items = useCheckItemsFor(d.orgId, asset?.modelId ?? null);
   const draft = useCheckDraft(asset?.id ?? null);
   const failCount = checkFailCount(draft.current.states);
-  // Any fail forces and locks Damaged (D50; the server forces it too).
-  const condition: CheckConditionValue = failCount > 0 ? "DAMAGED" : (draft.current.condition ?? preselectFor(asset));
+  const condition = conditionFor(failCount, draft.current.condition, asset);
   const blocker = blockerFor(items, draft.current.states, draft.photoUploading);
   const save = useCheckSave({ ...d, asset, items, draft, condition, failCount, blocker });
 
@@ -79,7 +80,7 @@ export function useCheckMode(d: CheckModeDeps) {
     /** The failed items in words — a maintenance job's prefill. */
     failureReason: checkFailureReason(items ?? [], draft.current.states),
     canPassAll: canPassAllFor(items, draft.current.states),
-    passAll: () => items && draft.passAll(items),
+    passAll: () => draft.passAll(items),
     blocker,
     // A save in flight carries the answers: they are not "unsaved" any more (SF3).
     dirty: draft.dirty && !save.saving,
@@ -88,6 +89,12 @@ export function useCheckMode(d: CheckModeDeps) {
     /** Forget the answers (a confirmed discard). */
     discard: draft.reset,
   };
+}
+
+/** Any fail forces and locks Damaged (D50; the server forces it too); else the chosen word, else the stored one. */
+function conditionFor(failCount: number, chosen: CheckConditionValue | null, asset: ScanAsset | null): CheckConditionValue {
+  if (failCount > 0) return "DAMAGED";
+  return chosen ?? preselectFor(asset);
 }
 
 /** The word the asset's stored condition reads as, as the value a check submits (Q5). */
@@ -121,11 +128,20 @@ function useCheckDraft(assetId: string | null) {
     setUploading((prev) => ({ ...prev, [id]: isUploading }));
   }, []);
 
-  /** Pass all, with its own Undo (the list as it was). */
-  const passAll = (items: CheckItemData[]) => {
-    const before = current;
+  /**
+   * Pass all, with its own exact Undo (review SF5): it un-answers only the items Pass
+   * all answered, only while they still read Pass and the draft is still this asset's.
+   */
+  const passAll = (items: CheckItemData[] | undefined) => {
+    if (!items) return;
+    const ids = passAllTargets(items, current.states);
     setDraft({ ...current, states: passAllStates(items, current.states) });
-    announceListWrite({ title: "All pass/fail items marked Pass", undoneTitle: "Pass all undone", performUndo: async () => setDraft(before) });
+    announceListWrite({
+      title: "All pass/fail items marked Pass",
+      undoneTitle: "Pass all undone",
+      performUndo: async () =>
+        setDraft((prev) => (prev.forAssetId === assetId ? { ...prev, states: revertPassAll(prev.states, ids) } : prev)),
+    });
   };
 
   return {

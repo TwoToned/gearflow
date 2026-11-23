@@ -7,8 +7,10 @@ import {
   emptyTtDraft,
   makeOutlets,
   nextDueText,
+  passAllVisual,
   prefillFromRecord,
   readingVerdict,
+  revertPassAllVisual,
   ttBlocker,
   ttDraftDirty,
   ttPayload,
@@ -43,6 +45,33 @@ function filled(profile = CLASS_I): TtDraft {
     manual: { polarity: "PASS" },
   };
 }
+
+describe("tt-draft Pass all (SF5)", () => {
+  const THREE: TtProfile = { ...CLASS_I, visualChecks: [...(CLASS_I.visualChecks as object[]), { key: "casing", label: "Casing", enabled: true }] };
+
+  it("ticks every visual check and records only what it changed", () => {
+    const d = { ...emptyTtDraft("tt1", THREE, null), visual: { cordCondition: true, casing: false } };
+    const { draft, changed } = passAllVisual(d, THREE);
+    expect(draft.visual).toEqual({ cordCondition: true, plugCondition: true, casing: true });
+    expect(changed).toEqual({ plugCondition: undefined, casing: false });
+  });
+
+  it("its Undo restores only the keys it ticked that still read ticked; later answers survive", () => {
+    const d = { ...emptyTtDraft("tt1", THREE, null), visual: { casing: false } };
+    const { draft, changed } = passAllVisual(d, THREE);
+    // Later: Plug failed by hand, a reading typed, a note written.
+    const later: TtDraft = {
+      ...draft,
+      visual: { ...draft.visual, plugCondition: false },
+      readings: { earthContinuity: { value: "0.2", na: false } },
+      visualNotes: "scuffed",
+    };
+    const undone = revertPassAllVisual(later, changed);
+    expect(undone.visual).toEqual({ plugCondition: false, casing: false }); // cord un-inspected again
+    expect(undone.readings).toEqual(later.readings);
+    expect(undone.visualNotes).toBe("scuffed");
+  });
+});
 
 describe("tt-draft", () => {
   it("D51: a blank enabled reading blocks the save; an explicit N/A unblocks it", () => {

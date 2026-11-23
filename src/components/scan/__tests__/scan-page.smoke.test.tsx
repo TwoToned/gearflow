@@ -318,6 +318,20 @@ describe("ScanPage — Check mode", () => {
     expect(saveButton()).toHaveProperty("disabled", false);
   });
 
+  it("SF5: Pass all's Undo un-answers only what Pass all set and still reads Pass; a later Fail and its note survive", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    render(<ScanPage />);
+    const row = (label: string) => screen.getByText(label).closest("[data-check-item]") as HTMLElement;
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    await userEvent.click(within(row("Yoke")).getByRole("button", { name: "Fail" }));
+    await userEvent.type(within(row("Yoke")).getByPlaceholderText("Describe the failure..."), "Slips");
+    const toast = h.toasts.find((t) => t.title === "All pass/fail items marked Pass");
+    await act(async () => toast!.action!.onClick());
+    expect(within(row("Power on")).getByRole("button", { name: "Pass" }).getAttribute("aria-pressed")).toBe("false");
+    expect(within(row("Yoke")).getByRole("button", { name: "Fail" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(row("Yoke")).getByPlaceholderText("Describe the failure...")).toHaveProperty("value", "Slips");
+  });
+
   it("a failed save keeps the card and its answers", async () => {
     setUrl("/scan?mode=check&tag=AURA-01");
     h.save.mockRejectedValueOnce(new Error("Network down"));

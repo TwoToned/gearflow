@@ -96,6 +96,7 @@ function TtContent(p: TtBodyProps) {
       <TtSection
         draft={p.tt.draft}
         edit={p.tt.edit}
+        onPassAllVisual={p.tt.passAllVisual}
         profile={p.tt.profile}
         testerMenu={p.testerMenu}
         result={p.tt.result}

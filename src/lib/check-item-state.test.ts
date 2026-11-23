@@ -8,8 +8,11 @@ import {
   initialCheckStates,
   measurementAutoResult,
   passAllStates,
+  passAllTargets,
+  revertPassAll,
   type CheckItemData,
   type CheckItemType,
+  type CheckStates,
 } from "./check-item-state";
 
 function item(id: string, label: string, type: CheckItemType): CheckItemData {
@@ -48,6 +51,25 @@ describe("check-item-state", () => {
     expect(next.yoke.result).toBe("FAIL");
     expect(next.notes.result).toBeNull();
     expect(checkFailCount(next)).toBe(1);
+  });
+
+  it("Pass all's Undo reverts only what it set, only where it still holds (SF5)", () => {
+    const three = [...items, item("lens", "Lens", "PASS_FAIL")];
+    const s = initialCheckStates(three);
+    s.yoke = { ...s.yoke, result: "FAIL", notes: "slips" };
+    const ids = passAllTargets(three, s);
+    expect(ids).toEqual(["power", "lens"]);
+    const passed = passAllStates(three, s);
+    // Later: Lens failed with a note and a photo; Power got a note but stays Pass.
+    const later: CheckStates = {
+      ...passed,
+      lens: { ...passed.lens, result: "FAIL" as const, notes: "cracked", photos: ["/api/files/p1"] },
+      power: { ...passed.power, notes: "warm" },
+    };
+    const undone = revertPassAll(later, ids);
+    expect(undone.power).toEqual({ ...later.power, result: null }); // its note survives
+    expect(undone.lens).toEqual(later.lens); // answered since: untouched
+    expect(undone.yoke).toEqual(later.yoke); // never Pass all's
   });
 
   it("a FAIL needs a reason and a photo, named in plain words", () => {

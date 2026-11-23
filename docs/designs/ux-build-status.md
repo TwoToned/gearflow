@@ -112,15 +112,16 @@ Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that
 | Phase | Worker | Branch / PR | State | Blockers |
 |---|---|---|---|---|
 | 7 Job header + Overview + tab strip (M) | default | #1400 **merged 2026-11-22** (15450b14) | done. Independent review: 0 blockers, 6 should-fix, all fixed. An unapproved index was reverted (`by_projectId` used instead) | — |
-| 8 Packing + Versions (L) | Sonnet | `claude/ux-8-packing-versions` · #1399 | slices 1–2 pushed; review: 0 blockers, 7 should-fix in progress; slice 3 (Versions) next, then slice 4 (page.tsx, now unlocked) | — |
-| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` · #1401 | S1 approved; S2 (Home) pushed, review running; S3 (⌘K) building | — |
-| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` · #1402 | slice 1 approved; slice 2 (Timesheets, roles sheet, nav) pushed, review running; slice 3 (planner) building | — |
-| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` · #1403 | slice 1 pushed; review: 3 blockers (ad-hoc Undo window, later-save clobber, caller-chosen test profile) + 4 should-fix, in progress; slice 2 next | merges before Phase 14 |
+| 8 Packing + Versions (L) | Sonnet | #1399 **merged 2026-11-23** (8fc9b203) | done. Two independent reviews (0 blockers; 7 + 7 should-fix, all fixed). Ships `projectContainers.sealedAt` (approved) | — |
+| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` · #1401 | S1 approved; S2 review: 0 blockers, 6 should-fix (incl. org-switch layout cross-write) being fixed; S3 (⌘K) / S4 building | — |
+| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` · #1402 | all 4 slices built; slice 3–4 review: 0 blockers, 6 should-fix (open-calls cap, multi-day calls, mail chunking, dimmed selection, org week start, undo author scope) being fixed | — |
+| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` · #1403 | slice 1 review fixes (3 blockers) + slice 2 (/scan + Check) done; slices 3–4 building. Ad-hoc Undo deletes that save's photos (overseer ruling) | merges before Phase 14 |
+| Security hotfix: crew token + pay leak | default | #1410 **merged 2026-11-23** (acb51388) | done: `responseToken` is service-only; crew pay on raw reads is manager+ (`canSeeCrewPay`). Follow-ups: `crewMembers.listPage` and `crewAssignments.projectCrew` still return pay below manager | — |
 | Follow-up: CSV formula guard | default | #1405 **merged 2026-11-21** (d2b323c7) | done | — |
 | Follow-up: Next.js 16.4.3 → 16.4.5 | default | #1406 **merged 2026-11-22** (f3c5547f) | done (7 moderate advisories cleared) | — |
 | Follow-up: picomatch GHSA-fc5q | default | #1407 **merged 2026-11-22** (9e847a93) | done: the audit passes without the ignore, so the exception row is retired | — |
 
-**Restarts:** the container restarted twice (2026-11-21 ~11:40 and ~15:25); the second left the build idle about 32 h. Branches were always clean and pushed, and workers were re-briefed from their PR-body handoffs.
+**Restarts:** the container restarted twice (2026-11-21 ~11:40 and ~15:25); the second left the build idle about 32 h. A third stop (2026-11-23 ~01:20, usage limit, then a restart) idled it about 21 h; workers were resumed with their uncommitted work intact. Branches were always clean and pushed, and workers were re-briefed from their PR-body handoffs.
 
 **Gate addendum (2026-11-21):** the handoff §6 gate list missed several CI Hygiene steps (depcruise-ratchet broke three branches). Workers now run the full Hygiene set: check-docs-npm-npx, check-dependency-justification, depcruise / any / date-format / collect / knip / complexity / xtenant ratchets, check-client-routes, api:registry/docs/mcp checks, wasm:sync:check, mira:feature-map:check, plus pnpm audit.
 

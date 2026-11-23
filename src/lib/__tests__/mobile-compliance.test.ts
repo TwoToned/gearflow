@@ -339,6 +339,12 @@ describe("UX Phase 11 — Home's rows and header words are 44px tap targets on a
     }
   });
 
+  it("the ⌘K palette's drill crumb and children toggle are 44px on a phone", () => {
+    const chrome = src("components/layout/palette/palette-chrome.tsx");
+    expect(chrome).toMatch(/onClick=\{onClick\} className="tap-area /);
+    expect(chrome).toMatch(/onClick=\{p\.onToggleChildren\}[^>]*max-md:size-11/);
+  });
+
   it("the My tasks tick is a 44px button around its 18px circle", () => {
     expect(src(`${HOME}/widgets/my-tasks-widget.tsx`)).toMatch(/flex size-11 shrink-0 items-center justify-center rounded-full/);
   });

@@ -20,7 +20,7 @@ function ModeIcon({ mode, crumb }: { mode: "slash" | "at" | "search"; crumb: boo
 /** The drill crumb: what you're inside (a page's records, a row's children); click to step out. */
 function Crumb({ crumb, onClick }: { crumb: { label: string; icon: string }; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="flex shrink-0 items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80">
+    <button type="button" onClick={onClick} className="tap-area flex shrink-0 items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/80">
       <PaletteIcon icon={crumb.icon} className="h-3 w-3" />
       <span className="max-w-[150px] truncate">{crumb.label}</span>
       <ChevronRight className="h-3 w-3 text-fg-3" />
@@ -103,7 +103,7 @@ function InputBarEnd(p: Omit<InputBarProps, "inputRef">) {
         </>
       )}
       {p.hasChildren && (
-        <button type="button" onClick={p.onToggleChildren} className="shrink-0 rounded p-1 text-fg-3 transition-colors hover:bg-accent hover:text-fg" title={p.showChildren ? "Collapse children (⌘L)" : "Expand children (⌘L)"}>
+        <button type="button" onClick={p.onToggleChildren} aria-label={p.showChildren ? "Collapse children" : "Expand children"} className="flex shrink-0 items-center justify-center rounded p-1 text-fg-3 transition-colors hover:bg-accent hover:text-fg max-md:size-11" title={p.showChildren ? "Collapse children (⌘L)" : "Expand children (⌘L)"}>
           <ChevronsUpDown className="h-4 w-4" />
         </button>
       )}

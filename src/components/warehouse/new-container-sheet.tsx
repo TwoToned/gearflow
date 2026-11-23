@@ -27,12 +27,16 @@ import {
 interface NewContainerSheetParentOption {
   id: string;
   label: string;
+  /** A sealed case refuses having a case packed into it (`CASE_SEALED`), so it is not offered. */
+  sealed?: boolean;
 }
 
 export interface NewContainerSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
+  /** The version the case is created on (the Packing tab follows the viewed one); absent = the live version. */
+  versionId?: string;
   /** Every container already on the job — the "Packed inside" parent picker's
    *  options (top-level containers only; nesting depth is capped at the build
    *  plan's cycle-check ceiling server-side, not re-enforced here). */
@@ -88,9 +92,11 @@ export function NewContainerSheet({
   open,
   onOpenChange,
   projectId,
-  existingContainers,
+  versionId,
+  existingContainers: allContainers,
   onCreated,
 }: NewContainerSheetProps) {
+  const existingContainers = allContainers.filter((c) => !c.sealed);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const writes = useProjectContainerWrites();
@@ -144,6 +150,7 @@ export function NewContainerSheet({
     try {
       const result = await writes.create({
         projectId,
+        versionId,
         kind,
         label: resolvedLabel,
         assetId: kind === "ASSET" ? selectedAssetId : undefined,

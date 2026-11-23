@@ -35734,6 +35734,204 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectContainerPlanWrites.restorePlannedContainersNative",
+    "module": "projectContainerPlanWrites",
+    "fn": "restorePlannedContainersNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "batchAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a248087362c6fa2f",
+    "returnsSha": "42f28e263a2d90a0",
+    "stability": "tracks-app",
+    "summary": "Undo a bulk plan change by its batch audit id: put lines back to the case the server recorded, only where they are still as that change left them. Once per change.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainerPlanWrites.sealNative",
+    "module": "projectContainerPlanWrites",
+    "fn": "sealNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "39474d96b96cd2a8",
+    "returnsSha": "03f3db641059a5f0",
+    "stability": "tracks-app",
+    "summary": "Seal a packing case: its plan is locked (no lines planned in or out) until unsealed.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainerPlanWrites.undoDeleteContainerNative",
+    "module": "projectContainerPlanWrites",
+    "fn": "undoDeleteContainerNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "batchAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a248087362c6fa2f",
+    "returnsSha": "5b219410cc26ff1a",
+    "stability": "tracks-app",
+    "summary": "Undo a custom case delete by its batch audit id: re-create the case in place and put its planned lines back. Once per delete.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectContainerPlanWrites.unsealNative",
+    "module": "projectContainerPlanWrites",
+    "fn": "unsealNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "39474d96b96cd2a8",
+    "returnsSha": "03f3db641059a5f0",
+    "stability": "tracks-app",
+    "summary": "Unseal a packing case so its plan can change again.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectContainers.listForProject",
     "module": "projectContainers",
     "fn": "listForProject",
@@ -36030,7 +36228,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cba90547a1f914f4",
-    "returnsSha": "42d138e1e179a81f",
+    "returnsSha": "04f4a29790345a12",
     "stability": "tracks-app",
     "summary": "Set or clear the planned container for a batch of lines (Packing tab).",
     "danger": "low",
@@ -58484,6 +58682,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "expectLiveVersionId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -58499,13 +58702,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "undoOfAuditId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "versionId",
         "optional": false,
         "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7e288f8b0b892119",
+    "argsSha": "c20acc31b778800a",
     "returnsSha": "e497654c7ffad67a",
     "stability": "tracks-app",
     "summary": "Flip the project's live pointer to another version.",
@@ -58571,6 +58779,152 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "b4b4f715234117da",
     "stability": "tracks-app",
     "summary": "Rename a version's internal label.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versions.undoCreateNative",
+    "module": "versions",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "createAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d12f25f1b177dd2a",
+    "returnsSha": "76e9166418f484d2",
+    "stability": "tracks-app",
+    "summary": "Undo saving a new version: delete that copy only while it is still exactly what the save made (not live, not edited, not quoted).",
+    "danger": "high",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versionsPreview.makeLivePreview",
+    "module": "versionsPreview",
+    "fn": "makeLivePreview",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8749a3b1e4e406bf",
+    "returnsSha": "20df553dacdf24c4",
+    "stability": "tracks-app",
+    "summary": "Counts-only preview of making a version live: lines, packed units carried, models whose demand changes, invoices, quote total and balance before and after.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versionsPreview.versionRowFacts",
+    "module": "versionsPreview",
+    "fn": "versionRowFacts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "9528e846ef8c4f41",
+    "returnsSha": "6345c2cfd8cdd30f",
+    "stability": "tracks-app",
+    "summary": "Per-version facts for the Versions tab: line and planned counts, total, quote status, and a derived diff against the previous version.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -64620,10 +64974,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1251,
-  agentReachable: 623,
-  queries: 449,
-  mutations: 802,
-  agentReachableQueries: 314,
-  agentReachableMutations: 309,
+  total: 1258,
+  agentReachable: 628,
+  queries: 451,
+  mutations: 807,
+  agentReachableQueries: 316,
+  agentReachableMutations: 312,
 } as const;

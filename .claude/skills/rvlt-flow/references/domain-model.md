@@ -92,6 +92,14 @@ Not a kit and never priced; a unit's membership is on the unit, not the line.
 The old free-text "prep container" label it replaced still exists only as a
 legacy string. Used to organise the pick, the Prepped stage and the documents.
 
+On the job's **Packing** tab the office *plans* which case each line travels in:
+a line with no case planned is **Unplanned** (a plan state; **Loose** is the
+physical state, gear not in a case). What the warehouse actually packed wins
+over the plan, and the row says `Planned → LX-04` only when they disagree. A
+case can be **sealed** (its plan is locked and its label printed): nothing is
+planned into or out of it, and it cannot be renamed, moved or deleted until it
+is unsealed. A seal never stops the warehouse prepping or moving units.
+
 ## Availability
 
 Stock arithmetic that every availability answer rests on:

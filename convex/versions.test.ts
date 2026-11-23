@@ -239,6 +239,22 @@ describe("versions.makeLiveNative", () => {
     expect(project?.subtotal).toBe(1000); // recalculated off v2's (diverged) line, not v1's
   });
 
+  // UX Phase 8 (Q5): a make-live Undo names the version it expects to be live.
+  test("expectLiveVersionId: the Undo flips back only while the live pointer is still where it was left", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    const v2 = await create(t);
+    await makeLive(t, v2.id, { auditId: "aLive1" });
+    // Pointer is on v2, as the Undo expects: flips back to v1.
+    await makeLive(t, "v1", { auditId: "aUndo", expectLiveVersionId: v2.id });
+    expect((await getProject(t))?.liveVersionId).toBe("v1");
+
+    // Someone else moved it (v1 is live now, the caller still expects v2): refused, nothing changes.
+    await expect(makeLive(t, "v1", { auditId: "aUndo2", expectLiveVersionId: v2.id })).rejects.toThrow(/changed since/i);
+    expect((await getProject(t))?.liveVersionId).toBe("v1");
+  });
+
   // The core Phase 3 acceptance criterion: make-live in both directions
   // returns the project to byte-identical PLAN state.
   test("make-live is a pointer flip — round trip v1 -> v2 -> v1 is byte-identical on the project's plan fields", async () => {

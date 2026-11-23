@@ -40,6 +40,8 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Packer** | The member who packs a job (`projects.packerUserId`, set by `setPackerNative`). The floor's `Mine` = PM or packer. |
 | **Pull sheet** | The printable pick list for a job, a dialog on the warehouse job (`?doc=pull-sheet`). The same list as the pull-slip PDF. |
 | **Loose** (UI) | Gear not in a case (replaces "Not planned" / "No container"). |
+| **Unplanned** (UI) | A line with no case planned for it on the job's Packing tab. A PLAN state; **Loose** is the PHYSICAL state (gear not in a case). A line can be Unplanned and Loose, or Planned and still Loose. |
+| **Sealed** (UI) | A packing case whose plan is locked (`projectContainers.sealedAt`): nothing is planned into or out of it until unsealed. Does not touch the warehouse. |
 | **Return** | UI label for checking an asset **in** from a project back to the warehouse. |
 | **Docket** | A delivery or return document generated for a project (delivery docket / return docket) — see [13-pdfs.md](../FEATUREDOCS/13-pdfs.md). |
 | **Prep container (prep)** | The legacy free-text label for a case during pick/prep (`prepContainer`). Superseded by the first-class packing container (`projectContainers`; membership on the unit): see [83-packing-containers.md](../FEATUREDOCS/83-packing-containers.md). |

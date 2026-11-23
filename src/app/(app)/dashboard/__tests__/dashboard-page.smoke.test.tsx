@@ -193,6 +193,10 @@ describe("Home (smoke)", () => {
     await lastToast()?.[1]?.action?.onClick();
     await waitFor(() => expect(screen.getByLabelText("Hide My tasks")).toBeDefined());
 
+    // A stat tile is being arranged, not opened: no link while customising.
+    expect(screen.queryByRole("link", { name: /^Active jobs:/ })).toBeNull();
+    expect(screen.getAllByText("Active jobs").length).toBeGreaterThan(0);
+
     // Add widget lists only what is off the board.
     await user.click(screen.getByRole("button", { name: /Add widget/ }));
     expect(await screen.findByText("Every widget is already on your board.")).toBeDefined();

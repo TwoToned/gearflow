@@ -5,7 +5,7 @@ import Link from "next/link";
 import { GripVertical, X } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
 import type { DashboardLink } from "@/lib/dashboard-links";
-import { WidgetHeaderContext } from "@/components/dashboard/widget-chrome";
+import { HEADER_ACTION_TAP, WidgetEditModeContext, WidgetHeaderContext } from "@/components/dashboard/widget-chrome";
 
 export interface DashboardCardProps {
   /** Title in the header. In Customise mode the header is also the drag handle. */
@@ -64,7 +64,7 @@ function CardHeader({
           <Link
             href={viewAll.href}
             title={viewAll.tip}
-            className={cn("whitespace-nowrap rounded-sm text-[12.5px] font-semibold text-muted hover:text-ink", focusRing)}
+            className={cn(HEADER_ACTION_TAP, "whitespace-nowrap rounded-sm text-[12.5px] font-semibold text-muted hover:text-ink", focusRing)}
           >
             View all ›
           </Link>
@@ -104,7 +104,9 @@ export const DashboardCard = forwardRef<HTMLDivElement, DashboardCardProps>(func
       {/* Scroll stays for a widget whose content genuinely overflows (an open-ended feed);
           only the native scrollbar chrome is hidden, the app's existing convention. */}
       <div className="min-h-0 flex-1 overflow-auto pt-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <WidgetHeaderContext.Provider value={{ count: countEl, action: actionEl }}>{widget}</WidgetHeaderContext.Provider>
+        <WidgetEditModeContext.Provider value={editMode}>
+          <WidgetHeaderContext.Provider value={{ count: countEl, action: actionEl }}>{widget}</WidgetHeaderContext.Provider>
+        </WidgetEditModeContext.Provider>
       </div>
       {children}
     </div>

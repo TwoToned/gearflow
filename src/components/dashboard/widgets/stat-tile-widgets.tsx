@@ -8,6 +8,7 @@ import { useNativeDashboardStats } from "@/hooks/use-native-dashboard";
 import { AnimatedNumber } from "@/components/ui/motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DASHBOARD_LINKS, type DashboardLink } from "@/lib/dashboard-links";
+import { useWidgetEditMode } from "@/components/dashboard/widget-chrome";
 import { cn, focusRing } from "@/lib/utils";
 
 interface StatValue {
@@ -47,6 +48,17 @@ function StatTile({
   children,
   ...figure
 }: StatValue & { label: string; sub: string; link: DashboardLink; children?: React.ReactNode }) {
+  const editing = useWidgetEditMode();
+  const body = (
+    <>
+      <StatFigure {...figure} />
+      <span className={cn("mt-2 block text-[13px] font-semibold", !editing && "group-hover:underline")}>{label}</span>
+      <span className="mt-px block text-[12px] text-muted">{sub}</span>
+      {children}
+    </>
+  );
+  // In Customise the tile is being arranged, not opened: no link to fire mid-drag.
+  if (editing) return <div className="block min-w-0 text-ink">{body}</div>;
   return (
     <Link
       href={link.href}
@@ -54,10 +66,7 @@ function StatTile({
       aria-label={`${label}: ${figureText(figure)}, ${sub}. Opens ${link.tip}`}
       className={cn("group block min-w-0 rounded-sm text-ink", focusRing)}
     >
-      <StatFigure {...figure} />
-      <span className="mt-2 block text-[13px] font-semibold group-hover:underline">{label}</span>
-      <span className="mt-px block text-[12px] text-muted">{sub}</span>
-      {children}
+      {body}
     </Link>
   );
 }

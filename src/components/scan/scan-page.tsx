@@ -47,6 +47,7 @@ import { ExceptionState, LoadingState, ReadyState } from "./scan-states";
 import { TtBody } from "./tt-body";
 import { useCheckMode } from "./use-check-mode";
 import { useScanSession } from "./use-scan-session";
+import { useTtHotkeys } from "./use-tt-hotkeys";
 import { useTtMode } from "./use-tt-mode";
 import { useTtRegister } from "./use-tt-register";
 
@@ -103,11 +104,21 @@ function useScanPageModel(session: Session, mode: ScanMode) {
   // The bottom-nav Scan lands in this page's pipeline, not the shell's lookup.
   useScanTarget((value) => session.scan(value));
   useReportUnreadable(session, mode, feedback.play);
+  useTtKeys(session, mode, tt);
   useLogExceptions({ card: mode === "check" ? checkCard : testCard, tag, mode, play: feedback.play, add: lastScans.add });
   return { orgId, feedback, checkCard, testCard, check, tt, checkable: checkableCard(checkCard) };
 }
 
 type Model = ReturnType<typeof useScanPageModel>;
+
+/** Test & tag mode's keyboard (Ctrl+Enter, Esc, Ctrl+Shift+P), only while a test card is open. */
+function useTtKeys(session: Session, mode: ScanMode, tt: ReturnType<typeof useTtMode>) {
+  useTtHotkeys(mode === "tt" && tt.item !== null, {
+    save: () => void tt.save({ keepOpen: false }),
+    back: session.clear,
+    passAllVisual: tt.passAllVisual,
+  });
+}
 
 type Mx = ReturnType<typeof useMaintenanceJob>;
 

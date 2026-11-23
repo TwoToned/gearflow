@@ -302,6 +302,50 @@ describe("ScanPage — Test & tag mode", () => {
     expect(h.ttRetire).not.toHaveBeenCalled();
   });
 
+  it("keyboard: Ctrl+Shift+P passes the visual checks, Ctrl+Enter saves even from a reading, Esc goes back", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    h.record.mockResolvedValueOnce({ id: "rec9", nextDueDate: Date.UTC(2027, 1, 22), result: "PASS" });
+    render(<ScanPage />);
+    const earth = screen.getByRole("spinbutton", { name: "Earth Continuity" });
+    // Inside a text field only Ctrl+Enter is ours: Ctrl+Shift+P there does nothing.
+    await userEvent.click(earth);
+    await userEvent.keyboard("{Control>}{Shift>}P{/Shift}{/Control}");
+    expect(screen.getByText("Finish the visual inspection (2 left)")).toBeTruthy();
+    (document.activeElement as HTMLElement).blur();
+    await userEvent.keyboard("{Control>}{Shift>}P{/Shift}{/Control}");
+    expect(screen.queryByText("Finish the visual inspection (2 left)")).toBeNull();
+    expect(h.toasts.map((t) => t.title)).toContain("Every visual check ticked");
+    await userEvent.type(earth, "0.2");
+    await userEvent.click(screen.getByRole("button", { name: "Insulation Resistance: N/A" }));
+    // Esc in a field leaves the scan alone.
+    await userEvent.click(earth);
+    await userEvent.keyboard("{Escape}");
+    expect(replace).not.toHaveBeenCalled();
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(h.record).toHaveBeenCalledTimes(1);
+  });
+
+  it("keyboard: Esc goes back (asking first over answers); a menu's own Esc only closes the menu", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    render(<ScanPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Scan actions" }));
+    await screen.findByRole("menuitem", { name: "Retire from test & tag…" });
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
+    (document.activeElement as HTMLElement).blur();
+    await userEvent.keyboard("{Escape}");
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=tt", { scroll: false });
+  });
+
+  it("keyboard: no T&T shortcut fires without an open test card", async () => {
+    render(<ScanPage />);
+    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(replace).not.toHaveBeenCalled();
+    expect(h.record).not.toHaveBeenCalled();
+  });
+
   it("Quick pass is absent for an item that has never been tested (nothing to repeat)", async () => {
     setUrl("/scan?mode=tt&tag=TT-0412"); // tt() defaults to lastTestDate: null
     render(<ScanPage />);

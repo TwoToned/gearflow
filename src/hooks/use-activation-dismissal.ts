@@ -12,8 +12,9 @@ import { api } from "../../convex/_generated/api";
  * from the org's real state (`useActivationMilestones`). Reactive: a dismiss
  * updates every mounted reader immediately, no manual refetch.
  */
-export function useActivationDismissal() {
-  const dismissedAt = useAuthedQuery(api.orgActivationDismissalsWrites.mine, {});
+export function useActivationDismissal(enabled = true) {
+  // `enabled: false` (no setup slot on the board) skips the read entirely.
+  const dismissedAt = useAuthedQuery(api.orgActivationDismissalsWrites.mine, enabled ? {} : "skip");
   const dismissM = useMutation(api.orgActivationDismissalsWrites.dismissNative);
   const undismissM = useMutation(api.orgActivationDismissalsWrites.undismissNative);
 

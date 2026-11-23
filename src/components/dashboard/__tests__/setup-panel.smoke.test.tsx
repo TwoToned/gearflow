@@ -92,10 +92,27 @@ beforeEach(() => {
 });
 
 describe("SetupPanel (smoke)", () => {
-  it("renders no rows while a read is loading (pending invites included, so Team never flashes unfinished)", () => {
+  it("renders no rows while a read is loading (pending invites included, so Team never flashes unfinished), but holds its place", () => {
     mocks.invites = { data: undefined, isLoading: true };
     renderPanel();
     expect(screen.queryByText("Invite your team")).toBeNull();
+    // The slot's height is reserved while it loads (no layout shift when it lands).
+    expect(screen.getByLabelText("Loading the setup panel")).toBeDefined();
+  });
+
+  it("one half failing to dismiss still offers Undo for the half that DID, and analytics fire only for a real dismissal", async () => {
+    mocks.activation = { ...DONE_ACTIVATION, hasProject: false, hasModelLineItemOnFirstProject: false };
+    mocks.activationDismiss.mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(await screen.findByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+    expect(mocks.toast.mock.calls.at(-1)?.[0]).toBe("Setup panel partly dismissed");
+    // The activation half failed: no analytics for it.
+    expect(mocks.captured).toEqual([]);
+    await lastUndo()!();
+    expect(mocks.setupUndismiss).toHaveBeenCalledWith("setup-row");
+    expect(mocks.activationUndismiss).not.toHaveBeenCalled();
   });
 
   it("renders nothing once both halves are dismissed or complete", () => {

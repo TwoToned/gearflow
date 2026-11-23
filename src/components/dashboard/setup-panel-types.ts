@@ -13,6 +13,8 @@ export interface SetupPanelItem {
 /** One half of the panel ("Finish setup" or "Get started"), with its own dismissal. */
 export interface SetupPanelHalf {
   items: SetupPanelItem[];
+  /** Its reads are still in flight (the slot keeps its height meanwhile). */
+  loading: boolean;
   /** Loaded, not dismissed, and not complete. */
   visible: boolean;
   /** Resolves to the dismissal row id it created, or null when already dismissed. */

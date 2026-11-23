@@ -19,6 +19,20 @@ interface WidgetHeaderTargets {
 
 export const WidgetHeaderContext = createContext<WidgetHeaderTargets>({ count: null, action: null });
 
+/**
+ * A quiet header word (`View all ›`, `Dismiss`) gets a 44 px HIT area on a phone
+ * (DESIGN.md §15) through the shared `.tap-area` (globals.css), so the 26 px
+ * header row itself doesn't grow.
+ */
+export const HEADER_ACTION_TAP = "tap-area";
+
+/** Customise mode is on for this card: a widget's own links must not navigate while it is. */
+export const WidgetEditModeContext = createContext(false);
+
+export function useWidgetEditMode(): boolean {
+  return useContext(WidgetEditModeContext);
+}
+
 /** The figure beside the widget title (`6`, `2 live`). Absent while loading. */
 export function WidgetCount({ children }: { children: React.ReactNode }) {
   const { count } = useContext(WidgetHeaderContext);

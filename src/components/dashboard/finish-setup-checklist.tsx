@@ -36,6 +36,8 @@ function isChecklistLoading(opts: {
   );
 }
 
+const countOf = (rows: unknown[] | undefined): number => rows?.length ?? 0;
+
 /** Every item is computed from the org's actual settings: nothing tracks "step N
  *  done" (C6, #1104; D5/R-3.1). Team counts pending invites with accepted
  *  members: an owner who has invited a teammate has finished this step. Each row
@@ -69,11 +71,11 @@ export function useFinishSetupState(orgId: string | undefined): SetupPanelHalf {
     data: unknown[] | undefined;
     isLoading: boolean;
   };
-  const { dismissedAt, dismiss, undismiss } = useSetupDismissal();
+  // `orgId: undefined` (no setup slot on the board, or no org yet) skips every read.
+  const { dismissedAt, dismiss, undismiss } = useSetupDismissal(!!orgId);
 
-  const loading = isChecklistLoading({ orgLoading, membersLoading, invitesLoading, locations, dismissedAt });
-  const teamCount = (members?.length ?? 0) + (invites?.length ?? 0);
-  const items = buildItems(org, locations?.length ?? 0, teamCount);
+  const loading = !!orgId && isChecklistLoading({ orgLoading, membersLoading, invitesLoading, locations, dismissedAt });
+  const items = buildItems(org, countOf(locations), countOf(members) + countOf(invites));
   const complete = items.every((i) => i.done);
-  return { items, visible: !loading && dismissedAt == null && !complete, dismiss, undismiss };
+  return { items, loading, visible: !!orgId && !loading && dismissedAt == null && !complete, dismiss, undismiss };
 }

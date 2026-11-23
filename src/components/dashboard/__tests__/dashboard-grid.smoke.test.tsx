@@ -13,7 +13,16 @@ import { rolePermissions } from "@/lib/permissions";
 const state = vi.hoisted(() => ({ isMobile: false, permissions: { project: ["read"] } as Record<string, string[]> | null }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => state.isMobile }));
 vi.mock("@/lib/use-permissions", () => ({ useCurrentRole: () => ({ permissions: state.permissions, isLoading: false }) }));
-vi.mock("@/components/dashboard/setup-panel", () => ({ useSetupPanelState: () => ({ visible: true, title: "Get started" }) }));
+const setupCalls = vi.hoisted(() => ({ panel: [] as (string | undefined)[], analytics: [] as (string | undefined)[] }));
+vi.mock("@/components/dashboard/setup-panel", () => ({
+  useSetupPanelState: (orgId?: string) => {
+    setupCalls.panel.push(orgId);
+    return { visible: true, loading: false, title: "Get started" };
+  },
+}));
+vi.mock("@/hooks/use-activation-milestones", () => ({
+  useActivationMilestoneAnalytics: (orgId?: string) => void setupCalls.analytics.push(orgId),
+}));
 
 function FixtureWidgetA() {
   return <p>Fixture A content</p>;
@@ -67,6 +76,7 @@ vi.mock("@/lib/dashboard-widgets", () => {
     DASHBOARD_WIDGET_REGISTRY: registry,
     readingOrder: <T extends W>(ws: T[]) => [...ws].sort((a, b) => a.y - b.y || a.x - b.x),
     renderedWidgets: <T extends { kind: string }>(ws: T[]) => ws.filter((w) => w.kind in registry),
+    boardHasSetup: (ws: { kind: string }[]) => ws.some((w) => (registry as Record<string, { setupSlot?: boolean }>)[w.kind]?.setupSlot),
   };
 });
 
@@ -96,6 +106,17 @@ describe("DashboardGrid (smoke)", () => {
     expect(screen.getByText("Fixture A")).toBeDefined();
     expect(screen.getAllByText("Fixture A content")).toHaveLength(3);
     expect(screen.queryByText("removedKind")).toBeNull();
+  });
+
+  it("with no setup kind on the board the panel's reads are skipped; milestone analytics still run", () => {
+    setupCalls.panel = [];
+    setupCalls.analytics = [];
+    render(<DashboardGrid widgets={WIDGETS.filter((w) => (w.kind as string) !== "fixtureSetup")} editMode={false} orgId="org1" onLayoutChange={vi.fn()} onRemove={vi.fn()} />);
+    expect(setupCalls.panel.every((o) => o === undefined)).toBe(true);
+    expect(setupCalls.analytics).toContain("org1");
+    setupCalls.panel = [];
+    render(grid(false));
+    expect(setupCalls.panel).toContain("org1");
   });
 
   it("the setup slot is titled by what the panel shows, not by the kind hosting it", () => {

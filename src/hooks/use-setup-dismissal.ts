@@ -12,8 +12,9 @@ import { api } from "../../convex/_generated/api";
  * real settings. Reactive: a dismiss updates every mounted reader immediately,
  * no manual refetch.
  */
-export function useSetupDismissal() {
-  const dismissedAt = useAuthedQuery(api.orgSetupDismissalsWrites.mine, {});
+export function useSetupDismissal(enabled = true) {
+  // `enabled: false` (no setup slot on the board) skips the read entirely.
+  const dismissedAt = useAuthedQuery(api.orgSetupDismissalsWrites.mine, enabled ? {} : "skip");
   const dismissM = useMutation(api.orgSetupDismissalsWrites.dismissNative);
   const undismissM = useMutation(api.orgSetupDismissalsWrites.undismissNative);
 

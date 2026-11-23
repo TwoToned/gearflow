@@ -9,8 +9,10 @@ import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { DashboardBoardContext } from "@/components/dashboard/widget-chrome";
 import { useSetupPanelState } from "@/components/dashboard/setup-panel";
 import { canOpenLink } from "@/lib/dashboard-links";
+import { useActivationMilestoneAnalytics } from "@/hooks/use-activation-milestones";
 import {
   DASHBOARD_WIDGET_REGISTRY,
+  boardHasSetup,
   GRID_COLS,
   readingOrder,
   renderedWidgets,
@@ -35,8 +37,14 @@ export interface LayoutChange {
  * so the slot is dropped here, before RGL.
  */
 function useBoardModel(widgets: DashboardLayoutWidget[], orgId: string | undefined) {
-  const setup = useSetupPanelState(orgId);
-  const visibleWidgets = useMemo(() => renderedWidgets(widgets, setup.visible), [widgets, setup.visible]);
+  // No setup kind on the board ⇒ the panel's reads are skipped altogether.
+  const setup = useSetupPanelState(boardHasSetup(widgets) ? orgId : undefined);
+  // D4 (#1108): milestone analytics report while Home is open, whether or not the
+  // panel's slot renders (a completion is worth reporting after it was dismissed).
+  useActivationMilestoneAnalytics(orgId);
+  // While the panel loads its slot stays, so the board doesn't shift when it lands.
+  const setupShown = setup.visible || setup.loading;
+  const visibleWidgets = useMemo(() => renderedWidgets(widgets, setupShown), [widgets, setupShown]);
   const kinds = useMemo(() => new Set(visibleWidgets.map((w) => w.kind)), [visibleWidgets]);
   const rglLayout: Layout = useMemo(
     () =>

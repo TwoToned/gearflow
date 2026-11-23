@@ -49,10 +49,11 @@ function buildItems(state: ActivationMilestonesState): SetupPanelItem[] {
  * `visible` = loaded, not dismissed, at least one milestone left.
  */
 export function useActivationState(orgId: string | undefined): SetupPanelHalf & { doneCount: number } {
+  // `orgId: undefined` (no setup slot on the board, or no org yet) skips every read.
   const state = useActivationMilestones(orgId);
-  const { dismissedAt, dismiss, undismiss } = useActivationDismissal();
+  const { dismissedAt, dismiss, undismiss } = useActivationDismissal(!!orgId);
   const items = state ? buildItems(state) : [];
-  const loading = state === undefined || dismissedAt === undefined;
-  const visible = !loading && dismissedAt == null && items.some((i) => !i.done);
-  return { items, visible, dismiss, undismiss, doneCount: items.filter((i) => i.done).length };
+  const loading = !!orgId && (state === undefined || dismissedAt === undefined);
+  const visible = !!orgId && !loading && dismissedAt == null && items.some((i) => !i.done);
+  return { items, loading, visible, dismiss, undismiss, doneCount: items.filter((i) => i.done).length };
 }

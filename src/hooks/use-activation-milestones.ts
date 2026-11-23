@@ -46,9 +46,10 @@ export function useActiveMilestoneKey(orgId: string | undefined): MilestoneKey |
 /**
  * D4 (#1108) — fires `activation_milestone` the first time each of the four
  * milestones flips from not-done to done, for as long as this hook stays
- * mounted (Home's `SetupPanel` is the one call site — it calls this ahead of
- * its own early return, so a completion witnessed while the panel is mounted
- * still gets reported).
+ * mounted. Home's board (`DashboardGrid`) is the one call site, OUTSIDE the
+ * setup panel's slot: the slot disappears once the panel is dismissed, complete
+ * or hidden in Customise, and a completion witnessed after that must still be
+ * reported.
  *
  * Never fires for a milestone that was ALREADY done the first time this
  * hook observes state in a given mount — that would report a historical

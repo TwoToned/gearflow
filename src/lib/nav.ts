@@ -11,6 +11,7 @@
  */
 import { MODULE_NAMES } from "@/lib/vocabulary";
 import type { Resource } from "@/lib/permissions";
+import type { NavCountSource } from "@/lib/nav-counts";
 
 /** Module accent. `null` = the muted neutral used by the "More" group and Settings. */
 export type NavHue = "blue" | "amber" | "green" | "purple" | "coral" | "teal";
@@ -45,6 +46,8 @@ export interface NavSub {
   resource?: Resource | readonly Resource[];
   /** Fuller label when the row stands alone in the phone More sheet ("Job templates"). */
   moreLabel?: string;
+  /** The phone More sheet's trailing count for this row (`src/lib/nav-counts.ts`). */
+  count?: NavCountSource;
 }
 
 export interface NavItem {
@@ -60,6 +63,8 @@ export interface NavItem {
   subs?: readonly NavSub[];
   /** Extra path prefixes that make this module "active" (url's own prefix is implied). */
   matchPrefixes?: readonly string[];
+  /** The phone More sheet's trailing count for this row (`src/lib/nav-counts.ts`). */
+  count?: NavCountSource;
 }
 
 export const NAV: readonly NavItem[] = [
@@ -70,10 +75,10 @@ export const NAV: readonly NavItem[] = [
     resource: "project",
     subs: [
       { key: "job-templates", label: "Templates", url: "/projects/templates", icon: "templates", resource: "project", moreLabel: "Job templates" },
-      { key: "overbookings", label: "Overbookings", url: "/overbookings", icon: "overbookings", resource: "project" },
+      { key: "overbookings", label: "Overbookings", url: "/overbookings", icon: "overbookings", resource: "project", count: "overbookings" },
     ],
   },
-  { key: "finance", label: "Finance", url: "/finance", icon: "finance", hue: "green", group: 0, moreGroup: "plan", resource: "invoice" },
+  { key: "finance", label: "Finance", url: "/finance", icon: "finance", hue: "green", group: 0, moreGroup: "plan", resource: "invoice", count: "invoicesOverdue" },
   { key: "schedule", label: MODULE_NAMES.schedule, url: "/availability", icon: "schedule", hue: "green", group: 0, moreGroup: "plan", resource: "asset" },
   // Group 1
   {
@@ -85,7 +90,7 @@ export const NAV: readonly NavItem[] = [
   },
   {
     key: "assets", label: "Assets", url: "/assets/registry", icon: "assets", hue: "amber", group: 1, moreGroup: "gear", resource: "asset",
-    matchPrefixes: ["/assets", "/kits"],
+    matchPrefixes: ["/assets", "/kits"], count: "assets",
     subs: [
       { key: "asset-models", label: "Models", url: "/assets/models", icon: "models", resource: "model" },
       { key: "asset-categories", label: "Categories", url: "/assets/categories", icon: "categories", resource: "model" },
@@ -96,21 +101,21 @@ export const NAV: readonly NavItem[] = [
   },
   {
     key: "warehouse", label: "Warehouse", url: "/warehouse", icon: "warehouse", hue: "teal", group: 1, moreGroup: "gear", resource: "warehouse",
-    subs: [{ key: "warehouse-returns", label: "Returns", url: "/warehouse?mode=returning", icon: "returns", resource: "warehouse" }],
+    subs: [{ key: "warehouse-returns", label: "Returns", url: "/warehouse?mode=returning", icon: "returns", resource: "warehouse", count: "returnsOverdue" }],
   },
   {
-    key: "test-and-tag", label: "Test & Tag", url: "/test-and-tag", icon: "testTag", hue: "teal", group: 1, moreGroup: "gear", resource: "testTag",
+    key: "test-and-tag", label: "Test & Tag", url: "/test-and-tag", icon: "testTag", hue: "teal", group: 1, moreGroup: "gear", resource: "testTag", count: "testTagOverdue",
     subs: [
       { key: "tt-registry", label: "Registry", url: "/test-and-tag/registry", icon: "registry", resource: "testTag" },
       { key: "tt-quick-test", label: "Quick Test", url: "/test-and-tag/quick-test", icon: "quickTest", resource: "testTag" },
       { key: "tt-reports", label: "Reports", url: "/test-and-tag/reports", icon: "reports", resource: "reports" },
     ],
   },
-  { key: "maintenance", label: "Maintenance", url: "/maintenance", icon: "maintenance", hue: "coral", group: 1, moreGroup: "gear", resource: "maintenance" },
+  { key: "maintenance", label: "Maintenance", url: "/maintenance", icon: "maintenance", hue: "coral", group: 1, moreGroup: "gear", resource: "maintenance", count: "maintenance" },
   // Group 2 — "More". No hue: these are lookups, not workspaces.
-  { key: "clients", label: "Clients", url: "/clients", icon: "clients", hue: null, group: 2, moreGroup: "people", resource: "client" },
-  { key: "suppliers", label: "Suppliers", url: "/suppliers", icon: "suppliers", hue: null, group: 2, moreGroup: "people", resource: "supplier" },
-  { key: "locations", label: "Locations", url: "/locations", icon: "locations", hue: null, group: 2, moreGroup: "people", resource: "location" },
+  { key: "clients", label: "Clients", url: "/clients", icon: "clients", hue: null, group: 2, moreGroup: "people", resource: "client", count: "clients" },
+  { key: "suppliers", label: "Suppliers", url: "/suppliers", icon: "suppliers", hue: null, group: 2, moreGroup: "people", resource: "supplier", count: "suppliers" },
+  { key: "locations", label: "Locations", url: "/locations", icon: "locations", hue: null, group: 2, moreGroup: "people", resource: "location", count: "locations" },
   { key: "activity", label: "Activity", url: "/activity", icon: "activity", hue: null, group: 2, moreGroup: "account", resource: "reports" },
 ];
 
@@ -207,6 +212,8 @@ export interface MoreRow {
   icon: NavIconKey;
   /** Drill-down targets (`Open X ›` + these). Empty = a plain link. */
   subs: readonly NavSub[];
+  /** The trailing count, from the NAV row. */
+  count?: NavCountSource;
 }
 
 /**
@@ -222,10 +229,10 @@ export function moreSheetGroups(items: readonly NavItem[]): { group: MoreGroup; 
     const rows = byGroup.get(item.moreGroup)!;
     if ((BOTTOM_NAV_KEYS as readonly string[]).includes(item.key)) {
       for (const s of item.subs ?? []) {
-        rows.push({ key: s.key, label: s.moreLabel ?? s.label, url: s.url, icon: s.icon, subs: [] });
+        rows.push({ key: s.key, label: s.moreLabel ?? s.label, url: s.url, icon: s.icon, subs: [], count: s.count });
       }
     } else {
-      rows.push({ key: item.key, label: item.label, url: item.url, icon: item.icon, subs: item.subs ?? [] });
+      rows.push({ key: item.key, label: item.label, url: item.url, icon: item.icon, subs: item.subs ?? [], count: item.count });
     }
   }
   return MORE_GROUP_ORDER.map((group) => ({ group, label: MORE_GROUP_LABELS[group], rows: byGroup.get(group)! })).filter(

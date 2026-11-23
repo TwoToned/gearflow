@@ -44,6 +44,39 @@ vi.mock("next-themes", () => ({ useTheme: () => ({ resolvedTheme: "dark", setThe
 const query = vi.fn();
 vi.mock("convex/react", () => ({ useConvex: () => ({ query }) }));
 
+// More-sheet counts (UX Phase 11, S4): navCounts.get per row, and the two reused counts queries.
+const NAV_COUNTS: Record<string, { value: number; secondary?: number; truncated: boolean } | null> = {
+  assets: { value: 605, truncated: false },
+  testTagOverdue: { value: 4, truncated: false },
+  maintenance: { value: 20, secondary: 5, truncated: false },
+  returnsOverdue: { value: 2, truncated: false },
+  clients: { value: 26, truncated: false },
+  suppliers: { value: 13, truncated: false },
+  locations: { value: 200, truncated: true },
+};
+const countReads: string[] = [];
+vi.mock("@/hooks/use-authed-query", () => ({
+  useAuthedQuery: (_q: unknown, args: unknown) => {
+    if (args === "skip") return undefined;
+    const source = (args as { source: string }).source;
+    countReads.push(source);
+    return NAV_COUNTS[source] ?? null;
+  },
+}));
+const reusedReads: string[] = [];
+vi.mock("@/hooks/use-native-dashboard", () => ({
+  useNativeOrgFinanceCounts: (orgId?: string) => {
+    if (!orgId) return undefined;
+    reusedReads.push("finance");
+    return { overdueCount: 1, overdueTruncated: false };
+  },
+  useNativeOverbookingCounts: (orgId?: string) => {
+    if (!orgId) return undefined;
+    reusedReads.push("overbookings");
+    return { hardCount: 5, pencilledCount: 0, saleStockCount: 0 };
+  },
+}));
+
 // The camera engine has its own jsdom suite; here it is a stub that proves WHEN it mounts.
 let cameraMounts = 0;
 vi.mock("@/components/scanner/camera-scanner-dialog", () => ({
@@ -191,6 +224,36 @@ describe("More sheet", () => {
     expect(within(dialog).queryByText("Crew")).toBeNull();
     expect(within(dialog).queryByText("Finance")).toBeNull();
     expect(within(dialog).getByText("Clients")).toBeTruthy();
+  });
+
+  it("S4: opened, each row carries its count (§6d.6), truncated reads as n+, nothing is read while closed", async () => {
+    countReads.length = 0;
+    reusedReads.length = 0;
+    renderNav();
+    expect(countReads).toEqual([]);
+    expect(reusedReads).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: /More/ }));
+    const dialog = await screen.findByRole("dialog");
+    const row = (label: string) => within(dialog).getByText(label).closest("[role='menuitem'], button, a, div")!.parentElement!.textContent;
+    expect(row("Finance")).toContain("1 overdue");
+    expect(row("Overbookings")).toContain("5 overbooked");
+    expect(row("Assets")).toContain("605");
+    expect(row("Test & Tag")).toContain("4 overdue");
+    expect(row("Maintenance")).toContain("20 open · 5 overdue");
+    expect(row("Returns")).toContain("2 overdue");
+    expect(row("Clients")).toContain("26");
+    expect(row("Locations")).toContain("200+");
+    // Crew's row is Phase 15's to attach (Q10): no count source on it yet.
+    expect(countReads).not.toContain("crew");
+  });
+
+  it("S4: a viewer (no warehouse) has no Returns row and so no Returns count read", async () => {
+    perms = { project: ["read"], asset: ["read"], client: ["read"], invoice: ["read"], warehouse: [] };
+    countReads.length = 0;
+    const dialog = await open();
+    expect(within(dialog).queryByText("Returns")).toBeNull();
+    expect(countReads).not.toContain("returnsOverdue");
+    expect(countReads).toContain("assets");
   });
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readRecents, writeRecents, pushRecent } from "@/lib/palette/recents";
 import { recordRow, type PaletteRow } from "@/lib/palette/model";
@@ -19,6 +19,15 @@ export function usePaletteRecents(orgId: string | undefined, userId: string | un
   const resolved = useAuthedQuery(api.paletteRecents.resolve, orgId && refs.length > 0 ? { orgId, refs } : "skip");
 
   const rows = useMemo((): PaletteRow[] => (resolved ?? []).map((r) => recordRow({ ...r, isChild: false })), [resolved]);
+
+  // A ref the server dropped (deleted, archived, another org's, or no longer readable
+  // by this role) is pruned from storage, so it stops taking one of the five places.
+  // Storage only: the rows above already leave it out.
+  useEffect(() => {
+    if (!resolved || !orgId || !userId) return;
+    const kept = refs.filter((ref) => resolved.some((r) => r.type === ref.type && r.id === ref.id));
+    if (kept.length < refs.length) writeRecents(orgId, userId, kept);
+  }, [resolved, refs, orgId, userId]);
 
   /** Opening a row moves it to the top of Recent. */
   const record = useCallback(

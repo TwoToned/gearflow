@@ -107,6 +107,22 @@ describe("⌘K palette (smoke)", () => {
     expect(within(actions).getAllByRole("option").map((o) => o.textContent)).toEqual(["New job", "Scan a tag", "New asset", "New client"]);
   });
 
+  it("a Recent ref the server no longer resolves is pruned from storage", async () => {
+    window.localStorage.setItem(
+      recentsKey("org_1", "u1"),
+      JSON.stringify([{ type: "asset", id: "a1" }, { type: "client", id: "gone" }, { type: "project", id: "p1" }]),
+    );
+    render(<CommandSearch />);
+    openPalette();
+    await screen.findByRole("group", { name: "Recent" });
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(recentsKey("org_1", "u1"))!)).toEqual([
+        { type: "asset", id: "a1" },
+        { type: "project", id: "p1" },
+      ]),
+    );
+  });
+
   it("a viewer gets no New job / New asset / New client and no Scan", async () => {
     m.permissions = rolePermissions.viewer;
     render(<CommandSearch />);

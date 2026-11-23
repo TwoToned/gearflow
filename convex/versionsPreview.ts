@@ -33,7 +33,7 @@ const MAX_LINES_EXAMINED = 500;
 /** Lines across every bundle `versionRowFacts` loads; the next version is skipped once spent. */
 const MAX_BUNDLE_LINES = 2500;
 /** Versions that get row facts (newest first); older rows render without them. */
-const MAX_VERSIONS_WITH_FACTS = 6;
+const MAX_VERSIONS_WITH_FACTS = 3; // each costs a FULL totals bundle, so only the newest few get money facts
 /** Of those, how many also get `plannedCount` (it reads units); the rest show `null`. */
 const MAX_VERSIONS_WITH_PLANNED = 3;
 

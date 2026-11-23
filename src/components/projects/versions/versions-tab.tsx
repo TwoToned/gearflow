@@ -147,7 +147,8 @@ function VersionRow({
           </span>
           {diffLine ? <span className="block truncate text-caption text-muted">{diffLine}</span> : null}
         </span>
-        {facts ? <span className="t-mono shrink-0 text-ink">{formatCurrency(facts.total, undefined, { cents: false })}</span> : null}
+        {/* Money facts exist for the newest few versions only; the rest print a dash, never a guess. */}
+        <span className="t-mono shrink-0 text-ink">{facts ? formatCurrency(facts.total, undefined, { cents: false }) : "—"}</span>
       </button>
       <ActionMenu spec={menu} label={`v${v.number} actions`} />
     </li>

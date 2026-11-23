@@ -106,6 +106,19 @@ describe("versionsPreview.versionRowFacts", () => {
     expect(r1?.diff).toBeNull();
   });
 
+  test("with more versions than the cap it RETURNS facts for the newest few only and says truncated (never throws)", async () => {
+    const t = makeT();
+    await seed(t);
+    const made = [] as { id: string; number: number }[];
+    for (let i = 0; i < 6; i++) made.push(await create(t, `aCreate${i}`));
+    const res = await t.withIdentity(asUser(ORG)).query(api.versionsPreview.versionRowFacts, { organizationId: ORG, projectId: "p1" });
+    expect(res.truncated).toBe(true);
+    expect(res.rows).toHaveLength(3);
+    // The newest three, newest first: the older versions have no money facts at all.
+    expect(res.rows.map((r) => r.versionId)).toEqual(made.slice(-3).reverse().map((m) => m.id));
+    expect(res.rows.every((r) => typeof r.total === "number")).toBe(true);
+  });
+
   test("a foreign org sees nothing for another org's project", async () => {
     const t = makeT();
     await seed(t);

@@ -386,8 +386,17 @@ target (`Packing into → LX-04 ▾`) and the mode words `Prep as I scan · Chec
 `ScanStrip` lists the last scans by tone (success with Undo, warning with Run check, error
 with Add & prep, neutral saved on device · syncing). The strip's Undo is the exact
 `scanUndo` closure from `announceWarehouseWrite`. The single pipeline that feeds them
-(`useDurableScanIntake` → result → `announceWarehouseWrite`) is Phase 3; the legacy
-`ScanHistoryStrip` stays until a surface adopts these.
+(`useDurableScanIntake` → result → `announceWarehouseWrite`) is Phase 3. The legacy
+`ScanHistoryStrip` is deleted (Phase 16): its last consumers moved to these.
+
+Three additive props serve the **Scan page** (`/scan`, Phase 16): `ScanDock.cameraContinuous`
+(default `true`; `false` passes the existing `continuous` flag through so the camera sheet
+closes on a read — one item per scan), `modes={[]}` (no mode row; the page's
+`Check · Test & tag` words sit above the dock), and `ScanStripEntry.onSelect` (the row's
+text becomes a button — the Scan page re-scans that tag). The Scan page registers
+`useScanTarget`, so the bottom-nav Scan lands in its ONE `scan(tag)` pipeline (the same one
+the dock's wedge and camera, a Last scans row tap and the `?tag=` deep link use) — no
+second camera or decoder, and the camera still opens only from the tap.
 
 ### Scan Lookup (`convex/scanLookup.ts`, `resolve` query — formerly `src/server/scan-lookup.ts`)
 Resolves barcode value to entity URL:

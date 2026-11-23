@@ -66,82 +66,85 @@ Multi-outlet/phase devices (power boards, RCD power boards, three-phase) require
 - UI allows adding/removing outlets during testing
 - `outletCount` remembered on asset for next test
 
-## Quick Test Wizard
+## Testing an item: the Scan page's Test & tag mode (Phase 16, spec §9i)
 
-5-step wizard using `useReducer` pattern at `/test-and-tag/quick-test`:
+The five-step quick-test wizard is gone. Testing is `/scan?mode=tt&tag=` — the same page
+as the ad-hoc check (FEATUREDOCS/37), one scroll, no steps. `/test-and-tag/quick-test[?id=]`
+is a server redirect into it (old links, the item page's "Test now", the palette), and NAV
+› Test & Tag › Quick Test points at `/scan?mode=tt`. Mode shown only with `testTag:create`.
 
-### Steps
-1. **Scan** — Enter test tag ID, loads asset + resolves profile. Handles retired assets (block + reactivate button). Quick Pass pre-fills from last test record.
-2. **Visual** — Profile-driven checkbox grid of visual inspection items. "Pass All" button (Ctrl+Shift+P). Auto-calculates visual result.
-3. **Electrical** — Profile-driven test inputs (only enabled tests shown). Numeric inputs with unit labels and threshold hints. Auto-evaluates readings.
-4. **Sub-Tests** — Only shown if profile `requiresSubTests`. Per-outlet rows with electrical inputs. Add/remove outlets.
-5. **Result** — Overall result pill. Breakdown dots. Failure workflow dialog (create maintenance record / mark out of service / retire). Next due date picker (no longer sent since Phase 16 — the server derives the date, see "Next due is derived"; the Scan page replaces this wizard). Save & Next / Save & Print Label.
-
-### Session Features
-- **Session tester**: Defaults to logged-in user, selectable from org members. Persists across tests in session.
-- **Audio feedback**: Success/error tone on save, toggleable — via the shared `useScanFeedback` hook (`@/hooks/use-scan-feedback`), not a page-local implementation. See "Audio / Scan Feedback" below.
-- **Session log**: Desktop sidebar / mobile bottom bar showing tested items + results.
-- **Keyboard shortcuts**: Ctrl+Enter save, Escape reset to scan.
+- **Any tag**: an asset tag or a test tag (`TT-0412`) reaches the same item
+  (`scanLookup.testCard`, which also returns the resolved profile).
+- **States**: an asset not on the register → `Add to the register` (Undo deletes it); a
+  retired item → `Reactivate and test` (Undo retires it again); unknown / kit / bulk tags
+  say what to scan instead. Each is logged in Last scans.
+- **The form** (`src/components/scan/tt-section.tsx`, draft `src/lib/tt-draft.ts`):
+  - `Tested by: Name ▾` (org members; sticks for the session, defaults to you) and
+    `Method: … ▾`.
+  - Visual inspection: an always-on tick per enabled check (shift-click ticks a range),
+    `Fail` per check, `Pass all` with Undo, notes, `n/m` + a dot-word in the head.
+  - Electrical: one row per enabled profile test with its threshold, the reading's own
+    dot-word verdict, and `N/A`; pass / fail / N/A words for polarity and the RCD
+    push-button; an optional insulation test voltage.
+  - Outlets (sub-test profiles): `− n +`, a row per outlet with its readings and polarity.
+  - Result: `Pass` / `Fail` / `not finished`, and **Next due, derived** (`Next due 21 Feb
+    2027 · every 3 months`; a fail reads `Next due after repair`).
+  - On a fail, inline `Failure action: Removed from service ▾` (D53 default; also
+    Referred to electrician — only for an item linked to inventory — Disposed / retired,
+    Repaired on the spot, No action), failure notes, and a line saying the item is
+    flagged. No blocking dialog.
+- **The primary** `Save and scan next` is disabled with the first blocker in plain words
+  (`Enter insulation resistance, or mark it N/A`, `Finish the visual inspection (2 left)`).
+  Caret: `Save and keep this asset open`, `Save and print label` (mounts the saved record's
+  `LabelTemplate` print-only, then prints — it used to print the page).
+- **Card ⋯**: Open asset, `Quick pass: repeat the last test` (PREFILLS the last record's
+  ticks, readings and method for review; every blocker still applies — it can no longer
+  save a reading-less PASS), Open in test & tag list, Clear this scan, `Retire from test &
+  tag…` (confirm; no Undo, because reactivating sets Not tested, not the prior status).
+- **Save awaits** `recordTest`; the save's ONE undo closure (`undoRecordTest`) is the
+  toast's Undo and the Last scans row's (10 s), and restores the draft when nothing else is
+  loaded. A scan over unsaved answers asks `Discard this test?`; Escape never resets.
+- Last scans (`n pass · n fail`) replaces the session log; the page ⋯ holds `Scan sounds`.
 
 ## Audio / Scan Feedback
 
-The quick-test wizard was the **original** (and until #951/QW-1, only) audio call site in
-the repo — a page-local `playBeep(success: boolean)` in
-`src/app/(app)/test-and-tag/quick-test/page.tsx` that built a brand-new `AudioContext` per
-beep and never closed it (Chrome caps ~6 concurrent contexts, so head-down scanning
-sessions eventually went silent), never called `ctx.resume()` (autoplay policy can
-silently suspend a context created outside a user gesture), stopped the oscillator with
-a hard `osc.stop()` (audible click), and swallowed every failure with a bare `catch {}`.
+The Scan page uses the shared **`src/lib/scan-feedback.ts`** + **`src/hooks/use-scan-feedback.ts`**
+pair (FEATUREDOCS/12 §"Scan Feedback"; the T&T wizard's page-local `playBeep` was the
+original call site): a save plays `success` on a PASS and `error` on a FAIL or a failed
+save, `exception` on a tag it can't test. The toggle is the page ⋯ `Scan sounds` (the same
+`rvlt.scanAudio` key; the old `<ScanFeedbackToggle>` is deleted). Haptics (#1220) ride the
+same toggle; `navigator.vibrate` is unimplemented on iOS Safari, so iOS is audio-only.
 
-That logic has been extracted into the shared **`src/lib/scan-feedback.ts`** +
-**`src/hooks/use-scan-feedback.ts`** pair (FEATUREDOCS/12 §"Scan Feedback" has the full
-architecture — this section covers only what's specific to the quick-test wizard):
-
-- `saveMutation`'s `onSuccess` plays `success` when `overallResult === "PASS"`, `error`
-  otherwise (byte-identical to the legacy pass/fail tones: 800 Hz/150 ms vs 300 Hz/400 ms).
-  `onError` (the save itself failing, e.g. a network/validation error) always plays `error`.
-- The old page-local `audioEnabled` `useState` (default `true`, **not persisted** — reset
-  every mount) is gone. The header's `Volume2`/`VolumeX` icon button is now the shared
-  `<ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />`
-  component (`@/components/scan-feedback-toggle`), backed by `useScanFeedback`'s
-  localStorage-persisted (`rvlt.scanAudio`) toggle. Default is still ON and the toggle is
-  visually/behaviourally identical — only the persistence and the underlying audio
-  implementation changed.
-- **Haptics (#1220)**: `useScanFeedback.play()` also fires `playScanHaptic(kind)`
-  (`src/lib/scan-feedback.ts`) alongside the tone, behind the same toggle — no separate
-  control. `navigator.vibrate` is unimplemented on iOS Safari, so this wizard (and every
-  other scan surface) is audio-only there; that's the accepted outcome, not a bug.
-- **Scan history strip (#1223)**: the save mutation's `onSuccess`/`onError` pass a
-  `{ label, outcome }` entry alongside the kind — `saveMutation` has no undo (`recordTest`
-  isn't one of the six warehouse writes), so `entry.undo` is always omitted here.
-  `<ScanHistoryStrip>` renders above `<ScanStep>`'s scan input while on the "scan" step —
-  see FEATUREDOCS/12 §"Scan History Strip" for the shared mechanism.
-
-### Failure Workflow
-When overall result is FAIL, a dialog prompts with options:
-- Create Maintenance Record → sets `failureAction: REFERRED_TO_ELECTRICIAN`
-- Mark Out of Service → sets `failureAction: REMOVED_FROM_SERVICE`, asset status → FAILED
-- Retire Asset → sets `failureAction: DISPOSED`, asset status → RETIRED, isActive → false
-- Save Without Action → sets `failureAction: NONE`
+### Failure actions
+On a derived FAIL the record's `failureAction` (default `REMOVED_FROM_SERVICE`, D53 — a UI
+default; an API caller that sends none gets `NONE`, Q16):
+- `REMOVED_FROM_SERVICE` → item status FAILED
+- `REFERRED_TO_ELECTRICIAN` → opens a REPAIR maintenance record linked to the inventory
+  asset and sets that asset IN_MAINTENANCE (only for an item linked to inventory)
+- `DISPOSED` → item RETIRED, `isActive: false`
+- `REPAIRED` / `NONE` → recorded, no side effect
 
 ### Pass/Fail Calculation
-`src/lib/test-tag/calculate-result.ts` gives the browser instant feedback:
-- `calculateVisualResult` — all enabled checks must pass
-- `calculateElectricalResult` — evaluates readings against thresholds
-- `calculateSubTestResult` — per-outlet evaluation
-- `calculateOverallResult` — any FAIL → overall FAIL
+The browser previews with `src/lib/tt-draft.ts` (`readingVerdict`, `ttBlocker`,
+`ttResult`, `ttPayload`), which imports `evaluateReading` and `TEST_FIELDS` from
+`convex/lib/testTagReadings.ts` — ONE function for preview and check.
 
 **The server is the authority (Phase 16, D51 + Q11).** `testTagRecordsWrites.createNative`
-re-derives everything in `convex/lib/testTagReadings.ts` before it writes, and
-`evaluateReading` is ONE function (calculate-result.ts re-exports it from there):
+re-derives everything in `convex/lib/testTagReadings.ts` before it writes:
 1. **Each reading carries its OWN verdict.** A numeric reading needs `PASS`/`FAIL`; a
    `PASS`/`FAIL` needs its reading; `NOT_APPLICABLE` carries none. (Live bug F5: every
    reading used to be stored with the *overall* electrical result, and RCD trip time was
    always `PASS`.)
 2. **A blank enabled reading is rejected, an explicit N/A is not (D51).** Every test the
-   profile enables must be answered. The profile is the one the caller names (org-checked)
-   or else the asset's cascade (`convex/lib/testProfileResolve.ts`), so leaving out
-   `testProfileId` can't skip the check. Sub-test profiles apply the same rule per outlet.
+   profile enables must be answered. The profile is ALWAYS the asset's resolved cascade
+   (`convex/lib/testProfileResolve.ts`, which skips deactivated profiles): a caller may
+   name it as `testProfileId` only to confirm it — naming another (a laxer one), a foreign
+   or an inactive profile is rejected, and only the resolved profile is ever pinned onto
+   the asset. Sub-test profiles apply the same rule per outlet; a profile that requires
+   sub-tests needs 1–50 of them, and `outletCount` (a whole number 1–50) must equal the
+   outlets tested. A legacy object-shaped `electricalTests` blob is normalised (an entry
+   counts as enabled unless it says `enabled: false`), never read as "no tests".
+   `testDate` may not be more than 5 minutes ahead of the server clock.
 3. **A stated threshold decides the verdict.** A reading that fails the profile's limit
    can't be sent as a pass (outlets use `thresholds.earthMax`/`insulationMin`/`leakageMax`,
    as the outlet UI does).
@@ -170,9 +173,13 @@ server-written before/after snapshot of the T&T asset (`lastTestDate`, `nextDueD
 `outletCount`, `testProfileId`, `status`, `isActive`, `updatedAt`), the inventory asset a
 referral flagged, and the referral it opened (`convex/lib/testTagUndo.ts`). The Undo takes
 only ids and refuses (changing nothing) unless it is **within 10 minutes on the server
-clock**, by the tester who saved it, the first undo, the record is still the item's
+clock** (`UNDO_WINDOW_MS`, `convex/lib/undoWindow.ts`, shared with the ad-hoc check's
+Undo), by the tester who saved it, the first undo (its forward audit row is read first, so
+a second undo is answered by the UNDO-row guard), the record is still the item's
 newest, and the item / flagged asset / referral are exactly as the save left them. It
-deletes the record, its sub-tests and an untouched referral, restores every field exactly
+deletes the record, its sub-tests and an untouched referral (a link it added to an
+EXISTING referral is deleted by `(maintenance record, asset)` after an org check, never by
+a bare link id; the save also rejects a colliding `maintenanceLinkId`), restores every field exactly
 (absent ones unset), and appends an `UNDO` activity row as the compliance trace. (Nothing
 else references a record today — labels print client-side and are not recorded.)
 
@@ -194,7 +201,7 @@ Same pattern as asset tags. Stored in `Organization.metadata.testTag`:
 - `/test-and-tag/registry` — Item list
 - `/test-and-tag/new` — Create item
 - `/test-and-tag/[id]` — Item detail + test records
-- `/test-and-tag/quick-test` — Quick test wizard
+- `/test-and-tag/quick-test` — redirect to `/scan?mode=tt[&tag=]` (the Scan page's Test & tag mode)
 - `/test-and-tag/reports` — 10 report types
 - `/settings/test-and-tag/profiles` — Test profile management
 
@@ -245,9 +252,10 @@ Models can set:
   case). Reuse/extend these rather than hand-rolling per-file maps.
 - Auth: every page is gated with `RequirePermission resource="testTag"` (read for
   list/detail/registry, create for new/quick-test). Reports uses `reports`/`view`.
-- The quick-test wizard is the inspector data-entry flow: 44px tap targets, focusRing
-  on every hand-built control, plain copy (no personality) in the fail dialog /
-  failure-details / retired-asset notice (alert contexts, §9).
+- The Scan page's Test & tag mode is the inspector data-entry flow: 44px tap targets,
+  16px inputs on a phone, the primary pinned above the bottom nav, plain copy (no
+  personality) in the failure action / retired / not-on-register states (alert
+  contexts, §9).
 - `label-template.tsx` is a print template — intentionally left on its own print-CSS
   styling, not migrated to app tokens (mirrors the pull-sheet print exception).
 - The **new-item page** (`test-and-tag/new/page.tsx`) is a PAGE smart form on the

@@ -246,6 +246,15 @@ export const deleteNative = mutation({
   },
 });
 
+/** Did `userId`'s Log time create entry `id` at `stamp`? Read from the forward write's own CREATE row. */
+async function loggedBy(ctx: MutationCtx, orgId: string, id: string, stamp: number, userId: string): Promise<boolean> {
+  const rows = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "crew_time_entry").eq("entityId", id))
+    .take(50);
+  return rows.some((r) => r.action === "CREATE" && r.createdAt === stamp && r.userId === userId);
+}
+
 /**
  * The exact Undo of ONE Log time (`createManyNative`), ONE atomic mutation: deletes exactly
  * `ids` (what that call created at `stamp`) and refuses the WHOLE Undo if any is gone, another
@@ -265,6 +274,9 @@ export const undoCreateManyNative = mutation({
     for (const doc of docs) {
       const refusal = undoCreateRefusal(doc, a.orgId, a.stamp);
       if (refusal) throw new ConvexError(refusal);
+      // Author-scoped, like revertNative / unconfirmManyNative: only the user whose
+      // Log time created the entry at this stamp may take it back.
+      if (!(await loggedBy(ctx, a.orgId, doc!.id, a.stamp, actor.userId))) throw new ConvexError("Only the person who logged this time can undo it");
     }
     for (const doc of docs as Doc<"crewTimeEntries">[]) {
       const member = await memberName(ctx, a.orgId, doc.crewMemberId);

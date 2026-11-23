@@ -282,7 +282,9 @@ org switch drops the selection and the seen rows.
   Log time's Undo is ONE atomic mutation,
   `crewTimeEntriesWrites.undoCreateManyNative({ ids, stamp })`: it deletes
   exactly the entries that call created and refuses the whole Undo if any was
-  edited, submitted or approved since (offered only with `crew:delete`).
+  edited, submitted or approved since (offered only with `crew:delete`). Like
+  `revertNative`, it is author-scoped: only the user whose Log time wrote the
+  entries' CREATE rows at that stamp may take them back.
   Query… is a dialog whose Save stays disabled until a reason is typed.
 - Phone: cards `name` / `#2336 · Sat 7 Nov · 8.5h · Submitted` with the total
   on the right, the sticky Log time, `Show 25 more`. Export all… stays in the

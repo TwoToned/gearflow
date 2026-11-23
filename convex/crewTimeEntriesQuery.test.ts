@@ -244,6 +244,16 @@ describe("undoCreateManyNative — Log time's Undo, ONE atomic mutation", () => 
     expect((await te(t, "n2"))?.status).toBe("SUBMITTED");
   });
 
+  test("author-scoped: another user (even an admin) can't undo someone else's Log time", async () => {
+    const t = makeT(); await seed(t, []);
+    await logTime(t, ["n1"]);
+    await expect(
+      t.withIdentity(asUser2).mutation(api.crewTimeEntriesWrites.undoCreateManyNative, { orgId: ORG, ids: ["n1"], stamp: NOW, now: NOW + 9, actor: { userId: USER2, userName: "Ben" }, auditId: "u2" }),
+    ).rejects.toThrow(/Only the person who logged this time/);
+    expect(await te(t, "n1")).not.toBeNull();
+    expect(await undo(t, ["n1"])).toEqual({ count: 1 });
+  });
+
   test("refuses ids it did not create (another stamp, another org)", async () => {
     const t = makeT(); await seed(t, [{ id: "old", status: "DRAFT" }, { id: "theirs", status: "DRAFT", org: OTHER }]);
     await expect(undo(t, ["old"])).rejects.toThrow(/can't be undone/);

@@ -157,7 +157,10 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
     <div className={cn("mx-auto flex w-full max-w-[640px] flex-col gap-4", isMobile && "pb-28")}>
       <PageMeta title="Scan" />
       <header className="flex items-start gap-3">
-        <h1 className="min-w-0 flex-1 font-display text-page-title font-extrabold leading-tight tracking-tight text-ink">Scan</h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-page-title font-extrabold leading-tight tracking-tight text-ink">Scan</h1>
+          {isMobile ? <p className="text-caption text-muted">{phoneSubtitle(mode, model.tt.tester?.name)}</p> : null}
+        </div>
         {isMobile ? null : primary}
         <ActionMenu spec={pageMenu} label="Scan page actions" />
       </header>
@@ -226,6 +229,11 @@ function ScanPageBody({ session, held, mode }: { session: Session; held: ScanMod
       />
     </div>
   );
+}
+
+/** Phone head: `Check · Sam Tester` (§9i.6) — the mode, and who is scanning / testing. */
+function phoneSubtitle(mode: ScanMode, name: string | undefined): string {
+  return name ? `${SCAN_MODE_LABELS[mode]} · ${name}` : SCAN_MODE_LABELS[mode];
 }
 
 const DOCK_PLACEHOLDER: Record<ScanMode, string> = { check: "Scan or type a tag to check", tt: "Scan or type a tag or test tag" };

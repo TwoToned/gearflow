@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   convexQuery: vi.fn(),
   toasts: [] as Array<{ title: string; action?: { label: string; onClick: () => void } }>,
   perms: { testTag: ["read", "create"], asset: ["read", "create"] } as Record<string, string[]>,
+  mobile: false,
 }));
 
 function setUrl(href: string) {
@@ -68,7 +69,7 @@ vi.mock("@/lib/use-permissions", () => ({
   useCurrentRole: () => ({ permissions: h.perms, isLoading: false }),
   useCanDo: (r: string, a: string) => h.perms[r]?.includes(a) ?? false,
 }));
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => h.mobile }));
 vi.mock("@/hooks/use-stable-now", () => ({ useStableNow: () => Date.UTC(2026, 10, 22) }));
 vi.mock("@/lib/scan-feedback", () => ({ playScanFeedback: vi.fn(), playScanHaptic: vi.fn() }));
 vi.mock("@/components/layout/page-meta", () => ({ PageMeta: () => null }));
@@ -125,6 +126,25 @@ beforeEach(() => {
     "TT-OLD": card("TT-OLD", { tt: tt({ status: "RETIRED", isActive: false, testTagId: "TT-OLD" }) }),
   };
   h.perms = { testTag: ["read", "create"], asset: ["read", "create"] };
+  h.mobile = false;
+});
+
+describe("ScanPage — phone (≤ 859 px, §9i.6)", () => {
+  it("head says the mode and who; the primary is pinned above the bottom nav; menus are bottom sheets", async () => {
+    h.mobile = true;
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    const { container } = render(<ScanPage />);
+    expect(screen.getByText("Test & tag · Sam Tester")).toBeTruthy();
+    // Pinned primary: portaled to <body>, outside the page column.
+    const primary = saveButton();
+    expect(container.contains(primary)).toBe(false);
+    expect(screen.getByText("Finish the visual inspection (2 left)")).toBeTruthy();
+    // Inputs are 16 px on a phone (no iOS zoom on focus).
+    expect(screen.getByRole("spinbutton", { name: "Earth Continuity" }).className).toContain("text-reading-body");
+    // The page ⋯ opens as a phone sheet with its items.
+    await userEvent.click(screen.getByRole("button", { name: "Scan page actions" }));
+    expect(await screen.findByText("Scan sounds: On")).toBeTruthy();
+  });
 });
 
 describe("ScanPage — Test & tag mode", () => {

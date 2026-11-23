@@ -141,7 +141,7 @@ function ItemInput({
         onChange={(e) => onUpdate({ notes: e.target.value, result: e.target.value ? "NOTES_ONLY" : null })}
         placeholder="Enter notes..."
         rows={2}
-        className="text-ui-text"
+        className={FIELD_TEXT}
       />
     );
   }
@@ -161,6 +161,8 @@ function ItemInput({
 }
 
 const EMPTY_STATE: CheckState = { result: null, value: "", notes: "", photos: [] };
+/** 16 px on a phone (no iOS zoom on focus), the table size from `md` up. */
+const FIELD_TEXT = "text-reading-body md:text-ui-text";
 
 /** FAIL: the inline "what happened?" reason + photo, required before the save (#898). */
 function FailBlock({
@@ -180,7 +182,7 @@ function FailBlock({
         onChange={(e) => onUpdate({ notes: e.target.value })}
         placeholder="Describe the failure..."
         rows={2}
-        className="text-ui-text"
+        className={FIELD_TEXT}
       />
       <PhotoGridInput
         value={state?.photos || []}
@@ -200,7 +202,7 @@ function ItemNote({ notes, onChange }: { notes: string; onChange: (notes: string
   return (
     <div className="mt-2">
       {show || notes ? (
-        <Textarea value={notes} onChange={(e) => onChange(e.target.value)} placeholder="Add notes..." rows={2} className="text-ui-text" />
+        <Textarea value={notes} onChange={(e) => onChange(e.target.value)} placeholder="Add notes..." rows={2} className={FIELD_TEXT} />
       ) : (
         <button
           type="button"
@@ -274,7 +276,7 @@ function MeasurementInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Enter value"
-          className="flex-1 text-ui-text"
+          className={`flex-1 font-mono ${FIELD_TEXT}`}
         />
         {unit && <span className="text-ui-text text-muted shrink-0">{unit}</span>}
         {result && <Badge status={result === "PASS" ? "ok" : "overbooked"}>{result === "PASS" ? "Pass" : "Fail"}</Badge>}
@@ -303,7 +305,7 @@ function DropdownInput({
         onChange(v, opt?.isFail ?? false);
       }}
     >
-      <SelectTrigger className="text-ui-text">
+      <SelectTrigger className={FIELD_TEXT}>
         <SelectValue placeholder="Select...">{selectedOption ? selectedOption.label : "Select..."}</SelectValue>
       </SelectTrigger>
       <SelectContent>

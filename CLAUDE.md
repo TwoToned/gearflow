@@ -521,8 +521,11 @@ table, `convex/lib/crewCallTransitions.ts` (`canCrewCall`): the server gates
 read it, so add a status there, not in a menu. `sendCrewOffers` refuses a call
 that is not PENDING/OFFERED (it would knock a yes back to OFFERED). Offer and
 Cancel email the crew: confirm first, toast with no Undo; `Confirm n`'s Undo is
-`unconfirmManyNative(result)` with the forward result unchanged. The planner
-reads `plannerData` / `openCalls` as live subscriptions keyed on the URL week;
+`unconfirmManyNative(result)` with the forward result unchanged. A bulk offer's
+gate is atomic (`crewAssignments.markOfferedIfOfferable`); crew mail goes out in
+batches of `MAX_CREW_MAIL_BATCH`. The week starts on the ORG's week start
+(`useOrgWeekStartsOn`); a multi-day service is checked on every day it covers.
+The planner reads `plannerData` / `openCalls` as live subscriptions keyed on the URL week;
 editing a call stays on the job's Logistics tab (`updateNative` is a full
 replace). FEATUREDOCS/31 "Crew Planner".
 

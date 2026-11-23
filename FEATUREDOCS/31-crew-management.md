@@ -292,8 +292,10 @@ org switch drops the selection and the seen rows.
 
 ### Crew roles & rates (`roles/crew-roles-sheet.tsx`, spec §9h.5)
 The old `/crew/settings` page as a sheet: active roles in display order,
-archived ones under a muted head, cost / charge for managers only (the server
-strips them below manager in `crewRoles.listForSettings`). Row ⋯
+archived ones under a muted head, cost / charge only when the SERVER says the
+caller sees pay (`crewRoles.ratesVisible` = `canSeeCrewPay`, never the client's
+role; `crewRoles.listForSettings` strips the rates otherwise, and an edit then
+sends no rate fields). Row ⋯
 (`src/lib/row-actions/crew-role.ts`): Edit… · Move up / Move down (active roles
 only, absent at the ends) · Archive… (usage dialog) · Restore. A move is ONE
 atomic `moveNative`, its Undo the opposite move; archive ↔ restore and an
@@ -493,14 +495,17 @@ bulk verbs in `src/lib/row-actions/crew-call.ts`). The route is a thin server
 component; the fortnight, the today-tiles, the crew-member Select and the glyph
 legend are gone (every block prints its own word).
 
-- **One week, Mon–Sun** with ‹ › Today; it opens on this week, or the next
-  working week on a weekend. Rows are active crew by last name; the last column
+- **One week** (D46) from the **org's week start** (`useOrgWeekStartsOn`, #1086:
+  Mon, or Sun for a Sunday-start country) with ‹ › Today; it opens on this week,
+  or the week holding the next working days on a weekend. Rows are active crew by last name; the last column
   is **Hours** = planned (each booked call's `estimatedHours`, else its times ×
   its days in the week; PENDING / DECLINED are not planned — the live rule) `/`
   logged (`crewTimeEntries.approvedHoursByMember`). Derived, never stored.
-- **A call is a block**: tick · job number (links to the job's Logistics tab) ·
-  role · times · status word (`Offered 4d`, amber from 3 days). The rest of the
-  block opens the **call sheet**; ⋯ on hover/focus (always on touch).
+- **A call is a block**: tick (a 24px target) · job number (links to the job's
+  Logistics tab) · role · times · status word (`Offered 4d`, amber from 3 days).
+  The block is a plain container: its primary is ONE stretched button (opens the
+  **call sheet**), with the tick, the link and ⋯ as sibling controls — never
+  interactive content nested in a button. ⋯ on hover/focus (always on touch).
 - **Empty cells print the person's day**: `Unavailable` (hatched, with its
   reason), `Pencilled` (a TENTATIVE block, Q-S5), `Preferred`. Clicking one opens
   **Offer a call** for that person and day (needs `crew:create`).
@@ -514,33 +519,50 @@ legend are gone (every block prints its own word).
   Week, strip, search and filters are ALL the URL (D11); other params
   (`sheet=roles`) are kept. The #1246 find-cover deep link
   `?week=<epoch ms>&role=<id>&avail=AVAILABLE` still lands filtered (`AVAILABLE`
-  reads as Free; the old `TENTATIVE`/`ASSIGNED`/… values map too).
-- **Needs crew** replaces the grid with the open calls by day: job · call ·
-  times · `needs n` · up to three free people with that role (preferred first).
-  A row opens Offer a call with the first suggestion picked; row ⋯ = Offer to…,
-  Offer to suggested, Open job.
+  reads as Free; the old `TENTATIVE`/`ASSIGNED`/… values map too; the epoch-ms
+  week is read as the viewer's LOCAL day, the way it was written).
+- **Needs crew** replaces the grid with the open calls by day (a multi-day run
+  once, under its first day in the week): job · call · times · `needs n` · up to
+  three people with that role free on EVERY day of the week the run covers
+  (preferred first). A row opens Offer a call with the first suggestion picked;
+  row ⋯ = Offer to…, Offer to suggested, Open job. When `openCalls` stopped at
+  its cap (`truncated`), the list says `n+ open slots` and asks for a filter.
 - **Offer a call** (sheet): Person (each with their day state), Day, Job service
-  (that day's open services, `needs n`), Role, Start, End, the role's cost rate
-  (only when the server sent it), `Send the offer now`. It creates a PENDING call
-  through the same `crewAssignmentsWrites.createNative` Logistics uses (with the
-  service's `phase`); with Send on it then calls `sendCrewOffers` — the button
-  asks once more in place, and the toast has no Undo (the email is out). Saved as
-  Pending, its Undo deletes the created call (only with `crew:delete`).
+  (every open service RUNNING that day, a multi-day run on each day it covers,
+  `needs n`), Role, Start, End, the role's cost rate (only when the server sent
+  it), `Send the offer now`. For a multi-day run it asks **This day only / Whole
+  run** (default: the picked day). It creates a PENDING call through the same
+  `crewAssignmentsWrites.createNative` Logistics uses (with the service's
+  `phase`); with Send on it then calls `sendCrewOffers` — the button asks once
+  more in place, and the toast has no Undo (the email is out). Saved as Pending,
+  its Undo deletes the created call (only with `crew:delete`).
 - **Bulk** (tick calls, shift-click ranges, select-all in the header): `Offer n`
   (PENDING → OFFERED, confirmed, no Undo), `Confirm n` (ACCEPTED → CONFIRMED,
   Undo `unconfirmManyNative(result)`), `Cancel n` (red, last, confirmed;
   `cancelManyNative` then `sendCancellationEmails(toTell)`; no Undo). Ticking
   open calls under Needs crew offers `Offer to suggested n`: free or preferred
-  people with the role, up to each shortfall, one person once per day across the
-  batch (`planSuggestedOffers`), created then offered in one send.
+  people with the role on every day the run covers, up to each shortfall, one
+  person once per DAY across the batch (`planSuggestedOffers`; a run claims each
+  of its days), created then offered in one send. Select-all and shift ranges
+  skip calls **dimmed** by the Job filter or the Unconfirmed / Mine segment; a
+  confirm that reaches more than one job names them (`Jobs: #2341, #2350.`); a
+  tick whose call left the live data drops out of every count. Crew mail goes
+  out in batches of `MAX_CREW_MAIL_BATCH` (100, the action's own cap), so a
+  500-call bulk write emails everyone.
 - **Which verb a call offers** comes from ONE table,
   `convex/lib/crewCallTransitions.ts` (`canCrewCall`), read by the server gates
   (`confirmManyNative`, `cancelManyNative`, `sendCrewOffers`) and the menus.
   `sendCrewOffers` now refuses (per row, named) a call that is not PENDING or
-  OFFERED, so a bulk offer can never knock an ACCEPTED/CONFIRMED call back.
-  `cancelManyNative` also clears the call's `responseToken`.
+  OFFERED, so a bulk offer can never knock an ACCEPTED/CONFIRMED call back — and
+  the refusal is ATOMIC: the write is the service mutation
+  `crewAssignments.markOfferedIfOfferable`, which re-checks the status inside
+  the same transaction as the OFFERED patch (a yes that lands between the
+  action's read and its write wins). `cancelManyNative` also clears the call's
+  `responseToken`.
 - **The call sheet** shows role, times, status (with when it was offered) and
-  the person's day, and the block ⋯ verbs as buttons (the same spec). Editing a
+  the person's day, and the block ⋯ verbs as buttons (the same spec). It holds
+  only ids and reads the call from the live data, so an Offer / Confirm shows the
+  new status and a cancelled call closes it. Editing a
   call's role, times or rate stays on the job's Logistics tab: `updateNative`
   replaces the whole assignment, and a planner edit below the pay line (which
   never read `rateOverride`) would wipe it.
@@ -549,7 +571,8 @@ legend are gone (every block prints its own word).
 - **Live**: `plannerData`, `openCalls` and the logged hours are live
   subscriptions keyed on the URL week (no `Date.now()` in the args).
 - **Phone** (§9h.6): day mode — day chips (`Tue 17 · 1 open`, red count), then one
-  day as Needs crew · Booked (64px cards, 22px tick, ⋯) · Free (tap = Offer a
+  day as Needs crew (every run covering that day) · Booked (64px cards, 22px tick
+  on a 44px target, ⋯; a DECLINED call doesn't book the day) · Free (tap = Offer a
   call) · Unavailable; the Needs crew strip lists the week's open calls by day.
   Sticky `Offer call`, replaced by the bulk bar while ticked. Sheets open from the
   bottom.
@@ -808,8 +831,8 @@ Resource `crew` with actions: `read, create, update, delete`
 Since `crew:create`/`crew:update` are manager+-only, the Crew roles & rates
 sheet's write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
 every role can VIEW the sheet (`crew:read`), but the cost (`defaultRate`) and
-charge (`chargeRate`) rate columns render only for manager+
-(`useIsManagerPlus()`), server-enforced via `crewRoles.ts`'s `listForSettings`
+charge (`chargeRate`) rate columns render only when `crewRoles.ratesVisible`
+(`canSeeCrewPay`) says so, server-enforced via `crewRoles.ts`'s `listForSettings`
 query (field-stripped for non-manager+ callers — the plain `list` query, used by
 cost-preview call sites elsewhere, is unchanged).
 

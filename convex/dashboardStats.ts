@@ -4,6 +4,7 @@ import { requireOrgReadFor } from "./lib/auth";
 import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { overdueReturnsForOrg } from "./lib/overdueReturns";
+import { OPEN_MAINTENANCE_STATUSES } from "./lib/maintenanceOpen";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -20,7 +21,8 @@ import { overdueReturnsForOrg } from "./lib/overdueReturns";
  * Phase 5 domain slice, #1001).
  */
 
-const OPEN_MAINTENANCE_STATUSES = ["SCHEDULED", "IN_PROGRESS"] as const;
+// Open maintenance is ONE definition (lib/maintenanceOpen.ts): scheduled plus the
+// holding statuses, so AWAITING_PARTS and QA work past its date counts as due too.
 // A range `.lte`/`.lt(now)` sweeps in rows whose date field is undefined (undefined
 // sorts before all numbers in a Convex index). Pin the lower bound at the minimum
 // representable timestamp so undated rows stay OUT of the read-set entirely (matters

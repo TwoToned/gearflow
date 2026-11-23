@@ -40,6 +40,18 @@ describe("dashboardStats.bundle — WS6 maintenanceDue exclusion", () => {
     expect(res.modelsDueForService).toBe(0);
   });
 
+  test("open is the ONE definition (lib/maintenanceOpen.ts): awaiting-parts and QA work past its date is due too", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      for (const [id, status] of [["p", "AWAITING_PARTS"], ["q", "QA"], ["d", "COMPLETED"]] as const) {
+        await ctx.db.insert("maintenanceRecords", {
+          id, organizationId: ORG, type: "REPAIR", status, title: id, scheduledDate: NOW - 1000, createdAt: NOW, updatedAt: NOW,
+        });
+      }
+    });
+    expect((await bundle(t)).maintenanceDue).toBe(2);
+  });
+
   test("a schedule-generated due PM cycle counts toward modelsDueForService, NOT maintenanceDue", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {

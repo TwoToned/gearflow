@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { NAV_COUNT_CAP, type NavCountServerSource } from "./navCounts";
+import { isOpenMaintenance, isOverdueMaintenance } from "./lib/maintenanceOpen";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -48,18 +49,28 @@ describe("navCounts.get — figures", () => {
     expect(await count(t, "crew")).toEqual({ value: 1, truncated: false });
   });
 
-  test("Maintenance: open (scheduled + in progress) with how many are past their date", async () => {
+  test("Maintenance: open and overdue are the Maintenance page's own Open / Overdue tiles (one definition)", async () => {
     const t = await makeT();
+    const seeded = [
+      { id: "a", status: "SCHEDULED", scheduledDate: NOW - DAY },
+      { id: "b", status: "SCHEDULED", scheduledDate: NOW + DAY },
+      { id: "c", status: "IN_PROGRESS", scheduledDate: NOW - 2 * DAY },
+      { id: "d", status: "IN_PROGRESS" },
+      { id: "e", status: "AWAITING_PARTS", scheduledDate: NOW - DAY },
+      { id: "f", status: "QA" },
+      { id: "g", status: "COMPLETED", scheduledDate: NOW - DAY },
+      { id: "h", status: "CANCELLED" },
+    ];
     await t.run(async (ctx) => {
-      const rec = (id: string, status: string, scheduledDate?: number) =>
-        ctx.db.insert("maintenanceRecords", { id, organizationId: ORG, title: id, status: status as "SCHEDULED", scheduledDate, type: "REPAIR" as never });
-      await rec("a", "SCHEDULED", NOW - DAY);
-      await rec("b", "SCHEDULED", NOW + DAY);
-      await rec("c", "IN_PROGRESS", NOW - 2 * DAY);
-      await rec("d", "IN_PROGRESS");
-      await rec("e", "COMPLETED", NOW - DAY);
+      for (const r of seeded) {
+        await ctx.db.insert("maintenanceRecords", { id: r.id, organizationId: ORG, title: r.id, status: r.status as "SCHEDULED", scheduledDate: r.scheduledDate, type: "REPAIR" as never });
+      }
     });
-    expect(await count(t, "maintenance")).toEqual({ value: 4, secondary: 2, truncated: false });
+    // The page's tiles, computed the way the page computes them.
+    const pageOpen = seeded.filter((r) => isOpenMaintenance(r.status)).length;
+    const pageOverdue = seeded.filter((r) => isOverdueMaintenance(r, NOW)).length;
+    expect([pageOpen, pageOverdue]).toEqual([6, 2]);
+    expect(await count(t, "maintenance")).toEqual({ value: pageOpen, secondary: pageOverdue, truncated: false });
   });
 
   test("Test & tag: overdue, active only", async () => {

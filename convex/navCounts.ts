@@ -7,6 +7,7 @@ import type { Resource } from "./lib/permissionsCore";
 import { readCounterValues } from "./dashboardCounters";
 import { overdueReturnsForOrg } from "./lib/overdueReturns";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { OPEN_MAINTENANCE_STATUSES, OVERDUE_MAINTENANCE_STATUSES, type OpenMaintenanceStatus } from "./lib/maintenanceOpen";
 
 /**
  * The phone More sheet's row counts (UX Phase 11, §6d.6, S4): `Assets 605`,
@@ -80,22 +81,21 @@ async function testTagOverdueCount(ctx: QueryCtx, orgId: string): Promise<NavCou
 }
 
 /** Open = SCHEDULED + IN_PROGRESS; overdue = open with a scheduled date already passed (both index ranges). */
-const OPEN_MAINTENANCE = ["SCHEDULED", "IN_PROGRESS"] as const;
-
+/** Open and overdue = the ONE definitions (lib/maintenanceOpen.ts), the Maintenance page's own Open and Overdue tiles. */
 async function maintenanceCount(ctx: QueryCtx, orgId: string, now: number): Promise<NavCount> {
-  const open = (status: (typeof OPEN_MAINTENANCE)[number]) =>
+  const open = (status: OpenMaintenanceStatus) =>
     ctx.db
       .query("maintenanceRecords")
       .withIndex("by_organizationId_status_scheduledDate", (q) => q.eq("organizationId", orgId).eq("status", status))
       .take(NAV_COUNT_CAP + 1);
-  const late = (status: (typeof OPEN_MAINTENANCE)[number]) =>
+  const late = (status: OpenMaintenanceStatus) =>
     ctx.db
       .query("maintenanceRecords")
       .withIndex("by_organizationId_status_scheduledDate", (q) =>
         q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", now),
       )
       .take(NAV_COUNT_CAP + 1);
-  const [opens, lates] = await Promise.all([Promise.all(OPEN_MAINTENANCE.map(open)), Promise.all(OPEN_MAINTENANCE.map(late))]);
+  const [opens, lates] = await Promise.all([Promise.all(OPEN_MAINTENANCE_STATUSES.map(open)), Promise.all(OVERDUE_MAINTENANCE_STATUSES.map(late))]);
   const sum = (lists: unknown[][]) => lists.reduce((n, rows) => n + Math.min(rows.length, NAV_COUNT_CAP), 0);
   return {
     value: sum(opens),

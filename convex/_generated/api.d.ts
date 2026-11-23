@@ -141,6 +141,7 @@ import type * as lib_kits from "../lib/kits.js";
 import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
 import type * as lib_lineTotal from "../lib/lineTotal.js";
 import type * as lib_listQuery from "../lib/listQuery.js";
+import type * as lib_maintenanceOpen from "../lib/maintenanceOpen.js";
 import type * as lib_maintenanceRecordAssetKind from "../lib/maintenanceRecordAssetKind.js";
 import type * as lib_moneyGuards from "../lib/moneyGuards.js";
 import type * as lib_notificationPreferences from "../lib/notificationPreferences.js";
@@ -470,6 +471,7 @@ declare const fullApi: ApiFromModules<{
   "lib/lineItemUnits": typeof lib_lineItemUnits;
   "lib/lineTotal": typeof lib_lineTotal;
   "lib/listQuery": typeof lib_listQuery;
+  "lib/maintenanceOpen": typeof lib_maintenanceOpen;
   "lib/maintenanceRecordAssetKind": typeof lib_maintenanceRecordAssetKind;
   "lib/moneyGuards": typeof lib_moneyGuards;
   "lib/notificationPreferences": typeof lib_notificationPreferences;

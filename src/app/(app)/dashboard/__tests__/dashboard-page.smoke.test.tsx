@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DEFAULT_DASHBOARD_LAYOUT } from "@/lib/dashboard-widgets";
+import { rolePermissions } from "@/lib/permissions";
 
 const m = vi.hoisted(() => ({
   isMobile: false,
@@ -217,6 +218,27 @@ describe("Home (smoke)", () => {
     expect(await screen.findByText(/Customise Home on a desktop/)).toBeDefined();
     expect(screen.getByRole("button", { name: "Warehouse" })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Customise…" })).toBeNull();
+  });
+
+  it("My tasks: the row ⋯ opens with Open and Mark done; Mark done is the same write as the tick", async () => {
+    const user = userEvent.setup();
+    render(<DashboardPage />);
+    await user.click(screen.getByRole("button", { name: "Send revised quote actions" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Open on the job" })).toBeDefined();
+    await user.click(within(menu).getByRole("menuitem", { name: "Mark done" }));
+    expect(m.updateTask).toHaveBeenCalledWith("k1", { status: "DONE" });
+  });
+
+  it("My tasks: a role without work/project update has NO tick and NO Mark done (absent, not disabled)", async () => {
+    m.permissions = rolePermissions.viewer as Record<string, string[]>;
+    const user = userEvent.setup();
+    render(<DashboardPage />);
+    expect(screen.getByText("Send revised quote")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Complete Send revised quote" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Send revised quote actions" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Open on the job"]);
   });
 
   it("My tasks: the tick completes with the /my-tasks write and Undo restores the prior status", async () => {

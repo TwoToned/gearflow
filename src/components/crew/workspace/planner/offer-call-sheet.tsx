@@ -165,7 +165,10 @@ function Fields({ form, c }: { form: Form; c: Ctx }) {
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <PickSelect id="offer-day" label="Day" value={v.day} display={dayLabel(v.day)} onChange={pickDay} options={c.days.map((d) => ({ value: d, label: dayLabel(d) }))} placeholder="Day" />
-        <ServiceField form={form} c={c} onPick={pickService} />
+        {/* The service label is long (`#2341 Show day · LX op · needs 1`): its own full row. */}
+        <div className="md:col-span-2">
+          <ServiceField form={form} c={c} onPick={pickService} />
+        </div>
       </div>
       {err.serviceId && <p className="text-caption text-t-out">{err.serviceId.message}</p>}
       <div className="grid grid-cols-2 gap-3">

@@ -43,7 +43,7 @@ function Suggestions({ o, members }: { o: OpenCall; members: PlannerMember[] }) 
   if (c.length === 0) return <span className="text-caption text-faint">no one free</span>;
   return (
     <span className="inline-flex items-center gap-2 text-caption text-muted">
-      <span className="flex -space-x-1.5">
+      <span className="flex -space-x-1">
         {c.map((x) => (
           <PersonAvatar key={x.member.id} name={memberName(x.member)} className="size-6" title={memberName(x.member)} />
         ))}
@@ -61,7 +61,7 @@ function OpenRow({ o, members, ticked, p }: { o: OpenCall; members: PlannerMembe
       className={cn("cursor-pointer border-t border-line hover:bg-paper-2", ticked && "bg-select")}
       data-open={o.serviceId}
     >
-      <td className="w-9 py-2 align-middle" onClick={stop}>
+      <td className="w-12 py-2 align-middle" onClick={stop}>
         <Checkbox
           aria-label={`Select ${o.projectNumber} ${o.title}`}
           checked={ticked}
@@ -105,7 +105,7 @@ export function NeedsCrewList(p: NeedsCrewProps) {
     <table className="w-full table-fixed border-collapse" aria-label="Calls that need crew">
       <thead>
         <tr className="text-left text-caption font-semibold text-muted">
-          <th className="w-9 pb-1.5">
+          <th className="w-12 pb-1.5">
             <Checkbox aria-label="Select every open call" checked={allOn} onCheckedChange={(v) => p.onToggleAll(v === true)} />
           </th>
           <th className="w-20 pb-1.5">Job</th>

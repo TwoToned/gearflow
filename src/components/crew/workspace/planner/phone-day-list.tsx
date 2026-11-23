@@ -109,7 +109,7 @@ function BookedCard({ m, c, p }: { m: PlannerMember; c: PlannerCall; p: PhonePla
   const job = c.project?.projectNumber ?? "Job";
   return (
     <div className="flex min-h-16 items-center gap-3" data-call={c.id}>
-      <Checkbox aria-label={`Select ${memberName(m)} ${job}`} checked={p.selected.has(c.id)} onCheckedChange={() => p.onToggle(c.id)} className="size-[22px]" />
+      <Checkbox aria-label={`Select ${memberName(m)} ${job}`} checked={p.selected.has(c.id)} onCheckedChange={() => p.onToggle(c.id)} className="[&>span]:size-[22px]" />
       <button type="button" onClick={() => p.onOpenCall(c, m)} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 text-left">
         <PersonAvatar name={memberName(m)} className="size-8" />
         <span className="min-w-0 flex-1">

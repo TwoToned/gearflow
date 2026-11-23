@@ -85,6 +85,8 @@ function CallBlock({ call, member, day, now, filters, userId, h }: { call: Plann
         <span onClick={stop} className="inline-flex">
           <Checkbox
             aria-label={`Select ${label}, ${day}`}
+            // The desktop grid's compact tick (the phone day list keeps the 22px one).
+            className="min-h-6 min-w-6 [&>span]:size-3.5 [&>span]:rounded-[4px]"
             checked={ticked}
             onClick={(e) => {
               e.stopPropagation();

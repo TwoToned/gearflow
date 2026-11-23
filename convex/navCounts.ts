@@ -53,8 +53,10 @@ export type NavCount = {
 
 /** `rows` from a `take(NAV_COUNT_CAP + 1)`, kept by `keep`, as a capped count. */
 function capped<T>(rows: T[], keep: (r: T) => boolean = () => true): NavCount {
-  const kept = rows.slice(0, NAV_COUNT_CAP).filter(keep).length;
-  return { value: kept, truncated: rows.length > NAV_COUNT_CAP };
+  // Filter FIRST, then cap: an inactive row inside the first CAP must not hide a
+  // kept one at CAP + 1 (the read takes CAP + 1, so that row is in hand).
+  const kept = rows.filter(keep);
+  return { value: Math.min(kept.length, NAV_COUNT_CAP), truncated: rows.length > NAV_COUNT_CAP };
 }
 
 async function byOrg<T extends "clients" | "suppliers" | "locations" | "crewMembers">(ctx: QueryCtx, table: T, orgId: string): Promise<Doc<T>[]> {

@@ -93,6 +93,16 @@ describe("navCounts.get — figures", () => {
     expect(await count(t, "returnsOverdue")).toEqual({ value: 0, truncated: false });
   });
 
+  test("the filter runs before the cap: an inactive row among the first CAP doesn't hide the kept row at CAP + 1", async () => {
+    const t = await makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "off", organizationId: ORG, name: "Off", isActive: false });
+      for (let i = 0; i < NAV_COUNT_CAP; i++) await ctx.db.insert("clients", { id: `c${i}`, organizationId: ORG, name: `C${i}`, isActive: true });
+    });
+    // 201 rows read: one inactive, 200 active → 200 (and truncated, the scan hit its cap).
+    expect(await count(t, "clients")).toEqual({ value: NAV_COUNT_CAP, truncated: true });
+  });
+
   test(`the read stops at ${NAV_COUNT_CAP} + 1 and says so: the row prints n+`, async () => {
     const t = await makeT();
     await t.run(async (ctx) => {

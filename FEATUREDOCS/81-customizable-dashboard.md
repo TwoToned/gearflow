@@ -31,8 +31,20 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
   - **Every layout change toasts with Undo (Q6):** move, resize, hide, add and reset.
     `useDashboardLayout` returns ONE `LayoutRestore` closure per change, and the page hands
     it to `announceListWrite`.
+  - **An Undo is tied to the board its change produced.** Once a later change moved the
+    board, an older Undo refuses ("Layout changed since. Undo the newer change first.")
+    instead of silently reverting the later change too.
   - A no-op (for example, Reset on the default board) doesn't toast.
   - A failed save is surfaced, not swallowed.
+  - **Per org.** The board is stamped with its org. An org switch drops the pending save,
+    takes a fresh row id and re-hydrates from the new org's row; `dashboardLayouts.get` /
+    `saveNative` take an optional `orgId` that must match the token's org, so org A's
+    board can never be written into org B. An Undo held from the old org writes nothing,
+    and Customise mode ends.
+  - **Hiding the setup panel hides both setup kinds** in one change (`withoutWidget`), and
+    `Add widget` offers the panel again (once, as its first kind) when neither is on the
+    board (`addableKinds`).
+  - A stat tile doesn't navigate while customising.
   - The keyboard handle (↑↓ Enter Delete) and the per-widget ⋯ (Move, Width, Hide) from
     §6c.3 are deferred follow-ups.
 - **Phone.** The board is read-only, in the saved (y, x) order, with the stat tiles two to
@@ -42,7 +54,9 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
   - a 13 px/600 title;
   - a muted mono count;
   - a quiet `View all ›` from the registry's `viewAll`. The grid drops it when
-    `canOpenLink` fails for the viewer's role.
+    `canOpenLink` fails for the viewer's role. `canOpenLink` is the shell's own rule
+    (`canSee` in `nav.ts`): ANY action on the resource opens it (`reports` grants
+    `view`, not `read`). On a phone it has the shared `.tap-area` (44 px hit area).
 
   Widgets write their count, and one header action (the setup panel's Dismiss), into the
   card header through `WidgetCount` / `WidgetAction` (`widget-chrome.tsx`, portals). A stat
@@ -69,11 +83,13 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
     | Source | Read needed |
     |---|---|
     | stats, blockers, overbookings | `project` |
-    | sub-hire | `subHire` |
+    | sub-hire | `subHire` + `supplier` (it opens Suppliers) |
     | finance | `invoice` |
     | crew offers | `project` + `crew` |
 
-    The maintenance lines are dropped without `maintenance`.
+    The maintenance lines are dropped without `maintenance`. On top of the read's gate,
+    every line checks its TARGET (`canOpen` → `canOpenLink`), so a line only exists when
+    the role can both count it and open where it links.
   - **Suppression.** The overdue-returns line is suppressed while its stat tile is on the
     board (`DashboardBoardContext`), so the same fact never shows twice.
   - **D88.** `N invoices overdue · $X outstanding` comes from `financeOrg.counts`
@@ -83,9 +99,14 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
   Q2): one progress line, and rows with a destination word (`Branding ›`).
   - The rows come from `useFinishSetupState` / `useActivationState`, with every row still
     derived from real org state.
-  - **Dismiss with Undo.** Dismiss acts on each visible half. Its Undo calls
-    `undismissNative` with exactly the ids that click created. A half that was already
-    dismissed creates nothing, so Undo doesn't touch it.
+  - **Dismiss with Undo.** Dismiss acts on each visible half (`Promise.allSettled`). Its
+    Undo calls `undismissNative` with exactly the ids that click created, even when the
+    other half failed. A half that was already dismissed creates nothing, so Undo doesn't
+    touch it. The activation-dismissed analytics fire only for a dismissal that happened.
+  - **Reads.** With no setup kind on the board every setup read is skipped. While they
+    load the slot keeps its height (a skeleton), so the board doesn't shift. Milestone
+    analytics (`useActivationMilestoneAnalytics`) are mounted by the board, outside the
+    slot, so they keep reporting once the panel is dismissed or hidden.
   - **One slot.** Both kinds stay registered. `renderedWidgets()` renders the panel in the
     first of the two slots in reading order and drops the other, and drops both once
     neither half has anything to show. This fixes the old "empty shell" limitation.
@@ -94,12 +115,18 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
 - **My tasks.** A tick completes with the same `projectTasksWrites.updateNative` write
   `/my-tasks` uses. The toast's Undo restores the exact prior status. Due reads `2d
   overdue` / `Today` / the date (`src/lib/home-rows.ts`). High priority is a dot-word. The
-  row ⋯ has Open and Mark done.
-- **On the floor now.** Rows in two columns, soonest due back first. The status word is the
-  real one: `Out` for CHECKED_OUT, `On site` for ON_SITE (it used to say On site for
-  both). An overdue job is red.
-- **Upcoming.** Dot-word status, the lock glyph and a mono date range. `View all ›` →
-  `/projects?seg=booked`.
+  row ⋯ has Open and Mark done. The tick and Mark done are ABSENT for a role without
+  `work:update` or `project:update` (the pair the write checks).
+- **On the floor now.** The ORG's live jobs (the Jobs `out` segment through
+  `projects.listPage`, `useNativeFloorJobs`), soonest due back first, in two columns. The
+  header counts the org-wide total, never a slice, matching its org-wide `/warehouse`
+  link. The status word is the real one: `Out` for CHECKED_OUT, `On site` for ON_SITE (it
+  used to say On site for both). An overdue job is red.
+- **Upcoming.** Dot-word status, the lock glyph and a mono date range. Quoted and booked
+  jobs (`HOME_UPCOMING_STATUSES`, `convex/lib/jobStatusGroups.ts`, shared with
+  `dashboardLists.upcoming`). `View all ›` → the Jobs list filtered to exactly those
+  statuses, so it holds every row the widget showed. The header prints `8+` once the read
+  returned its limit.
 - **Recent activity.** Sentences with who · when; no icon discs. `View all ›` →
   `/activity` (gated on `reports`).
 
@@ -120,7 +147,7 @@ Every v1 widget is a thin extraction of JSX/logic that already rendered on
 
 | Widget kind | Source | Extracted from |
 |---|---|---|
-| `onTheFloorNow` | `use-native-dashboard.ts`'s `useNativeHome` | dashboard Zone 1 |
+| `onTheFloorNow` | `use-native-dashboard.ts`'s `useNativeFloorJobs` (`projects.listPage`, segment `out`; was the user's own `useNativeHome` projects until the Phase 11 review) | dashboard Zone 1 |
 | `needsAttention` | several `useNative*` hooks | dashboard Zone 2 chip tray |
 | `statActiveJobs` / `statOverdueReturns` / `statGearDeployed` / `statCrewBooked` | `useNativeDashboardStats` | dashboard Zone 3 (4 separate widgets, not one — each independently sizeable/removable). UX Phase 11 (D85): `dashboardStats.bundle` also returns `overdueReturnJobs` (overdue-return JOBS, the shared rule in `convex/lib/overdueReturns.ts`, the same set the Jobs `overdue=1` filter lists) and `overdueTruncated`; `overdueReturns` stays the line count, now the tile's sub-line |
 | `upcomingProjects` | `useNativeUpcoming` | dashboard Zone 3 |

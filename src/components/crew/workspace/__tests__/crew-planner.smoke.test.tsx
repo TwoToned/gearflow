@@ -86,14 +86,14 @@ const open = [{
   serviceId: "svc1", projectId: "p1", projectName: "Hilton gala", projectNumber: "#2341", title: "Bump in", date: Date.parse(day("2026-11-18")),
   endDate: null, crewCountRequired: 3, assignedCount: 1, shortfall: 2, startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN",
 }];
-const queried = vi.hoisted(() => ({ planner: undefined as unknown, truncated: false, open: undefined as unknown[] | undefined }));
+const queried = vi.hoisted(() => ({ planner: undefined as unknown, truncated: false, open: undefined as unknown[] | undefined, members: undefined as unknown[] | undefined }));
 vi.mock("@/hooks/use-authed-query", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
     useAuthedQuery: (q: FunctionReference<"query">, args: unknown) => {
       if (args === "skip") return undefined;
       const name = getFunctionName(q);
-      if (name === "crewAvailability:plannerData") { queried.planner = args; return members; }
+      if (name === "crewAvailability:plannerData") { queried.planner = args; return queried.members ?? members; }
       if (name === "crewPlanner:openCalls") return { calls: queried.open ?? open, truncated: queried.truncated };
       if (name === "crewTimeEntries:approvedHoursByMember") return { c1: 9 };
       if (name === "crewRoles:listForSettings") return [{ id: "r1", name: "Rigger", isActive: true, defaultRate: 420, rateType: "DAILY", sortOrder: 0 }];
@@ -109,6 +109,7 @@ beforeEach(() => {
   mobile.value = false;
   queried.truncated = false;
   queried.open = undefined;
+  queried.members = undefined;
   nav.search = "";
   nav.push.mockClear();
   perms.all = true;
@@ -329,6 +330,40 @@ describe("CrewPlanner (smoke)", () => {
     nav.search = "seg=needs";
     render(<CrewPlanner />);
     expect(screen.getByRole("region", { name: "Wed, 18 Nov" }).textContent).toContain("needs 2");
+  });
+
+  it("select-all skips calls dimmed by the Job filter; a bulk confirm over two jobs names them", async () => {
+    const agm = { id: "p2", name: "AGM", projectNumber: "#2350", status: "CONFIRMED", projectManagerId: "you" };
+    const withTwoJobs = [{ ...members[0], assignments: [...members[0].assignments, call("x1", "2026-11-20", "PENDING", { project: agm })] }, members[1]];
+    queried.members = withTwoJobs;
+    const user = userEvent.setup();
+    // Job: #2341 — the #2350 block is dimmed, so select-all never reaches it.
+    nav.search = "job=p1";
+    const { unmount } = render(<CrewPlanner />);
+    await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+    expect(screen.getByText("3 calls selected")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Select #2350 Rigger, 2026-11-20" }).getAttribute("data-state")).toBe("unchecked");
+    unmount();
+    // No filter: all four, across two jobs — Cancel's confirm names both.
+    nav.search = "";
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Cancel 4" }));
+    expect(within(await screen.findByRole("dialog")).getByText(/Jobs: #2341, #2350\./)).toBeTruthy();
+  });
+
+  it("a ticked call that disappears from the live data drops out of the bulk counts", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<CrewPlanner />);
+    await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+    expect(screen.getByText("3 calls selected")).toBeTruthy();
+    // a1 (the PENDING one) is cancelled in another tab: the subscription no longer returns it.
+    queried.members = [{ ...members[0], assignments: members[0].assignments.filter((c) => c.id !== "a1") }, members[1]];
+    rerender(<CrewPlanner />);
+    const bar = screen.getByRole("toolbar", { name: "Bulk actions" });
+    expect(within(bar).getByText("2 calls selected")).toBeTruthy();
+    expect(within(bar).queryByRole("button", { name: /^Offer/ })).toBeNull();
+    expect(within(bar).getByRole("button", { name: "Cancel 2" })).toBeTruthy();
   });
 
   it("a multi-day run is offerable from an empty cell on any day it covers; the call takes that day only, or the whole run", async () => {

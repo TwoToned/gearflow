@@ -50,6 +50,15 @@ describe("planner bulk bar", () => {
     expect(bar[1].confirm).toBeUndefined(); // Confirm n has an Undo instead
   });
 
+  it("a confirm names the jobs it touches only when there is more than one", () => {
+    const one = buildPlannerBulkActions({ statuses: ["PENDING", "OFFERED"], jobs: ["#2341", "#2341"], suggested: 0 }, ctx);
+    expect(one.find((a) => a.key === "cancel")!.confirm!.body).not.toMatch(/Jobs:/);
+    const two = buildPlannerBulkActions({ statuses: ["PENDING", "OFFERED", "PENDING"], jobs: ["#2350", "#2341", "#2341"], suggested: 2, suggestedJobs: ["#2341", "#2338"] }, ctx);
+    expect(two.find((a) => a.key === "cancel")!.confirm!.body).toMatch(/Jobs: #2341, #2350\.$/);
+    expect(two.find((a) => a.key === "offer")!.confirm!.body).toMatch(/Jobs: #2341, #2350\.$/);
+    expect(two.find((a) => a.key === "suggested")!.confirm!.body).toMatch(/Jobs: #2338, #2341\.$/);
+  });
+
   it("open calls ticked: only Offer to suggested", () => {
     expect(buildPlannerBulkActions({ statuses: [], suggested: 3 }, ctx).map((a) => a.label(0))).toEqual(["Offer to suggested 3"]);
   });

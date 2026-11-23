@@ -18,6 +18,7 @@ import {
   candidatesFor,
   daysCovered,
   localDayKey,
+  isDimmed,
   memberMatches,
   memberName,
   openCallMatches,
@@ -222,7 +223,9 @@ function PlannerBody(p: BodyProps) {
   const needs = p.url.state.seg === "needs";
   const isMobile = useIsMobile();
   const { callMenu, openMenu, offerTo } = usePlannerMenus(p, all, w);
-  const order = gridOrder(shown.members, p.days);
+  // Select-all and shift ranges reach only the calls the view is ABOUT: a block
+  // dimmed by the Job filter or the Unconfirmed / Mine segment is never ticked by them.
+  const order = selectableOrder(shown.members, p.days, p.url.filters, p.userId);
   const handlers: GridHandlers = {
     selected: calls.ids,
     onToggle: (id, shift) => calls.toggle(id, order, shift),
@@ -232,6 +235,7 @@ function PlannerBody(p: BodyProps) {
     menuFor: callMenu,
   };
   const sel = needs ? opens : calls;
+  const liveCount = liveTickCount(needs, sel.ids, all, shown.open);
   const bulk = useBulk({ all, open: shown.open, calls: calls.ids, opens: opens.ids, needs, perms: p.perms, w, clear: sel.clear, days: p.days });
   const openOrder = shown.open.map((o) => o.serviceId);
   const onOpenOpen = (o: OpenCall) => p.perms.create && offerTo(o);
@@ -262,12 +266,25 @@ function PlannerBody(p: BodyProps) {
   return (
     <>
       <div className="overflow-x-auto">{views[view]()}</div>
-      <BulkBar selection={{ count: sel.count, clear: sel.clear }} actions={bulk} noun={needs ? "open call" : "call"} />
+      <BulkBar selection={{ count: liveCount, clear: sel.clear }} actions={bulk} noun={needs ? "open call" : "call"} />
       {/* Phone: the sticky primary, replaced by the bulk bar while anything is ticked (§9h.6). */}
-      {isMobile && p.primary && sel.count === 0 && <StickyPrimary primary={p.primary} />}
+      {isMobile && p.primary && liveCount === 0 && <StickyPrimary primary={p.primary} />}
       <CallSheet opened={opened} spec={opened ? callMenu(opened.call, opened.member) : { items: [] }} now={p.now} onOpenChange={(o) => !o && setOpened(null)} />
     </>
   );
+}
+
+/** The grid's reading order minus dimmed calls: what select-all and a shift range may tick. */
+function selectableOrder(members: PlannerMember[], days: string[], filters: PlannerFilters, userId?: string): string[] {
+  const byId = new Map(members.flatMap((m) => m.assignments.map((c) => [c.id, c] as const)));
+  return gridOrder(members, days).filter((id) => !isDimmed(byId.get(id)!, filters, userId));
+}
+
+/** Ticks that still exist in the live data (a call cancelled or removed elsewhere drops out of the count). */
+function liveTickCount(needs: boolean, ids: ReadonlySet<string>, all: PlannerMember[], open: OpenCall[]): number {
+  if (needs) return open.filter((o) => ids.has(o.serviceId)).length;
+  const live = new Set(all.flatMap((m) => m.assignments.map((c) => c.id)));
+  return [...ids].filter((id) => live.has(id)).length;
 }
 
 /** Which body the planner shows: loading, the phone day list, Needs crew, the grid, or the grid's empty state. */
@@ -285,8 +302,10 @@ function useBulk(a: {
   w: ReturnType<typeof usePlannerWrites>; clear: () => void; days: readonly string[];
 }): BulkAction[] {
   const statusById = new Map<string, string | null | undefined>();
-  for (const m of a.all) for (const c of m.assignments) statusById.set(c.id, c.status);
-  const ticked = a.needs ? [] : [...a.calls];
+  const jobById = new Map<string, string | undefined>();
+  for (const m of a.all) for (const c of m.assignments) { statusById.set(c.id, c.status); jobById.set(c.id, c.project?.projectNumber); }
+  // Only ids still in the live data count: a call cancelled elsewhere drops out of every count.
+  const ticked = a.needs ? [] : [...a.calls].filter((id) => statusById.has(id));
   const pick = (ok: (s: string | null | undefined) => boolean) => ticked.filter((id) => ok(statusById.get(id)));
   const plan = planSuggestedOffers(a.needs ? a.open.filter((o) => a.opens.has(o.serviceId)) : [], a.all, a.days);
   const after = (f: () => Promise<void>) => async () => {
@@ -294,7 +313,12 @@ function useBulk(a: {
     a.clear();
   };
   return buildPlannerBulkActions(
-    { statuses: ticked.map((id) => statusById.get(id)), suggested: plan.offers.length },
+    {
+      statuses: ticked.map((id) => statusById.get(id)),
+      jobs: ticked.map((id) => jobById.get(id)),
+      suggested: plan.offers.length,
+      suggestedJobs: plan.offers.map((o) => o.open.projectNumber),
+    },
     {
       onOffer: when(a.perms.update, after(() => a.w.offer(pick((s) => (s ?? "PENDING") === "PENDING")))),
       onConfirm: when(a.perms.update, after(() => a.w.confirm(pick((s) => canCrewCall(s, "confirm"))))),

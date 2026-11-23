@@ -99,8 +99,19 @@ export function buildOpenCallActions(ctx: OpenCallCtx): ActionMenuSpec {
 export interface PlannerBulkInput {
   /** Statuses of the ticked calls (grid). */
   statuses: readonly (string | null | undefined)[];
+  /** The ticked calls' job numbers, parallel to `statuses` (a confirm names them when more than one job is touched). */
+  jobs?: readonly (string | null | undefined)[];
   /** People `Offer to suggested` would offer across the ticked open calls. */
   suggested: number;
+  /** The job numbers `Offer to suggested` would touch. */
+  suggestedJobs?: readonly string[];
+}
+
+/** ` Jobs: #2341, #2350.` when a bulk write reaches more than one job — so a broad tick can't surprise anyone. */
+function namingJobs(confirm: NonNullable<ActionItem["confirm"]>, jobs: readonly (string | null | undefined)[]): NonNullable<ActionItem["confirm"]> {
+  const distinct = [...new Set(jobs.filter((j): j is string => !!j))].sort();
+  if (distinct.length < 2) return confirm;
+  return { ...confirm, body: `${confirm.body} Jobs: ${distinct.join(", ")}.` };
 }
 
 export interface PlannerBulkCtx {
@@ -124,15 +135,19 @@ export function plannerBulkCounts(statuses: readonly (string | null | undefined)
  */
 export function buildPlannerBulkActions(input: PlannerBulkInput, ctx: PlannerBulkCtx): BulkAction[] {
   const n = plannerBulkCounts(input.statuses);
+  const jobsWhere = (ok: (s: string | null | undefined) => boolean) => input.statuses.flatMap((s, i) => (ok(s) ? [input.jobs?.[i]] : []));
   const cancelStatuses = input.statuses.filter((s) => canCrewCall(s, "cancel"));
+  const offerJobs = jobsWhere((s) => (s ?? "PENDING") === "PENDING");
   const out: (BulkAction | false | undefined)[] = [
-    !!ctx.onOffer && n.offer > 0 && { key: "offer", label: () => `Offer ${n.offer}`, group: "edit", icon: Send, onSelect: ctx.onOffer, confirm: offerConfirm(n.offer) },
+    !!ctx.onOffer && n.offer > 0 && { key: "offer", label: () => `Offer ${n.offer}`, group: "edit", icon: Send, onSelect: ctx.onOffer, confirm: namingJobs(offerConfirm(n.offer)!, offerJobs) },
     !!ctx.onConfirm && n.confirm > 0 && { key: "confirm", label: () => `Confirm ${n.confirm}`, group: "edit", icon: CalendarCheck, onSelect: ctx.onConfirm },
     !!ctx.onOfferSuggested && input.suggested > 0 && {
-      key: "suggested", label: () => `Offer to suggested ${input.suggested}`, group: "edit", icon: Users, onSelect: ctx.onOfferSuggested, confirm: offerConfirm(input.suggested),
+      key: "suggested", label: () => `Offer to suggested ${input.suggested}`, group: "edit", icon: Users, onSelect: ctx.onOfferSuggested,
+      confirm: namingJobs(offerConfirm(input.suggested)!, input.suggestedJobs ?? []),
     },
     !!ctx.onCancel && n.cancel > 0 && {
-      key: "cancel", label: () => `Cancel ${n.cancel}`, group: "danger", icon: Ban, danger: true, onSelect: ctx.onCancel, confirm: cancelConfirm(cancelStatuses),
+      key: "cancel", label: () => `Cancel ${n.cancel}`, group: "danger", icon: Ban, danger: true, onSelect: ctx.onCancel,
+      confirm: namingJobs(cancelConfirm(cancelStatuses), jobsWhere((s) => canCrewCall(s, "cancel"))),
     },
   ];
   return out.filter((a): a is BulkAction => !!a);

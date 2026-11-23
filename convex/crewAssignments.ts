@@ -9,6 +9,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
 import { liveRows } from "./lib/versionScope";
+import { canCrewCall } from "./lib/crewCallTransitions";
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -585,6 +586,29 @@ export const patchAssignment = mutation({
     await ctx.db.patch(doc._id, patch);
     await bumpCountersForTable(ctx, "crewAssignments", doc, { ...doc, ...patch });
     return doc._id;
+  },
+});
+
+/**
+ * The bulk offer's write (`sendCrewOffers`): → OFFERED with a fresh single-use
+ * token, ONLY if the call is this org's and still waiting on an offer
+ * (`canCrewCall(status, "offer")` — PENDING, or OFFERED for a resend). The
+ * status check and the write are one transaction, so a call that was accepted
+ * or confirmed between the action's read and this write is refused, never
+ * knocked back to OFFERED. Service-only: the action holds the email side.
+ */
+export const markOfferedIfOfferable = mutation({
+  args: { id: v.string(), organizationId: v.string(), responseToken: v.string(), now: v.number() },
+  returns: v.object({ offered: v.boolean(), status: v.string() }),
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    if (!doc || doc.organizationId !== a.organizationId) throw new ConvexError("crewAssignments not found: " + a.id);
+    if (!canCrewCall(doc.status, "offer")) return { offered: false, status: doc.status ?? "PENDING" };
+    const patch = { status: "OFFERED" as const, responseToken: a.responseToken, offeredAt: a.now, updatedAt: a.now };
+    await ctx.db.patch(doc._id, patch);
+    await bumpCountersForTable(ctx, "crewAssignments", doc, { ...doc, ...patch });
+    return { offered: true, status: "OFFERED" };
   },
 });
 

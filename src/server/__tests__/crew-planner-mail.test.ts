@@ -23,8 +23,18 @@ vi.mock("@/lib/email-side-effect", () => ({
   }),
 }));
 vi.mock("@/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://flow.test" } }));
+// The Convex write sees the status AT WRITE TIME (`atWrite`, default = what the
+// action read), the way `markOfferedIfOfferable` re-checks inside its transaction.
+const atWrite = vi.hoisted(() => new Map<string, string>());
 vi.mock("@/lib/convex-client", () => ({
-  getConvexClient: vi.fn(async () => ({ mutation: vi.fn(async (_fn: unknown, a: { id: string }) => patched.push(a)) })),
+  getConvexClient: vi.fn(async () => ({
+    mutation: vi.fn(async (_fn: unknown, a: { id: string }) => {
+      const status = atWrite.get(a.id) ?? String(rows.get(a.id)?.status ?? "PENDING");
+      if (status !== "PENDING" && status !== "OFFERED") return { offered: false, status };
+      patched.push(a);
+      return { offered: true, status: "OFFERED" };
+    }),
+  })),
 }));
 vi.mock("@/lib/locations-read", () => ({ getLocationById: vi.fn(async () => null) }));
 vi.mock("@/lib/crew-scheduling-read", () => ({
@@ -51,6 +61,7 @@ function call(id: string, status: string, over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   rows.clear();
+  atWrite.clear();
   mailed.length = 0;
   patched.length = 0;
 });
@@ -66,6 +77,17 @@ describe("sendCrewOffers — the offer gate", () => {
     expect(res.errors).toEqual(["Bob Ryan is already accepted", "Bob Ryan is already confirmed"]);
     expect(patched.map((p) => p.id)).toEqual(["pen", "off"]);
     expect(mailed).toHaveLength(2);
+  });
+});
+
+describe("sendCrewOffers — the gate is atomic", () => {
+  it("a call accepted between the action's read and its write is refused, and gets no email", async () => {
+    call("race", "PENDING");
+    atWrite.set("race", "ACCEPTED"); // the crew member said yes a moment ago
+    const res = await sendCrewOffers({ assignmentIds: ["race"] });
+    expect(res).toMatchObject({ sent: 0, errors: ["Bob Ryan is already accepted"] });
+    expect(patched).toHaveLength(0);
+    expect(mailed).toHaveLength(0);
   });
 });
 

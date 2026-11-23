@@ -23,8 +23,8 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 451 | 316 | 132 | 1 | 2 |
-| Mutations | 812 | 317 | 484 | 0 | 11 |
-| **Total** | **1263** | **633** | **616** | **1** | **13** |
+| Mutations | 813 | 317 | 485 | 0 | 11 |
+| **Total** | **1264** | **633** | **617** | **1** | **13** |
 
 <!-- reachability-floor: 633 -->
 

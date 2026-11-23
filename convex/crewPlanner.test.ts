@@ -170,6 +170,19 @@ describe("confirmManyNative / unconfirmManyNative / cancelManyNative", () => {
     expect(await t.run(async (ctx) => ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "te1")).first())).not.toBeNull();
   });
 
+  test("markOfferedIfOfferable: offers PENDING/OFFERED in one transaction; refuses a yes; service-only; org-checked", async () => {
+    const t = makeT(); await seedBase(t); await seedCalls(t);
+    const svc = t.withIdentity({ subject: "gearflow-service", svc: true });
+    const mark = (id: string, organizationId = ORG) => svc.mutation(api.crewAssignments.markOfferedIfOfferable, { id, organizationId, responseToken: `tok-${id}`, now: D0 });
+    expect(await mark("pen")).toEqual({ offered: true, status: "OFFERED" });
+    expect(await asg(t, "pen")).toMatchObject({ status: "OFFERED", responseToken: "tok-pen", offeredAt: D0 });
+    expect(await mark("off")).toEqual({ offered: true, status: "OFFERED" }); // a resend
+    expect(await mark("acc")).toEqual({ offered: false, status: "ACCEPTED" });
+    expect((await asg(t, "acc"))?.status).toBe("ACCEPTED"); // the yes is never knocked back
+    await expect(mark("foreign")).rejects.toThrow(/not found/);
+    await expect(t.withIdentity(asUser).mutation(api.crewAssignments.markOfferedIfOfferable, { id: "pen", organizationId: ORG, responseToken: "x", now: D0 })).rejects.toThrow();
+  });
+
   test("cancel kills the offer's accept/decline token (an old email link can't revive the call)", async () => {
     const t = makeT(); await seedBase(t); await seedCalls(t);
     await t.run(async (ctx) => {

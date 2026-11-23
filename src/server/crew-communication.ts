@@ -169,15 +169,26 @@ async function offerAssignment(
   // Status-machine: → OFFERED, stamp a fresh single-use token + offeredAt.
   // Convex-only write (dates → epoch-ms).
   const convex = await getConvexClient();
-  await convex.mutation(api.crewAssignments.patchAssignment, {
-    id: assignmentId,
-    set: {
-      status: "OFFERED",
-      responseToken: token,
-      offeredAt: Date.now(),
-      updatedAt: Date.now(),
-    },
-  });
+  if (gateStatus) {
+    // The bulk path re-checks the status INSIDE the write (one transaction), so a
+    // call accepted between the read above and now is refused, not knocked back.
+    const r = await convex.mutation(api.crewAssignments.markOfferedIfOfferable, {
+      id: assignmentId, organizationId, responseToken: token, now: Date.now(),
+    });
+    if (!r.offered) {
+      throw new Error(`${assignment.crewMember.firstName} ${assignment.crewMember.lastName} is already ${r.status.toLowerCase()}`);
+    }
+  } else {
+    await convex.mutation(api.crewAssignments.patchAssignment, {
+      id: assignmentId,
+      set: {
+        status: "OFFERED",
+        responseToken: token,
+        offeredAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    });
+  }
 
   // Build accept/decline URLs
   const baseUrl = env.NEXT_PUBLIC_APP_URL;

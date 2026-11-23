@@ -13548,6 +13548,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewAssignments.markOfferedIfOfferable",
+    "module": "crewAssignments",
+    "fn": "markOfferedIfOfferable",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "responseToken",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "348062265df12603",
+    "returnsSha": "af619ceb87d317d4",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewAssignments.membersForAssignment",
     "module": "crewAssignments",
     "fn": "membersForAssignment",
@@ -65234,10 +65276,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1263,
+  total: 1264,
   agentReachable: 633,
   queries: 451,
-  mutations: 812,
+  mutations: 813,
   agentReachableQueries: 316,
   agentReachableMutations: 317,
 } as const;

@@ -54,6 +54,61 @@ missing operation behind defect 1), `unpackNative` (empty to Loose),
 `setPlannedContainerNative` (Packing tab, phase 4). Reads: `projectContainers.ts`'s
 `listForProject`.
 
+### Seal case, plan-write rules and the exact Undo (UX Phase 8, slice 1)
+
+- `projectContainers.sealedAt` (optional timestamp; D21) is a **plan lock only**:
+  `projectContainerPlanWrites.sealNative` / `unsealNative` (each its own audited write,
+  idempotent, returning `changed`). `lib/containerSeal.ts` (`assertContainerNotSealed`) is the
+  ONE check. A sealed case rejects planning a line **into** it and planning a line **out** of it
+  (including a clear / Unpack) with `CASE_SEALED`, atomically for the whole batch; and (owner-decided,
+  2026-11-21) it also rejects **rename**, **re-nest** and **delete** of the case itself
+  (`updateNative` / `deleteNative`; a description-only edit still goes through). A seal never touches
+  a unit and does NOT block warehouse prep or unit moves (owner-decided): packers are the physical truth.
+  A version copy keeps `sealedAt` (`copyPlanGraph` clones the row).
+- `setPlannedContainerNative` now (a) skips lines with a packed unit (packed wins, server-side, not
+  only in the UI) and lines on another job or version (closes the same-job gap), (b) ignores a re-plan
+  into the same case, and (c) returns `{ updated, changes: [{ lineItemId, from }], skipped }`.
+  Capped at `MAX_PLAN_LINES` (500, `convex/lib/packingPlan.ts`, matching `assertBulkSizeOk`) per call; the
+  client refuses above it with "Plan up to 500 lines at a time". `isPlannableLine` (same module) is the ONE
+  plannable-line predicate (tab, readiness, versions facts).
+- The forward plan write writes ONE audit row PER changed line (kind `PLAN_LINE`: previous case, new
+  case, batch id) plus one batch header (kind `PLAN_BATCH`: the changed lines and where they went),
+  ids `<auditId>` / `<auditId>:<lineItemId>`.
+- `restorePlannedContainersNative` is the exact reverse and takes ONLY the forward call's batch id
+  (`auditId`): the client supplies no prior values, each line's previous case is read from the
+  server's own org-checked audit rows. A line is restored only while its plan still equals the case the
+  forward write left it in (a later edit is never clobbered), it is on the batch's job, and neither
+  case is sealed. Anything else is counted in `skipped`. One audit row per restored line.
+- **Review fixes (UX Phase 8):** the seal is also enforced from the PARENT side (`createNative` into,
+  `updateNative` into / out of a sealed case; the UI drops sealed cases from Move into, the New case parent
+  list and "Take out of"). `restorePlannedContainersNative` writes an `undo:<batchAuditId>` marker and
+  refuses a second restore (`ALREADY_UNDONE`; no ABA replay), skips lines packed since, and throws
+  `CASE_SEALED` when a seal is the only thing that blocked it. Case delete stores a snapshot on its audit
+  row; `undoDeleteContainerNative` re-creates the CUSTOM case in place (id, label, parent, version, sort
+  position) and restores its lines in ONE mutation (once). `unplanLinesFromCase` falls back to the live
+  version for a legacy case with no `versionId` and is bounded (3,000 lines scanned). An Unplan call spans
+  one job (others are skipped `OTHER_JOB`). "Packed" is `convex/lib/packedUnit.ts` everywhere.
+- `versions.makeLiveNative` takes an optional `expectLiveVersionId` (used only by Undo of a make-live):
+  it refuses with `VERSION_LIVE_MOVED` if the live pointer is no longer that version.
+- `versionsPreview.makeLivePreview` (counts only: lines, packed units carried, models whose demand
+  changes, invoices, quote total and balance before/after; the client fails open) and
+  `versionsPreview.versionRowFacts` (Versions tab: line / planned counts, total, quote state, diff vs
+  the previous version; the newest 6 versions, `plannedCount` for the newest 3, all budgeted on TOTAL
+  documents read; `truncated` / a `null` count says a cap bit, and the query never throws on a big job).
+
+### Versions tab, Compare sheet, Make live (slice 3, UX Phase 8)
+
+Versions is a job tab (D19): `versions/versions-tab.tsx` (dated list in the Discussion rendering, row ⋯
+from `src/lib/row-actions/version-row.ts`, phone: 64 px rows + a red sticky `Save as new version`),
+`versions/version-dialogs.tsx` (Rename, Save as new version), `versions/use-save-version.ts` (one write,
+one GUARDED Undo `versions.undoCreateNative`, shared with the header ⋯; the server keeps an edited, quoted or live copy). Compare is a read-only sheet
+(`compare/compare-sheet.tsx`, D20) and Make live one dialog (`versions/make-live-dialog.tsx`: Warehouse /
+Availability / Invoices rows from `makeLivePreview`, fail-open; Undo only with no conflicts, checked on the
+server against the expected live pointer). `versions/version-overlays.tsx` hosts both under the version
+context (`openCompare`, `openMakeLive`). The tab-row primaries live in `JOB_TAB_PRIMARY`
+(`job-tab-sources.ts`); `Packing n/m` is `usePackingTabCount` over `packingCounts()`.
+- Vocabulary: **Unplanned** (a plan state, `UNPLANNED_LABEL`) is not **Loose** (a physical state).
+
 ### Checkout/return rewire (phase 1c)
 
 `convex/lib/fulfillment.ts`'s `prepUnit` stamps `containerId` instead of a
@@ -406,15 +461,13 @@ bucket last).
 `use-packing-tab.ts` wires `useNativeEquipmentTab` (reused verbatim — no new
 model/kit/group attachment logic, no risk to the Equipment tab it already
 serves) + `projectContainers.listForProject` into that pure module.
-`packing-tab.tsx` renders one section per container plus "Not planned", a
-native `<select>` per line (disabled once actually packed — the warehouse is
-the source of truth from that point on, not this tab) calling
-`useProjectContainerWrites().setPlannedContainer`, and reuses
-`NewContainerSheet` verbatim for "+ New container".
+`packing-tab.tsx` renders the Unplanned card and one card per container (see
+"Packing tab body" below; phase 4's per-row `<select>` is gone) and reuses
+`NewContainerSheet` verbatim for "+ Add case".
 
 **Case cards (UX 2b, §7b.2/§7b.3).** Every container on the job is a card
-(`packing-case-card.tsx`), empty ones included (`buildPackingBuckets`'s
-`allContainerIds`), with "Loose" last and plain. The header: the name in
+(`packing/case-card.tsx`), empty ones included (`buildPackingBuckets`'s
+`allContainerIds`), with Unplanned first and plain. The header: the name in
 mono, the kind muted (`CONTAINER_KIND_WORDS`), `· in LX-02` when nested,
 `n lines · m packed` (`caseCardFacts`), and the case ⋯ built by
 `buildPackingCaseActions` (`src/lib/row-actions/packing-case.ts`), absent
@@ -447,15 +500,51 @@ violation), dropped entirely when the project has no plannable equipment
 checks). `work-card.tsx`'s `resolveRowAction` sends its action to the new
 `packing` tab.
 
-**Deliberately deferred**: the design doc's preferred interaction is
-DRAG (reusing the Equipment tab's `use-equipment-dnd.ts` `buildContainerMap`
-pattern, containers as a new drop-target kind). That hook is a 1200+ line,
-deeply specialized system the ENTIRE Equipment tab depends on in
-production — extending it carries real regression risk to a working, heavily
-used surface, for an interaction-only difference (the underlying effect,
-`plannedContainerId`, is identical whether set by drag or by the picker
-shipped here). Left for its own dedicated pass; the plain `<select>` ships
-the feature's full underlying value now.
+### Packing tab body (UX Phase 8, §7b.2/§7b.3 — replaces the per-row `<select>`)
+
+The tab is `src/components/projects/packing-tab.tsx` (wiring) over
+`src/components/projects/packing/`: `PackingBoard` (layout), `UnplannedCard`,
+`CaseCard`, `PackingLineRow`, `PackingToolbar`, `case-menu.ts`, `packing-dnd.tsx`.
+The Equipment tab's drag system is NOT extended: this is a small local dnd-kit
+core layer (`PointerSensor`, 6 px activation; grips are desktop-only).
+
+- **One planning write.** `usePackingPlan().planInto(ids, case | null)` is the only
+  caller of `setPlannedContainer`. Drag (a ticked row drags the whole selection),
+  the bulk bar's `Plan n into…` and the row ⋯ `Plan into…` / `Unplan` all call it.
+  It skips packed lines up front, toasts `3 lines → LX-04` (with a quiet line for
+  what it left alone: `1 packed line stays (move in the warehouse)`), and hands the
+  toast ONE Undo: `restorePlannedContainers(batchAuditId)`.
+- **The glyph rule** (`planGlyph`): `● Packed` on a packed line; `Planned → LX-04`
+  ONLY when the plan names a different case than the one the gear is in. A line
+  whose plan and reality agree, or that is planned but not packed, carries no
+  glyph. This fixes the old "disabled select reads Not planned" contradiction.
+- **Unplanned, not Loose.** The dashed sticky left card is titled `Unplanned`
+  (`UNPLANNED_LABEL`): a PLAN state. Loose stays the physical word (gear not in a
+  case). Empty copy: `Every line has a case` (nothing unplanned) vs
+  `No lines match that` (filters).
+- **Seal (D21).** Case ⋯ `Seal · lock the plan, print label` / `Unseal`. Sealing
+  opens the existing container-label document for that case. A sealed card shows a
+  `Sealed` word, offers only Print / Unseal / Show every line (Rename, Move into,
+  Take out, Unpack, Delete are absent; the server refuses them with `CASE_SEALED`),
+  refuses drops with a toast naming Unseal (`resolveDrop`, before the server), and
+  its lines have no grip and no ⋯. Seal/Unseal Undo is the opposite write.
+- **Delete case…** (red, last, confirm names the effect). The server returns lines
+  only PLANNED into the case to Unplanned (`unplanLinesFromCase`, audited as a plan
+  batch on the delete's `auditId`) and refuses while anything is packed in it
+  (`NOT_EMPTY`; the toast shows the server's sentence). Undo re-creates a CUSTOM
+  case under the same id and restores those lines by `restorePlannedContainers`;
+  an asset-backed case offers no Undo (the container's model is not on the
+  container row, so it cannot be re-created exactly).
+- **Toolbar / tab ⋯.** Bare search, `Category ▾`, `Status ▾`, `Clear`; tab ⋯ = Print
+  all case labels, Manifest, Select the unplanned, Show every / fewer lines, Open
+  the warehouse page (desktop only). `+ Add case` is an outline button on desktop
+  and the red pinned bar on a phone, replaced by the bulk bar while anything is
+  ticked. The tab-row primary slot belongs to Phase 7 (`useJobTabPrimary`); until
+  it merges the button sits in the toolbar.
+- **Counts.** `packingCounts(lines)` (planned-or-packed over plannable lines) is the
+  ONE derivation for the tab's `Packing n/m`; the footer is `packingFooterFacts`.
+- **Phone.** Unplanned first, cases as sections, 64 px rows, whole row toggles
+  selection, ⋯ always visible, `Show 5 more · n left`, 48 px bottom sheets.
 
 ## Plan-honouring prep: omitted vs null (UX Phase 2c)
 

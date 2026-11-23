@@ -722,7 +722,9 @@ Overview  Equipment  Packing 36/44  Logistics  Finance  Tasks 9/14  Notes  Files
   `usePackingTabCount`) and `Versions n`.
 - **Tab primary:** `JOB_TAB_PRIMARY` holds a tab's one primary for the right of the
   tab row on desktop (outline style; red only as a phone sticky bar).
-- **Versions** is a placeholder that opens the Versions panel until Phase 8 builds the tab.
+- **Packing** and **Versions** are real tabs (UX Phase 8, FEATUREDOCS/83): `Packing n/m` is
+  `packingCounts()`, `+ Add case` / `Save as new version` are the tab-row primaries, `V` and Manage
+  versions… open `?tab=versions`, and Compare is a sheet / Make live one dialog (`VersionOverlays`).
 
 ### Equipment Tab
 - Flat table layout (`table-layout: fixed` with `<colgroup>`) — no card chrome

@@ -25,6 +25,8 @@ import { api } from "../../convex/_generated/api";
  * step instead.
  */
 export interface MakeLiveResult {
+  /** This call's own audit id: the handle its Undo passes as `undoOfAuditId`. */
+  auditId: string;
   liveVersionId: string;
   previousLiveVersionId: string;
   conflicts: string[];
@@ -40,6 +42,7 @@ export function useProjectVersionWrites(projectId: string) {
   const makeLiveM = useMutation(api.versions.makeLiveNative);
   const setLabelM = useMutation(api.versions.setLabelNative);
   const deleteM = useMutation(api.versions.deleteNative);
+  const undoCreateM = useMutation(api.versions.undoCreateNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -51,18 +54,20 @@ export function useProjectVersionWrites(projectId: string) {
     /** "New version from vN" — copies `fromVersionId`'s plan graph into a
      *  fresh, non-live version. `fromVersionId` defaults server-side to the
      *  project's current live version. */
-    createVersion: async (opts: { fromVersionId?: string; label?: string } = {}): Promise<{ id: string; number: number }> => {
+    createVersion: async (opts: { fromVersionId?: string; label?: string } = {}): Promise<{ id: string; number: number; auditId: string }> => {
       const organizationId = requireOrg();
+      const auditId = createId();
       try {
-        return await createM({
+        const r = await createM({
           organizationId,
           projectId,
           fromVersionId: opts.fromVersionId,
           label: opts.label,
           actor: actor(),
-          auditId: createId(),
+          auditId,
           now: Date.now(),
         });
+        return { id: r.id, number: r.number, auditId };
       } catch (e) {
         throw mapNativeWriteError(e);
       }
@@ -70,10 +75,31 @@ export function useProjectVersionWrites(projectId: string) {
 
     /** "Make vN live" — a pointer flip (design §4.4/§4.8). Returns the
      *  warehouse conflicts the Make-live dialog lists, never blocks on them. */
-    makeLive: async (versionId: string): Promise<MakeLiveResult> => {
+    makeLive: async (versionId: string, opts: { expectLiveVersionId?: string; undoOfAuditId?: string } = {}): Promise<MakeLiveResult> => {
+      const organizationId = requireOrg();
+      const auditId = createId();
+      try {
+        const r = await makeLiveM({
+          organizationId,
+          projectId,
+          versionId,
+          expectLiveVersionId: opts.expectLiveVersionId,
+          undoOfAuditId: opts.undoOfAuditId,
+          actor: actor(),
+          auditId,
+          now: Date.now(),
+        });
+        return { ...r, auditId };
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** The guarded Undo of `createVersion`: the server deletes the copy only while it is unedited, unquoted and not live. */
+    undoCreateVersion: async (versionId: string, createAuditId: string): Promise<{ id: string; number: number }> => {
       const organizationId = requireOrg();
       try {
-        return await makeLiveM({ organizationId, projectId, versionId, actor: actor(), auditId: createId(), now: Date.now() });
+        return await undoCreateM({ organizationId, projectId, versionId, createAuditId, actor: actor(), auditId: createId(), now: Date.now() });
       } catch (e) {
         throw mapNativeWriteError(e);
       }

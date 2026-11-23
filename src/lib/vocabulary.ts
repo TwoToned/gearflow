@@ -24,6 +24,11 @@ export const MODULE_NAMES = {
 /** Gear that is not in a case (replaces "Not planned" / "No container"). */
 export const LOOSE_LABEL = "Loose";
 
+/** A line with no case planned for it (a PLAN state, on the job's Packing tab).
+ *  Not "Loose": that is the PHYSICAL state (gear not in a case) and reusing it
+ *  would blur plan and reality (spec §7b.1 finding 2). */
+export const UNPLANNED_LABEL = "Unplanned";
+
 /** Stages gear moves through, left to right, plus the archived end state. */
 export type GearStageKey =
   | "to_prep"

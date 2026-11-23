@@ -295,6 +295,15 @@ describe("financeOrg.bundle", () => {
       overdueTruncated: false,
     });
   });
+
+  test("counts returns a dollar total, so it needs the ROLE's invoice read, not just the org match", async () => {
+    const t = makeT();
+    await seedCoreFixture(t);
+    // A token for the org with no member row: requireOrgReadFor alone would let it through.
+    await expect(
+      t.withIdentity({ subject: "stranger", orgId: ORG }).query(api.financeOrg.counts, { orgId: ORG, now: NOW }),
+    ).rejects.toThrow(/not a member|insufficient/i);
+  });
 });
 
 describe("financeOrg.counts — overdue invoices (D88)", () => {

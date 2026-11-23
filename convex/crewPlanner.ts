@@ -22,9 +22,33 @@ const OPEN_CALLS_SERVICE_CAP = 500;
 /** How far back a multi-day service may start and still run into the window (a month-long install). */
 const MULTI_DAY_LOOKBACK_DAYS = 31;
 
-/** Does the service's [date, endDate] reach the window (its start is already ≤ the window's end)? */
-function overlapsWindow(s: Doc<"projectServices">, startMs: number): boolean {
-  return Math.max(s.date ?? 0, s.endDate ?? 0) >= startMs;
+/** Rows read per range before the result says `truncated` (both ranges are filtered server-side first). */
+const OPEN_CALLS_READ_CAP = 2000;
+
+/**
+ * The services that could be open in [startMs, endMs], crewed only. Two reads:
+ * - the window itself, by start date, so a busy past can never crowd it out;
+ * - the multi-day lookback (`MULTI_DAY_LOOKBACK_DAYS` before the window),
+ *   narrowed server-side to services whose `endDate` reaches into the window.
+ * VERSION-SCOPE: an org-wide date-range scan across every version's services by
+ * design; the caller keeps only each job's LIVE-version rows (`onLiveJob`).
+ */
+async function scanWindow(ctx: QueryCtx, orgId: string, startMs: number, endMs: number): Promise<{ services: Doc<"projectServices">[]; truncated: boolean }> {
+  const lookbackFrom = startMs - MULTI_DAY_LOOKBACK_DAYS * DAY_MS;
+  const [inWindow, runningIn] = await Promise.all([
+    ctx.db
+      .query("projectServices")
+      .withIndex("by_organizationId_date", (q) => q.eq("organizationId", orgId).gte("date", startMs).lte("date", endMs))
+      .filter((q) => q.gt(q.field("crewCountRequired"), 0))
+      .take(OPEN_CALLS_READ_CAP + 1),
+    ctx.db
+      .query("projectServices")
+      .withIndex("by_organizationId_date", (q) => q.eq("organizationId", orgId).gte("date", lookbackFrom).lt("date", startMs))
+      .filter((q) => q.and(q.gt(q.field("crewCountRequired"), 0), q.gte(q.field("endDate"), startMs)))
+      .take(OPEN_CALLS_READ_CAP + 1),
+  ]);
+  const truncated = inWindow.length > OPEN_CALLS_READ_CAP || runningIn.length > OPEN_CALLS_READ_CAP;
+  return { services: [...inWindow.slice(0, OPEN_CALLS_READ_CAP), ...runningIn.slice(0, OPEN_CALLS_READ_CAP)], truncated };
 }
 
 export const agentOps: AgentOpsAnnotations = {
@@ -76,23 +100,14 @@ export const openCalls = query({
   handler: async (ctx, { orgId, startMs, endMs }) => {
     await requireOrgReadFor(ctx, orgId, "crew");
     assertRange(startMs, endMs);
-    // VERSION-SCOPE: an org-wide date-range scan across every version's services
-    // by design; `onLiveJob` below keeps only each job's LIVE-version rows.
-    // A multi-day service that STARTED before the window but runs into it is
-    // still open in it, so the scan reaches back `MULTI_DAY_LOOKBACK_DAYS` and
-    // keeps every service whose [date, endDate] overlaps the window.
+    const { services: scanned, truncated: readCapped } = await scanWindow(ctx, orgId, startMs, endMs);
+    // Live-version, live-job rows FIRST, then the cap: old versions' copies and
+    // cancelled jobs must never push a real open call past it.
+    const projects = await liveProjects(ctx, orgId, [...new Set(scanned.map((s) => s.projectId))]);
+    const live = scanned.filter((s) => onLiveJob(s, projects));
+    const truncated = readCapped || live.length > OPEN_CALLS_SERVICE_CAP;
+    const services = live.slice(0, OPEN_CALLS_SERVICE_CAP);
     const scanFrom = startMs - MULTI_DAY_LOOKBACK_DAYS * DAY_MS;
-    const ranged = await ctx.db
-      .query("projectServices")
-      .withIndex("by_organizationId_date", (q) => q.eq("organizationId", orgId).gte("date", scanFrom).lte("date", endMs))
-      .take(OPEN_CALLS_SERVICE_CAP + 1);
-    const truncated = ranged.length > OPEN_CALLS_SERVICE_CAP;
-    const capped = ranged
-      .slice(0, OPEN_CALLS_SERVICE_CAP)
-      .filter((s) => (s.crewCountRequired ?? 0) > 0 && overlapsWindow(s, startMs));
-
-    const projects = await liveProjects(ctx, orgId, [...new Set(capped.map((s) => s.projectId))]);
-    const services = capped.filter((s) => onLiveJob(s, projects));
     const byService = await assignmentsByService(ctx, orgId, services);
     const refs = new Map([...projects.values()].map((p) => [p.id, { id: p.id, name: p.name, projectNumber: p.projectNumber }]));
     // The board's gap rule, over the scanned span (the window overlap is already applied above).

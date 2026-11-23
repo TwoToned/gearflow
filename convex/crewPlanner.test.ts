@@ -79,6 +79,23 @@ describe("crewPlanner.openCalls (Needs crew)", () => {
     expect(res.calls.map((c) => c.serviceId)).toEqual(["runsIn"]);
   });
 
+  test("a busy past and old versions never crowd the week's open calls out of the cap", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false, liveVersionId: "v2" });
+      const svc = (id: string, extra: Record<string, unknown>) =>
+        ctx.db.insert("projectServices", { id, organizationId: ORG, projectId: "p1", type: "LABOUR", title: id, crewCountRequired: 1, ...extra } as never);
+      // 520 crewed services in the lookback that ended before the week (a busy month)…
+      for (let i = 0; i < 520; i++) await svc(`past${i}`, { versionId: "v2", date: D0 - 10 * DAY + i, endDate: D0 - DAY });
+      // …and 520 copies of this week's services in a non-live version.
+      for (let i = 0; i < 520; i++) await svc(`old${i}`, { versionId: "v1", date: D0 + DAY + i });
+      await svc("live", { versionId: "v2", date: D0 + 2 * DAY });
+    });
+    const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });
+    expect(res.calls.map((c) => c.serviceId)).toEqual(["live"]);
+    expect(res.truncated).toBe(false);
+  });
+
   test("each open call carries the phase a call on it staffs (Offer a call creates with it)", async () => {
     const t = makeT(); await seedBase(t); await seedServices(t);
     const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });

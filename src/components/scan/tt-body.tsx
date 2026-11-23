@@ -82,7 +82,8 @@ function TtContent(p: TtBodyProps) {
   if (state || !card || !item) return state;
   const menu = buildTtCardMenu({
     assetId: item.assetId, ttId: item.id, testTagId: item.testTagId, onOpen: p.onOpen,
-    onQuickPass: () => void p.tt.quickPass(), onClearScan: p.onClearScan, onRetire: () => void p.register.retire(item),
+    // Absent (not an error toast) for an item that has never been tested.
+    onQuickPass: item.lastTestDate != null ? () => void p.tt.quickPass() : undefined, onClearScan: p.onClearScan, onRetire: () => void p.register.retire(item),
     onCreateMaintenance: p.onCreateMaintenance,
   });
   const asAsset = checkableCard({ ...card, checkItemCount: 1 });

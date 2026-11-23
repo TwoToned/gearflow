@@ -302,7 +302,17 @@ describe("ScanPage — Test & tag mode", () => {
     expect(h.ttRetire).not.toHaveBeenCalled();
   });
 
+  it("Quick pass is absent for an item that has never been tested (nothing to repeat)", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412"); // tt() defaults to lastTestDate: null
+    render(<ScanPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Scan actions" }));
+    expect(await screen.findByRole("menuitem", { name: "Retire from test & tag…" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Quick pass: repeat the last test" })).toBeNull();
+    expect(h.convexQuery).not.toHaveBeenCalled();
+  });
+
   it("card ⋯ opens; Retire confirms first; Quick pass prefills the last test for review", async () => {
+    h.testCards["TT-0412"] = card("TT-0412", { tt: tt({ lastTestDate: Date.UTC(2026, 7, 22) }) });
     setUrl("/scan?mode=tt&tag=TT-0412");
     h.convexQuery.mockResolvedValue({ visualCordCondition: true, visualPlugCondition: true, earthContinuityResult: "PASS", earthContinuityReading: 0.3, insulationResult: "NOT_APPLICABLE" });
     render(<ScanPage />);

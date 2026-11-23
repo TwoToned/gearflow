@@ -98,7 +98,8 @@ export interface TtCardMenuCtx {
   ttId: string;
   testTagId: string;
   onOpen: (href: string) => void;
-  onQuickPass: () => void;
+  /** Absent when the item has never been tested: there is no last test to repeat. */
+  onQuickPass?: () => void;
   onClearScan: () => void;
   onRetire: () => void;
   /** Absent without `maintenance:create`, or for an item with no inventory asset. */
@@ -109,7 +110,7 @@ export interface TtCardMenuCtx {
 export function buildTtCardMenu(c: TtCardMenuCtx): ActionMenuSpec {
   return spec([
     c.assetId && { key: "open", label: "Open asset", group: "edit", icon: ExternalLink, onSelect: () => c.onOpen(`/assets/registry/${c.assetId}`) },
-    { key: "quick-pass", label: "Quick pass: repeat the last test", group: "edit", icon: RotateCcw, onSelect: c.onQuickPass },
+    c.onQuickPass && { key: "quick-pass", label: "Quick pass: repeat the last test", group: "edit", icon: RotateCcw, onSelect: c.onQuickPass },
     maintenanceItem(c.onCreateMaintenance),
     { key: "tt", label: "Open in test & tag list", group: "organise", icon: ClipboardList, onSelect: () => c.onOpen(`/test-and-tag/${c.ttId}`) },
     { key: "clear", label: "Clear this scan", group: "organise", icon: X, onSelect: c.onClearScan },

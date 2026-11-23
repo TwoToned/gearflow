@@ -20,6 +20,7 @@ import {
   type PaletteSection,
 } from "@/lib/palette/model";
 import type { Resource } from "@/lib/permissions";
+import { reachesResource } from "@/lib/permission-reach";
 import { useAtMode, atScore } from "./use-at-mode";
 import { useSlashMode } from "./use-slash-mode";
 import { useDateMode } from "./use-date-mode";
@@ -27,8 +28,8 @@ import { useSearchMode } from "./use-search-mode";
 
 export type Permissions = Partial<Record<Resource, readonly string[]>> | null;
 
-/** The same rule the shell uses to show a module (`nav.ts` canSee): any action opens it. */
-export const reaches = (p: Permissions, r: Resource) => (p?.[r]?.length ?? 0) > 0;
+/** The ONE "can open" rule (`src/lib/permission-reach.ts`), the shell's own. */
+export const reaches = (p: Permissions, r: Resource) => reachesResource(p, r);
 
 export interface Drill {
   parent: PaletteRow;

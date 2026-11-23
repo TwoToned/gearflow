@@ -12,6 +12,7 @@
 import { MODULE_NAMES } from "@/lib/vocabulary";
 import type { Resource } from "@/lib/permissions";
 import type { NavCountSource } from "@/lib/nav-counts";
+import { reachesResource } from "@/lib/permission-reach";
 
 /** Module accent. `null` = the muted neutral used by the "More" group and Settings. */
 export type NavHue = "blue" | "amber" | "green" | "purple" | "coral" | "teal";
@@ -249,7 +250,7 @@ function canSee(resource: NavItem["resource"], permissions: PermissionMapLike | 
   // Still loading (or no org): permissive, so the shell doesn't flash an empty nav.
   if (!permissions) return true;
   const list = typeof resource === "string" ? [resource] : resource;
-  return list.some((r) => (permissions[r]?.length ?? 0) > 0);
+  return list.some((r) => reachesResource(permissions, r));
 }
 
 /** NAV with gated rows and gated sub-rows removed. `permissions: null` = still loading. */

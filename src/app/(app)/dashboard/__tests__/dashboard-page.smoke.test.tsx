@@ -148,6 +148,13 @@ describe("Home (smoke)", () => {
     expect(within(row).getByText("back in 3d")).toBeDefined();
   });
 
+  it("a read is gated by the ONE 'can open' rule: any action on invoice runs the finance read and shows its line", () => {
+    m.permissions = { ...FULL, invoice: ["create"] };
+    render(<DashboardPage />);
+    expect(m.financeArg.some((a) => a === "org1")).toBe(true);
+    expect(screen.getByText("invoices overdue")).toBeDefined();
+  });
+
   it("On the floor now counts the ORG's live jobs (the total, not the page it shows)", () => {
     render(<DashboardPage />);
     const card = screen.getByRole("heading", { name: "On the floor now" }).parentElement!;

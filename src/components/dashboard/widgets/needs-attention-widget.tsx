@@ -16,6 +16,7 @@ import { StatusWord } from "@/components/ui/status-word";
 import { WidgetCount, useBoardHas } from "@/components/dashboard/widget-chrome";
 import { buildNeedsAttentionLines, type NeedsAttentionLine, type NeedsAttentionTone } from "@/lib/needs-attention";
 import { canOpenLink } from "@/lib/dashboard-links";
+import { reachesResource } from "@/lib/permission-reach";
 import type { ColorIntent } from "@/lib/status-colors";
 import type { Resource } from "@/lib/permissions";
 import { cn, focusRing } from "@/lib/utils";
@@ -26,7 +27,7 @@ type Permissions = ReturnType<typeof useCurrentRole>["permissions"];
 
 /** The org id for a query only when the role can open what it feeds; otherwise the query is skipped. */
 function gated(orgId: string | undefined, permissions: Permissions, ...resources: Resource[]): string | undefined {
-  return resources.every((r) => permissions?.[r]?.includes("read")) ? orgId : undefined;
+  return resources.every((r) => reachesResource(permissions, r)) ? orgId : undefined;
 }
 
 /**

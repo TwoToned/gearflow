@@ -1,4 +1,5 @@
 import type { Resource } from "@/lib/permissions";
+import { reachesResource } from "@/lib/permission-reach";
 import { HOME_UPCOMING_STATUSES } from "../../convex/lib/jobStatusGroups";
 
 /**
@@ -58,6 +59,5 @@ type PermissionsLike = Partial<Record<Resource, readonly string[]>> | null | und
  * `View all ›` dead for every role. Unknown permissions (still loading) = no.
  */
 export function canOpenLink(link: DashboardLink, permissions: PermissionsLike): boolean {
-  if (!link.resource) return true;
-  return (permissions?.[link.resource]?.length ?? 0) > 0;
+  return !link.resource || reachesResource(permissions, link.resource);
 }

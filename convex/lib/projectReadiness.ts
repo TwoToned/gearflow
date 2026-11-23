@@ -36,6 +36,8 @@ import {
   computeServicesMissingCrew,
 } from "./overbookingBoard";
 import { EXCLUDED_ASSIGNMENT_STATUSES } from "./crewConflicts";
+import { isPackedUnit, type PackableUnit } from "./packedUnit";
+import { isPlannableLine } from "./packingPlan";
 
 /**
  * The models THIS project actually books as real (non-optional, non-cancelled,
@@ -213,9 +215,8 @@ export interface PackingLineInput {
   plannedContainerId?: string | null;
 }
 
-export interface PackingUnitInput {
+export interface PackingUnitInput extends PackableUnit {
   lineItemId: string;
-  containerId?: string | null;
 }
 
 export interface ReadinessPackingSection {
@@ -224,10 +225,7 @@ export interface ReadinessPackingSection {
 }
 
 function isPlannableEquipmentLine(li: PackingLineInput, projectId: string): boolean {
-  if (li.projectId !== projectId) return false;
-  if (li.type !== "EQUIPMENT") return false;
-  if (li.isKitChild || li.isContainerLineItem) return false;
-  return (li.status ?? "") !== "CANCELLED";
+  return li.projectId === projectId && isPlannableLine(li);
 }
 
 export function computeProjectPackingReadiness(
@@ -235,7 +233,7 @@ export function computeProjectPackingReadiness(
   lines: PackingLineInput[],
   units: PackingUnitInput[],
 ): ReadinessPackingSection {
-  const packedLineIds = new Set(units.filter((u) => u.containerId != null).map((u) => u.lineItemId));
+  const packedLineIds = new Set(units.filter(isPackedUnit).map((u) => u.lineItemId));
   const plannable = lines.filter((li) => isPlannableEquipmentLine(li, projectId));
   const notPlanned = plannable.filter((li) => li.plannedContainerId == null && !packedLineIds.has(li.id));
   return { totalCount: plannable.length, notPlannedCount: notPlanned.length };

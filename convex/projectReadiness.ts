@@ -100,7 +100,7 @@ async function readPackingReadiness(ctx: QueryCtx, orgId: string, projectId: str
       isContainerLineItem: li.isContainerLineItem ?? false,
       plannedContainerId: li.plannedContainerId ?? null,
     })),
-    units.map((u) => ({ lineItemId: u.lineItemId, containerId: u.containerId ?? null })),
+    units.map((u) => ({ lineItemId: u.lineItemId, containerId: u.containerId ?? null, status: u.status })),
   );
 }
 

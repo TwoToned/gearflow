@@ -12,6 +12,10 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { assertProjectInOrg } from "./projectLineItems";
 import * as enums from "./lib/validators";
 import { resolveWriteVersionId, versionRows } from "./lib/versionScope";
+import { assertContainerNotSealed } from "./lib/containerSeal";
+import { isPackedUnit } from "./lib/packedUnit";
+import { MAX_PLAN_LINES } from "./lib/packingPlan";
+import type { Doc } from "./_generated/dataModel";
 
 /**
  * Native ProjectContainer write mutations (#1296 packing containers, build
@@ -20,7 +24,7 @@ import { resolveWriteVersionId, versionRows } from "./lib/versionScope";
  * same allowance an unpriced line-item add gets (Q16).
  */
 
-const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+export const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
 const LABEL_MAX = 120; // src/lib/validations/project-container.ts
 const DESCRIPTION_MAX = 500;
@@ -35,13 +39,13 @@ async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId
 }
 
 /** Fetch a container by cuid and confirm it belongs to the caller's org (by_cuid is global). */
-async function requireContainerInOrg(ctx: MutationCtx, containerId: string, orgId: string) {
+export async function requireContainerInOrg(ctx: MutationCtx, containerId: string, orgId: string) {
   const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", containerId)).first();
   if (!c || c.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Container not found." });
   return c;
 }
 
-async function logContainerChange(
+export async function logContainerChange(
   ctx: MutationCtx,
   args: {
     orgId: string;
@@ -174,6 +178,76 @@ async function deleteContainerLineWithUnits(ctx: MutationCtx, lineItemId: string
   await ctx.db.delete(line._id);
 }
 
+/** Insert a case and its own line item (D5: never priced). The ONE place a case
+ *  row is born: `createNative` and the exact Undo of a case delete
+ *  (`projectContainerPlanWrites.undoDeleteContainerNative`) both call it. An Undo
+ *  passes the old `sortOrder`/`lineageId` so the case returns to its place. */
+export async function insertContainerWithLine(
+  ctx: MutationCtx,
+  a: {
+    id: string;
+    orgId: string;
+    projectId: string;
+    versionId: string;
+    kind: "ASSET" | "BULK_ASSET" | "CUSTOM";
+    assetId?: string;
+    bulkAssetId?: string;
+    label: string;
+    description?: string;
+    parentContainerId?: string;
+    modelId?: string;
+    now: number;
+    sortOrder?: number;
+    lineageId?: string;
+  },
+): Promise<string> {
+  const { id, orgId, projectId, versionId, kind, label, now } = a;
+  const kindFields = deriveContainerKindFields(kind, a.assetId, a.bulkAssetId, label);
+  const lineItemId = createId();
+  const lineSort = await nextLineSort(ctx, versionId, orgId);
+  await ctx.db.insert("projectLineItems", {
+    id: lineItemId,
+    organizationId: orgId,
+    projectId,
+    versionId,
+    lineageId: lineItemId,
+    type: "EQUIPMENT",
+    modelId: a.modelId,
+    assetId: kindFields.assetId,
+    bulkAssetId: kindFields.bulkAssetId,
+    isCustomItem: kindFields.isCustomItem,
+    description: kindFields.description,
+    quantity: 1,
+    sortOrder: lineSort,
+    status: "CONFIRMED",
+    checkedOutQuantity: 0,
+    prepStatus: "PACKED",
+    prepContainer: label, // widen — stays readable for anything not yet migrated to containerId
+    containerId: id,
+    isContainerLineItem: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await ctx.db.insert("projectContainers", {
+    id,
+    organizationId: orgId,
+    projectId,
+    versionId,
+    lineageId: a.lineageId ?? id,
+    kind,
+    assetId: kindFields.assetId,
+    bulkAssetId: kindFields.bulkAssetId,
+    label,
+    description: a.description,
+    lineItemId,
+    parentContainerId: a.parentContainerId,
+    sortOrder: a.sortOrder ?? (await nextContainerSort(ctx, versionId, orgId)),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return lineItemId;
+}
+
 export const createNative = mutation({
   returns: v.object({ id: v.string(), lineItemId: v.string() }),
   args: {
@@ -209,6 +283,8 @@ export const createNative = mutation({
 
     await assertContainerRefsInOrg(ctx, orgId, { assetId, bulkAssetId, modelId });
     await assertParentContainerOnSameProject(ctx, parentContainerId, projectId, orgId);
+    // A sealed case vouches for its printed label and contents (Q3): nothing is packed into it.
+    if (parentContainerId) assertContainerNotSealed(await requireContainerInOrg(ctx, parentContainerId, orgId), "pack a case inside it");
 
     // Idempotent on a retried create with the same client-minted cuid.
     const existing = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -217,50 +293,8 @@ export const createNative = mutation({
       return { id, lineItemId: existing.lineItemId };
     }
 
-    const kindFields = deriveContainerKindFields(kind, assetId, bulkAssetId, label);
-    const lineItemId = createId();
-    const lineSort = await nextLineSort(ctx, targetVersionId, orgId);
-    await ctx.db.insert("projectLineItems", {
-      id: lineItemId,
-      organizationId: orgId,
-      projectId,
-      versionId: targetVersionId,
-      lineageId: lineItemId,
-      type: "EQUIPMENT",
-      modelId,
-      assetId: kindFields.assetId,
-      bulkAssetId: kindFields.bulkAssetId,
-      isCustomItem: kindFields.isCustomItem,
-      description: kindFields.description,
-      quantity: 1,
-      sortOrder: lineSort,
-      status: "CONFIRMED",
-      checkedOutQuantity: 0,
-      prepStatus: "PACKED",
-      prepContainer: label, // widen — stays readable for anything not yet migrated to containerId
-      containerId: id,
-      isContainerLineItem: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const containerSort = await nextContainerSort(ctx, targetVersionId, orgId);
-    await ctx.db.insert("projectContainers", {
-      id,
-      organizationId: orgId,
-      projectId,
-      versionId: targetVersionId,
-      lineageId: id,
-      kind,
-      assetId: kindFields.assetId,
-      bulkAssetId: kindFields.bulkAssetId,
-      label,
-      description,
-      lineItemId,
-      parentContainerId,
-      sortOrder: containerSort,
-      createdAt: now,
-      updatedAt: now,
+    const lineItemId = await insertContainerWithLine(ctx, {
+      id, orgId, projectId, versionId: targetVersionId, kind, assetId, bulkAssetId, label, description, parentContainerId, modelId, now,
     });
 
     await logContainerChange(ctx, {
@@ -289,6 +323,23 @@ async function assertParentContainerReparentValid(
     throw new ConvexError({ code: "INVALID_FIELD", message: "A container can only be packed inside a container on the same job." });
   }
   await assertNoParentCycle(ctx, id, parentContainerId, orgId);
+}
+
+/** Seal check from the PARENT side (Q3): a sealed case also refuses having a case
+ *  nested into it or taken out of it, or its contents would drift from the label
+ *  that was printed on seal. A missing or foreign old parent counts as not sealed. */
+async function assertParentSealsAllowReparent(
+  ctx: MutationCtx,
+  container: Doc<"projectContainers">,
+  newParentId: string | null | undefined,
+  orgId: string,
+): Promise<void> {
+  if (newParentId === undefined || (newParentId ?? null) === (container.parentContainerId ?? null)) return;
+  if (newParentId) assertContainerNotSealed(await requireContainerInOrg(ctx, newParentId, orgId), "pack a case inside it");
+  const oldId = container.parentContainerId;
+  if (!oldId) return;
+  const old = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", oldId)).first();
+  if (old && old.organizationId === orgId) assertContainerNotSealed(old, "take a case out of it");
 }
 
 function buildContainerUpdatePatch(
@@ -362,7 +413,17 @@ export const updateNative = mutation({
     if (label !== undefined) assertStrLen(label, "label", { min: 1, max: LABEL_MAX });
     if (description) assertStrLen(description, "description", { max: DESCRIPTION_MAX });
 
+    // Q3 (owner-decided): a seal vouches for the printed label, so a rename or a
+    // re-nest of a sealed case is refused. A description-only edit is not.
+    if (container.sealedAt != null) {
+      if (label !== undefined && label !== container.label) assertContainerNotSealed(container, "rename it");
+      if (parentContainerId !== undefined && (parentContainerId ?? null) !== (container.parentContainerId ?? null)) {
+        assertContainerNotSealed(container, "move it");
+      }
+    }
+
     await assertParentContainerReparentValid(ctx, id, parentContainerId, container.projectId, orgId);
+    await assertParentSealsAllowReparent(ctx, container, parentContainerId, orgId);
 
     const patch = buildContainerUpdatePatch(label, description, parentContainerId, now);
     await ctx.db.patch(container._id, patch);
@@ -386,6 +447,73 @@ export const updateNative = mutation({
   },
 });
 
+/** Most lines one case delete will scan (no index on `plannedContainerId`; the read stays bounded). */
+const MAX_UNPLAN_SCAN = 3000;
+
+/** Clear `plannedContainerId` on every line of the case's version still planned
+ *  into it; one PLAN_LINE audit row each. Streams the version's lines (never
+ *  materialises them all); returns the cleared line ids. */
+async function unplanLinesFromCase(
+  ctx: MutationCtx,
+  container: Doc<"projectContainers">,
+  orgId: string,
+  now: number,
+  actor: Actor,
+  batchAuditId: string,
+  /** A pre-versioning case has no `versionId`; its lines live on the job's live version. */
+  fallbackVersionId: string | undefined,
+): Promise<string[]> {
+  const versionId = container.versionId ?? fallbackVersionId;
+  if (!versionId) return [];
+  const cleared: string[] = [];
+  let scanned = 0;
+  const lines = ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", versionId));
+  for await (const line of lines) {
+    if (++scanned > MAX_UNPLAN_SCAN) {
+      throw new ConvexError({ code: "CASE_TOO_LARGE", message: "This job has too many lines to delete a case in one step. Unplan its lines first." });
+    }
+    if (line.organizationId !== orgId || line.plannedContainerId !== container.id) continue;
+    await ctx.db.patch(line._id, { plannedContainerId: undefined, updatedAt: now });
+    await writeActivityLog(ctx, {
+      id: planLineAuditId(batchAuditId, line.id),
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "projectLineItem",
+      entityId: line.id,
+      projectId: container.projectId,
+      entityName: "Planned container",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Unplanned: case "${container.label}" was deleted`,
+      metadata: { kind: PLAN_LINE_KIND, batchId: batchAuditId, from: container.id, to: null },
+      createdAt: now,
+    });
+    cleared.push(line.id);
+  }
+  return cleared;
+}
+
+/** The fields of a deleted CUSTOM case an Undo needs (read back from the server's own audit row). */
+export interface DeletedCaseSnapshot {
+  label: string;
+  description: string | null;
+  parentContainerId: string | null;
+  versionId: string | null;
+  lineageId: string | null;
+  sortOrder: number | null;
+}
+
+function deletedCaseSnapshot(c: Doc<"projectContainers">): DeletedCaseSnapshot {
+  return {
+    label: c.label,
+    description: c.description ?? null,
+    parentContainerId: c.parentContainerId ?? null,
+    versionId: c.versionId ?? null,
+    lineageId: c.lineageId ?? null,
+    sortOrder: c.sortOrder ?? null,
+  };
+}
+
 export const deleteNative = mutation({
   returns: v.object({ ok: v.boolean() }),
   args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -396,6 +524,9 @@ export const deleteNative = mutation({
     const actor = await resolveActor(ctx, suppliedActor);
 
     const container = await requireContainerInOrg(ctx, id, orgId);
+    assertContainerNotSealed(container, "delete it"); // Q3
+    // Deleting a case inside a sealed one would change what the seal vouches for.
+    await assertParentSealsAllowReparent(ctx, container, null, orgId);
 
     const memberUnit = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", id)).collect())
       .find((u) => u.organizationId === orgId && u.status !== "CANCELLED");
@@ -408,6 +539,14 @@ export const deleteNative = mutation({
       throw new ConvexError({ code: "NOT_EMPTY", message: "This container still has another container packed inside it — move it out first." });
     }
 
+    // Lines that were only PLANNED into this case go back to Unplanned (a
+    // dangling `plannedContainerId` would put them in a case that no longer
+    // exists). Audited as a plan batch on this call's `auditId`, so the Undo
+    // (re-create the case, then `restorePlannedContainersNative(auditId)`) reads
+    // each line's previous case from the server's own rows.
+    const project = await requireProjectForGuard(ctx, container.projectId, orgId);
+    const unplanned = await unplanLinesFromCase(ctx, container, orgId, now, actor, auditId, project.liveVersionId);
+
     await deleteContainerLineWithUnits(ctx, container.lineItemId, orgId);
     await ctx.db.delete(container._id);
 
@@ -415,6 +554,14 @@ export const deleteNative = mutation({
       orgId, projectId: container.projectId, actor, auditId, now,
       action: "DELETE", entityId: id, entityName: container.label,
       summary: `Deleted container "${container.label}"`,
+      metadata: {
+        kind: PLAN_BATCH_KIND,
+        lineItemIds: unplanned,
+        plannedContainerId: null,
+        // What `undoDeleteContainerNative` re-creates from (a CUSTOM case only: an
+        // asset-backed case's model lives on the deleted line, so it has no exact Undo).
+        deleted: container.kind === "CUSTOM" ? deletedCaseSnapshot(container) : undefined,
+      },
     });
 
     return { ok: true };
@@ -530,27 +677,112 @@ function planChangeSummary(count: number, target: { label: string } | null, from
   return `Cleared the planned container on ${lines}`;
 }
 
-/** Patch `plannedContainerId` on each in-org line; report what changed. */
+/* Lines per plan call: `MAX_PLAN_LINES` (lib/packingPlan.ts, shared with the client). Each line is
+ * checked for a packed unit, so the read volume is bounded by it, not by the caller. */
+
+export type PlanSkipReason = "PACKED" | "OTHER_JOB";
+
+/** True when any live unit of the line is physically in a case (packed wins over
+ *  the plan; the office never moves physical gear — §7b.3). Streams the line's
+ *  units and stops at the first packed one. */
+export async function lineHasPackedUnit(ctx: Pick<MutationCtx, "db">, lineItemId: string, orgId: string): Promise<boolean> {
+  const units = ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId));
+  for await (const u of units) {
+    if (u.organizationId === orgId && isPackedUnit(u)) return true;
+  }
+  return false;
+}
+
+/** A line belongs with a target case only on the same job AND the same version
+ *  (container ids are per-version; closes the same-job gap in handoff §5). */
+function sameJobAndVersion(line: Doc<"projectLineItems">, target: Doc<"projectContainers">): boolean {
+  return line.projectId === target.projectId && (line.versionId ?? null) === (target.versionId ?? null);
+}
+
+/** Planning a line OUT of a sealed case is refused (`CASE_SEALED`). The case is
+ *  org-checked; a missing/foreign one is treated as not sealed. */
+async function assertNotPlannedOutOfSealed(
+  ctx: MutationCtx,
+  line: Doc<"projectLineItems">,
+  orgId: string,
+  cache: Map<string, Doc<"projectContainers"> | null>,
+): Promise<void> {
+  const fromId = line.plannedContainerId;
+  if (!fromId) return;
+  if (!cache.has(fromId)) {
+    const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", fromId)).first();
+    cache.set(fromId, c && c.organizationId === orgId ? c : null);
+  }
+  const from = cache.get(fromId);
+  if (from) assertContainerNotSealed(from, "plan lines out of it");
+}
+
+/** Why a line is skipped rather than planned, or `null` when it can be. */
+async function planSkipReason(
+  ctx: MutationCtx,
+  line: Doc<"projectLineItems">,
+  target: Doc<"projectContainers"> | null,
+  orgId: string,
+): Promise<PlanSkipReason | null> {
+  if (target && !sameJobAndVersion(line, target)) return "OTHER_JOB";
+  if (await lineHasPackedUnit(ctx, line.id, orgId)) return "PACKED";
+  return null;
+}
+
+/**
+ * Patch `plannedContainerId` on each plannable line and report exactly what
+ * changed (`changes[].from` is each line's previous case, which is what the
+ * Undo restores) and what was skipped (packed, or on another job). Missing or
+ * cross-org ids are ignored. A line already planned into the target is a no-op,
+ * not a change. Throws `CASE_SEALED` (before any write) when the target or any
+ * source case is sealed.
+ */
 async function applyPlannedContainer(
   ctx: MutationCtx,
-  { orgId, lineItemIds, containerId, now }: { orgId: string; lineItemIds: string[]; containerId: string | null; now: number },
+  { orgId, lineItemIds, containerId, now, target }: { orgId: string; lineItemIds: string[]; containerId: string | null; now: number; target: Doc<"projectContainers"> | null },
 ) {
-  const updatedIds: string[] = [];
-  const previous = new Set<string>();
+  const changes: { lineItemId: string; from: string | null }[] = [];
+  const skipped: { lineItemId: string; reason: PlanSkipReason }[] = [];
+  const sourceCache = new Map<string, Doc<"projectContainers"> | null>();
+  const toPatch: Doc<"projectLineItems">[] = [];
   let projectId: string | null = null;
+  let jobId: string | null = null;
   for (const lineItemId of lineItemIds) {
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
     if (!line || line.organizationId !== orgId) continue; // missing/cross-org — skipped
-    if (line.plannedContainerId) previous.add(line.plannedContainerId);
+    // Unplanning has no target to pin the job, so the FIRST line's job is the
+    // batch's job: one call never edits two jobs' plans (and one audit batch
+    // names one job, which the exact Undo relies on).
+    jobId ??= line.projectId;
+    const reason = !target && line.projectId !== jobId ? "OTHER_JOB" : await planSkipReason(ctx, line, target, orgId);
+    if (reason) {
+      skipped.push({ lineItemId, reason });
+      continue;
+    }
+    if ((line.plannedContainerId ?? null) === containerId) continue; // already there
+    await assertNotPlannedOutOfSealed(ctx, line, orgId, sourceCache);
     projectId ??= line.projectId;
-    await ctx.db.patch(line._id, { plannedContainerId: containerId ?? undefined, updatedAt: now });
-    updatedIds.push(lineItemId);
+    changes.push({ lineItemId, from: line.plannedContainerId ?? null });
+    toPatch.push(line);
   }
-  return { updatedIds, previous, projectId };
+  // Validate every line first so a sealed source rejects the whole call
+  // atomically; the writes only start once nothing can throw.
+  for (const line of toPatch) await ctx.db.patch(line._id, { plannedContainerId: containerId ?? undefined, updatedAt: now });
+  return { changes, skipped, projectId };
 }
 
-/** The one audit row of a `setPlannedContainerNative` call. Planning names
- *  the case the lines now go in; clearing names the case they were planned
+/** Audit vocabulary shared with `restorePlannedContainersNative`, which reads
+ *  these rows back (the Undo takes NO client-supplied prior values; the server's
+ *  own audit trail is the source of each line's previous case). */
+export const PLAN_BATCH_KIND = "PLAN_BATCH";
+export const PLAN_LINE_KIND = "PLAN_LINE";
+/** Deterministic id of one line's row inside a batch (batch id = the call's `auditId`). */
+export const planLineAuditId = (batchAuditId: string, lineItemId: string) => `${batchAuditId}:${lineItemId}`;
+
+/** The audit rows of a `setPlannedContainerNative` call: ONE BATCH row (the
+ *  header: names the case, lists the changed lines, records where they went) and
+ *  ONE ROW PER CHANGED LINE recording that line's previous and new case. Planning
+ *  names the case the lines now go in; clearing names the case they were planned
  *  into when that is one case (a case card's "Unpack"), else the first line. */
 async function logPlanChange(
   ctx: MutationCtx,
@@ -564,23 +796,40 @@ async function logPlanChange(
     target: { id: string; label: string } | null;
     /** When clearing: the one case they were all planned into, if any. */
     from: { id: string; label: string } | null;
-    lineItemIds: string[];
+    changes: { lineItemId: string; from: string | null }[];
   },
 ) {
+  const lineItemIds = args.changes.map((c) => c.lineItemId);
   const caseRef = args.target ?? args.from;
-  const summary = planChangeSummary(args.lineItemIds.length, args.target, args.from);
+  const summary = planChangeSummary(lineItemIds.length, args.target, args.from);
+  for (const { lineItemId, from } of args.changes) {
+    await writeActivityLog(ctx, {
+      id: planLineAuditId(args.auditId, lineItemId),
+      organizationId: args.orgId,
+      action: "UPDATE",
+      entityType: "projectLineItem",
+      entityId: lineItemId,
+      projectId: args.projectId,
+      entityName: "Planned container",
+      userId: args.actor.userId,
+      userName: args.actor.userName,
+      summary: args.target ? `Planned into container "${args.target.label}"` : "Cleared the planned container",
+      metadata: { kind: PLAN_LINE_KIND, batchId: args.auditId, from, to: args.target?.id ?? null },
+      createdAt: args.now,
+    });
+  }
   await writeActivityLog(ctx, {
     id: args.auditId,
     organizationId: args.orgId,
     action: "UPDATE",
     entityType: caseRef ? "projectContainer" : "projectLineItem",
-    entityId: caseRef?.id ?? args.lineItemIds[0],
+    entityId: caseRef?.id ?? lineItemIds[0],
     projectId: args.projectId,
     entityName: caseRef?.label ?? "Planned container",
     userId: args.actor.userId,
     userName: args.actor.userName,
     summary,
-    metadata: { lineItemIds: args.lineItemIds, plannedContainerId: args.target?.id ?? null },
+    metadata: { kind: PLAN_BATCH_KIND, lineItemIds, plannedContainerId: args.target?.id ?? null },
     createdAt: args.now,
   });
 }
@@ -589,7 +838,15 @@ async function logPlanChange(
  *  batch of whole lines (D9 — Packing tab, phase 4). Nothing physical moves,
  *  but every write is audited (CLAUDE.md): one row per call. */
 export const setPlannedContainerNative = mutation({
-  returns: v.object({ updated: v.number() }),
+  // `changes` carries each line's previous case (the exact data an Undo needs,
+  // see `projectContainerPlanWrites.restorePlannedContainersNative`); `skipped`
+  // names lines left alone (packed, or on another job). Additive over the old
+  // `{ updated }` shape.
+  returns: v.object({
+    updated: v.number(),
+    changes: v.array(v.object({ lineItemId: v.string(), from: v.union(v.string(), v.null()) })),
+    skipped: v.array(v.object({ lineItemId: v.string(), reason: v.union(v.literal("PACKED"), v.literal("OTHER_JOB")) })),
+  }),
   args: {
     orgId: v.string(),
     lineItemIds: v.array(v.string()),
@@ -601,22 +858,24 @@ export const setPlannedContainerNative = mutation({
   handler: async (ctx, { orgId, lineItemIds, containerId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "warehouse");
     await enforceBrowserWriteLimit(ctx);
-    assertArrayMax(lineItemIds, "lineItemIds", MAX_UNIT_IDS);
+    await assertBulkSizeOk(ctx, lineItemIds.length);
+    assertArrayMax(lineItemIds, "lineItemIds", MAX_PLAN_LINES);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const target = containerId ? await requireContainerInOrg(ctx, containerId, orgId) : null;
+    if (target) assertContainerNotSealed(target, "plan lines into it");
 
-    const { updatedIds, previous, projectId } = await applyPlannedContainer(ctx, { orgId, lineItemIds, containerId, now });
-    if (projectId) {
+    const { changes, skipped, projectId } = await applyPlannedContainer(ctx, { orgId, lineItemIds, containerId, now, target });
+    if (projectId && changes.length > 0) {
       await logPlanChange(ctx, {
         orgId, actor, auditId, now, projectId,
         target: target ? { id: target.id, label: target.label } : null,
-        from: target ? null : await soleContainerInOrg(ctx, previous, orgId),
-        lineItemIds: updatedIds,
+        from: target ? null : await soleContainerInOrg(ctx, new Set(changes.flatMap((c) => (c.from ? [c.from] : []))), orgId),
+        changes,
       });
     }
-    return { updated: updatedIds.length };
+    return { updated: changes.length, changes, skipped };
   },
 });
 

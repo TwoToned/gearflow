@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (627 agent-reachable)
+## Operations (632 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -423,6 +423,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectCategoriesWrites.deleteCategoryNative` (mutation, scope: project:manage_line_items)
 - `projectCategoriesWrites.reorderCategoriesNative` (mutation, scope: project:manage_line_items)
 - `projectCategoriesWrites.updateCategoryNative` (mutation, scope: project:manage_line_items)
+- `projectContainerPlanWrites.restorePlannedContainersNative` (mutation, scope: project:manage_line_items)
+- `projectContainerPlanWrites.undoDeleteContainerNative` (mutation, scope: project:manage_line_items)
 - `projectContainersWrites.createNative` (mutation, scope: project:manage_line_items)
 - `projectContainersWrites.deleteNative` (mutation, scope: project:manage_line_items)
 - `projectContainersWrites.setPlannedContainerNative` (mutation, scope: project:manage_line_items)
@@ -506,6 +508,9 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `versions.deleteNative` (mutation, scope: project:update)
 - `versions.makeLiveNative` (mutation, scope: project:update)
 - `versions.setLabelNative` (mutation, scope: project:update)
+- `versions.undoCreateNative` (mutation, scope: project:update)
+- `versionsPreview.makeLivePreview` (query, scope: project:read)
+- `versionsPreview.versionRowFacts` (query, scope: project:read)
 - `versionsRead.compareVersions` (query, scope: project:read)
 - `versionsRead.getVersion` (query, scope: project:read)
 - `versionsRead.listForProject` (query, scope: project:read)
